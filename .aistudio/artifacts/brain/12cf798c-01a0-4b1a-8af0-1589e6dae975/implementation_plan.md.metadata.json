@@ -1,0 +1,6 @@
+{
+  "summary": "Updated implementation plan for AeroPulse adding a comprehensive fork-ready README.md, .env.example, and in-app setup guide so anyone cloning or forking the GitHub repository to Vercel or local dev can easily configure their own Intervals.icu, Strava, Garmin sync, and Gemini credentials.",
+  "updatedAt": "2026-11-05T21:46:36.335869651Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

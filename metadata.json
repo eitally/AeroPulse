@@ -1,0 +1,6 @@
+{
+  "name": "AeroPulse — Multi-Sport Physiology, Load & AI Coaching PWA",
+  "description": "Unified fitness, physiology, Strava segment, and AI recovery coaching PWA bridging Intervals.icu, Garmin Connect wellness, and Strava OAuth2.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
