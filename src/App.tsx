@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Sun,
   Target,
+  TrendingUp,
 } from 'lucide-react';
 import {
   AnnualMileageGoal,
@@ -32,6 +33,7 @@ import {
 } from './data/mockTelemetry';
 import { CalendarView } from './components/CalendarView';
 import { FitnessHealthView } from './components/FitnessHealthView';
+import { PhysiologicalTrendsView } from './components/PhysiologicalTrendsView';
 import { CustomChartsView } from './components/CustomChartsView';
 import { ActivitiesView } from './components/ActivitiesView';
 import { PhysiologyView } from './components/PhysiologyView';
@@ -41,7 +43,14 @@ import { DataSourcesModal } from './components/DataSourcesModal';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 
-type ActiveTab = 'calendar' | 'fitness' | 'charts' | 'activities' | 'curves' | 'totals';
+type ActiveTab =
+  | 'calendar'
+  | 'fitness'
+  | 'trends'
+  | 'charts'
+  | 'activities'
+  | 'curves'
+  | 'totals';
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
@@ -278,6 +287,16 @@ export default function App() {
                 gearName: sa.gearName,
                 stravaPrCount: sa.stravaPrCount || 0,
                 kudosCount: sa.kudosCount || 0,
+                commentCount: sa.commentCount || 0,
+                achievementCount: sa.achievementCount || 0,
+                athleteCount: sa.athleteCount || 1,
+                hasKudoed: Boolean(sa.hasKudoed),
+                kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
+                comments: Array.isArray(sa.comments) ? sa.comments : [],
+                summaryPolyline: sa.summaryPolyline,
+                routeLatLngs: Array.isArray(sa.routeLatLngs) ? sa.routeLatLngs : undefined,
+                startLatLng: sa.startLatLng,
+                endLatLng: sa.endLatLng,
                 segmentEfforts: sa.segmentEfforts || [],
                 sourceBadges: ['Strava'],
               });
@@ -320,9 +339,31 @@ export default function App() {
                   if (matched) {
                     return {
                       ...act,
+                      stravaId: String(matched.stravaId || act.stravaId || ''),
                       gearName: matched.gearName || act.gearName,
                       stravaPrCount: matched.stravaPrCount ?? act.stravaPrCount,
                       kudosCount: matched.kudosCount ?? act.kudosCount,
+                      commentCount: matched.commentCount ?? act.commentCount,
+                      achievementCount: matched.achievementCount ?? act.achievementCount,
+                      athleteCount: matched.athleteCount ?? act.athleteCount,
+                      hasKudoed: matched.hasKudoed ?? act.hasKudoed,
+                      kudoers:
+                        Array.isArray(matched.kudoers) && matched.kudoers.length > 0
+                          ? matched.kudoers
+                          : act.kudoers,
+                      comments:
+                        Array.isArray(matched.comments) && matched.comments.length > 0
+                          ? matched.comments
+                          : act.comments,
+                      summaryPolyline: matched.summaryPolyline || act.summaryPolyline,
+                      routeLatLngs:
+                        Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 2
+                          ? act.routeLatLngs
+                          : Array.isArray(matched.routeLatLngs) && matched.routeLatLngs.length > 2
+                            ? matched.routeLatLngs
+                            : act.routeLatLngs,
+                      startLatLng: act.startLatLng || matched.startLatLng,
+                      endLatLng: act.endLatLng || matched.endLatLng,
                       segmentEfforts:
                         Array.isArray(matched.segmentEfforts) && matched.segmentEfforts.length > 0
                           ? matched.segmentEfforts
@@ -663,32 +704,339 @@ export default function App() {
     await syncLiveTelemetry(true);
   };
 
-  // Load real streams + auto-detected intervals when selecting an activity
-  const handleSelectActivity = async (activity: UnifiedActivity | null) => {
-    setSelectedActivity(activity);
-    if (
-      activity &&
-      (!activity.streams || !activity.intervals) &&
-      connectionStatus.intervalsConnected &&
-      activity.intervalsId
-    ) {
+  const [isScanningSegments, setIsScanningSegments] = useState(false);
+  const [isHydratingRoutes, setIsHydratingRoutes] = useState(false);
+
+  const reRankActivitiesSegments = useCallback((list: UnifiedActivity[]): UnifiedActivity[] => {
+    const bySeg = new Map<string, { actIdx: number; effIdx: number; elapsedTimeSecs: number }[]>();
+    list.forEach((act, actIdx) => {
+      if (!Array.isArray(act.segmentEfforts)) return;
+      act.segmentEfforts.forEach((eff, effIdx) => {
+        if (!eff || !eff.segmentId || !(eff.elapsedTimeSecs > 0)) return;
+        const sid = String(eff.segmentId);
+        const arr = bySeg.get(sid) || [];
+        arr.push({ actIdx, effIdx, elapsedTimeSecs: eff.elapsedTimeSecs });
+        bySeg.set(sid, arr);
+      });
+    });
+
+    const rankLookup = new Map<string, 1 | 2 | 3 | null>();
+    for (const arr of bySeg.values()) {
+      arr.sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
+      arr.forEach((item, idx) => {
+        const key = `${item.actIdx}:${item.effIdx}`;
+        rankLookup.set(key, idx === 0 ? 1 : idx === 1 ? 2 : idx === 2 ? 3 : null);
+      });
+    }
+
+    return list.map((act, actIdx) => {
+      if (!Array.isArray(act.segmentEfforts) || act.segmentEfforts.length === 0) return act;
+      const updatedEfforts = act.segmentEfforts.map((eff, effIdx) => ({
+        ...eff,
+        prRank: rankLookup.get(`${actIdx}:${effIdx}`) ?? eff.prRank ?? null,
+      }));
+      const prCount = updatedEfforts.filter((e) => e.prRank === 1).length;
+      return {
+        ...act,
+        segmentEfforts: updatedEfforts,
+        stravaPrCount: Math.max(act.stravaPrCount || 0, prCount),
+      };
+    });
+  }, []);
+
+  const handleScanMoreSegments = useCallback(async () => {
+    setIsScanningSegments(true);
+    try {
+      const resp = await fetch('/api/segments/scan-more', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const segMap = (data.segmentsByActivity || {}) as Record<string, any[]>;
+        const routesMap = (data.routesByActivity || {}) as Record<string, [number, number][]>;
+        setActivities((prev) => {
+          const merged = prev.map((act) => {
+            const key = act.intervalsId || act.id;
+            const foundSegs = segMap[key] || segMap[act.id];
+            const foundRoute = routesMap[key] || routesMap[act.id];
+            return {
+              ...act,
+              segmentEfforts:
+                Array.isArray(foundSegs) && foundSegs.length > 0 ? foundSegs : act.segmentEfforts,
+              routeLatLngs:
+                Array.isArray(foundRoute) && foundRoute.length > 2
+                  ? foundRoute
+                  : act.routeLatLngs,
+            };
+          });
+          return reRankActivitiesSegments(merged);
+        });
+      }
+    } catch {
+      // ignore error
+    } finally {
+      setIsScanningSegments(false);
+    }
+  }, [reRankActivitiesSegments]);
+
+  const handleHydrateMoreRoutes = useCallback(async () => {
+    setIsHydratingRoutes(true);
+    try {
+      const resp = await fetch('/api/activities/hydrate-routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const routesMap = (data.routesByActivity || {}) as Record<string, [number, number][]>;
+        setActivities((prev) =>
+          prev.map((act) => {
+            const key = act.intervalsId || act.id;
+            const foundRoute = routesMap[key] || routesMap[act.id];
+            if (Array.isArray(foundRoute) && foundRoute.length > 2) {
+              return {
+                ...act,
+                routeLatLngs: foundRoute,
+                startLatLng: foundRoute[0],
+                endLatLng: foundRoute[foundRoute.length - 1],
+              };
+            }
+            return act;
+          })
+        );
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsHydratingRoutes(false);
+    }
+  }, []);
+
+  const handleToggleActivityKudos = useCallback(async (activity: UnifiedActivity) => {
+    const key = activity.stravaId || activity.intervalsId || activity.id;
+    try {
+      const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+        body: JSON.stringify({ action: 'toggle_kudos' }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setActivities((prev) =>
+          prev.map((a) => {
+            if (a.id !== activity.id) return a;
+            const updated: UnifiedActivity = {
+              ...a,
+              hasKudoed: Boolean(data.hasKudoed),
+              kudosCount: typeof data.kudosCount === 'number' ? data.kudosCount : a.kudosCount,
+              kudoers: Array.isArray(data.kudoers) ? data.kudoers : a.kudoers,
+            };
+            setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+            return updated;
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleAddActivityComment = useCallback(
+    async (activity: UnifiedActivity, commentText: string, authorName?: string) => {
+      if (!commentText.trim()) return;
+      const key = activity.stravaId || activity.intervalsId || activity.id;
       try {
-        const resp = await fetch(`/api/intervals/activities/${activity.intervalsId}/streams`, {
-          headers: getSavedIntervalsHeaders(),
+        const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+          body: JSON.stringify({
+            action: 'add_comment',
+            commentText: commentText.trim(),
+            authorName: authorName || connectionStatus.stravaAthleteName || 'Athlete',
+          }),
         });
         if (resp.ok) {
-          const payload = await resp.json();
-          const streams = payload.streams || payload;
-          const intervals = Array.isArray(payload.intervals) ? payload.intervals : undefined;
-          setSelectedActivity((prev) =>
-            prev && prev.id === activity.id ? { ...prev, streams, intervals } : prev
-          );
+          const data = await resp.json();
           setActivities((prev) =>
-            prev.map((a) => (a.id === activity.id ? { ...a, streams, intervals } : a))
+            prev.map((a) => {
+              if (a.id !== activity.id) return a;
+              const updated: UnifiedActivity = {
+                ...a,
+                comments: Array.isArray(data.comments) ? data.comments : a.comments,
+                commentCount: Array.isArray(data.comments)
+                  ? data.comments.length
+                  : (a.commentCount || 0) + 1,
+              };
+              setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+              return updated;
+            })
           );
         }
       } catch {
-        // Fallback if stream endpoint unavailable
+        // ignore
+      }
+    },
+    [connectionStatus.stravaAthleteName]
+  );
+
+  // Load real streams + auto-detected intervals + Strava segment efforts + GPS route for any activity
+  const loadStreamsForActivity = useCallback(
+    async (activity: UnifiedActivity) => {
+      if (
+        activity.streams &&
+        activity.streams.time.length > 0 &&
+        activity.segmentEfforts &&
+        activity.segmentEfforts.length > 0 &&
+        (activity.environment === 'INDOOR' ||
+          (activity.streams.latlng && activity.streams.latlng.length > 2))
+      ) {
+        return;
+      }
+      const headers = getSavedIntervalsHeaders();
+      try {
+        if (connectionStatus.intervalsConnected && activity.intervalsId) {
+          const resp = await fetch(
+            `/api/intervals/activities/${encodeURIComponent(activity.intervalsId)}/streams`,
+            { headers }
+          );
+          if (resp.ok) {
+            const payload = await resp.json();
+            const streams = payload.streams || payload;
+            const intervals = Array.isArray(payload.intervals) ? payload.intervals : undefined;
+            const segmentEfforts = Array.isArray(payload.segmentEfforts)
+              ? payload.segmentEfforts
+              : undefined;
+            if (
+              (streams && Array.isArray(streams.time) && streams.time.length > 0) ||
+              (segmentEfforts && segmentEfforts.length > 0)
+            ) {
+              setActivities((prev) => {
+                const updated = prev.map((a) =>
+                  a.id === activity.id
+                    ? {
+                        ...a,
+                        streams:
+                          streams && Array.isArray(streams.time) && streams.time.length > 0
+                            ? streams
+                            : a.streams,
+                        routeLatLngs:
+                          streams && Array.isArray(streams.latlng) && streams.latlng.length > 2
+                            ? streams.latlng
+                            : a.routeLatLngs,
+                        intervals: intervals || a.intervals,
+                        segmentEfforts:
+                          segmentEfforts && segmentEfforts.length > 0
+                            ? segmentEfforts
+                            : a.segmentEfforts,
+                      }
+                    : a
+                );
+                const ranked = reRankActivitiesSegments(updated);
+                const latestAct = ranked.find((a) => a.id === activity.id);
+                if (latestAct) {
+                  setSelectedActivity((curr) =>
+                    curr && curr.id === activity.id ? latestAct : curr
+                  );
+                }
+                return ranked;
+              });
+              return;
+            }
+          }
+        }
+
+        if (connectionStatus.stravaConnected && activity.stravaId) {
+          const resp = await fetch(
+            `/api/strava/activities/${encodeURIComponent(activity.stravaId)}/streams`,
+            { headers }
+          );
+          if (resp.ok) {
+            const payload = await resp.json();
+            const streams = payload.streams || payload;
+            const segmentEfforts = Array.isArray(payload.segmentEfforts)
+              ? payload.segmentEfforts
+              : undefined;
+            if (
+              (streams && Array.isArray(streams.time) && streams.time.length > 0) ||
+              (segmentEfforts && segmentEfforts.length > 0)
+            ) {
+              setActivities((prev) => {
+                const updated = prev.map((a) =>
+                  a.id === activity.id
+                    ? {
+                        ...a,
+                        streams:
+                          streams && Array.isArray(streams.time) && streams.time.length > 0
+                            ? streams
+                            : a.streams,
+                        routeLatLngs:
+                          streams && Array.isArray(streams.latlng) && streams.latlng.length > 2
+                            ? streams.latlng
+                            : a.routeLatLngs,
+                        segmentEfforts:
+                          segmentEfforts && segmentEfforts.length > 0
+                            ? segmentEfforts
+                            : a.segmentEfforts,
+                      }
+                    : a
+                );
+                const ranked = reRankActivitiesSegments(updated);
+                const latestAct = ranked.find((a) => a.id === activity.id);
+                if (latestAct) {
+                  setSelectedActivity((curr) =>
+                    curr && curr.id === activity.id ? latestAct : curr
+                  );
+                }
+                return ranked;
+              });
+            }
+          }
+        }
+      } catch {
+        // Fallback handled in view if stream endpoint unavailable
+      }
+    },
+    [connectionStatus.intervalsConnected, connectionStatus.stravaConnected, reRankActivitiesSegments]
+  );
+
+  // Load real streams + auto-detected intervals + Strava segments when selecting an activity
+  const handleSelectActivity = async (activity: UnifiedActivity | null) => {
+    setSelectedActivity(activity);
+    if (activity) {
+      await loadStreamsForActivity(activity);
+      if (activity.stravaId) {
+        try {
+          const resp = await fetch(
+            `/api/strava/activities/${encodeURIComponent(activity.stravaId)}/kudos`,
+            { headers: getSavedIntervalsHeaders() }
+          );
+          if (resp.ok) {
+            const kData = await resp.json();
+            setActivities((prev) =>
+              prev.map((a) => {
+                if (a.id !== activity.id) return a;
+                const updated: UnifiedActivity = {
+                  ...a,
+                  hasKudoed: kData.hasKudoed ?? a.hasKudoed,
+                  kudosCount: Math.max(a.kudosCount || 0, (kData.kudoers || []).length),
+                  kudoers:
+                    Array.isArray(kData.kudoers) && kData.kudoers.length > 0
+                      ? kData.kudoers
+                      : a.kudoers,
+                  comments:
+                    Array.isArray(kData.comments) && kData.comments.length > 0
+                      ? kData.comments
+                      : a.comments,
+                };
+                setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+                return updated;
+              })
+            );
+          }
+        } catch {
+          // ignore
+        }
       }
     }
   };
@@ -919,11 +1267,12 @@ export default function App() {
         </a>
 
         {/* Zone 2: Intervals.icu Workspaces Navigation */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-400">
+        <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-slate-600 dark:text-slate-400">
           {(
             [
               { id: 'calendar', label: 'Calendar' },
               { id: 'fitness', label: 'Fitness & Health' },
+              { id: 'trends', label: 'Physiological Trends' },
               { id: 'charts', label: 'Custom Charts' },
               { id: 'activities', label: 'Activities' },
               { id: 'curves', label: 'Curves & PRs' },
@@ -1226,6 +1575,15 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'trends' && (
+          <PhysiologicalTrendsView
+            wellnessDays={wellnessDays}
+            activities={activities}
+            athleteWeightKg={latestWeightKg}
+            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          />
+        )}
+
         {activeTab === 'charts' && (
           <CustomChartsView
             activities={activities}
@@ -1245,6 +1603,14 @@ export default function App() {
             distanceUnit={distanceUnit}
             selectedActivity={selectedActivity}
             onSelectActivity={handleSelectActivity}
+            onLoadActivityStreams={loadStreamsForActivity}
+            onScanMoreSegments={handleScanMoreSegments}
+            isScanningSegments={isScanningSegments}
+            onHydrateMoreRoutes={handleHydrateMoreRoutes}
+            isHydratingRoutes={isHydratingRoutes}
+            onToggleKudos={handleToggleActivityKudos}
+            onAddComment={handleAddActivityComment}
+            athleteWeightKg={latestWeightKg}
           />
         )}
 
@@ -1257,6 +1623,12 @@ export default function App() {
             envFilter={envFilter}
             distanceUnit={distanceUnit}
             athleteWeightKg={latestWeightKg}
+            onScanMoreSegments={handleScanMoreSegments}
+            isScanningSegments={isScanningSegments}
+            onSelectActivity={(act) => {
+              handleSelectActivity(act);
+              setActiveTab('activities');
+            }}
           />
         )}
 
@@ -1279,11 +1651,12 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Tab Bar (< md) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-6 items-center h-16 px-1">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-7 items-center h-16 px-1">
         {(
           [
             { id: 'calendar', label: 'Calendar', icon: Calendar },
             { id: 'fitness', label: 'Fitness', icon: HeartPulse },
+            { id: 'trends', label: 'Trends', icon: TrendingUp },
             { id: 'charts', label: 'Charts', icon: LineChart },
             { id: 'activities', label: 'Workouts', icon: Activity },
             { id: 'curves', label: 'Curves', icon: BarChart3 },

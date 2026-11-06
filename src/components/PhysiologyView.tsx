@@ -17,6 +17,23 @@ interface PhysiologyViewProps {
   envFilter: EnvironmentFilter;
   distanceUnit: DistanceUnit;
   athleteWeightKg: number;
+  onScanMoreSegments?: () => Promise<void>;
+  isScanningSegments?: boolean;
+  onSelectActivity?: (activity: UnifiedActivity) => void;
+}
+
+interface ExtendedSegmentHistory extends BenchmarkSegmentHistory {
+  efforts: {
+    date: string;
+    startDateLocal: string;
+    activityId?: string;
+    activityName?: string;
+    elapsedTimeSecs: number;
+    avgWatts?: number;
+    avgPaceSecsPerKm?: number;
+    avgHr: number;
+    prRank: 1 | 2 | 3 | null;
+  }[];
 }
 
 export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
@@ -27,9 +44,15 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   envFilter,
   distanceUnit,
   athleteWeightKg,
+  onScanMoreSegments,
+  isScanningSegments = false,
+  onSelectActivity,
 }) => {
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [segmentSportFilter, setSegmentSportFilter] = useState<'ALL' | 'Cycling' | 'Running'>('ALL');
+  const [segmentSearch, setSegmentSearch] = useState<string>('');
+  const [segmentHoverIdx, setSegmentHoverIdx] = useState<number | null>(null);
 
   // Dynamically calibrate Power & Pace Duration Curves from athlete's real eFTP, W', Pmax & synced activities
   const calibratedCurves = useMemo(() => {
@@ -106,24 +129,33 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
     });
   }, [wellnessDays, activities, curves]);
 
-  // Extract real benchmark segments from synced activities if available
-  const realBenchmarkSegments = useMemo<BenchmarkSegmentHistory[]>(() => {
-    const segMap = new Map<string, BenchmarkSegmentHistory>();
+  // Group all Strava segment efforts by segmentId across all activities and filter for segments biked or run more than once (>= 2 efforts)
+  const realBenchmarkSegments = useMemo<ExtendedSegmentHistory[]>(() => {
+    const segMap = new Map<string, ExtendedSegmentHistory>();
     for (const act of activities) {
       if (!act.segmentEfforts || act.segmentEfforts.length === 0) continue;
       for (const eff of act.segmentEfforts) {
-        const existing = segMap.get(eff.id);
+        if (!eff || !(eff.elapsedTimeSecs > 0)) continue;
+        const sid = String(eff.segmentId || eff.name);
+        const existing = segMap.get(sid);
         const effortEntry = {
-          date: act.startDateLocal.slice(0, 10),
+          date: (eff.startDateLocal || act.startDateLocal).slice(0, 10),
+          startDateLocal: eff.startDateLocal || act.startDateLocal,
+          activityId: act.id,
+          activityName: act.name,
           elapsedTimeSecs: eff.elapsedTimeSecs,
           avgWatts: eff.avgWatts,
-          avgPaceSecsPerKm: eff.avgPaceSecsPerKm,
-          avgHr: eff.avgHr || act.avgHr || 155,
+          avgPaceSecsPerKm:
+            eff.avgPaceSecsPerKm ||
+            (act.sportCategory === 'Running' && eff.distanceMeters > 0
+              ? Math.round(eff.elapsedTimeSecs / (eff.distanceMeters / 1000))
+              : undefined),
+          avgHr: eff.avgHr || act.avgHr || 0,
           prRank: eff.prRank,
         };
         if (!existing) {
-          segMap.set(eff.id, {
-            segmentId: eff.id,
+          segMap.set(sid, {
+            segmentId: sid,
             name: eff.name,
             sportCategory: act.sportCategory === 'Running' ? 'Running' : 'Cycling',
             distanceMeters: eff.distanceMeters,
@@ -137,19 +169,60 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
           if (eff.elapsedTimeSecs < existing.prElapsedTimeSecs) {
             existing.prElapsedTimeSecs = eff.elapsedTimeSecs;
           }
+          if (eff.averageGradePct && !existing.averageGradePct) {
+            existing.averageGradePct = eff.averageGradePct;
+          }
         }
       }
     }
-    const list = Array.from(segMap.values()).filter((s) => s.efforts.length > 0);
-    return list.length > 0 ? list : benchmarkSegments;
+
+    for (const seg of segMap.values()) {
+      // Rank top 3 efforts by elapsedTimeSecs ascending
+      const sortedBySpeed = [...seg.efforts].sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
+      sortedBySpeed.forEach((e, idx) => {
+        e.prRank = idx === 0 ? 1 : idx === 1 ? 2 : idx === 2 ? 3 : null;
+      });
+      // Sort chronologically for time-series chart
+      seg.efforts.sort(
+        (a, b) => new Date(a.startDateLocal).getTime() - new Date(b.startDateLocal).getTime()
+      );
+    }
+
+    const repeatedList = Array.from(segMap.values())
+      .filter((s) => s.efforts.length >= 2)
+      .sort((a, b) => b.efforts.length - a.efforts.length);
+
+    if (repeatedList.length > 0) return repeatedList;
+
+    const allList = Array.from(segMap.values()).filter((s) => s.efforts.length > 0);
+    return allList.length > 0
+      ? allList
+      : benchmarkSegments.map((b) => ({
+          ...b,
+          efforts: b.efforts.map((e) => ({ ...e, startDateLocal: e.date })),
+        }));
   }, [activities, benchmarkSegments]);
+
+  const filteredBenchmarkSegments = useMemo(() => {
+    return realBenchmarkSegments.filter((seg) => {
+      if (segmentSportFilter !== 'ALL' && seg.sportCategory !== segmentSportFilter) return false;
+      if (
+        segmentSearch.trim() &&
+        !seg.name.toLowerCase().includes(segmentSearch.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [realBenchmarkSegments, segmentSportFilter, segmentSearch]);
 
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>(
     realBenchmarkSegments[0]?.segmentId || ''
   );
 
   const activeSegment =
-    realBenchmarkSegments.find((s) => s.segmentId === selectedSegmentId) ||
+    filteredBenchmarkSegments.find((s) => s.segmentId === selectedSegmentId) ||
+    filteredBenchmarkSegments[0] ||
     realBenchmarkSegments[0];
 
   const recent14Wellness = wellnessDays.slice(-14);
@@ -527,46 +600,115 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         </div>
       </section>
 
-      {/* 2. Benchmark Strava Segments Historical Progression (Only shown if athlete has synced segment efforts) */}
-      {realBenchmarkSegments.length > 0 && activeSegment && (
-        <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Starred &amp; Benchmark Strava Segment Progression
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Track elapsed time, average watts/pace, and heart rate efficiency across historical attempts on your climbs and loops
-              </p>
+      {/* 2. Strava Segment Performance Over Time (Segments Biked or Run 2+ Times) */}
+      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+              Strava Segment Performance Over Time ({filteredBenchmarkSegments.length} Repeated Segments)
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Compare elapsed time, average watts/pace, and heart rate efficiency across historical attempts on segments you have biked or run more than once
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sport Filter */}
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              {(['ALL', 'Cycling', 'Running'] as const).map((sp) => (
+                <button
+                  key={sp}
+                  type="button"
+                  onClick={() => {
+                    setSegmentSportFilter(sp);
+                    setSegmentHoverIdx(null);
+                  }}
+                  className={`min-h-[32px] px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    segmentSportFilter === sp
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {sp === 'ALL' ? 'All Sports' : sp}
+                </button>
+              ))}
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              {realBenchmarkSegments.map((seg) => (
+            {/* Segment Search Input */}
+            <input
+              type="text"
+              value={segmentSearch}
+              onChange={(e) => setSegmentSearch(e.target.value)}
+              placeholder="Search segment name..."
+              className="min-h-[34px] w-44 sm:w-56 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
+            {onScanMoreSegments && (
+              <button
+                type="button"
+                onClick={onScanMoreSegments}
+                disabled={isScanningSegments}
+                className="min-h-[34px] px-3 py-1.5 rounded-lg border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-50 text-xs font-semibold text-blue-600 dark:text-blue-400 transition-colors whitespace-nowrap"
+              >
+                {isScanningSegments
+                  ? 'Scanning Historical Segments...'
+                  : 'Scan +30 Workouts for Segments'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Segment Selector Buttons (Showing Repeat Count Nx) */}
+        {filteredBenchmarkSegments.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto pr-1">
+            {filteredBenchmarkSegments.slice(0, 36).map((seg) => {
+              const isSelected = activeSegment?.segmentId === seg.segmentId;
+              return (
                 <button
                   key={seg.segmentId}
-                  onClick={() => setSelectedSegmentId(seg.segmentId)}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
-                    selectedSegmentId === seg.segmentId
+                  type="button"
+                  onClick={() => {
+                    setSelectedSegmentId(seg.segmentId);
+                    setSegmentHoverIdx(null);
+                  }}
+                  className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+                    isSelected
                       ? 'bg-blue-600 border-blue-600 text-white'
                       : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900'
                   }`}
                 >
-                  {seg.name}
+                  {seg.name}{' '}
+                  <span
+                    className={`font-mono text-[11px] ml-1 ${
+                      isSelected ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400 font-bold'
+                    }`}
+                  >
+                    ({seg.efforts.length}x)
+                  </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
+        ) : (
+          <div className="text-xs text-slate-500 py-4">
+            No repeated segments matched your filter. Click &quot;Scan +30 Workouts for Segments&quot; above to index additional outdoor rides and runs.
+          </div>
+        )}
 
+        {activeSegment && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3.5">
-                <div className="text-xs text-slate-500">Segment Details</div>
-                <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
-                  {activeSegment.sportCategory} ·{' '}
-                  {formatDistance(activeSegment.distanceMeters, distanceUnit, 2)}
+                <div className="text-xs text-slate-500">Segment &amp; Discipline</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 truncate">
+                  {activeSegment.name}
                 </div>
                 <div className="text-xs text-slate-500 font-mono mt-0.5">
-                  Avg Grade {activeSegment.averageGradePct}% · {activeSegment.location}
+                  {activeSegment.sportCategory} ·{' '}
+                  {formatDistance(activeSegment.distanceMeters, distanceUnit, 2)} · Avg Grade{' '}
+                  {activeSegment.averageGradePct > 0
+                    ? `+${activeSegment.averageGradePct}%`
+                    : `${activeSegment.averageGradePct}%`}
                 </div>
               </div>
 
@@ -576,68 +718,394 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                   {formatStopwatch(activeSegment.prElapsedTimeSecs)}
                 </div>
                 <div className="text-xs text-slate-500 font-mono mt-0.5">
-                  Recorded on {activeSegment.efforts[activeSegment.efforts.length - 1]?.date}
+                  Set on{' '}
+                  {activeSegment.efforts.find((e) => e.prRank === 1)?.date ||
+                    activeSegment.efforts[0]?.date}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3.5">
+                <div className="text-xs text-slate-500">Latest Attempt</div>
+                <div className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100 mt-1">
+                  {formatStopwatch(
+                    activeSegment.efforts[activeSegment.efforts.length - 1]?.elapsedTimeSecs || 0
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 font-mono mt-0.5">
+                  {activeSegment.efforts[activeSegment.efforts.length - 1]?.date} (
+                  {(activeSegment.efforts[activeSegment.efforts.length - 1]?.elapsedTimeSecs || 0) -
+                    activeSegment.prElapsedTimeSecs <=
+                  0
+                    ? 'PR #1'
+                    : `+${
+                        (activeSegment.efforts[activeSegment.efforts.length - 1]?.elapsedTimeSecs ||
+                          0) - activeSegment.prElapsedTimeSecs
+                      }s vs PR`}
+                  )
                 </div>
               </div>
 
               <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3.5">
                 <div className="text-xs text-slate-500">Logged Attempts</div>
-                <div className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100 mt-1">
+                <div className="text-lg font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400 mt-1">
                   {activeSegment.efforts.length} efforts
                 </div>
                 <div className="text-xs text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                  Synced from Strava
+                  Click any attempt to inspect workout
                 </div>
               </div>
             </div>
+
+            {/* Interactive Segment Performance Over Time SVG Chart */}
+            {activeSegment.efforts.length >= 2 && (
+              <div
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-4 space-y-3 select-none"
+                onMouseLeave={() => setSegmentHoverIdx(null)}
+              >
+                {(() => {
+                  const efforts = activeSegment.efforts;
+                  const len = efforts.length;
+                  const hovered =
+                    segmentHoverIdx !== null && efforts[segmentHoverIdx]
+                      ? efforts[segmentHoverIdx]
+                      : efforts[efforts.length - 1];
+
+                  return (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-mono tabular-nums">
+                        <span className="font-sans font-bold text-slate-900 dark:text-slate-100">
+                          {activeSegment.name} — Elapsed Time (Emerald) &amp;{' '}
+                          {activeSegment.sportCategory === 'Cycling'
+                            ? 'Average Power (Blue)'
+                            : 'Average Heart Rate (Red)'}{' '}
+                          Over Time
+                        </span>
+                        {hovered && (
+                          <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {hovered.date}
+                            </span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                              Time: {formatStopwatch(hovered.elapsedTimeSecs)}
+                            </span>
+                            {hovered.avgWatts && (
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">
+                                Power: {hovered.avgWatts}W (
+                                {(hovered.avgWatts / athleteWeightKg).toFixed(2)} W/kg)
+                              </span>
+                            )}
+                            {hovered.avgPaceSecsPerKm && (
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">
+                                Pace: {formatPace(hovered.avgPaceSecsPerKm, distanceUnit)}
+                              </span>
+                            )}
+                            {hovered.avgHr > 0 && (
+                              <span className="text-rose-500 font-bold">
+                                HR: {hovered.avgHr} bpm
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <svg viewBox="0 0 920 235" className="w-full h-60">
+                        {(() => {
+                          const chartLeft = 68;
+                          const chartRight = 846;
+                          const chartW = chartRight - chartLeft;
+                          const chartTop = 20;
+                          const chartBottom = 180;
+                          const chartH = chartBottom - chartTop;
+
+                          const times = efforts.map((e) => e.elapsedTimeSecs);
+                          const minTime = Math.min(...times);
+                          const maxTime = Math.max(...times);
+                          const pad = Math.max(4, Math.round((maxTime - minTime) * 0.15));
+                          const lowT = Math.max(1, minTime - pad);
+                          const highT = maxTime + pad;
+                          const spanT = Math.max(10, highT - lowT);
+
+                          // Faster elapsed time (fewer seconds) is higher on Y-Axis
+                          const toYTime = (tSecs: number) =>
+                            chartBottom - ((highT - tSecs) / spanT) * chartH;
+
+                          const wattsArr = efforts
+                            .map((e) => e.avgWatts || 0)
+                            .filter((w) => w > 0);
+                          const useWatts = wattsArr.length >= 2;
+                          const maxSecondary = useWatts
+                            ? Math.max(250, ...wattsArr) * 1.1
+                            : Math.max(185, ...efforts.map((e) => e.avgHr || 155)) + 5;
+                          const minSecondary = useWatts
+                            ? Math.max(50, Math.min(...wattsArr) * 0.85)
+                            : Math.max(105, Math.min(...efforts.map((e) => e.avgHr || 140)) - 10);
+
+                          const toYSecondary = (val: number) =>
+                            chartBottom -
+                            ((val - minSecondary) / Math.max(20, maxSecondary - minSecondary)) *
+                              chartH;
+
+                          const xForIdx = (i: number) =>
+                            chartLeft + (i / Math.max(1, len - 1)) * chartW;
+
+                          const timePts = efforts
+                            .map((e, i) => `${xForIdx(i)},${toYTime(e.elapsedTimeSecs)}`)
+                            .join(' ');
+
+                          const secondaryPts = efforts
+                            .map((e, i) => {
+                              const v = useWatts ? e.avgWatts : e.avgHr;
+                              return v && v > 0 ? `${xForIdx(i)},${toYSecondary(v)}` : null;
+                            })
+                            .filter(Boolean)
+                            .join(' ');
+
+                          const prY = toYTime(activeSegment.prElapsedTimeSecs);
+
+                          return (
+                            <>
+                              {/* Left Y-Axis Title */}
+                              <text
+                                x={16}
+                                y={100}
+                                transform="rotate(-90 16 100)"
+                                textAnchor="middle"
+                                className="fill-emerald-600 dark:fill-emerald-400 text-[11px] font-sans font-bold"
+                              >
+                                Elapsed Time (mm:ss · Faster ↑)
+                              </text>
+
+                              {/* Right Y-Axis Title */}
+                              <text
+                                x={904}
+                                y={100}
+                                transform="rotate(90 904 100)"
+                                textAnchor="middle"
+                                className={`text-[11px] font-sans font-bold ${
+                                  useWatts ? 'fill-blue-500' : 'fill-rose-500'
+                                }`}
+                              >
+                                {useWatts ? 'Avg Power (Watts)' : 'Avg Heart Rate (bpm)'}
+                              </text>
+
+                              {[0, 0.33, 0.66, 1].map((f, idx) => {
+                                const y = chartBottom - f * chartH;
+                                const tVal = Math.round(highT - f * spanT);
+                                const secVal = Math.round(
+                                  minSecondary + f * (maxSecondary - minSecondary)
+                                );
+                                return (
+                                  <g key={idx}>
+                                    <line
+                                      x1={chartLeft}
+                                      y1={y}
+                                      x2={chartRight}
+                                      y2={y}
+                                      stroke="currentColor"
+                                      className="text-slate-200 dark:text-slate-800"
+                                      strokeDasharray="3 3"
+                                    />
+                                    <text
+                                      x={chartLeft - 8}
+                                      y={y + 4}
+                                      textAnchor="end"
+                                      className="fill-emerald-600 dark:fill-emerald-400 text-[11px] font-mono"
+                                    >
+                                      {formatStopwatch(tVal)}
+                                    </text>
+                                    <text
+                                      x={chartRight + 8}
+                                      y={y + 4}
+                                      className={`${
+                                        useWatts ? 'fill-blue-500' : 'fill-rose-500'
+                                      } text-[11px] font-mono`}
+                                    >
+                                      {useWatts ? `${secVal}W` : `${secVal} bpm`}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* PR #1 Benchmark Line */}
+                              <line
+                                x1={chartLeft}
+                                y1={prY}
+                                x2={chartRight}
+                                y2={prY}
+                                stroke="#10B981"
+                                strokeWidth="1.25"
+                                strokeDasharray="5 4"
+                                strokeOpacity="0.7"
+                              />
+
+                              {secondaryPts && (
+                                <polyline
+                                  fill="none"
+                                  stroke={useWatts ? '#3B82F6' : '#F43F5E'}
+                                  strokeWidth="2"
+                                  strokeOpacity="0.8"
+                                  points={secondaryPts}
+                                />
+                              )}
+
+                              <polyline
+                                fill="none"
+                                stroke="#10B981"
+                                strokeWidth="2.5"
+                                points={timePts}
+                              />
+
+                              {efforts.map((e, i) => {
+                                const x = xForIdx(i);
+                                const y = toYTime(e.elapsedTimeSecs);
+                                const isPr = e.prRank === 1;
+                                const isHovered = segmentHoverIdx === i;
+                                const colW = chartW / Math.max(1, len);
+                                return (
+                                  <g key={`${e.date}-${i}`}>
+                                    {isHovered && (
+                                      <line
+                                        x1={x}
+                                        y1={chartTop}
+                                        x2={x}
+                                        y2={chartBottom}
+                                        stroke="#94A3B8"
+                                        strokeWidth="1.5"
+                                        strokeDasharray="3 2"
+                                      />
+                                    )}
+                                    <circle
+                                      cx={x}
+                                      cy={y}
+                                      r={isPr || isHovered ? 5.5 : 4}
+                                      fill={isPr ? '#F59E0B' : '#10B981'}
+                                      stroke="#fff"
+                                      strokeWidth="1.5"
+                                    />
+                                    {(i === 0 ||
+                                      i === len - 1 ||
+                                      len <= 8 ||
+                                      i % Math.ceil(len / 6) === 0) && (
+                                      <text
+                                        x={x}
+                                        y={198}
+                                        textAnchor="middle"
+                                        className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                                      >
+                                        {e.date.slice(2)}
+                                      </text>
+                                    )}
+                                    <rect
+                                      x={x - colW / 2}
+                                      y={0}
+                                      width={colW}
+                                      height={205}
+                                      fill="transparent"
+                                      className="cursor-pointer"
+                                      onMouseEnter={() => setSegmentHoverIdx(i)}
+                                      onClick={() => {
+                                        if (e.activityId && onSelectActivity) {
+                                          const foundAct = activities.find(
+                                            (a) => a.id === e.activityId
+                                          );
+                                          if (foundAct) onSelectActivity(foundAct);
+                                        }
+                                      }}
+                                    />
+                                  </g>
+                                );
+                              })}
+
+                              <text
+                                x={chartLeft + chartW / 2}
+                                y={222}
+                                textAnchor="middle"
+                                className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
+                              >
+                                Attempt Date (Chronological Progression · Gold Point = PR #1 · Click Point to Open Workout)
+                              </text>
+                            </>
+                          );
+                        })()}
+                      </svg>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 text-xs">
-                    <th className="py-2 px-4">Attempt Date</th>
+                    <th className="py-2 px-4">Attempt Date &amp; Workout</th>
                     <th className="py-2 px-4 text-right">Elapsed Time</th>
                     <th className="py-2 px-4 text-right">Average Output</th>
                     <th className="py-2 px-4 text-right">Average Heart Rate</th>
-                    <th className="py-2 px-4 text-right">Strava PR Rank</th>
+                    <th className="py-2 px-4 text-right">Strava PR Rank / Delta</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
-                  {activeSegment.efforts.map((ef, idx) => (
-                    <tr key={`${ef.date}-${idx}`}>
-                      <td className="py-2.5 px-4 text-slate-900 dark:text-slate-100">{ef.date}</td>
-                      <td className="py-2.5 px-4 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {formatStopwatch(ef.elapsedTimeSecs)}
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-blue-600 dark:text-blue-400">
-                        {ef.avgWatts
-                          ? `${ef.avgWatts} W (${(ef.avgWatts / athleteWeightKg).toFixed(2)} W/kg)`
-                          : ef.avgPaceSecsPerKm
-                            ? formatPace(ef.avgPaceSecsPerKm, distanceUnit)
-                            : '—'}
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-slate-600 dark:text-slate-300">
-                        {ef.avgHr} bpm
-                      </td>
-                      <td className="py-2.5 px-4 text-right">
-                        {ef.prRank === 1 ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-bold">PR #1</span>
-                        ) : ef.prRank === 2 ? (
-                          <span className="text-slate-700 dark:text-slate-200">2nd Best</span>
-                        ) : ef.prRank === 3 ? (
-                          <span className="text-slate-500">3rd Best</span>
-                        ) : (
-                          <span className="text-slate-400">Logged</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {[...activeSegment.efforts].reverse().map((ef, idx) => {
+                    const deltaSecs = ef.elapsedTimeSecs - activeSegment.prElapsedTimeSecs;
+                    return (
+                      <tr
+                        key={`${ef.date}-${idx}`}
+                        onClick={() => {
+                          if (ef.activityId && onSelectActivity) {
+                            const found = activities.find((a) => a.id === ef.activityId);
+                            if (found) onSelectActivity(found);
+                          }
+                        }}
+                        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                      >
+                        <td className="py-2.5 px-4 text-slate-900 dark:text-slate-100">
+                          <span className="font-semibold">{ef.date}</span>
+                          {ef.activityName && (
+                            <span className="font-sans text-xs text-slate-500 ml-2">
+                              · {ef.activityName}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          {formatStopwatch(ef.elapsedTimeSecs)}
+                        </td>
+                        <td className="py-2.5 px-4 text-right text-blue-600 dark:text-blue-400">
+                          {ef.avgWatts
+                            ? `${ef.avgWatts} W (${(ef.avgWatts / athleteWeightKg).toFixed(2)} W/kg)`
+                            : ef.avgPaceSecsPerKm
+                              ? formatPace(ef.avgPaceSecsPerKm, distanceUnit)
+                              : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right text-slate-600 dark:text-slate-300">
+                          {ef.avgHr > 0 ? `${ef.avgHr} bpm` : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          {ef.prRank === 1 || deltaSecs <= 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-bold">
+                              PR #1
+                            </span>
+                          ) : ef.prRank === 2 ? (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                              2nd Best (+{deltaSecs}s)
+                            </span>
+                          ) : ef.prRank === 3 ? (
+                            <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                              3rd Best (+{deltaSecs}s)
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">+{deltaSecs}s vs PR</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* 3. 14-Day Autonomic Recovery (HRV & RHR) vs. Daily Load Log */}
       <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">

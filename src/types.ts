@@ -75,6 +75,28 @@ export interface ActivityInterval {
   strideLengthMeters?: number;
 }
 
+export interface StravaKudoer {
+  id?: string;
+  name?: string;
+  avatarInitials?: string;
+  location?: string;
+  firstname?: string;
+  lastname?: string;
+  profileMedium?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+export interface StravaActivityComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  athleteName?: string;
+  authorName?: string;
+  avatarUrl?: string;
+}
+
 export interface StravaSegmentEffort {
   id: string;
   segmentId: string;
@@ -93,6 +115,13 @@ export interface StravaSegmentEffort {
   startDateLocal: string;
   activityId: string;
   activityName: string;
+  startTimeSecs?: number;
+  endTimeSecs?: number;
+  startIndex?: number;
+  endIndex?: number;
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
+  pathLatLngs?: [number, number][];
 }
 
 export interface BenchmarkSegmentHistory {
@@ -116,6 +145,8 @@ export interface BenchmarkSegmentHistory {
 
 export interface ActivityStreamSet {
   time: number[]; // seconds elapsed
+  distance?: number[]; // meters elapsed
+  latlng?: [number, number][]; // [lat, lng] GPS coordinates aligned with time[]
   watts?: number[];
   heartrate?: number[];
   velocitySmooth?: number[]; // m/s
@@ -159,6 +190,16 @@ export interface UnifiedActivity {
   gearName?: string;
   stravaPrCount: number;
   kudosCount?: number;
+  commentCount?: number;
+  achievementCount?: number;
+  athleteCount?: number;
+  hasKudoed?: boolean;
+  kudoers?: StravaKudoer[];
+  comments?: StravaActivityComment[];
+  summaryPolyline?: string;
+  routeLatLngs?: [number, number][];
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
   segmentEfforts: StravaSegmentEffort[];
   intervals?: ActivityInterval[];
   streams?: ActivityStreamSet;

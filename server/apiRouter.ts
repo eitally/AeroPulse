@@ -7,6 +7,44 @@ export const apiRouter = express.Router();
 const SESSION_CACHE_FILE = '/tmp/aeropulse-runtime-session.json';
 const STRAVA_ARCHIVE_CACHE_FILE = '/tmp/aeropulse-strava-archive.json';
 const PLANNED_EVENTS_CACHE_FILE = '/tmp/aeropulse-planned-events.json';
+const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-segments-by-activity.json';
+const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-routes-by-activity.json';
+const STRAVA_KUDOS_CACHE_FILE = '/tmp/aeropulse-strava-kudos.json';
+
+function decodeGooglePolyline(encoded: string): [number, number][] {
+  if (!encoded || typeof encoded !== 'string') return [];
+  const points: [number, number][] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < len) {
+    let b = 0;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < len);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < len);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push([Number((lat / 1e5).toFixed(5)), Number((lng / 1e5).toFixed(5))]);
+  }
+  return points;
+}
 
 interface RuntimeSessionStore {
   intervalsApiKey: string;
@@ -882,7 +920,9 @@ async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
         deviceName: a.device_name ? String(a.device_name) : undefined,
         zoneSecs: {
           hr: Array.isArray(a.icu_hr_zone_times)
-            ? a.icu_hr_zone_times.slice(0, 7)
+            ? a.icu_hr_zone_times
+                .slice(0, 7)
+                .map((z: any) => (typeof z === 'number' ? z : Number(z?.secs ?? 0)))
             : [0, 0, 0, 0, 0, 0, 0],
           power: Array.isArray(a.icu_zone_times)
             ? a.icu_zone_times
@@ -892,12 +932,151 @@ async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
         },
         gearName: resolvedGearName,
         stravaPrCount: Number(a.pr_count ?? 0),
-        segmentEfforts: [],
+        hasSegments: Boolean(a.has_segments),
+        routeLatLngs: undefined as [number, number][] | undefined,
+        startLatLng: undefined as [number, number] | undefined,
+        endLatLng: undefined as [number, number] | undefined,
+        kudosCount: undefined as number | undefined,
+        commentCount: undefined as number | undefined,
+        hasKudoed: undefined as boolean | undefined,
+        kudoers: undefined as any[] | undefined,
+        comments: undefined as any[] | undefined,
+        segmentEfforts: [] as any[],
         sourceBadges: (a.source === 'GARMIN_CONNECT'
           ? ['Intervals.icu', 'Garmin']
-          : ['Intervals.icu']) as ('Intervals.icu' | 'Garmin' | 'Strava')[],
+          : a.strava_id
+            ? ['Intervals.icu', 'Strava']
+            : ['Intervals.icu']) as ('Intervals.icu' | 'Garmin' | 'Strava')[],
       };
     });
+
+  // Hydrate Strava segment efforts + GPS route polylines from local cache + backfill top outdoor Rides & Runs
+  const segmentsCache = loadJsonFile<Record<string, any[]>>(SEGMENTS_BY_ACTIVITY_CACHE_FILE, {});
+  const routesCache = loadJsonFile<Record<string, [number, number][]>>(
+    ROUTES_BY_ACTIVITY_CACHE_FILE,
+    {}
+  );
+  const kudosCache = loadJsonFile<
+    Record<
+      string,
+      {
+        kudosCount?: number;
+        hasKudoed?: boolean;
+        kudoers?: any[];
+        comments?: any[];
+      }
+    >
+  >(STRAVA_KUDOS_CACHE_FILE, {});
+
+  const uncachedWithSegments = activities.filter(
+    (act) =>
+      act.hasSegments &&
+      (act.sportCategory === 'Cycling' || act.sportCategory === 'Running') &&
+      (!Array.isArray(segmentsCache[act.id]) || !Array.isArray(routesCache[act.id]))
+  );
+
+  // If fewer than 36 activities have cached segment efforts or fewer than 20 have GPS routes, automatically backfill
+  if (
+    (Object.keys(segmentsCache).length < 36 || Object.keys(routesCache).length < 20) &&
+    uncachedWithSegments.length > 0
+  ) {
+    const cyclingCandidates = uncachedWithSegments
+      .filter((a) => a.sportCategory === 'Cycling')
+      .slice(0, 14);
+    const runningCandidates = uncachedWithSegments
+      .filter((a) => a.sportCategory === 'Running')
+      .slice(0, 14);
+    const batchToHydrate = [...cyclingCandidates, ...runningCandidates];
+
+    for (let i = 0; i < batchToHydrate.length; i += 10) {
+      const slice = batchToHydrate.slice(i, i + 10);
+      await Promise.all(
+        slice.map(async (act) => {
+          try {
+            const [segResp, stResp] = await Promise.all([
+              fetch(
+                `https://intervals.icu/api/v1/activity/${encodeURIComponent(act.id)}/segments`,
+                { headers: { Authorization: authHeader, Accept: 'application/json' } }
+              ),
+              fetch(
+                `https://intervals.icu/api/v1/activity/${encodeURIComponent(act.id)}/streams?types=time,distance,latlng,watts,heartrate,velocity_smooth,altitude`,
+                { headers: { Authorization: authHeader, Accept: 'application/json' } }
+              ),
+            ]);
+            if (segResp.ok && stResp.ok) {
+              const rawSegs = (await segResp.json()) as any[];
+              const rawStreams = (await stResp.json()) as {
+                type: string;
+                data: number[];
+                data2?: number[];
+              }[];
+              const efforts = computeIntervalsSegmentEfforts(rawSegs, rawStreams, act);
+              segmentsCache[act.id] = efforts;
+
+              // Extract compact 160-point GPS route from latlng stream
+              const latlngEntry = Array.isArray(rawStreams)
+                ? rawStreams.find((s) => s && s.type === 'latlng')
+                : undefined;
+              if (
+                latlngEntry &&
+                Array.isArray(latlngEntry.data) &&
+                Array.isArray(latlngEntry.data2) &&
+                latlngEntry.data.length > 2
+              ) {
+                const step = Math.max(1, Math.floor(latlngEntry.data.length / 160));
+                const compactPts: [number, number][] = [];
+                for (let k = 0; k < latlngEntry.data.length; k += step) {
+                  const lat = latlngEntry.data[k];
+                  const lng = latlngEntry.data2[k];
+                  if (
+                    lat != null &&
+                    lng != null &&
+                    !Number.isNaN(lat) &&
+                    !Number.isNaN(lng) &&
+                    Math.abs(lat) > 0.01
+                  ) {
+                    compactPts.push([Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
+                  }
+                }
+                if (compactPts.length > 2) {
+                  routesCache[act.id] = compactPts;
+                }
+              }
+            } else {
+              if (!Array.isArray(segmentsCache[act.id])) segmentsCache[act.id] = [];
+            }
+          } catch {
+            // ignore transient segment/stream fetch error
+          }
+        })
+      );
+    }
+    saveJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, segmentsCache);
+    saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+  }
+
+  for (const act of activities) {
+    if (Array.isArray(segmentsCache[act.id]) && segmentsCache[act.id].length > 0) {
+      act.segmentEfforts = segmentsCache[act.id].map((eff) => ({ ...eff }));
+    }
+    const routePts = routesCache[act.id];
+    if (Array.isArray(routePts) && routePts.length >= 2) {
+      act.routeLatLngs = routePts;
+      act.startLatLng = routePts[0];
+      act.endLatLng = routePts[routePts.length - 1];
+    }
+    const kEntry = kudosCache[act.id] || (act.stravaId ? kudosCache[act.stravaId] : undefined);
+    if (kEntry) {
+      if (kEntry.kudosCount !== undefined) act.kudosCount = kEntry.kudosCount;
+      if (kEntry.hasKudoed !== undefined) act.hasKudoed = kEntry.hasKudoed;
+      if (Array.isArray(kEntry.kudoers)) act.kudoers = kEntry.kudoers;
+      if (Array.isArray(kEntry.comments)) {
+        act.comments = kEntry.comments;
+        act.commentCount = kEntry.comments.length;
+      }
+    }
+  }
+  rankSegmentEffortsAcrossActivities(activities);
 
   // Merge user-created local planned workouts with Intervals.icu calendar events
   const localPlanned = loadJsonFile<any[]>(PLANNED_EVENTS_CACHE_FILE, []);
@@ -957,6 +1136,192 @@ async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
   };
 }
 
+function computeIntervalsSegmentEfforts(
+  rawSegments: any[],
+  rawStreams: { type: string; data: number[]; data2?: number[] }[],
+  act: {
+    id: string;
+    name: string;
+    startDateLocal: string;
+    sportCategory: string;
+    avgHr?: number;
+  }
+) {
+  if (!Array.isArray(rawSegments) || rawSegments.length === 0) return [];
+  const fullStreamMap: Record<string, number[]> = {};
+  let latArr: number[] = [];
+  let lngArr: number[] = [];
+  if (Array.isArray(rawStreams)) {
+    for (const s of rawStreams) {
+      if (s && s.type && Array.isArray(s.data)) {
+        fullStreamMap[s.type] = s.data;
+        if (s.type === 'latlng' && Array.isArray(s.data2)) {
+          latArr = s.data;
+          lngArr = s.data2;
+        }
+      }
+    }
+  }
+  const timeArr = fullStreamMap.time || [];
+  const distArr = fullStreamMap.distance || [];
+  const wattsArr = fullStreamMap.watts || [];
+  const hrArr = fullStreamMap.heartrate || [];
+  const altArr = fullStreamMap.altitude || [];
+
+  const efforts: any[] = [];
+  for (let idx = 0; idx < rawSegments.length; idx++) {
+    const seg = rawSegments[idx];
+    if (!seg || (!seg.segment_id && !seg.id)) continue;
+    const sIdx = Math.max(0, Number(seg.start_index ?? 0));
+    const eIdx = Math.max(sIdx, Number(seg.end_index ?? sIdx));
+
+    const startTimeSecs =
+      timeArr.length > sIdx && timeArr[sIdx] != null ? Math.round(timeArr[sIdx]) : sIdx;
+    const endTimeSecs =
+      timeArr.length > eIdx && timeArr[eIdx] != null ? Math.round(timeArr[eIdx]) : eIdx;
+
+    const elapsedTimeSecs =
+      timeArr.length > eIdx && timeArr[eIdx] != null && timeArr[sIdx] != null
+        ? Math.max(1, Math.round(timeArr[eIdx] - timeArr[sIdx]))
+        : Math.max(1, eIdx - sIdx);
+
+    if (elapsedTimeSecs < 5) continue;
+
+    let distanceMeters = 0;
+    if (distArr.length > eIdx && distArr[eIdx] != null && distArr[sIdx] != null) {
+      distanceMeters = Math.max(0, Math.round(distArr[eIdx] - distArr[sIdx]));
+    }
+    if (distanceMeters < 20) continue;
+
+    let averageGradePct = 0;
+    if (
+      altArr.length > eIdx &&
+      altArr[eIdx] != null &&
+      altArr[sIdx] != null &&
+      distanceMeters > 25
+    ) {
+      averageGradePct = Number(
+        (((altArr[eIdx] - altArr[sIdx]) / distanceMeters) * 100).toFixed(1)
+      );
+    }
+
+    let avgWatts: number | undefined;
+    if (wattsArr.length > sIdx) {
+      const sliceW = wattsArr
+        .slice(sIdx, Math.min(wattsArr.length, eIdx + 1))
+        .filter((v) => v != null && !Number.isNaN(v) && v >= 0);
+      if (sliceW.length > 0) {
+        const meanW = Math.round(sliceW.reduce((a, b) => a + b, 0) / sliceW.length);
+        if (meanW > 0) avgWatts = meanW;
+      }
+    }
+
+    let avgHr: number | undefined = act.avgHr && act.avgHr > 0 ? act.avgHr : undefined;
+    if (hrArr.length > sIdx) {
+      const sliceHr = hrArr
+        .slice(sIdx, Math.min(hrArr.length, eIdx + 1))
+        .filter((v) => v != null && !Number.isNaN(v) && v > 40);
+      if (sliceHr.length > 0) {
+        avgHr = Math.round(sliceHr.reduce((a, b) => a + b, 0) / sliceHr.length);
+      }
+    }
+
+    let startLatLng: [number, number] | undefined;
+    let endLatLng: [number, number] | undefined;
+    let pathLatLngs: [number, number][] | undefined;
+    if (latArr.length > eIdx && lngArr.length > eIdx) {
+      const segStep = Math.max(1, Math.floor((eIdx - sIdx + 1) / 36));
+      const pts: [number, number][] = [];
+      for (let k = sIdx; k <= eIdx; k += segStep) {
+        if (latArr[k] != null && lngArr[k] != null && Math.abs(latArr[k]) > 0.01) {
+          pts.push([Number(latArr[k].toFixed(5)), Number(lngArr[k].toFixed(5))]);
+        }
+      }
+      if (
+        latArr[eIdx] != null &&
+        lngArr[eIdx] != null &&
+        Math.abs(latArr[eIdx]) > 0.01 &&
+        pts.length > 0
+      ) {
+        pts.push([Number(latArr[eIdx].toFixed(5)), Number(lngArr[eIdx].toFixed(5))]);
+      }
+      if (pts.length >= 2) {
+        pathLatLngs = pts;
+        startLatLng = pts[0];
+        endLatLng = pts[pts.length - 1];
+      }
+    }
+
+    const sportCategory: 'Cycling' | 'Running' =
+      act.sportCategory === 'Running' ? 'Running' : 'Cycling';
+    const avgPaceSecsPerKm =
+      sportCategory === 'Running' && distanceMeters > 0
+        ? Math.round(elapsedTimeSecs / (distanceMeters / 1000))
+        : undefined;
+
+    efforts.push({
+      id: `${act.id}-seg-${seg.id || seg.segment_id}-${idx}`,
+      segmentId: String(seg.segment_id || seg.id),
+      name: String(seg.name || 'Strava Segment').trim(),
+      sportCategory,
+      distanceMeters,
+      averageGradePct,
+      elapsedTimeSecs,
+      movingTimeSecs: elapsedTimeSecs,
+      avgWatts,
+      avgPaceSecsPerKm,
+      avgHr,
+      prRank: null as 1 | 2 | 3 | null,
+      komRank: null,
+      starred: Boolean(seg.starred),
+      startDateLocal: String(act.startDateLocal),
+      activityId: String(act.id),
+      activityName: String(act.name),
+      startTimeSecs,
+      endTimeSecs,
+      startIndex: sIdx,
+      endIndex: eIdx,
+      startLatLng,
+      endLatLng,
+      pathLatLngs,
+    });
+  }
+  return efforts;
+}
+
+function rankSegmentEffortsAcrossActivities(activities: any[]) {
+  const bySegmentId = new Map<string, any[]>();
+  for (const act of activities) {
+    if (!Array.isArray(act.segmentEfforts)) continue;
+    for (const eff of act.segmentEfforts) {
+      if (!eff || !eff.segmentId || !(eff.elapsedTimeSecs > 0)) continue;
+      const sid = String(eff.segmentId);
+      const list = bySegmentId.get(sid) || [];
+      list.push(eff);
+      bySegmentId.set(sid, list);
+    }
+  }
+
+  for (const list of bySegmentId.values()) {
+    list.sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
+    list.forEach((eff, idx) => {
+      if (idx === 0) eff.prRank = 1;
+      else if (idx === 1) eff.prRank = 2;
+      else if (idx === 2) eff.prRank = 3;
+      else eff.prRank = null;
+    });
+  }
+
+  for (const act of activities) {
+    if (Array.isArray(act.segmentEfforts) && act.segmentEfforts.length > 0) {
+      const prCount = act.segmentEfforts.filter((e: any) => e.prRank === 1).length;
+      if (prCount > (act.stravaPrCount || 0)) {
+        act.stravaPrCount = prCount;
+      }
+    }
+  }
+}
+
 apiRouter.get('/api/intervals/sync', async (req: Request, res: Response) => {
   try {
     const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
@@ -973,7 +1338,125 @@ apiRouter.get('/api/intervals/sync', async (req: Request, res: Response) => {
   }
 });
 
-// Fetch both second-by-second streams AND auto-detected Intervals.icu intervals / lap splits
+// Scan additional batch of historical activities with Strava segments + GPS routes (on-demand deep backfill)
+apiRouter.post('/api/segments/scan-more', async (req: Request, res: Response) => {
+  try {
+    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    if (!apiKey) {
+      res.status(401).json({ error: 'Intervals.icu API Key is not configured.' });
+      return;
+    }
+    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+    const resolvedId = athleteId || '0';
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${todayStr}`;
+    const actResp = await fetch(activitiesUrl, {
+      headers: { Authorization: authHeader, Accept: 'application/json' },
+    });
+    if (!actResp.ok) {
+      res.status(actResp.status).json({ error: 'Unable to fetch Intervals.icu activities list' });
+      return;
+    }
+    const rawActivities = (await actResp.json()) as Record<string, any>[];
+    const segmentsCache = loadJsonFile<Record<string, any[]>>(SEGMENTS_BY_ACTIVITY_CACHE_FILE, {});
+    const routesCache = loadJsonFile<Record<string, [number, number][]>>(
+      ROUTES_BY_ACTIVITY_CACHE_FILE,
+      {}
+    );
+
+    const candidates = rawActivities
+      .filter((a) => a && a.id && a.has_segments && !Array.isArray(segmentsCache[String(a.id)]))
+      .slice(0, 30);
+
+    let scannedCount = 0;
+    for (let i = 0; i < candidates.length; i += 10) {
+      const slice = candidates.slice(i, i + 10);
+      await Promise.all(
+        slice.map(async (rawAct) => {
+          const actId = String(rawAct.id);
+          const rawType = String(rawAct.type || '');
+          const sportCategory = /run|trailrun|virtualrun|treadmill/i.test(rawType)
+            ? 'Running'
+            : 'Cycling';
+          try {
+            const [segResp, stResp] = await Promise.all([
+              fetch(`https://intervals.icu/api/v1/activity/${encodeURIComponent(actId)}/segments`, {
+                headers: { Authorization: authHeader, Accept: 'application/json' },
+              }),
+              fetch(
+                `https://intervals.icu/api/v1/activity/${encodeURIComponent(actId)}/streams?types=time,distance,latlng,watts,heartrate,velocity_smooth,altitude`,
+                { headers: { Authorization: authHeader, Accept: 'application/json' } }
+              ),
+            ]);
+            if (segResp.ok && stResp.ok) {
+              const rawSegs = (await segResp.json()) as any[];
+              const rawStreams = (await stResp.json()) as {
+                type: string;
+                data: number[];
+                data2?: number[];
+              }[];
+              segmentsCache[actId] = computeIntervalsSegmentEfforts(rawSegs, rawStreams, {
+                id: actId,
+                name: String(rawAct.name || rawType || sportCategory),
+                startDateLocal: String(rawAct.start_date_local || ''),
+                sportCategory,
+                avgHr: rawAct.average_heartrate
+                  ? Math.round(Number(rawAct.average_heartrate))
+                  : undefined,
+              });
+              const latlngEntry = Array.isArray(rawStreams)
+                ? rawStreams.find((s) => s && s.type === 'latlng')
+                : undefined;
+              if (
+                latlngEntry &&
+                Array.isArray(latlngEntry.data) &&
+                Array.isArray(latlngEntry.data2) &&
+                latlngEntry.data.length > 2
+              ) {
+                const step = Math.max(1, Math.floor(latlngEntry.data.length / 160));
+                const compactPts: [number, number][] = [];
+                for (let k = 0; k < latlngEntry.data.length; k += step) {
+                  const lat = latlngEntry.data[k];
+                  const lng = latlngEntry.data2[k];
+                  if (lat != null && lng != null && Math.abs(lat) > 0.01) {
+                    compactPts.push([Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
+                  }
+                }
+                if (compactPts.length > 2) routesCache[actId] = compactPts;
+              }
+              scannedCount += 1;
+            } else {
+              segmentsCache[actId] = [];
+            }
+          } catch {
+            // ignore error on single activity
+          }
+        })
+      );
+    }
+    saveJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, segmentsCache);
+    saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+
+    res.json({
+      scannedCount,
+      remainingUnscannedCount: Math.max(
+        0,
+        rawActivities.filter(
+          (a) => a && a.has_segments && !Array.isArray(segmentsCache[String(a.id)])
+        ).length
+      ),
+      totalCachedActivities: Object.keys(segmentsCache).length,
+      segmentsByActivity: segmentsCache,
+      routesByActivity: routesCache,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to scan additional segments',
+    });
+  }
+});
+
+// Fetch second-by-second streams (including GPS latlng), auto-detected Intervals.icu intervals, AND Strava segments for an activity
 apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res: Response) => {
   try {
     const { apiKey } = getEffectiveIntervalsConfig(req);
@@ -984,24 +1467,68 @@ apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res:
 
     const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
     const activityId = req.params.id;
-    const [streamsResp, detailResp] = await Promise.all([
+    const [streamsResp, detailResp, segmentsResp] = await Promise.all([
       fetch(
-        `https://intervals.icu/api/v1/activity/${encodeURIComponent(activityId)}/streams?types=time,watts,heartrate,velocity_smooth,cadence,altitude`,
+        `https://intervals.icu/api/v1/activity/${encodeURIComponent(activityId)}/streams?types=time,distance,latlng,watts,heartrate,velocity_smooth,cadence,altitude`,
         { headers: { Authorization: authHeader, Accept: 'application/json' } }
       ),
       fetch(
         `https://intervals.icu/api/v1/activity/${encodeURIComponent(activityId)}?intervals=true`,
         { headers: { Authorization: authHeader, Accept: 'application/json' } }
       ),
+      fetch(
+        `https://intervals.icu/api/v1/activity/${encodeURIComponent(activityId)}/segments`,
+        { headers: { Authorization: authHeader, Accept: 'application/json' } }
+      ),
     ]);
 
     const streamMap: Record<string, number[]> = {};
+    let downsampledLatLng: [number, number][] | undefined;
+    let rawStreamsList: { type: string; data: number[]; data2?: number[] }[] = [];
     if (streamsResp.ok) {
-      const rawStreams = (await streamsResp.json()) as { type: string; data: number[] }[];
+      const rawStreams = (await streamsResp.json()) as {
+        type: string;
+        data: number[];
+        data2?: number[];
+      }[];
       if (Array.isArray(rawStreams)) {
+        rawStreamsList = rawStreams;
+        const timeEntry = rawStreams.find((s) => s && s.type === 'time' && Array.isArray(s.data));
+        const baseLen = timeEntry?.data?.length || rawStreams[0]?.data?.length || 1;
+        const step = Math.max(1, Math.floor(baseLen / 500));
+
         for (const s of rawStreams) {
-          if (s && s.type && Array.isArray(s.data)) {
-            const step = Math.max(1, Math.floor(s.data.length / 100));
+          if (!s || !s.type || !Array.isArray(s.data)) continue;
+          if (s.type === 'latlng' && Array.isArray(s.data2)) {
+            const latArr = s.data;
+            const lngArr = s.data2;
+            const paired: [number, number][] = [];
+            for (let idx = 0; idx < latArr.length; idx += step) {
+              const lat = latArr[idx];
+              const lng = lngArr[idx];
+              if (
+                lat != null &&
+                lng != null &&
+                !Number.isNaN(lat) &&
+                !Number.isNaN(lng) &&
+                Math.abs(lat) > 0.01
+              ) {
+                paired.push([Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
+              } else if (paired.length > 0) {
+                paired.push(paired[paired.length - 1]);
+              }
+            }
+            if (paired.length > 2) {
+              downsampledLatLng = paired;
+              const routesCache = loadJsonFile<Record<string, [number, number][]>>(
+                ROUTES_BY_ACTIVITY_CACHE_FILE,
+                {}
+              );
+              const compactStep = Math.max(1, Math.floor(paired.length / 160));
+              routesCache[String(activityId)] = paired.filter((_, i) => i % compactStep === 0);
+              saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+            }
+          } else {
             streamMap[s.type] = s.data.filter((_, idx) => idx % step === 0);
           }
         }
@@ -1009,8 +1536,9 @@ apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res:
     }
 
     let intervals: any[] = [];
+    let detailJson: Record<string, any> = {};
     if (detailResp.ok) {
-      const detailJson = (await detailResp.json()) as Record<string, any>;
+      detailJson = (await detailResp.json()) as Record<string, any>;
       if (Array.isArray(detailJson.icu_intervals)) {
         intervals = detailJson.icu_intervals.map((iv: any, idx: number) => {
           const dist = Number(iv.distance || 0);
@@ -1048,9 +1576,37 @@ apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res:
       }
     }
 
+    let segmentEfforts: any[] = [];
+    if (segmentsResp.ok) {
+      const rawSegments = (await segmentsResp.json()) as any[];
+      const rawType = String(detailJson.type || '');
+      const sportCategory = /run|trailrun|virtualrun|treadmill/i.test(rawType)
+        ? 'Running'
+        : 'Cycling';
+      segmentEfforts = computeIntervalsSegmentEfforts(rawSegments, rawStreamsList, {
+        id: String(activityId),
+        name: String(detailJson.name || rawType || sportCategory),
+        startDateLocal: String(detailJson.start_date_local || ''),
+        sportCategory,
+        avgHr: detailJson.average_heartrate
+          ? Math.round(Number(detailJson.average_heartrate))
+          : undefined,
+      });
+      if (segmentEfforts.length > 0) {
+        const segmentsCache = loadJsonFile<Record<string, any[]>>(
+          SEGMENTS_BY_ACTIVITY_CACHE_FILE,
+          {}
+        );
+        segmentsCache[String(activityId)] = segmentEfforts;
+        saveJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, segmentsCache);
+      }
+    }
+
     res.json({
       streams: {
         time: streamMap.time || [],
+        distance: streamMap.distance,
+        latlng: downsampledLatLng,
         watts: streamMap.watts,
         heartrate: streamMap.heartrate,
         velocitySmooth: streamMap.velocity_smooth,
@@ -1058,6 +1614,7 @@ apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res:
         altitude: streamMap.altitude,
       },
       intervals,
+      segmentEfforts,
     });
   } catch (error) {
     res.status(500).json({
@@ -1575,6 +2132,71 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
     if (d && d.id) detailById.set(Number(d.id), d);
   }
 
+  // Hydrate Strava kudoers for top recent activities with kudos_count > 0
+  const kudosCache = loadJsonFile<
+    Record<
+      string,
+      {
+        kudosCount?: number;
+        hasKudoed?: boolean;
+        kudoers?: any[];
+        comments?: any[];
+      }
+    >
+  >(STRAVA_KUDOS_CACHE_FILE, {});
+
+  const recentKudoCandidates = activitiesList
+    .filter((a) => a && a.id && Number(a.kudos_count || 0) > 0 && !kudosCache[String(a.id)]?.kudoers)
+    .slice(0, 8);
+
+  if (recentKudoCandidates.length > 0) {
+    await Promise.all(
+      recentKudoCandidates.map(async (act) => {
+        const sid = String(act.id);
+        try {
+          const [kResp, cResp] = await Promise.all([
+            fetch(`https://www.strava.com/api/v3/activities/${encodeURIComponent(sid)}/kudos?per_page=50`, {
+              headers,
+            }),
+            fetch(`https://www.strava.com/api/v3/activities/${encodeURIComponent(sid)}/comments?per_page=30`, {
+              headers,
+            }),
+          ]);
+          const kudoers = kResp.ok
+            ? (((await kResp.json()) as any[]) || []).map((k: any) => ({
+                firstname: String(k.firstname || 'Athlete'),
+                lastname: String(k.lastname || ''),
+                profileMedium: k.profile_medium || k.profile || undefined,
+                city: k.city || undefined,
+                state: k.state || undefined,
+                country: k.country || undefined,
+              }))
+            : [];
+          const comments = cResp.ok
+            ? (((await cResp.json()) as any[]) || []).map((c: any, idx: number) => ({
+                id: String(c.id || `sc-${sid}-${idx}`),
+                text: String(c.text || ''),
+                createdAt: String(c.created_at || act.start_date_local || ''),
+                athleteName:
+                  [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(' ') ||
+                  'Strava Athlete',
+                avatarUrl: c.athlete?.profile_medium || undefined,
+              }))
+            : [];
+          kudosCache[sid] = {
+            ...kudosCache[sid],
+            kudosCount: Math.max(Number(act.kudos_count || 0), kudoers.length),
+            kudoers,
+            comments: [...(kudosCache[sid]?.comments || []), ...comments],
+          };
+        } catch {
+          // ignore transient kudos fetch error
+        }
+      })
+    );
+    saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
+  }
+
   const ftp = runtimeStore.athleteFtp || 300;
   const normalizedStravaActivities = activitiesList.map((a) => {
     const detail = detailById.get(Number(a.id)) || a;
@@ -1646,23 +2268,51 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
     }
 
     const rawEfforts = Array.isArray(detail.segment_efforts) ? detail.segment_efforts : [];
-    const segmentEfforts = rawEfforts.slice(0, 8).map((se: Record<string, any>) => ({
-      id: String(se.id),
-      segmentId: String(se.segment?.id || se.id),
-      name: String(se.name || se.segment?.name || 'Segment'),
-      sportCategory: sportCategory === 'Running' ? ('Running' as const) : ('Cycling' as const),
-      distanceMeters: Math.round(Number(se.distance || se.segment?.distance || 0)),
-      averageGradePct: Number(se.segment?.average_grade ?? 0),
-      elapsedTimeSecs: Number(se.elapsed_time || 0),
-      movingTimeSecs: Number(se.moving_time || se.elapsed_time || 0),
-      avgWatts: se.average_watts ? Math.round(Number(se.average_watts)) : undefined,
-      avgHr: se.average_heartrate ? Math.round(Number(se.average_heartrate)) : undefined,
-      prRank: se.pr_rank === 1 || se.pr_rank === 2 || se.pr_rank === 3 ? se.pr_rank : null,
-      komRank: typeof se.kom_rank === 'number' ? se.kom_rank : null,
-      startDateLocal: String(se.start_date_local || a.start_date_local),
-      activityId: String(a.id),
-      activityName: String(a.name),
-    }));
+    const segmentEfforts = rawEfforts.slice(0, 40).map((se: Record<string, any>) => {
+      const dist = Math.round(Number(se.distance || se.segment?.distance || 0));
+      const elTime = Number(se.elapsed_time || 0);
+      return {
+        id: String(se.id),
+        segmentId: String(se.segment?.id || se.id),
+        name: String(se.name || se.segment?.name || 'Segment'),
+        sportCategory: sportCategory === 'Running' ? ('Running' as const) : ('Cycling' as const),
+        distanceMeters: dist,
+        averageGradePct: Number(se.segment?.average_grade ?? 0),
+        elapsedTimeSecs: elTime,
+        movingTimeSecs: Number(se.moving_time || elTime),
+        avgWatts: se.average_watts ? Math.round(Number(se.average_watts)) : undefined,
+        avgPaceSecsPerKm:
+          sportCategory === 'Running' && dist > 0 && elTime > 0
+            ? Math.round(elTime / (dist / 1000))
+            : undefined,
+        avgHr: se.average_heartrate ? Math.round(Number(se.average_heartrate)) : undefined,
+        prRank: se.pr_rank === 1 || se.pr_rank === 2 || se.pr_rank === 3 ? se.pr_rank : null,
+        komRank: typeof se.kom_rank === 'number' ? se.kom_rank : null,
+        startDateLocal: String(se.start_date_local || a.start_date_local),
+        activityId: String(a.id),
+        activityName: String(a.name),
+        startIndex: typeof se.start_index === 'number' ? se.start_index : undefined,
+        endIndex: typeof se.end_index === 'number' ? se.end_index : undefined,
+      };
+    });
+
+    const summaryPolyline: string | undefined =
+      detail.map?.summary_polyline || a.map?.summary_polyline || undefined;
+    const decodedRoute = summaryPolyline ? decodeGooglePolyline(summaryPolyline) : undefined;
+    const startLatLng: [number, number] | undefined =
+      Array.isArray(a.start_latlng) && a.start_latlng.length === 2
+        ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])]
+        : decodedRoute && decodedRoute.length > 0
+          ? decodedRoute[0]
+          : undefined;
+    const endLatLng: [number, number] | undefined =
+      Array.isArray(a.end_latlng) && a.end_latlng.length === 2
+        ? [Number(a.end_latlng[0]), Number(a.end_latlng[1])]
+        : decodedRoute && decodedRoute.length > 0
+          ? decodedRoute[decodedRoute.length - 1]
+          : undefined;
+
+    const cachedK = kudosCache[String(a.id)];
 
     return {
       stravaId: String(a.id),
@@ -1689,7 +2339,17 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
         normalizedPower && avgHr > 0 ? Number((normalizedPower / avgHr).toFixed(2)) : 0,
       gearName: detail.gear?.name || undefined,
       stravaPrCount: Number(a.pr_count || 0),
-      kudosCount: Number(a.kudos_count || 0),
+      kudosCount: cachedK?.kudosCount ?? Number(a.kudos_count || 0),
+      commentCount: cachedK?.comments?.length ?? Number(a.comment_count || 0),
+      achievementCount: Number(a.achievement_count || 0),
+      athleteCount: Number(a.athlete_count || 1),
+      hasKudoed: cachedK?.hasKudoed ?? Boolean(a.has_kudoed),
+      kudoers: cachedK?.kudoers,
+      comments: cachedK?.comments,
+      summaryPolyline,
+      routeLatLngs: decodedRoute && decodedRoute.length >= 2 ? decodedRoute : undefined,
+      startLatLng,
+      endLatLng,
       segmentEfforts,
     };
   });
@@ -1721,6 +2381,440 @@ apiRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
     res.status(401).json({
       error:
         error instanceof Error ? error.message : 'Failed to sync Strava activities and segments',
+    });
+  }
+});
+
+apiRouter.get('/api/strava/activities/:id/streams', async (req: Request, res: Response) => {
+  try {
+    const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
+    if (accessToken && !runtimeStore.stravaAccessToken) {
+      runtimeStore.stravaAccessToken = accessToken;
+    }
+    if (refreshToken && !runtimeStore.stravaRefreshToken) {
+      runtimeStore.stravaRefreshToken = refreshToken;
+    }
+
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const needsRefresh =
+      !runtimeStore.stravaAccessToken ||
+      (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60);
+
+    if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
+      const refreshResp = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: runtimeStore.stravaRefreshToken,
+        }),
+      });
+      if (refreshResp.ok) {
+        const refreshed = (await refreshResp.json()) as {
+          access_token: string;
+          refresh_token: string;
+          expires_at: number;
+        };
+        runtimeStore.stravaAccessToken = refreshed.access_token;
+        runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
+        runtimeStore.stravaExpiresAt = refreshed.expires_at;
+        saveSessionCache();
+      }
+    }
+
+    if (!runtimeStore.stravaAccessToken) {
+      res.status(401).json({ error: 'Strava is not connected.' });
+      return;
+    }
+
+    const activityId = req.params.id;
+    const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+    const [streamsResp, detailResp, kudosResp] = await Promise.all([
+      fetch(
+        `https://www.strava.com/api/v3/activities/${encodeURIComponent(activityId)}/streams?keys=time,distance,latlng,watts,heartrate,velocity_smooth,cadence,altitude&key_by_type=true`,
+        { headers }
+      ),
+      fetch(
+        `https://www.strava.com/api/v3/activities/${encodeURIComponent(activityId)}?include_all_efforts=true`,
+        { headers }
+      ),
+      fetch(
+        `https://www.strava.com/api/v3/activities/${encodeURIComponent(activityId)}/kudos?per_page=50`,
+        { headers }
+      ),
+    ]);
+
+    if (!streamsResp.ok && !detailResp.ok) {
+      res.status(streamsResp.status).json({ error: 'Unable to load Strava streams for activity.' });
+      return;
+    }
+
+    const raw = streamsResp.ok
+      ? ((await streamsResp.json()) as Record<string, { data?: any[] }>)
+      : {};
+    const timeData = Array.isArray(raw?.time?.data) ? (raw.time.data as number[]) : [];
+    const step = Math.max(1, Math.floor(timeData.length / 500));
+    const downsample = (arr?: number[]) =>
+      Array.isArray(arr) ? arr.filter((_, idx) => idx % step === 0) : undefined;
+
+    const rawLatLng = Array.isArray(raw?.latlng?.data) ? (raw.latlng.data as [number, number][]) : undefined;
+    const downsampledLatLng = rawLatLng
+      ? rawLatLng
+          .filter((_, idx) => idx % step === 0)
+          .filter((pt) => Array.isArray(pt) && pt.length === 2 && Math.abs(pt[0]) > 0.01)
+          .map((pt): [number, number] => [Number(Number(pt[0]).toFixed(5)), Number(Number(pt[1]).toFixed(5))])
+      : undefined;
+
+    let segmentEfforts: any[] = [];
+    if (detailResp.ok) {
+      const detail = (await detailResp.json()) as Record<string, any>;
+      const rawEfforts = Array.isArray(detail.segment_efforts) ? detail.segment_efforts : [];
+      const sportType = String(detail.sport_type || detail.type || '');
+      const sportCat = /run|trailrun|virtualrun|treadmill/i.test(sportType)
+        ? ('Running' as const)
+        : ('Cycling' as const);
+      segmentEfforts = rawEfforts.slice(0, 40).map((se: Record<string, any>) => {
+        const dist = Math.round(Number(se.distance || se.segment?.distance || 0));
+        const elTime = Number(se.elapsed_time || 0);
+        const sIdx = typeof se.start_index === 'number' ? se.start_index : undefined;
+        const eIdx = typeof se.end_index === 'number' ? se.end_index : undefined;
+        let pathLatLngs: [number, number][] | undefined;
+        if (rawLatLng && sIdx !== undefined && eIdx !== undefined && rawLatLng.length > eIdx) {
+          const segStep = Math.max(1, Math.floor((eIdx - sIdx + 1) / 36));
+          const pts: [number, number][] = [];
+          for (let k = sIdx; k <= eIdx; k += segStep) {
+            const p = rawLatLng[k];
+            if (Array.isArray(p) && p.length === 2 && Math.abs(p[0]) > 0.01) {
+              pts.push([Number(Number(p[0]).toFixed(5)), Number(Number(p[1]).toFixed(5))]);
+            }
+          }
+          if (pts.length >= 2) pathLatLngs = pts;
+        }
+        return {
+          id: String(se.id),
+          segmentId: String(se.segment?.id || se.id),
+          name: String(se.name || se.segment?.name || 'Segment'),
+          sportCategory: sportCat,
+          distanceMeters: dist,
+          averageGradePct: Number(se.segment?.average_grade ?? 0),
+          elapsedTimeSecs: elTime,
+          movingTimeSecs: Number(se.moving_time || elTime),
+          avgWatts: se.average_watts ? Math.round(Number(se.average_watts)) : undefined,
+          avgPaceSecsPerKm:
+            sportCat === 'Running' && dist > 0 && elTime > 0
+              ? Math.round(elTime / (dist / 1000))
+              : undefined,
+          avgHr: se.average_heartrate ? Math.round(Number(se.average_heartrate)) : undefined,
+          prRank: se.pr_rank === 1 || se.pr_rank === 2 || se.pr_rank === 3 ? se.pr_rank : null,
+          komRank: typeof se.kom_rank === 'number' ? se.kom_rank : null,
+          startDateLocal: String(se.start_date_local || detail.start_date_local || ''),
+          activityId: String(detail.id || activityId),
+          activityName: String(detail.name || ''),
+          startIndex: sIdx,
+          endIndex: eIdx,
+          startLatLng: pathLatLngs?.[0],
+          endLatLng: pathLatLngs?.[pathLatLngs.length - 1],
+          pathLatLngs,
+        };
+      });
+    }
+
+    let kudoers: any[] | undefined;
+    if (kudosResp.ok) {
+      const rawKudos = (await kudosResp.json()) as any[];
+      if (Array.isArray(rawKudos)) {
+        kudoers = rawKudos.map((k: any) => ({
+          firstname: String(k.firstname || 'Athlete'),
+          lastname: String(k.lastname || ''),
+          profileMedium: k.profile_medium || k.profile || undefined,
+          city: k.city || undefined,
+          state: k.state || undefined,
+          country: k.country || undefined,
+        }));
+      }
+    }
+
+    res.json({
+      streams: {
+        time: downsample(raw?.time?.data as number[]) || [],
+        distance: downsample(raw?.distance?.data as number[]),
+        latlng: downsampledLatLng,
+        watts: downsample(raw?.watts?.data as number[]),
+        heartrate: downsample(raw?.heartrate?.data as number[]),
+        velocitySmooth: downsample(raw?.velocity_smooth?.data as number[]),
+        cadence: downsample(raw?.cadence?.data as number[]),
+        altitude: downsample(raw?.altitude?.data as number[]),
+      },
+      segmentEfforts,
+      kudoers,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to load Strava activity streams',
+    });
+  }
+});
+
+// Fetch Strava Kudoers & Comments for a specific activity (live Strava API + cached/local social notes)
+apiRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: Response) => {
+  try {
+    const activityId = String(req.params.id);
+    const stravaId = String(req.query.stravaId || activityId).replace(/^strava-/, '');
+    const kudosCache = loadJsonFile<
+      Record<
+        string,
+        {
+          kudosCount?: number;
+          hasKudoed?: boolean;
+          kudoers?: any[];
+          comments?: any[];
+        }
+      >
+    >(STRAVA_KUDOS_CACHE_FILE, {});
+
+    const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
+    if (accessToken && !runtimeStore.stravaAccessToken) runtimeStore.stravaAccessToken = accessToken;
+    if (refreshToken && !runtimeStore.stravaRefreshToken) runtimeStore.stravaRefreshToken = refreshToken;
+
+    const nowSecs = Math.floor(Date.now() / 1000);
+    if (
+      (!runtimeStore.stravaAccessToken ||
+        (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60)) &&
+      runtimeStore.stravaRefreshToken &&
+      clientId &&
+      clientSecret
+    ) {
+      const refreshResp = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: runtimeStore.stravaRefreshToken,
+        }),
+      });
+      if (refreshResp.ok) {
+        const refreshed = (await refreshResp.json()) as {
+          access_token: string;
+          refresh_token: string;
+          expires_at: number;
+        };
+        runtimeStore.stravaAccessToken = refreshed.access_token;
+        runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
+        runtimeStore.stravaExpiresAt = refreshed.expires_at;
+        saveSessionCache();
+      }
+    }
+
+    if (runtimeStore.stravaAccessToken && /^\d+$/.test(stravaId)) {
+      const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+      const [kResp, cResp] = await Promise.all([
+        fetch(
+          `https://www.strava.com/api/v3/activities/${encodeURIComponent(stravaId)}/kudos?per_page=100`,
+          { headers }
+        ),
+        fetch(
+          `https://www.strava.com/api/v3/activities/${encodeURIComponent(stravaId)}/comments?per_page=50`,
+          { headers }
+        ),
+      ]);
+
+      if (kResp.ok) {
+        const rawKudos = (await kResp.json()) as any[];
+        const kudoers = Array.isArray(rawKudos)
+          ? rawKudos.map((k: any) => ({
+              firstname: String(k.firstname || 'Athlete'),
+              lastname: String(k.lastname || ''),
+              profileMedium: k.profile_medium || k.profile || undefined,
+              city: k.city || undefined,
+              state: k.state || undefined,
+              country: k.country || undefined,
+            }))
+          : [];
+        const existing = kudosCache[activityId] || kudosCache[stravaId] || {};
+        let mergedComments = existing.comments || [];
+        if (cResp.ok) {
+          const rawComments = (await cResp.json()) as any[];
+          if (Array.isArray(rawComments)) {
+            const remoteComments = rawComments.map((c: any, idx: number) => ({
+              id: String(c.id || `sc-${stravaId}-${idx}`),
+              text: String(c.text || ''),
+              createdAt: String(c.created_at || new Date().toISOString()),
+              athleteName:
+                [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(' ') ||
+                'Strava Athlete',
+              avatarUrl: c.athlete?.profile_medium || undefined,
+            }));
+            const seenIds = new Set(mergedComments.map((mc: any) => mc.id));
+            mergedComments = [
+              ...mergedComments,
+              ...remoteComments.filter((rc) => !seenIds.has(rc.id)),
+            ];
+          }
+        }
+        const updatedEntry = {
+          ...existing,
+          kudosCount: Math.max(existing.kudosCount || 0, kudoers.length + (existing.hasKudoed ? 1 : 0)),
+          kudoers,
+          comments: mergedComments,
+        };
+        kudosCache[activityId] = updatedEntry;
+        kudosCache[stravaId] = updatedEntry;
+        saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
+      }
+    }
+
+    const entry = kudosCache[activityId] || kudosCache[stravaId] || {};
+    res.json({
+      kudosCount: entry.kudosCount || 0,
+      hasKudoed: Boolean(entry.hasKudoed),
+      kudoers: entry.kudoers || [],
+      comments: entry.comments || [],
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to fetch Strava kudos',
+    });
+  }
+});
+
+// Toggle Kudos or add a Club / Coaching Comment on an activity
+apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
+  try {
+    const activityId = String(req.params.id);
+    const { action = 'toggle_kudos', commentText, athleteName } = req.body || {};
+    const kudosCache = loadJsonFile<
+      Record<
+        string,
+        {
+          kudosCount?: number;
+          hasKudoed?: boolean;
+          kudoers?: any[];
+          comments?: any[];
+        }
+      >
+    >(STRAVA_KUDOS_CACHE_FILE, {});
+
+    const current = kudosCache[activityId] || {
+      kudosCount: Number(req.body?.currentKudosCount || 0),
+      hasKudoed: false,
+      kudoers: [],
+      comments: [],
+    };
+
+    const resolvedName =
+      athleteName ||
+      runtimeStore.stravaAthleteName ||
+      runtimeStore.intervalsAthleteName ||
+      'AeroPulse Athlete';
+    const [first, ...rest] = String(resolvedName).trim().split(' ');
+    const last = rest.join(' ') || '';
+
+    if (action === 'comment' && commentText && String(commentText).trim()) {
+      const newComment = {
+        id: `comment-${Date.now()}`,
+        text: String(commentText).trim(),
+        createdAt: new Date().toISOString(),
+        athleteName: resolvedName,
+      };
+      current.comments = [...(current.comments || []), newComment];
+    } else {
+      const nextKudoed = !current.hasKudoed;
+      current.hasKudoed = nextKudoed;
+      const baseCount = Math.max(0, Number(current.kudosCount || 0));
+      current.kudosCount = nextKudoed ? baseCount + 1 : Math.max(0, baseCount - 1);
+      const existingKudoers = Array.isArray(current.kudoers) ? [...current.kudoers] : [];
+      if (nextKudoed) {
+        if (!existingKudoers.some((k) => k.firstname === first && k.lastname === last)) {
+          existingKudoers.unshift({
+            firstname: first,
+            lastname: last,
+            city: 'AeroPulse Club',
+          });
+        }
+      } else {
+        const idx = existingKudoers.findIndex((k) => k.firstname === first && k.lastname === last);
+        if (idx >= 0) existingKudoers.splice(idx, 1);
+      }
+      current.kudoers = existingKudoers;
+    }
+
+    kudosCache[activityId] = current;
+    saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
+
+    res.json({
+      activityId,
+      kudosCount: current.kudosCount || 0,
+      hasKudoed: Boolean(current.hasKudoed),
+      kudoers: current.kudoers || [],
+      comments: current.comments || [],
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to update activity kudos',
+    });
+  }
+});
+
+// Hydrate GPS route polylines from Intervals.icu /map for a batch of outdoor workouts
+apiRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = getEffectiveIntervalsConfig(req);
+    if (!apiKey) {
+      res.status(401).json({ error: 'Intervals.icu API Key is not configured.' });
+      return;
+    }
+    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+    const activityIds: string[] = Array.isArray(req.body?.activityIds)
+      ? req.body.activityIds.map(String).slice(0, 24)
+      : [];
+    const routesCache = loadJsonFile<Record<string, [number, number][]>>(
+      ROUTES_BY_ACTIVITY_CACHE_FILE,
+      {}
+    );
+
+    const toFetch = activityIds.filter((id) => id && !Array.isArray(routesCache[id]));
+    for (let i = 0; i < toFetch.length; i += 8) {
+      const slice = toFetch.slice(i, i + 8);
+      await Promise.all(
+        slice.map(async (actId) => {
+          try {
+            const mapResp = await fetch(
+              `https://intervals.icu/api/v1/activity/${encodeURIComponent(actId)}/map`,
+              { headers: { Authorization: authHeader, Accept: 'application/json' } }
+            );
+            if (mapResp.ok) {
+              const mapJson = (await mapResp.json()) as { latlngs?: [number, number][] };
+              if (Array.isArray(mapJson.latlngs) && mapJson.latlngs.length > 2) {
+                const rawPts = mapJson.latlngs.filter(
+                  (p) => Array.isArray(p) && p.length === 2 && p[0] != null && p[1] != null && Math.abs(p[0]) > 0.01
+                );
+                const step = Math.max(1, Math.floor(rawPts.length / 180));
+                const compactPts = rawPts
+                  .filter((_, idx) => idx % step === 0)
+                  .map((p): [number, number] => [
+                    Number(Number(p[0]).toFixed(5)),
+                    Number(Number(p[1]).toFixed(5)),
+                  ]);
+                if (compactPts.length >= 2) {
+                  routesCache[actId] = compactPts;
+                }
+              }
+            }
+          } catch {
+            // ignore single map error
+          }
+        })
+      );
+    }
+    saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+    res.json({ routesByActivity: routesCache });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to hydrate GPS routes',
     });
   }
 });
