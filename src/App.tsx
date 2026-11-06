@@ -135,6 +135,13 @@ export default function App() {
   const [redactedStravaCount, setRedactedStravaCount] = useState<number>(0);
   const [inlineStravaCode, setInlineStravaCode] = useState<string>('');
   const [inlineBundleInput, setInlineBundleInput] = useState<string>('');
+  const [dismissedStravaBanner, setDismissedStravaBanner] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aeropulse_dismiss_strava_banner') === '1';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     redactedStravaCountRef.current = redactedStravaCount;
@@ -260,7 +267,10 @@ export default function App() {
         lastSyncedAt: data.lastSyncedAt || prev.lastSyncedAt,
         nextHourlySyncAt: data.nextHourlySyncAt || prev.nextHourlySyncAt,
         autoSyncCronActive: true,
-        stravaActivitiesCount: data.stravaActivitiesCount ?? prev.stravaActivitiesCount,
+        stravaActivitiesCount:
+          data.stravaActivitiesCount && data.stravaActivitiesCount > 0
+            ? data.stravaActivitiesCount
+            : prev.stravaActivitiesCount,
       }));
       return data;
     } catch {
@@ -956,9 +966,22 @@ export default function App() {
   const handleHydrateMoreRoutes = useCallback(async () => {
     setIsHydratingRoutes(true);
     try {
+      const uncachedOutdoorIds = activitiesRef.current
+        .filter(
+          (a) =>
+            a.environment === 'OUTDOOR' &&
+            a.distanceMeters > 500 &&
+            (!Array.isArray(a.routeLatLngs) || a.routeLatLngs.length < 2) &&
+            (!a.streams?.latlng || a.streams.latlng.length < 2) &&
+            Boolean(a.intervalsId || a.id)
+        )
+        .slice(0, 32)
+        .map((a) => String(a.intervalsId || a.id));
+
       const resp = await fetch('/api/activities/hydrate-routes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+        body: JSON.stringify({ activityIds: uncachedOutdoorIds }),
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -1593,8 +1616,8 @@ export default function App() {
       {/* Main Content Viewport */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6 space-y-6">
         {redactedStravaCount > 0 &&
-          (!connectionStatus.stravaConnected ||
-            (connectionStatus.stravaActivitiesCount ?? 0) === 0) && (
+          !connectionStatus.stravaConnected &&
+          !dismissedStravaBanner && (
             <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
@@ -1602,7 +1625,7 @@ export default function App() {
                     {redactedStravaCount.toLocaleString()} Historical Strava-Only Workouts Need{' '}
                     <code className="font-mono">activity:read_all</code> Permission:
                   </span>{' '}
-                  Strava&apos;s default API settings token only grants profile <code className="font-mono">read</code> access. To load your 1,372 Strava workouts without changing your Strava Callback Domain, click <strong>1. Authorize Strava (localhost)</strong>, click <strong>Authorize</strong> on Strava, then copy the <code className="font-mono">http://localhost/exchange_token?state=&amp;code=...</code> URL from the popup address bar and paste it into Step 2 below:
+                  Strava&apos;s default API settings token only grants profile <code className="font-mono">read</code> access. To load your Strava workouts without changing your Strava Callback Domain, click <strong>1. Authorize Strava (localhost)</strong>, click <strong>Authorize</strong> on Strava, then copy the <code className="font-mono">http://localhost/exchange_token?state=&amp;code=...</code> URL from the popup address bar and paste it into Step 2 below:
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
@@ -1625,6 +1648,21 @@ export default function App() {
                     className="min-h-[36px] px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
                   >
                     Data Sources
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDismissedStravaBanner(true);
+                      try {
+                        localStorage.setItem('aeropulse_dismiss_strava_banner', '1');
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="min-h-[36px] px-2.5 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
+                    title="Dismiss banner"
+                  >
+                    Dismiss
                   </button>
                 </div>
               </div>
@@ -1654,7 +1692,7 @@ export default function App() {
                   disabled={isSyncing || !inlineStravaCode.trim()}
                   className="min-h-[36px] px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
                 >
-                  {isSyncing ? 'Syncing...' : '2. Exchange Code & Sync 1,372 Workouts'}
+                  {isSyncing ? 'Syncing...' : '2. Exchange Code & Sync Workouts'}
                 </button>
               </form>
               {syncError && (

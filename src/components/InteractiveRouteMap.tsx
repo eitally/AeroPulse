@@ -4,7 +4,7 @@ import { Compass, Layers, Maximize2, Navigation, Sparkles } from 'lucide-react';
 import { DistanceUnit, StravaSegmentEffort, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
 
-export type MapTileStyle = 'DARK' | 'STREET' | 'CYCLOSM' | 'TOPO';
+export type MapTileStyle = 'DARK' | 'STREET' | 'TOPO' | 'SATELLITE';
 export type RouteColorMode = 'STRAVA' | 'POWER' | 'HR' | 'ALTITUDE';
 
 const TILE_CONFIGS: Record<
@@ -23,17 +23,17 @@ const TILE_CONFIGS: Record<
     attribution: '&copy; OpenStreetMap &copy; CARTO',
     maxZoom: 19,
   },
-  CYCLOSM: {
-    label: 'CyclOSM Bike',
-    url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap &copy; CyclOSM',
-    maxZoom: 18,
-  },
   TOPO: {
     label: 'Topo Terrain',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap &copy; OpenTopoMap',
-    maxZoom: 17,
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; OpenStreetMap',
+    maxZoom: 18,
+  },
+  SATELLITE: {
+    label: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri World Imagery',
+    maxZoom: 18,
   },
 };
 

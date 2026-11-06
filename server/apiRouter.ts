@@ -1197,9 +1197,16 @@ async function syncIntervalsAllHistory(
 
   const plannedEvents = [...localPlanned, ...icuPlanned];
 
+  const stravaLinkedCount = activities.filter((a) => Boolean(a.stravaId)).length;
   runtimeStore.garminActivitiesCount = activities.length;
   runtimeStore.redactedStravaCount = redactedStravaCount;
-  runtimeStore.totalActivitiesCount = activities.length + runtimeStore.stravaActivitiesCount;
+  if (runtimeStore.stravaActivitiesCount < stravaLinkedCount) {
+    runtimeStore.stravaActivitiesCount = stravaLinkedCount;
+  }
+  runtimeStore.totalActivitiesCount = Math.max(
+    activities.length,
+    activities.length + Math.max(0, runtimeStore.stravaActivitiesCount - stravaLinkedCount)
+  );
   runtimeStore.earliestActivityDate =
     activities.length > 0
       ? activities[activities.length - 1].startDateLocal.slice(0, 10)
@@ -2174,14 +2181,19 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     (a, b) =>
       new Date(b.start_date_local || 0).getTime() - new Date(a.start_date_local || 0).getTime()
   );
-  saveJsonFile(STRAVA_ARCHIVE_CACHE_FILE, activitiesList);
+  if (activitiesList.length > 0) {
+    saveJsonFile(STRAVA_ARCHIVE_CACHE_FILE, activitiesList);
+  }
 
-  const starredResp = await fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', {
-    headers,
-  });
-  const starredSegments = starredResp.ok
-    ? ((await starredResp.json()) as Record<string, any>[])
-    : [];
+  const starredResp = firstPageResp.ok
+    ? await fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', {
+        headers,
+      })
+    : null;
+  const starredSegments =
+    starredResp && starredResp.ok
+      ? ((await starredResp.json()) as Record<string, any>[])
+      : [];
 
   // Fetch detailed activity payloads for the top 4 recent activities to extract segment_efforts
   const topIds = activitiesList.slice(0, 4).map((a) => a.id);
@@ -2421,7 +2433,9 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     };
   });
 
-  runtimeStore.stravaActivitiesCount = normalizedStravaActivities.length;
+  if (normalizedStravaActivities.length > 0) {
+    runtimeStore.stravaActivitiesCount = normalizedStravaActivities.length;
+  }
   saveSessionCache();
 
   return {
@@ -2802,19 +2816,42 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
 // Hydrate GPS route polylines from Intervals.icu /map for a batch of outdoor workouts
 apiRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Response) => {
   try {
-    const { apiKey } = getEffectiveIntervalsConfig(req);
-    if (!apiKey) {
-      res.status(401).json({ error: 'Intervals.icu API Key is not configured.' });
-      return;
-    }
-    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
-    const activityIds: string[] = Array.isArray(req.body?.activityIds)
-      ? req.body.activityIds.map(String).slice(0, 24)
-      : [];
+    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
       ROUTES_BY_ACTIVITY_CACHE_FILE,
       {}
     );
+    if (!apiKey) {
+      res.json({ routesByActivity: routesCache });
+      return;
+    }
+    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+    let activityIds: string[] = Array.isArray(req.body?.activityIds)
+      ? req.body.activityIds.map(String).slice(0, 32)
+      : [];
+
+    if (activityIds.length === 0) {
+      const resolvedId = athleteId || '0';
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const actResp = await fetch(
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${todayStr}`,
+        { headers: { Authorization: authHeader, Accept: 'application/json' } }
+      );
+      if (actResp.ok) {
+        const rawActs = (await actResp.json()) as Record<string, any>[];
+        activityIds = rawActs
+          .filter(
+            (a) =>
+              a &&
+              a.id &&
+              !a.trainer &&
+              Number(a.distance || 0) > 1000 &&
+              !Array.isArray(routesCache[String(a.id)])
+          )
+          .slice(0, 32)
+          .map((a) => String(a.id));
+      }
+    }
 
     const toFetch = activityIds.filter((id) => id && !Array.isArray(routesCache[id]));
     for (let i = 0; i < toFetch.length; i += 8) {
@@ -2830,7 +2867,12 @@ apiRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Respo
               const mapJson = (await mapResp.json()) as { latlngs?: [number, number][] };
               if (Array.isArray(mapJson.latlngs) && mapJson.latlngs.length > 2) {
                 const rawPts = mapJson.latlngs.filter(
-                  (p) => Array.isArray(p) && p.length === 2 && p[0] != null && p[1] != null && Math.abs(p[0]) > 0.01
+                  (p) =>
+                    Array.isArray(p) &&
+                    p.length === 2 &&
+                    p[0] != null &&
+                    p[1] != null &&
+                    Math.abs(p[0]) > 0.01
                 );
                 const step = Math.max(1, Math.floor(rawPts.length / 180));
                 const compactPts = rawPts
