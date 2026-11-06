@@ -1598,19 +1598,66 @@ async function executeHourlyBackgroundPoll() {
   return results;
 }
 
-apiRouter.get('/api/cron/hourly-sync', async (_req: Request, res: Response) => {
+apiRouter.all('/api/cron/hourly-sync', async (_req: Request, res: Response) => {
   try {
     const summary = await executeHourlyBackgroundPoll();
     res.json({ ok: true, ...summary });
   } catch (error) {
     res.status(500).json({
       ok: false,
-      error: error instanceof Error ? error.message : 'Hourly sync cron failed',
+      error: error instanceof Error ? error.message : 'Background sync failed',
     });
   }
 });
 
-// Start in-process hourly background polling timer (every 60 minutes)
+// Real-Time Webhook Receiver for Intervals.icu (ACTIVITY_UPLOADED, WELLNESS_UPDATED, etc.)
+apiRouter.post('/api/webhooks/intervals', async (req: Request, res: Response) => {
+  try {
+    const summary = await executeHourlyBackgroundPoll();
+    res.json({
+      ok: true,
+      source: 'intervals-webhook',
+      eventsReceived: Array.isArray(req.body?.events) ? req.body.events.length : 1,
+      ...summary,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Intervals webhook sync failed',
+    });
+  }
+});
+
+// Real-Time Push Webhook Verification & Receiver for Strava
+apiRouter.get('/api/webhooks/strava', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && challenge) {
+    res.json({ 'hub.challenge': challenge });
+    return;
+  }
+  res.json({ ok: true, status: 'Strava webhook endpoint ready' });
+});
+
+apiRouter.post('/api/webhooks/strava', async (req: Request, res: Response) => {
+  try {
+    const summary = await executeHourlyBackgroundPoll();
+    res.json({
+      ok: true,
+      source: 'strava-webhook',
+      aspectType: req.body?.aspect_type,
+      objectId: req.body?.object_id,
+      ...summary,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Strava webhook sync failed',
+    });
+  }
+});
+
+// Start in-process hourly background polling timer (every 60 minutes on persistent Node runtimes)
 const HOURLY_INTERVAL_MS = 60 * 60 * 1000;
 setInterval(() => {
   executeHourlyBackgroundPoll().catch(() => {

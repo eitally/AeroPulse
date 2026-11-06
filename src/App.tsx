@@ -375,12 +375,33 @@ export default function App() {
     });
   }, [fetchServerConfigStatus, syncLiveTelemetry]);
 
-  // Client-side hourly background auto-sync poll (every 60 minutes)
+  // Automatic Stale-While-Revalidate sync on Tab Focus / Visibility Change + 15-min active timer
   useEffect(() => {
+    let lastAutoSyncMs = Date.now();
+    const MIN_REFOCUS_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes cooldown
+
+    const triggerIfStale = () => {
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastAutoSyncMs >= MIN_REFOCUS_INTERVAL_MS) {
+          lastAutoSyncMs = now;
+          syncLiveTelemetry(false);
+        }
+      }
+    };
+
     const intervalId = window.setInterval(() => {
+      lastAutoSyncMs = Date.now();
       syncLiveTelemetry(false);
-    }, 60 * 60 * 1000);
-    return () => window.clearInterval(intervalId);
+    }, 15 * 60 * 1000);
+
+    document.addEventListener('visibilitychange', triggerIfStale);
+    window.addEventListener('focus', triggerIfStale);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', triggerIfStale);
+      window.removeEventListener('focus', triggerIfStale);
+    };
   }, [syncLiveTelemetry]);
 
   // Listen for OAuth popup completion via window.postMessage and BroadcastChannel
