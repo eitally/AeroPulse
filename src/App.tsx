@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -42,6 +42,14 @@ import { AICoachDrawer } from './components/AICoachDrawer';
 import { DataSourcesModal } from './components/DataSourcesModal';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
+import {
+  clearPersistedTelemetrySnapshot,
+  loadPersistedTelemetrySnapshot,
+  mergeActivitiesNonDestructive,
+  mergeWellnessDaysNonDestructive,
+  savePersistedTelemetrySnapshot,
+  saveRotatedStravaTokensToStorage,
+} from './utils/telemetryStorage';
 
 type ActiveTab =
   | 'calendar'
@@ -62,13 +70,34 @@ export default function App() {
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
   const [selectedSport, setSelectedSport] = useState<SportCategory | 'ALL'>('ALL');
 
-  // Telemetry state — initialized empty so zero made-up demo activities ever appear
+  // Telemetry state — hydrated from Browser IndexedDB on boot so deployments never wipe history
   const [wellnessDays, setWellnessDays] = useState<UnifiedWellnessDay[]>([]);
   const [activities, setActivities] = useState<UnifiedActivity[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedWorkoutEvent[]>([]);
   const [gearItems, setGearItems] = useState<AthleteGearItem[]>([]);
   const [benchmarkSegments] = useState<BenchmarkSegmentHistory[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<UnifiedActivity | null>(null);
+  const [idbSavedAt, setIdbSavedAt] = useState<string | null>(null);
+
+  const idbHydratedRef = useRef<boolean>(false);
+  const activitiesRef = useRef<UnifiedActivity[]>([]);
+  const wellnessDaysRef = useRef<UnifiedWellnessDay[]>([]);
+  const plannedEventsRef = useRef<PlannedWorkoutEvent[]>([]);
+  const gearItemsRef = useRef<AthleteGearItem[]>([]);
+  const redactedStravaCountRef = useRef<number>(0);
+
+  useEffect(() => {
+    activitiesRef.current = activities;
+  }, [activities]);
+  useEffect(() => {
+    wellnessDaysRef.current = wellnessDays;
+  }, [wellnessDays]);
+  useEffect(() => {
+    plannedEventsRef.current = plannedEvents;
+  }, [plannedEvents]);
+  useEffect(() => {
+    gearItemsRef.current = gearItems;
+  }, [gearItems]);
 
   // Persisted Annual Mileage & Target Race Goals (purge any legacy seed goal-1/2/3 dummy goals)
   const [annualMileageGoals, setAnnualMileageGoals] = useState<AnnualMileageGoal[]>(() => {
@@ -107,6 +136,10 @@ export default function App() {
   const [inlineStravaCode, setInlineStravaCode] = useState<string>('');
   const [inlineBundleInput, setInlineBundleInput] = useState<string>('');
 
+  useEffect(() => {
+    redactedStravaCountRef.current = redactedStravaCount;
+  }, [redactedStravaCount]);
+
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     mode: 'SANDBOX_CALIBRATION',
     intervalsConnected: false,
@@ -123,6 +156,29 @@ export default function App() {
         ? `${window.location.origin}/auth/strava/callback`
         : `${DEV_APP_URL}/auth/strava/callback`,
   });
+
+  // Automatically persist telemetry state changes (streams, routes, segments, kudos) to IndexedDB
+  useEffect(() => {
+    if (!idbHydratedRef.current) return;
+    if (activities.length === 0 && wellnessDays.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const earliestActivityDate =
+        activities.length > 0
+          ? activities[activities.length - 1].startDateLocal.slice(0, 10)
+          : undefined;
+      savePersistedTelemetrySnapshot({
+        activities,
+        wellnessDays,
+        plannedEvents,
+        gearItems,
+        redactedStravaCount,
+        earliestActivityDate,
+      }).then((savedTimestamp) => {
+        if (savedTimestamp) setIdbSavedAt(savedTimestamp);
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [activities, wellnessDays, plannedEvents, gearItems, redactedStravaCount]);
 
   // Sync Dark Mode class with <html>
   useEffect(() => {
@@ -164,10 +220,12 @@ export default function App() {
       const stravaClientSecret = localStorage.getItem('aeropulse_strava_client_secret') || '';
       const stravaRefreshToken = localStorage.getItem('aeropulse_strava_refresh_token') || '';
       const stravaAccessToken = localStorage.getItem('aeropulse_strava_access_token') || '';
+      const stravaExpiresAt = localStorage.getItem('aeropulse_strava_expires_at') || '';
       if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
       if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
       if (stravaRefreshToken) headers['x-strava-refresh-token'] = stravaRefreshToken;
       if (stravaAccessToken) headers['x-strava-access-token'] = stravaAccessToken;
+      if (stravaExpiresAt) headers['x-strava-expires-at'] = stravaExpiresAt;
     } catch {
       // ignore
     }
@@ -182,6 +240,9 @@ export default function App() {
       });
       if (!resp.ok) return null;
       const data = await resp.json();
+      if (data.stravaTokens) {
+        saveRotatedStravaTokensToStorage(data.stravaTokens);
+      }
       setConnectionStatus((prev) => ({
         ...prev,
         mode: data.intervalsConnected || data.stravaConnected ? 'LIVE' : 'SANDBOX_CALIBRATION',
@@ -218,47 +279,75 @@ export default function App() {
           { headers }
         );
         const statusData = statusResp.ok ? await statusResp.json() : {};
+        if (statusData.stravaTokens) {
+          saveRotatedStravaTokensToStorage(statusData.stravaTokens);
+        }
+
+        // Refresh headers in case status check rotated the Strava token
+        const activeHeaders = getSavedIntervalsHeaders();
+        const hasPersistedArchive = !fullHistory && activitiesRef.current.length >= 50;
+        const deltaOldestDate = new Date(Date.now() - 60 * 86400 * 1000)
+          .toISOString()
+          .slice(0, 10);
 
         let mergedActivities: UnifiedActivity[] | null = null;
-        let garminCount = 0;
-        let stravaCount = 0;
+        let nextWellnessDays = wellnessDaysRef.current;
+        let nextPlannedEvents = plannedEventsRef.current;
+        let nextGearItems = gearItemsRef.current;
+        let nextRedactedCount = redactedStravaCountRef.current;
         let earliestDate: string | undefined;
 
         if (statusData.intervalsConnected) {
-          const intResp = await fetch('/api/intervals/sync?oldest=2010-01-01', { headers });
+          const oldestParam = hasPersistedArchive ? deltaOldestDate : '2010-01-01';
+          const intResp = await fetch(`/api/intervals/sync?oldest=${oldestParam}`, {
+            headers: activeHeaders,
+          });
           if (intResp.ok) {
             const intData = await intResp.json();
             if (Array.isArray(intData.wellnessDays) && intData.wellnessDays.length > 0) {
-              setWellnessDays(intData.wellnessDays);
+              nextWellnessDays = mergeWellnessDaysNonDestructive(
+                wellnessDaysRef.current,
+                intData.wellnessDays
+              );
+              setWellnessDays(nextWellnessDays);
             }
             if (typeof intData.redactedStravaCount === 'number') {
-              setRedactedStravaCount(intData.redactedStravaCount);
+              nextRedactedCount = Math.max(nextRedactedCount, intData.redactedStravaCount);
+              setRedactedStravaCount(nextRedactedCount);
             }
             if (Array.isArray(intData.plannedEvents) && intData.plannedEvents.length > 0) {
-              setPlannedEvents(intData.plannedEvents);
+              nextPlannedEvents = intData.plannedEvents;
+              setPlannedEvents(nextPlannedEvents);
             }
             if (
               Array.isArray(intData.athleteProfile?.gearItems) &&
               intData.athleteProfile.gearItems.length > 0
             ) {
-              setGearItems(intData.athleteProfile.gearItems);
+              nextGearItems = intData.athleteProfile.gearItems;
+              setGearItems(nextGearItems);
             }
             if (Array.isArray(intData.activities)) {
               mergedActivities = intData.activities;
-              garminCount = intData.activities.length;
               earliestDate = intData.earliestActivityDate || undefined;
             }
           }
         }
 
         if (statusData.stravaConnected) {
-          const stravaResp = await fetch(`/api/strava/sync${fullHistory ? '?full=true' : ''}`, {
-            headers,
+          const queryParam = fullHistory
+            ? '?full=true'
+            : hasPersistedArchive
+              ? '?deltaOnly=true'
+              : '';
+          const stravaResp = await fetch(`/api/strava/sync${queryParam}`, {
+            headers: activeHeaders,
           });
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
+            if (stravaData.stravaTokens) {
+              saveRotatedStravaTokensToStorage(stravaData.stravaTokens);
+            }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
-              stravaCount = stravaData.activities.length;
               const toUnifiedFromStrava = (sa: any): UnifiedActivity => ({
                 id: `strava-${sa.stravaId}`,
                 stravaId: String(sa.stravaId),
@@ -391,19 +480,43 @@ export default function App() {
         }
 
         if (mergedActivities !== null) {
-          setActivities(mergedActivities);
+          // Non-destructively merge with existing persisted archive so deployments/delta syncs never lose workouts, streams, or routes
+          const combinedArchive = mergeActivitiesNonDestructive(
+            activitiesRef.current,
+            mergedActivities
+          );
+          setActivities(combinedArchive);
+          activitiesRef.current = combinedArchive;
+
           const oldestLoaded =
-            mergedActivities.length > 0
-              ? mergedActivities[mergedActivities.length - 1].startDateLocal.slice(0, 10)
+            combinedArchive.length > 0
+              ? combinedArchive[combinedArchive.length - 1].startDateLocal.slice(0, 10)
               : earliestDate;
+          const totalGarmin = combinedArchive.filter(
+            (a) => a.sourceBadges.includes('Garmin') || a.sourceBadges.includes('Intervals.icu')
+          ).length;
+          const totalStrava = combinedArchive.filter(
+            (a) => a.sourceBadges.includes('Strava') || Boolean(a.stravaId)
+          ).length;
+
           setConnectionStatus((prev) => ({
             ...prev,
-            totalActivitiesCount: mergedActivities!.length,
-            garminActivitiesCount: garminCount,
-            stravaActivitiesCount: stravaCount,
+            totalActivitiesCount: combinedArchive.length,
+            garminActivitiesCount: totalGarmin,
+            stravaActivitiesCount: totalStrava,
             earliestActivityDate: oldestLoaded || prev.earliestActivityDate,
             lastSyncedAt: new Date().toISOString(),
           }));
+
+          const savedTimestamp = await savePersistedTelemetrySnapshot({
+            activities: combinedArchive,
+            wellnessDays: nextWellnessDays,
+            plannedEvents: nextPlannedEvents,
+            gearItems: nextGearItems,
+            redactedStravaCount: nextRedactedCount,
+            earliestActivityDate: oldestLoaded,
+          });
+          if (savedTimestamp) setIdbSavedAt(savedTimestamp);
         }
         await fetchServerConfigStatus();
       } catch (err) {
@@ -415,13 +528,63 @@ export default function App() {
     [fetchServerConfigStatus]
   );
 
-  // Initial sync on load
+  // Instant hydration from Browser IndexedDB on boot + background incremental delta sync
   useEffect(() => {
-    fetchServerConfigStatus().then((statusData) => {
-      if (statusData?.intervalsConnected || statusData?.stravaConnected) {
+    let mounted = true;
+    (async () => {
+      const cached = await loadPersistedTelemetrySnapshot();
+      if (mounted && cached && (cached.activities.length > 0 || cached.wellnessDays.length > 0)) {
+        setActivities(cached.activities);
+        activitiesRef.current = cached.activities;
+        if (Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0) {
+          setWellnessDays(cached.wellnessDays);
+          wellnessDaysRef.current = cached.wellnessDays;
+        }
+        if (Array.isArray(cached.plannedEvents) && cached.plannedEvents.length > 0) {
+          setPlannedEvents(cached.plannedEvents);
+          plannedEventsRef.current = cached.plannedEvents;
+        }
+        if (Array.isArray(cached.gearItems) && cached.gearItems.length > 0) {
+          setGearItems(cached.gearItems);
+          gearItemsRef.current = cached.gearItems;
+        }
+        if (typeof cached.redactedStravaCount === 'number') {
+          setRedactedStravaCount(cached.redactedStravaCount);
+          redactedStravaCountRef.current = cached.redactedStravaCount;
+        }
+        setIdbSavedAt(cached.savedAt);
+
+        const totalGarmin = cached.activities.filter(
+          (a) => a.sourceBadges.includes('Garmin') || a.sourceBadges.includes('Intervals.icu')
+        ).length;
+        const totalStrava = cached.activities.filter(
+          (a) => a.sourceBadges.includes('Strava') || Boolean(a.stravaId)
+        ).length;
+        const oldest =
+          cached.earliestActivityDate ||
+          (cached.activities.length > 0
+            ? cached.activities[cached.activities.length - 1].startDateLocal.slice(0, 10)
+            : undefined);
+
+        setConnectionStatus((prev) => ({
+          ...prev,
+          totalActivitiesCount: cached.activities.length,
+          garminActivitiesCount: totalGarmin,
+          stravaActivitiesCount: totalStrava,
+          earliestActivityDate: oldest || prev.earliestActivityDate,
+          lastSyncedAt: cached.savedAt,
+        }));
+      }
+      idbHydratedRef.current = true;
+
+      const statusData = await fetchServerConfigStatus();
+      if (mounted && (statusData?.intervalsConnected || statusData?.stravaConnected)) {
         syncLiveTelemetry(false);
       }
-    });
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [fetchServerConfigStatus, syncLiveTelemetry]);
 
   // Automatic Stale-While-Revalidate sync on Tab Focus / Visibility Change + 15-min active timer
@@ -521,9 +684,21 @@ export default function App() {
       // ignore
     }
     await fetch('/api/intervals/disconnect', { method: 'POST' });
+    await clearPersistedTelemetrySnapshot();
+    setIdbSavedAt(null);
     setWellnessDays([]);
     setActivities([]);
+    activitiesRef.current = [];
+    wellnessDaysRef.current = [];
     await fetchServerConfigStatus();
+  };
+
+  const handleClearPersistedArchive = async () => {
+    await clearPersistedTelemetrySnapshot();
+    setIdbSavedAt(null);
+    activitiesRef.current = [];
+    wellnessDaysRef.current = [];
+    await syncLiveTelemetry(true);
   };
 
   const handleSaveStravaCredentials = async (clientId: string, clientSecret: string) => {
@@ -622,14 +797,13 @@ export default function App() {
       setSyncError(data.error || 'Failed to exchange Strava authorization code.');
       throw new Error(data.error || 'Failed to exchange Strava authorization code.');
     }
-    try {
-      if (data.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', data.refreshToken);
-      if (data.accessToken) localStorage.setItem('aeropulse_strava_access_token', data.accessToken);
-      if (data.clientId) localStorage.setItem('aeropulse_strava_client_id', data.clientId);
-      if (data.clientSecret) localStorage.setItem('aeropulse_strava_client_secret', data.clientSecret);
-    } catch {
-      // ignore
-    }
+    saveRotatedStravaTokensToStorage({
+      refreshToken: data.refreshToken,
+      accessToken: data.accessToken,
+      expiresAt: data.expiresAt,
+      clientId: data.clientId,
+      clientSecret: data.clientSecret,
+    });
     await syncLiveTelemetry(true);
   };
 
@@ -645,14 +819,13 @@ export default function App() {
       setSyncError(data.error || 'Failed to connect Strava token.');
       throw new Error(data.error || 'Failed to connect Strava token.');
     }
-    try {
-      if (data.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', data.refreshToken);
-      if (data.accessToken) localStorage.setItem('aeropulse_strava_access_token', data.accessToken);
-      if (data.clientId) localStorage.setItem('aeropulse_strava_client_id', data.clientId);
-      if (data.clientSecret) localStorage.setItem('aeropulse_strava_client_secret', data.clientSecret);
-    } catch {
-      // ignore
-    }
+    saveRotatedStravaTokensToStorage({
+      refreshToken: data.refreshToken,
+      accessToken: data.accessToken,
+      expiresAt: data.expiresAt,
+      clientId: data.clientId,
+      clientSecret: data.clientSecret,
+    });
     await syncLiveTelemetry(true);
   };
 
@@ -1723,6 +1896,9 @@ export default function App() {
         onSyncNow={syncLiveTelemetry}
         isSyncing={isSyncing}
         errorMessage={syncError}
+        idbSavedAt={idbSavedAt}
+        persistedWorkoutCount={activities.length}
+        onRebuildPersistedArchive={handleClearPersistedArchive}
       />
     </div>
   );

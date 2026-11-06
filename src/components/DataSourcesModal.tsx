@@ -28,6 +28,9 @@ interface DataSourcesModalProps {
   onSyncNow: (fullHistory?: boolean) => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
+  idbSavedAt?: string | null;
+  persistedWorkoutCount?: number;
+  onRebuildPersistedArchive?: () => Promise<void>;
 }
 
 export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
@@ -45,6 +48,9 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onSyncNow,
   isSyncing,
   errorMessage,
+  idbSavedAt,
+  persistedWorkoutCount = 0,
+  onRebuildPersistedArchive,
 }) => {
   const [athleteId, setAthleteId] = useState(status.intervalsAthleteId || '0');
   const [intervalsKey, setIntervalsKey] = useState('');
@@ -169,19 +175,36 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                   <Database className="w-3.5 h-3.5 text-blue-500" />
-                  <span>All-Time Activity &amp; Health Archive</span>
+                  <span>Browser IndexedDB Archive (Deployment-Safe)</span>
                 </span>
-                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
-                  {status.earliestActivityDate ? `Since ${status.earliestActivityDate}` : '2019–2026'}
+                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  {persistedWorkoutCount > 0 ? 'Persisted Locally' : 'Ready'}
                 </span>
               </div>
               <div className="text-xs font-mono text-slate-600 dark:text-slate-300">
-                Total Loaded: <strong>{status.totalActivitiesCount ?? 0}</strong> workouts (Garmin:{' '}
+                Cached: <strong>{(persistedWorkoutCount || status.totalActivitiesCount || 0).toLocaleString()}</strong> workouts (Garmin:{' '}
                 <strong>{status.garminActivitiesCount ?? 0}</strong> · Strava:{' '}
                 <strong>{status.stravaActivitiesCount ?? 0}</strong>)
               </div>
-              <div className="text-[11px] text-slate-500">
-                Includes all outdoor rides, smart trainer sessions, road/trail/treadmill runs, rows, swims, and nightly Garmin Sleep &amp; HRV records.
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <span className="text-[11px] text-slate-500">
+                  {idbSavedAt
+                    ? `Saved ${new Date(idbSavedAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })} — survives GitHub → Vercel deployments.`
+                    : 'Hydrates in <50ms and merges new workouts incrementally.'}
+                </span>
+                {onRebuildPersistedArchive && persistedWorkoutCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onRebuildPersistedArchive}
+                    disabled={isSyncing}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap shrink-0"
+                  >
+                    Force Full Re-Sync
+                  </button>
+                )}
               </div>
             </div>
 
@@ -189,7 +212,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Hourly Auto-Sync Cron (0 * * * *)</span>
+                  <span>Self-Healing OAuth &amp; Incremental Sync</span>
                 </span>
                 <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                   Active
@@ -216,7 +239,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 </strong>
               </div>
               <div className="text-[11px] text-slate-500">
-                Automatically polls Intervals.icu and Strava via background timer, focus sync, webhooks (<code className="font-mono">/api/webhooks/intervals</code>), &amp; <code className="font-mono">/api/cron/hourly-sync</code>.
+                Strava OAuth refresh tokens auto-rotate &amp; self-heal across Vercel cold starts so you never have to re-authorize.
               </div>
             </div>
           </div>

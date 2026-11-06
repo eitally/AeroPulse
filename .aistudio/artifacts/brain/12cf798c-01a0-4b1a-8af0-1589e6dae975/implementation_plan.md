@@ -1,142 +1,98 @@
-# AeroPulse — Full-History Intervals.icu Analytics Suite, Garmin Health/Sleep/Training Status, Hourly Auto-Sync & AI Coach
+# Permanent Activity History & Strava OAuth Persistence Across Vercel Deployments
 
-AeroPulse will be upgraded into a comprehensive endurance training, physiological health, and workout-planning platform modeled directly after **Intervals.icu**, backed by **100% all-time historical synchronization** across Garmin Connect (via Intervals.icu) and Strava OAuth2, **full Garmin Sleep, HRV & Training Status telemetry**, **automated hourly background polling**, arbitrary multi-metric time-series and correlation charting, and a persistent **AI Training & Program Coach** that can design and schedule daily or multi-week cycling and running workouts directly onto your Training Calendar.
-
----
+Deliver zero-latency, permanent persistence for your 4,200+ historical workouts, wellness metrics, Strava segments, and GPS routes using Browser IndexedDB combined with automatic incremental delta syncing and self-healing Strava OAuth token rotation—so pushing code updates from GitHub to Vercel never wipes your activity archive or requires re-authorizing Strava.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> This revised plan explicitly incorporates your **Garmin Health, Sleep & Training Status** metrics alongside the **All-Time Historical Sync**, **Hourly Background Cron**, and **Intervals.icu Analytics Suite**:
+> Your preferences from the clarification step have been locked into this plan:
 
-- **Confirmed Decision 1 — Full Garmin Health, Sleep & Training Status Telemetry**:
-  - **Garmin Sleep Tracking**: Pulls your real nightly Garmin sleep data (`sleepSecs` duration, `sleepScore` 0–100, `sleepQuality` rating, and overnight sleeping HR) across your entire history, displaying nightly sleep badges on the Training Calendar, a dedicated **Sleep & Recovery** subplot on the Fitness page, and longitudinal sleep trends in the Custom Chart Builder.
-  - **Garmin Autonomic & Daily Health Biometrics**: Syncs overnight **HRV (`rMSSD` & `SDNN`)** with 7-day rolling averages and 60-day normal baseline corridors (**Garmin HRV Status**: `Balanced`, `Unbalanced`, `Low`), **Resting HR**, **Garmin VO2max** (Cycling & Running), **SpO2**, **Respiration Rate**, **Steps**, and **Weight**.
-  - **8-State Garmin Training Status Engine**: Combines your Garmin **VO2max 28-day trend**, **HRV Status vs. baseline**, **Sleep Score**, and **Acute-to-Chronic Load Ratio (`ATL / CTL`)** to compute and track all 8 official Training Status states (`Productive`, `Peaking`, `Maintaining`, `Recovery`, `Unproductive`, `Strained`, `Overreaching`, `Detraining`) with clear physiological explanations.
-- **Confirmed Decision 2 — All-Time Historical Sync + Automated Hourly Background Cron (`0 * * * *`)**:
-  - **All-Time Backfill**: Pulls your complete historical timeline (`2010-01-01` through today) from Intervals.icu (`activities`, `wellness`, `events`) and pages through all historical Strava activities (`per_page=200` until exhaustion) so every indoor smart-trainer ride and outdoor workout back to day one is indexed and cached.
-  - **Hourly Background Cron**: Runs an automated hourly sync job (`0 * * * *`) both via a server-side background scheduler and a dedicated `/api/cron/hourly-sync` endpoint (configured in `vercel.json` for Vercel Cron deployments) that delta-polls Strava and Intervals.icu every hour.
-- **Confirmed Decision 3 — Full Intervals.icu Workspace Emulation + Advanced Endurance Tools**:
-  - **Training Calendar (`/calendar`)**: Monthly/weekly grid juxtaposing completed workouts, planned structured workouts, nightly Garmin Sleep Score & HRV badges, weekly training load (`TSS`), duration, distance by sport, indoor/outdoor tags, and an Intervals.icu-style text workout syntax builder with `.zwo` / `.erg` export.
-  - **Fitness, Freshness & Garmin Health View (`/fitness`)**: Interactive Performance Management Chart (`CTL` Fitness, `ATL` Fatigue, `TSB` Form), **Garmin Training Status & HRV Status Banner**, Forward PMC Tapering Simulator, and stackable subplots for **Sleep Duration & Score**, **HRV vs. Baseline Band**, **Resting HR**, **VO2max**, and **Weight**.
-  - **Arbitrary Custom Chart Builder (`/charts`)**: Supports both **Multi-Axis Time-Series Plots** and **Metric Correlation Scatter Plots** across 30+ workout and Garmin health metrics (so you can chart *Sleep Score vs. Next-Day Efficiency Factor*, *HRV vs. Training Load*, *Resting HR vs. CTL*, or *Power vs. Heart Rate* over any custom date range).
-  - **Power, HR & Pace Curves + Durability (`/curves`)**: Maximal effort duration curves (`1s` to `5h`) for Cycling Power (`W`, `W/kg`), Running Pace (`/mi`, `/km`, GAP), and Heart Rate with multi-season overlays, automatic `eFTP` / Critical Speed estimation, **Indoor vs. Outdoor Power/HR Delta**, and **Race Time Predictor**.
-  - **Totals, Polarization & Gear Tracker (`/totals`)**: Weekly, monthly, and annual volume and time-in-zone distributions (`Z1–Z7`), **Seiler 80/20 Polarization Index**, Annual Mileage Target tracking, and **Shoe & Bike Gear Lifespan Tracking**.
-  - **Activity Detail, Interval Inspector & Similar Workout Matcher**: Deep drill-down modal displaying second-by-second streams, auto-detected work intervals and lap splits, aerobic decoupling (`Pw:Hr` / `Pa:Hr`), Strava segment efforts, and **Matched Similar Workouts**.
-- **Confirmed Decision 4 — Omnipresent AI Coach Drawer + Calendar Program Scheduling**:
-  - Accessible on every page via a **persistent slide-over AI Coach Drawer** with full awareness of your Garmin Sleep Score, HRV Status, Training Status, CTL/ATL/TSB, and workout history—capable of scheduling single workouts or multi-week cycling/running programs directly onto your Training Calendar.
+- **Confirmed Decision 1 — Activity, Segment & GPS Route Persistence**: **Browser IndexedDB Cache + Automatic Incremental Delta Sync**. The full archive (workouts, Garmin wellness days, planned workouts, gear, Strava segments, and GPS polylines) will be persisted locally in a dedicated IndexedDB store (`aeropulse_telemetry_db`). On every page load or after any GitHub/Vercel deployment, the app hydrates immediately from IndexedDB in `<50ms` and then performs a fast incremental delta sync for new workouts without ever wiping existing history.
+- **Confirmed Decision 2 — Permanent Strava OAuth Persistence**: **Auto-Persist Rotated Strava Tokens in Browser + Vercel Environment Variables**. The server and client will automatically exchange and persist rotated Strava `refresh_token`, `access_token`, and `expires_at` values on every sync and automatically retry with a token refresh on any `401 Unauthorized` response after a Vercel cold start. In addition, the **Data Sources** modal will provide a 1-click **Copy Vercel Environment Variables** block so you can optionally paste your 5 keys into Vercel Project Settings once for permanent server-side configuration across all devices.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Provides an end-to-end endurance performance, Garmin health/sleep, and workout-planning environment matching Intervals.icu's analytical depth while unifying Garmin Connect and Strava's complete multi-year history, polling automatically every hour, and embedding a context-aware Gemini AI Coach.
-- **Target Audience / Persona**: Data-driven multi-sport athletes (cyclists and runners training both outdoors and indoors on smart trainers/treadmills) who want complete longitudinal visibility into their fitness, workload, sleep, and autonomic recovery alongside intelligent, adaptive program design.
-- **Key Value**: Eliminates the data gap caused by Intervals.icu redacting Strava-sourced indoor trainer rides, surfaces your Garmin epix Pro sleep, HRV, VO2max, and Training Status directly alongside your workload curves, and turns coaching conversations into scheduled calendar workouts.
+- **Why Activities & Strava Disappeared on Vercel Deployments**:
+  1. **Ephemeral Server `/tmp` on Vercel**: Every GitHub push spins up a brand-new serverless container on Vercel with an empty `/tmp` directory. Because 4,200+ activities (plus GPS routes and segment efforts) are too large for `localStorage`'s 5MB cap, they were previously held only in React memory and server `/tmp`.
+  2. **Strava 6-Hour Access Token Expiry on Cold Starts**: When a new Vercel deployment started with `stravaExpiresAt = 0` in `/tmp`, the server accepted the browser's cached `x-strava-access-token` header without realizing it had expired after 6 hours, and when Strava rotated the `refresh_token`, the updated token was not returned to the browser's `localStorage` during background syncs.
+- **What This Update Delivers**:
+  - **Instant IndexedDB Hydration on Boot**: Your complete activity archive, wellness history, segments, and GPS routes load immediately from IndexedDB before any network call begins, and non-destructive merge logic guarantees that a server cold start or offline state never overwrites your archive with an empty list.
+  - **Incremental Delta Sync Engine**: Once your full history is stored in IndexedDB, routine syncs only request recent workouts (e.g., last 45 days from Intervals.icu and page 1 from Strava) and merge them by workout ID into your persistent archive—cutting sync time from ~20 seconds to ~1.5 seconds while still offering a "Full History Re-Sync" button whenever needed.
+  - **Self-Healing Strava OAuth Token Rotation**: Every Strava API call automatically refreshes expired tokens using your `refresh_token` (including automatic 401 retry on Vercel cold starts) and returns the newly rotated `refreshToken`, `accessToken`, and `expiresAt` to the browser so `localStorage` stays permanently in sync.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### Key User Flows
-1. **Garmin Health, Sleep & Training Status Cockpit**:
-   - At the top of the **Fitness & Health** workspace (and summarized in the header), a dedicated **Garmin Training & Recovery Status Bar** displays:
-     - **Training Status Badge** (`Productive`, `Peaking`, `Maintaining`, `Strained`, `Recovery`, `Overreaching`, `Unproductive`, or `Detraining`) driven by your 28-day VO2max trend, HRV Status, and Acute-to-Chronic Load Ratio (`ATL / CTL`).
-     - **Last Night's Garmin Sleep Card**: Total Sleep Duration (`7h 03m`), Garmin Sleep Score (`82 / 100`), Sleep Quality rating, and 7-day / 30-day rolling sleep debt.
-     - **Garmin HRV Status & Autonomic Balance**: Overnight rMSSD (`ms`) plotted against your personal 7-day rolling average and 60-day normal baseline corridor (`Balanced` / `Unbalanced` / `Low`), plus Resting HR (`bpm`), VO2max (`mL/kg/min`), Respiration, and SpO2.
-2. **All-Time Historical Sync & Hourly Auto-Poll Status**:
-   - Pulls your complete Intervals.icu archive (`2010–present`, including all historical Garmin wellness/sleep/HRV days) and pages through all historical Strava activities (`200/page` until complete).
-   - An **Hourly Auto-Sync Scheduler** runs automatically every 60 minutes so morning sleep/HRV metrics and newly completed Garmin/Strava workouts appear automatically.
-3. **Training Calendar with Daily Sleep/HRV Badges & Workout Builder**:
-   - Each calendar day cell displays completed workouts, planned structured workouts, and optional compact **Morning Readiness Pills** (Sleep Score, Sleep Hours, and HRV `ms`) so you can visually see how poor sleep or suppressed HRV affected workout execution across any week.
-   - Clicking any calendar date opens the **Structured Workout Builder** supporting Intervals.icu shorthand syntax (`- 15m 65% FTP`, `5x - 4m 108% FTP - 2m 50% FTP`) with `.zwo` / `.erg` export and direct Intervals.icu → Garmin watch sync.
-4. **Custom Chart Studio (Workouts + Garmin Sleep/Health Correlations)**:
-   - Plot any combination of workout metrics AND Garmin health metrics over any custom date range:
-     - *Time-Series Examples*: `Sleep Score & Sleep Duration vs. HRV (7d rolling)`, `Resting HR vs. CTL & ATL`, `VO2max vs. Weekly Training Load`.
-     - *Scatter / Correlation Examples*: `Previous Night Sleep Score vs. Workout Efficiency Factor`, `Overnight HRV vs. Aerobic Decoupling %`, `Acute Training Load vs. Sleep Quality`.
-5. **Slide-Over AI Coach with Sleep & Training Status Awareness**:
-   - The AI Coach receives your latest Garmin Sleep Score, Sleep Duration, 7-day Sleep Debt, HRV Status (`Balanced`/`Unbalanced`/`Low`), 8-state Training Status, and CTL/ATL/TSB on every turn—automatically modulating daily or multi-week cycling and running prescriptions when sleep or HRV is suppressed, and scheduling approved sessions onto your calendar.
-
-### Visual Identity & Theme
-- **Aesthetic Direction**: High-precision physiological telemetry studio inspired by Intervals.icu's information density and Garmin's Training Status clarity.
-- **Color Palette & Mood**:
-  - Dark-first analytical slate canvas (`#0B0F17` primary background, `#111827` elevated surface, `1px solid #1E293B` hairlines) with instant toggle to crisp daylight mode (`#F8FAFC` / `#FFFFFF`).
-  - Semantic physiological accents: **CTL Fitness Blue** (`#3B82F6`), **ATL Fatigue Purple** (`#A855F7`), **TSB Form & Productive Status Emerald/Amber/Crimson** (`#10B981` / `#F59E0B` / `#EF4444`), **Sleep Indigo/Sky** (`#6366F1` / `#38BDF8`), **Cycling Cyan** (`#06B6D4`), and **Running Orange** (`#F97316`).
-- **Typography & Hierarchy**:
-  - `Plus Jakarta Sans` for workspace navigation, section headers, and coaching prose.
-  - `JetBrains Mono` (`tabular-nums`) strictly enforced across all calendar cells, sleep/HRV metrics, lap tables, power/pace curves, and time-series axes.
+- **Key User Flows**:
+  1. **Zero-Latency App Launch After GitHub/Vercel Deploy**: Opening the live Vercel site immediately renders all 4,200+ cached activities, wellness trends, and GPS routes from IndexedDB with a subtle `"Archive Persisted Locally (4,264 workouts) · Syncing latest..."` indicator in the utility sub-bar.
+  2. **Seamless Background Strava Token Refresh**: Even if you open the site days or weeks after a code update, the client passes `x-strava-refresh-token`, `x-strava-expires-at`, `x-strava-client-id`, and `x-strava-client-secret` to the backend, which transparently refreshes the Strava token and returns the rotated credentials to browser storage.
+  3. **1-Click Vercel Environment Variables Export (`Data Sources` Modal)**: A dedicated card in **Data Sources** lets you copy your exact `INTERVALS_API_KEY`, `INTERVALS_ATHLETE_ID`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and `STRAVA_REFRESH_TOKEN` formatted for Vercel's Environment Variables paste box, plus shows live IndexedDB storage stats and a "Force Full Archive Re-Sync" action.
+- **Visual Identity & Theme**:
+  - Preserves the high-contrast **AeroPulse** SaaS telemetry aesthetic (`#F8FAFC` light / `#0B0F17` dark canvas, `#111827` structural surfaces, `#3B82F6` primary accent, `#FC4C02` Strava accent, `#10B981` nominal status) with strict `font-mono tabular-nums` discipline and single-elevation bordered surfaces.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Deriving Garmin's 8-State Training Status & HRV Baseline Corridor from Raw Biometrics**
-  - *Chosen Approach*: Extract all raw Garmin wellness fields synced through Intervals.icu (`sleepSecs`, `sleepScore`, `sleepQuality`, `hrv`, `hrvSDNN`, `restingHR`, `vo2max`, `spO2`, `respiration`, `steps`, `weight`) and compute the 60-day HRV normal corridor ($\mu \pm 0.75\sigma$), Acute-to-Chronic Load Ratio (`ATL / CTL`), and 28-day VO2max slope to classify each day into Garmin's 8 Training Status states (`Peaking`, `Productive`, `Maintaining`, `Recovery`, `Unproductive`, `Strained`, `Overreaching`, `Detraining`).
-  - *Why*: Gives you the exact Garmin Training Status and HRV Status experience right inside your Intervals.icu PMC and Custom Chart workspace, while exposing the underlying math transparently.
-- **Decision 2: Dual-Mode Hourly Auto-Sync Cron (Server Daemon + Vercel Cron Endpoint)**
-  - *Chosen Approach*: Implement both an in-process hourly cron job on the Express server (`0 * * * *`) and a `/api/cron/hourly-sync` endpoint configured in `vercel.json` so new morning sleep/HRV data and completed Garmin/Strava workouts sync automatically every hour.
-- **Decision 3: All-Time Multi-Page Historical Sync with Longitudinal PMC Reconstruction**
-  - *Chosen Approach*: Pull your complete multi-year Intervals.icu wellness and activity history (`2010–present`) and paginate through all historical Strava activities (`200/page`), merging Strava-only indoor trainer rides into the daily training load series so `CTL`, `ATL`, `TSB`, and Load Ratio reflect 100% of your outdoor and indoor training.
+- **Decision 1: Browser IndexedDB (`aeropulse_telemetry_db`) vs. `localStorage` for Telemetry Archive**
+  - *Chosen Approach*: Store credentials and token metadata in `localStorage` (for synchronous header attachment) and store the multi-megabyte telemetry datasets (`activities`, `wellnessDays`, `plannedEvents`, `gearItems`, `connectionStatus`) in `IndexedDB`.
+  - *Why*: `localStorage` throws `QuotaExceededError` above ~5MB (especially once GPS route polylines and Strava segment efforts are attached to ribuan workouts), whereas `IndexedDB` comfortably stores hundreds of megabytes of structured JSON objects asynchronously.
+- **Decision 2: Non-Destructive Incremental Merge vs. Full Replacement**
+  - *Chosen Approach*: Merge incoming synced activities into the existing IndexedDB activity map keyed by canonical ID (`intervalsId` / `stravaId`), preserving previously hydrated `streams`, `routeLatLngs`, `segmentEfforts`, `kudoers`, and `comments` on historical workouts.
+  - *Why*: Prevents a fast incremental sync or a freshly deployed Vercel container (whose `/tmp` segment/route cache is empty) from stripping previously scanned Strava segments or GPS polylines off your older workouts.
+- **Decision 3: Self-Healing Strava Token Refresh with 401 Automatic Retry**
+  - *Chosen Approach*: Track `stravaExpiresAt` in both browser `localStorage` and server memory; proactively refresh whenever `now >= expiresAt - 300`, and if any Strava API call returns `401 Unauthorized`, immediately execute a `refresh_token` grant and retry the request before returning the rotated tokens in the API response payload.
+  - *Why*: Guarantees that Vercel serverless cold starts never fail with an expired access token as long as a valid refresh token is present in either browser headers or Vercel environment variables.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Architecture & Component Diagram
-
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                        AeroPulse Analytical Workspace (React 19)                    │
-│                                                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │ Top Bar: Navigation Tabs │ Date Range & Sport/Env Filters │ AI Coach Drawer   │  │
-│  └───────────────────────────────────────────────────────────────────────────────┘  │
-│                                         │                                           │
-│       ┌─────────────────────────────────┴───────────────────────────────────┐       │
-│       ▼                                                                     ▼       │
-│  ┌──────────────────────────────────────────────────────────┐  ┌─────────────────┐  │
-│  │ Primary Analytical Viewport                              │  │ Persistent      │  │
-│  │                                                          │  │ Slide-Over      │  │
-│  │  ├─ 1. Training Calendar View (/calendar)                │  │ AI Coach Drawer │  │
-│  │  │     ├─ Monthly/Weekly Grid + Sleep/HRV Readiness Pills│  │                 │  │
-│  │  │     ├─ Completed Workouts + Planned Events + Load     │  │ ├─ Sleep, HRV & │  │
-│  │  │     └─ Workout Builder Modal (.zwo/.erg + ICU Sync)   │  │ │  Training     │  │
-│  │  │                                                       │  │ │  Status Pill  │  │
-│  │  ├─ 2. Fitness, Freshness & Garmin Health (/fitness)     │  │ ├─ Multi-Turn   │  │
-│  │  │     ├─ Garmin Training Status, Sleep & HRV Status Bar │  │ │  Run/Bike     │  │
-│  │  │     ├─ All-Time CTL / ATL / TSB + Forward Simulator   │  │ │  Program Chat │  │
-│  │  │     └─ Subplots: Sleep Score/Hrs, HRV Band, RHR, VO2  │  │ └─ Interactive  │  │
-│  │  │                                                       │  │    Proposed     │  │
-│  │  ├─ 3. Custom Chart Builder Studio (/charts)             │  │    Workout Cards│  │
-│  │  │     ├─ Multi-Axis Time-Series (Workouts + Sleep/HRV)  │  │    [+ Schedule  │  │
-│  │  │     └─ Scatter Correlations (e.g. Sleep vs. EF/Drift) │  │     to Calendar]│  │
-│  │  │                                                       │  └────────┬────────┘  │
-│  │  ├─ 4. Power, HR & Pace Curves + Predictors (/curves)    │           │           │
-│  │  │     └─ Season Overlays, Indoor/Outdoor & Race Times   │           │           │
-│  │  │                                                       │           │           │
-│  │  ├─ 5. Totals, Polarization & Gear View (/totals)        │           │           │
-│  │  │     └─ Volume, Z1-Z7 Zones, 80/20 Index & Gear Wear   │           │           │
-│  │  │                                                       │           │           │
-│  │  └─ 6. Activity Detail & Interval Inspector Modal        │           │           │
-│  │        └─ Streams, Intervals/Laps, Segments & Repeats    │           │           │
-│  └────────────────────────────┬─────────────────────────────┘           │           │
-└───────────────────────────────┼─────────────────────────────────────────┼───────────┘
-                                │                                         │
-                                ▼                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                     Express Backend API & Hourly Cron Engine (/api/*)               │
-│                                                                                     │
-│  ├─ Hourly Scheduler (0 * * * *) + GET /api/cron/hourly-sync (Delta Poll + Merge)   │
-│  ├─ GET  /api/sync/all-history      (All-time Intervals.icu + Garmin Health/Strava) │
-│  ├─ GET  /api/intervals/activities/:id/details (Streams + Intervals/Lap Splits)     │
-│  ├─ POST /api/calendar/events       (Create/Update Planned Workout & Sync to ICU)   │
-│  ├─ DELETE /api/calendar/events/:id (Remove Planned Workout)                        │
-│  └─ POST /api/coach/chat            (Gemini 3.8 Flash Advisor + Workout Generator)  │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        Browser Client (React + Vite)                         │
+│                                                                              │
+│  ┌────────────────────────────────────┐  ┌────────────────────────────────┐  │
+│  │ localStorage (Credentials & Tokens)│  │ IndexedDB (aeropulse_telemetry)│  │
+│  │ • intervalsApiKey / AthleteId      │  │ • activities (4,264+ workouts) │  │
+│  │ • stravaClientId / ClientSecret    │  │ • wellnessDays (Garmin/ICU)    │  │
+│  │ • stravaRefreshToken (Auto-Rotated)│  │ • plannedEvents & gearItems    │  │
+│  │ • stravaAccessToken & ExpiresAt    │  │ • hydrated GPS routes/segments │  │
+│  └─────────────────┬──────────────────┘  └───────────────┬────────────────┘  │
+│                    │Headers (x-strava-*, x-intervals-*)  │Instant Boot (<50ms)│
+│                    ▼                                     ▼                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ Incremental Sync & Non-Destructive Reconciler (App.tsx)                │  │
+│  │ • Hydrates UI immediately from IndexedDB on mount                      │  │
+│  │ • Runs fast delta sync (?oldest=45d) & merges into existing archive    │  │
+│  │ • Persists rotated Strava tokens returned from server responses        │  │
+│  └───────────────────────────────────┬────────────────────────────────────┘  │
+└──────────────────────────────────────┼───────────────────────────────────────┘
+                                       │ HTTPS (/api/intervals/sync, /api/strava/sync)
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                 Vercel Serverless / Express Backend (apiRouter)              │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ Self-Healing Strava OAuth Manager (ensureValidStravaToken)             │  │
+│  │ • Reads token + expiresAt from Headers -> RuntimeStore -> process.env  │  │
+│  │ • Proactively refreshes if expired OR retries automatically on HTTP 401│  │
+│  │ • Returns rotated { accessToken, refreshToken, expiresAt } in JSON     │  │
+│  └───────────────────────────────────┬────────────────────────────────────┘  │
+│                                      ▼                                       │
+│            Intervals.icu API v1      &      Strava API v3                    │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Model & State
-- **`UnifiedWellnessDay` (All-Time Garmin Health & PMC Archive)**:
-  - Stores daily fields across your entire history: `date`, `ctl`, `atl`, `tsb`, `loadRatio` (`ATL/CTL`), `rampRate`, `sleepSecs`, `sleepScore` (0–100), `sleepQuality` (1–4), `sleepDebt7dSecs`, `hrvRMSSD`, `hrvSDNN`, `hrvBaseline7d`, `hrvNormalBandLow`, `hrvNormalBandHigh`, `hrvStatus` (`'Balanced' | 'Unbalanced' | 'Low'`), `restingHR`, `vo2MaxCycling`, `vo2MaxRunning`, `spO2`, `respiration`, `steps`, `weightKg`, `garminTrainingStatus` (`'Peaking' | 'Productive' | 'Maintaining' | 'Recovery' | 'Unproductive' | 'Strained' | 'Overreaching' | 'Detraining'`), `trainingStatusReason`, and `dailyLoad`.
-- **`UnifiedActivity` (All-Time Workout Archive)**:
-  - Normalized across every historical Garmin/Intervals.icu and Strava workout (`id`, `intervalsId`, `stravaId`, `startDateLocal`, `name`, `sportCategory`, `environment`, `subType`, `movingTimeSecs`, `distanceMeters`, `elevationGainMeters`, `avgPower`, `normalizedPower`, `intensityFactor`, `variabilityIndex`, `trainingLoad`, `avgHr`, `maxHr`, `avgCadence`, `avgPaceSecsPerKm`, `gapPaceSecsPerKm`, `aerobicDecouplingPct`, `efficiencyFactor`, `zoneSecs`, `intervals[]`, `segmentEfforts[]`, `gearName`, `sourceBadges[]`).
+### Interactive Component & State Mapping
+- **IndexedDB Storage Engine**: Provides asynchronous `loadPersistedTelemetrySnapshot()`, `savePersistedTelemetrySnapshot()`, and `clearPersistedTelemetrySnapshot()` helpers using native `window.indexedDB` with zero external library overhead.
+- **Non-Destructive Activity Merger**: When `/api/intervals/sync` or `/api/strava/sync` returns activities, merges them by ID and Strava ID with the existing client archive so previously loaded `streams`, `routeLatLngs`, `segmentEfforts`, `kudoers`, and `comments` are always retained even if the Vercel server container just cold-started.
+- **Incremental vs. Full Sync Mode**:
+  - If IndexedDB already contains $\ge 100$ historical activities, automatic startup and tab-focus syncs request incremental delta updates (`?oldest=<45_days_ago>` for Intervals.icu and `?full=false` for Strava) and merge them into the persisted archive in ~1.5 seconds.
+  - Clicking **Sync All-Time History** in **Data Sources** triggers a full 2010–present backfill (`?full=true`) and updates IndexedDB.
+- **Data Sources Modal Enhancements**:
+  - Displays live **Browser IndexedDB Archive Status** (number of persisted workouts, earliest workout date, and last saved timestamp).
+  - Adds a 1-click **Copy Vercel `.env` Variables** button that copies `INTERVALS_API_KEY`, `INTERVALS_ATHLETE_ID`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and `STRAVA_REFRESH_TOKEN` so pasting them into Vercel Project Settings -> Environment Variables makes server-side auth permanent across all devices.

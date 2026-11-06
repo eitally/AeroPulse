@@ -164,6 +164,7 @@ function getEffectiveStravaClientConfig(req?: Request) {
   const headerClientSecret = req?.headers['x-strava-client-secret'] as string | undefined;
   const headerRefreshToken = req?.headers['x-strava-refresh-token'] as string | undefined;
   const headerAccessToken = req?.headers['x-strava-access-token'] as string | undefined;
+  const headerExpiresAt = Number(req?.headers['x-strava-expires-at'] || 0);
   const clientId = (
     headerClientId ||
     runtimeStore.stravaClientId ||
@@ -188,7 +189,84 @@ function getEffectiveStravaClientConfig(req?: Request) {
     process.env.STRAVA_ACCESS_TOKEN ||
     ''
   ).trim();
-  return { clientId, clientSecret, refreshToken, accessToken };
+  const expiresAt =
+    runtimeStore.stravaExpiresAt > 0
+      ? runtimeStore.stravaExpiresAt
+      : headerExpiresAt > 0
+        ? headerExpiresAt
+        : 0;
+  return { clientId, clientSecret, refreshToken, accessToken, expiresAt };
+}
+
+function getStravaTokenRotationPayload() {
+  if (!runtimeStore.stravaRefreshToken && !runtimeStore.stravaAccessToken) {
+    return undefined;
+  }
+  return {
+    accessToken: runtimeStore.stravaAccessToken || undefined,
+    refreshToken: runtimeStore.stravaRefreshToken || undefined,
+    expiresAt: runtimeStore.stravaExpiresAt || undefined,
+    clientId: runtimeStore.stravaClientId || undefined,
+    clientSecret: runtimeStore.stravaClientSecret || undefined,
+    athleteName: runtimeStore.stravaAthleteName || undefined,
+  };
+}
+
+async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false): Promise<string> {
+  const { clientId, clientSecret, refreshToken, accessToken, expiresAt } =
+    getEffectiveStravaClientConfig(req);
+  if (clientId && !runtimeStore.stravaClientId) runtimeStore.stravaClientId = clientId;
+  if (clientSecret && !runtimeStore.stravaClientSecret)
+    runtimeStore.stravaClientSecret = clientSecret;
+  if (refreshToken && !runtimeStore.stravaRefreshToken)
+    runtimeStore.stravaRefreshToken = refreshToken;
+  if (accessToken && !runtimeStore.stravaAccessToken) runtimeStore.stravaAccessToken = accessToken;
+  if (expiresAt > 0 && !runtimeStore.stravaExpiresAt) runtimeStore.stravaExpiresAt = expiresAt;
+
+  const nowSecs = Math.floor(Date.now() / 1000);
+  // Refresh if forced (e.g. after 401), missing access token, unknown expiry on Vercel cold start, or within 5 mins of expiry
+  const needsRefresh =
+    forceRefresh ||
+    !runtimeStore.stravaAccessToken ||
+    runtimeStore.stravaExpiresAt === 0 ||
+    nowSecs >= runtimeStore.stravaExpiresAt - 300;
+
+  if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
+    try {
+      const refreshResp = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: runtimeStore.stravaRefreshToken,
+        }),
+      });
+      if (refreshResp.ok) {
+        const refreshed = (await refreshResp.json()) as {
+          access_token: string;
+          refresh_token: string;
+          expires_at: number;
+          athlete?: { firstname?: string; lastname?: string };
+        };
+        runtimeStore.stravaAccessToken = refreshed.access_token;
+        runtimeStore.stravaRefreshToken =
+          refreshed.refresh_token || runtimeStore.stravaRefreshToken;
+        runtimeStore.stravaExpiresAt = refreshed.expires_at;
+        if (refreshed.athlete) {
+          const name = [refreshed.athlete.firstname, refreshed.athlete.lastname]
+            .filter(Boolean)
+            .join(' ');
+          if (name) runtimeStore.stravaAthleteName = name;
+        }
+        saveSessionCache();
+      }
+    } catch {
+      // fallback to existing accessToken if network error
+    }
+  }
+  return runtimeStore.stravaAccessToken;
 }
 
 function resolveCallbackUrl(req: Request): string {
@@ -321,6 +399,7 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     athleteMaxHr: runtimeStore.athleteMaxHr,
     gearItems: runtimeStore.gearItems,
     callbackUrl: resolveCallbackUrl(req),
+    stravaTokens: getStravaTokenRotationPayload(),
   });
 });
 
@@ -497,7 +576,11 @@ apiRouter.post('/api/intervals/disconnect', (_req: Request, res: Response) => {
   res.json({ connected: false });
 });
 
-async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
+async function syncIntervalsAllHistory(
+  apiKey: string,
+  athleteId: string,
+  oldestActivitiesDate = '2010-01-01'
+) {
   const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
   const now = new Date();
   const newest = now.toISOString().slice(0, 10);
@@ -508,19 +591,25 @@ async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
   oldestEventsDate.setUTCDate(oldestEventsDate.getUTCDate() - 180);
   const oldestEvents = oldestEventsDate.toISOString().slice(0, 10);
 
-  // Fetch All-Time Activities (since 2010-01-01), All-Time Wellness (since 2018-01-01), Athlete Profile/Gear, and Calendar Events
+  const safeOldestActs = /^\d{4}-\d{2}-\d{2}$/.test(oldestActivitiesDate)
+    ? oldestActivitiesDate
+    : '2010-01-01';
+  const isDeltaSync = safeOldestActs > '2020-01-01';
+  const oldestWellness = isDeltaSync ? '2024-01-01' : '2018-01-01';
+
+  // Fetch Activities, Wellness, Athlete Profile/Gear, and Calendar Events
   const [profileResp, wellnessResp, activitiesResp, eventsResp] = await Promise.all([
     fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
       headers: { Authorization: authHeader, Accept: 'application/json' },
     }),
     fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=2018-01-01&newest=${newest}`,
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldestWellness}&newest=${newest}`,
       {
         headers: { Authorization: authHeader, Accept: 'application/json' },
       }
     ),
     fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/activities?oldest=2010-01-01&newest=${newest}`,
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/activities?oldest=${safeOldestActs}&newest=${newest}`,
       {
         headers: { Authorization: authHeader, Accept: 'application/json' },
       }
@@ -980,12 +1069,13 @@ async function syncIntervalsAllHistory(apiKey: string, athleteId: string) {
     (Object.keys(segmentsCache).length < 36 || Object.keys(routesCache).length < 20) &&
     uncachedWithSegments.length > 0
   ) {
+    const perSportLimit = isDeltaSync ? 3 : 14;
     const cyclingCandidates = uncachedWithSegments
       .filter((a) => a.sportCategory === 'Cycling')
-      .slice(0, 14);
+      .slice(0, perSportLimit);
     const runningCandidates = uncachedWithSegments
       .filter((a) => a.sportCategory === 'Running')
-      .slice(0, 14);
+      .slice(0, perSportLimit);
     const batchToHydrate = [...cyclingCandidates, ...runningCandidates];
 
     for (let i = 0; i < batchToHydrate.length; i += 10) {
@@ -1329,7 +1419,8 @@ apiRouter.get('/api/intervals/sync', async (req: Request, res: Response) => {
       res.status(401).json({ error: 'Intervals.icu API Key is not configured.' });
       return;
     }
-    const payload = await syncIntervalsAllHistory(apiKey, athleteId);
+    const oldestParam = String(req.query.oldest || '2010-01-01').trim();
+    const payload = await syncIntervalsAllHistory(apiKey, athleteId, oldestParam);
     res.json(payload);
   } catch (error) {
     res.status(500).json({
@@ -1996,50 +2087,14 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
 
 apiRouter.get(['/auth/strava/callback', '/auth/strava/callback/'], stravaCallbackHandler);
 
-async function syncStravaAllHistory(req?: Request, forceFull = false) {
-  const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
-  if (accessToken && !runtimeStore.stravaAccessToken) {
-    runtimeStore.stravaAccessToken = accessToken;
-  }
-  if (refreshToken && !runtimeStore.stravaRefreshToken) {
-    runtimeStore.stravaRefreshToken = refreshToken;
-  }
-
-  // Refresh token if access token is missing (e.g., serverless cold start) or expired
-  const nowSecs = Math.floor(Date.now() / 1000);
-  const needsRefresh =
-    !runtimeStore.stravaAccessToken ||
-    (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60);
-
-  if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
-    const refreshResp = await fetch('https://www.strava.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'refresh_token',
-        refresh_token: runtimeStore.stravaRefreshToken,
-      }),
-    });
-    if (refreshResp.ok) {
-      const refreshed = (await refreshResp.json()) as {
-        access_token: string;
-        refresh_token: string;
-        expires_at: number;
-      };
-      runtimeStore.stravaAccessToken = refreshed.access_token;
-      runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
-      runtimeStore.stravaExpiresAt = refreshed.expires_at;
-      saveSessionCache();
-    }
-  }
+async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly = false) {
+  await ensureValidStravaAccessToken(req, false);
 
   if (!runtimeStore.stravaAccessToken) {
     throw new Error('Strava is not connected via OAuth yet.');
   }
 
-  const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+  let headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
   const cachedArchive = loadJsonFile<Record<string, any>[]>(STRAVA_ARCHIVE_CACHE_FILE, []);
 
   let rawActivitiesMap = new Map<string, Record<string, any>>();
@@ -2047,57 +2102,69 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
     if (item && item.id) rawActivitiesMap.set(String(item.id), item);
   }
 
-  if (cachedArchive.length === 0 || forceFull) {
-    // All-time paginated backfill: fetch up to 30 pages (6,000 activities) in batches of 3 pages until empty
-    for (let batchStart = 1; batchStart <= 30; batchStart += 3) {
-      const pages = [batchStart, batchStart + 1, batchStart + 2];
-      const batchResps = await Promise.all(
-        pages.map((p) =>
-          fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}`, {
-            headers,
-          })
-        )
-      );
-      let reachedEnd = false;
-      for (const r of batchResps) {
-        if (!r.ok) {
-          if (r.status === 401) {
-            const errText = await r.text();
-            if (errText.includes('activity:read_permission')) {
-              runtimeStore.stravaAccessToken = '';
-              runtimeStore.stravaRefreshToken = '';
-              saveSessionCache();
-              throw new Error(
-                "Strava token is missing 'activity:read_all' permission. Please authorize via OAuth (Method A or Method B in Data Sources)."
-              );
-            }
-          }
-          reachedEnd = true;
-          break;
-        }
-        const pageItems = (await r.json()) as Record<string, any>[];
-        if (!Array.isArray(pageItems) || pageItems.length === 0) {
-          reachedEnd = true;
-        } else {
-          for (const item of pageItems) {
-            if (item && item.id) rawActivitiesMap.set(String(item.id), item);
-          }
-          if (pageItems.length < 200) reachedEnd = true;
-        }
-      }
-      if (reachedEnd) break;
-    }
-  } else {
-    // Delta poll latest 200 activities for fast hourly cron updates
-    const latestResp = await fetch(
+  // Probe page 1 first so if the token was stale after a Vercel cold start, we immediately refresh once and retry
+  let firstPageResp = await fetch(
+    'https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1',
+    { headers }
+  );
+  if (firstPageResp.status === 401 && runtimeStore.stravaRefreshToken) {
+    await ensureValidStravaAccessToken(req, true);
+    headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+    firstPageResp = await fetch(
       'https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1',
       { headers }
     );
-    if (latestResp.ok) {
-      const latestItems = (await latestResp.json()) as Record<string, any>[];
-      if (Array.isArray(latestItems)) {
-        for (const item of latestItems) {
-          if (item && item.id) rawActivitiesMap.set(String(item.id), item);
+  }
+
+  if (!firstPageResp.ok) {
+    if (firstPageResp.status === 401) {
+      const errText = await firstPageResp.text();
+      if (errText.includes('activity:read_permission')) {
+        runtimeStore.stravaAccessToken = '';
+        runtimeStore.stravaRefreshToken = '';
+        saveSessionCache();
+        throw new Error(
+          "Strava token is missing 'activity:read_all' permission. Please authorize via OAuth (Method A or Method B in Data Sources)."
+        );
+      }
+      throw new Error(
+        'Strava session expired or invalid. Verify your Strava Client ID, Secret, and Refresh Token in Data Sources.'
+      );
+    }
+  } else {
+    const firstPageItems = (await firstPageResp.json()) as Record<string, any>[];
+    if (Array.isArray(firstPageItems)) {
+      for (const item of firstPageItems) {
+        if (item && item.id) rawActivitiesMap.set(String(item.id), item);
+      }
+      const shouldPaginateAll = (cachedArchive.length === 0 && !deltaOnly) || forceFull;
+      if (shouldPaginateAll && firstPageItems.length === 200) {
+        for (let batchStart = 2; batchStart <= 30; batchStart += 3) {
+          const pages = [batchStart, batchStart + 1, batchStart + 2];
+          const batchResps = await Promise.all(
+            pages.map((p) =>
+              fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}`, {
+                headers,
+              })
+            )
+          );
+          let reachedEnd = false;
+          for (const r of batchResps) {
+            if (!r.ok) {
+              reachedEnd = true;
+              break;
+            }
+            const pageItems = (await r.json()) as Record<string, any>[];
+            if (!Array.isArray(pageItems) || pageItems.length === 0) {
+              reachedEnd = true;
+            } else {
+              for (const item of pageItems) {
+                if (item && item.id) rawActivitiesMap.set(String(item.id), item);
+              }
+              if (pageItems.length < 200) reachedEnd = true;
+            }
+          }
+          if (reachedEnd) break;
         }
       }
     }
@@ -2360,6 +2427,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
   return {
     athleteName: runtimeStore.stravaAthleteName,
     activities: normalizedStravaActivities,
+    stravaTokens: getStravaTokenRotationPayload(),
     starredSegments: starredSegments.map((s) => ({
       segmentId: String(s.id),
       name: String(s.name),
@@ -2375,7 +2443,8 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
 apiRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
   try {
     const forceFull = req.query.full === 'true';
-    const data = await syncStravaAllHistory(req, forceFull);
+    const deltaOnly = req.query.deltaOnly === 'true';
+    const data = await syncStravaAllHistory(req, forceFull, deltaOnly);
     res.json(data);
   } catch (error) {
     res.status(401).json({
@@ -2387,42 +2456,7 @@ apiRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
 
 apiRouter.get('/api/strava/activities/:id/streams', async (req: Request, res: Response) => {
   try {
-    const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
-    if (accessToken && !runtimeStore.stravaAccessToken) {
-      runtimeStore.stravaAccessToken = accessToken;
-    }
-    if (refreshToken && !runtimeStore.stravaRefreshToken) {
-      runtimeStore.stravaRefreshToken = refreshToken;
-    }
-
-    const nowSecs = Math.floor(Date.now() / 1000);
-    const needsRefresh =
-      !runtimeStore.stravaAccessToken ||
-      (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60);
-
-    if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
-      const refreshResp = await fetch('https://www.strava.com/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: 'refresh_token',
-          refresh_token: runtimeStore.stravaRefreshToken,
-        }),
-      });
-      if (refreshResp.ok) {
-        const refreshed = (await refreshResp.json()) as {
-          access_token: string;
-          refresh_token: string;
-          expires_at: number;
-        };
-        runtimeStore.stravaAccessToken = refreshed.access_token;
-        runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
-        runtimeStore.stravaExpiresAt = refreshed.expires_at;
-        saveSessionCache();
-      }
-    }
+    await ensureValidStravaAccessToken(req, false);
 
     if (!runtimeStore.stravaAccessToken) {
       res.status(401).json({ error: 'Strava is not connected.' });
@@ -2706,6 +2740,7 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
     };
 
     const resolvedName =
+      req.body?.authorName ||
       athleteName ||
       runtimeStore.stravaAthleteName ||
       runtimeStore.intervalsAthleteName ||
@@ -2713,12 +2748,17 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
     const [first, ...rest] = String(resolvedName).trim().split(' ');
     const last = rest.join(' ') || '';
 
-    if (action === 'comment' && commentText && String(commentText).trim()) {
+    if (
+      (action === 'comment' || action === 'add_comment') &&
+      commentText &&
+      String(commentText).trim()
+    ) {
       const newComment = {
         id: `comment-${Date.now()}`,
         text: String(commentText).trim(),
         createdAt: new Date().toISOString(),
         athleteName: resolvedName,
+        authorName: resolvedName,
       };
       current.comments = [...(current.comments || []), newComment];
     } else {
