@@ -1,6 +1,81 @@
 <!doctype html>
 <html lang="en" class="dark">
   <head>
+    <script>
+      (function () {
+        // Block broken main-world Chrome extension listeners (e.g. Imagus / HoverZoom
+        // chrome-extension://acfcbfkjgnbfglpnlfipdohfdgpgpogh/assets/content_mainworld.js)
+        // from attaching mouseover (m_over), mousemove (mover), or keydown (key_action) listeners
+        // that throw "Cannot read properties of undefined (reading 'hz' / 'keys')" inside iframes.
+        function isExtensionCallerOrListener(listener) {
+          try {
+            var fnName = (listener && listener.name) || '';
+            if (
+              fnName === 'm_over' ||
+              fnName === 'mover' ||
+              fnName === 'key_action' ||
+              fnName === 'onkeydown'
+            ) {
+              return true;
+            }
+            var stack = String(new Error().stack || '');
+            if (
+              stack.indexOf('chrome-extension://') !== -1 ||
+              stack.indexOf('moz-extension://') !== -1 ||
+              stack.indexOf('content_mainworld') !== -1
+            ) {
+              return true;
+            }
+          } catch (_) {
+            // ignore
+          }
+          return false;
+        }
+
+        function patchAddEventListener(proto) {
+          if (!proto || !proto.addEventListener) return;
+          var origAdd = proto.addEventListener;
+          proto.addEventListener = function (type, listener, options) {
+            if (isExtensionCallerOrListener(listener)) {
+              // Completely skip registering the broken extension listener so it never executes
+              return undefined;
+            }
+            return origAdd.call(this, type, listener, options);
+          };
+        }
+
+        patchAddEventListener(
+          typeof EventTarget !== 'undefined' ? EventTarget.prototype : undefined
+        );
+        if (typeof Window !== 'undefined' && Window.prototype !== EventTarget.prototype) {
+          patchAddEventListener(Window.prototype);
+        }
+        if (typeof Document !== 'undefined' && Document.prototype !== EventTarget.prototype) {
+          patchAddEventListener(Document.prototype);
+        }
+
+        // Guard window.onkeydown / document.onkeydown setters against extension assignment
+        [window, document].forEach(function (target) {
+          if (!target) return;
+          ['onkeydown', 'onkeyup', 'onmouseover', 'onmousemove'].forEach(function (prop) {
+            try {
+              Object.defineProperty(target, prop, {
+                configurable: true,
+                enumerable: true,
+                get: function () {
+                  return null;
+                },
+                set: function () {
+                  // Ignore direct property handlers from mainworld extensions
+                },
+              });
+            } catch (_) {
+              // ignore
+            }
+          });
+        });
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AeroPulse — Multi-Sport Physiology, Load & AI Coaching PWA</title>
@@ -10,7 +85,7 @@
     />
     <meta property="og:title" content="AeroPulse — Multi-Sport Physiology, Load & AI Coaching PWA" />
     <meta
-      property="og:description"
+      name="og:description"
       content="Unified fitness, physiology, Strava segment, and AI recovery coaching PWA bridging Intervals.icu, Garmin Connect wellness, and Strava OAuth2."
     />
     <meta property="og:type" content="website" />

@@ -1,6 +1,6 @@
 {
-  "summary": "Updated implementation plan for AeroPulse adding a comprehensive fork-ready README.md, .env.example, and in-app setup guide so anyone cloning or forking the GitHub repository to Vercel or local dev can easily configure their own Intervals.icu, Strava, Garmin sync, and Gemini credentials.",
-  "updatedAt": "2026-11-05T21:46:36.335869651Z",
+  "summary": "Revised implementation plan detailing full Garmin Health, Sleep, HRV Status, and 8-state Training Status integration (sleep duration, Garmin sleep score, sleep quality, overnight HRV rMSSD + 7d/60d baseline bands, resting HR, VO2max trend, SpO2, respiration, steps, and Acute-to-Chronic Load Ratio) across the Training Calendar, Fitness & Freshness view, Custom Chart Builder, and AI Coach.",
+  "updatedAt": "2026-11-06T04:43:24.919425603Z",
   "requestFeedback": true,
   "userFacing": true
 }

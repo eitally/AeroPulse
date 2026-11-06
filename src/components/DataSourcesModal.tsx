@@ -1,5 +1,15 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Copy, ExternalLink, KeyRound, Link2, RefreshCw, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  Clock,
+  Copy,
+  Database,
+  ExternalLink,
+  KeyRound,
+  Link2,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { ConnectionStatus } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -10,8 +20,10 @@ interface DataSourcesModalProps {
   onConnectIntervals: (athleteId: string, apiKey: string) => Promise<void>;
   onDisconnectIntervals: () => Promise<void>;
   onSaveStravaCredentials: (clientId: string, clientSecret: string) => Promise<void>;
-  onLaunchStravaOAuth: () => Promise<void>;
-  onSyncNow: () => Promise<void>;
+  onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
+  onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
+  onSaveStravaDirectToken: (refreshToken: string, accessToken?: string) => Promise<void>;
+  onSyncNow: (fullHistory?: boolean) => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
 }
@@ -24,18 +36,42 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onDisconnectIntervals,
   onSaveStravaCredentials,
   onLaunchStravaOAuth,
+  onExchangeStravaCode,
+  onSaveStravaDirectToken,
   onSyncNow,
   isSyncing,
   errorMessage,
 }) => {
   const [athleteId, setAthleteId] = useState(status.intervalsAthleteId || '0');
   const [intervalsKey, setIntervalsKey] = useState('');
-  const [stravaClientId, setStravaClientId] = useState('');
+  const [stravaClientId, setStravaClientId] = useState(status.stravaClientId || '');
   const [stravaClientSecret, setStravaClientSecret] = useState('');
+  const [pastedCodeOrUrl, setPastedCodeOrUrl] = useState('');
+  const [directRefreshToken, setDirectRefreshToken] = useState('');
+  const [directAccessToken, setDirectAccessToken] = useState('');
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (status.stravaClientId && !stravaClientId) {
+      setStravaClientId(status.stravaClientId);
+    }
+    if (status.intervalsAthleteId && athleteId === '0') {
+      setAthleteId(status.intervalsAthleteId);
+    }
+  }, [status.stravaClientId, status.intervalsAthleteId, stravaClientId, athleteId]);
+
   if (!isOpen) return null;
+
+  const devDomainOnly = status.devCallbackUrl
+    .replace(/^https?:\/\//, '')
+    .split('/')[0];
+  const sharedDomainOnly = status.sharedCallbackUrl
+    .replace(/^https?:\/\//, '')
+    .split('/')[0];
+  const activeDomainOnly = status.currentOriginCallbackUrl
+    .replace(/^https?:\/\//, '')
+    .split('/')[0];
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -53,7 +89,28 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const handleStravaCredsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSaveStravaCredentials(stravaClientId, stravaClientSecret);
-    setLocalStatusMsg('Strava Client ID & Secret saved for this instance. Click "Connect Strava via OAuth Popup" below.');
+    setLocalStatusMsg(
+      'Strava Client ID & Secret saved. Choose any of the 3 connection methods below.'
+    );
+  };
+
+  const handleCodeExchangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pastedCodeOrUrl.trim()) return;
+    setLocalStatusMsg(null);
+    await onExchangeStravaCode(pastedCodeOrUrl.trim());
+    setPastedCodeOrUrl('');
+    setLocalStatusMsg('Strava authorization code exchanged and full history synced!');
+  };
+
+  const handleDirectTokenSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directRefreshToken.trim() && !directAccessToken.trim()) return;
+    setLocalStatusMsg(null);
+    await onSaveStravaDirectToken(directRefreshToken.trim(), directAccessToken.trim());
+    setDirectRefreshToken('');
+    setDirectAccessToken('');
+    setLocalStatusMsg('Strava token verified and full history synced!');
   };
 
   return (
@@ -63,20 +120,20 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Data Sources, API Keys & Fork Setup
+              Data Sources, All-Time Archive &amp; Hourly Auto-Sync
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Connect your live Intervals.icu (including Garmin Connect wellness/workouts) and Strava OAuth2 accounts
+              Connect live Intervals.icu (Garmin Connect workouts + Sleep/HRV wellness) and Strava OAuth2
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={onSyncNow}
+              onClick={() => onSyncNow(true)}
               disabled={isSyncing}
-              className="min-h-[38px] flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+              className="min-h-[38px] flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing...' : 'Sync Telemetry'}</span>
+              <span>{isSyncing ? 'Syncing History...' : 'Sync Complete History'}</span>
             </button>
             <button
               onClick={onClose}
@@ -89,7 +146,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+        <div className="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
           {errorMessage && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-600 dark:text-red-300">
               {errorMessage}
@@ -101,20 +158,328 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </div>
           )}
 
-          {/* Section 1: Intervals.icu + Garmin Connect Sync */}
+          {/* All-Time Archive & Hourly Cron Status Banner */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-4 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-blue-500" />
+                  <span>All-Time Activity &amp; Health Archive</span>
+                </span>
+                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                  {status.earliestActivityDate ? `Since ${status.earliestActivityDate}` : '2019–2026'}
+                </span>
+              </div>
+              <div className="text-xs font-mono text-slate-600 dark:text-slate-300">
+                Total Loaded: <strong>{status.totalActivitiesCount ?? 0}</strong> workouts (Garmin:{' '}
+                <strong>{status.garminActivitiesCount ?? 0}</strong> · Strava:{' '}
+                <strong>{status.stravaActivitiesCount ?? 0}</strong>)
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Includes all outdoor rides, smart trainer sessions, road/trail/treadmill runs, rows, swims, and nightly Garmin Sleep &amp; HRV records.
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-4 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Hourly Auto-Sync Cron (0 * * * *)</span>
+                </span>
+                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  Active
+                </span>
+              </div>
+              <div className="text-xs font-mono text-slate-600 dark:text-slate-300">
+                Last Sync:{' '}
+                <strong>
+                  {status.lastSyncedAt
+                    ? new Date(status.lastSyncedAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Just now'}
+                </strong>{' '}
+                · Next Poll:{' '}
+                <strong>
+                  {status.nextHourlySyncAt
+                    ? new Date(status.nextHourlySyncAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'In 60m'}
+                </strong>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Automatically polls Intervals.icu and Strava every 60 minutes via server timer &amp; <code className="font-mono">/api/cron/hourly-sync</code>.
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Strava OAuth2 & All-Time Multi-Page Backfill */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    01. Intervals.icu API + Garmin Connect Wellness Bridge
+                    01. Strava OAuth2 (All-Time Paginated Backfill, Segment PRs &amp; Redacted Rides)
                   </h3>
-                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                    · {status.intervalsConnected ? `Connected (${status.intervalsAthleteName || status.intervalsAthleteId})` : 'Using Calibration Dataset'}
+                  <span
+                    className={`text-xs font-mono font-semibold ${
+                      status.stravaConnected
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                    }`}
+                  >
+                    ·{' '}
+                    {status.stravaConnected
+                      ? `Connected (${status.stravaAthleteName || 'OAuth Active'})`
+                      : status.stravaClientId
+                        ? `Client ID ${status.stravaClientId} Saved — Ready to Authorize`
+                        : 'OAuth Ready'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Pulls CTL/ATL/TSB load, power/HR/pace streams, planned calendar workouts, and Garmin-synced daily HRV, Resting HR, Sleep Score, and VO2max.
+                  Paginates through your entire Strava history (<code className="font-mono">per_page=200</code> across all pages) to recover all 1,372 Strava-only rides/runs, PR medals, and segment efforts.
+                </p>
+              </div>
+              <a
+                href="https://www.strava.com/settings/api"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+              >
+                <span>Open Strava API Settings</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            {/* Step 1: Client ID & Secret */}
+            <form onSubmit={handleStravaCredsSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              <div className="sm:col-span-4">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Strava Client ID (<code className="font-mono">STRAVA_CLIENT_ID</code>)
+                </label>
+                <input
+                  type="text"
+                  value={stravaClientId}
+                  onChange={(e) => setStravaClientId(e.target.value)}
+                  placeholder="e.g. 121717"
+                  className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-5">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Strava Client Secret (<code className="font-mono">STRAVA_CLIENT_SECRET</code>)
+                </label>
+                <input
+                  type="password"
+                  value={stravaClientSecret}
+                  onChange={(e) => setStravaClientSecret(e.target.value)}
+                  placeholder={
+                    status.stravaClientId
+                      ? '•••••••••••••••••••• (Saved on Server)'
+                      : 'Paste Client Secret'
+                  }
+                  className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-3 flex items-end">
+                <button
+                  type="submit"
+                  className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 transition-colors whitespace-nowrap"
+                >
+                  {status.stravaClientId ? 'Update Client Keys' : 'Save Client Keys'}
+                </button>
+              </div>
+            </form>
+
+            {/* Important Strava Callback Domain Note + 3 Connection Methods */}
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-4 space-y-4">
+              {/* Method A: Cloud Popup OAuth (requires setting Strava Authorization Callback Domain) */}
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">
+                    <Link2 className="w-3.5 h-3.5 text-[#FC4C02]" />
+                    <span>Method A: OAuth2 Popup (Set Strava &quot;Authorization Callback Domain&quot;)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onLaunchStravaOAuth('cloud')}
+                    className="min-h-[36px] inline-flex items-center gap-1.5 rounded-lg bg-[#FC4C02] hover:bg-[#e34402] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>
+                      {status.stravaConnected
+                        ? 'Reconnect Strava OAuth2 Popup'
+                        : 'Connect Strava via OAuth2 Popup'}
+                    </span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  In <a href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer" className="text-blue-500 underline">strava.com/settings/api</a>, Strava&apos;s <strong>Authorization Callback Domain</strong> field requires <strong>only the domain hostname</strong> (no <code className="font-mono">https://</code> and no <code className="font-mono">/auth/strava/callback</code> path):
+                </p>
+
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-amber-500/40 rounded-md px-3 py-1.5">
+                    <div className="truncate">
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold mr-2">
+                        Strava &quot;Authorization Callback Domain&quot; (Copy this):
+                      </span>
+                      <code className="font-mono text-slate-900 dark:text-slate-100 font-bold">
+                        {activeDomainOnly}
+                      </code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(activeDomainOnly, 'domain_active')}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 shrink-0"
+                    >
+                      {copiedLabel === 'domain_active' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedLabel === 'domain_active' ? 'Copied' : 'Copy Domain'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
+                    <div className="truncate">
+                      <span className="text-slate-500 mr-2">Dev Callback URL:</span>
+                      <code className="font-mono text-slate-900 dark:text-slate-100">
+                        {status.devCallbackUrl}
+                      </code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(devDomainOnly, 'domain_dev')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0"
+                    >
+                      {copiedLabel === 'domain_dev' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedLabel === 'domain_dev' ? 'Copied' : 'Copy Dev Domain'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
+                    <div className="truncate">
+                      <span className="text-slate-500 mr-2">Shared Callback URL:</span>
+                      <code className="font-mono text-slate-900 dark:text-slate-100">
+                        {status.sharedCallbackUrl}
+                      </code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(sharedDomainOnly, 'domain_shared')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0"
+                    >
+                      {copiedLabel === 'domain_shared' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedLabel === 'domain_shared' ? 'Copied' : 'Copy Shared Domain'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Method B: Keep Strava Callback Domain as 'localhost' + Paste Redirect URL/Code */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Method B: Keep Strava Callback Domain as <code className="font-mono">localhost</code> &amp; Paste Code URL
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onLaunchStravaOAuth('localhost')}
+                    className="min-h-[32px] px-3 py-1 rounded-lg border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors"
+                  >
+                    1. Authorize with localhost Redirect
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  If your Strava app&apos;s Authorization Callback Domain is <code className="font-mono">localhost</code>, click the button above, click <strong>Authorize</strong> on Strava, then copy the resulting <code className="font-mono">http://localhost/exchange_token?state=&amp;code=...</code> URL from the popup&apos;s address bar and paste it here:
+                </p>
+                <form onSubmit={handleCodeExchangeSubmit} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={pastedCodeOrUrl}
+                    onChange={(e) => setPastedCodeOrUrl(e.target.value)}
+                    placeholder="Paste http://localhost/exchange_token?... or raw code here"
+                    className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                  <button
+                    type="submit"
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white whitespace-nowrap"
+                  >
+                    2. Exchange Code &amp; Sync
+                  </button>
+                </form>
+              </div>
+
+              {/* Method C: Direct Strava Refresh Token / Access Token Paste */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  Method C: Paste Strava Refresh Token / Access Token Directly
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Or paste <strong>Your Refresh Token</strong> (and optional Access Token) directly from <a href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer" className="text-blue-500 underline">strava.com/settings/api</a>:
+                </p>
+                <form onSubmit={handleDirectTokenSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                  <div className="sm:col-span-5">
+                    <input
+                      type="password"
+                      value={directRefreshToken}
+                      onChange={(e) => setDirectRefreshToken(e.target.value)}
+                      placeholder="Strava Refresh Token"
+                      className="w-full min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <input
+                      type="password"
+                      value={directAccessToken}
+                      onChange={(e) => setDirectAccessToken(e.target.value)}
+                      placeholder="Access Token (optional)"
+                      className="w-full min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <button
+                      type="submit"
+                      className="w-full min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white whitespace-nowrap"
+                    >
+                      Save Token &amp; Sync
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Intervals.icu + Garmin Connect Sync */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    02. Intervals.icu API + Garmin Connect Wellness Bridge
+                  </h3>
+                  <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                    ·{' '}
+                    {status.intervalsConnected
+                      ? `Connected (${status.intervalsAthleteName || status.intervalsAthleteId})`
+                      : 'Using Calibration Dataset'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                  Pulls all-time Garmin workouts (`2010–present`), CTL/ATL/TSB load, auto-detected intervals, planned workouts, and nightly Garmin Sleep Score, Sleep Duration, Overnight HRV, Resting HR, VO2max, and eFTP.
                 </p>
               </div>
               <a
@@ -149,7 +514,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   type="password"
                   value={intervalsKey}
                   onChange={(e) => setIntervalsKey(e.target.value)}
-                  placeholder={status.intervalsConnected ? '•••••••••••••••••••• (Connected)' : 'Paste your Intervals.icu API Key'}
+                  placeholder={
+                    status.intervalsConnected
+                      ? '•••••••••••••••••••• (Connected)'
+                      : 'Paste your Intervals.icu API Key'
+                  }
                   className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -173,145 +542,13 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </form>
           </div>
 
-          {/* Section 2: Strava OAuth2 & Segment Performance */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    02. Strava OAuth2 (Activities, Segment PRs & Gear Mileage)
-                  </h3>
-                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                    · {status.stravaConnected ? `Connected (${status.stravaAthleteName || 'OAuth Active'})` : 'OAuth Ready'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Enriches activities with Strava <code className="font-mono">segment_efforts</code>, PR medals (#1/2/3), starred benchmark climbs, and indoor/outdoor flags.
-                </p>
-              </div>
-              <a
-                href="https://www.strava.com/settings/api"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
-              >
-                <span>Strava API Dashboard</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            {/* Required OAuth Callback URLs */}
-            <div className="rounded-lg bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                <Link2 className="w-3.5 h-3.5 text-blue-500" />
-                <span>OAuth Redirect / Callback URLs (Copy for Strava API Settings)</span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
-                  <div className="truncate">
-                    <span className="text-slate-500 mr-2">Active Origin Callback:</span>
-                    <code className="font-mono text-slate-900 dark:text-slate-100">{status.currentOriginCallbackUrl}</code>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(status.currentOriginCallbackUrl, 'active')}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0"
-                  >
-                    {copiedLabel === 'active' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedLabel === 'active' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
-                  <div className="truncate">
-                    <span className="text-slate-500 mr-2">Development URL:</span>
-                    <code className="font-mono text-slate-900 dark:text-slate-100">{status.devCallbackUrl}</code>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(status.devCallbackUrl, 'dev')}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0"
-                  >
-                    {copiedLabel === 'dev' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedLabel === 'dev' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
-                  <div className="truncate">
-                    <span className="text-slate-500 mr-2">Shared / Deployed URL:</span>
-                    <code className="font-mono text-slate-900 dark:text-slate-100">{status.sharedCallbackUrl}</code>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(status.sharedCallbackUrl, 'shared')}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0"
-                  >
-                    {copiedLabel === 'shared' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedLabel === 'shared' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Optional runtime Strava Client ID/Secret form for forkers who haven't set .env yet */}
-            <form onSubmit={handleStravaCredsSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-              <div className="sm:col-span-4">
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Strava Client ID (<code className="font-mono">STRAVA_CLIENT_ID</code>)
-                </label>
-                <input
-                  type="text"
-                  value={stravaClientId}
-                  onChange={(e) => setStravaClientId(e.target.value)}
-                  placeholder="e.g. 129481"
-                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-              </div>
-              <div className="sm:col-span-5">
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Strava Client Secret (<code className="font-mono">STRAVA_CLIENT_SECRET</code>)
-                </label>
-                <input
-                  type="password"
-                  value={stravaClientSecret}
-                  onChange={(e) => setStravaClientSecret(e.target.value)}
-                  placeholder="Paste Client Secret (or set in .env / Vercel)"
-                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-              </div>
-              <div className="sm:col-span-3 flex items-end">
-                <button
-                  type="submit"
-                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-200 transition-colors whitespace-nowrap"
-                >
-                  Save Client Keys
-                </button>
-              </div>
-            </form>
-
-            <div className="pt-1 flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={onLaunchStravaOAuth}
-                className="min-h-[42px] inline-flex items-center gap-2 rounded-lg bg-[#FC4C02] hover:bg-[#e34402] px-4 py-2 text-xs font-semibold text-white transition-colors"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>{status.stravaConnected ? 'Reconnect Strava OAuth2 Popup' : 'Connect Strava via OAuth2 Popup'}</span>
-              </button>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Opens <code className="font-mono">strava.com/oauth/authorize</code> directly in a popup window
-              </span>
-            </div>
-          </div>
-
           {/* Section 3: GitHub Fork & Vercel Self-Hosting Quick Guide + PWA Install */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              03. Deploying Your Own Fork to Vercel via GitHub & Installing PWA
+              03. Deploying Your Own Fork to Vercel via GitHub &amp; Installing PWA
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              This repository includes <code className="font-mono">vercel.json</code>, <code className="font-mono">/api/index.ts</code>, <code className="font-mono">.env.example</code>, and a full <code className="font-mono">README.md</code> guide. Anyone forking the repo on GitHub can import it into Vercel and set <code className="font-mono">GEMINI_API_KEY</code>, <code className="font-mono">INTERVALS_API_KEY</code>, <code className="font-mono">STRAVA_CLIENT_ID</code>, and <code className="font-mono">STRAVA_CLIENT_SECRET</code> in Vercel Environment Variables—or enter their keys directly in this modal.
+              This repository includes <code className="font-mono">vercel.json</code> (with the <code className="font-mono">0 * * * *</code> hourly cron job), <code className="font-mono">/api/index.ts</code>, and <code className="font-mono">.env.example</code>.
             </p>
             <div className="pt-1 max-w-xs">
               <PWAInstallButton variant="full" />

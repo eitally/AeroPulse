@@ -1,159 +1,142 @@
-# AeroPulse — Unified Multi-Sport Physiology, Load, Segments, Goals & AI Coaching PWA
+# AeroPulse — Full-History Intervals.icu Analytics Suite, Garmin Health/Sleep/Training Status, Hourly Auto-Sync & AI Coach
 
-AeroPulse unifies your **Intervals.icu** (including auto-synced **Garmin Connect** daily health & workout telemetry) and **Strava** data into an installable, mobile-ready **Progressive Web App (PWA)** and desktop physiological cockpit. It correlates daily autonomic readiness (HRV, Resting HR, Sleep) with chronic training load (CTL, ATL, TSB), **Outdoor vs. Indoor (Treadmill/Trainer)** activity filtering, **Strava Segment Performance**, **Separate Running & Cycling Annual Mileage Targets**, **Target Race & Performance Goals**, and an interactive **Gemini Health & Fitness Coach**.
+AeroPulse will be upgraded into a comprehensive endurance training, physiological health, and workout-planning platform modeled directly after **Intervals.icu**, backed by **100% all-time historical synchronization** across Garmin Connect (via Intervals.icu) and Strava OAuth2, **full Garmin Sleep, HRV & Training Status telemetry**, **automated hourly background polling**, arbitrary multi-metric time-series and correlation charting, and a persistent **AI Training & Program Coach** that can design and schedule daily or multi-week cycling and running workouts directly onto your Training Calendar.
 
 ---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Confirmed Scope & Fork-Ready GitHub Documentation**
-> - **Fork-Ready `README.md`, `.env.example` & In-App Setup Guide**:
->   - The repository will include a complete, step-by-step **`README.md`** and documented **`.env.example`** designed for other athletes or developers who fork or clone the GitHub repo:
->     1. **Intervals.icu + Garmin Connect Sync Setup**: How to link Garmin Connect (activities + wellness/HRV/sleep) in Intervals.icu and generate a personal `INTERVALS_API_KEY` and `INTERVALS_ATHLETE_ID` at `https://intervals.icu/settings`.
->     2. **Strava OAuth2 App Setup**: How to create a personal Strava API application at `https://www.strava.com/settings/api`, obtain `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`, and configure the Authorization Callback Domain for Vercel, Cloud Run, or `localhost:3000`.
->     3. **Gemini API Key Setup**: How to configure `GEMINI_API_KEY` in Vercel or local `.env` for the AI Coach and Daily Workout Options Generator.
->     4. **One-Click Vercel / GitHub Deployment Guide**: Step-by-step instructions for importing the forked repository into Vercel and setting environment variables.
-> - **Separate Annual Mileage Targets (Running & Cycling)**:
->   - Dedicated YTD mileage pacing trackers for **Running** and **Cycling** (with `mi` / `km` unit toggle), comparing cumulative distance against the pro-rated daily target line (*Ahead / Behind Pace*), required weekly average for the rest of the year, and an **Outdoor vs. Indoor (Treadmill / Trainer)** mileage split bar.
-> - **Outdoor vs. Indoor (Treadmill / Smart Trainer) Filter**:
->   - Global and view-level environment selector (`Combined`, `Outdoor Only`, `Indoor: Trainer / Treadmill`) so you can isolate outdoor road/trail efforts, indoor Zwift/trainer/treadmill sessions, or analyze both together.
-> - **Strava Segment Performance & Benchmark History**:
->   - Pulls detailed Strava `segment_efforts` (`include_all_efforts=true`) and starred segments, surfacing PR ranks (`1st`, `2nd`, `3rd`), elapsed time, average power (`W` / `W/kg`), pace, heart rate, and grade inside each activity and across historical attempts.
+> This revised plan explicitly incorporates your **Garmin Health, Sleep & Training Status** metrics alongside the **All-Time Historical Sync**, **Hourly Background Cron**, and **Intervals.icu Analytics Suite**:
+
+- **Confirmed Decision 1 — Full Garmin Health, Sleep & Training Status Telemetry**:
+  - **Garmin Sleep Tracking**: Pulls your real nightly Garmin sleep data (`sleepSecs` duration, `sleepScore` 0–100, `sleepQuality` rating, and overnight sleeping HR) across your entire history, displaying nightly sleep badges on the Training Calendar, a dedicated **Sleep & Recovery** subplot on the Fitness page, and longitudinal sleep trends in the Custom Chart Builder.
+  - **Garmin Autonomic & Daily Health Biometrics**: Syncs overnight **HRV (`rMSSD` & `SDNN`)** with 7-day rolling averages and 60-day normal baseline corridors (**Garmin HRV Status**: `Balanced`, `Unbalanced`, `Low`), **Resting HR**, **Garmin VO2max** (Cycling & Running), **SpO2**, **Respiration Rate**, **Steps**, and **Weight**.
+  - **8-State Garmin Training Status Engine**: Combines your Garmin **VO2max 28-day trend**, **HRV Status vs. baseline**, **Sleep Score**, and **Acute-to-Chronic Load Ratio (`ATL / CTL`)** to compute and track all 8 official Training Status states (`Productive`, `Peaking`, `Maintaining`, `Recovery`, `Unproductive`, `Strained`, `Overreaching`, `Detraining`) with clear physiological explanations.
+- **Confirmed Decision 2 — All-Time Historical Sync + Automated Hourly Background Cron (`0 * * * *`)**:
+  - **All-Time Backfill**: Pulls your complete historical timeline (`2010-01-01` through today) from Intervals.icu (`activities`, `wellness`, `events`) and pages through all historical Strava activities (`per_page=200` until exhaustion) so every indoor smart-trainer ride and outdoor workout back to day one is indexed and cached.
+  - **Hourly Background Cron**: Runs an automated hourly sync job (`0 * * * *`) both via a server-side background scheduler and a dedicated `/api/cron/hourly-sync` endpoint (configured in `vercel.json` for Vercel Cron deployments) that delta-polls Strava and Intervals.icu every hour.
+- **Confirmed Decision 3 — Full Intervals.icu Workspace Emulation + Advanced Endurance Tools**:
+  - **Training Calendar (`/calendar`)**: Monthly/weekly grid juxtaposing completed workouts, planned structured workouts, nightly Garmin Sleep Score & HRV badges, weekly training load (`TSS`), duration, distance by sport, indoor/outdoor tags, and an Intervals.icu-style text workout syntax builder with `.zwo` / `.erg` export.
+  - **Fitness, Freshness & Garmin Health View (`/fitness`)**: Interactive Performance Management Chart (`CTL` Fitness, `ATL` Fatigue, `TSB` Form), **Garmin Training Status & HRV Status Banner**, Forward PMC Tapering Simulator, and stackable subplots for **Sleep Duration & Score**, **HRV vs. Baseline Band**, **Resting HR**, **VO2max**, and **Weight**.
+  - **Arbitrary Custom Chart Builder (`/charts`)**: Supports both **Multi-Axis Time-Series Plots** and **Metric Correlation Scatter Plots** across 30+ workout and Garmin health metrics (so you can chart *Sleep Score vs. Next-Day Efficiency Factor*, *HRV vs. Training Load*, *Resting HR vs. CTL*, or *Power vs. Heart Rate* over any custom date range).
+  - **Power, HR & Pace Curves + Durability (`/curves`)**: Maximal effort duration curves (`1s` to `5h`) for Cycling Power (`W`, `W/kg`), Running Pace (`/mi`, `/km`, GAP), and Heart Rate with multi-season overlays, automatic `eFTP` / Critical Speed estimation, **Indoor vs. Outdoor Power/HR Delta**, and **Race Time Predictor**.
+  - **Totals, Polarization & Gear Tracker (`/totals`)**: Weekly, monthly, and annual volume and time-in-zone distributions (`Z1–Z7`), **Seiler 80/20 Polarization Index**, Annual Mileage Target tracking, and **Shoe & Bike Gear Lifespan Tracking**.
+  - **Activity Detail, Interval Inspector & Similar Workout Matcher**: Deep drill-down modal displaying second-by-second streams, auto-detected work intervals and lap splits, aerobic decoupling (`Pw:Hr` / `Pa:Hr`), Strava segment efforts, and **Matched Similar Workouts**.
+- **Confirmed Decision 4 — Omnipresent AI Coach Drawer + Calendar Program Scheduling**:
+  - Accessible on every page via a **persistent slide-over AI Coach Drawer** with full awareness of your Garmin Sleep Score, HRV Status, Training Status, CTL/ATL/TSB, and workout history—capable of scheduling single workouts or multi-week cycling/running programs directly onto your Training Calendar.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Acts as a single pane of glass over your athletic physiology on both desktop and mobile home screens. By bridging Intervals.icu’s sports-science engine (and its Garmin Connect wellness pipeline) with Strava’s activity & segment telemetry and Gemini’s reasoning engine, it answers five questions every day:
-  1. *How recovered is my autonomic nervous system today?* (HRV rMSSD vs. 7-day rolling baseline, RHR, Sleep).
-  2. *How is my training load and annual mileage trending toward my Running and Cycling targets?* (Fitness CTL vs. Target Peak CTL, plus YTD Running & Cycling mileage pacing split by Outdoor vs. Trainer/Treadmill).
-  3. *How am I performing on key Strava segments and physiological curves?* (Segment PRs, `W/kg` or pace vs. HR on benchmark climbs/routes, and aerobic decoupling).
-  4. *What are my best workout options for today?* (3 selectable daily workout prescriptions tailored to your readiness, indoor/outdoor preference, schedule, and sport).
-  5. *What does my data say when I ask a specific question?* (Interactive Gemini Coach chat grounded in your live wellness, activities, segments, and goals).
+- **What It Does**: Provides an end-to-end endurance performance, Garmin health/sleep, and workout-planning environment matching Intervals.icu's analytical depth while unifying Garmin Connect and Strava's complete multi-year history, polling automatically every hour, and embedding a context-aware Gemini AI Coach.
+- **Target Audience / Persona**: Data-driven multi-sport athletes (cyclists and runners training both outdoors and indoors on smart trainers/treadmills) who want complete longitudinal visibility into their fitness, workload, sleep, and autonomic recovery alongside intelligent, adaptive program design.
+- **Key Value**: Eliminates the data gap caused by Intervals.icu redacting Strava-sourced indoor trainer rides, surfaces your Garmin epix Pro sleep, HRV, VO2max, and Training Status directly alongside your workload curves, and turns coaching conversations into scheduled calendar workouts.
 
 ---
 
-## 2. User Experience, Mobile PWA & Visual Design
+## 2. User Experience & Visual Design
 
 ### Key User Flows
-1. **Desktop Top Bar & Mobile Bottom Tab Bar Navigation**:
-   - **Desktop (`md:` and up)**: Follows the strict three-zone Top Bar Contract — **AeroPulse** wordmark on the left, five concise single-line navigation links in the center (`Overview`, `Activities`, `Physiology`, `Goals`, `Coach`), and the primary action (`Data Sources` + contextual `Install App` trigger) on the right.
-   - **Mobile PWA (`< md`)**: Compact sticky top header with brand wordmark, `Install App` / `Data Sources` trigger, and a fixed thumb-zone **Bottom Tab Bar** (`Overview`, `Activities`, `Physiology`, `Goals`, `Coach`) with `44×44px` minimum touch hitboxes and `<15%` aggregate sticky viewport height.
-   - **Global Environment & Unit Filter Bar**: Below the header, users can toggle **Sport** (`All`, `Cycling`, `Running`, `Swim & Multisport`, `Strength`), **Environment** (`Combined`, `Outdoor Only`, `Indoor: Trainer/Treadmill`), and **Distance Units** (`mi` / `km`).
-2. **Data Sources & Self-Service Onboarding Modal**:
-   - Allows any user who forks or opens the app to connect their own data either via **Environment Variables** (`.env` / Vercel Dashboard) or directly via **In-App Credential Input** (Intervals.icu Athlete ID + API Key and Strava OAuth2 Client ID / Secret or one-click OAuth popup).
-   - Displays dynamic, copyable OAuth callback URLs that automatically adapt to whichever domain the fork is hosted on (`window.location.origin/auth/strava/callback`).
-3. **Overview View (Readiness, PMC & Annual Mileage Pacing)**:
-   - **Morning Readiness Strip**: Displays today's synced Garmin/Intervals.icu wellness metrics—HRV (`ms` + 7-day baseline delta), Resting HR (`bpm`), Sleep Duration & Score, VO2max, and Form (`TSB`)—using tabular numerals and explicit semantic labels (`Optimal`, `Caution`, `Strain`).
-   - **Interactive PMC (Fitness, Fatigue & Form Chart + Goal Projection)**: Full-width interactive chart plotting CTL (Fitness), ATL (Fatigue), and TSB (Form) across selectable windows (`14d`, `42d`, `90d`, `180d`), overlaid with your **Target Race Peak CTL** milestone marker.
-   - **Annual Running & Cycling Mileage Summary Cards**: Side-by-side YTD progress cards for **Running** and **Cycling** showing current distance vs. annual target, pro-rated pace delta (`+42 mi ahead of schedule`), and the exact **Outdoor vs. Treadmill/Trainer** percentage split.
-4. **Activities View (Outdoor/Indoor Explorer, Stream Inspector & Strava Segments)**:
-   - **Filterable High-Density Activity Grid / Mobile Tap List**: Lists completed workouts reconciled across Intervals.icu and Strava. Filterable by sport, **Environment (`Combined` | `Outdoor` | `Indoor Trainer/Treadmill`)**, date range, and search query.
-   - **Deep Activity Drawer / Mobile Bottom Sheet**: Clicking any activity opens a detailed physiological and segment breakdown:
-     - **Time-Series Stream Chart**: Synchronized scrubbing across Power (`W`), Pace (`min/km` or `min/mi`), Heart Rate (`bpm`), Cadence (`rpm/spm`), and Altitude (`m`).
-     - **Strava Segment Efforts Table**: Lists all Strava segments from that activity (`segment_efforts`) with PR badges (`PR #1`, `2nd`, `3rd`), distance, average grade (`%`), elapsed time, average power (`W` / `W/kg`) or pace, and average HR.
-     - **Aerobic Decoupling & Zones**: First-half vs. second-half Efficiency Factor (`EF`) drift (`Pw:Hr` or `Pa:Hr`) alongside 7-zone Power/HR/Pace distribution bars.
-5. **Physiology View (Curves, Benchmark Segments & Wellness Correlations)**:
-   - **Critical Power & Pace Duration Curves**: Plots best efforts across durations (`5s`, `1m`, `5m`, `20m`, `60m`) for cycling power (`W` and `W/kg`) and running pace, filterable by **Outdoor vs. Indoor Trainer/Treadmill**.
-   - **Benchmark Strava Segments Progression**: Tracks historical efforts across your starred/key Strava segments, comparing time, wattage/pace, and heart rate efficiency across attempts.
-   - **Autonomic Recovery vs. Load Correlation**: Visualizes 28-day HRV and Resting HR trends overlaid with daily training load and sleep quality.
-6. **Goals View (Annual Mileage Targets, Race Calendar & Performance Milestones)**:
-   - **Annual Mileage Targets (Running & Cycling)**: Set independent annual distance targets for **Running** and **Cycling**, with cumulative YTD trajectory charts, pro-rated daily/weekly requirement to hit goal by Dec 31, and a toggleable breakdown of **Outdoor** vs. **Treadmill / Smart Trainer** volume.
-   - **Target Race Calendar & Periodization Tracker**: Add, edit, or delete target events (`A-Race`, `B-Race`) with event date, sport, **Target Peak CTL**, and target finish time/power/pace.
-   - **Physiological & Segment Goals**: Set targets for Cycling FTP (`W/kg`), Threshold Run Pace, VO2max, or a target time on a specific **Strava Segment**.
-7. **AI Coach View (Daily Workout Options Generator + Interactive Gemini Chat)**:
-   - **Daily Workout Options Generator**: Select your desired sport, environment (`Outdoor` or `Indoor Trainer/Treadmill`), and duration (`30m`, `45m`, `60m`, `90m+`) and click **Generate Daily Options** to receive **3 structured workout cards** (*Optimal Progression*, *Modulated Aerobic*, *Active Recovery*).
-   - **Interactive Health & Fitness Chat with Gemini**: Multi-turn chat interface (`gemini-3.8-flash`) with full live context of your Intervals.icu wellness, CTL/ATL/TSB, Outdoor/Indoor activities, Strava segment PRs, and annual mileage/race goals.
+1. **Garmin Health, Sleep & Training Status Cockpit**:
+   - At the top of the **Fitness & Health** workspace (and summarized in the header), a dedicated **Garmin Training & Recovery Status Bar** displays:
+     - **Training Status Badge** (`Productive`, `Peaking`, `Maintaining`, `Strained`, `Recovery`, `Overreaching`, `Unproductive`, or `Detraining`) driven by your 28-day VO2max trend, HRV Status, and Acute-to-Chronic Load Ratio (`ATL / CTL`).
+     - **Last Night's Garmin Sleep Card**: Total Sleep Duration (`7h 03m`), Garmin Sleep Score (`82 / 100`), Sleep Quality rating, and 7-day / 30-day rolling sleep debt.
+     - **Garmin HRV Status & Autonomic Balance**: Overnight rMSSD (`ms`) plotted against your personal 7-day rolling average and 60-day normal baseline corridor (`Balanced` / `Unbalanced` / `Low`), plus Resting HR (`bpm`), VO2max (`mL/kg/min`), Respiration, and SpO2.
+2. **All-Time Historical Sync & Hourly Auto-Poll Status**:
+   - Pulls your complete Intervals.icu archive (`2010–present`, including all historical Garmin wellness/sleep/HRV days) and pages through all historical Strava activities (`200/page` until complete).
+   - An **Hourly Auto-Sync Scheduler** runs automatically every 60 minutes so morning sleep/HRV metrics and newly completed Garmin/Strava workouts appear automatically.
+3. **Training Calendar with Daily Sleep/HRV Badges & Workout Builder**:
+   - Each calendar day cell displays completed workouts, planned structured workouts, and optional compact **Morning Readiness Pills** (Sleep Score, Sleep Hours, and HRV `ms`) so you can visually see how poor sleep or suppressed HRV affected workout execution across any week.
+   - Clicking any calendar date opens the **Structured Workout Builder** supporting Intervals.icu shorthand syntax (`- 15m 65% FTP`, `5x - 4m 108% FTP - 2m 50% FTP`) with `.zwo` / `.erg` export and direct Intervals.icu → Garmin watch sync.
+4. **Custom Chart Studio (Workouts + Garmin Sleep/Health Correlations)**:
+   - Plot any combination of workout metrics AND Garmin health metrics over any custom date range:
+     - *Time-Series Examples*: `Sleep Score & Sleep Duration vs. HRV (7d rolling)`, `Resting HR vs. CTL & ATL`, `VO2max vs. Weekly Training Load`.
+     - *Scatter / Correlation Examples*: `Previous Night Sleep Score vs. Workout Efficiency Factor`, `Overnight HRV vs. Aerobic Decoupling %`, `Acute Training Load vs. Sleep Quality`.
+5. **Slide-Over AI Coach with Sleep & Training Status Awareness**:
+   - The AI Coach receives your latest Garmin Sleep Score, Sleep Duration, 7-day Sleep Debt, HRV Status (`Balanced`/`Unbalanced`/`Low`), 8-state Training Status, and CTL/ATL/TSB on every turn—automatically modulating daily or multi-week cycling and running prescriptions when sleep or HRV is suppressed, and scheduling approved sessions onto your calendar.
 
 ### Visual Identity & Theme
-- **Aesthetic Direction**: Precision Sports Science Lab — utilitarian, high-contrast, daylight-legible on mobile, inspired by professional telemetry workbenches.
-- **Color Palette (60-30-10 Discipline)**:
-  - **60% Dominant Canvas**: Crisp Alabaster (`#F8FAFC`) in Light Mode / Deep Obsidian Slate (`#0B0F17`) in Dark Mode.
-  - **30% Structural Surfaces**: Pure White (`#FFFFFF`) / Elevated Slate (`#111827`) with `1px solid` hairline borders (`#E2E8F0` light / `#1E293B` dark).
-  - **10% Semantic & Action Accents**:
-    - Primary Action & Fitness (CTL): Cobalt Blue (`#2563EB` / `#3B82F6`)
-    - Optimal Readiness / On-Track Mileage & PRs: Emerald (`#16A34A` / `#22C55E`)
-    - Elevated Fatigue / Pacing Deficit Warning: Amber (`#D97706` / `#F59E0B`)
-    - Overreaching / High Strain Alert: Crimson (`#DC2626` / `#EF4444`)
-- **Typography & Hierarchy (2+1 Font Rule)**:
-  - **Display & Navigation**: `Plus Jakarta Sans` (600/700 weights).
-  - **Body Prose & Coaching Chat**: `DM Sans` (400/500 weights).
-  - **Telemetry, Tables & Physiological Numerals**: `JetBrains Mono` with `font-variant-numeric: tabular-nums`.
+- **Aesthetic Direction**: High-precision physiological telemetry studio inspired by Intervals.icu's information density and Garmin's Training Status clarity.
+- **Color Palette & Mood**:
+  - Dark-first analytical slate canvas (`#0B0F17` primary background, `#111827` elevated surface, `1px solid #1E293B` hairlines) with instant toggle to crisp daylight mode (`#F8FAFC` / `#FFFFFF`).
+  - Semantic physiological accents: **CTL Fitness Blue** (`#3B82F6`), **ATL Fatigue Purple** (`#A855F7`), **TSB Form & Productive Status Emerald/Amber/Crimson** (`#10B981` / `#F59E0B` / `#EF4444`), **Sleep Indigo/Sky** (`#6366F1` / `#38BDF8`), **Cycling Cyan** (`#06B6D4`), and **Running Orange** (`#F97316`).
+- **Typography & Hierarchy**:
+  - `Plus Jakarta Sans` for workspace navigation, section headers, and coaching prose.
+  - `JetBrains Mono` (`tabular-nums`) strictly enforced across all calendar cells, sleep/HRV metrics, lap tables, power/pace curves, and time-series axes.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Fork-Friendly Dual Configuration (`.env` + Self-Service Setup Guide + `README.md`)**
-  - *Chosen Approach*: Ship a thorough `README.md` and `.env.example` documenting every environment variable (`INTERVALS_API_KEY`, `INTERVALS_ATHLETE_ID`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `GEMINI_API_KEY`, `APP_URL`) alongside an in-app **Data Sources & Setup Guide** modal that accepts user-supplied Intervals.icu and Strava credentials per session/browser if server `.env` variables aren't pre-populated.
-  - *Why*: Anyone who forks the GitHub repository can either configure private environment variables in their Vercel project settings or enter their Intervals.icu API key directly in the UI to get their own Garmin/Intervals.icu/Strava data working in under two minutes.
-- **Decision 2: Dual Deployment Architecture (AI Studio Cloud Run + Vercel via GitHub)**
-  - *Chosen Approach*: Extract all backend API routes (`/api/intervals/*`, `/api/strava/*`, `/api/coach/*`, `/auth/strava/callback`) into a modular Express router mounted by both `server.ts` (for AI Studio preview) and `/api/index.ts` with `vercel.json` rewrites (for Vercel serverless deployment).
-  - *Why*: Lets you develop and preview live in AI Studio while enabling zero-config deployment whenever you or a fork user pushes to GitHub and links the repo in Vercel.
-- **Decision 3: Normalized Outdoor vs. Indoor (Treadmill/Trainer) Classification & Strava Segments**
-  - *Chosen Approach*: Tag every activity with `environment: 'OUTDOOR' | 'INDOOR'` (`trainer`, `VirtualRide`, `VirtualRun`, `Treadmill`) and enrich Strava activities with `segment_efforts` (`include_all_efforts=true`) and starred segment benchmarks.
-  - *Why*: Gives complete control over indoor vs. outdoor mileage accounting while surfacing competitive Strava segment PRs alongside Intervals.icu heart rate and power efficiency.
+- **Decision 1: Deriving Garmin's 8-State Training Status & HRV Baseline Corridor from Raw Biometrics**
+  - *Chosen Approach*: Extract all raw Garmin wellness fields synced through Intervals.icu (`sleepSecs`, `sleepScore`, `sleepQuality`, `hrv`, `hrvSDNN`, `restingHR`, `vo2max`, `spO2`, `respiration`, `steps`, `weight`) and compute the 60-day HRV normal corridor ($\mu \pm 0.75\sigma$), Acute-to-Chronic Load Ratio (`ATL / CTL`), and 28-day VO2max slope to classify each day into Garmin's 8 Training Status states (`Peaking`, `Productive`, `Maintaining`, `Recovery`, `Unproductive`, `Strained`, `Overreaching`, `Detraining`).
+  - *Why*: Gives you the exact Garmin Training Status and HRV Status experience right inside your Intervals.icu PMC and Custom Chart workspace, while exposing the underlying math transparently.
+- **Decision 2: Dual-Mode Hourly Auto-Sync Cron (Server Daemon + Vercel Cron Endpoint)**
+  - *Chosen Approach*: Implement both an in-process hourly cron job on the Express server (`0 * * * *`) and a `/api/cron/hourly-sync` endpoint configured in `vercel.json` so new morning sleep/HRV data and completed Garmin/Strava workouts sync automatically every hour.
+- **Decision 3: All-Time Multi-Page Historical Sync with Longitudinal PMC Reconstruction**
+  - *Chosen Approach*: Pull your complete multi-year Intervals.icu wellness and activity history (`2010–present`) and paginate through all historical Strava activities (`200/page`), merging Strava-only indoor trainer rides into the daily training load series so `CTL`, `ATL`, `TSB`, and Load Ratio reflect 100% of your outdoor and indoor training.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
 ### Architecture & Component Diagram
 
-```text
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│               AeroPulse PWA Client (React 19 + Vite + Service Worker)            │
-│                                                                                  │
-│  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │ Desktop Header / Mobile Bottom Nav:                                        │  │
-│  │ [AeroPulse] ── [Overview | Activities | Physiology | Goals | Coach]        │  │
-│  │                                          ── [Install PWA] [Data Sources]   │  │
-│  ├────────────────────────────────────────────────────────────────────────────┤  │
-│  │ Global Filter Bar: [Sport: All/Run/Bike] [Env: Combined | Outdoor | Indoor]│  │
-│  └──────┬─────────────────┬──────────────────┬────────────────┬───────────────┘  │
-│         │                 │                  │                │                  │
-│         ▼                 ▼                  ▼                ▼                  │
-│  ┌──────────────┐ ┌───────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │ Overview/PMC │ │  Activities   │ │ Physiology &   │ │   AI Coach & Chat    │  │
-│  │ • HRV/Sleep  │ │ • Outdoor vs  │ │ Goals/Segments │ │ • 3-Option Daily     │  │
-│  │ • CTL/ATL/TSB│ │   Trainer/    │ │ • Annual Run & │ │   Workout Generator  │  │
-│  │ • Run & Bike │ │   Treadmill   │ │   Bike Mileage │ │   (Indoor/Outdoor)   │  │
-│  │   YTD Mileage│ │ • Strava      │ │ • Starred      │ │ • Multi-Turn Gemini  │  │
-│  │   Pacing     │ │   Segments    │ │   Segment PRs  │ │   Health/Fitness Q&A │  │
-│  └──────┬───────┘ └───────┬───────┘ └────────┬───────┘ └──────────┬───────────┘  │
-└─────────┼─────────────────┼──────────────────┼────────────────────┼──────────────┘
-          │                 │                  │                    │
-          ▼                 ▼                  ▼                    ▼
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│         Shared Express API Router (server.ts AND Vercel /api/index.ts)           │
-│         + README.md & .env.example for GitHub Fork / Self-Hosting Users          │
-│                                                                                  │
-│  ┌─────────────────────────┐  ┌──────────────────────┐  ┌─────────────────────┐  │
-│  │ /api/intervals/*        │  │ /api/strava/*        │  │ /api/coach/*        │  │
-│  │ • GET /wellness         │  │ • GET /auth/url      │  │ • POST /options     │  │
-│  │ • GET /activities       │  │ • GET /auth/callback │  │   (3 Workout Cards) │  │
-│  │ • GET /activity/streams │  │ • GET /activities    │  │ • POST /chat        │  │
-│  │ • GET /events (Planned) │  │ • GET /segments      │  │   (Multi-Turn Q&A)  │  │
-│  └────────────┬────────────┘  └──────────┬───────────┘  └──────────┬──────────┘  │
-└───────────────┼──────────────────────────┼─────────────────────────┼─────────────┘
-                │                          │                         │
-                ▼                          ▼                         ▼
-     ┌─────────────────────┐    ┌─────────────────────┐   ┌─────────────────────┐
-     │  Intervals.icu API  │    │   Strava API v3     │   │  Google Gemini API  │
-     │ (Basic Auth API_KEY)│    │  (OAuth2 Bearer +   │   │ (gemini-3.8-flash)  │
-     │ + Garmin Sync Data  │    │   Segment Efforts)  │   │                     │
-     └─────────────────────┘    └─────────────────────┘   └─────────────────────┘
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        AeroPulse Analytical Workspace (React 19)                    │
+│                                                                                     │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Top Bar: Navigation Tabs │ Date Range & Sport/Env Filters │ AI Coach Drawer   │  │
+│  └───────────────────────────────────────────────────────────────────────────────┘  │
+│                                         │                                           │
+│       ┌─────────────────────────────────┴───────────────────────────────────┐       │
+│       ▼                                                                     ▼       │
+│  ┌──────────────────────────────────────────────────────────┐  ┌─────────────────┐  │
+│  │ Primary Analytical Viewport                              │  │ Persistent      │  │
+│  │                                                          │  │ Slide-Over      │  │
+│  │  ├─ 1. Training Calendar View (/calendar)                │  │ AI Coach Drawer │  │
+│  │  │     ├─ Monthly/Weekly Grid + Sleep/HRV Readiness Pills│  │                 │  │
+│  │  │     ├─ Completed Workouts + Planned Events + Load     │  │ ├─ Sleep, HRV & │  │
+│  │  │     └─ Workout Builder Modal (.zwo/.erg + ICU Sync)   │  │ │  Training     │  │
+│  │  │                                                       │  │ │  Status Pill  │  │
+│  │  ├─ 2. Fitness, Freshness & Garmin Health (/fitness)     │  │ ├─ Multi-Turn   │  │
+│  │  │     ├─ Garmin Training Status, Sleep & HRV Status Bar │  │ │  Run/Bike     │  │
+│  │  │     ├─ All-Time CTL / ATL / TSB + Forward Simulator   │  │ │  Program Chat │  │
+│  │  │     └─ Subplots: Sleep Score/Hrs, HRV Band, RHR, VO2  │  │ └─ Interactive  │  │
+│  │  │                                                       │  │    Proposed     │  │
+│  │  ├─ 3. Custom Chart Builder Studio (/charts)             │  │    Workout Cards│  │
+│  │  │     ├─ Multi-Axis Time-Series (Workouts + Sleep/HRV)  │  │    [+ Schedule  │  │
+│  │  │     └─ Scatter Correlations (e.g. Sleep vs. EF/Drift) │  │     to Calendar]│  │
+│  │  │                                                       │  └────────┬────────┘  │
+│  │  ├─ 4. Power, HR & Pace Curves + Predictors (/curves)    │           │           │
+│  │  │     └─ Season Overlays, Indoor/Outdoor & Race Times   │           │           │
+│  │  │                                                       │           │           │
+│  │  ├─ 5. Totals, Polarization & Gear View (/totals)        │           │           │
+│  │  │     └─ Volume, Z1-Z7 Zones, 80/20 Index & Gear Wear   │           │           │
+│  │  │                                                       │           │           │
+│  │  └─ 6. Activity Detail & Interval Inspector Modal        │           │           │
+│  │        └─ Streams, Intervals/Laps, Segments & Repeats    │           │           │
+│  └────────────────────────────┬─────────────────────────────┘           │           │
+└───────────────────────────────┼─────────────────────────────────────────┼───────────┘
+                                │                                         │
+                                ▼                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                     Express Backend API & Hourly Cron Engine (/api/*)               │
+│                                                                                     │
+│  ├─ Hourly Scheduler (0 * * * *) + GET /api/cron/hourly-sync (Delta Poll + Merge)   │
+│  ├─ GET  /api/sync/all-history      (All-time Intervals.icu + Garmin Health/Strava) │
+│  ├─ GET  /api/intervals/activities/:id/details (Streams + Intervals/Lap Splits)     │
+│  ├─ POST /api/calendar/events       (Create/Update Planned Workout & Sync to ICU)   │
+│  ├─ DELETE /api/calendar/events/:id (Remove Planned Workout)                        │
+│  └─ POST /api/coach/chat            (Gemini 3.8 Flash Advisor + Workout Generator)  │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Model & State
-- **`UnifiedActivity`**: `{ id, intervalsId, stravaId, startDateLocal, name, sportCategory, environment: 'OUTDOOR' | 'INDOOR', subType: 'Road' | 'Trail' | 'Gravel' | 'Smart Trainer' | 'Treadmill' | 'Pool' | 'Gym', movingTimeSecs, distanceMeters, elevationGainMeters, avgPower, normalizedPower, intensityFactor, trainingLoad, avgHr, maxHr, aerobicDecouplingPct, efficiencyFactor, zoneSecs, gearName, stravaPrCount, segmentEfforts: StravaSegmentEffort[] }`
-- **`StravaSegmentEffort`**: `{ id, segmentId, name, distanceMeters, averageGradePct, elapsedTimeSecs, movingTimeSecs, avgWatts, avgHr, prRank: 1 | 2 | 3 | null, komRank: number | null, startDateLocal }`
-- **`AnnualMileageGoal`**: `{ sportCategory: 'Running' | 'Cycling', year: number, targetDistanceMeters: number, ytdOutdoorMeters: number, ytdIndoorMeters: number }`
-- **`TargetGoal`**: `{ id, title, type: 'RACE_EVENT' | 'PERFORMANCE_METRIC' | 'SEGMENT_TARGET', sportCategory, targetDate, priority: 'A' | 'B' | 'MILESTONE', targetCtl, currentValue, targetValue, unit, notes }`
-
-### Interactive Component & State Mapping
-- **Fork-Ready Onboarding & Credential Resolution**: Server endpoints resolve Intervals.icu and Strava credentials from either server environment variables (`.env` / Vercel) or user-provided headers/session from the **Data Sources** modal, accompanied by a comprehensive `README.md` and `.env.example` for GitHub forkers.
-- **Outdoor / Indoor Environment Filter (`Combined` | `Outdoor Only` | `Indoor: Trainer/Treadmill`)**: Filters the activity table, recalculates summary volume/load KPIs, toggles indoor vs. outdoor Critical Power/Pace curves, and highlights indoor vs. outdoor contributions in the Annual Mileage progress bars.
-- **Annual Mileage Goal Editor (`Running` & `Cycling`)**: Users can adjust their annual distance target in miles or kilometers for Running and Cycling independently; the app dynamically computes YTD total (`Outdoor + Trainer/Treadmill`), percentage complete, pro-rated status (`Ahead` or `Behind` daily trajectory), and required weekly mileage for the remainder of the calendar year.
-- **Strava Segment Inspector & Starred Benchmark Tracker**: Clicking an activity shows its embedded Strava `segment_efforts` with PR badges; clicking any segment opens its historical comparison across previous attempts (time, `W/kg` or pace, and HR).
+- **`UnifiedWellnessDay` (All-Time Garmin Health & PMC Archive)**:
+  - Stores daily fields across your entire history: `date`, `ctl`, `atl`, `tsb`, `loadRatio` (`ATL/CTL`), `rampRate`, `sleepSecs`, `sleepScore` (0–100), `sleepQuality` (1–4), `sleepDebt7dSecs`, `hrvRMSSD`, `hrvSDNN`, `hrvBaseline7d`, `hrvNormalBandLow`, `hrvNormalBandHigh`, `hrvStatus` (`'Balanced' | 'Unbalanced' | 'Low'`), `restingHR`, `vo2MaxCycling`, `vo2MaxRunning`, `spO2`, `respiration`, `steps`, `weightKg`, `garminTrainingStatus` (`'Peaking' | 'Productive' | 'Maintaining' | 'Recovery' | 'Unproductive' | 'Strained' | 'Overreaching' | 'Detraining'`), `trainingStatusReason`, and `dailyLoad`.
+- **`UnifiedActivity` (All-Time Workout Archive)**:
+  - Normalized across every historical Garmin/Intervals.icu and Strava workout (`id`, `intervalsId`, `stravaId`, `startDateLocal`, `name`, `sportCategory`, `environment`, `subType`, `movingTimeSecs`, `distanceMeters`, `elevationGainMeters`, `avgPower`, `normalizedPower`, `intensityFactor`, `variabilityIndex`, `trainingLoad`, `avgHr`, `maxHr`, `avgCadence`, `avgPaceSecsPerKm`, `gapPaceSecsPerKm`, `aerobicDecouplingPct`, `efficiencyFactor`, `zoneSecs`, `intervals[]`, `segmentEfforts[]`, `gearName`, `sourceBadges[]`).

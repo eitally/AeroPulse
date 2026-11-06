@@ -1,5 +1,4 @@
 import { DistanceUnit, EnvironmentFilter, UnifiedActivity } from '../types';
-import { HISTORICAL_YTD_BASE_METERS } from '../data/mockTelemetry';
 
 const METERS_PER_MILE = 1609.344;
 const METERS_PER_KM = 1000;
@@ -55,6 +54,10 @@ export function formatSleepDuration(totalSecs: number): string {
 
 export interface AnnualMileageSummary {
   sportCategory: 'Running' | 'Cycling';
+  year: number;
+  workoutCount: number;
+  outdoorCount: number;
+  indoorCount: number;
   targetMeters: number;
   outdoorMeters: number;
   indoorMeters: number;
@@ -72,42 +75,62 @@ export function computeAnnualMileageSummary(
   sportCategory: 'Running' | 'Cycling',
   targetMeters: number,
   activities: UnifiedActivity[],
-  envFilter: EnvironmentFilter
+  envFilter: EnvironmentFilter,
+  yearOverride?: number
 ): AnnualMileageSummary {
-  // Day 309 of 365 (Nov 5)
-  const dayOfYear = 309;
+  const now = new Date();
+  const targetYear = yearOverride || now.getFullYear();
+  const targetYearPrefix = `${targetYear}-`;
+
+  const startOfYear = new Date(Date.UTC(targetYear, 0, 1));
+  const dayOfYear = Math.max(
+    1,
+    Math.min(365, Math.floor((now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+  );
   const totalDaysInYear = 365;
   const remainingWeeks = Math.max(1, (totalDaysInYear - dayOfYear) / 7);
 
-  const sportActivities = activities.filter((a) => a.sportCategory === sportCategory);
-  const recentOutdoor = sportActivities
-    .filter((a) => a.environment === 'OUTDOOR')
-    .reduce((sum, a) => sum + a.distanceMeters, 0);
-  const recentIndoor = sportActivities
-    .filter((a) => a.environment === 'INDOOR')
-    .reduce((sum, a) => sum + a.distanceMeters, 0);
+  // Strictly filter to the target year (e.g. 2026 YTD) and sport category
+  const sportActivities = activities.filter(
+    (a) =>
+      a.sportCategory === sportCategory &&
+      String(a.startDateLocal || '').startsWith(targetYearPrefix)
+  );
 
-  const base = HISTORICAL_YTD_BASE_METERS[sportCategory];
-  const outdoorMeters = base.outdoorMeters + recentOutdoor;
-  const indoorMeters = base.indoorMeters + recentIndoor;
+  const outdoorActs = sportActivities.filter((a) => a.environment === 'OUTDOOR');
+  const indoorActs = sportActivities.filter((a) => a.environment === 'INDOOR');
+
+  const outdoorMeters = outdoorActs.reduce((sum, a) => sum + (a.distanceMeters || 0), 0);
+  const indoorMeters = indoorActs.reduce((sum, a) => sum + (a.distanceMeters || 0), 0);
   const combinedTotalMeters = outdoorMeters + indoorMeters;
 
   const displayedTotalMeters =
-    envFilter === 'OUTDOOR' ? outdoorMeters : envFilter === 'INDOOR' ? indoorMeters : combinedTotalMeters;
+    envFilter === 'OUTDOOR'
+      ? outdoorMeters
+      : envFilter === 'INDOOR'
+        ? indoorMeters
+        : combinedTotalMeters;
 
   const proRatedTargetTodayMeters = (targetMeters * dayOfYear) / totalDaysInYear;
   const deltaVsScheduleMeters = displayedTotalMeters - proRatedTargetTodayMeters;
-  const pctOfAnnualTarget = Math.min(100, Number(((displayedTotalMeters / Math.max(1, targetMeters)) * 100).toFixed(1)));
+  const pctOfAnnualTarget = Math.min(
+    100,
+    Number(((displayedTotalMeters / Math.max(1, targetMeters)) * 100).toFixed(1))
+  );
 
   const outdoorSharePct =
     combinedTotalMeters > 0 ? Math.round((outdoorMeters / combinedTotalMeters) * 100) : 0;
-  const indoorSharePct = 100 - outdoorSharePct;
+  const indoorSharePct = combinedTotalMeters > 0 ? 100 - outdoorSharePct : 0;
 
   const remainingMeters = Math.max(0, targetMeters - displayedTotalMeters);
   const requiredWeeklyMetersRemaining = remainingMeters / remainingWeeks;
 
   return {
     sportCategory,
+    year: targetYear,
+    workoutCount: sportActivities.length,
+    outdoorCount: outdoorActs.length,
+    indoorCount: indoorActs.length,
     targetMeters,
     outdoorMeters,
     indoorMeters,

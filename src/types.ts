@@ -6,23 +6,73 @@ export type EnvironmentFilter = 'COMBINED' | 'OUTDOOR' | 'INDOOR';
 
 export type DistanceUnit = 'mi' | 'km';
 
+export type GarminTrainingStatus =
+  | 'Peaking'
+  | 'Productive'
+  | 'Maintaining'
+  | 'Recovery'
+  | 'Unproductive'
+  | 'Strained'
+  | 'Overreaching'
+  | 'Detraining';
+
+export type GarminHrvStatus = 'Balanced' | 'Unbalanced' | 'Low';
+
 export interface UnifiedWellnessDay {
   date: string; // YYYY-MM-DD
   ctl: number; // Chronic Training Load (Fitness)
   atl: number; // Acute Training Load (Fatigue)
   tsb: number; // Training Stress Balance (Form = CTL - ATL)
+  loadRatio?: number; // ATL / CTL (Acute-to-Chronic Workload Ratio)
   rampRate: number; // Weekly CTL change
   hrvRMSSD: number; // ms
   hrvBaseline7d: number; // ms
+  hrvNormalBandLow?: number; // 60d normal corridor low (ms)
+  hrvNormalBandHigh?: number; // 60d normal corridor high (ms)
+  hrvStatus?: GarminHrvStatus; // Garmin HRV status
   restingHR: number; // bpm
   sleepSecs: number;
   sleepScore: number; // 0-100
+  sleepQuality?: number; // 1=Great, 2=Good, 3=Fair, 4=Poor
+  sleepDebt7dSecs?: number; // Rolling 7d sleep debt vs 8h target
   weightKg: number;
   vo2MaxCycling?: number;
   vo2MaxRunning?: number;
+  spO2?: number;
+  respiration?: number;
+  steps?: number;
+  floorsClimbed?: number;
   soreness?: number; // 1-4
+  rideEftp?: number; // Estimated Cycling FTP from Intervals.icu sportInfo
+  rideWPrime?: number; // Cycling W' (J)
+  ridePMax?: number; // Cycling Pmax (W)
+  runEftp?: number; // Estimated Running FTP (W)
+  runWPrime?: number; // Running W' (J)
+  runPMax?: number; // Running Pmax (W)
+  garminTrainingStatus?: GarminTrainingStatus;
+  trainingStatusReason?: string;
   readinessStatus: 'Optimal' | 'Caution' | 'Strain';
   dailyLoad: number;
+}
+
+export interface ActivityInterval {
+  id: string;
+  type: 'WORK' | 'RECOVERY';
+  label: string;
+  startTimeSecs: number;
+  durationSecs: number;
+  distanceMeters: number;
+  avgWatts?: number;
+  weightedAvgWatts?: number;
+  intensityPct?: number;
+  zone?: number;
+  avgHr?: number;
+  maxHr?: number;
+  avgPaceSecsPerKm?: number;
+  gapPaceSecsPerKm?: number;
+  avgCadence?: number;
+  decouplingPct?: number;
+  strideLengthMeters?: number;
 }
 
 export interface StravaSegmentEffort {
@@ -99,6 +149,8 @@ export interface UnifiedActivity {
   efficiencyFactor: number; // NP/HR or Speed/HR
   firstHalfEf: number;
   secondHalfEf: number;
+  calories?: number;
+  deviceName?: string;
   zoneSecs: {
     hr: number[]; // 7 zones [Z1..Z7]
     power?: number[]; // 7 zones [Z1..Z7]
@@ -108,8 +160,17 @@ export interface UnifiedActivity {
   stravaPrCount: number;
   kudosCount?: number;
   segmentEfforts: StravaSegmentEffort[];
+  intervals?: ActivityInterval[];
   streams?: ActivityStreamSet;
   sourceBadges: ('Intervals.icu' | 'Garmin' | 'Strava')[];
+}
+
+export interface StructuredWorkoutStep {
+  label: string;
+  durationSecs?: number;
+  duration: string;
+  targetPctFtp?: number;
+  targetZoneOrOutput: string;
 }
 
 export interface PlannedWorkoutEvent {
@@ -122,6 +183,9 @@ export interface PlannedWorkoutEvent {
   plannedLoad: number;
   plannedDurationSecs: number;
   targetZoneSummary: string;
+  workoutSyntax?: string;
+  structuredSteps?: StructuredWorkoutStep[];
+  source?: 'USER' | 'AI_COACH' | 'INTERVALS_ICU';
 }
 
 export interface AnnualMileageGoal {
@@ -155,11 +219,8 @@ export interface DailyWorkoutOption {
   estimatedLoad: number;
   summary: string;
   physiologicalWhy: string;
-  structuredSteps: {
-    label: string;
-    duration: string;
-    targetZoneOrOutput: string;
-  }[];
+  workoutSyntax?: string;
+  structuredSteps: StructuredWorkoutStep[];
 }
 
 export interface CoachChatMessage {
@@ -168,6 +229,7 @@ export interface CoachChatMessage {
   content: string;
   timestamp: string;
   citedMetrics?: string[];
+  proposedWorkouts?: PlannedWorkoutEvent[];
 }
 
 export interface PowerPaceCurvePoint {
@@ -181,6 +243,59 @@ export interface PowerPaceCurvePoint {
   runningSeasonBestPaceSecsKm: number;
 }
 
+export type ChartMetricKey =
+  | 'ctl'
+  | 'atl'
+  | 'tsb'
+  | 'loadRatio'
+  | 'dailyLoad'
+  | 'rampRate'
+  | 'hrvRMSSD'
+  | 'restingHR'
+  | 'sleepScore'
+  | 'sleepHours'
+  | 'vo2MaxCycling'
+  | 'rideEftp'
+  | 'runEftp'
+  | 'steps'
+  | 'weightKg'
+  | 'activityDistanceKm'
+  | 'activityDurationMins'
+  | 'activityLoad'
+  | 'avgPower'
+  | 'normalizedPower'
+  | 'avgHr'
+  | 'maxHr'
+  | 'efficiencyFactor'
+  | 'aerobicDecouplingPct'
+  | 'avgPaceMinKm'
+  | 'avgCadence'
+  | 'elevationGainMeters';
+
+export interface CustomChartConfig {
+  id: string;
+  title: string;
+  chartType: 'TIME_SERIES' | 'SCATTER';
+  primaryMetric: ChartMetricKey;
+  secondaryMetric: ChartMetricKey | 'NONE';
+  aggregation: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  rollingWindowDays: 1 | 7 | 14 | 28 | 42 | 90;
+  sportFilter: SportCategory | 'ALL';
+  environmentFilter: EnvironmentFilter;
+  dateRangePreset: '30D' | '90D' | '6M' | '1Y' | '2Y' | 'ALL' | 'CUSTOM';
+  customStartDate?: string;
+  customEndDate?: string;
+}
+
+export interface AthleteGearItem {
+  id: string;
+  name: string;
+  type: 'BIKE' | 'SHOE';
+  distanceMeters: number;
+  maxRecommendedMeters: number;
+  primary: boolean;
+}
+
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   intervalsConnected: boolean;
@@ -188,10 +303,24 @@ export interface ConnectionStatus {
   intervalsAthleteName?: string;
   intervalsSource: 'ENV' | 'USER_INPUT' | 'NONE';
   stravaConnected: boolean;
+  stravaClientId?: string;
   stravaAthleteName?: string;
   stravaSource: 'OAUTH' | 'ENV' | 'NONE';
   hasGeminiServerKey: boolean;
   lastSyncedAt?: string;
+  nextHourlySyncAt?: string;
+  autoSyncCronActive?: boolean;
+  totalActivitiesCount?: number;
+  earliestActivityDate?: string;
+  garminActivitiesCount?: number;
+  stravaActivitiesCount?: number;
+  redactedStravaCount?: number;
+  athleteFtp?: number;
+  athleteIndoorFtp?: number;
+  athleteRunFtp?: number;
+  athleteLthr?: number;
+  athleteMaxHr?: number;
+  gearItems?: AthleteGearItem[];
   devCallbackUrl: string;
   sharedCallbackUrl: string;
   currentOriginCallbackUrl: string;

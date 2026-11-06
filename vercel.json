@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/hourly-sync",
+      "schedule": "0 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
