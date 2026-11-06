@@ -502,7 +502,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Saved Custom & Preset Charts Ribbon */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+      <section className="rounded-2xl liquid-glass p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -548,7 +548,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
       </section>
 
       {/* Interactive Chart Configuration Matrix */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+      <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
           {/* 1. Chart Type */}
           <div>

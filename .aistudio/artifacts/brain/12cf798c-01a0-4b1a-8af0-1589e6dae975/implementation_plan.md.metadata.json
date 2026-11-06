@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for permanent browser IndexedDB activity & telemetry persistence across Vercel deployments, automatic incremental delta syncing, and self-healing Strava OAuth token refresh rotation with Vercel Environment Variable export.",
-  "updatedAt": "2026-11-06T16:15:21.455803320Z",
+  "summary": "Implementation plan for locking the daily activities bar to a fixed 2-line height (zero vertical chart shift) and upgrading the application to an Adaptive Dual-Mode macOS Liquid Glass design system with a single unified floating header bar, specular glass cards, recessed capsule switchers, and luminous SVG telemetry curves.",
+  "updatedAt": "2026-11-06T19:54:23.862680684Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -7,10 +7,11 @@ import {
   ExternalLink,
   KeyRound,
   Link2,
+  Map as MapIcon,
   RefreshCw,
   X,
 } from 'lucide-react';
-import { ConnectionStatus } from '../types';
+import { ConnectionStatus, MapTileProvider } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface DataSourcesModalProps {
@@ -23,6 +24,7 @@ interface DataSourcesModalProps {
   onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
   onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
   onSaveStravaDirectToken: (refreshToken: string, accessToken?: string) => Promise<void>;
+  onSaveMapTileConfig: (provider: MapTileProvider, apiKey: string) => Promise<void>;
   onExportBundle: () => Promise<{ bundle: string; envText: string } | null>;
   onImportBundle: (bundleOrEnv: string) => Promise<void>;
   onSyncNow: (fullHistory?: boolean) => Promise<void>;
@@ -43,6 +45,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onLaunchStravaOAuth,
   onExchangeStravaCode,
   onSaveStravaDirectToken,
+  onSaveMapTileConfig,
   onExportBundle,
   onImportBundle,
   onSyncNow,
@@ -59,6 +62,10 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [pastedCodeOrUrl, setPastedCodeOrUrl] = useState('');
   const [directRefreshToken, setDirectRefreshToken] = useState('');
   const [directAccessToken, setDirectAccessToken] = useState('');
+  const [mapTileProvider, setMapTileProvider] = useState<MapTileProvider>(
+    status.mapTileProvider || 'OSM_KEYLESS'
+  );
+  const [mapTileApiKey, setMapTileApiKey] = useState<string>(status.mapTileApiKey || '');
   const [bundleInput, setBundleInput] = useState('');
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
@@ -70,7 +77,21 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     if (status.intervalsAthleteId && athleteId === '0') {
       setAthleteId(status.intervalsAthleteId);
     }
-  }, [status.stravaClientId, status.intervalsAthleteId, stravaClientId, athleteId]);
+    if (status.mapTileProvider) {
+      setMapTileProvider(status.mapTileProvider);
+    }
+    if (status.mapTileApiKey && !mapTileApiKey) {
+      setMapTileApiKey(status.mapTileApiKey);
+    }
+  }, [
+    status.stravaClientId,
+    status.intervalsAthleteId,
+    status.mapTileProvider,
+    status.mapTileApiKey,
+    stravaClientId,
+    athleteId,
+    mapTileApiKey,
+  ]);
 
   if (!isOpen) return null;
 
@@ -126,7 +147,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto">
-      <div className="w-full max-w-3xl rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto">
+      <div className="w-full max-w-3xl rounded-2xl liquid-glass shadow-2xl overflow-hidden my-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
@@ -663,10 +684,140 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </form>
           </div>
 
-          {/* Section 3: GitHub Fork & Vercel Self-Hosting Quick Guide + PWA Install */}
+          {/* Section 3: Mapbox / OpenStreetMap Map Tile API Key Configuration */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MapIcon className="w-4 h-4 text-[#FC4C02]" />
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    03. Mapbox / OpenStreetMap Map Tile Provider &amp; API Key
+                  </h3>
+                  <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                    ·{' '}
+                    {status.mapTileProvider === 'MAPBOX' && status.mapTileApiKeyConfigured
+                      ? 'Mapbox API Key Active'
+                      : status.mapTileProvider === 'THUNDERFOREST' && status.mapTileApiKeyConfigured
+                        ? 'OpenStreetMap / Thunderforest Key Active'
+                        : 'OpenStreetMap Keyless Tiles Active'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                  Configure the Leaflet map tiles used in the Activity View (Dark Matter, Outdoors/Cycle, Street, and Satellite). Choose <strong>OpenStreetMap (Free Keyless)</strong> for zero-key maps, or enter a <strong>Mapbox Public Access Token</strong> (<code className="font-mono">pk.eyJ1...</code>) or <strong>OpenStreetMap / Thunderforest API Key</strong> for high-DPI Outdoors &amp; OpenCycleMap tiles.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <a
+                  href="https://account.mapbox.com/access-tokens/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                >
+                  <span>Mapbox Tokens</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <a
+                  href="https://manage.thunderforest.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                >
+                  <span>OpenCycleMap Key</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setLocalStatusMsg(null);
+                const trimmedKey = mapTileApiKey.trim();
+                const autoProvider: MapTileProvider =
+                  trimmedKey.startsWith('pk.') && mapTileProvider === 'OSM_KEYLESS'
+                    ? 'MAPBOX'
+                    : trimmedKey && mapTileProvider === 'OSM_KEYLESS'
+                      ? 'THUNDERFOREST'
+                      : mapTileProvider;
+                setMapTileProvider(autoProvider);
+                await onSaveMapTileConfig(autoProvider, trimmedKey);
+                setLocalStatusMsg(
+                  autoProvider === 'OSM_KEYLESS' || !trimmedKey
+                    ? 'Map tiles updated to Free Keyless OpenStreetMap + CARTO + Esri Satellite.'
+                    : `Map tiles updated to ${autoProvider === 'MAPBOX' ? 'Mapbox 512px High-DPI Tiles' : 'OpenStreetMap / Thunderforest Cycle & Outdoors Tiles'} with your API key!`
+                );
+              }}
+              className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1"
+            >
+              <div className="sm:col-span-4">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Map Tile Provider
+                </label>
+                <select
+                  value={mapTileProvider}
+                  onChange={(e) => setMapTileProvider(e.target.value as MapTileProvider)}
+                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="OSM_KEYLESS">OpenStreetMap + CARTO (Free / No Key)</option>
+                  <option value="MAPBOX">Mapbox (Dark, Outdoors, Streets, Satellite)</option>
+                  <option value="THUNDERFOREST">
+                    OpenStreetMap / Thunderforest (OpenCycleMap &amp; Outdoors)
+                  </option>
+                </select>
+              </div>
+              <div className="sm:col-span-5">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Mapbox or OpenStreetMap API Key (<code className="font-mono">MAPBOX_ACCESS_TOKEN</code>)
+                </label>
+                <input
+                  type="password"
+                  value={mapTileApiKey}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMapTileApiKey(val);
+                    if (val.trim().startsWith('pk.')) {
+                      setMapTileProvider('MAPBOX');
+                    }
+                  }}
+                  placeholder={
+                    mapTileProvider === 'MAPBOX'
+                      ? 'pk.eyJ1Ijoi... (Mapbox Public Token)'
+                      : mapTileProvider === 'THUNDERFOREST'
+                        ? 'Paste Thunderforest / OpenCycleMap API Key'
+                        : 'Optional — leave blank for keyless OpenStreetMap tiles'
+                  }
+                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="sm:col-span-3 flex items-end gap-2">
+                <button
+                  type="submit"
+                  className="w-full min-h-[40px] rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-2 text-xs font-medium text-white transition-colors whitespace-nowrap"
+                >
+                  Save Map Tile Key
+                </button>
+                {(mapTileApiKey || mapTileProvider !== 'OSM_KEYLESS') && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setMapTileProvider('OSM_KEYLESS');
+                      setMapTileApiKey('');
+                      await onSaveMapTileConfig('OSM_KEYLESS', '');
+                      setLocalStatusMsg('Reset to keyless OpenStreetMap + CARTO tiles.');
+                    }}
+                    className="min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Use Free OSM
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* Section 4: GitHub Fork & Vercel Self-Hosting Quick Guide + PWA Install */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              03. Deploying Your Own Fork to Vercel via GitHub &amp; Installing PWA
+              04. Deploying Your Own Fork to Vercel via GitHub &amp; Installing PWA
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               This repository includes <code className="font-mono">vercel.json</code> (with the <code className="font-mono">0 * * * *</code> hourly cron job), <code className="font-mono">/api/index.ts</code>, and <code className="font-mono">.env.example</code>.

@@ -68,6 +68,8 @@ interface RuntimeSessionStore {
   athleteRunFtp: number;
   athleteLthr: number;
   athleteMaxHr: number;
+  mapTileApiKey: string;
+  mapTileProvider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
   gearItems: {
     id: string;
     name: string;
@@ -99,6 +101,13 @@ function saveJsonFile(filePath: string, data: unknown) {
 
 const cachedSession = loadJsonFile<Partial<RuntimeSessionStore>>(SESSION_CACHE_FILE, {});
 
+const initialEnvMapKey = (
+  process.env.MAPBOX_ACCESS_TOKEN ||
+  process.env.VITE_MAPBOX_ACCESS_TOKEN ||
+  process.env.THUNDERFOREST_API_KEY ||
+  ''
+).trim();
+
 const runtimeStore: RuntimeSessionStore = {
   intervalsApiKey: cachedSession.intervalsApiKey || process.env.INTERVALS_API_KEY || '',
   intervalsAthleteId: cachedSession.intervalsAthleteId || process.env.INTERVALS_ATHLETE_ID || '0',
@@ -122,6 +131,14 @@ const runtimeStore: RuntimeSessionStore = {
   athleteRunFtp: cachedSession.athleteRunFtp || 420,
   athleteLthr: cachedSession.athleteLthr || 163,
   athleteMaxHr: cachedSession.athleteMaxHr || 180,
+  mapTileApiKey: cachedSession.mapTileApiKey || initialEnvMapKey,
+  mapTileProvider:
+    cachedSession.mapTileProvider ||
+    (initialEnvMapKey.startsWith('pk.')
+      ? 'MAPBOX'
+      : initialEnvMapKey
+        ? 'THUNDERFOREST'
+        : 'OSM_KEYLESS'),
   gearItems: cachedSession.gearItems || [],
 };
 
@@ -362,6 +379,35 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     runtimeStore.stravaAccessToken = stravaAccessToken;
   }
 
+  const headerMapKey = (req.headers['x-map-tile-api-key'] as string | undefined)?.trim();
+  const headerMapProvider = (req.headers['x-map-tile-provider'] as string | undefined)?.trim();
+  if (headerMapKey && !runtimeStore.mapTileApiKey) {
+    runtimeStore.mapTileApiKey = headerMapKey;
+  }
+  if (
+    headerMapProvider &&
+    (headerMapProvider === 'OSM_KEYLESS' ||
+      headerMapProvider === 'MAPBOX' ||
+      headerMapProvider === 'THUNDERFOREST')
+  ) {
+    runtimeStore.mapTileProvider = headerMapProvider;
+  }
+
+  const effectiveMapKey = (
+    runtimeStore.mapTileApiKey ||
+    process.env.MAPBOX_ACCESS_TOKEN ||
+    process.env.VITE_MAPBOX_ACCESS_TOKEN ||
+    process.env.THUNDERFOREST_API_KEY ||
+    ''
+  ).trim();
+  const effectiveMapProvider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST' =
+    runtimeStore.mapTileProvider ||
+    (effectiveMapKey.startsWith('pk.')
+      ? 'MAPBOX'
+      : effectiveMapKey
+        ? 'THUNDERFOREST'
+        : 'OSM_KEYLESS');
+
   const hasIntervalsEnv = Boolean(
     process.env.INTERVALS_API_KEY && process.env.INTERVALS_API_KEY.trim()
   );
@@ -400,6 +446,36 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     gearItems: runtimeStore.gearItems,
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: getStravaTokenRotationPayload(),
+    mapTileProvider: effectiveMapProvider,
+    mapTileApiKeyConfigured: Boolean(effectiveMapKey),
+    mapTileApiKey: effectiveMapKey || undefined,
+  });
+});
+
+// Save Mapbox / OpenStreetMap / Thunderforest Map Tile Provider & API Key
+apiRouter.post('/api/map/config', (req: Request, res: Response) => {
+  const rawProvider = String(req.body?.provider || 'OSM_KEYLESS')
+    .trim()
+    .toUpperCase();
+  const rawApiKey = String(req.body?.apiKey || '').trim();
+  const provider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST' =
+    rawProvider === 'MAPBOX'
+      ? 'MAPBOX'
+      : rawProvider === 'THUNDERFOREST'
+        ? 'THUNDERFOREST'
+        : rawApiKey.startsWith('pk.')
+          ? 'MAPBOX'
+          : 'OSM_KEYLESS';
+
+  runtimeStore.mapTileProvider = provider;
+  runtimeStore.mapTileApiKey = rawApiKey;
+  saveSessionCache();
+
+  res.json({
+    ok: true,
+    mapTileProvider: runtimeStore.mapTileProvider,
+    mapTileApiKeyConfigured: Boolean(runtimeStore.mapTileApiKey),
+    mapTileApiKey: runtimeStore.mapTileApiKey || undefined,
   });
 });
 
@@ -412,6 +488,13 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     refreshToken: stravaRefreshToken,
     accessToken: stravaAccessToken,
   } = getEffectiveStravaClientConfig(req);
+  const mapTileApiKey = (
+    (req.headers['x-map-tile-api-key'] as string | undefined) ||
+    runtimeStore.mapTileApiKey ||
+    process.env.MAPBOX_ACCESS_TOKEN ||
+    ''
+  ).trim();
+  const mapTileProvider = runtimeStore.mapTileProvider || 'OSM_KEYLESS';
 
   const payload = {
     v: 1,
@@ -424,6 +507,8 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     stravaAccessToken,
     stravaExpiresAt: runtimeStore.stravaExpiresAt,
     stravaAthleteName: runtimeStore.stravaAthleteName,
+    mapTileProvider,
+    mapTileApiKey,
   };
 
   const bundle = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
@@ -433,6 +518,7 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     `STRAVA_CLIENT_ID="${stravaClientId}"`,
     `STRAVA_CLIENT_SECRET="${stravaClientSecret}"`,
     `STRAVA_REFRESH_TOKEN="${stravaRefreshToken}"`,
+    ...(mapTileApiKey ? [`MAPBOX_ACCESS_TOKEN="${mapTileApiKey}"`] : []),
   ].join('\n');
 
   res.json({
@@ -451,7 +537,11 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
     }
 
     let parsed: Partial<RuntimeSessionStore> = {};
-    if (rawInput.includes('INTERVALS_API_KEY=') || rawInput.includes('STRAVA_')) {
+    if (
+      rawInput.includes('INTERVALS_API_KEY=') ||
+      rawInput.includes('STRAVA_') ||
+      rawInput.includes('MAPBOX_')
+    ) {
       // Parse .env key=value format
       const lines = rawInput.split(/\r?\n/);
       for (const line of lines) {
@@ -470,6 +560,14 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
         if (key === 'STRAVA_CLIENT_SECRET') parsed.stravaClientSecret = val;
         if (key === 'STRAVA_REFRESH_TOKEN') parsed.stravaRefreshToken = val;
         if (key === 'STRAVA_ACCESS_TOKEN') parsed.stravaAccessToken = val;
+        if (
+          key === 'MAPBOX_ACCESS_TOKEN' ||
+          key === 'VITE_MAPBOX_ACCESS_TOKEN' ||
+          key === 'THUNDERFOREST_API_KEY'
+        ) {
+          parsed.mapTileApiKey = val;
+          parsed.mapTileProvider = val.startsWith('pk.') ? 'MAPBOX' : 'THUNDERFOREST';
+        }
       }
     } else {
       const jsonStr = rawInput.startsWith('{')
@@ -492,6 +590,12 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
       runtimeStore.stravaAccessToken = String(parsed.stravaAccessToken).trim();
     if (parsed.stravaExpiresAt) runtimeStore.stravaExpiresAt = Number(parsed.stravaExpiresAt);
     if (parsed.stravaAthleteName) runtimeStore.stravaAthleteName = parsed.stravaAthleteName;
+    if (parsed.mapTileApiKey !== undefined) {
+      runtimeStore.mapTileApiKey = String(parsed.mapTileApiKey).trim();
+    }
+    if (parsed.mapTileProvider) {
+      runtimeStore.mapTileProvider = parsed.mapTileProvider;
+    }
 
     saveSessionCache();
 
@@ -504,6 +608,8 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
         stravaClientSecret: runtimeStore.stravaClientSecret,
         stravaRefreshToken: runtimeStore.stravaRefreshToken,
         stravaAccessToken: runtimeStore.stravaAccessToken,
+        mapTileProvider: runtimeStore.mapTileProvider,
+        mapTileApiKey: runtimeStore.mapTileApiKey,
       },
     });
   } catch (err) {

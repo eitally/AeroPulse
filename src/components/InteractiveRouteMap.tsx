@@ -1,41 +1,163 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Compass, Layers, Maximize2, Navigation, Sparkles } from 'lucide-react';
-import { DistanceUnit, StravaSegmentEffort, UnifiedActivity } from '../types';
+import { Compass, KeyRound, Layers, Maximize2, Navigation, Sparkles } from 'lucide-react';
+import { DistanceUnit, MapTileProvider, StravaSegmentEffort, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
 
 export type MapTileStyle = 'DARK' | 'STREET' | 'TOPO' | 'SATELLITE';
 export type RouteColorMode = 'STRAVA' | 'POWER' | 'HR' | 'ALTITUDE';
 
-const TILE_CONFIGS: Record<
-  MapTileStyle,
-  { label: string; url: string; attribution: string; maxZoom: number }
-> = {
-  DARK: {
-    label: 'Dark Telemetry',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
-    maxZoom: 19,
-  },
-  STREET: {
-    label: 'Street Map',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
-    maxZoom: 19,
-  },
-  TOPO: {
-    label: 'Topo Terrain',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri &copy; OpenStreetMap',
-    maxZoom: 18,
-  },
-  SATELLITE: {
-    label: 'Satellite',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri World Imagery',
-    maxZoom: 18,
-  },
-};
+interface ResolvedTileConfig {
+  label: string;
+  url: string;
+  attribution: string;
+  maxZoom: number;
+  tileSize?: number;
+  zoomOffset?: number;
+  providerBadge: string;
+}
+
+function getStoredMapTileSettings(): {
+  apiKey: string;
+  provider: MapTileProvider;
+} {
+  try {
+    const savedKey =
+      localStorage.getItem('aeropulse_map_tile_api_key') ||
+      (import.meta as any).env?.VITE_MAPBOX_ACCESS_TOKEN ||
+      '';
+    const savedProvider =
+      (localStorage.getItem('aeropulse_map_tile_provider') as MapTileProvider | null) ||
+      (savedKey.trim().startsWith('pk.')
+        ? 'MAPBOX'
+        : savedKey.trim()
+          ? 'THUNDERFOREST'
+          : 'OSM_KEYLESS');
+    return {
+      apiKey: savedKey.trim(),
+      provider: savedProvider,
+    };
+  } catch {
+    return { apiKey: '', provider: 'OSM_KEYLESS' };
+  }
+}
+
+function buildTileConfigs(
+  provider: MapTileProvider,
+  rawApiKey: string
+): Record<MapTileStyle, ResolvedTileConfig> {
+  const key = rawApiKey.trim();
+  const isMapbox =
+    key.length > 0 && (provider === 'MAPBOX' || key.startsWith('pk.') || key.startsWith('sk.'));
+  const isThunderforest = key.length > 0 && !isMapbox && provider === 'THUNDERFOREST';
+
+  if (isMapbox) {
+    const encKey = encodeURIComponent(key);
+    return {
+      DARK: {
+        label: 'Mapbox Dark',
+        url: `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/512/{z}/{x}/{y}@2x?access_token=${encKey}`,
+        attribution: '&copy; Mapbox &copy; OpenStreetMap',
+        maxZoom: 20,
+        tileSize: 512,
+        zoomOffset: -1,
+        providerBadge: 'Mapbox API Key Active',
+      },
+      STREET: {
+        label: 'Mapbox Streets',
+        url: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${encKey}`,
+        attribution: '&copy; Mapbox &copy; OpenStreetMap',
+        maxZoom: 20,
+        tileSize: 512,
+        zoomOffset: -1,
+        providerBadge: 'Mapbox API Key Active',
+      },
+      TOPO: {
+        label: 'Mapbox Outdoors',
+        url: `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${encKey}`,
+        attribution: '&copy; Mapbox &copy; OpenStreetMap',
+        maxZoom: 20,
+        tileSize: 512,
+        zoomOffset: -1,
+        providerBadge: 'Mapbox API Key Active',
+      },
+      SATELLITE: {
+        label: 'Mapbox Satellite',
+        url: `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${encKey}`,
+        attribution: '&copy; Mapbox &copy; Maxar',
+        maxZoom: 20,
+        tileSize: 512,
+        zoomOffset: -1,
+        providerBadge: 'Mapbox API Key Active',
+      },
+    };
+  }
+
+  if (isThunderforest) {
+    const encKey = encodeURIComponent(key);
+    return {
+      DARK: {
+        label: 'Dark Transport',
+        url: `https://tile.thunderforest.com/transport-dark/{z}/{x}/{y}.png?apikey=${encKey}`,
+        attribution: '&copy; Thunderforest &copy; OpenStreetMap',
+        maxZoom: 19,
+        providerBadge: 'OpenCycleMap / Thunderforest Key Active',
+      },
+      STREET: {
+        label: 'OpenCycleMap',
+        url: `https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey=${encKey}`,
+        attribution: '&copy; Thunderforest &copy; OpenStreetMap',
+        maxZoom: 19,
+        providerBadge: 'OpenCycleMap / Thunderforest Key Active',
+      },
+      TOPO: {
+        label: 'Outdoors Topo',
+        url: `https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=${encKey}`,
+        attribution: '&copy; Thunderforest &copy; OpenStreetMap',
+        maxZoom: 19,
+        providerBadge: 'OpenCycleMap / Thunderforest Key Active',
+      },
+      SATELLITE: {
+        label: 'Landscape',
+        url: `https://tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey=${encKey}`,
+        attribution: '&copy; Thunderforest &copy; OpenStreetMap',
+        maxZoom: 19,
+        providerBadge: 'OpenCycleMap / Thunderforest Key Active',
+      },
+    };
+  }
+
+  return {
+    DARK: {
+      label: 'Dark Telemetry',
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19,
+      providerBadge: 'OpenStreetMap Keyless',
+    },
+    STREET: {
+      label: 'OpenStreetMap',
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+      providerBadge: 'OpenStreetMap Keyless',
+    },
+    TOPO: {
+      label: 'Topo Terrain',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      attribution: '&copy; Esri &copy; OpenStreetMap',
+      maxZoom: 18,
+      providerBadge: 'OpenStreetMap Keyless',
+    },
+    SATELLITE: {
+      label: 'Satellite',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: '&copy; Esri World Imagery',
+      maxZoom: 18,
+      providerBadge: 'OpenStreetMap Keyless',
+    },
+  };
+}
 
 function colorForMetricFraction(frac: number): string {
   const clamped = Math.max(0, Math.min(1, frac));
@@ -55,6 +177,7 @@ interface SingleActivityMapProps {
   zoomStreamRange?: [number, number] | null;
   selectedSegmentId?: string | null;
   onSelectSegmentId?: (segmentId: string) => void;
+  onOpenMapSettings?: () => void;
   heightClass?: string;
 }
 
@@ -64,6 +187,7 @@ interface MultiActivityMapProps {
   highlightedActivityId?: string | null;
   onSelectActivity: (activity: UnifiedActivity) => void;
   onHoverActivity?: (activityId: string | null) => void;
+  onOpenMapSettings?: () => void;
   distanceUnit: DistanceUnit;
   heightClass?: string;
 }
@@ -80,6 +204,27 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
   const [tileStyle, setTileStyle] = useState<MapTileStyle>('DARK');
   const [colorMode, setColorMode] = useState<RouteColorMode>('STRAVA');
   const [autoFitZoomWindow, setAutoFitZoomWindow] = useState<boolean>(true);
+  const [mapSettings, setMapSettings] = useState<{ apiKey: string; provider: MapTileProvider }>(
+    () => getStoredMapTileSettings()
+  );
+
+  // Sync when user updates Mapbox / OpenStreetMap API key in DataSourcesModal
+  useEffect(() => {
+    const handleConfigUpdate = () => {
+      setMapSettings(getStoredMapTileSettings());
+    };
+    window.addEventListener('aeropulse-map-config-updated', handleConfigUpdate);
+    window.addEventListener('storage', handleConfigUpdate);
+    return () => {
+      window.removeEventListener('aeropulse-map-config-updated', handleConfigUpdate);
+      window.removeEventListener('storage', handleConfigUpdate);
+    };
+  }, []);
+
+  const tileConfigs = useMemo(
+    () => buildTileConfigs(mapSettings.provider, mapSettings.apiKey),
+    [mapSettings.provider, mapSettings.apiKey]
+  );
 
   // Extract coordinates for SINGLE mode
   const singleCoords = useMemo((): [number, number][] => {
@@ -107,11 +252,22 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    const cfg = TILE_CONFIGS[tileStyle];
+    const cfg = tileConfigs[tileStyle];
     const tl = L.tileLayer(cfg.url, {
       attribution: cfg.attribution,
       maxZoom: cfg.maxZoom,
-    }).addTo(map);
+      tileSize: cfg.tileSize || 256,
+      zoomOffset: cfg.zoomOffset || 0,
+    });
+    tl.on('tileerror', (errEvt: any) => {
+      const img = errEvt?.tile as HTMLImageElement | undefined;
+      const coords = errEvt?.coords;
+      if (img && coords && !img.dataset.fallbackApplied) {
+        img.dataset.fallbackApplied = '1';
+        img.src = `https://tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+      }
+    });
+    tl.addTo(map);
 
     const routeGroup = L.layerGroup().addTo(map);
     const cursorGroup = L.layerGroup().addTo(map);
@@ -135,19 +291,30 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
     };
   }, []);
 
-  // Update tile layer when tileStyle changes
+  // Update tile layer when tileStyle or API key / provider changes
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current);
     }
-    const cfg = TILE_CONFIGS[tileStyle];
-    tileLayerRef.current = L.tileLayer(cfg.url, {
+    const cfg = tileConfigs[tileStyle];
+    const tl = L.tileLayer(cfg.url, {
       attribution: cfg.attribution,
       maxZoom: cfg.maxZoom,
-    }).addTo(map);
-  }, [tileStyle]);
+      tileSize: cfg.tileSize || 256,
+      zoomOffset: cfg.zoomOffset || 0,
+    });
+    tl.on('tileerror', (errEvt: any) => {
+      const img = errEvt?.tile as HTMLImageElement | undefined;
+      const coords = errEvt?.coords;
+      if (img && coords && !img.dataset.fallbackApplied) {
+        img.dataset.fallbackApplied = '1';
+        img.src = `https://tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+      }
+    });
+    tileLayerRef.current = tl.addTo(map);
+  }, [tileStyle, tileConfigs]);
 
   // Render Route Polylines, Segment Highlights & Split Markers
   useEffect(() => {
@@ -627,7 +794,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
           {/* Map Tile Switcher */}
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]">
             <Layers className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-0.5" />
-            {(Object.keys(TILE_CONFIGS) as MapTileStyle[]).map((styleKey) => (
+            {(Object.keys(tileConfigs) as MapTileStyle[]).map((styleKey) => (
               <button
                 key={styleKey}
                 type="button"
@@ -638,9 +805,15 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                {TILE_CONFIGS[styleKey].label}
+                {tileConfigs[styleKey].label}
               </button>
             ))}
+            <span
+              title="Active Map Tile Provider (Configure Mapbox or OpenStreetMap API key in Data Sources)"
+              className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-semibold mr-1"
+            >
+              {tileConfigs[tileStyle].providerBadge}
+            </span>
           </div>
 
           <button

@@ -4,23 +4,158 @@
 
 @layer base {
   :root {
-    --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', sans-serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', 'Inter', sans-serif;
+    --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   }
 
   body {
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+    background-color: #eef2f7;
+    background-image:
+      radial-gradient(at 12% 8%, rgba(56, 189, 248, 0.14) 0px, transparent 48%),
+      radial-gradient(at 88% 12%, rgba(129, 140, 248, 0.12) 0px, transparent 52%),
+      radial-gradient(at 50% 92%, rgba(16, 185, 129, 0.08) 0px, transparent 55%);
+    background-attachment: fixed;
+  }
+
+  .dark body {
+    background-color: #060a12;
+    background-image:
+      radial-gradient(at 15% 6%, rgba(14, 165, 233, 0.13) 0px, transparent 46%),
+      radial-gradient(at 85% 10%, rgba(139, 92, 246, 0.11) 0px, transparent 50%),
+      radial-gradient(at 50% 95%, rgba(16, 185, 129, 0.07) 0px, transparent 55%);
+    background-attachment: fixed;
   }
 
   h1, h2, h3, h4, .font-display {
     font-family: var(--font-display);
+    letter-spacing: -0.024em;
   }
 
   .font-mono, .tabular-nums {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* ==========================================================================
+   macOS Tahoe / visionOS Liquid Glass Surface System (Adaptive Light & Dark)
+   ========================================================================== */
+
+/* Primary Translucent Specular Card */
+.liquid-glass {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(255, 255, 255, 0.68) 100%
+  );
+  backdrop-filter: blur(24px) saturate(185%);
+  -webkit-backdrop-filter: blur(24px) saturate(185%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 10px 30px -10px rgba(15, 23, 42, 0.07),
+    0 2px 8px -2px rgba(15, 23, 42, 0.04);
+}
+
+.dark .liquid-glass {
+  background: linear-gradient(
+    165deg,
+    rgba(19, 28, 46, 0.74) 0%,
+    rgba(11, 17, 30, 0.62) 100%
+  );
+  backdrop-filter: blur(26px) saturate(190%);
+  -webkit-backdrop-filter: blur(26px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 18px 42px -12px rgba(0, 0, 0, 0.52),
+    0 4px 12px -2px rgba(0, 0, 0, 0.32);
+}
+
+/* Floating Navigation Dock Glass */
+.liquid-glass-header {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86) 0%,
+    rgba(248, 250, 252, 0.74) 100%
+  );
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 1),
+    0 12px 32px -8px rgba(15, 23, 42, 0.08),
+    0 2px 6px -1px rgba(15, 23, 42, 0.04);
+}
+
+.dark .liquid-glass-header {
+  background: linear-gradient(
+    180deg,
+    rgba(17, 25, 42, 0.80) 0%,
+    rgba(10, 15, 27, 0.70) 100%
+  );
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 16px 38px -10px rgba(0, 0, 0, 0.6),
+    0 4px 10px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* Subtle Nested Inset Glass (KPI Tiles, Table Containers) */
+.liquid-glass-subtle {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+.dark .liquid-glass-subtle {
+  background: rgba(15, 23, 42, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Recessed macOS Capsule Switcher Track */
+.liquid-capsule-track {
+  background: rgba(15, 23, 42, 0.055);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.dark .liquid-capsule-track {
+  background: rgba(3, 7, 18, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+/* Raised Specular Capsule Active Pill */
+.liquid-capsule-active {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow:
+    inset 0 1px 0 0 #ffffff,
+    0 2px 6px -1px rgba(15, 23, 42, 0.08),
+    0 1px 2px 0 rgba(15, 23, 42, 0.05);
+}
+
+.dark .liquid-capsule-active {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.09) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.24),
+    0 2px 8px -1px rgba(0, 0, 0, 0.45);
 }
 
 /* Custom subtle scrollbars for data tables and drawers */
@@ -34,10 +169,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: rgba(148, 163, 184, 0.48);
 }

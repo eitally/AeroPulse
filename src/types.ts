@@ -337,6 +337,8 @@ export interface AthleteGearItem {
   primary: boolean;
 }
 
+export type MapTileProvider = 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
+
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   intervalsConnected: boolean;
@@ -348,6 +350,9 @@ export interface ConnectionStatus {
   stravaAthleteName?: string;
   stravaSource: 'OAUTH' | 'ENV' | 'NONE';
   hasGeminiServerKey: boolean;
+  mapTileProvider?: MapTileProvider;
+  mapTileApiKeyConfigured?: boolean;
+  mapTileApiKey?: string;
   lastSyncedAt?: string;
   nextHourlySyncAt?: string;
   autoSyncCronActive?: boolean;

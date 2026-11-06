@@ -30,6 +30,10 @@ import {
   formatStopwatch,
 } from '../utils/formatters';
 import { InteractiveRouteMap } from './InteractiveRouteMap';
+import {
+  buildRepeatedSegmentsFromActivities,
+  SegmentEffortOverTimeChart,
+} from './SegmentEffortOverTimeChart';
 
 interface ActivitiesViewProps {
   activities: UnifiedActivity[];
@@ -215,10 +219,14 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [streamBrushEndIdx, setStreamBrushEndIdx] = useState<number | null>(null);
   const [hrZoneHoverIdx, setHrZoneHoverIdx] = useState<number | null>(null);
   const [modalSelectedSegmentId, setModalSelectedSegmentId] = useState<string | null>(null);
-  const [modalSegmentHoverIdx, setModalSegmentHoverIdx] = useState<number | null>(null);
+  const [explorerSelectedSegmentId, setExplorerSelectedSegmentId] = useState<string | null>(null);
+
+  // Unified 4-Mode Tabbed Workspace Switcher (one panel active at a time)
+  const [activeWorkspace, setActiveWorkspace] = useState<
+    'LOG' | 'MAP_KUDOS' | 'SEGMENTS' | 'COMPARE'
+  >('LOG');
 
   // Strava Kudos Feed & Interactive Map Explorer State
-  const [isKudosMapOpen, setIsKudosMapOpen] = useState<boolean>(true);
   const [kudosFeedFilter, setKudosFeedFilter] = useState<
     'ALL' | 'WITH_KUDOS' | 'PR_HUNTS' | 'WITH_GPS'
   >('ALL');
@@ -227,7 +235,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [modalCommentInput, setModalCommentInput] = useState<string>('');
 
   // Split-View Comparison Mode State
-  const [isSplitCompareOpen, setIsSplitCompareOpen] = useState<boolean>(false);
   const [compareIdA, setCompareIdA] = useState<string | null>(null);
   const [compareIdB, setCompareIdB] = useState<string | null>(null);
   const [compareXMode, setCompareXMode] = useState<'PERCENT' | 'TIME'>('PERCENT');
@@ -270,53 +277,48 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     [activities, compareIdB]
   );
 
-  // When entering Split-View Mode with empty slots, pre-populate Workout A and a matched repeat Workout B
-  const handleToggleSplitView = () => {
-    if (!isSplitCompareOpen) {
-      setIsSplitCompareOpen(true);
-      const sourcePool = filteredActivities.length >= 2 ? filteredActivities : activities;
-      if (!compareIdA && sourcePool.length > 0) {
-        const first = sourcePool[0];
-        setCompareIdA(first.id);
-        if (onLoadActivityStreams) onLoadActivityStreams(first);
-        if (!compareIdB && sourcePool.length > 1) {
-          // Find a repeat workout of the same sport and similar distance/duration
-          const matchedRepeat =
-            sourcePool.find(
-              (cand) =>
-                cand.id !== first.id &&
-                cand.sportCategory === first.sportCategory &&
-                cand.environment === first.environment &&
-                (first.distanceMeters > 1000
-                  ? Math.abs(cand.distanceMeters - first.distanceMeters) / first.distanceMeters <=
-                    0.25
-                  : Math.abs(cand.movingTimeSecs - first.movingTimeSecs) /
-                      Math.max(60, first.movingTimeSecs) <=
-                    0.3)
-            ) || sourcePool.find((cand) => cand.id !== first.id);
-          if (matchedRepeat) {
-            setCompareIdB(matchedRepeat.id);
-            if (onLoadActivityStreams) onLoadActivityStreams(matchedRepeat);
-          }
+  // When entering Split-View Comparator Mode with empty slots, pre-populate Workout A and a matched repeat Workout B
+  const handleActivateSplitCompare = () => {
+    setActiveWorkspace('COMPARE');
+    const sourcePool = filteredActivities.length >= 2 ? filteredActivities : activities;
+    if (!compareIdA && sourcePool.length > 0) {
+      const first = sourcePool[0];
+      setCompareIdA(first.id);
+      if (onLoadActivityStreams) onLoadActivityStreams(first);
+      if (!compareIdB && sourcePool.length > 1) {
+        const matchedRepeat =
+          sourcePool.find(
+            (cand) =>
+              cand.id !== first.id &&
+              cand.sportCategory === first.sportCategory &&
+              cand.environment === first.environment &&
+              (first.distanceMeters > 1000
+                ? Math.abs(cand.distanceMeters - first.distanceMeters) / first.distanceMeters <=
+                  0.25
+                : Math.abs(cand.movingTimeSecs - first.movingTimeSecs) /
+                    Math.max(60, first.movingTimeSecs) <=
+                  0.3)
+          ) || sourcePool.find((cand) => cand.id !== first.id);
+        if (matchedRepeat) {
+          setCompareIdB(matchedRepeat.id);
+          if (onLoadActivityStreams) onLoadActivityStreams(matchedRepeat);
         }
       }
-    } else {
-      setIsSplitCompareOpen(false);
     }
   };
 
-  // Automatically load streams whenever Workout A or Workout B changes
+  // Automatically load streams whenever Workout A or Workout B changes in Split-View Comparator
   useEffect(() => {
-    if (isSplitCompareOpen && compareActivityA && onLoadActivityStreams) {
+    if (activeWorkspace === 'COMPARE' && compareActivityA && onLoadActivityStreams) {
       onLoadActivityStreams(compareActivityA);
     }
-  }, [isSplitCompareOpen, compareActivityA, onLoadActivityStreams]);
+  }, [activeWorkspace, compareActivityA, onLoadActivityStreams]);
 
   useEffect(() => {
-    if (isSplitCompareOpen && compareActivityB && onLoadActivityStreams) {
+    if (activeWorkspace === 'COMPARE' && compareActivityB && onLoadActivityStreams) {
       onLoadActivityStreams(compareActivityB);
     }
-  }, [isSplitCompareOpen, compareActivityB, onLoadActivityStreams]);
+  }, [activeWorkspace, compareActivityB, onLoadActivityStreams]);
 
   const handleAssignToCompareSlot = (act: UnifiedActivity, slot?: 'A' | 'B') => {
     if (onLoadActivityStreams) {
@@ -324,12 +326,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     }
     if (slot === 'A') {
       setCompareIdA(act.id);
-      setIsSplitCompareOpen(true);
+      setActiveWorkspace('COMPARE');
       return;
     }
     if (slot === 'B') {
       setCompareIdB(act.id);
-      setIsSplitCompareOpen(true);
+      setActiveWorkspace('COMPARE');
       return;
     }
     if (!compareIdA || compareIdA === act.id) {
@@ -339,7 +341,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     } else {
       setCompareIdB(act.id);
     }
-    setIsSplitCompareOpen(true);
+    setActiveWorkspace('COMPARE');
   };
 
   const handleAutoMatchRepeatForA = () => {
@@ -477,6 +479,11 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     return map;
   }, [activities]);
 
+  const repeatedSegmentsList = useMemo(
+    () => buildRepeatedSegmentsFromActivities(activities),
+    [activities]
+  );
+
   // Whenever selectedActivity changes or its segmentEfforts load, auto-select the most-repeated segment on this activity
   useEffect(() => {
     if (!selectedActivity?.segmentEfforts || selectedActivity.segmentEfforts.length === 0) {
@@ -497,7 +504,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     } else {
       setModalSelectedSegmentId(null);
     }
-    setModalSegmentHoverIdx(null);
   }, [selectedActivity?.id, selectedActivity?.segmentEfforts, segmentHistoryBySegmentId]);
 
   // Reset stream zoom range and brush state when switching selectedActivity
@@ -638,63 +644,43 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Filter & All-Time Archive Summary Header Card */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+      {/* Filter, Summary KPI Strip & 4-Mode Workspace Switcher Header Card */}
+      <section className="rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              All-Time Activity Explorer, Split-View Workout Comparator &amp; Interval Splits
+              Workouts, Routes &amp; Segment Analytics
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Browse all {activities.length.toLocaleString()} historical workouts, inspect auto-detected intervals, or launch Split-View Mode to overlay power &amp; heart rate streams from any two workouts
+              Switch cleanly between your searchable Activity Log, GPS Route Map &amp; Strava Kudos Feed, Segment Effort Over Time chart, and 2-Workout Comparator
             </p>
           </div>
 
+          {/* Unified Sport Filter, Year Selector & Search Input */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Strava Kudos Feed & Interactive Map Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsKudosMapOpen((prev) => !prev)}
-              className={`min-h-[38px] inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
-                isKudosMapOpen
-                  ? 'bg-[#FC4C02] text-white shadow-xs'
-                  : 'border border-[#FC4C02]/40 bg-[#FC4C02]/10 text-[#FC4C02] hover:bg-[#FC4C02]/20'
-              }`}
-            >
-              <ThumbsUp className="w-3.5 h-3.5" />
-              <span>
-                {isKudosMapOpen
-                  ? 'Hide Strava Kudos & Route Map'
-                  : 'Strava Kudos Feed & Route Map'}
-              </span>
-            </button>
+            <div className="flex flex-wrap items-center gap-0.5 p-1 rounded-xl liquid-capsule-track">
+              {(['ALL', 'Cycling', 'Running', 'Swimming', 'Strength'] as const).map((sport) => (
+                <button
+                  key={sport}
+                  onClick={() => onSelectSport(sport)}
+                  className={`min-h-[30px] px-2.5 py-1 text-xs rounded-lg transition-all whitespace-nowrap ${
+                    selectedSport === sport
+                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                  }`}
+                >
+                  {sport === 'ALL' ? 'All Sports' : sport}
+                </button>
+              ))}
+            </div>
 
-            {/* Split-View Compare Mode Toggle Button */}
-            <button
-              type="button"
-              onClick={handleToggleSplitView}
-              className={`min-h-[38px] inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
-                isSplitCompareOpen
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'border border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'
-              }`}
-            >
-              <Columns2 className="w-4 h-4" />
-              <span>
-                {isSplitCompareOpen
-                  ? 'Exit Split-View Comparison'
-                  : 'Split-View Compare (2 Workouts)'}
-              </span>
-            </button>
-
-            {/* Year Selector */}
             <select
               value={yearFilter}
               onChange={(e) => {
                 setYearFilter(e.target.value);
                 setVisibleLimit(60);
               }}
-              className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-sm font-mono text-slate-900 dark:text-slate-100"
+              className="min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
             >
               <option value="ALL">All Years ({activities.length})</option>
               {availableYears.map((y) => (
@@ -704,101 +690,121 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               ))}
             </select>
 
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="relative w-full sm:w-60">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search workout, track, bike, shoe..."
-                className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 pl-9 pr-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search workout, bike, shoe..."
+                className="w-full min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
         </div>
 
-        {/* Sport + Outdoor/Indoor Filter Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-          <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-            {(['ALL', 'Cycling', 'Running', 'Swimming', 'Strength'] as const).map((sport) => (
-              <button
-                key={sport}
-                onClick={() => onSelectSport(sport)}
-                className={`min-h-[34px] px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  selectedSport === sport
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                {sport === 'ALL' ? 'All Sports' : sport}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-            {(
-              [
-                { id: 'COMBINED', label: 'Combined (All)' },
-                { id: 'OUTDOOR', label: 'Outdoor Only' },
-                { id: 'INDOOR', label: 'Indoor (Trainer / Treadmill)' },
-              ] as const
-            ).map((env) => (
-              <button
-                key={env.id}
-                onClick={() => onSelectEnvFilter(env.id)}
-                className={`min-h-[34px] px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  envFilter === env.id
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                {env.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Filtered Rollup Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs font-mono tabular-nums">
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1 text-xs font-mono tabular-nums">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
             <span className="text-slate-500 block font-sans">Matched Workouts</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {filteredActivities.length.toLocaleString()}
             </span>
           </div>
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
             <span className="text-slate-500 block font-sans">Total Distance</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {formatDistance(summaryStats.totalDistanceMeters, distanceUnit, 1)}
             </span>
           </div>
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
             <span className="text-slate-500 block font-sans">Moving Duration</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {formatDuration(summaryStats.totalDurationSecs)}
             </span>
           </div>
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
             <span className="text-slate-500 block font-sans">Cumulative Load</span>
-            <span className="text-base font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-base font-bold text-blue-600 dark:text-sky-400">
               {summaryStats.totalLoad.toLocaleString()} TSS
             </span>
           </div>
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
             <span className="text-slate-500 block font-sans">Avg Efficiency (EF)</span>
             <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
               {summaryStats.avgEf}
             </span>
           </div>
         </div>
+
+        {/* 4-Mode Tabbed Workspace Switcher (One Active Panel at a Time) */}
+        <div className="pt-2 border-t border-slate-200/70 dark:border-white/10">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
+            <button
+              type="button"
+              onClick={() => setActiveWorkspace('LOG')}
+              className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                activeWorkspace === 'LOG'
+                  ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <span>Activity Log</span>
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
+                {filteredActivities.length.toLocaleString()}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveWorkspace('MAP_KUDOS')}
+              className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                activeWorkspace === 'MAP_KUDOS'
+                  ? 'liquid-capsule-active text-[#FC4C02]'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <ThumbsUp className="w-3.5 h-3.5" />
+              <span>Route Map &amp; Kudos Feed</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveWorkspace('SEGMENTS')}
+              className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                activeWorkspace === 'SEGMENTS'
+                  ? 'liquid-capsule-active text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5" />
+              <span>Segment Effort Over Time</span>
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
+                {repeatedSegmentsList.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleActivateSplitCompare}
+              className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                activeWorkspace === 'COMPARE'
+                  ? 'liquid-capsule-active text-blue-600 dark:text-sky-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span>Split-View Comparator</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* ==========================================================================
-          STRAVA KUDOS FEED & INTERACTIVE GPS ROUTE MAP EXPLORER
+          WORKSPACE 2: STRAVA KUDOS FEED & INTERACTIVE GPS ROUTE MAP EXPLORER
          ========================================================================== */}
-      {isKudosMapOpen && (
-        <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+      {activeWorkspace === 'MAP_KUDOS' && (
+        <section className="rounded-2xl liquid-glass p-5 space-y-5">
           {(() => {
             const totalKudosEarned = filteredActivities.reduce(
               (acc, a) => acc + (a.kudosCount || 0),
@@ -1220,9 +1226,29 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       )}
 
       {/* ==========================================================================
-          SPLIT-VIEW SIDE-BY-SIDE WORKOUT COMPARISON WORKSPACE
+          WORKSPACE 3: SEGMENT 'EFFORT OVER TIME' MULTI-ATTEMPT PROGRESS CHART EXPLORER
          ========================================================================== */}
-      {isSplitCompareOpen && (
+      {activeWorkspace === 'SEGMENTS' && (
+        <SegmentEffortOverTimeChart
+          segments={repeatedSegmentsList}
+          selectedSegmentId={explorerSelectedSegmentId}
+          onSelectSegmentId={setExplorerSelectedSegmentId}
+          distanceUnit={distanceUnit}
+          athleteWeightKg={athleteWeightKg}
+          onSelectActivity={(actId) => {
+            const found = activities.find((a) => a.id === actId);
+            if (found) onSelectActivity(found);
+          }}
+          onScanMoreSegments={onScanMoreSegments}
+          isScanningSegments={isScanningSegments}
+          showSegmentPicker={true}
+        />
+      )}
+
+      {/* ==========================================================================
+          WORKSPACE 4: SPLIT-VIEW SIDE-BY-SIDE WORKOUT COMPARISON WORKSPACE
+         ========================================================================== */}
+      {activeWorkspace === 'COMPARE' && (
         <section className="rounded-xl bg-white dark:bg-[#111827] border-2 border-blue-500/40 shadow-lg p-5 space-y-6">
           {/* Top Bar: Title, Alignment Controls, Smoothing Toggle & Close */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -1280,10 +1306,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setIsSplitCompareOpen(false)}
+                onClick={() => setActiveWorkspace('LOG')}
                 className="min-h-[34px] px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
-                Close Split-View
+                Back to Activity Log
               </button>
             </div>
           </div>
@@ -2279,8 +2305,11 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
         </section>
       )}
 
-      {/* High-Density Activity Table */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+      {/* ==========================================================================
+          WORKSPACE 1: HIGH-DENSITY ACTIVITY LOG TABLE
+         ========================================================================== */}
+      {activeWorkspace === 'LOG' && (
+        <section className="rounded-2xl liquid-glass overflow-hidden">
         {filteredActivities.length === 0 ? (
           <div className="p-10 text-center space-y-3">
             <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -2474,12 +2503,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             )}
           </div>
         )}
-      </section>
+        </section>
+      )}
 
       {/* Deep Activity Stream, Auto-Detected Intervals & Similar Workout Inspector Modal */}
       {selectedActivity && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xs p-0 sm:p-6">
-          <div className="w-full max-w-5xl max-h-[90vh] rounded-t-3xl sm:rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-y-auto">
+          <div className="w-full max-w-5xl max-h-[90vh] rounded-t-3xl sm:rounded-2xl liquid-glass shadow-2xl overflow-y-auto">
             <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3" />
 
             {/* Header */}
@@ -2726,7 +2756,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   selectedSegmentId={modalSelectedSegmentId}
                   onSelectSegmentId={(segId: string) => {
                     setModalSelectedSegmentId(segId);
-                    setModalSegmentHoverIdx(null);
                   }}
                   heightClass="h-[340px] sm:h-[400px]"
                 />
@@ -4029,7 +4058,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   onClick={() => {
                                     if (totalAttempts >= 2) {
                                       setModalSelectedSegmentId(sid);
-                                      setModalSegmentHoverIdx(null);
                                     }
                                   }}
                                   className={`${
@@ -4088,7 +4116,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setModalSelectedSegmentId(sid);
-                                          setModalSegmentHoverIdx(null);
                                         }}
                                         className={`min-h-[28px] px-2.5 py-1 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
                                           isSelectedForChart
@@ -4097,8 +4124,8 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         }`}
                                       >
                                         {isSelectedForChart
-                                          ? `Viewing Chart (${totalAttempts}x)`
-                                          : `Trend Chart (${totalAttempts}x)`}
+                                          ? `Viewing Effort Over Time (${totalAttempts}x)`
+                                          : `Effort Over Time (${totalAttempts}x)`}
                                       </button>
                                     ) : (
                                       <span className="text-xs font-mono text-slate-400">1st effort</span>
@@ -4111,280 +4138,39 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         </table>
                       </div>
 
-                      {/* Inline Segment Performance Over Time Chart (for any selected segment with >= 2 efforts) */}
+                      {/* Inline 'Effort Over Time' Chart (for any selected segment on this activity with >= 2 efforts) */}
                       {modalSelectedSegmentId &&
                         (() => {
-                          const segHist = segmentHistoryBySegmentId.get(modalSelectedSegmentId);
-                          if (!segHist || segHist.efforts.length < 2) return null;
-                          const efforts = segHist.efforts;
-                          const len = efforts.length;
-                          const hoveredEffort =
-                            modalSegmentHoverIdx !== null && efforts[modalSegmentHoverIdx]
-                              ? efforts[modalSegmentHoverIdx]
-                              : efforts.find((e) => e.activityId === selectedActivity.id) ||
-                                efforts[efforts.length - 1];
+                          const repeatedOnCurrentAct = (selectedActivity.segmentEfforts || [])
+                            .map((eff) =>
+                              repeatedSegmentsList.find(
+                                (r) => r.segmentId === String(eff.segmentId || eff.name)
+                              )
+                            )
+                            .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+                          if (repeatedOnCurrentAct.length === 0) return null;
 
                           return (
-                            <div className="rounded-xl border border-blue-500/30 bg-slate-50/60 dark:bg-slate-900/60 p-4 space-y-3">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-mono uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold">
-                                      Segment Performance Over Time ({len} Logged Efforts)
-                                    </span>
-                                  </div>
-                                  <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-                                    {segHist.name} ·{' '}
-                                    {formatDistance(segHist.distanceMeters, distanceUnit, 2)} (
-                                    {segHist.averageGradePct}% Grade) · All-Time PR:{' '}
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-mono">
-                                      {formatStopwatch(segHist.prElapsedTimeSecs)}
-                                    </span>
-                                  </h4>
-                                </div>
-
-                                {hoveredEffort && (
-                                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono tabular-nums bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5">
-                                    <span className="font-bold text-slate-900 dark:text-slate-100">
-                                      {hoveredEffort.date}
-                                      {hoveredEffort.activityId === selectedActivity.id
-                                        ? ' (This Workout)'
-                                        : ''}
-                                    </span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                                      Time: {formatStopwatch(hoveredEffort.elapsedTimeSecs)}
-                                    </span>
-                                    {hoveredEffort.avgWatts && (
-                                      <span className="text-blue-600 dark:text-blue-400 font-bold">
-                                        Power: {hoveredEffort.avgWatts}W
-                                      </span>
-                                    )}
-                                    {hoveredEffort.avgPaceSecsPerKm && (
-                                      <span className="text-blue-600 dark:text-blue-400 font-bold">
-                                        Pace: {formatPace(hoveredEffort.avgPaceSecsPerKm, distanceUnit)}
-                                      </span>
-                                    )}
-                                    {hoveredEffort.avgHr && (
-                                      <span className="text-rose-500 font-bold">
-                                        HR: {hoveredEffort.avgHr} bpm
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-
-                              <svg
-                                viewBox="0 0 840 215"
-                                className="w-full h-52 select-none"
-                                onMouseLeave={() => setModalSegmentHoverIdx(null)}
-                              >
-                                {(() => {
-                                  const chartLeft = 64;
-                                  const chartRight = 774;
-                                  const chartW = chartRight - chartLeft;
-                                  const chartTop = 18;
-                                  const chartBottom = 160;
-                                  const chartH = chartBottom - chartTop;
-
-                                  const times = efforts.map((e) => e.elapsedTimeSecs);
-                                  const minTime = Math.min(...times);
-                                  const maxTime = Math.max(...times);
-                                  const timePad = Math.max(4, Math.round((maxTime - minTime) * 0.15));
-                                  const lowT = Math.max(1, minTime - timePad);
-                                  const highT = maxTime + timePad;
-                                  const spanT = Math.max(10, highT - lowT);
-
-                                  // Faster elapsed time (smaller seconds) is plotted HIGHER on the Y-axis
-                                  const toYTime = (tSecs: number) =>
-                                    chartBottom - ((highT - tSecs) / spanT) * chartH;
-
-                                  const wattsList = efforts
-                                    .map((e) => e.avgWatts || 0)
-                                    .filter((w) => w > 0);
-                                  const maxW = wattsList.length > 0 ? Math.max(250, ...wattsList) * 1.1 : 350;
-                                  const minW = wattsList.length > 0 ? Math.max(50, Math.min(...wattsList) * 0.85) : 100;
-                                  const toYWatts = (w: number) =>
-                                    chartBottom - ((w - minW) / Math.max(20, maxW - minW)) * chartH;
-
-                                  const xForIdx = (i: number) =>
-                                    chartLeft + (i / Math.max(1, len - 1)) * chartW;
-
-                                  const timePoints = efforts
-                                    .map((e, i) => `${xForIdx(i)},${toYTime(e.elapsedTimeSecs)}`)
-                                    .join(' ');
-
-                                  const wattsPoints =
-                                    wattsList.length >= 2
-                                      ? efforts
-                                          .filter((e) => (e.avgWatts || 0) > 0)
-                                          .map((e) => {
-                                            const idx = efforts.indexOf(e);
-                                            return `${xForIdx(idx)},${toYWatts(e.avgWatts!)}`;
-                                          })
-                                          .join(' ')
-                                      : '';
-
-                                  const prY = toYTime(segHist.prElapsedTimeSecs);
-
-                                  return (
-                                    <>
-                                      {/* Left Y-Axis Title */}
-                                      <text
-                                        x={15}
-                                        y={89}
-                                        transform="rotate(-90 15 89)"
-                                        textAnchor="middle"
-                                        className="fill-emerald-600 dark:fill-emerald-400 text-[11px] font-sans font-bold"
-                                      >
-                                        Elapsed Time (Faster ↑)
-                                      </text>
-
-                                      {/* Right Y-Axis Title */}
-                                      <text
-                                        x={826}
-                                        y={89}
-                                        transform="rotate(90 826 89)"
-                                        textAnchor="middle"
-                                        className="fill-blue-500 text-[11px] font-sans font-bold"
-                                      >
-                                        {wattsList.length >= 2 ? 'Avg Power (Watts)' : 'Avg Heart Rate (bpm)'}
-                                      </text>
-
-                                      {/* Horizontal Grid & Ticks */}
-                                      {[0, 0.33, 0.66, 1].map((f, idx) => {
-                                        const y = chartBottom - f * chartH;
-                                        const tVal = Math.round(highT - f * spanT);
-                                        const rightVal =
-                                          wattsList.length >= 2
-                                            ? `${Math.round(minW + f * (maxW - minW))}W`
-                                            : `${Math.round(120 + f * 65)} bpm`;
-                                        return (
-                                          <g key={idx}>
-                                            <line
-                                              x1={chartLeft}
-                                              y1={y}
-                                              x2={chartRight}
-                                              y2={y}
-                                              stroke="currentColor"
-                                              className="text-slate-200 dark:text-slate-800"
-                                              strokeDasharray="3 3"
-                                            />
-                                            <text
-                                              x={chartLeft - 8}
-                                              y={y + 4}
-                                              textAnchor="end"
-                                              className="fill-emerald-600 dark:fill-emerald-400 text-[11px] font-mono"
-                                            >
-                                              {formatStopwatch(tVal)}
-                                            </text>
-                                            <text
-                                              x={chartRight + 8}
-                                              y={y + 4}
-                                              className="fill-blue-500 text-[11px] font-mono"
-                                            >
-                                              {rightVal}
-                                            </text>
-                                          </g>
-                                        );
-                                      })}
-
-                                      {/* All-Time PR Benchmark Line */}
-                                      <line
-                                        x1={chartLeft}
-                                        y1={prY}
-                                        x2={chartRight}
-                                        y2={prY}
-                                        stroke="#10B981"
-                                        strokeWidth="1.25"
-                                        strokeDasharray="5 4"
-                                        strokeOpacity="0.7"
-                                      />
-
-                                      {/* Secondary Power Polyline */}
-                                      {wattsPoints && (
-                                        <polyline
-                                          fill="none"
-                                          stroke="#3B82F6"
-                                          strokeWidth="2"
-                                          strokeOpacity="0.8"
-                                          points={wattsPoints}
-                                        />
-                                      )}
-
-                                      {/* Primary Elapsed Time Polyline */}
-                                      <polyline
-                                        fill="none"
-                                        stroke="#10B981"
-                                        strokeWidth="2.5"
-                                        points={timePoints}
-                                      />
-
-                                      {/* Effort Points & Current Activity Highlight */}
-                                      {efforts.map((e, i) => {
-                                        const x = xForIdx(i);
-                                        const y = toYTime(e.elapsedTimeSecs);
-                                        const isCurrentWorkout = e.activityId === selectedActivity.id;
-                                        const isPr = e.prRank === 1;
-                                        const colW = chartW / Math.max(1, len);
-                                        return (
-                                          <g key={e.effortId}>
-                                            {isCurrentWorkout && (
-                                              <circle
-                                                cx={x}
-                                                cy={y}
-                                                r={8}
-                                                fill="none"
-                                                stroke="#F59E0B"
-                                                strokeWidth="2.5"
-                                              />
-                                            )}
-                                            <circle
-                                              cx={x}
-                                              cy={y}
-                                              r={isCurrentWorkout || isPr ? 5 : 4}
-                                              fill={isPr ? '#F59E0B' : '#10B981'}
-                                              stroke="#fff"
-                                              strokeWidth="1.5"
-                                            />
-                                            {(i === 0 ||
-                                              i === len - 1 ||
-                                              len <= 8 ||
-                                              i % Math.ceil(len / 6) === 0) && (
-                                              <text
-                                                x={x}
-                                                y={178}
-                                                textAnchor="middle"
-                                                className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
-                                              >
-                                                {e.date.slice(2)}
-                                              </text>
-                                            )}
-                                            <rect
-                                              x={x - colW / 2}
-                                              y={0}
-                                              width={colW}
-                                              height={185}
-                                              fill="transparent"
-                                              className="cursor-pointer"
-                                              onMouseEnter={() => setModalSegmentHoverIdx(i)}
-                                            />
-                                          </g>
-                                        );
-                                      })}
-
-                                      <text
-                                        x={chartLeft + chartW / 2}
-                                        y={202}
-                                        textAnchor="middle"
-                                        className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
-                                      >
-                                        Attempt Date (Chronological Progression · Gold Ring = Current Activity)
-                                      </text>
-                                    </>
-                                  );
-                                })()}
-                              </svg>
-                            </div>
+                            <SegmentEffortOverTimeChart
+                              segments={repeatedOnCurrentAct}
+                              selectedSegmentId={modalSelectedSegmentId}
+                              onSelectSegmentId={setModalSelectedSegmentId}
+                              distanceUnit={distanceUnit}
+                              athleteWeightKg={athleteWeightKg}
+                              currentActivityId={selectedActivity.id}
+                              onSelectActivity={(actId) => {
+                                const found = activities.find((a) => a.id === actId);
+                                if (found) onSelectActivity(found);
+                              }}
+                              onZoomToSegmentWindow={(startSecs, endSecs) => {
+                                zoomStreamToTimeWindow(startSecs, endSecs);
+                              }}
+                              onScanMoreSegments={onScanMoreSegments}
+                              isScanningSegments={isScanningSegments}
+                              showSegmentPicker={repeatedOnCurrentAct.length > 1}
+                              compact={false}
+                            />
                           );
                         })()}
                     </>

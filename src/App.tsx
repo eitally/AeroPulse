@@ -20,6 +20,7 @@ import {
   ConnectionStatus,
   DistanceUnit,
   EnvironmentFilter,
+  MapTileProvider,
   PlannedWorkoutEvent,
   SportCategory,
   TargetGoal,
@@ -64,7 +65,7 @@ const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('calendar');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('fitness');
   const [isDark, setIsDark] = useState<boolean>(true);
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi');
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
@@ -228,11 +229,15 @@ export default function App() {
       const stravaRefreshToken = localStorage.getItem('aeropulse_strava_refresh_token') || '';
       const stravaAccessToken = localStorage.getItem('aeropulse_strava_access_token') || '';
       const stravaExpiresAt = localStorage.getItem('aeropulse_strava_expires_at') || '';
+      const mapTileApiKey = localStorage.getItem('aeropulse_map_tile_api_key') || '';
+      const mapTileProvider = localStorage.getItem('aeropulse_map_tile_provider') || '';
       if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
       if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
       if (stravaRefreshToken) headers['x-strava-refresh-token'] = stravaRefreshToken;
       if (stravaAccessToken) headers['x-strava-access-token'] = stravaAccessToken;
       if (stravaExpiresAt) headers['x-strava-expires-at'] = stravaExpiresAt;
+      if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
+      if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
     } catch {
       // ignore
     }
@@ -249,6 +254,18 @@ export default function App() {
       const data = await resp.json();
       if (data.stravaTokens) {
         saveRotatedStravaTokensToStorage(data.stravaTokens);
+      }
+      if (data.mapTileApiKey) {
+        try {
+          if (!localStorage.getItem('aeropulse_map_tile_api_key')) {
+            localStorage.setItem('aeropulse_map_tile_api_key', data.mapTileApiKey);
+          }
+          if (data.mapTileProvider && !localStorage.getItem('aeropulse_map_tile_provider')) {
+            localStorage.setItem('aeropulse_map_tile_provider', data.mapTileProvider);
+          }
+        } catch {
+          // ignore
+        }
       }
       setConnectionStatus((prev) => ({
         ...prev,
@@ -271,6 +288,9 @@ export default function App() {
           data.stravaActivitiesCount && data.stravaActivitiesCount > 0
             ? data.stravaActivitiesCount
             : prev.stravaActivitiesCount,
+        mapTileProvider: data.mapTileProvider || prev.mapTileProvider || 'OSM_KEYLESS',
+        mapTileApiKeyConfigured: Boolean(data.mapTileApiKeyConfigured || data.mapTileApiKey),
+        mapTileApiKey: data.mapTileApiKey || prev.mapTileApiKey,
       }));
       return data;
     } catch {
@@ -839,6 +859,33 @@ export default function App() {
     await syncLiveTelemetry(true);
   };
 
+  const handleSaveMapTileConfig = async (provider: MapTileProvider, apiKey: string) => {
+    setSyncError(null);
+    const cleanKey = apiKey.trim();
+    try {
+      localStorage.setItem('aeropulse_map_tile_provider', provider);
+      if (cleanKey) {
+        localStorage.setItem('aeropulse_map_tile_api_key', cleanKey);
+      } else {
+        localStorage.removeItem('aeropulse_map_tile_api_key');
+      }
+    } catch {
+      // ignore
+    }
+    await fetch('/api/map/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+      body: JSON.stringify({ provider, apiKey: cleanKey }),
+    });
+    setConnectionStatus((prev) => ({
+      ...prev,
+      mapTileProvider: provider,
+      mapTileApiKeyConfigured: Boolean(cleanKey),
+      mapTileApiKey: cleanKey || undefined,
+    }));
+    window.dispatchEvent(new CustomEvent('aeropulse-map-config-updated'));
+  };
+
   const handleExportConnectionBundle = async (): Promise<{
     bundle: string;
     envText: string;
@@ -881,6 +928,11 @@ export default function App() {
         localStorage.setItem('aeropulse_strava_refresh_token', creds.stravaRefreshToken);
       if (creds.stravaAccessToken)
         localStorage.setItem('aeropulse_strava_access_token', creds.stravaAccessToken);
+      if (creds.mapTileApiKey)
+        localStorage.setItem('aeropulse_map_tile_api_key', creds.mapTileApiKey);
+      if (creds.mapTileProvider)
+        localStorage.setItem('aeropulse_map_tile_provider', creds.mapTileProvider);
+      window.dispatchEvent(new CustomEvent('aeropulse-map-config-updated'));
     } catch {
       // ignore
     }
@@ -1445,92 +1497,103 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] dark:bg-[#0B0F17] text-slate-900 dark:text-slate-100 pb-20 md:pb-10">
+    <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100 pb-20 md:pb-10">
       <OfflineIndicator />
 
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-6 px-4 sm:px-8 h-14 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        {/* Zone 1: Brand Wordmark */}
-        <a
-          href="#calendar"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('calendar');
-          }}
-          className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0"
-        >
-          AeroPulse
-        </a>
-
-        {/* Zone 2: Intervals.icu Workspaces Navigation */}
-        <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-slate-600 dark:text-slate-400">
-          {(
-            [
-              { id: 'calendar', label: 'Calendar' },
-              { id: 'fitness', label: 'Fitness & Health' },
-              { id: 'trends', label: 'Physiological Trends' },
-              { id: 'charts', label: 'Custom Charts' },
-              { id: 'activities', label: 'Activities' },
-              { id: 'curves', label: 'Curves & PRs' },
-              { id: 'totals', label: 'Totals & Goals' },
-            ] as const
-          ).map((item) => (
+      {/* Unified Floating macOS Liquid Glass Header Bar */}
+      <div className="sticky top-2.5 z-40 px-3 sm:px-6 lg:px-8 pt-1">
+        <header className="max-w-7xl mx-auto rounded-2xl liquid-glass-header px-3.5 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
+          {/* Left: Brand Wordmark + Compact Live Sync Pill */}
+          <div className="flex items-center gap-3 shrink-0">
             <a
-              key={item.id}
-              href={`#${item.id}`}
+              href="#fitness"
               onClick={(e) => {
                 e.preventDefault();
-                setActiveTab(item.id);
+                setActiveTab('fitness');
               }}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-                activeTab === item.id
-                  ? 'border-blue-600 dark:border-blue-400 text-slate-900 dark:text-slate-100 font-semibold'
-                  : 'border-transparent hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+              className="flex items-center gap-2 text-base sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap"
             >
-              {item.label}
+              <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-sky-400 to-blue-600 shadow-xs" />
+              <span>AeroPulse</span>
             </a>
-          ))}
-        </nav>
 
-        {/* Zone 3: Omnipresent AI Coach Drawer Toggle + Data Sources */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setIsCoachDrawerOpen(true)}
-            className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap"
-          >
-            <Bot className="w-3.5 h-3.5" />
-            <span>AI Coach</span>
-          </button>
-          <button
-            onClick={() => setIsDataSourcesOpen(true)}
-            className="min-h-[36px] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
-          >
-            Data Sources
-          </button>
-        </div>
-      </header>
+            <button
+              onClick={() => syncLiveTelemetry(false)}
+              disabled={isSyncing}
+              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+              title="Hourly Auto-Sync Cron Active (0 * * * *) — Click to sync now"
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
+              />
+              <span>{activities.length.toLocaleString()} acts</span>
+              {latestWellness && (
+                <>
+                  <span className="opacity-40">·</span>
+                  <span className="text-sky-600 dark:text-sky-300 font-semibold">
+                    CTL {latestWellness.ctl.toFixed(0)}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
 
-      {/* Workspace Utility Sub-Bar (Outdoor/Indoor Filter, Archive Status, Units, Theme) */}
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-[#111827]/60 px-4 sm:px-8 py-2">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Environment Filter + Archive Summary */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+          {/* Center: 4 Primary Workspaces in a Recessed macOS Capsule Switcher */}
+          <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
+            {(
+              [
+                {
+                  id: 'fitness',
+                  label: 'Fitness & Freshness',
+                  match: ['fitness', 'curves', 'trends', 'charts'],
+                },
+                { id: 'calendar', label: 'Calendar & Plan', match: ['calendar'] },
+                { id: 'activities', label: 'Workouts & Routes', match: ['activities'] },
+                { id: 'totals', label: 'Goals & Totals', match: ['totals'] },
+              ] as const
+            ).map((item) => {
+              const isActive = (item.match as readonly string[]).includes(activeTab);
+              return (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setActiveTab(item.id);
+                  }}
+                  className={`min-h-[30px] inline-flex items-center px-3 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                  }`}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
+          </nav>
+
+          {/* Right: Compact Environment Pill + Units + AI Coach + Data Sources + Theme */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Compact Environment Capsule (All / Out / In) */}
+            <div
+              className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-medium"
+              title="Filter Outdoor vs Indoor Smart Trainer / Treadmill"
+            >
               {(
                 [
-                  { id: 'COMBINED', label: 'All Environments' },
-                  { id: 'OUTDOOR', label: 'Outdoor Only' },
-                  { id: 'INDOOR', label: 'Indoor (Trainer/Treadmill)' },
+                  { id: 'COMBINED', label: 'All' },
+                  { id: 'OUTDOOR', label: 'Out' },
+                  { id: 'INDOOR', label: 'In' },
                 ] as const
               ).map((env) => (
                 <button
                   key={env.id}
                   onClick={() => setEnvFilter(env.id)}
-                  className={`min-h-[28px] px-2.5 py-0.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                  className={`min-h-[26px] px-2 py-0.5 rounded-lg transition-all whitespace-nowrap ${
                     envFilter === env.id
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   {env.label}
@@ -1538,61 +1601,16 @@ export default function App() {
               ))}
             </div>
 
-            <button
-              onClick={() => syncLiveTelemetry(false)}
-              disabled={isSyncing}
-              className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
-              title="Hourly Auto-Sync Cron Active (0 * * * *) — Click to poll now"
-            >
-              <RefreshCw
-                className={`w-3 h-3 ${isSyncing ? 'animate-spin text-blue-500' : 'text-emerald-500'}`}
-              />
-              <span>
-                {activities.length.toLocaleString()} workouts (
-                {connectionStatus.earliestActivityDate || '2019'}–2026) · Hourly Auto-Sync
-              </span>
-            </button>
-          </div>
-
-          {/* Right: Garmin Status Quick Pill, Units Toggle (mi / km), PWA Install, and Theme Switch */}
-          <div className="flex items-center gap-2">
-            {latestWellness && (
-              <button
-                onClick={() => setActiveTab('fitness')}
-                className="hidden lg:inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-700 dark:text-slate-300 hover:border-blue-500/40 transition-colors"
-              >
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                  Garmin: {latestWellness.garminTrainingStatus || 'Productive'}
-                </span>
-                <span>·</span>
-                <span>CTL {latestWellness.ctl.toFixed(1)}</span>
-                {latestWellness.sleepSecs > 0 && (
-                  <>
-                    <span>·</span>
-                    <span>
-                      Sleep {Math.floor(latestWellness.sleepSecs / 3600)}h
-                      {Math.round((latestWellness.sleepSecs % 3600) / 60)}m ({latestWellness.sleepScore})
-                    </span>
-                  </>
-                )}
-                {latestWellness.hrvRMSSD > 0 && (
-                  <>
-                    <span>·</span>
-                    <span>HRV {latestWellness.hrvRMSSD}ms</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-xs">
+            {/* Compact Units Capsule (mi / km) */}
+            <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track font-mono text-[11px]">
               {(['mi', 'km'] as const).map((u) => (
                 <button
                   key={u}
                   onClick={() => setDistanceUnit(u)}
-                  className={`min-h-[28px] px-2.5 py-0.5 rounded-md transition-colors ${
+                  className={`min-h-[26px] px-2 py-0.5 rounded-lg transition-all ${
                     distanceUnit === u
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   {u}
@@ -1600,25 +1618,40 @@ export default function App() {
               ))}
             </div>
 
+            <button
+              onClick={() => setIsCoachDrawerOpen(true)}
+              className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 rounded-xl shadow-xs transition-all whitespace-nowrap"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>AI Coach</span>
+            </button>
+
+            <button
+              onClick={() => setIsDataSourcesOpen(true)}
+              className="min-h-[32px] px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl liquid-glass-subtle hover:border-blue-500/40 transition-colors whitespace-nowrap"
+            >
+              Sources
+            </button>
+
             <PWAInstallButton variant="compact" />
 
             <button
               onClick={() => setIsDark(!isDark)}
-              className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-700 dark:text-slate-200 hover:border-blue-500/40 transition-colors"
               aria-label="Toggle color theme"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-700" />}
             </button>
           </div>
-        </div>
+        </header>
       </div>
 
       {/* Main Content Viewport */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6 space-y-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 space-y-5">
         {redactedStravaCount > 0 &&
           !connectionStatus.stravaConnected &&
           !dismissedStravaBanner && (
-            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
+            <div className="rounded-2xl liquid-glass border-amber-500/30 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
                   <span className="font-bold text-amber-600 dark:text-amber-400">
@@ -1631,21 +1664,21 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleLaunchStravaOAuth('localhost')}
-                    className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                   >
                     1. Authorize Strava (localhost)
                   </button>
                   <button
                     type="button"
                     onClick={() => handleLaunchStravaOAuth('cloud')}
-                    className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                   >
                     Cloud Callback Popup
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsDataSourcesOpen(true)}
-                    className="min-h-[36px] px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
                   >
                     Data Sources
                   </button>
@@ -1659,7 +1692,7 @@ export default function App() {
                         // ignore
                       }
                     }}
-                    className="min-h-[36px] px-2.5 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
+                    className="min-h-[36px] px-2.5 py-1.5 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
                     title="Dismiss banner"
                   >
                     Dismiss
@@ -1685,12 +1718,12 @@ export default function App() {
                   value={inlineStravaCode}
                   onChange={(e) => setInlineStravaCode(e.target.value)}
                   placeholder="2. Paste http://localhost/exchange_token?state=&code=... URL (or code) here after clicking Authorize"
-                  className="flex-1 min-w-[260px] min-h-[36px] rounded-lg border border-amber-500/40 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-w-[260px] min-h-[36px] rounded-xl border border-amber-500/40 bg-white/80 dark:bg-slate-950/80 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="submit"
                   disabled={isSyncing || !inlineStravaCode.trim()}
-                  className="min-h-[36px] px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  className="min-h-[36px] px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
                 >
                   {isSyncing ? 'Syncing...' : '2. Exchange Code & Sync Workouts'}
                 </button>
@@ -1707,18 +1740,18 @@ export default function App() {
           !connectionStatus.stravaConnected &&
           activities.length === 0 &&
           !isSyncing && (
-            <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-4 space-y-3">
+            <div className="rounded-2xl liquid-glass border-blue-500/30 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
                   <span className="font-bold text-blue-600 dark:text-blue-400">
                     Connect Your Live Telemetry or Paste Your 1-Click Connection Bundle:
                   </span>{' '}
-                  This deployment has no credentials saved yet. In your local preview (where Intervals.icu &amp; Strava are connected), open <strong>Data Sources</strong> → click <strong>Copy 1-Click Connection Bundle</strong>, and paste it below to load all 4,264+ activities and Garmin health records immediately:
+                  This deployment has no credentials saved yet. In your local preview (where Intervals.icu &amp; Strava are connected), open <strong>Sources</strong> → click <strong>Copy 1-Click Connection Bundle</strong>, and paste it below to load all 4,264+ activities and Garmin health records immediately:
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                 >
                   Open Data Sources Setup
                 </button>
@@ -1741,12 +1774,12 @@ export default function App() {
                   value={inlineBundleInput}
                   onChange={(e) => setInlineBundleInput(e.target.value)}
                   placeholder="Paste 1-Click Connection Bundle or .env block from your local app here..."
-                  className="flex-1 min-w-[260px] min-h-[36px] rounded-lg border border-blue-500/40 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-w-[260px] min-h-[36px] rounded-xl border border-blue-500/40 bg-white/80 dark:bg-slate-950/80 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="submit"
                   disabled={isSyncing || !inlineBundleInput.trim()}
-                  className="min-h-[36px] px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  className="min-h-[36px] px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
                 >
                   Import Bundle &amp; Sync All History
                 </button>
@@ -1778,10 +1811,68 @@ export default function App() {
           />
         )}
 
+        {/* Contextual Recessed Liquid Glass Sub-Switcher for Fitness & Physiology Workspace */}
+        {(activeTab === 'fitness' ||
+          activeTab === 'curves' ||
+          activeTab === 'trends' ||
+          activeTab === 'charts') && (
+          <div className="rounded-2xl liquid-glass p-1.5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
+              {(
+                [
+                  {
+                    id: 'fitness',
+                    label: 'PMC, Readiness & 14d Ledger',
+                    icon: HeartPulse,
+                  },
+                  {
+                    id: 'curves',
+                    label: 'Curves, Segments & 14d Ledger',
+                    icon: BarChart3,
+                  },
+                  {
+                    id: 'trends',
+                    label: 'Long-Term Physiological Trends',
+                    icon: TrendingUp,
+                  },
+                  {
+                    id: 'charts',
+                    label: 'Custom Chart Lab',
+                    icon: LineChart,
+                  },
+                ] as const
+              ).map((sub) => {
+                const SubIcon = sub.icon;
+                const isSubActive = activeTab === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setActiveTab(sub.id)}
+                    className={`min-h-[36px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                      isSubActive
+                        ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                    }`}
+                  >
+                    <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{sub.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'fitness' && (
           <FitnessHealthView
             wellnessDays={wellnessDays}
             plannedEvents={plannedEvents}
+            activities={activities}
+            onSelectActivity={(act) => {
+              handleSelectActivity(act);
+              setActiveTab('activities');
+            }}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -1861,33 +1952,35 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Tab Bar (< md) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-7 items-center h-16 px-1">
+      {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces in Floating Liquid Glass */}
+      <nav className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center h-14 px-1.5">
         {(
           [
-            { id: 'calendar', label: 'Calendar', icon: Calendar },
-            { id: 'fitness', label: 'Fitness', icon: HeartPulse },
-            { id: 'trends', label: 'Trends', icon: TrendingUp },
-            { id: 'charts', label: 'Charts', icon: LineChart },
-            { id: 'activities', label: 'Workouts', icon: Activity },
-            { id: 'curves', label: 'Curves', icon: BarChart3 },
-            { id: 'totals', label: 'Totals', icon: Target },
+            {
+              id: 'fitness',
+              label: 'Fitness',
+              icon: HeartPulse,
+              match: ['fitness', 'curves', 'trends', 'charts'],
+            },
+            { id: 'calendar', label: 'Calendar', icon: Calendar, match: ['calendar'] },
+            { id: 'activities', label: 'Workouts', icon: Activity, match: ['activities'] },
+            { id: 'totals', label: 'Goals', icon: Target, match: ['totals'] },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          const isActive = (tab.match as readonly string[]).includes(activeTab);
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[48px] flex flex-col items-center justify-center rounded-lg transition-colors ${
+              className={`min-h-[42px] flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
-                  ? 'text-blue-600 dark:text-blue-400 font-semibold'
+                  ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
                   : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               <Icon className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
+              <span className="text-[11px] tracking-tight mt-0.5 whitespace-nowrap">
                 {tab.label}
               </span>
             </button>
@@ -1929,6 +2022,7 @@ export default function App() {
         onLaunchStravaOAuth={handleLaunchStravaOAuth}
         onExchangeStravaCode={handleExchangeStravaCode}
         onSaveStravaDirectToken={handleSaveStravaDirectToken}
+        onSaveMapTileConfig={handleSaveMapTileConfig}
         onExportBundle={handleExportConnectionBundle}
         onImportBundle={handleImportConnectionBundle}
         onSyncNow={syncLiveTelemetry}

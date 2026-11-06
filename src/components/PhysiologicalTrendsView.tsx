@@ -394,7 +394,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   return (
     <div className="space-y-6">
       {/* Header & Global Controls */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+      <section className="rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -586,7 +586,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       {/* ==========================================================================
           CHART 1: LONG-TERM VO2MAX & AEROBIC CEILING SCATTER-TREND CHART
          ========================================================================== */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+      <section className="rounded-2xl liquid-glass p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -885,7 +885,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       {/* ==========================================================================
           CHART 2: LONG-TERM RESTING HEART RATE (RHR) SCATTER-TREND CHART
          ========================================================================== */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+      <section className="rounded-2xl liquid-glass p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -1144,7 +1144,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       {/* ==========================================================================
           CHART 3: LONG-TERM HRV rMSSD & HRV STABILITY (7d CV%) SCATTER-TREND CHART
          ========================================================================== */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+      <section className="rounded-2xl liquid-glass p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -1431,7 +1431,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
          ========================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Interactive Physiological Cross-Metric Scatter-Regression Explorer */}
-        <section className="lg:col-span-6 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+        <section className="lg:col-span-6 rounded-2xl liquid-glass p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -1600,7 +1600,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         </section>
 
         {/* Right: Multi-Year Annual Physiological Progression Table */}
-        <section className="lg:col-span-6 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+        <section className="lg:col-span-6 rounded-2xl liquid-glass p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">

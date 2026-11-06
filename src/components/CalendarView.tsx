@@ -403,7 +403,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Top Calendar Controls & Monthly Summary Strip */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-4">
+      <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1">
@@ -528,7 +528,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </section>
 
       {/* Intervals.icu Style 8-Column Calendar Grid (Mon-Sun + Weekly Totals Column) */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-x-auto">
+      <section className="rounded-2xl liquid-glass overflow-x-auto">
         <div className="min-w-[1060px]">
           {/* Header Row */}
           <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -870,7 +870,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Intervals.icu Structured Workout Builder Modal */}
       {builderDate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-2xl liquid-glass shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">

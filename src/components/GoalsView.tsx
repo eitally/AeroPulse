@@ -352,7 +352,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. Intervals.icu Totals, Volume Breakdown & Seiler 80/20 Polarization Index */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+      <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
@@ -607,7 +607,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       {/* 2. Critical Speed / eFTP Race Time Predictor & Equipment Lifespan Tracker */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Critical Speed / eFTP Race Time Predictor */}
-        <section className="lg:col-span-5 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+        <section className="lg:col-span-5 rounded-2xl liquid-glass p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
@@ -646,7 +646,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         </section>
 
         {/* Bike & Running Shoe Lifespan Tracker */}
-        <section className="lg:col-span-7 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+        <section className="lg:col-span-7 rounded-2xl liquid-glass p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
@@ -718,7 +718,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       </div>
 
       {/* 3. Annual Mileage Targets (Separate Running & Cycling with Outdoor vs. Indoor Treadmill/Trainer Filter) */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+      <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -890,7 +890,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       </section>
 
       {/* 4. Target Race Calendar & Physiological Milestones (Zero Dummy Data) */}
-      <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+      <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
             <Award className="w-4 h-4 text-blue-500" />
