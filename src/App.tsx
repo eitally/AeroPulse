@@ -26,11 +26,9 @@ import {
   UnifiedWellnessDay,
 } from './types';
 import {
-  INITIAL_ACTIVITIES,
   INITIAL_ANNUAL_MILEAGE_GOALS,
   INITIAL_CHAT_MESSAGES,
   INITIAL_POWER_PACE_CURVES,
-  INITIAL_WELLNESS_DAYS,
 } from './data/mockTelemetry';
 import { CalendarView } from './components/CalendarView';
 import { FitnessHealthView } from './components/FitnessHealthView';
@@ -55,9 +53,9 @@ export default function App() {
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
   const [selectedSport, setSelectedSport] = useState<SportCategory | 'ALL'>('ALL');
 
-  // Telemetry state
-  const [wellnessDays, setWellnessDays] = useState<UnifiedWellnessDay[]>(INITIAL_WELLNESS_DAYS);
-  const [activities, setActivities] = useState<UnifiedActivity[]>(INITIAL_ACTIVITIES);
+  // Telemetry state — initialized empty so zero made-up demo activities ever appear
+  const [wellnessDays, setWellnessDays] = useState<UnifiedWellnessDay[]>([]);
+  const [activities, setActivities] = useState<UnifiedActivity[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedWorkoutEvent[]>([]);
   const [gearItems, setGearItems] = useState<AthleteGearItem[]>([]);
   const [benchmarkSegments] = useState<BenchmarkSegmentHistory[]>([]);
@@ -98,6 +96,7 @@ export default function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [redactedStravaCount, setRedactedStravaCount] = useState<number>(0);
   const [inlineStravaCode, setInlineStravaCode] = useState<string>('');
+  const [inlineBundleInput, setInlineBundleInput] = useState<string>('');
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     mode: 'SANDBOX_CALIBRATION',
@@ -144,19 +143,26 @@ export default function App() {
   }, [targetGoals]);
 
   const getSavedIntervalsHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {};
     try {
       const apiKey = localStorage.getItem('aeropulse_intervals_api_key') || '';
       const athleteId = localStorage.getItem('aeropulse_intervals_athlete_id') || '0';
       if (apiKey) {
-        return {
-          'x-intervals-api-key': apiKey,
-          'x-intervals-athlete-id': athleteId,
-        };
+        headers['x-intervals-api-key'] = apiKey;
+        headers['x-intervals-athlete-id'] = athleteId;
       }
+      const stravaClientId = localStorage.getItem('aeropulse_strava_client_id') || '';
+      const stravaClientSecret = localStorage.getItem('aeropulse_strava_client_secret') || '';
+      const stravaRefreshToken = localStorage.getItem('aeropulse_strava_refresh_token') || '';
+      const stravaAccessToken = localStorage.getItem('aeropulse_strava_access_token') || '';
+      if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
+      if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
+      if (stravaRefreshToken) headers['x-strava-refresh-token'] = stravaRefreshToken;
+      if (stravaAccessToken) headers['x-strava-access-token'] = stravaAccessToken;
     } catch {
       // ignore
     }
-    return {};
+    return headers;
   };
 
   const fetchServerConfigStatus = useCallback(async () => {
@@ -237,7 +243,9 @@ export default function App() {
         }
 
         if (statusData.stravaConnected) {
-          const stravaResp = await fetch(`/api/strava/sync${fullHistory ? '?full=true' : ''}`);
+          const stravaResp = await fetch(`/api/strava/sync${fullHistory ? '?full=true' : ''}`, {
+            headers,
+          });
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
@@ -472,8 +480,8 @@ export default function App() {
       // ignore
     }
     await fetch('/api/intervals/disconnect', { method: 'POST' });
-    setWellnessDays(INITIAL_WELLNESS_DAYS);
-    setActivities(INITIAL_ACTIVITIES);
+    setWellnessDays([]);
+    setActivities([]);
     await fetchServerConfigStatus();
   };
 
@@ -488,6 +496,13 @@ export default function App() {
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to save Strava credentials');
       return;
+    }
+    try {
+      if (clientId.trim()) localStorage.setItem('aeropulse_strava_client_id', clientId.trim());
+      if (clientSecret.trim())
+        localStorage.setItem('aeropulse_strava_client_secret', clientSecret.trim());
+    } catch {
+      // ignore
     }
     await fetchServerConfigStatus();
   };
@@ -558,13 +573,21 @@ export default function App() {
     setSyncError(null);
     const resp = await fetch('/api/strava/exchange-code', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ code: codeOrUrl }),
     });
     const data = await resp.json();
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to exchange Strava authorization code.');
       throw new Error(data.error || 'Failed to exchange Strava authorization code.');
+    }
+    try {
+      if (data.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', data.refreshToken);
+      if (data.accessToken) localStorage.setItem('aeropulse_strava_access_token', data.accessToken);
+      if (data.clientId) localStorage.setItem('aeropulse_strava_client_id', data.clientId);
+      if (data.clientSecret) localStorage.setItem('aeropulse_strava_client_secret', data.clientSecret);
+    } catch {
+      // ignore
     }
     await syncLiveTelemetry(true);
   };
@@ -573,13 +596,69 @@ export default function App() {
     setSyncError(null);
     const resp = await fetch('/api/strava/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ refreshToken, accessToken }),
     });
     const data = await resp.json();
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to connect Strava token.');
       throw new Error(data.error || 'Failed to connect Strava token.');
+    }
+    try {
+      if (data.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', data.refreshToken);
+      if (data.accessToken) localStorage.setItem('aeropulse_strava_access_token', data.accessToken);
+      if (data.clientId) localStorage.setItem('aeropulse_strava_client_id', data.clientId);
+      if (data.clientSecret) localStorage.setItem('aeropulse_strava_client_secret', data.clientSecret);
+    } catch {
+      // ignore
+    }
+    await syncLiveTelemetry(true);
+  };
+
+  const handleExportConnectionBundle = async (): Promise<{
+    bundle: string;
+    envText: string;
+  } | null> => {
+    try {
+      const resp = await fetch('/api/config/export-bundle', {
+        headers: getSavedIntervalsHeaders(),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return { bundle: data.bundle, envText: data.envText };
+    } catch {
+      return null;
+    }
+  };
+
+  const handleImportConnectionBundle = async (bundleOrEnv: string) => {
+    setSyncError(null);
+    const resp = await fetch('/api/config/import-bundle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+      body: JSON.stringify({ bundle: bundleOrEnv }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      setSyncError(data.error || 'Failed to import Connection Bundle.');
+      throw new Error(data.error || 'Failed to import Connection Bundle.');
+    }
+    const creds = data.credentials || {};
+    try {
+      if (creds.intervalsApiKey)
+        localStorage.setItem('aeropulse_intervals_api_key', creds.intervalsApiKey);
+      if (creds.intervalsAthleteId)
+        localStorage.setItem('aeropulse_intervals_athlete_id', creds.intervalsAthleteId);
+      if (creds.stravaClientId)
+        localStorage.setItem('aeropulse_strava_client_id', creds.stravaClientId);
+      if (creds.stravaClientSecret)
+        localStorage.setItem('aeropulse_strava_client_secret', creds.stravaClientSecret);
+      if (creds.stravaRefreshToken)
+        localStorage.setItem('aeropulse_strava_refresh_token', creds.stravaRefreshToken);
+      if (creds.stravaAccessToken)
+        localStorage.setItem('aeropulse_strava_access_token', creds.stravaAccessToken);
+    } catch {
+      // ignore
     }
     await syncLiveTelemetry(true);
   };
@@ -1064,6 +1143,62 @@ export default function App() {
             </div>
           )}
 
+        {!connectionStatus.intervalsConnected &&
+          !connectionStatus.stravaConnected &&
+          activities.length === 0 &&
+          !isSyncing && (
+            <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
+                  <span className="font-bold text-blue-600 dark:text-blue-400">
+                    Connect Your Live Telemetry or Paste Your 1-Click Connection Bundle:
+                  </span>{' '}
+                  This deployment has no credentials saved yet. In your local preview (where Intervals.icu &amp; Strava are connected), open <strong>Data Sources</strong> → click <strong>Copy 1-Click Connection Bundle</strong>, and paste it below to load all 4,264+ activities and Garmin health records immediately:
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDataSourcesOpen(true)}
+                  className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                >
+                  Open Data Sources Setup
+                </button>
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!inlineBundleInput.trim()) return;
+                  try {
+                    await handleImportConnectionBundle(inlineBundleInput.trim());
+                    setInlineBundleInput('');
+                  } catch {
+                    // error shown below
+                  }
+                }}
+                className="flex flex-wrap items-center gap-2 pt-1"
+              >
+                <input
+                  type="text"
+                  value={inlineBundleInput}
+                  onChange={(e) => setInlineBundleInput(e.target.value)}
+                  placeholder="Paste 1-Click Connection Bundle or .env block from your local app here..."
+                  className="flex-1 min-w-[260px] min-h-[36px] rounded-lg border border-blue-500/40 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+                <button
+                  type="submit"
+                  disabled={isSyncing || !inlineBundleInput.trim()}
+                  className="min-h-[36px] px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                >
+                  Import Bundle &amp; Sync All History
+                </button>
+              </form>
+              {syncError && (
+                <div className="text-xs text-red-600 dark:text-red-400 font-medium">
+                  {syncError}
+                </div>
+              )}
+            </div>
+          )}
+
         {activeTab === 'calendar' && (
           <CalendarView
             activities={activities}
@@ -1210,6 +1345,8 @@ export default function App() {
         onLaunchStravaOAuth={handleLaunchStravaOAuth}
         onExchangeStravaCode={handleExchangeStravaCode}
         onSaveStravaDirectToken={handleSaveStravaDirectToken}
+        onExportBundle={handleExportConnectionBundle}
+        onImportBundle={handleImportConnectionBundle}
         onSyncNow={syncLiveTelemetry}
         isSyncing={isSyncing}
         errorMessage={syncError}

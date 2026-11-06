@@ -67,8 +67,8 @@ const runtimeStore: RuntimeSessionStore = {
   intervalsAthleteName: cachedSession.intervalsAthleteName || '',
   stravaClientId: cachedSession.stravaClientId || process.env.STRAVA_CLIENT_ID || '',
   stravaClientSecret: cachedSession.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || '',
-  stravaAccessToken: cachedSession.stravaAccessToken || '',
-  stravaRefreshToken: cachedSession.stravaRefreshToken || '',
+  stravaAccessToken: cachedSession.stravaAccessToken || process.env.STRAVA_ACCESS_TOKEN || '',
+  stravaRefreshToken: cachedSession.stravaRefreshToken || process.env.STRAVA_REFRESH_TOKEN || '',
   stravaExpiresAt: cachedSession.stravaExpiresAt || 0,
   stravaAthleteName: cachedSession.stravaAthleteName || '',
   lastSyncedAt: cachedSession.lastSyncedAt || new Date().toISOString(),
@@ -124,6 +124,8 @@ function getEffectiveIntervalsConfig(req?: Request) {
 function getEffectiveStravaClientConfig(req?: Request) {
   const headerClientId = req?.headers['x-strava-client-id'] as string | undefined;
   const headerClientSecret = req?.headers['x-strava-client-secret'] as string | undefined;
+  const headerRefreshToken = req?.headers['x-strava-refresh-token'] as string | undefined;
+  const headerAccessToken = req?.headers['x-strava-access-token'] as string | undefined;
   const clientId = (
     headerClientId ||
     runtimeStore.stravaClientId ||
@@ -136,7 +138,19 @@ function getEffectiveStravaClientConfig(req?: Request) {
     process.env.STRAVA_CLIENT_SECRET ||
     ''
   ).trim();
-  return { clientId, clientSecret };
+  const refreshToken = (
+    headerRefreshToken ||
+    runtimeStore.stravaRefreshToken ||
+    process.env.STRAVA_REFRESH_TOKEN ||
+    ''
+  ).trim();
+  const accessToken = (
+    headerAccessToken ||
+    runtimeStore.stravaAccessToken ||
+    process.env.STRAVA_ACCESS_TOKEN ||
+    ''
+  ).trim();
+  return { clientId, clientSecret, refreshToken, accessToken };
 }
 
 function resolveCallbackUrl(req: Request): string {
@@ -209,7 +223,29 @@ export function parseWorkoutSyntaxToSteps(syntax: string, fallbackDurationSecs =
 // ----------------------------------------------------------------------------
 apiRouter.get('/api/config/status', (req: Request, res: Response) => {
   const { apiKey: intervalsKey, athleteId } = getEffectiveIntervalsConfig(req);
-  const { clientId: stravaClientId } = getEffectiveStravaClientConfig(req);
+  const {
+    clientId: stravaClientId,
+    clientSecret: stravaClientSecret,
+    refreshToken: stravaRefreshToken,
+    accessToken: stravaAccessToken,
+  } = getEffectiveStravaClientConfig(req);
+  if (intervalsKey && !runtimeStore.intervalsApiKey) {
+    runtimeStore.intervalsApiKey = intervalsKey;
+    runtimeStore.intervalsAthleteId = athleteId;
+  }
+  if (stravaClientId && !runtimeStore.stravaClientId) {
+    runtimeStore.stravaClientId = stravaClientId;
+  }
+  if (stravaClientSecret && !runtimeStore.stravaClientSecret) {
+    runtimeStore.stravaClientSecret = stravaClientSecret;
+  }
+  if (stravaRefreshToken && !runtimeStore.stravaRefreshToken) {
+    runtimeStore.stravaRefreshToken = stravaRefreshToken;
+  }
+  if (stravaAccessToken && !runtimeStore.stravaAccessToken) {
+    runtimeStore.stravaAccessToken = stravaAccessToken;
+  }
+
   const hasIntervalsEnv = Boolean(
     process.env.INTERVALS_API_KEY && process.env.INTERVALS_API_KEY.trim()
   );
@@ -219,6 +255,7 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
       process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' &&
       process.env.GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY'
   );
+  const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
 
   res.json({
     intervalsConnected: Boolean(intervalsKey),
@@ -227,9 +264,9 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     intervalsSource: hasIntervalsEnv ? 'ENV' : intervalsKey ? 'USER_INPUT' : 'NONE',
     stravaConfigured: Boolean(stravaClientId),
     stravaClientId: stravaClientId || undefined,
-    stravaConnected: Boolean(runtimeStore.stravaAccessToken),
+    stravaConnected: isStravaConnected,
     stravaAthleteName: runtimeStore.stravaAthleteName || undefined,
-    stravaSource: runtimeStore.stravaAccessToken ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
+    stravaSource: isStravaConnected ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
     hasGeminiServerKey,
     lastSyncedAt: runtimeStore.lastSyncedAt,
     nextHourlySyncAt: runtimeStore.nextHourlySyncAt,
@@ -247,6 +284,119 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     gearItems: runtimeStore.gearItems,
     callbackUrl: resolveCallbackUrl(req),
   });
+});
+
+// Export & Import Connection Bundle for 1-Click Transfer to Deployed App / Vercel
+apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
+  const { apiKey: intervalsApiKey, athleteId: intervalsAthleteId } = getEffectiveIntervalsConfig(req);
+  const {
+    clientId: stravaClientId,
+    clientSecret: stravaClientSecret,
+    refreshToken: stravaRefreshToken,
+    accessToken: stravaAccessToken,
+  } = getEffectiveStravaClientConfig(req);
+
+  const payload = {
+    v: 1,
+    intervalsApiKey,
+    intervalsAthleteId,
+    intervalsAthleteName: runtimeStore.intervalsAthleteName,
+    stravaClientId,
+    stravaClientSecret,
+    stravaRefreshToken,
+    stravaAccessToken,
+    stravaExpiresAt: runtimeStore.stravaExpiresAt,
+    stravaAthleteName: runtimeStore.stravaAthleteName,
+  };
+
+  const bundle = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  const envLines = [
+    `INTERVALS_API_KEY="${intervalsApiKey}"`,
+    `INTERVALS_ATHLETE_ID="${intervalsAthleteId || '0'}"`,
+    `STRAVA_CLIENT_ID="${stravaClientId}"`,
+    `STRAVA_CLIENT_SECRET="${stravaClientSecret}"`,
+    `STRAVA_REFRESH_TOKEN="${stravaRefreshToken}"`,
+  ].join('\n');
+
+  res.json({
+    bundle,
+    envText: envLines,
+    credentials: payload,
+  });
+});
+
+apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
+  try {
+    const rawInput = String(req.body?.bundle || '').trim();
+    if (!rawInput) {
+      res.status(400).json({ error: 'Please paste a valid Connection Bundle or .env block.' });
+      return;
+    }
+
+    let parsed: Partial<RuntimeSessionStore> = {};
+    if (rawInput.includes('INTERVALS_API_KEY=') || rawInput.includes('STRAVA_')) {
+      // Parse .env key=value format
+      const lines = rawInput.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed
+          .slice(eqIdx + 1)
+          .trim()
+          .replace(/^["']|["']$/g, '');
+        if (key === 'INTERVALS_API_KEY') parsed.intervalsApiKey = val;
+        if (key === 'INTERVALS_ATHLETE_ID') parsed.intervalsAthleteId = val;
+        if (key === 'STRAVA_CLIENT_ID') parsed.stravaClientId = val;
+        if (key === 'STRAVA_CLIENT_SECRET') parsed.stravaClientSecret = val;
+        if (key === 'STRAVA_REFRESH_TOKEN') parsed.stravaRefreshToken = val;
+        if (key === 'STRAVA_ACCESS_TOKEN') parsed.stravaAccessToken = val;
+      }
+    } else {
+      const jsonStr = rawInput.startsWith('{')
+        ? rawInput
+        : Buffer.from(rawInput, 'base64').toString('utf8');
+      parsed = JSON.parse(jsonStr);
+    }
+
+    if (parsed.intervalsApiKey) runtimeStore.intervalsApiKey = parsed.intervalsApiKey.trim();
+    if (parsed.intervalsAthleteId)
+      runtimeStore.intervalsAthleteId = parsed.intervalsAthleteId.trim();
+    if (parsed.intervalsAthleteName)
+      runtimeStore.intervalsAthleteName = parsed.intervalsAthleteName;
+    if (parsed.stravaClientId) runtimeStore.stravaClientId = String(parsed.stravaClientId).trim();
+    if (parsed.stravaClientSecret)
+      runtimeStore.stravaClientSecret = String(parsed.stravaClientSecret).trim();
+    if (parsed.stravaRefreshToken)
+      runtimeStore.stravaRefreshToken = String(parsed.stravaRefreshToken).trim();
+    if (parsed.stravaAccessToken)
+      runtimeStore.stravaAccessToken = String(parsed.stravaAccessToken).trim();
+    if (parsed.stravaExpiresAt) runtimeStore.stravaExpiresAt = Number(parsed.stravaExpiresAt);
+    if (parsed.stravaAthleteName) runtimeStore.stravaAthleteName = parsed.stravaAthleteName;
+
+    saveSessionCache();
+
+    res.json({
+      imported: true,
+      credentials: {
+        intervalsApiKey: runtimeStore.intervalsApiKey,
+        intervalsAthleteId: runtimeStore.intervalsAthleteId,
+        stravaClientId: runtimeStore.stravaClientId,
+        stravaClientSecret: runtimeStore.stravaClientSecret,
+        stravaRefreshToken: runtimeStore.stravaRefreshToken,
+        stravaAccessToken: runtimeStore.stravaAccessToken,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({
+      error:
+        err instanceof Error
+          ? `Invalid Connection Bundle format: ${err.message}`
+          : 'Failed to parse Connection Bundle.',
+    });
+  }
 });
 
 // ----------------------------------------------------------------------------
@@ -1122,6 +1272,10 @@ apiRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) 
       connected: true,
       athleteName: runtimeStore.stravaAthleteName,
       expiresAt: tokenData.expires_at,
+      accessToken: runtimeStore.stravaAccessToken,
+      refreshToken: runtimeStore.stravaRefreshToken,
+      clientId: runtimeStore.stravaClientId,
+      clientSecret: runtimeStore.stravaClientSecret,
     });
   } catch (error) {
     res.status(400).json({
@@ -1217,6 +1371,10 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     res.json({
       connected: true,
       athleteName: runtimeStore.stravaAthleteName || 'Strava Athlete',
+      accessToken: runtimeStore.stravaAccessToken,
+      refreshToken: runtimeStore.stravaRefreshToken,
+      clientId,
+      clientSecret,
     });
   } catch (error) {
     res.status(500).json({
@@ -1282,18 +1440,21 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
 apiRouter.get(['/auth/strava/callback', '/auth/strava/callback/'], stravaCallbackHandler);
 
 async function syncStravaAllHistory(req?: Request, forceFull = false) {
-  if (!runtimeStore.stravaAccessToken) {
-    throw new Error('Strava is not connected via OAuth yet.');
+  const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
+  if (accessToken && !runtimeStore.stravaAccessToken) {
+    runtimeStore.stravaAccessToken = accessToken;
+  }
+  if (refreshToken && !runtimeStore.stravaRefreshToken) {
+    runtimeStore.stravaRefreshToken = refreshToken;
   }
 
-  // Refresh token if expired
+  // Refresh token if access token is missing (e.g., serverless cold start) or expired
   const nowSecs = Math.floor(Date.now() / 1000);
-  if (
-    runtimeStore.stravaExpiresAt &&
-    nowSecs >= runtimeStore.stravaExpiresAt - 60 &&
-    runtimeStore.stravaRefreshToken
-  ) {
-    const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+  const needsRefresh =
+    !runtimeStore.stravaAccessToken ||
+    (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60);
+
+  if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
     const refreshResp = await fetch('https://www.strava.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1311,10 +1472,14 @@ async function syncStravaAllHistory(req?: Request, forceFull = false) {
         expires_at: number;
       };
       runtimeStore.stravaAccessToken = refreshed.access_token;
-      runtimeStore.stravaRefreshToken = refreshed.refresh_token;
+      runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
       runtimeStore.stravaExpiresAt = refreshed.expires_at;
       saveSessionCache();
     }
+  }
+
+  if (!runtimeStore.stravaAccessToken) {
+    throw new Error('Strava is not connected via OAuth yet.');
   }
 
   const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };

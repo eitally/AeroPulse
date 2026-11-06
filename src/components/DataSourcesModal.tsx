@@ -23,6 +23,8 @@ interface DataSourcesModalProps {
   onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
   onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
   onSaveStravaDirectToken: (refreshToken: string, accessToken?: string) => Promise<void>;
+  onExportBundle: () => Promise<{ bundle: string; envText: string } | null>;
+  onImportBundle: (bundleOrEnv: string) => Promise<void>;
   onSyncNow: (fullHistory?: boolean) => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
@@ -38,6 +40,8 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onLaunchStravaOAuth,
   onExchangeStravaCode,
   onSaveStravaDirectToken,
+  onExportBundle,
+  onImportBundle,
   onSyncNow,
   isSyncing,
   errorMessage,
@@ -49,6 +53,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [pastedCodeOrUrl, setPastedCodeOrUrl] = useState('');
   const [directRefreshToken, setDirectRefreshToken] = useState('');
   const [directAccessToken, setDirectAccessToken] = useState('');
+  const [bundleInput, setBundleInput] = useState('');
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
 
@@ -211,9 +216,102 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 </strong>
               </div>
               <div className="text-[11px] text-slate-500">
-                Automatically polls Intervals.icu and Strava every 60 minutes via server timer &amp; <code className="font-mono">/api/cron/hourly-sync</code>.
+                Automatically polls Intervals.icu and Strava via background timer, focus sync, webhooks (<code className="font-mono">/api/webhooks/intervals</code>), &amp; <code className="font-mono">/api/cron/hourly-sync</code>.
               </div>
             </div>
+          </div>
+
+          {/* Section 00: 1-Click Transfer to Deployed App / Vercel (.env & Connection Bundle) */}
+          <div className="rounded-xl border border-blue-500/40 bg-blue-500/5 p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Transfer Active Connection to Deployed App / Vercel (1-Click Bundle &amp; .env)
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  Copy your working Intervals.icu API Key + Strava <code className="font-mono">activity:read_all</code> Refresh Token from this local session and paste it into your deployed app or Vercel Environment Variables.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const exported = await onExportBundle();
+                    if (exported?.bundle) {
+                      copyToClipboard(exported.bundle, 'bundle_copy');
+                      setLocalStatusMsg(
+                        'Copied 1-Click Connection Bundle! Paste it into your deployed app to restore both Intervals.icu and Strava immediately.'
+                      );
+                    }
+                  }}
+                  className="min-h-[36px] inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                >
+                  {copiedLabel === 'bundle_copy' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {copiedLabel === 'bundle_copy'
+                      ? 'Copied Connection Bundle!'
+                      : 'Copy 1-Click Connection Bundle'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const exported = await onExportBundle();
+                    if (exported?.envText) {
+                      copyToClipboard(exported.envText, 'env_copy');
+                      setLocalStatusMsg(
+                        'Copied Vercel .env Variables (including STRAVA_REFRESH_TOKEN)! Paste directly into Vercel Project Settings → Environment Variables.'
+                      );
+                    }
+                  }}
+                  className="min-h-[36px] inline-flex items-center gap-1.5 rounded-lg border border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 px-3 py-1.5 text-xs font-semibold transition-colors"
+                >
+                  {copiedLabel === 'env_copy' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {copiedLabel === 'env_copy'
+                      ? 'Copied Vercel .env!'
+                      : 'Copy Vercel .env Block'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!bundleInput.trim()) return;
+                setLocalStatusMsg(null);
+                await onImportBundle(bundleInput.trim());
+                setBundleInput('');
+                setLocalStatusMsg(
+                  'Connection Bundle imported! Syncing your complete Intervals.icu + Strava history...'
+                );
+              }}
+              className="flex flex-wrap items-center gap-2 pt-1"
+            >
+              <input
+                type="text"
+                value={bundleInput}
+                onChange={(e) => setBundleInput(e.target.value)}
+                placeholder="On your deployed app: Paste Connection Bundle or .env block here to connect both accounts in 1 click"
+                className="flex-1 min-w-[240px] min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+              />
+              <button
+                type="submit"
+                disabled={isSyncing || !bundleInput.trim()}
+                className="min-h-[36px] px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-semibold text-white whitespace-nowrap"
+              >
+                {isSyncing ? 'Syncing...' : 'Import Bundle & Sync History'}
+              </button>
+            </form>
           </div>
 
           {/* Section 1: Strava OAuth2 & All-Time Multi-Page Backfill */}
