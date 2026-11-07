@@ -154,6 +154,47 @@ export interface ActivityStreamSet {
   altitude?: number[];
 }
 
+export type OfficialRacePlatform =
+  | 'Athletic.net'
+  | 'TFRRS'
+  | 'MileSplit'
+  | 'RunSignup'
+  | 'Official FAT';
+
+export type OfficialTrackSurface =
+  | 'OUTDOOR_400M'
+  | 'INDOOR_BANKED_200M'
+  | 'INDOOR_FLAT_200M'
+  | 'XC_COURSE'
+  | 'ROAD';
+
+export interface OfficialRaceMetadata {
+  platform: OfficialRacePlatform;
+  meetName: string;
+  eventLabel: string; // e.g. '800m', '1500m', '1600m', '1 Mile', '3200m', '5000m'
+  eventDistanceMeters: number;
+  fatTimeSecs: number; // float with 0.01s precision (e.g. 115.84 for 1:55.84)
+  displayFatTime: string; // e.g. '1:55.84'
+  trackType: OfficialTrackSurface;
+  placeFinish?: string; // e.g. '1st (Final)'
+  windReading?: string; // e.g. '+0.8 m/s'
+  lapSplitDistanceMeters?: 200 | 400 | 1000;
+  lapSplitsSecs: number[];
+  vdotScore: number;
+  includeWarmupCooldown: boolean;
+  sourceUrl?: string;
+}
+
+export type ActivitySourceBadge =
+  | 'Intervals.icu'
+  | 'Garmin'
+  | 'Strava'
+  | 'Athletic.net'
+  | 'TFRRS'
+  | 'MileSplit'
+  | 'RunSignup'
+  | 'Official FAT';
+
 export interface UnifiedActivity {
   id: string;
   intervalsId?: string;
@@ -164,6 +205,8 @@ export interface UnifiedActivity {
   environment: ActivityEnvironment; // 'OUTDOOR' | 'INDOOR'
   subType:
     | 'Road'
+    | 'Track'
+    | 'Cross Country'
     | 'Trail'
     | 'Gravel'
     | 'Virtual Cycling'
@@ -212,7 +255,8 @@ export interface UnifiedActivity {
   segmentEfforts: StravaSegmentEffort[];
   intervals?: ActivityInterval[];
   streams?: ActivityStreamSet;
-  sourceBadges: ('Intervals.icu' | 'Garmin' | 'Strava')[];
+  officialRaceData?: OfficialRaceMetadata;
+  sourceBadges: ActivitySourceBadge[];
 }
 
 export interface StructuredWorkoutStep {
@@ -437,4 +481,36 @@ export interface ConnectionStatus {
   sharedCallbackUrl: string;
   currentOriginCallbackUrl: string;
 }
+
+export type AthleteConnectionRole = 'SELF' | 'COACH_EDIT' | 'FRIEND_VIEW';
+
+export type PrivacyVisibilityTier = 'ALL_CONNECTIONS' | 'COACHES_ONLY' | 'PRIVATE';
+
+export interface AthletePrivacySettings {
+  shareWellnessAndHrv: PrivacyVisibilityTier;
+  sharePmcAndZones: PrivacyVisibilityTier;
+  shareGpsRoutes: PrivacyVisibilityTier;
+  stravaComplianceShield: boolean; // Auto-redacts raw Strava-only GPS routes for non-owners while allowing derived fitness & official FAT marks
+  allowCoachCalendarEdits: boolean;
+}
+
+export interface ConnectedAthleteRecord {
+  id: string;
+  name: string;
+  avatarInitials: string;
+  location: string;
+  stravaAthleteId: string;
+  inviteCode: string;
+  role: 'COACH_EDIT' | 'FRIEND_VIEW';
+  status: 'CONNECTED' | 'PENDING_INCOMING' | 'PENDING_OUTGOING';
+  primaryGoalSummary: string;
+  primarySport: SportCategory;
+  athleteProfile: AthleteProfile;
+  privacySettings: AthletePrivacySettings;
+  wellnessDays: UnifiedWellnessDay[];
+  activities: UnifiedActivity[];
+  plannedEvents: PlannedWorkoutEvent[];
+  targetGoals: TargetGoal[];
+}
+
 

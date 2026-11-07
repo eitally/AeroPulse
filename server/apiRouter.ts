@@ -3956,3 +3956,135 @@ ${message}
     });
   }
 });
+
+// Parse Official Race Results from Athletic.net, TFRRS, MileSplit, or RunSignup URL / Raw Text
+apiRouter.post('/races/parse', async (req: Request, res: Response) => {
+  try {
+    const { url, rawText } = req.body as { url?: string; rawText?: string };
+    let fetchedTextSnippet = '';
+    let fetchNote = '';
+
+    if (url && typeof url === 'string' && /^https?:\/\//i.test(url.trim())) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6500);
+        const remoteResp = await fetch(url.trim(), {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (remoteResp.ok) {
+          const html = await remoteResp.text();
+          fetchedTextSnippet = html
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{2,}/g, '\n')
+            .slice(0, 18000);
+        } else {
+          fetchNote = `Remote site returned HTTP ${remoteResp.status} (anti-bot protection); parsed provided text.`;
+        }
+      } catch {
+        fetchNote =
+          'Remote platform throttled direct crawler access; parsed pasted results text.';
+      }
+    }
+
+    const combinedInput = [
+      url ? `SOURCE URL: ${url}` : '',
+      rawText ? `USER PASTED RESULTS:\n${rawText}` : '',
+      fetchedTextSnippet ? `FETCHED PAGE CONTENT:\n${fetchedTextSnippet}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    if (!combinedInput.trim()) {
+      res.status(400).json({ error: 'Provide an Athletic.net / TFRRS / MileSplit URL or pasted race results text.' });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            },
+          },
+        });
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `Extract all official track & field, cross country, or road race results from the following input (from Athletic.net, TFRRS, MileSplit, RunSignup, or meet result tables).
+Convert every race into structured JSON with exact FAT time in seconds (to 0.01s precision, e.g. "1:56.38" -> 116.38, "4:16.42" -> 256.42), eventLabel ("400m", "800m", "1500m", "1600m", "1 Mile", "3000m", "3200m", "5000m", "10000m", "XC 5K", "Road 5K", "Half Marathon"), eventDistanceMeters, date (YYYY-MM-DD), meetName, placeFinish, platform ("Athletic.net", "TFRRS", "MileSplit", "RunSignup", or "Official FAT"), trackType ("OUTDOOR_400M", "INDOOR_BANKED_200M", "INDOOR_FLAT_200M", "XC_COURSE", or "ROAD"), and lapSplitsSecs (array of lap split times in seconds if present).
+
+INPUT:
+${combinedInput}`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                races: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      date: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                      meetName: { type: Type.STRING },
+                      eventLabel: { type: Type.STRING, description: 'e.g. 800m, 1500m, 1600m, 3200m, XC 5K' },
+                      eventDistanceMeters: { type: Type.NUMBER },
+                      displayFatTime: { type: Type.STRING, description: 'e.g. 1:56.38 or 4:16.42' },
+                      fatTimeSecs: { type: Type.NUMBER, description: 'Total seconds with decimals, e.g. 116.38' },
+                      platform: { type: Type.STRING, description: 'Athletic.net, TFRRS, MileSplit, RunSignup, or Official FAT' },
+                      trackType: { type: Type.STRING, description: 'OUTDOOR_400M, INDOOR_BANKED_200M, INDOOR_FLAT_200M, XC_COURSE, or ROAD' },
+                      placeFinish: { type: Type.STRING },
+                      windReading: { type: Type.STRING },
+                      lapSplitsSecs: {
+                        type: Type.ARRAY,
+                        items: { type: Type.NUMBER },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const parsedJson = JSON.parse((response.text ?? '{}').trim());
+        if (Array.isArray(parsedJson.races) && parsedJson.races.length > 0) {
+          res.json({
+            races: parsedJson.races,
+            fetchNote,
+            source: 'GEMINI_STRUCTURED',
+          });
+          return;
+        }
+      } catch {
+        // Fall through to deterministic response so the client parser handles it cleanly
+      }
+    }
+
+    res.json({
+      races: [],
+      fetchNote:
+        fetchNote ||
+        'Used fast local deterministic parser for Athletic.net / TFRRS / MileSplit table rows.',
+      source: 'CLIENT_DETERMINISTIC',
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to parse official race results.',
+    });
+  }
+});
+

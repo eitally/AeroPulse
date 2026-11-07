@@ -52,6 +52,7 @@ interface ActivitiesViewProps {
   isHydratingRoutes?: boolean;
   onToggleKudos?: (activity: UnifiedActivity) => Promise<void>;
   onAddComment?: (activity: UnifiedActivity, commentText: string) => Promise<void>;
+  onOpenOfficialRaceModal?: () => void;
   athleteWeightKg?: number;
 }
 
@@ -209,6 +210,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   isHydratingRoutes = false,
   onToggleKudos,
   onAddComment,
+  onOpenOfficialRaceModal,
   athleteWeightKg = 72.5,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -784,6 +786,18 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 className="w-full min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {onOpenOfficialRaceModal && (
+              <button
+                type="button"
+                onClick={onOpenOfficialRaceModal}
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
+                title="Import watchless official race results from Athletic.net, TFRRS, or MileSplit"
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                <span>Official Race / FAT</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -2628,13 +2642,25 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       }`}
                     >
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          {act.name}
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
+                          <span>{act.name}</span>
+                          {act.officialRaceData && (
+                            <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400">
+                              [{act.officialRaceData.platform} · {act.officialRaceData.displayFatTime} FAT ·{' '}
+                              {act.officialRaceData.placeFinish || 'Official'}]
+                            </span>
+                          )}
                         </div>
                         <div className="text-slate-500 dark:text-slate-400 mt-0.5 font-mono text-xs flex flex-wrap items-center gap-1.5">
                           <span>
                             {act.startDateLocal.slice(0, 10)} · {act.gearName || act.deviceName || act.subType}
                           </span>
+                          {act.officialRaceData && act.officialRaceData.lapSplitsSecs.length > 0 && (
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                              · Splits ({act.officialRaceData.lapSplitDistanceMeters || 400}m):{' '}
+                              {act.officialRaceData.lapSplitsSecs.map((s) => s.toFixed(1) + 's').join(', ')}
+                            </span>
+                          )}
                           {act.segmentEfforts && act.segmentEfforts.length > 0 && (
                             <span className="text-blue-600 dark:text-blue-400 font-semibold">
                               · {act.segmentEfforts.length} segments

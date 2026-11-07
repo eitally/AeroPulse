@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive product and engineering implementation plan combining the best capabilities of Runna, TrainerRoad, Garmin Connect, Strava, and Intervals.icu into AeroPulse: (1) Multi-Week Goal-to-Calendar Adaptive Plan Generator with automatic Deload weeks and Calendar Objective Ribbon, (2) Live Race Time Predictor, 350W FTP Trajectory Model, and Runna-style Pace & Power Insights auto-calibration, (3) TrainerRoad-style Energy-System Progression Levels (1.0-10.0) & Garmin Load Focus Tunnels, and (4) Strava-style Matched Runs/Rides longitudinal comparison, Planned vs. Actual Execution Compliance Scoring, and a Seasonal Peak Power & Pace PR Trophy Matrix.",
-  "updatedAt":  "2026-11-07T06:47:19.069922128Z",
+  "summary":  "Implementation plan for launching AeroPulse as a multi-athlete web application with Strava OAuth Sign-Up/Login landing gate (plus 1-click Demo Sandbox bypass), Top Header Athlete Context Switcher, Team & Friends Roster Leaderboard, Coach Calendar Workout Push, and Granular Privacy & Strava API Compliance Controls.",
+  "updatedAt":  "2026-11-07T19:36:11.141111796Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

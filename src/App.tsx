@@ -8,17 +8,25 @@ import {
   LineChart,
   Moon,
   RefreshCw,
+  Shield,
   Sliders,
   Sun,
   Target,
   TrendingUp,
+  Users,
+  Eye,
+  Lock,
+  CalendarPlus,
+  LogIn,
 } from 'lucide-react';
 import {
   AnnualMileageGoal,
   AthleteGearItem,
+  AthletePrivacySettings,
   AthleteProfile,
   BenchmarkSegmentHistory,
   CoachChatMessage,
+  ConnectedAthleteRecord,
   ConnectionStatus,
   DistanceUnit,
   EnvironmentFilter,
@@ -34,6 +42,11 @@ import {
   INITIAL_CHAT_MESSAGES,
   INITIAL_POWER_PACE_CURVES,
 } from './data/mockTelemetry';
+import {
+  DEFAULT_SELF_PRIVACY_SETTINGS,
+  applyAthletePrivacyShield,
+  buildInitialConnectedAthletes,
+} from './data/athleteRosterData';
 import { CalendarView } from './components/CalendarView';
 import { FitnessHealthView } from './components/FitnessHealthView';
 import { PhysiologicalTrendsView } from './components/PhysiologicalTrendsView';
@@ -44,6 +57,9 @@ import { GoalsView } from './components/GoalsView';
 import { AICoachDrawer } from './components/AICoachDrawer';
 import { DataSourcesModal } from './components/DataSourcesModal';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
+import { OfficialRaceModal } from './components/OfficialRaceModal';
+import { StravaAuthGate } from './components/StravaAuthGate';
+import { AthleteRosterModal } from './components/AthleteRosterModal';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
@@ -85,6 +101,36 @@ export default function App() {
     buildCompleteAthleteProfile(null)
   );
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
+  const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
+  const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aeropulse_auth_gate_passed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [activeViewedAthleteId, setActiveViewedAthleteId] = useState<string>('SELF');
+  const [selfPrivacySettings, setSelfPrivacySettings] = useState<AthletePrivacySettings>(() => {
+    try {
+      const saved = localStorage.getItem('aeropulse_self_privacy_settings');
+      return saved ? JSON.parse(saved) : DEFAULT_SELF_PRIVACY_SETTINGS;
+    } catch {
+      return DEFAULT_SELF_PRIVACY_SETTINGS;
+    }
+  });
+  const [connectedAthletes, setConnectedAthletes] = useState<ConnectedAthleteRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('aeropulse_connected_athletes_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return buildInitialConnectedAthletes();
+  });
   const [isSyncingProfile, setIsSyncingProfile] = useState<boolean>(false);
   const [benchmarkSegments] = useState<BenchmarkSegmentHistory[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<UnifiedActivity | null>(null);
@@ -229,6 +275,22 @@ export default function App() {
       // ignore
     }
   }, [targetGoals]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aeropulse_self_privacy_settings', JSON.stringify(selfPrivacySettings));
+    } catch {
+      // ignore
+    }
+  }, [selfPrivacySettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aeropulse_connected_athletes_v1', JSON.stringify(connectedAthletes));
+    } catch {
+      // ignore
+    }
+  }, [connectedAthletes]);
 
   const getSavedIntervalsHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {};
@@ -1541,6 +1603,27 @@ export default function App() {
     }
   };
 
+  // Import watchless Official FAT Race Results into activities archive & IndexedDB
+  const handleImportOfficialRaces = useCallback(
+    (importedRaces: UnifiedActivity[]) => {
+      if (!importedRaces || importedRaces.length === 0) return;
+      setActivities((prev) => {
+        const merged = mergeActivitiesNonDestructive(prev, importedRaces);
+        activitiesRef.current = merged;
+        void savePersistedTelemetrySnapshot({
+          activities: merged,
+          wellnessDays: wellnessDaysRef.current,
+          plannedEvents: plannedEventsRef.current,
+          gearItems: gearItemsRef.current,
+          athleteProfile: athleteProfileRef.current,
+          redactedStravaCount: redactedStravaCountRef.current,
+        });
+        return merged;
+      });
+    },
+    []
+  );
+
   // Build concise physiological + Garmin Sleep/HRV + mileage telemetry payload for Gemini AI Coach
   const telemetrySummaryForGemini = useMemo(() => {
     const today = wellnessDays[wellnessDays.length - 1];
@@ -1626,11 +1709,170 @@ export default function App() {
     athleteProfile,
   ]);
 
-  const latestWellness = wellnessDays[wellnessDays.length - 1] || undefined;
+  // Multi-Athlete Context Resolution & Privacy Shield Enforcement
+  const activeConnectedAthlete = useMemo(
+    () =>
+      activeViewedAthleteId === 'SELF'
+        ? null
+        : connectedAthletes.find((a) => a.id === activeViewedAthleteId) || null,
+    [activeViewedAthleteId, connectedAthletes]
+  );
+
+  const shieldedConnectedTelemetry = useMemo(
+    () => (activeConnectedAthlete ? applyAthletePrivacyShield(activeConnectedAthlete) : null),
+    [activeConnectedAthlete]
+  );
+
+  const effectiveWellnessDays = useMemo(
+    () => (shieldedConnectedTelemetry ? shieldedConnectedTelemetry.wellnessDays : wellnessDays),
+    [shieldedConnectedTelemetry, wellnessDays]
+  );
+
+  const effectiveActivities = useMemo(
+    () => (shieldedConnectedTelemetry ? shieldedConnectedTelemetry.activities : activities),
+    [shieldedConnectedTelemetry, activities]
+  );
+
+  const effectivePlannedEvents = useMemo(
+    () => (activeConnectedAthlete ? activeConnectedAthlete.plannedEvents : plannedEvents),
+    [activeConnectedAthlete, plannedEvents]
+  );
+
+  const effectiveAthleteProfile = useMemo(
+    () => (activeConnectedAthlete ? activeConnectedAthlete.athleteProfile : athleteProfile),
+    [activeConnectedAthlete, athleteProfile]
+  );
+
+  const effectiveTargetGoals = useMemo(
+    () => (activeConnectedAthlete ? activeConnectedAthlete.targetGoals : targetGoals),
+    [activeConnectedAthlete, targetGoals]
+  );
+
+  const selfLatestWellness = wellnessDays[wellnessDays.length - 1] || undefined;
+  const latestWellness = effectiveWellnessDays[effectiveWellnessDays.length - 1] || undefined;
   const latestCtl = latestWellness?.ctl || 72.4;
-  const latestWeightKg = athleteProfile.weightKg || latestWellness?.weightKg || 70.0;
+  const latestWeightKg = effectiveAthleteProfile.weightKg || latestWellness?.weightKg || 70.0;
   const athleteFtp =
-    athleteProfile.ftp || connectionStatus.athleteFtp || latestWellness?.rideEftp || 300;
+    effectiveAthleteProfile.ftp || connectionStatus.athleteFtp || latestWellness?.rideEftp || 300;
+
+  // Multi-athlete roster & coach handlers
+  const handleEnterSandbox = useCallback(() => {
+    setHasEnteredWorkspace(true);
+    try {
+      localStorage.setItem('aeropulse_auth_gate_passed', '1');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleOpenStravaAuthGate = useCallback(() => {
+    setHasEnteredWorkspace(false);
+    try {
+      localStorage.removeItem('aeropulse_auth_gate_passed');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleApproveAthleteRequest = useCallback(
+    (athleteId: string, role: 'COACH_EDIT' | 'FRIEND_VIEW') => {
+      setConnectedAthletes((prev) =>
+        prev.map((a) => (a.id === athleteId ? { ...a, role, status: 'CONNECTED' } : a))
+      );
+    },
+    []
+  );
+
+  const handleRemoveOrDeclineAthlete = useCallback(
+    (athleteId: string) => {
+      setConnectedAthletes((prev) => prev.filter((a) => a.id !== athleteId));
+      setActiveViewedAthleteId((curr) => (curr === athleteId ? 'SELF' : curr));
+    },
+    []
+  );
+
+  const handleToggleAthleteRole = useCallback((athleteId: string) => {
+    setConnectedAthletes((prev) =>
+      prev.map((a) =>
+        a.id === athleteId
+          ? { ...a, role: a.role === 'COACH_EDIT' ? 'FRIEND_VIEW' : 'COACH_EDIT' }
+          : a
+      )
+    );
+  }, []);
+
+  const handleAddFollowByInviteOrName = useCallback(
+    (query: string, role: 'COACH_EDIT' | 'FRIEND_VIEW', specialty: 'Running' | 'Cycling') => {
+      const clean = query.trim();
+      if (!clean) return;
+      const initials = clean
+        .split(/\s+/)
+        .map((w) => w[0]?.toUpperCase() || 'A')
+        .join('')
+        .slice(0, 2);
+      const baseDefaults = buildInitialConnectedAthletes()[0];
+      const newRecord: ConnectedAthleteRecord = {
+        ...baseDefaults,
+        id: `athlete-custom-${Date.now()}`,
+        name: clean.startsWith('AP-') ? `Athlete (${clean})` : clean,
+        avatarInitials: initials || 'AT',
+        location: 'Connected via Invite Code',
+        stravaAthleteId: String(Math.floor(4000000 + Math.random() * 5000000)),
+        inviteCode: clean.startsWith('AP-')
+          ? clean.toUpperCase()
+          : `AP-${Math.floor(1000 + Math.random() * 8999)}-${(initials || 'ATH').toUpperCase()}`,
+        role,
+        status: 'CONNECTED',
+        primarySport: specialty,
+        primaryGoalSummary:
+          specialty === 'Cycling' ? '340W Target FTP' : 'Sub-19:45 5K & Track PRs',
+      };
+      setConnectedAthletes((prev) => [newRecord, ...prev]);
+    },
+    []
+  );
+
+  const handlePushCoachWorkout = useCallback(
+    (
+      athleteId: string,
+      workout: {
+        date: string;
+        name: string;
+        sportCategory: 'Running' | 'Cycling';
+        plannedDurationSecs: number;
+        plannedLoad: number;
+        workoutSyntax: string;
+        description: string;
+      }
+    ) => {
+      const newEvt: PlannedWorkoutEvent = {
+        id: `coach-push-${Date.now()}`,
+        date: workout.date,
+        name: workout.name,
+        sportCategory: workout.sportCategory,
+        environmentPreference: 'FLEXIBLE',
+        description: workout.description,
+        plannedLoad: workout.plannedLoad,
+        plannedDurationSecs: workout.plannedDurationSecs,
+        targetZoneSummary: 'Coach Prescribed Session',
+        workoutSyntax: workout.workoutSyntax,
+        source: 'USER',
+      };
+      setConnectedAthletes((prev) =>
+        prev.map((a) =>
+          a.id === athleteId
+            ? {
+                ...a,
+                plannedEvents: [...a.plannedEvents, newEvt].sort((x, y) =>
+                  x.date.localeCompare(y.date)
+                ),
+              }
+            : a
+        )
+      );
+    },
+    []
+  );
 
   const handleSendChatMessage = async (userText: string) => {
     const userMsg: CoachChatMessage = {
@@ -1702,6 +1944,25 @@ export default function App() {
     }
   };
 
+  if (!hasEnteredWorkspace && !connectionStatus.stravaConnected) {
+    return (
+      <StravaAuthGate
+        status={connectionStatus}
+        onLaunchStravaOAuth={async () => {
+          await handleLaunchStravaOAuth('cloud');
+        }}
+        onExchangeStravaCode={async (codeOrUrl) => {
+          await handleExchangeStravaCode(codeOrUrl);
+          handleEnterSandbox();
+        }}
+        onSaveStravaCredentials={handleSaveStravaCredentials}
+        onEnterSandbox={handleEnterSandbox}
+        isSyncing={isSyncing}
+        errorMessage={syncError}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100 pb-20 md:pb-10">
       <OfflineIndicator />
@@ -1709,8 +1970,8 @@ export default function App() {
       {/* Unified Floating macOS Liquid Glass Header Bar */}
       <div className="sticky top-2.5 z-40 px-3 sm:px-6 lg:px-8 pt-1">
         <header className="max-w-7xl mx-auto rounded-2xl liquid-glass-header px-3.5 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Brand Wordmark + Compact Live Sync Pill */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Left: Brand Wordmark + Athlete Context Switcher + Compact Live Sync Pill */}
+          <div className="flex items-center gap-2.5 shrink-0">
             <a
               href="#fitness"
               onClick={(e) => {
@@ -1723,6 +1984,42 @@ export default function App() {
               <span>AeroPulse</span>
             </a>
 
+            {/* Intervals.icu-Style Top Header Athlete Context Switcher */}
+            <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-sky-500/25">
+              <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <select
+                value={activeViewedAthleteId}
+                onChange={(e) => {
+                  setActiveViewedAthleteId(e.target.value);
+                  setSelectedActivity(null);
+                }}
+                aria-label="Switch Active Athlete Profile"
+                className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="SELF" className="bg-slate-900 text-white">
+                  You ({athleteProfile.name || 'Primary Athlete'})
+                </option>
+                {connectedAthletes
+                  .filter((a) => a.status === 'CONNECTED')
+                  .map((a) => (
+                    <option key={a.id} value={a.id} className="bg-slate-900 text-white">
+                      {a.name} ({a.role === 'COACH_EDIT' ? 'Coach Edit' : 'Friend View'})
+                    </option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setIsRosterModalOpen(true)}
+                className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-mono font-semibold transition-colors flex items-center gap-1"
+                title="Open Friends, Team Leaderboard & Coaching Hub"
+              >
+                <span>Roster</span>
+                {connectedAthletes.some((a) => a.status !== 'CONNECTED') && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                )}
+              </button>
+            </div>
+
             <button
               onClick={() => syncLiveTelemetry(false)}
               disabled={isSyncing}
@@ -1732,7 +2029,7 @@ export default function App() {
               <RefreshCw
                 className={`w-3 h-3 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
               />
-              <span>{activities.length.toLocaleString()} acts</span>
+              <span>{effectiveActivities.length.toLocaleString()} acts</span>
               {latestWellness && (
                 <>
                   <span className="opacity-40">·</span>
@@ -1840,7 +2137,7 @@ export default function App() {
               <Sliders className="w-3 h-3 text-blue-500" />
               <span className="hidden lg:inline">Zones</span>
               <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-sky-300">
-                {athleteProfile.ftp}W
+                {effectiveAthleteProfile.ftp}W
               </span>
             </button>
 
@@ -1849,6 +2146,17 @@ export default function App() {
               className="min-h-[32px] px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl liquid-glass-subtle hover:border-blue-500/40 transition-colors whitespace-nowrap"
             >
               Sources
+            </button>
+
+            <button
+              onClick={handleOpenStravaAuthGate}
+              className="min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-[#FC4C02] hover:bg-[#E34402] rounded-xl transition-colors whitespace-nowrap"
+              title="Open Strava OAuth Sign-Up / Sign-In Gate"
+            >
+              <LogIn className="w-3 h-3" />
+              <span className="hidden xl:inline">
+                {connectionStatus.stravaConnected ? 'Strava Active' : 'Strava Login'}
+              </span>
             </button>
 
             <PWAInstallButton variant="compact" />
@@ -1866,6 +2174,68 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 space-y-5">
+        {/* Active Friend / Coached Athlete Context Banner */}
+        {activeConnectedAthlete && (
+          <div className="rounded-2xl liquid-glass border-sky-500/40 p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-500/50 flex items-center justify-center font-mono font-bold text-sm text-sky-300">
+                {activeConnectedAthlete.avatarInitials}
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">
+                    Viewing {activeConnectedAthlete.name}
+                  </span>
+                  {activeConnectedAthlete.role === 'COACH_EDIT' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-orange-500/15 text-orange-400 border border-orange-500/40">
+                      <CalendarPlus className="w-3 h-3" />
+                      Coach Access (Calendar Edit Enabled)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-sky-500/15 text-sky-400 border border-sky-500/40">
+                      <Eye className="w-3 h-3" />
+                      Friend Access (Read-Only View)
+                    </span>
+                  )}
+                  {(shieldedConnectedTelemetry?.redactedWellness ||
+                    shieldedConnectedTelemetry?.redactedGpsRoutes) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/15 text-amber-400 border border-amber-500/40">
+                      <Lock className="w-3 h-3" />
+                      Privacy Shield Active (HRV/GPS Masked for Friends)
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-mono">
+                  {activeConnectedAthlete.location} • Strava #{activeConnectedAthlete.stravaAthleteId} • Goal:{' '}
+                  <span className="text-sky-400 font-semibold">
+                    {activeConnectedAthlete.primaryGoalSummary}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRosterModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-300 flex items-center gap-1.5"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Manage Roster &amp; Coach Push</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveViewedAthleteId('SELF');
+                  setSelectedActivity(null);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-mono font-semibold transition-colors"
+              >
+                Return to My Profile
+              </button>
+            </div>
+          </div>
+        )}
         {redactedStravaCount > 0 &&
           !connectionStatus.stravaConnected &&
           !dismissedStravaBanner && (
@@ -2012,23 +2382,38 @@ export default function App() {
 
         {activeTab === 'calendar' && (
           <CalendarView
-            activities={activities}
-            wellnessDays={wellnessDays}
-            plannedEvents={plannedEvents}
-            targetGoals={targetGoals}
+            activities={effectiveActivities}
+            wellnessDays={effectiveWellnessDays}
+            plannedEvents={effectivePlannedEvents}
+            targetGoals={effectiveTargetGoals}
             envFilter={envFilter}
             selectedSport={selectedSport}
             distanceUnit={distanceUnit}
             athleteFtp={athleteFtp}
-            athleteProfile={athleteProfile}
+            athleteProfile={effectiveAthleteProfile}
             onSelectActivity={(act) => {
               handleSelectActivity(act);
               setActiveTab('activities');
             }}
-            onCreatePlannedEvent={handleCreatePlannedEvent}
+            onCreatePlannedEvent={async (evt) => {
+              if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {
+                handlePushCoachWorkout(activeConnectedAthlete.id, {
+                  date: evt.date,
+                  name: evt.name,
+                  sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+                  plannedDurationSecs: evt.plannedDurationSecs,
+                  plannedLoad: evt.plannedLoad,
+                  workoutSyntax: evt.workoutSyntax || '',
+                  description: evt.description,
+                });
+              } else {
+                await handleCreatePlannedEvent(evt);
+              }
+            }}
             onDeletePlannedEvent={handleDeletePlannedEvent}
             onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
             onOpenGoalsArchitect={() => setActiveTab('totals')}
+            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -2119,10 +2504,10 @@ export default function App() {
 
         {activeTab === 'fitness' && (
           <FitnessHealthView
-            wellnessDays={wellnessDays}
-            plannedEvents={plannedEvents}
-            activities={activities}
-            athleteProfile={athleteProfile}
+            wellnessDays={effectiveWellnessDays}
+            plannedEvents={effectivePlannedEvents}
+            activities={effectiveActivities}
+            athleteProfile={effectiveAthleteProfile}
             distanceUnit={distanceUnit}
             onSelectActivity={(act) => {
               handleSelectActivity(act);
@@ -2136,8 +2521,8 @@ export default function App() {
 
         {activeTab === 'trends' && (
           <PhysiologicalTrendsView
-            wellnessDays={wellnessDays}
-            activities={activities}
+            wellnessDays={effectiveWellnessDays}
+            activities={effectiveActivities}
             athleteWeightKg={latestWeightKg}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
@@ -2145,8 +2530,8 @@ export default function App() {
 
         {activeTab === 'charts' && (
           <CustomChartsView
-            activities={activities}
-            wellnessDays={wellnessDays}
+            activities={effectiveActivities}
+            wellnessDays={effectiveWellnessDays}
             distanceUnit={distanceUnit}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
@@ -2154,7 +2539,7 @@ export default function App() {
 
         {activeTab === 'activities' && (
           <ActivitiesView
-            activities={activities}
+            activities={effectiveActivities}
             selectedSport={selectedSport}
             onSelectSport={setSelectedSport}
             envFilter={envFilter}
@@ -2169,6 +2554,7 @@ export default function App() {
             isHydratingRoutes={isHydratingRoutes}
             onToggleKudos={handleToggleActivityKudos}
             onAddComment={handleAddActivityComment}
+            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
             athleteWeightKg={latestWeightKg}
           />
         )}
@@ -2177,8 +2563,8 @@ export default function App() {
           <PhysiologyView
             curves={INITIAL_POWER_PACE_CURVES}
             benchmarkSegments={benchmarkSegments}
-            activities={activities}
-            wellnessDays={wellnessDays}
+            activities={effectiveActivities}
+            wellnessDays={effectiveWellnessDays}
             envFilter={envFilter}
             distanceUnit={distanceUnit}
             athleteWeightKg={latestWeightKg}
@@ -2195,18 +2581,18 @@ export default function App() {
           <GoalsView
             annualMileageGoals={annualMileageGoals}
             onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
-            targetGoals={targetGoals}
+            targetGoals={effectiveTargetGoals}
             onAddTargetGoal={handleAddTargetGoal}
             onDeleteTargetGoal={handleDeleteTargetGoal}
-            activities={activities}
-            wellnessDays={wellnessDays}
-            plannedEvents={plannedEvents}
+            activities={effectiveActivities}
+            wellnessDays={effectiveWellnessDays}
+            plannedEvents={effectivePlannedEvents}
             gearItems={gearItems}
             envFilter={envFilter}
             onSelectEnvFilter={setEnvFilter}
             distanceUnit={distanceUnit}
             currentCtl={latestCtl}
-            athleteProfile={athleteProfile}
+            athleteProfile={effectiveAthleteProfile}
             onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
             onSaveProfileOverride={handleSaveProfileOverride}
             onSelectActivity={(act) => {
@@ -2214,6 +2600,7 @@ export default function App() {
               setActiveTab('activities');
             }}
             onSwitchToCalendar={() => setActiveTab('calendar')}
+            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -2282,7 +2669,7 @@ export default function App() {
       <AthleteProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
-        athleteProfile={athleteProfile}
+        athleteProfile={effectiveAthleteProfile}
         latestWellness={latestWellness}
         distanceUnit={distanceUnit}
         intervalsConnected={connectionStatus.intervalsConnected}
@@ -2311,6 +2698,44 @@ export default function App() {
         idbSavedAt={idbSavedAt}
         persistedWorkoutCount={activities.length}
         onRebuildPersistedArchive={handleClearPersistedArchive}
+      />
+
+      {/* Official Race Results Importer (Athletic.net, TFRRS, MileSplit) & Watchless FAT Track Logger */}
+      <OfficialRaceModal
+        isOpen={isOfficialRaceModalOpen}
+        onClose={() => setIsOfficialRaceModalOpen(false)}
+        athleteProfile={effectiveAthleteProfile}
+        distanceUnit={distanceUnit}
+        existingOfficialRaces={effectiveActivities.filter((a) => Boolean(a.officialRaceData))}
+        onImportOfficialRaces={handleImportOfficialRaces}
+        onSaveProfileOverride={handleSaveProfileOverride}
+      />
+
+      {/* Multi-Athlete Friends, Team Leaderboard, Privacy Shield & Coach Hub Modal */}
+      <AthleteRosterModal
+        isOpen={isRosterModalOpen}
+        onClose={() => setIsRosterModalOpen(false)}
+        selfName={athleteProfile.name || 'Primary Athlete'}
+        selfInviteCode="AP-8492-TALLY"
+        selfCtl={selfLatestWellness?.ctl || 72.4}
+        selfAtl={selfLatestWellness?.atl || 68.0}
+        selfTsb={selfLatestWellness?.tsb || 4.4}
+        selfHrv={selfLatestWellness?.hrvRMSSD || 58}
+        selfProfile={athleteProfile}
+        selfPrivacySettings={selfPrivacySettings}
+        onUpdateSelfPrivacy={setSelfPrivacySettings}
+        roster={connectedAthletes}
+        activeAthleteId={activeViewedAthleteId}
+        onSelectAthleteViewport={(id) => {
+          setActiveViewedAthleteId(id);
+          setSelectedActivity(null);
+        }}
+        onApproveRequest={handleApproveAthleteRequest}
+        onRemoveOrDeclineAthlete={handleRemoveOrDeclineAthlete}
+        onToggleAthleteRole={handleToggleAthleteRole}
+        onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
+        onPushCoachWorkout={handlePushCoachWorkout}
+        distanceUnit={distanceUnit}
       />
     </div>
   );

@@ -55,6 +55,7 @@ interface CalendarViewProps {
   onDeletePlannedEvent: (id: string) => Promise<void>;
   onOpenAthleteProfileModal?: () => void;
   onOpenGoalsArchitect?: () => void;
+  onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
 }
 
@@ -876,6 +877,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onDeletePlannedEvent,
   onOpenAthleteProfileModal,
   onOpenGoalsArchitect,
+  onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
 }) => {
   const [sportFilter, setSportFilter] = useState<SportCategory | 'ALL'>(selectedSport);
@@ -1436,6 +1438,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               </button>
             </div>
 
+            {onOpenOfficialRaceModal && (
+              <button
+                type="button"
+                onClick={onOpenOfficialRaceModal}
+                className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
+                title="Import watchless official race results from Athletic.net, TFRRS, or MileSplit"
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                <span>Official Race / FAT</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => handleOpenBuilderForDate(todayIso)}
@@ -1934,17 +1948,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     onClick={() => onSelectActivity(act)}
                                     className="w-full text-left rounded-lg bg-white dark:bg-slate-900/95 border border-slate-300/85 dark:border-slate-700/85 shadow-xs hover:shadow-md hover:border-blue-500/70 transition-all overflow-hidden flex flex-col"
                                   >
-                                    {/* 1. Sport-Colored Top Bar (Intervals.icu style) */}
+                                    {/* 1. Sport-Colored Top Bar (or Gold Championship Bar for Official FAT Races) */}
                                     <div
-                                      className={`px-2 py-1 flex items-center justify-between gap-1 text-[11px] font-bold font-mono tabular-nums ${getSportHeaderColor(
-                                        act.sportCategory
-                                      )}`}
+                                      className={`px-2 py-1 flex items-center justify-between gap-1 text-[11px] font-bold font-mono tabular-nums ${
+                                        act.officialRaceData
+                                          ? 'bg-[#D97706] text-white'
+                                          : getSportHeaderColor(act.sportCategory)
+                                      }`}
                                     >
                                       <span className="inline-flex items-center gap-1 min-w-0">
-                                        {getSportIcon(act.sportCategory, 'w-3.5 h-3.5 shrink-0')}
-                                        <span>{formatCompactDuration(act.movingTimeSecs)}</span>
+                                        {act.officialRaceData ? (
+                                          <Trophy className="w-3.5 h-3.5 shrink-0" />
+                                        ) : (
+                                          getSportIcon(act.sportCategory, 'w-3.5 h-3.5 shrink-0')
+                                        )}
+                                        <span>
+                                          {act.officialRaceData
+                                            ? `${act.officialRaceData.eventLabel} · ${act.officialRaceData.displayFatTime}`
+                                            : formatCompactDuration(act.movingTimeSecs)}
+                                        </span>
                                       </span>
-                                      {act.distanceMeters > 100 ? (
+                                      {act.officialRaceData ? (
+                                        <span className="text-[9px] uppercase tracking-wider px-1 rounded bg-black/25">
+                                          {act.officialRaceData.platform}
+                                        </span>
+                                      ) : act.distanceMeters > 100 ? (
                                         <span className="truncate">
                                           {formatDistance(act.distanceMeters, distanceUnit, 1)}
                                         </span>
@@ -1958,6 +1986,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     {/* 2. Centered Physiological Telemetry Readout */}
                                     {cardDensity === 'intervals' && (
                                       <div className="px-1.5 pt-1.5 pb-1 text-center space-y-0.5 font-mono tabular-nums">
+                                        {act.officialRaceData && (
+                                          <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                            {act.officialRaceData.placeFinish || 'Official FAT'} · VDOT{' '}
+                                            {act.officialRaceData.vdotScore.toFixed(1)}
+                                          </div>
+                                        )}
                                         <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-[11px] font-bold leading-tight">
                                           {act.avgHr > 0 && (
                                             <span className="text-[#B91C1C] dark:text-rose-400">

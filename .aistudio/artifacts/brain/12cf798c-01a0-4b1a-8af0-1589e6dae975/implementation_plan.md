@@ -1,72 +1,96 @@
-# Unified Endurance Performance & Adaptive Goal-Planning Plan ("One App to Rule Them All")
+# Multi-Athlete Strava Authentication, Friend/Coach Roster & Granular Privacy Architecture
 
-## 1. Product Vision & Architectural Overview
-To unify the best capabilities of **Intervals.icu** (deep physiological telemetry & calendar), **Runna** (goal-to-calendar adaptive race plans, automatic deload weeks, race predictors, and pace insights), **TrainerRoad / Xert** (energy-system Progression Levels `1.0–10.0` and FTP block periodization), **Garmin Connect** (Primary Race Glance & 3-Bucket Load Focus tunnels), and **Strava** (Matched Runs/Rides longitudinal route comparison & PR Trophy Matrix), we will upgrade two core workspaces (**Goals & Plan Architect** and **Activity Log**) and connect them directly to the **Training Calendar** and **Athlete Profile**.
+To launch AeroPulse as a collaborative endurance platform like **Intervals.icu**, this update introduces a **Strava OAuth Sign-Up & Login Landing Gate** (with a 1-click **Live Athlete Sandbox** bypass), a **Top Header Athlete Context Switcher** for inspecting a friend's or coached athlete's dashboard, a **Team & Friends Roster Hub** comparing live `CTL`, `TSB`, `HRV`, and race objectives, **Coach Calendar Workout Push**, and a **Granular Privacy & Strava API Compliance Shield**.
 
----
+## User Review & Critical Decisions
 
-## 2. Core Functional & UI Modules to Build
+> [!IMPORTANT]
+> The following product and security decisions reflect your confirmed selections:
 
-### Module A: Multi-Week Goal-to-Calendar Adaptive Plan Generator + Calendar Objective Ribbon
-1. **Interactive Goal Plan Architect (`src/components/GoalsView.tsx`)**:
-   - **Preset & Custom Flagship Objectives**:
-     - **Sub-20:00 5K Speed Block** (`Running` · Target `19:59` / `3:59/km`)
-     - **Half Marathon Race Block** (`Running` · Target `1:32:00` in 12 Weeks)
-     - **350W Cycling FTP Builder** (`Cycling` · Target `350W` / `4.0+ W/kg`)
-     - **Gran Fondo / Century Endurance Peak** (`Cycling` · Target `100 mi` / `240 TSS`)
-   - **Block Configuration Controls**:
-     - Select **Block Duration** (`8`, `12`, or `16` weeks), **Training Days/Week** (`4`, `5`, or `6` days), **Primary Long Session Day** (`Saturday` or `Sunday`), and **Environment Split** (`Outdoor`, `Indoor/Virtual`, or `Hybrid`).
-   - **Automatic Mesocycle Periodization with Deload Weeks**:
-     - Generates a week-by-week periodized progression (`Base` → `Build` → **Every-4th-Week Deload (-30% volume & load)** → `Peak / Taper`) with weekly target hours, TSS, and key benchmark workouts.
-   - **1-Click "Populate Training Block to Calendar"**:
-     - Batch-generates structured `PlannedWorkoutEvent` workouts (complete with Intervals.icu step syntax and Z1–Z6 effort stripes) onto the **Training Calendar** and syncs them via the backend.
-2. **Calendar Primary Objective Ribbon (`src/components/CalendarView.tsx`)**:
-   - Adds a compact **Garmin Race-Glance Ribbon** at the top of the Calendar displaying the active primary goal (e.g., *`<20:00 5K` or `350W FTP`*), countdown in weeks/days, current mesocycle phase badge (`Base` / `Build` / `Deload Week` / `Taper`), weekly planned vs. completed load progress bar, and a 1-click jump to the Goal Plan Architect.
+- **Confirmed Decision 1 — Strava Auth Landing Gate with 1-Click Demo Sandbox Bypass**:
+  - New or signed-out visitors see a dedicated **AeroPulse × Strava Sign-Up / Sign-In Gate** that launches popup-based Strava OAuth (`https://www.strava.com/oauth/authorize`) and provisions their athlete account.
+  - Includes a prominent **"Enter Live Athlete Sandbox (1-Click Demo)"** button so anyone can test all features immediately without waiting for OAuth credentials, plus a header account control to switch back to the Auth Gate or sign out anytime.
+- **Confirmed Decision 2 — Role-Based Access (`Friend` vs. `Coach`), Invite Codes & Granular Privacy Shield**:
+  - **Two Relationship Tiers**:
+    - **Friend (`FRIEND_VIEW`)**: Read-only access to permitted fitness metrics, calendar summaries, and PRs.
+    - **Coach (`COACH_EDIT`)**: Full physiological visibility plus permission to **push, schedule, and morph structured workouts** directly onto the athlete's Training Calendar.
+  - **Granular Privacy & Strava API Compliance Toggles**: Athletes control whether **HRV / Sleep Wellness**, **Outdoor GPS Route Maps**, **Power/Pace Curves**, and **Strava-Sourced Activity Details** are visible to Friends, Coaches Only, or Private.
+  - **Shareable Invite Codes & 1-Click Follow Requests**: Athletes can share a unique invite code (e.g., `AP-8492-TALLY`), search athletes by name or Strava ID, and approve/revoke incoming Friend or Coach requests with one click.
+- **Confirmed Decision 3 — Top Header Athlete Switcher, Team Roster & Coach Workout Push**:
+  - **Top Header Athlete Switcher**: Switch the entire AeroPulse workspace between **Your Profile** and any followed **Friend** or **Coached Athlete** to inspect their Calendar, PMC (`CTL/ATL/TSB`), and Goals.
+  - **Team & Friends Roster Leaderboard**: Side-by-side comparison table of all followed athletes showing live **CTL (Fitness)**, **TSB (Form)**, **HRV Status**, **7d Load**, **W/kg & Threshold Pace**, and **Primary Race Goal**, with 1-click **Coach Workout Push**.
 
 ---
 
-### Module B: Live Race Time Predictor, FTP Trajectory Model & "Pace / Power Insights" Loop
-1. **Live Race Time & FTP Trajectory Predictor (`src/components/GoalsView.tsx`)**:
-   - **Running Race Predictor Matrix**: Calculates live estimated finish times and paces for **5K, 10K, Half Marathon, and Marathon** from synced Threshold Pace, $\text{VO}_2\text{max}$, recent running Efficiency Factor (EF), and Riegel endurance scaling—displaying the exact time delta vs. your target goal (e.g., *Projected 5K: `20:34` → `-35s` needed for `<20:00`*).
-   - **Cycling FTP Trajectory Model**: Projects **Current → 30-Day → 60-Day → 90-Day eFTP** (Watts & W/kg) toward your **350W FTP** target based on current CTL ramp rate and high-aerobic progression.
-2. **Runna-Style "Pace & Power Insights" Auto-Calibration Banner (`src/components/GoalsView.tsx`)**:
-   - Analyzes recent structured interval/threshold sessions against planned targets and surfaces a live coaching status:
-     - **Ahead of the Pack**: Consistently exceeding prescribed power/pace with controlled cardiac decoupling ($<3.5\%$).
-     - **On Point**: Hitting prescribed zone targets within $\pm 2\%$.
-     - **Stretch Warning**: Elevated HR drift or incomplete interval time-in-zone.
-   - Includes a **1-Click "Apply Recommended Target Adjustment"** button that updates your synced Athlete Profile (`ftp` or `thresholdPaceSecsPerKm`) and rescales future planned workouts.
+## 1. Overview & Core Concept
+
+- **What It Does**: Transforms AeroPulse from a single-user analytics dashboard into a multi-athlete social and coaching platform where athletes authenticate with Strava, follow teammates and friends, grant coaches calendar-editing rights, and enforce strict privacy over biometric and GPS data.
+- **Target Audience / Persona**: Endurance athletes, training partners, track/XC clubs, and cycling/running coaches who want Intervals.icu's multi-athlete switching and workout prescription combined with Strava's social following.
+- **Key Value**: Lets coaches and teammates collaborate in real time—comparing readiness and fitness across a squad and pushing structured workouts directly to an athlete's calendar—without compromising sensitive health telemetry or violating Strava API data-sharing rules.
 
 ---
 
-### Module C: Energy-System Progression Levels (`1.0–10.0`) & Garmin Load Focus Tunnels
-1. **TrainerRoad-Style Progression Levels (`src/components/GoalsView.tsx`)**:
-   - Computes your live `1.0–10.0` Progression Level (plus 28-day change badge, e.g., `+0.6`) across 6 physiological zones:
-     - **Endurance (Z2)**, **Tempo / Sweet Spot (Z3)**, **Threshold (Z4)**, **$\text{VO}_2\text{max}$ (Z5)**, **Anaerobic Capacity (Z6)**, and **Neuromuscular Sprint**.
-   - Overlays the **Target Goal Requirement Marker** on each bar so you can immediately see which energy system is the bottleneck for your `350W FTP` or `<20:00 5K` objective.
-2. **Garmin-Style 4-Week Load Focus Target Tunnels (`src/components/GoalsView.tsx`)**:
-   - Visualizes 28-day accumulated load split across **Low Aerobic (Z1–Z2)**, **High Aerobic (Z3–Z4)**, and **Anaerobic (Z5–Z6+)** with dashed optimal target tunnels and diagnostic badges (`Shortage`, `Balanced`, `Over-Indexed`).
+## 2. User Experience & Visual Design
+
+- **Key User Flows**:
+  1. **Strava Sign-Up / Sign-In Gate & 1-Click Sandbox**:
+     - Visitors see a clean split-screen landing gate showcasing AeroPulse's core capabilities (Intervals.icu Effort Skylines, Readiness-Morphing Workouts, Watchless FAT Track Synthesizer, and Team/Coach Roster).
+     - Clicking **"Continue with Strava"** opens the Strava OAuth popup directly (`https://www.strava.com/oauth/authorize`), exchanges the authorization code via `/api/strava/callback`, and signs the user in.
+     - Clicking **"Explore Live Athlete Sandbox"** enters the authenticated workspace immediately with realistic multi-athlete squad data.
+  2. **Top Header Athlete Context Switcher & Active Viewing Banner**:
+     - A compact **Athlete Switcher** button in the top navigation bar shows who you are currently viewing (e.g., `Elliot Tally (You)` or `Viewing: Maya Lin · Coached`).
+     - When viewing a **Friend** or **Coached Athlete**, a high-contrast contextual bar appears at the top of the workspace showing their relationship badge (`Coach Access · Can Prescribe Workouts` or `Friend View · Read-Only`), their active privacy shield status, a **"Push Workout to Athlete's Calendar"** button (for Coaches), and a 1-click **"Return to My Dashboard"** button.
+  3. **Athletes, Friends & Coaching Hub Modal**:
+     - **Tab 1 — Team & Friends Leaderboard**: High-density tabular comparison of your squad (`CTL`, `ATL`, `TSB`, `HRV rMSSD & Readiness`, `7d TSS`, `FTP / W/kg`, `Threshold Pace`, `Active Goal`), with 1-click **"Switch to Athlete"** and **"Prescribe Workout"** actions.
+     - **Tab 2 — Find Friends, Invite Code & Pending Requests**: Copy your personal **Athlete Invite Code** (`AP-8492-TALLY`), paste a teammate's code or search directory profiles to send a **Friend (View)** or **Coach (Edit Calendar)** request, and approve/decline incoming requests.
+     - **Tab 3 — Security, Privacy & Strava API Compliance Shield**: Toggle granular sharing permissions (`Share Morning HRV & Sleep`, `Share PMC & Zones`, `Redact GPS Start/End & Strava-Only Routes for Friends`, `Allow Approved Coaches to Edit Calendar`).
 
 ---
 
-### Module D: Workout History Upgrades — Matched Runs/Rides, Execution Compliance & Seasonal PR Matrix
-1. **Strava-Style "Matched Runs & Rides" Longitudinal Cluster (`src/components/ActivitiesView.tsx`)**:
-   - Automatically detects and groups repeated routes, virtual courses, and benchmark sessions (e.g., *San Jose Cycling*, *San Jose Track Running*, *Zwift - Watopia*) into an interactive **Matched Sessions Comparison Panel**.
-   - Displays attempt-over-attempt progression (Date, Duration, Avg Power or Pace, Avg HR, Efficiency Factor `EF`, Decoupling `%`, and delta vs. fastest/most efficient attempt) so you can verify real-world fitness gains on the exact same loop.
-2. **Planned vs. Actual Workout Execution Compliance Score (`src/components/ActivitiesView.tsx` & `src/components/CalendarView.tsx`)**:
-   - Computes a `0–100%` **Execution Compliance Score** comparing each completed workout against that day's planned duration, TSS load, and target intensity zone distribution, rendered as a color-coded badge (`Optimal Compliance ≥90%`, `Moderate 75–89%`, `Deviation <75%`) in both the Activity Log and Calendar cards.
-3. **Seasonal Peak Power & Best Running Efforts Trophy Matrix (`src/components/ActivitiesView.tsx` & `src/components/GoalsView.tsx`)**:
-   - Interactive PR matrix comparing **All-Time Best**, **2026 Season**, and **Last 90 Days** across key cycling durations (`5s`, `1m`, `5m`, `20m`, `60m` in Watts & W/kg) and running distances (`400m`, `1km`, `1 Mile`, `5K`, `10K`, `Half Marathon`), clickable to jump directly to the activity where the record was set.
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Popup-Based Strava OAuth + Signed Session Token (`SameSite=None; Secure` + Bearer Header)**
+  - *Chosen Approach*: Open `https://www.strava.com/oauth/authorize` directly in a browser popup, handle the code exchange at `/api/strava/callback`, and broadcast the authenticated athlete profile back to the iframe via `window.opener.postMessage` + `BroadcastChannel`, storing a session token in both `SameSite=None; Secure` cookies and client storage.
+  - *Why*: Complies with cross-origin iframe security constraints while supporting seamless multi-device login and 1-click sandbox testing.
+- **Decision 2: Strava API Compliance & Privacy Redaction Layer**
+  - *Chosen Approach*: Implement a server-and-client privacy filter (`applyAthletePrivacyShield`) that automatically redacts raw GPS route coordinates or biometric wellness metrics when viewing a Friend whose privacy shield restricts those fields.
+  - *Why*: Protects athlete home-location privacy and honors Strava API rules regarding third-party visibility of Strava-sourced activities while keeping derived fitness (`CTL/TSB`), official FAT race results, and coach-prescribed workouts shareable.
 
 ---
 
-## 3. Implementation Sequence
-1. **Data & State Plumbing (`src/App.tsx` & `src/types.ts`)**:
-   - Add batch planned-workout creation handler (`onBatchCreatePlannedEvents`) and wire `athleteProfile`, `plannedEvents`, `onSaveProfileOverride`, `onSelectActivity`, and `onSwitchToCalendar` into `GoalsView` and `ActivitiesView`.
-2. **Upgrade `src/components/GoalsView.tsx`**:
-   - Implement the **Multi-Week Goal-to-Calendar Adaptive Plan Generator (with Deload Weeks)**, **Live Race Time & 350W FTP Predictor Matrix**, **Pace & Power Insights Auto-Calibration Banner**, **Energy-System Progression Levels (`1.0–10.0`)**, **Garmin Load Focus Tunnels**, and **Seasonal PR Trophy Matrix**.
-3. **Upgrade `src/components/ActivitiesView.tsx`**:
-   - Add the **Matched Runs & Rides Longitudinal Comparison Panel** and **Planned vs. Actual Execution Compliance Score (`0–100%`)** badges.
-4. **Upgrade `src/components/CalendarView.tsx`**:
-   - Add the **Primary Objective Countdown & Block Phase Ribbon** at the top of the Calendar and display **Execution Compliance `%` badges** on completed activity cards.
-5. **Verification**:
-   - Run `compile_applet` and `lint_applet` together and verify all new workflows.
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│           StravaAuthLandingGate (Sign Up with Strava | Demo Bypass)          │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │ OAuth Popup (/api/strava/callback)
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│            Top Header Athlete Context Switcher & Active View Banner          │
+│  [Viewing: Elliot Tally (You) ▼]  ──►  Switch to Friend or Coached Athlete   │
+└───────────┬──────────────────────────────────────────┬───────────────────────┘
+            │                                          │
+            ▼                                          ▼
+┌───────────────────────────────────────┐  ┌───────────────────────────────────┐
+│   Athletes, Friends & Coaching Hub    │  │ Privacy & Coach Permission Engine │
+│ • Team Leaderboard (CTL/TSB/HRV/Goal) │  │ • FRIEND_VIEW (Read-Only + Redact)│
+│ • Invite Codes (AP-XXXX) & Requests   │  │ • COACH_EDIT (Push Workouts to    │
+│ • Granular Privacy & API Shield       │  │   Athlete's Calendar & Morph)     │
+└───────────────────────────────────────┘  └───────────────────────────────────┘
+```
+
+- **Data Model & State**:
+  - `AthleteConnectionRole`: `'SELF' | 'COACH_EDIT' | 'FRIEND_VIEW'`
+  - `AthletePrivacySettings`:
+    - `shareWellnessAndHrv`: `'ALL_CONNECTIONS' | 'COACHES_ONLY' | 'PRIVATE'`
+    - `sharePmcAndZones`: `'ALL_CONNECTIONS' | 'COACHES_ONLY' | 'PRIVATE'`
+    - `shareGpsRoutes`: `'COACHES_ONLY' | 'ALL_CONNECTIONS' | 'PRIVATE'`
+    - `stravaComplianceShield`: `boolean` (auto-redacts raw Strava-only GPS polylines for non-owners while preserving multi-source Garmin/Intervals.icu/FAT metrics)
+    - `allowCoachCalendarEdits`: `boolean`
+  - `ConnectedAthleteRecord`:
+    - `id`, `name`, `avatarInitials`, `location`, `stravaAthleteId`, `inviteCode`, `role` (`'COACH_EDIT' | 'FRIEND_VIEW'`), `status` (`'CONNECTED' | 'PENDING_INCOMING' | 'PENDING_OUTGOING'`), `primaryGoalSummary`, `athleteProfile`, `privacySettings`, `wellnessDays`, `activities`, `plannedEvents`, `targetGoals`
+- **Interactive Component & State Mapping**:
+  - **Authentication Gate (`StravaAuthGate.tsx`)**: Renders when `authSession.status === 'UNAUTHENTICATED'`; provides live Strava OAuth popup launch, inline OAuth callback code paste fallback, and 1-click Demo Sandbox entry.
+  - **Header Context Switcher & Banner (`App.tsx`)**: Swaps the active `activities`, `wellnessDays`, `plannedEvents`, `athleteProfile`, and `targetGoals` passed to all child views (`CalendarView`, `FitnessHealthView`, `ActivitiesView`, `GoalsView`) to the selected athlete's privacy-filtered dataset, and enables **Coach Workout Push** onto the selected athlete's calendar.
+  - **Athletes & Friends Hub Modal (`AthleteRosterModal.tsx`)**: Full CRUD for following athletes by invite code/search, approving incoming Friend/Coach requests, toggling role permissions, updating your own Privacy Shield, and pushing structured coach workouts to any coached athlete.

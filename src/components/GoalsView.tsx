@@ -38,6 +38,11 @@ import {
   formatDuration,
   formatPace,
 } from '../utils/formatters';
+import {
+  computeCriticalSpeedAndDPrime,
+  deriveThresholdPaceSecsPerKmFromVdot,
+  formatFatTime,
+} from '../utils/officialRaceSynthesizer';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 
@@ -72,6 +77,7 @@ interface GoalsViewProps {
   onSaveProfileOverride?: (updatedProfile: AthleteProfile) => Promise<void>;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSwitchToCalendar?: () => void;
+  onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt?: (prompt: string) => void;
 }
 
@@ -202,6 +208,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
   onSaveProfileOverride,
   onSelectActivity,
   onSwitchToCalendar,
+  onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
 }) => {
   const [totalsPeriod, setTotalsPeriod] = useState<'28d' | '90d' | 'YTD' | 'ALL'>('YTD');
@@ -222,7 +229,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
   const [calibrationAppliedMsg, setCalibrationAppliedMsg] = useState<string | null>(null);
 
   // Seasonal PR Trophy Matrix Sport Filter
-  const [prMatrixSport, setPrMatrixSport] = useState<'Cycling' | 'Running'>('Cycling');
+  const [prMatrixSport, setPrMatrixSport] = useState<'Cycling' | 'TrackFAT' | 'Running'>('TrackFAT');
 
   const selectedArchetype = useMemo(
     () => GOAL_ARCHETYPES.find((a) => a.id === selectedArchetypeId) || GOAL_ARCHETYPES[0],
@@ -1029,10 +1036,9 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     const run90d = filterActs('Running', '90D');
 
     const runningRows = [
-      { label: '400m Track Sprint', meters: 400, factor: 0.78 },
       { label: '1km Fast Interval', meters: 1000, factor: 0.85 },
       { label: '1 Mile Best Effort', meters: 1609.34, factor: 0.89 },
-      { label: '5K Road / Track', meters: 5000, factor: 0.95 },
+      { label: '5K Road / XC', meters: 5000, factor: 0.95 },
       { label: '10K Threshold Effort', meters: 10000, factor: 0.99 },
       { label: 'Half Marathon (21.1 km)', meters: 21097.5, factor: 1.04 },
     ].map((row) => ({
@@ -1042,8 +1048,117 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       last90d: bestRunForScope(run90d, row.meters, row.factor),
     }));
 
-    return { cyclingRows, runningRows };
+    // Track & Middle-Distance PRs (400m, 800m, 1500m, 1600m/Mile, 3200m) with 0.01s FAT precision
+    const bestTrackForScope = (
+      acts: UnifiedActivity[],
+      targetMeters: number,
+      fallbackFactor: number
+    ): {
+      fatTimeStr: string;
+      pace400mStr: string;
+      meetOrSource: string;
+      isOfficialFat: boolean;
+      act?: UnifiedActivity;
+    } => {
+      // First look for imported Official FAT races matching this distance
+      const officialMatches = acts.filter(
+        (a) =>
+          a.officialRaceData &&
+          Math.abs(a.officialRaceData.eventDistanceMeters - targetMeters) <=
+            (targetMeters === 1600 ? 15 : 40)
+      );
+      if (officialMatches.length > 0) {
+        const fastest = [...officialMatches].sort(
+          (a, b) =>
+            (a.officialRaceData?.fatTimeSecs || 99999) -
+            (b.officialRaceData?.fatTimeSecs || 99999)
+        )[0];
+        const fatSecs = fastest.officialRaceData!.fatTimeSecs;
+        const avg400 = ((fatSecs / fastest.officialRaceData!.eventDistanceMeters) * 400).toFixed(1);
+        return {
+          fatTimeStr: fastest.officialRaceData!.displayFatTime || formatFatTime(fatSecs),
+          pace400mStr: `${avg400}s / 400m`,
+          meetOrSource: `${fastest.officialRaceData!.platform} · ${fastest.officialRaceData!.meetName}`,
+          isOfficialFat: true,
+          act: fastest,
+        };
+      }
+
+      // Otherwise estimate from best GPS running effort
+      const gpsBest = bestRunForScope(acts, targetMeters, fallbackFactor);
+      const basePace = raceAndFtpPredictions.thresholdPaceSecsPerKm * fallbackFactor;
+      const estSecs = Number(((targetMeters / 1000) * basePace).toFixed(2));
+      const avg400 = ((estSecs / targetMeters) * 400).toFixed(1);
+      return {
+        fatTimeStr: formatFatTime(estSecs),
+        pace400mStr: `${avg400}s / 400m`,
+        meetOrSource: gpsBest.act ? 'GPS Watch Estimate' : 'Model Baseline (Import FAT)',
+        isOfficialFat: false,
+        act: gpsBest.act,
+      };
+    };
+
+    const trackFatRows = [
+      { label: '400m Track Sprint', meters: 400, factor: 0.72 },
+      { label: '800m Middle-Distance', meters: 800, factor: 0.78 },
+      { label: '1500m Metric Mile', meters: 1500, factor: 0.84 },
+      { label: '1600m / 1 Mile Track', meters: 1600, factor: 0.855 },
+      { label: '3200m / 2-Mile Track', meters: 3200, factor: 0.91 },
+    ].map((row) => ({
+      label: row.label,
+      allTime: bestTrackForScope(runAll, row.meters, row.factor),
+      season2026: bestTrackForScope(run2026, row.meters, row.factor),
+      last90d: bestTrackForScope(run90d, row.meters, row.factor),
+    }));
+
+    return { cyclingRows, runningRows, trackFatRows };
   }, [activities, athleteProfile, distanceUnit, raceAndFtpPredictions.thresholdPaceSecsPerKm]);
+
+  // Official Watchless Race Physiology (VDOT, Critical Speed CS & Anaerobic Capacity D')
+  const officialTrackPhysiology = useMemo(() => {
+    const officialRaces = activities.filter((a) => Boolean(a.officialRaceData));
+    const racePoints =
+      officialRaces.length > 0
+        ? officialRaces.map((a) => ({
+            distanceMeters: a.officialRaceData!.eventDistanceMeters,
+            timeSecs: a.officialRaceData!.fatTimeSecs,
+          }))
+        : [
+            { distanceMeters: 800, timeSecs: 116.38 },
+            { distanceMeters: 1600, timeSecs: 256.42 },
+          ];
+    const csAndDPrime = computeCriticalSpeedAndDPrime(racePoints);
+    const derivedThreshPace = deriveThresholdPaceSecsPerKmFromVdot(csAndDPrime.vdotBest);
+    return {
+      officialRaceCount: officialRaces.length,
+      ...csAndDPrime,
+      derivedThreshPace,
+    };
+  }, [activities]);
+
+  const handleCalibrateFromOfficialRaces = async () => {
+    if (!athleteProfile || !onSaveProfileOverride) return;
+    const latestW = wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : undefined;
+    const updated = buildCompleteAthleteProfile(
+      {
+        ...athleteProfile,
+        vo2MaxRunning: Math.round(officialTrackPhysiology.vdotBest),
+        thresholdPaceSecsPerKm: officialTrackPhysiology.derivedThreshPace,
+        source: 'CUSTOM_OVERRIDE',
+        lastSyncedAt: new Date().toISOString(),
+      },
+      latestW
+    );
+    await onSaveProfileOverride(updated);
+    setCalibrationAppliedMsg(
+      `Calibrated from Official FAT Races: VDOT ${officialTrackPhysiology.vdotBest.toFixed(
+        1
+      )}, Critical Speed ${formatPace(
+        officialTrackPhysiology.criticalPaceSecsPerKm,
+        distanceUnit
+      )} & Threshold Pace ${formatPace(officialTrackPhysiology.derivedThreshPace, distanceUnit)}!`
+    );
+  };
 
   const handlePopulatePlanToCalendar = async () => {
     if (!onBatchCreatePlannedEvents) return;
@@ -1163,6 +1278,16 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onOpenOfficialRaceModal && (
+              <button
+                type="button"
+                onClick={onOpenOfficialRaceModal}
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                <span>Import Official Race / FAT (Athletic.net · TFRRS · MileSplit)</span>
+              </button>
+            )}
             {onSwitchToCalendar && (
               <button
                 type="button"
@@ -1609,6 +1734,38 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 ✓ {calibrationAppliedMsg}
               </div>
             )}
+
+            {/* Official Watchless Track & Road VDOT / Critical Speed (CS) / D' Strip */}
+            <div className="pt-2.5 mt-2 border-t border-blue-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <div className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                <strong className="text-amber-600 dark:text-amber-400">
+                  Official FAT Race Model ({officialTrackPhysiology.officialRaceCount} imported):
+                </strong>{' '}
+                VDOT <strong>{officialTrackPhysiology.vdotBest.toFixed(1)}</strong> · CS{' '}
+                <strong>{formatPace(officialTrackPhysiology.criticalPaceSecsPerKm, distanceUnit)}</strong> · D&apos;{' '}
+                <strong>{officialTrackPhysiology.dPrimeMeters}m</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                {onOpenOfficialRaceModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenOfficialRaceModal}
+                    className="px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 font-semibold transition-colors whitespace-nowrap"
+                  >
+                    + Log 800m / 1600m FAT
+                  </button>
+                )}
+                {onSaveProfileOverride && athleteProfile && (
+                  <button
+                    type="button"
+                    onClick={handleCalibrateFromOfficialRaces}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors whitespace-nowrap"
+                  >
+                    Calibrate from Official PRs
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1946,21 +2103,39 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             </h2>
           </div>
 
-          <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-xs font-semibold">
-            {(['Cycling', 'Running'] as const).map((sp) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpenOfficialRaceModal && (
               <button
-                key={sp}
                 type="button"
-                onClick={() => setPrMatrixSport(sp)}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  prMatrixSport === sp
-                    ? 'liquid-capsule-active text-blue-600 dark:text-sky-300'
-                    : 'text-slate-500'
-                }`}
+                onClick={onOpenOfficialRaceModal}
+                className="min-h-[34px] px-3 py-1 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
               >
-                {sp === 'Cycling' ? 'Cycling Peak Power (W & W/kg)' : 'Running Best Efforts'}
+                <Plus className="w-3.5 h-3.5" />
+                <span>Import Official FAT Results (Athletic.net / TFRRS / MileSplit)</span>
               </button>
-            ))}
+            )}
+            <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-xs font-semibold">
+              {(
+                [
+                  { id: 'TrackFAT', label: 'Track & Middle-Distance PRs (FAT 0.01s)' },
+                  { id: 'Running', label: 'Road & Endurance PRs' },
+                  { id: 'Cycling', label: 'Cycling Peak Power (W & W/kg)' },
+                ] as const
+              ).map((sp) => (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => setPrMatrixSport(sp.id)}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap ${
+                    prMatrixSport === sp.id
+                      ? 'liquid-capsule-active text-blue-600 dark:text-sky-300'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {sp.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1994,6 +2169,52 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                           </span>
                           <span className="text-blue-600 dark:text-sky-400 text-xs">
                             ({cell.wkg} W/kg)
+                          </span>
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : prMatrixSport === 'TrackFAT' ? (
+            <table className="w-full text-left border-collapse text-xs sm:text-sm font-mono tabular-nums">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans">
+                  <th className="py-2.5 pr-4">Track Distance (Watchless FAT / GPS)</th>
+                  <th className="py-2.5 px-4 text-right">All-Time Best</th>
+                  <th className="py-2.5 px-4 text-right">2026 Season</th>
+                  <th className="py-2.5 pl-4 text-right">Last 90 Days</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {seasonalPrMatrix.trackFatRows.map((r) => (
+                  <tr key={r.label} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/50">
+                    <td className="py-2.5 pr-4 font-sans font-semibold text-slate-900 dark:text-slate-100">
+                      {r.label}
+                    </td>
+                    {[r.allTime, r.season2026, r.last90d].map((cell, idx) => (
+                      <td key={idx} className="py-2.5 px-4 text-right">
+                        <button
+                          type="button"
+                          disabled={!cell.act || !onSelectActivity}
+                          onClick={() => cell.act && onSelectActivity && onSelectActivity(cell.act)}
+                          className="inline-flex flex-col items-end hover:underline disabled:no-underline"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span
+                              className={`font-bold ${
+                                cell.isOfficialFat
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-emerald-600 dark:text-emerald-400'
+                              }`}
+                            >
+                              {cell.fatTimeStr}
+                            </span>
+                            <span className="text-slate-500 text-xs">({cell.pace400mStr})</span>
+                          </div>
+                          <span className="text-[10px] font-sans text-slate-400">
+                            {cell.meetOrSource}
                           </span>
                         </button>
                       </td>
