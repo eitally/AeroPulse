@@ -9,6 +9,7 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 interface CustomChartsViewProps {
   activities: UnifiedActivity[];
@@ -505,9 +506,23 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
       <section className="rounded-2xl liquid-glass p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Arbitrary Custom Chart Builder &amp; Multi-Metric Correlation Studio
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Arbitrary Custom Chart Builder &amp; Multi-Metric Correlation Studio
+              </h1>
+              <ChartInfoTooltip
+                title="Custom Multi-Metric Time-Series & Pearson Correlation Lab"
+                subtitle="Bivariate Physiological Regression (r, R², Linear Fit)"
+                whatItMeasures="Lets you pair any wellness biomarker (Sleep Score, HRV rMSSD, Resting HR, CTL, ATL, TSB, Weight) with any workout performance metric (Normalized Power, Efficiency Factor, Decoupling, Load) as either a Dual-Axis Time-Series or X-vs-Y Scatter Plot."
+                benchmarks="|r| ≥ 0.50 indicates a strong physiological correlation; |r| between 0.25 and 0.49 indicates a moderate relationship."
+                liveStatus={{
+                  label: `${primaryDef.label} vs ${secondaryDef?.label || 'Time'} · r = ${regressionStats.r} (R² = ${regressionStats.r2})`,
+                  state: Math.abs(regressionStats.r) >= 0.35 ? 'optimal' : 'neutral',
+                  interpretation: `Analyzing ${regressionStats.count} paired observations across the ${dateRangePreset} window (${startBound} to ${endBound}).`,
+                }}
+                coachingAction="Switch Chart Mode to 'Scatter / Correlation (X vs Y)' to test hypotheses like 'Does Sleep Score predict next-day Efficiency Factor?' or 'How strongly does CTL correlate with Cycling eFTP?'"
+              />
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Plot any combination of Garmin Sleep, HRV, CTL/ATL/TSB, Power, Heart Rate, Pace, and Efficiency over any custom date window
             </p>

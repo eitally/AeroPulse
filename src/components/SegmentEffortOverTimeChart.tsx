@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DistanceUnit, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
+import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 export interface SegmentEffortPoint {
   effortId: string;
@@ -156,8 +157,10 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
   const [showOverlayMetric, setShowOverlayMetric] = useState<boolean>(true);
 
   const filteredSegments = useMemo(() => {
+    const seenIds = new Set<string>();
     return segments.filter((seg) => {
-      if (seg.efforts.length < 2) return false;
+      if (!seg || seg.efforts.length < 2) return false;
+      if (seenIds.has(seg.segmentId)) return false;
       if (sportFilter !== 'ALL' && seg.sportCategory !== sportFilter) return false;
       if (
         searchQuery.trim() &&
@@ -165,6 +168,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
       ) {
         return false;
       }
+      seenIds.add(seg.segmentId);
       return true;
     });
   }, [segments, sportFilter, searchQuery]);
@@ -244,6 +248,18 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
               Segment Effort Over Time — Duration (Seconds) vs. Attempt Date
             </h3>
+            <ChartInfoTooltip
+              title="Benchmark Segment Progression Over Time"
+              subtitle="Real-World Field Testing & Repeat Effort Kinematics"
+              whatItMeasures="Plots elapsed time (seconds) and average power/pace across every historical attempt on a repeated real-world road, gravel, or trail segment, highlighting your All-Time PR (gold) and Rolling Average."
+              benchmarks="Consistent downward trend in elapsed time at equal or lower average Heart Rate confirms real-world transfer of laboratory eFTP and W/kg improvements."
+              liveStatus={{
+                label: `PR: ${formatStopwatch(prEffort.elapsedTimeSecs)} (${prEffort.date}) · Latest: ${formatStopwatch(latestEffort.elapsedTimeSecs)} (${len} attempts)`,
+                state: latestEffort.elapsedTimeSecs <= avgDurationSecs ? 'optimal' : 'neutral',
+                interpretation: `Across ${len} recorded attempts on "${activeSegment.name}", your PR is ${formatStopwatch(prEffort.elapsedTimeSecs)} and your mean time is ${formatStopwatch(avgDurationSecs)}.`,
+              }}
+              coachingAction="Click any point on the progression curve to open the full workout stream from that date and inspect pacing or wind/draft conditions."
+            />
             {!/^strava-|^icu-|seg-/i.test(activeSegment.segmentId) &&
               /^\d+$/.test(activeSegment.segmentId) && (
                 <a
@@ -373,11 +389,11 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
           )}
 
           <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto pr-1">
-            {filteredSegments.slice(0, 40).map((seg) => {
+            {filteredSegments.slice(0, 40).map((seg, segIdx) => {
               const isSelected = seg.segmentId === activeSegment.segmentId;
               return (
                 <button
-                  key={seg.segmentId}
+                  key={`${seg.segmentId}-${segIdx}`}
                   type="button"
                   onClick={() => {
                     onSelectSegmentId(seg.segmentId);
@@ -824,7 +840,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                     i % Math.ceil(len / 6) === 0;
 
                   return (
-                    <g key={e.effortId}>
+                    <g key={`${e.effortId}-${i}`}>
                       {/* Vertical Crosshair on Active Hover */}
                       {isHovered && (
                         <line
@@ -951,7 +967,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
-              {[...efforts].reverse().map((eff) => {
+              {[...efforts].reverse().map((eff, revIdx) => {
                 const chronologicalIdx = efforts.indexOf(eff);
                 const deltaPr = eff.elapsedTimeSecs - activeSegment.prElapsedTimeSecs;
                 const deltaFirst = eff.elapsedTimeSecs - firstEffort.elapsedTimeSecs;
@@ -961,7 +977,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
 
                 return (
                   <tr
-                    key={eff.effortId}
+                    key={`${eff.effortId}-${revIdx}`}
                     onMouseEnter={() => setHoverIdx(chronologicalIdx)}
                     onClick={() => {
                       if (

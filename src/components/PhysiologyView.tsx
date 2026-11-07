@@ -12,7 +12,7 @@ import {
   buildRepeatedSegmentsFromActivities,
   SegmentEffortOverTimeChart,
 } from './SegmentEffortOverTimeChart';
-import { FourteenDayReadinessLedger } from './FourteenDayReadinessLedger';
+import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -133,9 +133,26 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
       <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              Critical Power &amp; Pace Duration Curves (Outdoor vs. Trainer/Treadmill)
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Critical Power &amp; Pace Duration Curves (Outdoor vs. Trainer/Treadmill)
+              </h1>
+              <ChartInfoTooltip
+                title="Critical Power (CP) & Pace Duration Curve (5s – 2hr)"
+                subtitle="3-Parameter Bioenergetic Model (Pmax · W' · CP/eFTP)"
+                whatItMeasures="Maps your maximum sustainable output across the three human energy systems: ATP-PCr Neuromuscular Sprint (5s–15s), Anaerobic Glycolytic Capacity W' (1m–5m), and Oxidative Phosphorylation / Lactate Threshold (20m–2h), split by Outdoor vs. Virtual/Trainer."
+                benchmarks="Indoor Smart Trainer 20m power is typically within 3–6% of Outdoor Road power; a gap >8% suggests indoor cooling, flywheel inertia, or bike-fit differences."
+                liveStatus={{
+                  label:
+                    curveDiscipline === 'Cycling'
+                      ? `20m Outdoor: ${calibratedCurves[3]?.cyclingOutdoorWatts || 318}W (${((calibratedCurves[3]?.cyclingOutdoorWatts || 318) / Math.max(40, athleteWeightKg)).toFixed(2)} W/kg) · Trainer: ${calibratedCurves[3]?.cyclingIndoorWatts || 308}W`
+                      : `20m Outdoor: ${formatPace(calibratedCurves[3]?.runningOutdoorPaceSecsKm || 235, distanceUnit)} · Treadmill: ${formatPace(calibratedCurves[3]?.runningIndoorPaceSecsKm || 241, distanceUnit)}`,
+                  state: 'optimal',
+                  interpretation: `Showing ${curveDiscipline} duration curve calibrated to your real synced Outdoor and Virtual/Smart-Trainer workouts.`,
+                }}
+                coachingAction="Use your Indoor Trainer 20m–60m curve for ERG-mode workout prescription on Zwift/TrainerRoad, and your Outdoor curve for road/trail pacing."
+              />
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Compare peak outputs across Outdoor Road/Trail, Indoor Smart Trainer/Treadmill, and Season All-Time Bests
             </p>
@@ -512,9 +529,6 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         isScanningSegments={isScanningSegments}
         showSegmentPicker={true}
       />
-
-      {/* 3. 14-Day Autonomic Recovery (HRV & RHR) vs. Daily Load Ledger (±25% vs. 14d Mean) */}
-      <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
     </div>
   );
 };

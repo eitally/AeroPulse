@@ -1,5 +1,8 @@
 import {
   AthleteGearItem,
+  AthleteHrZone,
+  AthletePowerZone,
+  AthleteProfile,
   PlannedWorkoutEvent,
   UnifiedActivity,
   UnifiedWellnessDay,
@@ -15,9 +18,297 @@ export interface PersistedTelemetrySnapshot {
   wellnessDays: UnifiedWellnessDay[];
   plannedEvents: PlannedWorkoutEvent[];
   gearItems: AthleteGearItem[];
+  athleteProfile?: AthleteProfile;
   redactedStravaCount: number;
   earliestActivityDate?: string;
   savedAt: string;
+}
+
+const ZONE_COLORS_7 = [
+  '#52B788', // Z1 Recovery
+  '#2A9D8F', // Z2 Endurance
+  '#EAB308', // Z3 Tempo
+  '#F97316', // Z4 Threshold
+  '#EF4444', // Z5 VO2max
+  '#9333EA', // Z6 Anaerobic
+  '#EC4899', // Z7 Neuromuscular
+];
+
+const DEFAULT_POWER_ZONE_NAMES = [
+  'Active Recovery',
+  'Endurance',
+  'Tempo',
+  'Lactate Threshold',
+  'VO2 Max',
+  'Anaerobic Capacity',
+  'Neuromuscular Power',
+];
+
+const DEFAULT_HR_ZONE_NAMES = [
+  'Z1 Recovery',
+  'Z2 Aerobic Base',
+  'Z3 Tempo',
+  'Z4 Sub-Threshold',
+  'Z5a Super-Threshold',
+  'Z5b Aerobic Capacity',
+  'Z5c Anaerobic',
+];
+
+export function buildPowerZonesFromCeilings(
+  ftp: number,
+  indoorFtp: number,
+  ceilingsPct?: number[],
+  names?: string[]
+): AthletePowerZone[] {
+  const safeFtp = Math.max(100, Math.round(ftp || 300));
+  const safeIndoorFtp = Math.max(100, Math.round(indoorFtp || safeFtp));
+  const rawCeilings =
+    Array.isArray(ceilingsPct) && ceilingsPct.length >= 6
+      ? ceilingsPct
+      : [55, 75, 90, 105, 120, 150, 999];
+
+  const zones: AthletePowerZone[] = [];
+  for (let i = 0; i < Math.min(7, rawCeilings.length); i++) {
+    const minPct = i === 0 ? 0 : rawCeilings[i - 1] + 1;
+    const maxPct = rawCeilings[i] >= 900 ? 250 : rawCeilings[i];
+    const minWatts = i === 0 ? 0 : Math.round((rawCeilings[i - 1] / 100) * safeFtp) + 1;
+    const maxWatts = Math.round((maxPct / 100) * safeFtp);
+    const minIndoorWatts =
+      i === 0 ? 0 : Math.round((rawCeilings[i - 1] / 100) * safeIndoorFtp) + 1;
+    const maxIndoorWatts = Math.round((maxPct / 100) * safeIndoorFtp);
+
+    zones.push({
+      zone: i + 1,
+      code: `Z${i + 1}`,
+      name: (names && names[i]) || DEFAULT_POWER_ZONE_NAMES[i] || `Zone ${i + 1}`,
+      minPct,
+      maxPct,
+      minWatts,
+      maxWatts,
+      minIndoorWatts,
+      maxIndoorWatts,
+      color: ZONE_COLORS_7[i] || '#9333EA',
+    });
+  }
+  return zones;
+}
+
+export function buildHrZonesFromCeilings(
+  lthr: number,
+  maxHr: number,
+  ceilingsBpm?: number[],
+  names?: string[]
+): AthleteHrZone[] {
+  const safeLthr = Math.max(120, Math.round(lthr || 163));
+  const safeMaxHr = Math.max(safeLthr + 8, Math.round(maxHr || 182));
+
+  // Intervals.icu / Friel 7-zone HR defaults if raw ceilings are not provided
+  const defaultCeilings = [
+    Math.round(safeLthr * 0.81),
+    Math.round(safeLthr * 0.89),
+    Math.round(safeLthr * 0.93),
+    Math.round(safeLthr * 0.99),
+    Math.round(safeLthr * 1.02),
+    Math.round(safeLthr * 1.06),
+    safeMaxHr,
+  ];
+
+  const rawCeilings =
+    Array.isArray(ceilingsBpm) && ceilingsBpm.length >= 5
+      ? ceilingsBpm.map((v) => Number(v))
+      : defaultCeilings;
+
+  const zones: AthleteHrZone[] = [];
+  for (let i = 0; i < rawCeilings.length && i < 7; i++) {
+    const minBpm = i === 0 ? 60 : rawCeilings[i - 1] + 1;
+    const maxBpm =
+      i === rawCeilings.length - 1 ? Math.max(rawCeilings[i], safeMaxHr) : rawCeilings[i];
+    const minPctLthr = i === 0 ? 50 : Math.round((minBpm / safeLthr) * 100);
+    const maxPctLthr = Math.round((maxBpm / safeLthr) * 100);
+
+    zones.push({
+      zone: i + 1,
+      code: `Z${i + 1}`,
+      name: (names && names[i]) || DEFAULT_HR_ZONE_NAMES[i] || `HR Zone ${i + 1}`,
+      minBpm,
+      maxBpm,
+      minPctLthr,
+      maxPctLthr,
+      color: ZONE_COLORS_7[i] || '#EF4444',
+    });
+  }
+  return zones;
+}
+
+export function buildCompleteAthleteProfile(
+  partial?: Partial<AthleteProfile> | null,
+  latestWellness?: UnifiedWellnessDay
+): AthleteProfile {
+  const ftp = Number(partial?.ftp || latestWellness?.rideEftp || 300);
+  const indoorFtp = Number(partial?.indoorFtp || ftp);
+  const eFtp = Number(partial?.eFtp || latestWellness?.rideEftp || ftp);
+  const wPrime = Number(partial?.wPrime || latestWellness?.rideWPrime || 24500);
+  const pMax = Number(partial?.pMax || latestWellness?.ridePMax || 1180);
+  const lthr = Number(partial?.lthr || 163);
+  const maxHr = Number(partial?.maxHr || 182);
+  const weightKg = Number(partial?.weightKg || latestWellness?.weightKg || 70.0);
+  const restingHr = Number(partial?.restingHr || latestWellness?.restingHR || 49);
+  const vo2MaxCycling = Number(partial?.vo2MaxCycling || latestWellness?.vo2MaxCycling || 56);
+  const vo2MaxRunning = Number(partial?.vo2MaxRunning || latestWellness?.vo2MaxRunning || 55);
+
+  const runFtp = Number(partial?.runFtp || latestWellness?.runEftp || 340);
+  const runEFtp = Number(partial?.runEFtp || latestWellness?.runEftp || runFtp);
+  const runLthr = Number(partial?.runLthr || lthr + 4);
+  const runMaxHr = Number(partial?.runMaxHr || maxHr + 3);
+  const thresholdPaceSecsPerKm = Number(partial?.thresholdPaceSecsPerKm || 245); // 4:05/km
+
+  const powerZones =
+    Array.isArray(partial?.powerZones) && partial!.powerZones!.length >= 5
+      ? partial!.powerZones!.map((pz, idx) => ({
+          ...pz,
+          minWatts:
+            idx === 0
+              ? 0
+              : Math.round(((partial!.powerZones![idx - 1]?.maxPct || pz.minPct) / 100) * ftp) + 1,
+          maxWatts: Math.round((pz.maxPct / 100) * ftp),
+          minIndoorWatts:
+            idx === 0
+              ? 0
+              : Math.round(
+                  ((partial!.powerZones![idx - 1]?.maxPct || pz.minPct) / 100) * indoorFtp
+                ) + 1,
+          maxIndoorWatts: Math.round((pz.maxPct / 100) * indoorFtp),
+        }))
+      : buildPowerZonesFromCeilings(ftp, indoorFtp);
+
+  const hrZones =
+    Array.isArray(partial?.hrZones) && partial!.hrZones!.length >= 5
+      ? partial!.hrZones!
+      : buildHrZonesFromCeilings(lthr, maxHr);
+
+  const runHrZones =
+    Array.isArray(partial?.runHrZones) && partial!.runHrZones!.length >= 5
+      ? partial!.runHrZones!
+      : buildHrZonesFromCeilings(runLthr, runMaxHr);
+
+  return {
+    athleteId: partial?.athleteId || '0',
+    name: partial?.name || 'Athlete',
+    weightKg: Number(weightKg.toFixed(1)),
+    restingHr: Math.round(restingHr),
+    vo2MaxCycling: Math.round(vo2MaxCycling),
+    vo2MaxRunning: Math.round(vo2MaxRunning),
+    ftp: Math.round(ftp),
+    indoorFtp: Math.round(indoorFtp),
+    eFtp: Math.round(eFtp),
+    wPrime: Math.round(wPrime),
+    pMax: Math.round(pMax),
+    lthr: Math.round(lthr),
+    maxHr: Math.round(maxHr),
+    sweetSpotMinPct: partial?.sweetSpotMinPct || 84,
+    sweetSpotMaxPct: partial?.sweetSpotMaxPct || 97,
+    runFtp: Math.round(runFtp),
+    runEFtp: Math.round(runEFtp),
+    runLthr: Math.round(runLthr),
+    runMaxHr: Math.round(runMaxHr),
+    thresholdPaceSecsPerKm: Math.round(thresholdPaceSecsPerKm),
+    powerZones,
+    hrZones,
+    runHrZones,
+    lastSyncedAt: partial?.lastSyncedAt || new Date().toISOString(),
+    source: partial?.source || 'INTERVALS_GARMIN',
+  };
+}
+
+const VIRTUAL_PLATFORM_REGEX =
+  /\b(zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|titan'?s grove| fuego flats|epic kom|radio tower|innsbruckring|richmond uci|sand and sequoias|temples and towers|sleepless city|wandering flats|mech isle|fine and sandy|sugar cookie|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt|wahoo rgt|virtual ride|virtual cycling|pacer group|robopacer|tour de zwift|zrl|zwift racing|ttt)\b/i;
+
+const SMART_TRAINER_REGEX =
+  /\b(trainerroad|trainer road|wahoo systm|sufferfest|peloton|kickr|tacx|neo 2t|elite direto|elite suito|sarais|h3|wattbike|stages bike|concept2|bikeerg|zwift ride|zwift hub|smart trainer|indoor cycling|indoor ride|indoor bike|stationary bike|erg mode|ramp test|spinbike|spinning|garmin indoor)\b/i;
+
+/**
+ * Checks whether a GPS coordinate pair falls inside known Virtual Cycling worlds
+ * (e.g. Zwift Watopia, Makuri Islands, France, and Paris located in Solomon / Santa Cruz Islands).
+ */
+export function isVirtualWorldLatLng(latLng?: [number, number] | null): boolean {
+  if (!Array.isArray(latLng) || latLng.length < 2) return false;
+  const [lat, lng] = latLng;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+  // Watopia, Makuri Islands, Virtual France & Virtual Paris (Temotu / Santa Cruz Islands, Solomon Islands)
+  if (lat >= -12.6 && lat <= -9.8 && lng >= 164.8 && lng <= 168.0) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalizes and re-classifies any activity so Virtual Cycling (Zwift, Rouvy, MyWhoosh, VirtualRide)
+ * and Smart Trainer sessions (TrainerRoad, Peloton, Wahoo, KICKR, Tacx, zero-GPS indoor rides)
+ * are accurately tagged with environment: 'INDOOR' and subType: 'Virtual Cycling' | 'Smart Trainer'.
+ */
+export function reclassifyActivityEnvironment(act: UnifiedActivity): UnifiedActivity {
+  if (!act) return act;
+
+  const combinedText = `${act.name || ''} ${act.deviceName || ''} ${act.gearName || ''} ${act.subType || ''}`;
+  const isVirtualText = VIRTUAL_PLATFORM_REGEX.test(combinedText);
+  const isTrainerText = SMART_TRAINER_REGEX.test(combinedText);
+
+  const sampleLatLng =
+    act.startLatLng ||
+    (Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 0 ? act.routeLatLngs[0] : undefined) ||
+    (act.streams?.latlng && act.streams.latlng.length > 0 ? act.streams.latlng[0] : undefined);
+
+  const hasVirtualWorldGps = isVirtualWorldLatLng(sampleLatLng);
+
+  const hasAnyGps =
+    Boolean(act.summaryPolyline && act.summaryPolyline.length > 4) ||
+    (Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 2) ||
+    (Array.isArray(act.startLatLng) && act.startLatLng.length === 2) ||
+    (Array.isArray(act.streams?.latlng) && act.streams!.latlng!.length > 2);
+
+  if (act.sportCategory === 'Cycling') {
+    const isStationaryZeroGpsRide =
+      !hasAnyGps &&
+      (act.elevationGainMeters === 0 || (act.avgPower || 0) > 0 || act.movingTimeSecs > 300);
+
+    if (
+      act.environment === 'INDOOR' ||
+      isVirtualText ||
+      isTrainerText ||
+      hasVirtualWorldGps ||
+      isStationaryZeroGpsRide
+    ) {
+      const nextSubType: UnifiedActivity['subType'] =
+        isVirtualText || hasVirtualWorldGps || act.subType === 'Virtual Cycling'
+          ? 'Virtual Cycling'
+          : 'Smart Trainer';
+
+      if (act.environment === 'INDOOR' && act.subType === nextSubType) {
+        return act;
+      }
+      return {
+        ...act,
+        environment: 'INDOOR',
+        subType: nextSubType,
+      };
+    }
+  } else if (act.sportCategory === 'Running') {
+    const isTreadmillText = /\b(treadmill|indoor run|zwift run|woodway|peloton tread|track indoor)\b/i.test(
+      combinedText
+    );
+    const isZeroGpsRun = !hasAnyGps && act.elevationGainMeters === 0 && act.movingTimeSecs > 180;
+    if (act.environment === 'INDOOR' || isTreadmillText || isZeroGpsRun) {
+      if (act.environment === 'INDOOR' && act.subType === 'Treadmill') return act;
+      return {
+        ...act,
+        environment: 'INDOOR',
+        subType: 'Treadmill',
+      };
+    }
+  }
+
+  return act;
 }
 
 function openTelemetryDb(): Promise<IDBDatabase> {
@@ -47,7 +338,14 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
       const getReq = store.get(SNAPSHOT_KEY);
       getReq.onsuccess = () => {
         const val = getReq.result as PersistedTelemetrySnapshot | undefined;
-        resolve(val && Array.isArray(val.activities) ? val : null);
+        if (val && Array.isArray(val.activities)) {
+          resolve({
+            ...val,
+            activities: val.activities.map(reclassifyActivityEnvironment),
+          });
+        } else {
+          resolve(null);
+        }
       };
       getReq.onerror = () => reject(getReq.error);
     });
@@ -64,6 +362,9 @@ export async function savePersistedTelemetrySnapshot(
     const savedAt = snapshot.savedAt || new Date().toISOString();
     const record: PersistedTelemetrySnapshot = {
       ...snapshot,
+      activities: Array.isArray(snapshot.activities)
+        ? snapshot.activities.map(reclassifyActivityEnvironment)
+        : [],
       savedAt,
     };
     await new Promise<void>((resolve, reject) => {
@@ -96,32 +397,35 @@ export async function clearPersistedTelemetrySnapshot(): Promise<void> {
 
 /**
  * Merges incoming synced activities with existing persisted activities without losing
- * previously hydrated streams, GPS route polylines, Strava segment efforts, kudos, or comments.
+ * previously hydrated streams, GPS route polylines, Strava segment efforts, kudos, comments,
+ * or Indoor / Virtual Cycling / Smart Trainer classification.
  */
 export function mergeActivitiesNonDestructive(
   existing: UnifiedActivity[],
   incoming: UnifiedActivity[]
 ): UnifiedActivity[] {
   if (!Array.isArray(existing) || existing.length === 0) {
-    return incoming;
+    return (incoming || []).map(reclassifyActivityEnvironment);
   }
   if (!Array.isArray(incoming) || incoming.length === 0) {
-    return existing;
+    return existing.map(reclassifyActivityEnvironment);
   }
 
   const byId = new Map<string, UnifiedActivity>();
   const stravaIdToPrimaryId = new Map<string, string>();
   const intervalsIdToPrimaryId = new Map<string, string>();
 
-  for (const act of existing) {
-    if (!act || !act.id) continue;
+  for (const rawAct of existing) {
+    if (!rawAct || !rawAct.id) continue;
+    const act = reclassifyActivityEnvironment(rawAct);
     byId.set(act.id, act);
     if (act.stravaId) stravaIdToPrimaryId.set(String(act.stravaId), act.id);
     if (act.intervalsId) intervalsIdToPrimaryId.set(String(act.intervalsId), act.id);
   }
 
-  for (const inc of incoming) {
-    if (!inc || !inc.id) continue;
+  for (const rawInc of incoming) {
+    if (!rawInc || !rawInc.id) continue;
+    const inc = reclassifyActivityEnvironment(rawInc);
     const matchedKey =
       (byId.has(inc.id) ? inc.id : undefined) ||
       (inc.intervalsId ? intervalsIdToPrimaryId.get(String(inc.intervalsId)) : undefined) ||
@@ -142,12 +446,26 @@ export function mergeActivitiesNonDestructive(
       new Set([...(prev.sourceBadges || []), ...(inc.sourceBadges || [])])
     ) as ('Intervals.icu' | 'Garmin' | 'Strava')[];
 
-    const merged: UnifiedActivity = {
+    // If either source classified the session as INDOOR (VirtualRide / Smart Trainer / Treadmill), promote INDOOR!
+    const resolvedEnv =
+      prev.environment === 'INDOOR' || inc.environment === 'INDOOR' ? 'INDOOR' : inc.environment;
+    const resolvedSubType: UnifiedActivity['subType'] =
+      prev.subType === 'Virtual Cycling' || inc.subType === 'Virtual Cycling'
+        ? 'Virtual Cycling'
+        : prev.subType === 'Smart Trainer' || inc.subType === 'Smart Trainer'
+          ? 'Smart Trainer'
+          : prev.subType === 'Treadmill' || inc.subType === 'Treadmill'
+            ? 'Treadmill'
+            : inc.subType || prev.subType;
+
+    const mergedRaw: UnifiedActivity = {
       ...prev,
       ...inc,
       id: canonicalId,
       intervalsId: inc.intervalsId || prev.intervalsId,
       stravaId: inc.stravaId || prev.stravaId,
+      environment: resolvedEnv,
+      subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
       deviceName: inc.deviceName || prev.deviceName,
       avgPower: inc.avgPower ?? prev.avgPower,
@@ -194,6 +512,8 @@ export function mergeActivitiesNonDestructive(
           : prev.segmentEfforts,
       sourceBadges: mergedBadges,
     };
+
+    const merged = reclassifyActivityEnvironment(mergedRaw);
 
     if (canonicalId !== matchedKey) {
       byId.delete(matchedKey);

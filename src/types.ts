@@ -162,7 +162,16 @@ export interface UnifiedActivity {
   name: string;
   sportCategory: SportCategory;
   environment: ActivityEnvironment; // 'OUTDOOR' | 'INDOOR'
-  subType: 'Road' | 'Trail' | 'Gravel' | 'Smart Trainer' | 'Treadmill' | 'Pool' | 'Open Water' | 'Gym';
+  subType:
+    | 'Road'
+    | 'Trail'
+    | 'Gravel'
+    | 'Virtual Cycling'
+    | 'Smart Trainer'
+    | 'Treadmill'
+    | 'Pool'
+    | 'Open Water'
+    | 'Gym';
   movingTimeSecs: number;
   distanceMeters: number;
   elevationGainMeters: number;
@@ -339,6 +348,62 @@ export interface AthleteGearItem {
 
 export type MapTileProvider = 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
 
+export interface AthletePowerZone {
+  zone: number; // 1..7
+  code: string; // 'Z1'..'Z7'
+  name: string;
+  minPct: number;
+  maxPct: number;
+  minWatts: number;
+  maxWatts: number;
+  minIndoorWatts: number;
+  maxIndoorWatts: number;
+  color: string;
+}
+
+export interface AthleteHrZone {
+  zone: number; // 1..7
+  code: string; // 'Z1'..'Z7'
+  name: string;
+  minBpm: number;
+  maxBpm: number;
+  minPctLthr: number;
+  maxPctLthr: number;
+  color: string;
+}
+
+export interface AthleteProfile {
+  athleteId: string;
+  name: string;
+  weightKg: number;
+  restingHr: number;
+  vo2MaxCycling: number;
+  vo2MaxRunning: number;
+  // Cycling Thresholds
+  ftp: number; // Outdoor FTP (W)
+  indoorFtp: number; // Indoor / Virtual FTP (W)
+  eFtp: number; // Estimated FTP (W)
+  wPrime: number; // Anaerobic Work Capacity W' (J)
+  pMax: number; // Max Sprint Power (W)
+  lthr: number; // Cycling LTHR (bpm)
+  maxHr: number; // Cycling Max HR (bpm)
+  sweetSpotMinPct: number;
+  sweetSpotMaxPct: number;
+  // Running Thresholds
+  runFtp: number; // Running Critical Power (W)
+  runEFtp: number; // Running eFTP (W)
+  runLthr: number; // Running LTHR (bpm)
+  runMaxHr: number; // Running Max HR (bpm)
+  thresholdPaceSecsPerKm: number; // Running Threshold Pace (s/km)
+  // Authoritative Zone Tables
+  powerZones: AthletePowerZone[];
+  hrZones: AthleteHrZone[];
+  runHrZones: AthleteHrZone[];
+  // Sync Metadata
+  lastSyncedAt: string;
+  source: 'INTERVALS_GARMIN' | 'CUSTOM_OVERRIDE' | 'DEFAULT';
+}
+
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   intervalsConnected: boolean;
@@ -366,8 +431,10 @@ export interface ConnectionStatus {
   athleteRunFtp?: number;
   athleteLthr?: number;
   athleteMaxHr?: number;
+  athleteProfile?: AthleteProfile;
   gearItems?: AthleteGearItem[];
   devCallbackUrl: string;
   sharedCallbackUrl: string;
   currentOriginCallbackUrl: string;
 }
+

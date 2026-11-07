@@ -68,6 +68,7 @@ interface RuntimeSessionStore {
   athleteRunFtp: number;
   athleteLthr: number;
   athleteMaxHr: number;
+  athleteProfile?: Record<string, any>;
   mapTileApiKey: string;
   mapTileProvider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
   gearItems: {
@@ -131,6 +132,7 @@ const runtimeStore: RuntimeSessionStore = {
   athleteRunFtp: cachedSession.athleteRunFtp || 420,
   athleteLthr: cachedSession.athleteLthr || 163,
   athleteMaxHr: cachedSession.athleteMaxHr || 180,
+  athleteProfile: cachedSession.athleteProfile || undefined,
   mapTileApiKey: cachedSession.mapTileApiKey || initialEnvMapKey,
   mapTileProvider:
     cachedSession.mapTileProvider ||
@@ -141,6 +143,293 @@ const runtimeStore: RuntimeSessionStore = {
         : 'OSM_KEYLESS'),
   gearItems: cachedSession.gearItems || [],
 };
+
+const SERVER_ZONE_COLORS = [
+  '#52B788',
+  '#2A9D8F',
+  '#EAB308',
+  '#F97316',
+  '#EF4444',
+  '#9333EA',
+  '#EC4899',
+];
+
+function buildServerAthleteProfile(
+  rawProfile?: Record<string, any> | null,
+  latestWellness?: Record<string, any> | null
+) {
+  const prev = runtimeStore.athleteProfile || {};
+  const bikeSetting = Array.isArray(rawProfile?.sportSettings)
+    ? rawProfile!.sportSettings.find(
+        (s: any) =>
+          Array.isArray(s.types) &&
+          (s.types.includes('Ride') || s.types.includes('VirtualRide'))
+      )
+    : undefined;
+  const runSetting = Array.isArray(rawProfile?.sportSettings)
+    ? rawProfile!.sportSettings.find(
+        (s: any) =>
+          Array.isArray(s.types) &&
+          (s.types.includes('Run') || s.types.includes('VirtualRun') || s.types.includes('TrailRun'))
+      )
+    : undefined;
+
+  const ftp = Number(
+    bikeSetting?.ftp ||
+      rawProfile?.ftp ||
+      prev.ftp ||
+      runtimeStore.athleteFtp ||
+      latestWellness?.rideEftp ||
+      300
+  );
+  const indoorFtp = Number(
+    bikeSetting?.indoor_ftp ||
+      rawProfile?.indoorFtp ||
+      prev.indoorFtp ||
+      runtimeStore.athleteIndoorFtp ||
+      ftp
+  );
+  const eFtp = Number(
+    latestWellness?.rideEftp ||
+      bikeSetting?.eFtp ||
+      rawProfile?.eFtp ||
+      prev.eFtp ||
+      ftp
+  );
+  const wPrime = Number(
+    bikeSetting?.w_prime ||
+      latestWellness?.rideWPrime ||
+      rawProfile?.wPrime ||
+      prev.wPrime ||
+      24500
+  );
+  const pMax = Number(
+    bikeSetting?.p_max ||
+      latestWellness?.ridePMax ||
+      rawProfile?.pMax ||
+      prev.pMax ||
+      1180
+  );
+  const lthr = Number(
+    bikeSetting?.lthr ||
+      rawProfile?.lthr ||
+      prev.lthr ||
+      runtimeStore.athleteLthr ||
+      163
+  );
+  const maxHr = Number(
+    bikeSetting?.max_hr ||
+      rawProfile?.maxHr ||
+      prev.maxHr ||
+      runtimeStore.athleteMaxHr ||
+      182
+  );
+  const sweetSpotMinPct = Number(
+    bikeSetting?.sweet_spot_min || rawProfile?.sweetSpotMinPct || prev.sweetSpotMinPct || 84
+  );
+  const sweetSpotMaxPct = Number(
+    bikeSetting?.sweet_spot_max || rawProfile?.sweetSpotMaxPct || prev.sweetSpotMaxPct || 97
+  );
+
+  const weightKg = Number(
+    latestWellness?.weightKg ||
+      rawProfile?.icu_weight ||
+      rawProfile?.weight ||
+      rawProfile?.weightKg ||
+      prev.weightKg ||
+      70.0
+  );
+  const restingHr = Number(
+    latestWellness?.restingHR ||
+      rawProfile?.icu_resting_hr ||
+      rawProfile?.restingHr ||
+      prev.restingHr ||
+      49
+  );
+  const vo2MaxCycling = Number(
+    latestWellness?.vo2MaxCycling || rawProfile?.vo2MaxCycling || prev.vo2MaxCycling || 56
+  );
+  const vo2MaxRunning = Number(
+    latestWellness?.vo2MaxRunning || rawProfile?.vo2MaxRunning || prev.vo2MaxRunning || 55
+  );
+
+  const runFtp = Number(
+    runSetting?.ftp ||
+      rawProfile?.runFtp ||
+      prev.runFtp ||
+      runtimeStore.athleteRunFtp ||
+      latestWellness?.runEftp ||
+      340
+  );
+  const runEFtp = Number(
+    latestWellness?.runEftp || rawProfile?.runEFtp || prev.runEFtp || runFtp
+  );
+  const runLthr = Number(
+    runSetting?.lthr || rawProfile?.runLthr || prev.runLthr || lthr + 4
+  );
+  const runMaxHr = Number(
+    runSetting?.max_hr || rawProfile?.runMaxHr || prev.runMaxHr || maxHr + 3
+  );
+  // threshold_pace in Intervals.icu is m/s; convert to secs/km if < 15
+  let thresholdPaceSecsPerKm = Number(
+    rawProfile?.thresholdPaceSecsPerKm || prev.thresholdPaceSecsPerKm || 245
+  );
+  if (runSetting?.threshold_pace && Number(runSetting.threshold_pace) > 0) {
+    const rawTp = Number(runSetting.threshold_pace);
+    thresholdPaceSecsPerKm = rawTp < 15 ? Math.round(1000 / rawTp) : Math.round(rawTp);
+  }
+
+  // Power Zones (Z1..Z7)
+  const rawPowerCeilings: number[] =
+    Array.isArray(bikeSetting?.power_zones) && bikeSetting.power_zones.length >= 5
+      ? bikeSetting.power_zones.map((v: any) => Number(v))
+      : Array.isArray(prev.powerZones) && prev.powerZones.length >= 5
+        ? prev.powerZones.map((z: any) => Number(z.maxPct))
+        : [55, 75, 90, 105, 120, 150, 999];
+  const rawPowerNames: string[] =
+    Array.isArray(bikeSetting?.power_zone_names) && bikeSetting.power_zone_names.length >= 5
+      ? bikeSetting.power_zone_names
+      : [
+          'Active Recovery',
+          'Endurance',
+          'Tempo',
+          'Lactate Threshold',
+          'VO2 Max',
+          'Anaerobic Capacity',
+          'Neuromuscular Power',
+        ];
+
+  const powerZones = rawPowerCeilings.slice(0, 7).map((ceilPct, i) => {
+    const minPct = i === 0 ? 0 : rawPowerCeilings[i - 1] + 1;
+    const maxPct = ceilPct >= 900 ? 250 : ceilPct;
+    return {
+      zone: i + 1,
+      code: `Z${i + 1}`,
+      name: rawPowerNames[i] || `Zone ${i + 1}`,
+      minPct,
+      maxPct,
+      minWatts: i === 0 ? 0 : Math.round((rawPowerCeilings[i - 1] / 100) * ftp) + 1,
+      maxWatts: Math.round((maxPct / 100) * ftp),
+      minIndoorWatts:
+        i === 0 ? 0 : Math.round((rawPowerCeilings[i - 1] / 100) * indoorFtp) + 1,
+      maxIndoorWatts: Math.round((maxPct / 100) * indoorFtp),
+      color: SERVER_ZONE_COLORS[i] || '#9333EA',
+    };
+  });
+
+  // Cycling HR Zones
+  const defaultBikeHrCeilings = [
+    Math.round(lthr * 0.81),
+    Math.round(lthr * 0.89),
+    Math.round(lthr * 0.93),
+    Math.round(lthr * 0.99),
+    Math.round(lthr * 1.02),
+    Math.round(lthr * 1.06),
+    maxHr,
+  ];
+  const rawHrCeilings: number[] =
+    Array.isArray(bikeSetting?.hr_zones) && bikeSetting.hr_zones.length >= 5
+      ? bikeSetting.hr_zones.map((v: any) => Number(v))
+      : Array.isArray(prev.hrZones) && prev.hrZones.length >= 5
+        ? prev.hrZones.map((z: any) => Number(z.maxBpm))
+        : defaultBikeHrCeilings;
+  const rawHrNames: string[] =
+    Array.isArray(bikeSetting?.hr_zone_names) && bikeSetting.hr_zone_names.length >= 5
+      ? bikeSetting.hr_zone_names
+      : [
+          'Z1 Recovery',
+          'Z2 Aerobic Base',
+          'Z3 Tempo',
+          'Z4 Sub-Threshold',
+          'Z5a Super-Threshold',
+          'Z5b Aerobic Capacity',
+          'Z5c Anaerobic',
+        ];
+
+  const hrZones = rawHrCeilings.slice(0, 7).map((ceilBpm, i) => {
+    const minBpm = i === 0 ? 60 : rawHrCeilings[i - 1] + 1;
+    const maxBpm = i === rawHrCeilings.length - 1 ? Math.max(ceilBpm, maxHr) : ceilBpm;
+    return {
+      zone: i + 1,
+      code: `Z${i + 1}`,
+      name: rawHrNames[i] || `HR Zone ${i + 1}`,
+      minBpm,
+      maxBpm,
+      minPctLthr: i === 0 ? 50 : Math.round((minBpm / Math.max(100, lthr)) * 100),
+      maxPctLthr: Math.round((maxBpm / Math.max(100, lthr)) * 100),
+      color: SERVER_ZONE_COLORS[i] || '#EF4444',
+    };
+  });
+
+  // Running HR Zones
+  const defaultRunHrCeilings = [
+    Math.round(runLthr * 0.81),
+    Math.round(runLthr * 0.89),
+    Math.round(runLthr * 0.93),
+    Math.round(runLthr * 0.99),
+    Math.round(runLthr * 1.02),
+    Math.round(runLthr * 1.06),
+    runMaxHr,
+  ];
+  const rawRunHrCeilings: number[] =
+    Array.isArray(runSetting?.hr_zones) && runSetting.hr_zones.length >= 5
+      ? runSetting.hr_zones.map((v: any) => Number(v))
+      : defaultRunHrCeilings;
+  const rawRunHrNames: string[] =
+    Array.isArray(runSetting?.hr_zone_names) && runSetting.hr_zone_names.length >= 5
+      ? runSetting.hr_zone_names
+      : rawHrNames;
+
+  const runHrZones = rawRunHrCeilings.slice(0, 7).map((ceilBpm, i) => {
+    const minBpm = i === 0 ? 60 : rawRunHrCeilings[i - 1] + 1;
+    const maxBpm = i === rawRunHrCeilings.length - 1 ? Math.max(ceilBpm, runMaxHr) : ceilBpm;
+    return {
+      zone: i + 1,
+      code: `Z${i + 1}`,
+      name: rawRunHrNames[i] || `Run HR Zone ${i + 1}`,
+      minBpm,
+      maxBpm,
+      minPctLthr: i === 0 ? 50 : Math.round((minBpm / Math.max(100, runLthr)) * 100),
+      maxPctLthr: Math.round((maxBpm / Math.max(100, runLthr)) * 100),
+      color: SERVER_ZONE_COLORS[i] || '#EF4444',
+    };
+  });
+
+  return {
+    athleteId: String(
+      rawProfile?.id || runtimeStore.intervalsAthleteId || prev.athleteId || '0'
+    ),
+    name:
+      rawProfile?.name ||
+      [rawProfile?.firstname, rawProfile?.lastname].filter(Boolean).join(' ') ||
+      runtimeStore.intervalsAthleteName ||
+      prev.name ||
+      'Athlete',
+    weightKg: Number(weightKg.toFixed(1)),
+    restingHr: Math.round(restingHr),
+    vo2MaxCycling: Math.round(vo2MaxCycling),
+    vo2MaxRunning: Math.round(vo2MaxRunning),
+    ftp: Math.round(ftp),
+    indoorFtp: Math.round(indoorFtp),
+    eFtp: Math.round(eFtp),
+    wPrime: Math.round(wPrime),
+    pMax: Math.round(pMax),
+    lthr: Math.round(lthr),
+    maxHr: Math.round(maxHr),
+    sweetSpotMinPct,
+    sweetSpotMaxPct,
+    runFtp: Math.round(runFtp),
+    runEFtp: Math.round(runEFtp),
+    runLthr: Math.round(runLthr),
+    runMaxHr: Math.round(runMaxHr),
+    thresholdPaceSecsPerKm: Math.round(thresholdPaceSecsPerKm),
+    powerZones,
+    hrZones,
+    runHrZones,
+    lastSyncedAt: new Date().toISOString(),
+    source: rawProfile?.source || 'INTERVALS_GARMIN',
+  };
+}
 
 function saveSessionCache() {
   saveJsonFile(SESSION_CACHE_FILE, runtimeStore);
@@ -443,12 +732,114 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     athleteRunFtp: runtimeStore.athleteRunFtp,
     athleteLthr: runtimeStore.athleteLthr,
     athleteMaxHr: runtimeStore.athleteMaxHr,
+    athleteProfile:
+      runtimeStore.athleteProfile || buildServerAthleteProfile(null, null),
     gearItems: runtimeStore.gearItems,
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: getStravaTokenRotationPayload(),
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
     mapTileApiKey: effectiveMapKey || undefined,
+  });
+});
+
+// Sync or Override Athlete Profile & Sport Zones from Intervals.icu & Garmin
+apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response) => {
+  try {
+    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    if (!apiKey) {
+      const fallbackProfile = buildServerAthleteProfile(req.body?.overrides || null, null);
+      runtimeStore.athleteProfile = fallbackProfile;
+      saveSessionCache();
+      res.json({ ok: true, athleteProfile: fallbackProfile, mode: 'SANDBOX' });
+      return;
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const oldest14d = new Date(Date.now() - 14 * 86400 * 1000).toISOString().slice(0, 10);
+
+    const [profileResp, wellnessResp] = await Promise.all([
+      fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
+        headers: { Authorization: authHeader, Accept: 'application/json' },
+      }),
+      fetch(
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest14d}&newest=${todayStr}`,
+        {
+          headers: { Authorization: authHeader, Accept: 'application/json' },
+        }
+      ),
+    ]);
+
+    if (!profileResp.ok) {
+      res.status(profileResp.status).json({
+        error: `Intervals.icu athlete profile request returned ${profileResp.status}.`,
+      });
+      return;
+    }
+
+    const rawProfile = (await profileResp.json()) as Record<string, any>;
+    const rawWellnessList = wellnessResp.ok
+      ? ((await wellnessResp.json()) as Record<string, any>[])
+      : [];
+
+    let latestWellnessSummary: Record<string, any> = {};
+    for (const w of rawWellnessList) {
+      if (w.weight && Number(w.weight) > 25) latestWellnessSummary.weightKg = Number(w.weight);
+      if (w.restingHR && Number(w.restingHR) > 25)
+        latestWellnessSummary.restingHR = Number(w.restingHR);
+      if (w.vo2max && Number(w.vo2max) > 20) {
+        latestWellnessSummary.vo2MaxCycling = Number(w.vo2max);
+        latestWellnessSummary.vo2MaxRunning = Number(w.vo2max);
+      }
+      if (Array.isArray(w.sportInfo)) {
+        const rideInfo = w.sportInfo.find((s: any) => s.type === 'Ride');
+        const runInfo = w.sportInfo.find((s: any) => s.type === 'Run');
+        if (rideInfo?.eftp) latestWellnessSummary.rideEftp = Math.round(Number(rideInfo.eftp));
+        if (rideInfo?.wPrime) latestWellnessSummary.rideWPrime = Math.round(Number(rideInfo.wPrime));
+        if (rideInfo?.pMax) latestWellnessSummary.ridePMax = Math.round(Number(rideInfo.pMax));
+        if (runInfo?.eftp) latestWellnessSummary.runEftp = Math.round(Number(runInfo.eftp));
+      }
+    }
+
+    const syncedProfile = buildServerAthleteProfile(rawProfile, latestWellnessSummary);
+    runtimeStore.athleteFtp = syncedProfile.ftp;
+    runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
+    runtimeStore.athleteRunFtp = syncedProfile.runFtp;
+    runtimeStore.athleteLthr = syncedProfile.lthr;
+    runtimeStore.athleteMaxHr = syncedProfile.maxHr;
+    runtimeStore.athleteProfile = syncedProfile;
+    saveSessionCache();
+
+    res.json({
+      ok: true,
+      athleteProfile: syncedProfile,
+      mode: 'LIVE',
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Failed to sync Athlete Profile & Zones.',
+    });
+  }
+});
+
+apiRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
+  const incoming = (req.body?.athleteProfile || req.body || {}) as Record<string, any>;
+  const updated = buildServerAthleteProfile(
+    { ...incoming, source: 'CUSTOM_OVERRIDE' },
+    null
+  );
+  runtimeStore.athleteFtp = updated.ftp;
+  runtimeStore.athleteIndoorFtp = updated.indoorFtp;
+  runtimeStore.athleteRunFtp = updated.runFtp;
+  runtimeStore.athleteLthr = updated.lthr;
+  runtimeStore.athleteMaxHr = updated.maxHr;
+  runtimeStore.athleteProfile = updated;
+  saveSessionCache();
+
+  res.json({
+    ok: true,
+    athleteProfile: updated,
   });
 });
 
@@ -735,8 +1126,10 @@ async function syncIntervalsAllHistory(
   }
 
   // Extract Athlete Profile, Sport Thresholds (FTP, LTHR, Max HR), and Real Bikes & Shoes
+  let parsedRawProfile: Record<string, any> | null = null;
   if (profileResp.ok) {
     const profile = (await profileResp.json()) as Record<string, any>;
+    parsedRawProfile = profile;
     runtimeStore.intervalsAthleteName =
       profile.name ||
       [profile.firstname, profile.lastname].filter(Boolean).join(' ') ||
@@ -985,9 +1378,172 @@ async function syncIntervalsAllHistory(
     };
   });
 
-  // Normalize all-time Garmin / Intervals.icu Activities
+  // Enrich & reconstruct Strava-originated Virtual Cycling / Trainer sessions from Strava cache or Intervals.icu daily wellness residual load
+  const cachedStravaArchive = loadJsonFile<Record<string, any>[]>(STRAVA_ARCHIVE_CACHE_FILE, []);
+  const stravaArchiveById = new Map<string, Record<string, any>>();
+  for (const sa of cachedStravaArchive) {
+    if (sa && sa.id) stravaArchiveById.set(String(sa.id), sa);
+  }
+
+  const wellnessByDateMap = new Map<string, (typeof wellnessDays)[number]>();
+  for (const w of wellnessDays) {
+    if (w && w.date) wellnessByDateMap.set(w.date, w);
+  }
+
+  const knownGarminLoadByDate = new Map<string, number>();
+  const stubsByDate = new Map<string, Record<string, any>[]>();
+  const garminStravaIds = new Set<string>();
+
+  for (const a of rawActivities) {
+    if (!a || !a.start_date_local) continue;
+    const d = String(a.start_date_local).slice(0, 10);
+    if (a.source !== 'STRAVA' && a.strava_id) {
+      garminStravaIds.add(String(a.strava_id));
+    }
+    if (a.type || a.moving_time != null || a.elapsed_time != null) {
+      knownGarminLoadByDate.set(
+        d,
+        (knownGarminLoadByDate.get(d) || 0) + Number(a.icu_training_load ?? 0)
+      );
+    } else if (a.source === 'STRAVA') {
+      const list = stubsByDate.get(d) || [];
+      list.push(a);
+      stubsByDate.set(d, list);
+    }
+  }
+
+  const enrichedRawActivities: Record<string, any>[] = [];
+  for (const a of rawActivities) {
+    if (!a || !a.start_date_local) continue;
+    if (a.source === 'STRAVA' && !a.type && a.moving_time == null && a.elapsed_time == null) {
+      const sid = String(a.strava_id || a.id);
+      if (garminStravaIds.has(sid)) continue;
+
+      const cachedSa = stravaArchiveById.get(sid);
+      if (cachedSa) {
+        enrichedRawActivities.push({
+          ...a,
+          id: `strava-${sid}`,
+          strava_id: sid,
+          type: cachedSa.sport_type || cachedSa.type || 'VirtualRide',
+          name: cachedSa.name || 'Virtual Cycling (Zwift)',
+          moving_time: cachedSa.moving_time || cachedSa.elapsed_time || 2700,
+          elapsed_time: cachedSa.elapsed_time || cachedSa.moving_time || 2700,
+          distance: cachedSa.distance || 24000,
+          total_elevation_gain: cachedSa.total_elevation_gain ?? 180,
+          trainer: cachedSa.trainer ?? true,
+          average_watts: cachedSa.average_watts,
+          icu_weighted_avg_watts: cachedSa.weighted_average_watts || cachedSa.average_watts,
+          average_heartrate: cachedSa.average_heartrate,
+          max_heartrate: cachedSa.max_heartrate,
+          average_cadence: cachedSa.average_cadence,
+          device_name: cachedSa.device_name || 'Zwift Virtual Cycling',
+        });
+        continue;
+      }
+
+      // Reconstruct Virtual Cycling (Zwift / Smart Trainer) telemetry from Intervals.icu daily wellness residual load & eFTP
+      const d = String(a.start_date_local).slice(0, 10);
+      const dayStubs = (stubsByDate.get(d) || [])
+        .filter((s) => !garminStravaIds.has(String(s.strava_id || s.id)))
+        .sort((x, y) => String(x.start_date_local).localeCompare(String(y.start_date_local)));
+      const stubIdx = dayStubs.findIndex((s) => String(s.id) === String(a.id));
+
+      const wDay = wellnessByDateMap.get(d);
+      const totalDayLoad = wDay ? wDay.dailyLoad : 0;
+      const garminLoad = knownGarminLoadByDate.get(d) || 0;
+      const residualDayLoad = Math.max(0, totalDayLoad - garminLoad);
+      const rideEftp = wDay?.rideEftp || runtimeStore.athleteFtp || 310;
+
+      // Check if this stub is a short Zwift warmup immediately preceding a main event within 25 mins
+      let isWarmupStub = false;
+      let warmupGapSecs = 720;
+      if (stubIdx >= 0 && stubIdx < dayStubs.length - 1) {
+        const currMs = new Date(String(a.start_date_local)).getTime();
+        const nextMs = new Date(String(dayStubs[stubIdx + 1].start_date_local)).getTime();
+        const diffSecs = Math.round((nextMs - currMs) / 1000);
+        if (diffSecs >= 180 && diffSecs <= 1800) {
+          isWarmupStub = true;
+          warmupGapSecs = Math.max(300, diffSecs - 45);
+        }
+      }
+
+      let sessionLoad = 42;
+      if (residualDayLoad > 0) {
+        if (dayStubs.length === 1) {
+          sessionLoad = residualDayLoad;
+        } else if (isWarmupStub) {
+          sessionLoad = Math.max(5, Math.min(14, Math.round(residualDayLoad * 0.18)));
+        } else {
+          const warmupCount = dayStubs.length - 1;
+          const mainShare = Math.max(
+            12,
+            residualDayLoad - Math.round(residualDayLoad * 0.18) * Math.min(1, warmupCount)
+          );
+          const nonWarmupCount = Math.max(1, dayStubs.length - Math.min(1, warmupCount));
+          sessionLoad = Math.max(12, Math.round(mainShare / nonWarmupCount));
+        }
+      } else {
+        sessionLoad = isWarmupStub ? 9 : 46;
+      }
+
+      const ifEst = isWarmupStub
+        ? 0.64
+        : sessionLoad >= 80
+          ? 0.88
+          : sessionLoad >= 50
+            ? 0.81
+            : 0.75;
+      const movingTimeSecs = isWarmupStub
+        ? warmupGapSecs
+        : Math.max(
+            1200,
+            Math.min(7200, Math.round((sessionLoad / (ifEst * ifEst * 100)) * 3600))
+          );
+      const npWatts = Math.round(rideEftp * ifEst);
+      const avgWatts = Math.round(npWatts * (isWarmupStub ? 0.96 : 0.93));
+      const speedMps = isWarmupStub ? 8.6 : 9.7; // ~31–35 km/h virtual cycling speed
+      const distMeters = Math.round(movingTimeSecs * speedMps);
+      const elevMeters = isWarmupStub ? 45 : Math.round((distMeters / 1000) * 8.5);
+      const avgHrEst = Math.round(118 + ifEst * 42);
+      const maxHrEst = Math.round(avgHrEst + (isWarmupStub ? 10 : 18));
+
+      const sessionLabel = isWarmupStub
+        ? 'Zwift — Virtual Cycling Warmup'
+        : sessionLoad >= 75
+          ? 'Zwift — Virtual Cycling Race / Threshold'
+          : 'Zwift — Virtual Cycling Session';
+
+      enrichedRawActivities.push({
+        ...a,
+        id: `strava-${sid}`,
+        strava_id: sid,
+        type: 'VirtualRide',
+        sub_type: 'VIRTUAL_RIDE',
+        name: sessionLabel,
+        trainer: true,
+        moving_time: movingTimeSecs,
+        elapsed_time: movingTimeSecs,
+        distance: distMeters,
+        total_elevation_gain: elevMeters,
+        average_watts: avgWatts,
+        icu_average_watts: avgWatts,
+        icu_weighted_avg_watts: npWatts,
+        icu_intensity: Math.round(ifEst * 100),
+        icu_training_load: sessionLoad,
+        average_heartrate: avgHrEst,
+        max_heartrate: maxHrEst,
+        average_cadence: isWarmupStub ? 86 : 90,
+        device_name: 'Zwift Virtual Cycling',
+      });
+      continue;
+    }
+    enrichedRawActivities.push(a);
+  }
+
+  // Normalize all-time Garmin / Intervals.icu / Reconstructed Virtual Cycling Activities
   const seenStravaIds = new Set<string>();
-  const activities = rawActivities
+  const activities = enrichedRawActivities
     .filter((a) => {
       if (!a || !a.start_date_local) return false;
       if (!a.type && a.moving_time == null && a.elapsed_time == null) return false;
@@ -1003,47 +1559,83 @@ async function syncIntervalsAllHistory(
     })
     .map((a) => {
       const rawType = String(a.type || '').trim();
+      const rawSubType = String(a.sub_type || '').trim();
+      const rawName = String(a.name || '').trim();
+      const rawDevice = String(a.device_name || '').trim();
+      const combinedMeta = `${rawType} ${rawSubType} ${rawName} ${rawDevice}`;
+
       let sportCategory: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport' = 'Strength';
       if (
-        /ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|trackride|cyclocross/i.test(
-          rawType
+        /ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|trackride|cyclocross|zwift|trainerroad|peloton|rouvy|mywhoosh|wahoo|kickr|tacx/i.test(
+          combinedMeta
         )
       ) {
         sportCategory = 'Cycling';
-      } else if (/run|trailrun|virtualrun|treadmill/i.test(rawType)) {
+      } else if (/run|trailrun|virtualrun|treadmill/i.test(combinedMeta)) {
         sportCategory = 'Running';
-      } else if (/swim|openwater/i.test(rawType)) {
+      } else if (/swim|openwater/i.test(combinedMeta)) {
         sportCategory = 'Swimming';
-      } else if (/triathlon|multisport|brick|transition/i.test(rawType)) {
+      } else if (/triathlon|multisport|brick|transition/i.test(combinedMeta)) {
         sportCategory = 'Multisport';
       } else {
         sportCategory = 'Strength';
       }
 
+      const rawStartLatLng =
+        Array.isArray(a.start_latlng) && a.start_latlng.length >= 2
+          ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])]
+          : undefined;
+      const isWatopiaOrMakuriGps =
+        rawStartLatLng &&
+        Number.isFinite(rawStartLatLng[0]) &&
+        Number.isFinite(rawStartLatLng[1]) &&
+        rawStartLatLng[0] >= -12.6 &&
+        rawStartLatLng[0] <= -9.8 &&
+        rawStartLatLng[1] >= 164.8 &&
+        rawStartLatLng[1] <= 168.0;
+
+      const hasNoLatLngStream =
+        Array.isArray(a.stream_types) &&
+        a.stream_types.length > 0 &&
+        !a.stream_types.includes('latlng');
+
+      const isZeroGpsStationaryRide =
+        sportCategory === 'Cycling' &&
+        !rawStartLatLng &&
+        (hasNoLatLngStream || Number(a.total_elevation_gain ?? 0) === 0);
+
+      const isVirtualPlatform =
+        /virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
+          combinedMeta
+        ) || Boolean(isWatopiaOrMakuriGps);
+
       const isIndoor =
         Boolean(a.trainer) ||
-        /virtual|indoor|treadmill|zwift|trainer|spinning|gym|weight|hiit|workout|yoga|pool/i.test(
-          rawType
-        ) ||
-        /virtual|indoor|treadmill|zwift|trainer|peloton|wahoo|rouvy/i.test(String(a.name || ''));
+        Boolean(isVirtualPlatform) ||
+        Boolean(isZeroGpsStationaryRide) ||
+        /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(
+          combinedMeta
+        );
 
       let subType:
         | 'Road'
         | 'Trail'
         | 'Gravel'
+        | 'Virtual Cycling'
         | 'Smart Trainer'
         | 'Treadmill'
         | 'Pool'
         | 'Open Water'
         | 'Gym' = 'Road';
       if (sportCategory === 'Cycling') {
-        if (isIndoor) subType = 'Smart Trainer';
-        else if (/gravel/i.test(rawType) || /gravel/i.test(String(a.name || ''))) subType = 'Gravel';
-        else if (/mountain|mtb|trail/i.test(rawType)) subType = 'Trail';
+        if (isVirtualPlatform) subType = 'Virtual Cycling';
+        else if (isIndoor) subType = 'Smart Trainer';
+        else if (/gravel/i.test(combinedMeta)) subType = 'Gravel';
+        else if (/mountain|mtb|trail/i.test(combinedMeta)) subType = 'Trail';
         else subType = 'Road';
       } else if (sportCategory === 'Running') {
         if (isIndoor) subType = 'Treadmill';
-        else if (/trail/i.test(rawType) || /trail/i.test(String(a.name || ''))) subType = 'Trail';
+        else if (/trail/i.test(combinedMeta)) subType = 'Trail';
         else subType = 'Road';
       } else if (sportCategory === 'Swimming') {
         subType = /open/i.test(rawType) ? 'Open Water' : 'Pool';
@@ -1260,6 +1852,17 @@ async function syncIntervalsAllHistory(
       act.routeLatLngs = routePts;
       act.startLatLng = routePts[0];
       act.endLatLng = routePts[routePts.length - 1];
+      const [firstLat, firstLng] = routePts[0];
+      if (
+        act.sportCategory === 'Cycling' &&
+        firstLat >= -12.6 &&
+        firstLat <= -9.8 &&
+        firstLng >= 164.8 &&
+        firstLng <= 168.0
+      ) {
+        act.environment = 'INDOOR';
+        act.subType = 'Virtual Cycling';
+      }
     }
     const kEntry = kudosCache[act.id] || (act.stravaId ? kudosCache[act.stravaId] : undefined);
     if (kEntry) {
@@ -1317,6 +1920,10 @@ async function syncIntervalsAllHistory(
     activities.length > 0
       ? activities[activities.length - 1].startDateLocal.slice(0, 10)
       : runtimeStore.earliestActivityDate;
+  const latestWellnessRecord =
+    wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : null;
+  const fullProfile = buildServerAthleteProfile(parsedRawProfile, latestWellnessRecord);
+  runtimeStore.athleteProfile = fullProfile;
   runtimeStore.lastSyncedAt = new Date().toISOString();
   runtimeStore.nextHourlySyncAt = new Date(Date.now() + 3600 * 1000).toISOString();
   saveSessionCache();
@@ -1327,11 +1934,7 @@ async function syncIntervalsAllHistory(
     plannedEvents,
     redactedStravaCount,
     athleteProfile: {
-      ftp: runtimeStore.athleteFtp,
-      indoorFtp: runtimeStore.athleteIndoorFtp,
-      runFtp: runtimeStore.athleteRunFtp,
-      lthr: runtimeStore.athleteLthr,
-      maxHr: runtimeStore.athleteMaxHr,
+      ...fullProfile,
       gearItems: runtimeStore.gearItems,
     },
     syncedAt: runtimeStore.lastSyncedAt,
@@ -2250,7 +2853,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
       for (const item of firstPageItems) {
         if (item && item.id) rawActivitiesMap.set(String(item.id), item);
       }
-      const shouldPaginateAll = (cachedArchive.length === 0 && !deltaOnly) || forceFull;
+      const shouldPaginateAll = cachedArchive.length <= 200 || !deltaOnly || forceFull;
       if (shouldPaginateAll && firstPageItems.length === 200) {
         for (let batchStart = 2; batchStart <= 30; batchStart += 3) {
           const pages = [batchStart, batchStart + 1, batchStart + 2];
@@ -2403,29 +3006,58 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
       sportCategory = 'Strength';
     }
 
+    const rawStartLatLng: [number, number] | undefined =
+      Array.isArray(a.start_latlng) && a.start_latlng.length === 2
+        ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])]
+        : undefined;
+    const isWatopiaOrMakuriGps =
+      rawStartLatLng &&
+      Number.isFinite(rawStartLatLng[0]) &&
+      Number.isFinite(rawStartLatLng[1]) &&
+      rawStartLatLng[0] >= -12.6 &&
+      rawStartLatLng[0] <= -9.8 &&
+      rawStartLatLng[1] >= 164.8 &&
+      rawStartLatLng[1] <= 168.0;
+
+    const hasSummaryPolyline = Boolean(
+      (detail.map?.summary_polyline || a.map?.summary_polyline || '').length > 4
+    );
+    const isStationaryZeroGpsCycling =
+      sportCategory === 'Cycling' && !hasSummaryPolyline && !rawStartLatLng;
+
+    const combinedStravaMeta = `${sportType} ${actName} ${a.device_name || ''} ${detail.device_name || ''}`;
+    const isVirtualPlatform =
+      /virtualride|virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
+        combinedStravaMeta
+      ) || Boolean(isWatopiaOrMakuriGps);
+
     const isIndoor =
       Boolean(a.trainer) ||
-      /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|trainerroad|gym|weight|hiit|workout|yoga/i.test(
-        `${sportType} ${actName} ${a.device_name || ''}`
+      Boolean(isVirtualPlatform) ||
+      Boolean(isStationaryZeroGpsCycling) ||
+      /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga/i.test(
+        combinedStravaMeta
       );
 
     let subType:
       | 'Road'
       | 'Trail'
       | 'Gravel'
+      | 'Virtual Cycling'
       | 'Smart Trainer'
       | 'Treadmill'
       | 'Pool'
       | 'Open Water'
       | 'Gym' = 'Road';
     if (sportCategory === 'Cycling') {
-      if (isIndoor) subType = 'Smart Trainer';
-      else if (/gravel/i.test(sportType + ' ' + actName)) subType = 'Gravel';
-      else if (/mountain|mtb|trail/i.test(sportType + ' ' + actName)) subType = 'Trail';
+      if (isVirtualPlatform) subType = 'Virtual Cycling';
+      else if (isIndoor) subType = 'Smart Trainer';
+      else if (/gravel/i.test(combinedStravaMeta)) subType = 'Gravel';
+      else if (/mountain|mtb|trail/i.test(combinedStravaMeta)) subType = 'Trail';
       else subType = 'Road';
     } else if (sportCategory === 'Running') {
       if (isIndoor) subType = 'Treadmill';
-      else if (/trail/i.test(sportType + ' ' + actName)) subType = 'Trail';
+      else if (/trail/i.test(combinedStravaMeta)) subType = 'Trail';
       else subType = 'Road';
     } else if (sportCategory === 'Swimming') {
       subType = 'Pool';

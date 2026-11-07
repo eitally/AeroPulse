@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for locking the daily activities bar to a fixed 2-line height (zero vertical chart shift) and upgrading the application to an Adaptive Dual-Mode macOS Liquid Glass design system with a single unified floating header bar, specular glass cards, recessed capsule switchers, and luminous SVG telemetry curves.",
-  "updatedAt": "2026-11-06T19:54:23.862680684Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Comprehensive product and engineering implementation plan combining the best capabilities of Runna, TrainerRoad, Garmin Connect, Strava, and Intervals.icu into AeroPulse: (1) Multi-Week Goal-to-Calendar Adaptive Plan Generator with automatic Deload weeks and Calendar Objective Ribbon, (2) Live Race Time Predictor, 350W FTP Trajectory Model, and Runna-style Pace & Power Insights auto-calibration, (3) TrainerRoad-style Energy-System Progression Levels (1.0-10.0) & Garmin Load Focus Tunnels, and (4) Strava-style Matched Runs/Rides longitudinal comparison, Planned vs. Actual Execution Compliance Scoring, and a Seasonal Peak Power & Pace PR Trophy Matrix.",
+  "updatedAt":  "2026-11-07T06:47:19.069922128Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

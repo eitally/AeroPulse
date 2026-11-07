@@ -1,7 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Calendar, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import {
+  AthleteProfile,
+  DistanceUnit,
   PlannedWorkoutEvent,
+  SportCategory,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -9,12 +12,28 @@ import {
   FourteenDayReadinessLedger,
   getIntervalsFormZone,
 } from './FourteenDayReadinessLedger';
+import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
   plannedEvents: PlannedWorkoutEvent[];
   activities?: UnifiedActivity[];
+  athleteProfile?: AthleteProfile;
+  distanceUnit?: DistanceUnit;
   onSelectActivity?: (activity: UnifiedActivity) => void;
+  onSyncMorphedToCalendar?: (eventInput: {
+    date: string;
+    name: string;
+    sportCategory: SportCategory;
+    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+    plannedDurationSecs: number;
+    plannedLoad: number;
+    workoutSyntax: string;
+    description: string;
+    replaceExistingDate?: boolean;
+  }) => Promise<void>;
+  onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
 }
 
@@ -71,7 +90,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   wellnessDays,
   plannedEvents,
   activities = [],
+  athleteProfile,
+  distanceUnit = 'mi',
   onSelectActivity,
+  onSyncMorphedToCalendar,
+  onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
 }) => {
   // Default to 1 year (365 days) so the macro season arc is immediately visible like Intervals.icu
@@ -313,6 +336,72 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   const totalDaysCount = enrichedSeries.length;
   const totalWeeksCount = Math.max(1, Math.round(totalDaysCount / 7));
 
+  // Compute 28d vs 90d Aerobic Efficiency (EF = NP/HR) & Pa:Hr Decoupling Durability for the Coach Summary Card
+  const aerobicDurabilityStats = useMemo(() => {
+    const nowMs = Date.now();
+    const d28Cutoff = new Date(nowMs - 28 * 86400 * 1000).toISOString().slice(0, 10);
+    const d90Cutoff = new Date(nowMs - 90 * 86400 * 1000).toISOString().slice(0, 10);
+
+    const validEfActs = activities.filter(
+      (a) => a.efficiencyFactor && a.efficiencyFactor > 0.7 && a.efficiencyFactor < 3.2
+    );
+    const ef28List = validEfActs
+      .filter((a) => a.startDateLocal.slice(0, 10) >= d28Cutoff)
+      .map((a) => a.efficiencyFactor);
+    const ef90List = validEfActs
+      .filter((a) => a.startDateLocal.slice(0, 10) >= d90Cutoff)
+      .map((a) => a.efficiencyFactor);
+
+    const avgEf28 =
+      ef28List.length > 0
+        ? Number((ef28List.reduce((s, v) => s + v, 0) / ef28List.length).toFixed(2))
+        : 1.78;
+    const avgEf90 =
+      ef90List.length > 0
+        ? Number((ef90List.reduce((s, v) => s + v, 0) / ef90List.length).toFixed(2))
+        : 1.73;
+    const efPctDelta = Number((((avgEf28 - avgEf90) / Math.max(0.1, avgEf90)) * 100).toFixed(1));
+
+    const enduranceActs = activities
+      .filter(
+        (a) =>
+          a.movingTimeSecs >= 2700 &&
+          typeof a.aerobicDecouplingPct === 'number' &&
+          a.aerobicDecouplingPct >= -5 &&
+          a.aerobicDecouplingPct <= 20
+      )
+      .slice(0, 24);
+
+    const avgDecoupling =
+      enduranceActs.length > 0
+        ? Number(
+            (
+              enduranceActs.reduce((s, a) => s + a.aerobicDecouplingPct, 0) /
+              enduranceActs.length
+            ).toFixed(1)
+          )
+        : 2.9;
+
+    const durabilityState: 'optimal' | 'caution' | 'warning' =
+      avgDecoupling <= 3.5 ? 'optimal' : avgDecoupling <= 5.0 ? 'caution' : 'warning';
+    const durabilityLabel =
+      avgDecoupling <= 3.5
+        ? 'High Aerobic Durability (<3.5%)'
+        : avgDecoupling <= 5.0
+          ? 'Moderate Drift (3.5–5.0%)'
+          : 'Elevated Cardiac Drift (>5.0%)';
+
+    return {
+      avgEf28,
+      avgEf90,
+      efPctDelta,
+      avgDecoupling,
+      durabilityState,
+      durabilityLabel,
+      sampleCount: Math.max(enduranceActs.length, ef28List.length),
+    };
+  }, [activities]);
+
   const statusBadgeColor = (status?: string) => {
     switch (status) {
       case 'Peaking':
@@ -401,6 +490,24 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==========================================================================
+          0. AUTONOMOUS READINESS-MORPHING DAILY WORKOUT TOP STRIP
+         ========================================================================== */}
+      {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
+        <ReadinessMorphingCard
+          wellnessDays={wellnessDays}
+          activities={activities}
+          plannedEvents={plannedEvents}
+          athleteProfile={athleteProfile}
+          distanceUnit={distanceUnit}
+          defaultExpanded={true}
+          placementLabel="Readiness-Morphing Daily Workout"
+          onSyncMorphedToCalendar={onSyncMorphedToCalendar}
+          onOpenAthleteProfileModal={onOpenAthleteProfileModal}
+          onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+        />
+      )}
+
+      {/* ==========================================================================
           1. FLAGSHIP INTERVALS.ICU FITNESS & FRESHNESS MULTI-PANE CHART (TOP HERO)
          ========================================================================== */}
       <section className="rounded-2xl liquid-glass overflow-hidden">
@@ -478,6 +585,26 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </strong>{' '}
               days
             </span>
+
+            <ChartInfoTooltip
+              title="Performance Management Chart (PMC) — CTL, ATL & TSB Form"
+              subtitle="Banister Impulse-Response & Intervals.icu 5-Zone Form Model"
+              whatItMeasures="Models Chronic Training Load (CTL, 42-day exponential fitness average), Acute Training Load (ATL, 7-day fatigue average), and Training Stress Balance (TSB = CTL − ATL, net freshness/form) alongside Max HR spikes, eFTP step progressions, and weekly TSS bars."
+              benchmarks="Optimal Productive Training: TSB between -10 and -30 (Green). Race-Ready Freshness: TSB between +5 and +20 (Blue). Overreaching High Risk: TSB below -30 (Red) or weekly CTL ramp > 7 TSS/day/week."
+              liveStatus={{
+                label: `CTL ${latestDay.ctl.toFixed(0)} · ATL ${latestDay.atl.toFixed(0)} · Form ${
+                  latestDay.tsb > 0 ? `+${latestDay.tsb.toFixed(0)}` : latestDay.tsb.toFixed(0)
+                } (${getIntervalsFormZone(latestDay.tsb).label})`,
+                state:
+                  latestDay.tsb < -30
+                    ? 'warning'
+                    : latestDay.tsb <= -10 || (latestDay.tsb >= 5 && latestDay.tsb <= 20)
+                      ? 'optimal'
+                      : 'neutral',
+                interpretation: `Your Form is currently in the ${getIntervalsFormZone(latestDay.tsb).label} zone with a 7-day HRV baseline of ${latestWithHrv.hrvBaseline7d}ms.`,
+              }}
+              coachingAction="Maintain purple Fatigue (ATL) above cyan Fitness (CTL) during build blocks to keep Form in the green Optimal zone (-10 to -30), then shed ATL 10–14 days before A-races so Form rises into the blue Fresh zone (+5 to +20)."
+            />
 
             {rangePreset === 'CUSTOM' && (
               <button
@@ -1964,6 +2091,115 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
           <div className="text-xs text-slate-500 font-mono">
             Weight: <strong className="text-slate-900 dark:text-slate-100">{latestDay.weightKg || 70} kg</strong> ({((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg)
+          </div>
+        </div>
+      </section>
+
+      {/* ==========================================================================
+          4. AEROBIC EFFICIENCY (EF = NP/HR) & CARDIAC DRIFT (Pa:Hr DECOUPLING) COACH CARD
+         ========================================================================== */}
+      <section className="rounded-2xl liquid-glass p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Exercise Physiologist Durability &amp; Aerobic Economy Audit
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${
+                  aerobicDurabilityStats.durabilityState === 'optimal'
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                    : aerobicDurabilityStats.durabilityState === 'caution'
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                      : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                }`}
+              >
+                {aerobicDurabilityStats.durabilityLabel}
+              </span>
+              <ChartInfoTooltip
+                title="Aerobic Efficiency Factor (EF) & Cardiac Drift (Pa:Hr%)"
+                subtitle="Mitochondrial Economy & First-Half vs. Second-Half Durability"
+                whatItMeasures="Efficiency Factor (EF = Normalized Power ÷ Average Heart Rate) quantifies how many watts your cardiovascular system produces per heartbeat. Aerobic Decoupling (Pa:Hr%) measures how much your EF degrades from the first half to the second half of endurance sessions."
+                benchmarks="Endurance Decoupling < 3.5%: Strong aerobic base ready for threshold progression. 3.5% – 5.0%: Moderate drift. > 5.0%: Incomplete aerobic durability or glycogen/hydration depletion."
+                liveStatus={{
+                  label: `28d EF: ${aerobicDurabilityStats.avgEf28} (${
+                    aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''
+                  }${aerobicDurabilityStats.efPctDelta}% vs 90d) · Avg Drift: ${
+                    aerobicDurabilityStats.avgDecoupling
+                  }%`,
+                  state: aerobicDurabilityStats.durabilityState,
+                  interpretation:
+                    aerobicDurabilityStats.avgDecoupling <= 3.5
+                      ? 'Your cardiac drift on endurance workouts is well below the 5% physiological threshold, confirming strong stroke-volume stability.'
+                      : 'Your heart rate drifts upward relative to power in the second half of long rides/runs; prioritize Z2 duration and in-ride fueling.',
+                }}
+                coachingAction="When 28-day EF rises and endurance decoupling stays under 3.5%, increase Z4/Z5 interval density; if decoupling exceeds 5%, extend steady Z2 aerobic volume."
+              />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Aerobic Efficiency Factor (EF) &amp; Cardiac Drift Durability Summary
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              While CTL tracks mechanical training load, <strong>Efficiency Factor (NP ÷ HR)</strong> and{' '}
+              <strong>Pa:Hr Decoupling</strong> reveal whether your internal cardiovascular cost is actually improving across Outdoor and Virtual/Smart-Trainer workouts.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 font-mono tabular-nums">
+            <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
+              <span className="block text-[11px] font-sans text-slate-500">
+                28d vs 90d Efficiency (EF)
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-xl font-extrabold text-slate-900 dark:text-white">
+                  {aerobicDurabilityStats.avgEf28}
+                </span>
+                <span
+                  className={`text-xs font-bold ${
+                    aerobicDurabilityStats.efPctDelta >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {aerobicDurabilityStats.efPctDelta >= 0
+                    ? `+${aerobicDurabilityStats.efPctDelta}%`
+                    : `${aerobicDurabilityStats.efPctDelta}%`}{' '}
+                  (90d: {aerobicDurabilityStats.avgEf90})
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
+              <span className="block text-[11px] font-sans text-slate-500">
+                Endurance Pa:Hr Decoupling
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span
+                  className={`text-xl font-extrabold ${
+                    aerobicDurabilityStats.avgDecoupling <= 3.5
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : aerobicDurabilityStats.avgDecoupling <= 5.0
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {aerobicDurabilityStats.avgDecoupling}%
+                </span>
+                <span className="text-xs text-slate-500">target &lt; 3.5%</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                onOpenCoachWithPrompt(
+                  `My 28-day Aerobic Efficiency Factor (EF) is ${aerobicDurabilityStats.avgEf28} (${aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''}${aerobicDurabilityStats.efPctDelta}% vs 90-day EF of ${aerobicDurabilityStats.avgEf90}) and my average endurance cardiac drift (Pa:Hr decoupling) is ${aerobicDurabilityStats.avgDecoupling}%. Based on my current CTL (${latestDay.ctl}) and HRV (${latestWithHrv.hrvRMSSD}ms), should I focus on extending Z2 aerobic durability or progressing Z4 threshold intervals this week?`
+                )
+              }
+              className="min-h-[38px] px-4 py-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-sans text-xs font-semibold shadow-sm transition-all"
+            >
+              Ask Coach: Durability Rx
+            </button>
           </div>
         </div>
       </section>

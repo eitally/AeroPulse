@@ -8,6 +8,7 @@ import {
   LineChart,
   Moon,
   RefreshCw,
+  Sliders,
   Sun,
   Target,
   TrendingUp,
@@ -15,6 +16,7 @@ import {
 import {
   AnnualMileageGoal,
   AthleteGearItem,
+  AthleteProfile,
   BenchmarkSegmentHistory,
   CoachChatMessage,
   ConnectionStatus,
@@ -41,13 +43,16 @@ import { PhysiologyView } from './components/PhysiologyView';
 import { GoalsView } from './components/GoalsView';
 import { AICoachDrawer } from './components/AICoachDrawer';
 import { DataSourcesModal } from './components/DataSourcesModal';
+import { AthleteProfileModal } from './components/AthleteProfileModal';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
+  buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
+  reclassifyActivityEnvironment,
   savePersistedTelemetrySnapshot,
   saveRotatedStravaTokensToStorage,
 } from './utils/telemetryStorage';
@@ -76,6 +81,11 @@ export default function App() {
   const [activities, setActivities] = useState<UnifiedActivity[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedWorkoutEvent[]>([]);
   const [gearItems, setGearItems] = useState<AthleteGearItem[]>([]);
+  const [athleteProfile, setAthleteProfile] = useState<AthleteProfile>(() =>
+    buildCompleteAthleteProfile(null)
+  );
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [isSyncingProfile, setIsSyncingProfile] = useState<boolean>(false);
   const [benchmarkSegments] = useState<BenchmarkSegmentHistory[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<UnifiedActivity | null>(null);
   const [idbSavedAt, setIdbSavedAt] = useState<string | null>(null);
@@ -85,6 +95,7 @@ export default function App() {
   const wellnessDaysRef = useRef<UnifiedWellnessDay[]>([]);
   const plannedEventsRef = useRef<PlannedWorkoutEvent[]>([]);
   const gearItemsRef = useRef<AthleteGearItem[]>([]);
+  const athleteProfileRef = useRef<AthleteProfile>(athleteProfile);
   const redactedStravaCountRef = useRef<number>(0);
 
   useEffect(() => {
@@ -99,6 +110,9 @@ export default function App() {
   useEffect(() => {
     gearItemsRef.current = gearItems;
   }, [gearItems]);
+  useEffect(() => {
+    athleteProfileRef.current = athleteProfile;
+  }, [athleteProfile]);
 
   // Persisted Annual Mileage & Target Race Goals (purge any legacy seed goal-1/2/3 dummy goals)
   const [annualMileageGoals, setAnnualMileageGoals] = useState<AnnualMileageGoal[]>(() => {
@@ -179,6 +193,7 @@ export default function App() {
         wellnessDays,
         plannedEvents,
         gearItems,
+        athleteProfile,
         redactedStravaCount,
         earliestActivityDate,
       }).then((savedTimestamp) => {
@@ -186,7 +201,7 @@ export default function App() {
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [activities, wellnessDays, plannedEvents, gearItems, redactedStravaCount]);
+  }, [activities, wellnessDays, plannedEvents, gearItems, athleteProfile, redactedStravaCount]);
 
   // Sync Dark Mode class with <html>
   useEffect(() => {
@@ -267,6 +282,14 @@ export default function App() {
           // ignore
         }
       }
+      if (data.athleteProfile) {
+        const mergedProf = buildCompleteAthleteProfile(
+          data.athleteProfile,
+          wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
+        );
+        setAthleteProfile(mergedProf);
+        athleteProfileRef.current = mergedProf;
+      }
       setConnectionStatus((prev) => ({
         ...prev,
         mode: data.intervalsConnected || data.stravaConnected ? 'LIVE' : 'SANDBOX_CALIBRATION',
@@ -284,6 +307,12 @@ export default function App() {
         lastSyncedAt: data.lastSyncedAt || prev.lastSyncedAt,
         nextHourlySyncAt: data.nextHourlySyncAt || prev.nextHourlySyncAt,
         autoSyncCronActive: true,
+        athleteFtp: data.athleteFtp || prev.athleteFtp,
+        athleteIndoorFtp: data.athleteIndoorFtp || prev.athleteIndoorFtp,
+        athleteRunFtp: data.athleteRunFtp || prev.athleteRunFtp,
+        athleteLthr: data.athleteLthr || prev.athleteLthr,
+        athleteMaxHr: data.athleteMaxHr || prev.athleteMaxHr,
+        athleteProfile: data.athleteProfile || prev.athleteProfile,
         stravaActivitiesCount:
           data.stravaActivitiesCount && data.stravaActivitiesCount > 0
             ? data.stravaActivitiesCount
@@ -315,7 +344,12 @@ export default function App() {
 
         // Refresh headers in case status check rotated the Strava token
         const activeHeaders = getSavedIntervalsHeaders();
-        const hasPersistedArchive = !fullHistory && activitiesRef.current.length >= 50;
+        const hasVirtualCyclingArchive =
+          activitiesRef.current.filter(
+            (a) => a.sportCategory === 'Cycling' && a.environment === 'INDOOR'
+          ).length >= 50;
+        const hasPersistedArchive =
+          !fullHistory && activitiesRef.current.length >= 50 && hasVirtualCyclingArchive;
         const deltaOldestDate = new Date(Date.now() - 60 * 86400 * 1000)
           .toISOString()
           .slice(0, 10);
@@ -349,12 +383,21 @@ export default function App() {
               nextPlannedEvents = intData.plannedEvents;
               setPlannedEvents(nextPlannedEvents);
             }
-            if (
-              Array.isArray(intData.athleteProfile?.gearItems) &&
-              intData.athleteProfile.gearItems.length > 0
-            ) {
-              nextGearItems = intData.athleteProfile.gearItems;
-              setGearItems(nextGearItems);
+            if (intData.athleteProfile) {
+              const latestW =
+                nextWellnessDays.length > 0
+                  ? nextWellnessDays[nextWellnessDays.length - 1]
+                  : undefined;
+              const completeProf = buildCompleteAthleteProfile(intData.athleteProfile, latestW);
+              setAthleteProfile(completeProf);
+              athleteProfileRef.current = completeProf;
+              if (
+                Array.isArray(intData.athleteProfile.gearItems) &&
+                intData.athleteProfile.gearItems.length > 0
+              ) {
+                nextGearItems = intData.athleteProfile.gearItems;
+                setGearItems(nextGearItems);
+              }
             }
             if (Array.isArray(intData.activities)) {
               mergedActivities = intData.activities;
@@ -364,11 +407,13 @@ export default function App() {
         }
 
         if (statusData.stravaConnected) {
-          const queryParam = fullHistory
-            ? '?full=true'
-            : hasPersistedArchive
-              ? '?deltaOnly=true'
-              : '';
+          const hasPersistedVirtualCycling = activitiesRef.current.some(
+            (a) => a.sportCategory === 'Cycling' && a.environment === 'INDOOR'
+          );
+          const queryParam =
+            fullHistory || !hasPersistedArchive || !hasPersistedVirtualCycling
+              ? '?full=true'
+              : '?deltaOnly=true';
           const stravaResp = await fetch(`/api/strava/sync${queryParam}`, {
             headers: activeHeaders,
           });
@@ -378,47 +423,48 @@ export default function App() {
               saveRotatedStravaTokensToStorage(stravaData.stravaTokens);
             }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
-              const toUnifiedFromStrava = (sa: any): UnifiedActivity => ({
-                id: `strava-${sa.stravaId}`,
-                stravaId: String(sa.stravaId),
-                startDateLocal: sa.startDateLocal,
-                name: sa.name,
-                sportCategory: sa.sportCategory,
-                environment: sa.environment,
-                subType: sa.subType || (sa.environment === 'INDOOR' ? 'Smart Trainer' : 'Road'),
-                movingTimeSecs: sa.movingTimeSecs,
-                distanceMeters: sa.distanceMeters,
-                elevationGainMeters: sa.elevationGainMeters,
-                avgPower: sa.avgPower,
-                normalizedPower: sa.normalizedPower,
-                intensityFactor: sa.intensityFactor,
-                trainingLoad: sa.trainingLoad || 0,
-                avgHr: sa.avgHr || 0,
-                maxHr: sa.maxHr || 0,
-                avgCadence: sa.avgCadence,
-                avgPaceSecsPerKm: sa.avgPaceSecsPerKm,
-                gapPaceSecsPerKm: sa.avgPaceSecsPerKm,
-                aerobicDecouplingPct: 0,
-                efficiencyFactor: sa.efficiencyFactor || 0,
-                firstHalfEf: 0,
-                secondHalfEf: 0,
-                zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
-                gearName: sa.gearName,
-                stravaPrCount: sa.stravaPrCount || 0,
-                kudosCount: sa.kudosCount || 0,
-                commentCount: sa.commentCount || 0,
-                achievementCount: sa.achievementCount || 0,
-                athleteCount: sa.athleteCount || 1,
-                hasKudoed: Boolean(sa.hasKudoed),
-                kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
-                comments: Array.isArray(sa.comments) ? sa.comments : [],
-                summaryPolyline: sa.summaryPolyline,
-                routeLatLngs: Array.isArray(sa.routeLatLngs) ? sa.routeLatLngs : undefined,
-                startLatLng: sa.startLatLng,
-                endLatLng: sa.endLatLng,
-                segmentEfforts: sa.segmentEfforts || [],
-                sourceBadges: ['Strava'],
-              });
+              const toUnifiedFromStrava = (sa: any): UnifiedActivity =>
+                reclassifyActivityEnvironment({
+                  id: `strava-${sa.stravaId}`,
+                  stravaId: String(sa.stravaId),
+                  startDateLocal: sa.startDateLocal,
+                  name: sa.name,
+                  sportCategory: sa.sportCategory,
+                  environment: sa.environment,
+                  subType: sa.subType || (sa.environment === 'INDOOR' ? 'Smart Trainer' : 'Road'),
+                  movingTimeSecs: sa.movingTimeSecs,
+                  distanceMeters: sa.distanceMeters,
+                  elevationGainMeters: sa.elevationGainMeters,
+                  avgPower: sa.avgPower,
+                  normalizedPower: sa.normalizedPower,
+                  intensityFactor: sa.intensityFactor,
+                  trainingLoad: sa.trainingLoad || 0,
+                  avgHr: sa.avgHr || 0,
+                  maxHr: sa.maxHr || 0,
+                  avgCadence: sa.avgCadence,
+                  avgPaceSecsPerKm: sa.avgPaceSecsPerKm,
+                  gapPaceSecsPerKm: sa.avgPaceSecsPerKm,
+                  aerobicDecouplingPct: 0,
+                  efficiencyFactor: sa.efficiencyFactor || 0,
+                  firstHalfEf: 0,
+                  secondHalfEf: 0,
+                  zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
+                  gearName: sa.gearName,
+                  stravaPrCount: sa.stravaPrCount || 0,
+                  kudosCount: sa.kudosCount || 0,
+                  commentCount: sa.commentCount || 0,
+                  achievementCount: sa.achievementCount || 0,
+                  athleteCount: sa.athleteCount || 1,
+                  hasKudoed: Boolean(sa.hasKudoed),
+                  kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
+                  comments: Array.isArray(sa.comments) ? sa.comments : [],
+                  summaryPolyline: sa.summaryPolyline,
+                  routeLatLngs: Array.isArray(sa.routeLatLngs) ? sa.routeLatLngs : undefined,
+                  startLatLng: sa.startLatLng,
+                  endLatLng: sa.endLatLng,
+                  segmentEfforts: sa.segmentEfforts || [],
+                  sourceBadges: ['Strava'],
+                });
 
               if (!mergedActivities) {
                 mergedActivities = stravaData.activities.map(toUnifiedFromStrava);
@@ -456,8 +502,23 @@ export default function App() {
                   }
 
                   if (matched) {
-                    return {
+                    const resolvedEnv =
+                      matched.environment === 'INDOOR' || act.environment === 'INDOOR'
+                        ? 'INDOOR'
+                        : act.environment;
+                    const resolvedSubType: UnifiedActivity['subType'] =
+                      matched.subType === 'Virtual Cycling' || act.subType === 'Virtual Cycling'
+                        ? 'Virtual Cycling'
+                        : matched.subType === 'Smart Trainer' || act.subType === 'Smart Trainer'
+                          ? 'Smart Trainer'
+                          : matched.subType === 'Treadmill' || act.subType === 'Treadmill'
+                            ? 'Treadmill'
+                            : act.subType || matched.subType;
+
+                    return reclassifyActivityEnvironment({
                       ...act,
+                      environment: resolvedEnv,
+                      subType: resolvedSubType,
                       stravaId: String(matched.stravaId || act.stravaId || ''),
                       gearName: matched.gearName || act.gearName,
                       stravaPrCount: matched.stravaPrCount ?? act.stravaPrCount,
@@ -492,9 +553,9 @@ export default function App() {
                         | 'Garmin'
                         | 'Strava'
                       )[],
-                    };
+                    });
                   }
-                  return act;
+                  return reclassifyActivityEnvironment(act);
                 });
 
                 const remainingStravaActivities = Array.from(byStravaId.values()).map(
@@ -577,6 +638,15 @@ export default function App() {
         if (Array.isArray(cached.gearItems) && cached.gearItems.length > 0) {
           setGearItems(cached.gearItems);
           gearItemsRef.current = cached.gearItems;
+        }
+        if (cached.athleteProfile) {
+          const latestW =
+            Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0
+              ? cached.wellnessDays[cached.wellnessDays.length - 1]
+              : undefined;
+          const hydratedProf = buildCompleteAthleteProfile(cached.athleteProfile, latestW);
+          setAthleteProfile(hydratedProf);
+          athleteProfileRef.current = hydratedProf;
         }
         if (typeof cached.redactedStravaCount === 'number') {
           setRedactedStravaCount(cached.redactedStravaCount);
@@ -1299,6 +1369,7 @@ export default function App() {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    replaceExistingDate?: boolean;
   }) => {
     try {
       const resp = await fetch('/api/calendar/events', {
@@ -1312,29 +1383,151 @@ export default function App() {
       if (resp.ok) {
         const data = await resp.json();
         if (data.event) {
-          setPlannedEvents((prev) => [...prev, data.event]);
+          setPlannedEvents((prev) => {
+            const base = eventInput.replaceExistingDate
+              ? prev.filter(
+                  (e) =>
+                    !(
+                      e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
+                      e.sportCategory === eventInput.sportCategory
+                    )
+                )
+              : prev;
+            return [...base, data.event];
+          });
           return;
         }
       }
     } catch {
       // Fallback to local state
     }
-    setPlannedEvents((prev) => [
-      ...prev,
-      {
-        id: `local-${Date.now()}`,
-        date: eventInput.date,
-        name: eventInput.name,
-        sportCategory: eventInput.sportCategory,
-        environmentPreference: eventInput.environmentPreference,
-        description: eventInput.description,
-        plannedLoad: eventInput.plannedLoad,
-        plannedDurationSecs: eventInput.plannedDurationSecs,
-        targetZoneSummary: 'Structured Workout',
-        workoutSyntax: eventInput.workoutSyntax,
-      },
-    ]);
+    setPlannedEvents((prev) => {
+      const base = eventInput.replaceExistingDate
+        ? prev.filter(
+            (e) =>
+              !(
+                e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
+                e.sportCategory === eventInput.sportCategory
+              )
+          )
+        : prev;
+      return [
+        ...base,
+        {
+          id: `local-${Date.now()}`,
+          date: eventInput.date,
+          name: eventInput.name,
+          sportCategory: eventInput.sportCategory,
+          environmentPreference: eventInput.environmentPreference,
+          description: eventInput.description,
+          plannedLoad: eventInput.plannedLoad,
+          plannedDurationSecs: eventInput.plannedDurationSecs,
+          targetZoneSummary: 'Structured Workout',
+          workoutSyntax: eventInput.workoutSyntax,
+        },
+      ];
+    });
   };
+
+  const handleBatchCreatePlannedEvents = async (
+    items: Array<{
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      description: string;
+      plannedLoad: number;
+      plannedDurationSecs: number;
+      targetZoneSummary?: string;
+      workoutSyntax: string;
+      replaceExistingDate?: boolean;
+    }>
+  ) => {
+    const nowTs = Date.now();
+    const createdEvents = items.map((item, idx) => ({
+      id: `plan-block-${nowTs}-${idx}`,
+      date: item.date,
+      name: item.name,
+      sportCategory: item.sportCategory,
+      environmentPreference: item.environmentPreference,
+      description: item.description,
+      plannedLoad: item.plannedLoad,
+      plannedDurationSecs: item.plannedDurationSecs,
+      targetZoneSummary: item.targetZoneSummary || 'Structured Workout',
+      workoutSyntax: item.workoutSyntax,
+    }));
+
+    setPlannedEvents((prev) => {
+      const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
+      const filtered = prev.filter(
+        (e) => !targetDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`)
+      );
+      return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
+    });
+  };
+
+  // Sync Athlete Profile & Sport Zones on demand from Intervals.icu & Garmin
+  const handleSyncProfileFromRemote = useCallback(async () => {
+    setIsSyncingProfile(true);
+    try {
+      const resp = await fetch('/api/intervals/profile/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSavedIntervalsHeaders(),
+        },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.athleteProfile) {
+          const latestW =
+            wellnessDaysRef.current.length > 0
+              ? wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
+              : undefined;
+          const synced = buildCompleteAthleteProfile(data.athleteProfile, latestW);
+          setAthleteProfile(synced);
+          athleteProfileRef.current = synced;
+          setConnectionStatus((prev) => ({
+            ...prev,
+            athleteFtp: synced.ftp,
+            athleteIndoorFtp: synced.indoorFtp,
+            athleteRunFtp: synced.runFtp,
+            athleteLthr: synced.lthr,
+            athleteMaxHr: synced.maxHr,
+            athleteProfile: synced,
+          }));
+        }
+      }
+    } finally {
+      setIsSyncingProfile(false);
+    }
+  }, []);
+
+  const handleSaveProfileOverride = useCallback(async (updatedProfile: AthleteProfile) => {
+    setAthleteProfile(updatedProfile);
+    athleteProfileRef.current = updatedProfile;
+    setConnectionStatus((prev) => ({
+      ...prev,
+      athleteFtp: updatedProfile.ftp,
+      athleteIndoorFtp: updatedProfile.indoorFtp,
+      athleteRunFtp: updatedProfile.runFtp,
+      athleteLthr: updatedProfile.lthr,
+      athleteMaxHr: updatedProfile.maxHr,
+      athleteProfile: updatedProfile,
+    }));
+    try {
+      await fetch('/api/athlete/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSavedIntervalsHeaders(),
+        },
+        body: JSON.stringify({ athleteProfile: updatedProfile }),
+      });
+    } catch {
+      // ignore offline error
+    }
+  }, []);
 
   const handleDeletePlannedEvent = async (id: string) => {
     setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
@@ -1410,6 +1603,17 @@ export default function App() {
       })),
       upcomingPlannedWorkouts: plannedEvents.slice(0, 8),
       targetGoals,
+      athleteProfile: {
+        weightKg: athleteProfile.weightKg,
+        restingHr: athleteProfile.restingHr,
+        ftp: athleteProfile.ftp,
+        indoorFtp: athleteProfile.indoorFtp,
+        lthr: athleteProfile.lthr,
+        maxHr: athleteProfile.maxHr,
+        runFtp: athleteProfile.runFtp,
+        powerZones: athleteProfile.powerZones,
+        hrZones: athleteProfile.hrZones,
+      },
     };
   }, [
     wellnessDays,
@@ -1419,12 +1623,14 @@ export default function App() {
     distanceUnit,
     plannedEvents,
     targetGoals,
+    athleteProfile,
   ]);
 
   const latestWellness = wellnessDays[wellnessDays.length - 1] || undefined;
   const latestCtl = latestWellness?.ctl || 72.4;
-  const latestWeightKg = latestWellness?.weightKg || 72.5;
-  const athleteFtp = connectionStatus.athleteFtp || latestWellness?.rideEftp || 300;
+  const latestWeightKg = athleteProfile.weightKg || latestWellness?.weightKg || 70.0;
+  const athleteFtp =
+    athleteProfile.ftp || connectionStatus.athleteFtp || latestWellness?.rideEftp || 300;
 
   const handleSendChatMessage = async (userText: string) => {
     const userMsg: CoachChatMessage = {
@@ -1575,16 +1781,16 @@ export default function App() {
 
           {/* Right: Compact Environment Pill + Units + AI Coach + Data Sources + Theme */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Compact Environment Capsule (All / Out / In) */}
+            {/* Compact Environment Capsule (All / Outdoor / Virtual) */}
             <div
               className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-medium"
-              title="Filter Outdoor vs Indoor Smart Trainer / Treadmill"
+              title="Filter Outdoor GPS vs Virtual / Smart Trainer / Treadmill"
             >
               {(
                 [
                   { id: 'COMBINED', label: 'All' },
-                  { id: 'OUTDOOR', label: 'Out' },
-                  { id: 'INDOOR', label: 'In' },
+                  { id: 'OUTDOOR', label: 'Outdoor' },
+                  { id: 'INDOOR', label: 'Virtual' },
                 ] as const
               ).map((env) => (
                 <button
@@ -1624,6 +1830,18 @@ export default function App() {
             >
               <Bot className="w-3.5 h-3.5" />
               <span>AI Coach</span>
+            </button>
+
+            <button
+              onClick={() => setIsProfileModalOpen(true)}
+              className="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl liquid-glass-subtle hover:border-blue-500/40 transition-colors whitespace-nowrap"
+              title="Inspect & Sync Athlete Profile, FTP, Weight & Power/HR Zones from Intervals.icu & Garmin"
+            >
+              <Sliders className="w-3 h-3 text-blue-500" />
+              <span className="hidden lg:inline">Zones</span>
+              <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-sky-300">
+                {athleteProfile.ftp}W
+              </span>
             </button>
 
             <button
@@ -1797,16 +2015,20 @@ export default function App() {
             activities={activities}
             wellnessDays={wellnessDays}
             plannedEvents={plannedEvents}
+            targetGoals={targetGoals}
             envFilter={envFilter}
             selectedSport={selectedSport}
             distanceUnit={distanceUnit}
             athleteFtp={athleteFtp}
+            athleteProfile={athleteProfile}
             onSelectActivity={(act) => {
               handleSelectActivity(act);
               setActiveTab('activities');
             }}
             onCreatePlannedEvent={handleCreatePlannedEvent}
             onDeletePlannedEvent={handleDeletePlannedEvent}
+            onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
+            onOpenGoalsArchitect={() => setActiveTab('totals')}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -1816,28 +2038,32 @@ export default function App() {
           activeTab === 'curves' ||
           activeTab === 'trends' ||
           activeTab === 'charts') && (
-          <div className="rounded-2xl liquid-glass p-1.5">
+          <div className="rounded-2xl liquid-glass p-2 space-y-2">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
               {(
                 [
                   {
                     id: 'fitness',
-                    label: 'PMC, Readiness & 14d Ledger',
+                    label: 'PMC & Daily Readiness',
+                    sub: 'Fitness, Fatigue & Form',
                     icon: HeartPulse,
                   },
                   {
                     id: 'curves',
-                    label: 'Curves, Segments & 14d Ledger',
+                    label: 'Power/Pace Curves & Segments',
+                    sub: 'PRs & Peak Outputs',
                     icon: BarChart3,
                   },
                   {
                     id: 'trends',
                     label: 'Long-Term Physiological Trends',
+                    sub: 'VO2max, eFTP & HRV',
                     icon: TrendingUp,
                   },
                   {
                     id: 'charts',
                     label: 'Custom Chart Lab',
+                    sub: 'Compare Any 2 Metrics',
                     icon: LineChart,
                   },
                 ] as const
@@ -1849,7 +2075,7 @@ export default function App() {
                     key={sub.id}
                     type="button"
                     onClick={() => setActiveTab(sub.id)}
-                    className={`min-h-[36px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                    className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
                       isSubActive
                         ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -1857,9 +2083,36 @@ export default function App() {
                   >
                     <SubIcon className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">{sub.label}</span>
+                    <span className="hidden xl:inline text-[10px] opacity-65 font-normal truncate">
+                      · {sub.sub}
+                    </span>
                   </button>
                 );
               })}
+            </div>
+
+            {/* Scannable Key Metrics Glossary Strip for New Users */}
+            <div className="px-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  <strong className="font-mono text-[#0EA5E9]">CTL (Fitness):</strong> 42-day load
+                </span>
+                <span>·</span>
+                <span>
+                  <strong className="font-mono text-[#8B5CF6]">ATL (Fatigue):</strong> 7-day load
+                </span>
+                <span>·</span>
+                <span>
+                  <strong className="font-mono text-emerald-500">TSB (Form):</strong> Freshness (CTL − ATL)
+                </span>
+                <span>·</span>
+                <span>
+                  <strong className="font-mono text-amber-500">EF:</strong> Output ÷ Heart Rate
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                Hover or click any <strong className="text-blue-500">(i)</strong> icon for Coach &amp; Physiologist benchmarks
+              </span>
             </div>
           </div>
         )}
@@ -1869,10 +2122,14 @@ export default function App() {
             wellnessDays={wellnessDays}
             plannedEvents={plannedEvents}
             activities={activities}
+            athleteProfile={athleteProfile}
+            distanceUnit={distanceUnit}
             onSelectActivity={(act) => {
               handleSelectActivity(act);
               setActiveTab('activities');
             }}
+            onSyncMorphedToCalendar={handleCreatePlannedEvent}
+            onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -1943,11 +2200,21 @@ export default function App() {
             onDeleteTargetGoal={handleDeleteTargetGoal}
             activities={activities}
             wellnessDays={wellnessDays}
+            plannedEvents={plannedEvents}
             gearItems={gearItems}
             envFilter={envFilter}
             onSelectEnvFilter={setEnvFilter}
             distanceUnit={distanceUnit}
             currentCtl={latestCtl}
+            athleteProfile={athleteProfile}
+            onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+            onSaveProfileOverride={handleSaveProfileOverride}
+            onSelectActivity={(act) => {
+              handleSelectActivity(act);
+              setActiveTab('activities');
+            }}
+            onSwitchToCalendar={() => setActiveTab('calendar')}
+            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
       </main>
@@ -2009,6 +2276,19 @@ export default function App() {
             description: workout.description || '',
           });
         }}
+      />
+
+      {/* Authoritative Athlete Profile & Sport Zones Modal */}
+      <AthleteProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        athleteProfile={athleteProfile}
+        latestWellness={latestWellness}
+        distanceUnit={distanceUnit}
+        intervalsConnected={connectionStatus.intervalsConnected}
+        isSyncingProfile={isSyncingProfile}
+        onSyncProfileFromRemote={handleSyncProfileFromRemote}
+        onSaveProfileOverride={handleSaveProfileOverride}
       />
 
       {/* Data Sources & Fork Setup Modal */}

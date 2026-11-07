@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { UnifiedWellnessDay } from '../types';
+import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 interface FourteenDayReadinessLedgerProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -212,9 +213,28 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
     <section className="rounded-2xl liquid-glass p-5 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            14-Day Autonomic Recovery, Daily Load &amp; Intervals.icu PMC Ledger
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              14-Day Autonomic Recovery, Daily Load &amp; Intervals.icu PMC Ledger
+            </h2>
+            <ChartInfoTooltip
+              title="14-Day Autonomic Readiness & Daily Load Deviation Ledger"
+              subtitle="Acute-vs-Baseline Homeostasis & Intervals.icu TSB Matrix"
+              whatItMeasures="Compares each day's Readiness, Overnight HRV rMSSD, Resting HR, Sleep Score, and Daily Training Load against your rolling 14-day mean while tracking CTL, ATL, and 5-zone TSB Form."
+              benchmarks="Green: Within ±25% of your 14-day mean (consistent homeostasis). Red: >25% below your 14-day mean (autonomic suppression or recovery day). Gray: >25% above your 14-day mean (acute overload spike)."
+              liveStatus={{
+                label: `14d Mean Load: ${means.dailyLoad.toFixed(0)} TSS · Mean HRV: ${means.hrvRMSSD.toFixed(1)}ms · Mean Form: ${means.tsb > 0 ? `+${means.tsb.toFixed(1)}` : means.tsb.toFixed(1)}`,
+                state:
+                  means.tsb < -30
+                    ? 'warning'
+                    : means.tsb <= -10 || (means.tsb >= 5 && means.tsb <= 20)
+                      ? 'optimal'
+                      : 'neutral',
+                interpretation: `Your 14-day average daily load is ${means.dailyLoad.toFixed(0)} TSS (green consistency band: ${Math.round(means.dailyLoad * 0.75)}–${Math.round(means.dailyLoad * 1.25)} TSS) with a mean HRV of ${means.hrvRMSSD.toFixed(1)}ms.`,
+              }}
+              coachingAction="Watch for 2+ consecutive Red HRV or Sleep cells following Gray (> +25%) Daily Load spikes—this signals incomplete parasympathetic rebound and warrants an active recovery day."
+            />
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Daily Load &amp; recovery metrics are colored vs. the 14-day mean (Green within ±25%, Red &gt;25% below, Gray &gt;25% above) · CTL, ATL &amp; TSB use Intervals.icu colors
           </p>
