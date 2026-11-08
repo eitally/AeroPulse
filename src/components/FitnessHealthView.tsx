@@ -28,6 +28,8 @@ import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { DualAthleteComparator } from './DualAthleteComparator';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 import {
+  buildDayLoadSegments,
+  classifyActivityGarminLoad,
   classifyGarminLoadType,
   EChartsPMCDashboard,
   PMCDayPoint,
@@ -452,21 +454,39 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         typeof day.rampRate === 'number' && day.rampRate !== 0
           ? Number(day.rampRate.toFixed(1))
           : Number((day.ctl - (prev7?.ctl ?? day.ctl)).toFixed(1));
-      const garminFocus = classifyGarminLoadType(dayActs, day.dailyLoad || 0, maxHr);
+      const classifyOpts = {
+        ftp: day.rideEftp || athleteProfile?.ftp || 300,
+        lthr: athleteProfile?.lthr || 168,
+        maxHr: athleteProfile?.maxHr || 190,
+        thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 245,
+      };
+      const activitySegments = buildDayLoadSegments(
+        dayActs,
+        day.dailyLoad || 0,
+        day.date,
+        classifyOpts
+      );
+      const garminFocus = classifyGarminLoadType(
+        dayActs,
+        day.dailyLoad || 0,
+        maxHr,
+        classifyOpts
+      );
 
       return {
         ...day,
         rampRate: computedRamp,
         garminFocus,
+        activitySegments,
         dayActivities: dayActs,
         maxHr,
         prCount,
         milestones,
       };
     });
-  }, [chartSeries, activitiesByDate]);
+  }, [chartSeries, activitiesByDate, athleteProfile]);
 
-  // Group into 7-day calendar week buckets for the Weekly Load (Work) bar subplot (split by Garmin Load Focus)
+  // Group into 7-day calendar week buckets for the Weekly Load (Work) bar subplot (split by per-activity Garmin Load Focus)
   const weeklyLoadBuckets = useMemo(() => {
     const buckets: {
       startIdx: number;
@@ -485,13 +505,20 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     let sumAnaerobic = 0;
 
     enrichedSeries.forEach((d, idx) => {
-      const load = d.dailyLoad || 0;
-      sumLoad += load;
-      if (d.garminFocus.type === 'ANAEROBIC') {
-        sumAnaerobic += load;
-      } else if (d.garminFocus.type === 'HIGH_AEROBIC') {
-        sumHigh += load;
+      if (d.activitySegments && d.activitySegments.length > 0) {
+        for (const seg of d.activitySegments) {
+          sumLoad += seg.load;
+          if (seg.focus.type === 'ANAEROBIC') {
+            sumAnaerobic += seg.load;
+          } else if (seg.focus.type === 'HIGH_AEROBIC') {
+            sumHigh += seg.load;
+          } else {
+            sumLow += seg.load;
+          }
+        }
       } else {
+        const load = d.dailyLoad || 0;
+        sumLoad += load;
         sumLow += load;
       }
       const [y, m, dayNum] = d.date.split('-').map(Number);
@@ -1067,25 +1094,46 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
             </span>
-            {activePoint.dailyLoad > 0 && (
-              <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border shrink-0"
-                style={{
-                  backgroundColor: activePoint.garminFocus.badgeBg,
-                  borderColor: `${activePoint.garminFocus.solidColor}55`,
-                  color: activePoint.garminFocus.solidColor,
-                }}
-                title={`Garmin Load Focus: ${activePoint.garminFocus.label}`}
-              >
+            {activePoint.dailyLoad > 0 &&
+              (activePoint.activitySegments && activePoint.activitySegments.length > 1 ? (
                 <span
-                  className="w-1.5 h-1.5 rounded-full shrink-0"
-                  style={{ backgroundColor: activePoint.garminFocus.solidColor }}
-                />
-                <span>
-                  {activePoint.garminFocus.label} ({activePoint.dailyLoad} TSS)
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border border-slate-300/70 dark:border-white/15 bg-slate-900/5 dark:bg-white/5 text-slate-700 dark:text-slate-200 shrink-0"
+                  title={`Stacked Daily Load (${activePoint.dailyLoad} TSS): ${activePoint.activitySegments
+                    .map((s) => `${s.activityName} (${s.load} TSS · ${s.focus.shortLabel})`)
+                    .join(' + ')}`}
+                >
+                  <span className="inline-flex items-center gap-0.5">
+                    {activePoint.activitySegments.map((seg, sIdx) => (
+                      <span
+                        key={`seg-dot-${seg.activityId}-${sIdx}`}
+                        className="w-2 h-2 rounded-xs shrink-0"
+                        style={{ backgroundColor: seg.focus.solidColor }}
+                      />
+                    ))}
+                  </span>
+                  <span>
+                    {activePoint.dailyLoad} TSS ({activePoint.activitySegments.length} acts)
+                  </span>
                 </span>
-              </span>
-            )}
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border shrink-0"
+                  style={{
+                    backgroundColor: activePoint.garminFocus.badgeBg,
+                    borderColor: `${activePoint.garminFocus.solidColor}55`,
+                    color: activePoint.garminFocus.solidColor,
+                  }}
+                  title={`Garmin Load Focus: ${activePoint.garminFocus.label}`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: activePoint.garminFocus.solidColor }}
+                  />
+                  <span>
+                    {activePoint.garminFocus.label} ({activePoint.dailyLoad} TSS)
+                  </span>
+                </span>
+              ))}
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/5 font-mono text-[10.5px] text-slate-600 dark:text-slate-300 shrink-0">
               <span>Ramp:</span>
               <span
@@ -1127,24 +1175,43 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 </button>
               ))}
             {activePoint.dayActivities.length > 0 ? (
-              activePoint.dayActivities.slice(0, 5).map((act) => (
-                <button
-                  key={act.id}
-                  type="button"
-                  onClick={() => onSelectActivity && onSelectActivity(act)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-sky-300 border border-blue-500/25 font-medium transition-colors max-w-[280px] shrink-0"
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: activePoint.garminFocus.solidColor }}
-                  />
-                  <span className="truncate max-w-[165px]">{act.name}</span>
-                  <span className="font-mono text-[11px] opacity-85 shrink-0">
-                    ({act.trainingLoad} TSS
-                    {act.maxHr ? ` · ${act.maxHr}bpm` : ''})
-                  </span>
-                </button>
-              ))
+              activePoint.dayActivities.slice(0, 5).map((act) => {
+                const segMatch = activePoint.activitySegments?.find((s) => s.activityId === act.id);
+                const actFocus =
+                  segMatch?.focus ||
+                  classifyActivityGarminLoad(act, {
+                    ftp: activePoint.rideEftp || athleteProfile?.ftp || 300,
+                    lthr: athleteProfile?.lthr || 168,
+                    maxHr: athleteProfile?.maxHr || 190,
+                    thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 245,
+                  });
+                const actLoad = segMatch ? segMatch.load : Math.round(act.trainingLoad || 0);
+                return (
+                  <button
+                    key={act.id}
+                    type="button"
+                    onClick={() => onSelectActivity && onSelectActivity(act)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border font-medium transition-transform hover:scale-[1.01] max-w-[300px] shrink-0"
+                    style={{
+                      backgroundColor: actFocus.badgeBg,
+                      borderColor: `${actFocus.solidColor}55`,
+                      color: actFocus.solidColor,
+                    }}
+                    title={`${act.name} — ${actLoad} TSS · ${actFocus.label}`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-xs shrink-0"
+                      style={{ backgroundColor: actFocus.solidColor }}
+                    />
+                    <span className="truncate max-w-[155px] text-slate-900 dark:text-slate-100">
+                      {act.name}
+                    </span>
+                    <span className="font-mono text-[10.5px] font-bold shrink-0">
+                      ({actLoad} TSS · {actFocus.shortLabel})
+                    </span>
+                  </button>
+                );
+              })
             ) : (
               <span className="inline-flex items-center gap-2 py-0.5 text-slate-500 dark:text-slate-400">
                 <span>Rest / Recovery Day ({activePoint.dailyLoad} TSS)</span>
@@ -1451,26 +1518,56 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   opacity="0.7"
                 />
 
-                {/* Daily Training Load Bars Colored by Garmin Load Focus (Low Aerobic / High Aerobic / Anaerobic) */}
+                {/* Daily Training Load Bars (Stacked per-activity by Garmin Load Focus: Low Aerobic / High Aerobic / Anaerobic) */}
                 {enrichedSeries.map((d, i) => {
                   const load = d.dailyLoad || 0;
                   if (load <= 0) return null;
                   const x = xFor(i);
                   const maxBarH = p1Height * 0.42;
-                  const barH = Math.min(maxBarH, Math.max(3, (load / 180) * maxBarH));
+                  const totalBarH = Math.min(maxBarH, Math.max(3, (load / 180) * maxBarH));
                   const barW = Math.max(1.8, Math.min(5.5, (plotW / len) * 0.68));
                   const isHovered = activeIdx === i;
+                  const baseOpacity = isHovered ? 0.95 : d.isProjected ? 0.25 : 0.62;
+                  const segments =
+                    d.activitySegments && d.activitySegments.length > 0
+                      ? d.activitySegments
+                      : [
+                          {
+                            activityId: `day-${d.date}`,
+                            activityName: d.garminFocus.label,
+                            sport: 'Training',
+                            load,
+                            focus: d.garminFocus,
+                          },
+                        ];
+                  const segTotalLoad =
+                    segments.reduce((acc, s) => acc + Math.max(0, s.load), 0) || load;
+                  let currentBottom = p1Bottom;
+
                   return (
-                    <rect
-                      key={`p1-garmin-load-${d.date}`}
-                      x={x - barW / 2}
-                      y={p1Bottom - barH}
-                      width={barW}
-                      height={barH}
-                      rx={1}
-                      fill={d.garminFocus.solidColor}
-                      opacity={isHovered ? 0.92 : d.isProjected ? 0.25 : 0.48}
-                    />
+                    <g key={`p1-garmin-load-stack-${d.date}`}>
+                      {segments.map((seg, sIdx) => {
+                        const frac = Math.max(0, seg.load) / segTotalLoad;
+                        const segH =
+                          sIdx === segments.length - 1
+                            ? Math.max(1, currentBottom - (p1Bottom - totalBarH))
+                            : Math.max(1, frac * totalBarH);
+                        const yTop = currentBottom - segH;
+                        currentBottom = yTop;
+                        return (
+                          <rect
+                            key={`p1-garmin-seg-${d.date}-${seg.activityId}-${sIdx}`}
+                            x={x - barW / 2}
+                            y={yTop}
+                            width={barW}
+                            height={segH}
+                            rx={sIdx === segments.length - 1 ? 1 : 0}
+                            fill={seg.focus.solidColor}
+                            opacity={baseOpacity}
+                          />
+                        );
+                      })}
+                    </g>
                   );
                 })}
 

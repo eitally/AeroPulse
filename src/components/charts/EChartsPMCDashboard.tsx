@@ -41,94 +41,283 @@ export const GARMIN_LOAD_FOCUS_META: Record<GarminLoadFocus, GarminLoadFocusMeta
   },
 };
 
+export interface ActivityLoadSegment {
+  activityId: string;
+  activityName: string;
+  sportCategory?: string;
+  load: number;
+  rawActivityLoad: number;
+  focus: GarminLoadFocusMeta;
+  activity?: UnifiedActivity;
+}
+
+export interface GarminClassifyOptions {
+  ftp?: number;
+  lthr?: number;
+  maxHr?: number;
+  thresholdPaceSecsPerKm?: number;
+}
+
 /**
- * Classifies a day's workouts into Garmin's Training Load Focus jargon:
- * - Low Aerobic (Z1/Z2 Recovery, Base, Endurance)
- * - High Aerobic (Z3/Z4 Tempo, Sweet Spot, Threshold, Cruise Intervals)
- * - Anaerobic (Z5–Z7 VO2max, Anaerobic Capacity, Track Repeats, Sprints, Races, HIIT)
+ * Classifies a single workout into Garmin's Training Load Focus jargon:
+ * - Low Aerobic (Z1/Z2 Recovery, Base, Endurance, Warmup, Cooldown) -> Cyan (#38bdf8)
+ * - High Aerobic (Z3/Z4 Tempo, Sweet Spot, Lactate Threshold, Cruise Intervals) -> Orange (#f97316)
+ * - Anaerobic (Z5–Z7 VO2max, Anaerobic Capacity, Track Repeats, Sprints, Crit/Zwift Races, HIIT) -> Magenta (#d946ef)
+ */
+export function classifyActivityGarminLoad(
+  activity: UnifiedActivity,
+  opts?: GarminClassifyOptions
+): GarminLoadFocusMeta {
+  const name = String(activity.name || '').trim();
+  const ftp = opts?.ftp && opts.ftp > 80 ? opts.ftp : 300;
+  const lthr = opts?.lthr && opts.lthr > 110 ? opts.lthr : 168;
+  const athleteMaxHr = opts?.maxHr && opts.maxHr > 140 ? opts.maxHr : 190;
+
+  const hasHighIntensityTitleKeyword =
+    /\b(race|interval|intervals|tempo|threshold|vo2|vo2max|anaerobic|sprint|sprints|track|crit|criterium|hiit|over-under|over\/under|sweet\s*spot|\bsst\b|time trial|\btt\b)\b/i.test(
+      name
+    );
+
+  // 1. Explicit Warmup / Cooldown / Recovery / Easy / Z1-Z2 Base Title Intent
+  if (
+    !hasHighIntensityTitleKeyword &&
+    /\b(warmup|warm-up|warm up|cooldown|cool-down|cool down|recovery|shakeout|easy|zone 1|zone 2|\bz1\b|\bz2\b|base|endurance spin|aerobic spin|commute|walk|yoga|mobility|stretch|stretching|foundation)\b/i.test(
+      name
+    )
+  ) {
+    return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  }
+
+  // 2. Explicit Anaerobic / Race / Track / Sprint / VO2max Title Intent
+  if (
+    /\b(anaerobic|sprint|sprints|track|crit|criterium|hiit|zwift\s*-\s*race|zwift race|\brace\b|vo2|vo2max|microburst|microbursts|tabata|30\/30|40\/20|40\/15|attack|attacks|opener|openers|200m|400m|800m|wingate|neuromuscular|all-out)\b/i.test(
+      name
+    )
+  ) {
+    return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
+  }
+
+  // 3. Explicit High Aerobic (Tempo / Sweet Spot / Threshold / Cruise) Title Intent
+  if (
+    /\b(tempo|sweet\s*spot|\bsweetspot\b|\bsst\b|threshold|\blt1\b|\blt2\b|lactate|cruise|over-under|over\/under|time trial|\btt\b|half marathon|marathon pace|progression)\b/i.test(
+      name
+    )
+  ) {
+    return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+  }
+
+  // 4. Time-in-Zones Inspection (Power preferred when present, then Pace, then Heart Rate)
+  const pwrZones = activity.zoneSecs?.power || [];
+  const paceZones = activity.zoneSecs?.pace || [];
+  const hrZones = activity.zoneSecs?.hr || [];
+  const totalPwrSecs = pwrZones.reduce((s, v) => s + (v || 0), 0);
+  const totalPaceSecs = paceZones.reduce((s, v) => s + (v || 0), 0);
+  const totalHrSecs = hrZones.reduce((s, v) => s + (v || 0), 0);
+
+  if (totalPwrSecs > 60) {
+    const z3z4 = (pwrZones[2] || 0) + (pwrZones[3] || 0);
+    const z5Plus = (pwrZones[4] || 0) + (pwrZones[5] || 0) + (pwrZones[6] || 0);
+    const z6z7 = (pwrZones[5] || 0) + (pwrZones[6] || 0);
+
+    if (
+      z6z7 / totalPwrSecs >= 0.05 ||
+      z5Plus / totalPwrSecs >= 0.14 ||
+      (z5Plus / totalPwrSecs >= 0.09 && z5Plus >= z3z4 * 0.7)
+    ) {
+      return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
+    }
+    if ((z3z4 + z5Plus) / totalPwrSecs >= 0.30 || z3z4 / totalPwrSecs >= 0.25) {
+      return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    }
+    return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  }
+
+  if (totalPaceSecs > 60 || totalHrSecs > 60) {
+    const z = totalPaceSecs > 60 ? paceZones : hrZones;
+    const totalZ = totalPaceSecs > 60 ? totalPaceSecs : totalHrSecs;
+    const z3z4 = (z[2] || 0) + (z[3] || 0);
+    const z5Plus = (z[4] || 0) + (z[5] || 0) + (z[6] || 0);
+    const z6z7 = (z[5] || 0) + (z[6] || 0);
+
+    if (
+      z6z7 / totalZ >= 0.05 ||
+      z5Plus / totalZ >= 0.15 ||
+      (z5Plus / totalZ >= 0.10 && z5Plus >= z3z4 * 0.7)
+    ) {
+      return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
+    }
+    if ((z3z4 + z5Plus) / totalZ >= 0.34 || z3z4 / totalZ >= 0.28) {
+      return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    }
+    return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  }
+
+  // 5. Fallback to Intensity Factor (IF), Variability Index (VI), and Heart Rate vs LTHR
+  const rawIf = Number(activity.intensityFactor || 0);
+  const np = Number(activity.normalizedPower || activity.avgPower || 0);
+  const ifVal =
+    rawIf > 3
+      ? rawIf / 100
+      : rawIf > 0
+        ? rawIf
+        : np > 0 && ftp > 0 && activity.sportCategory === 'Cycling'
+          ? np / ftp
+          : 0;
+  const viVal =
+    activity.variabilityIndex && activity.variabilityIndex > 0
+      ? activity.variabilityIndex
+      : activity.normalizedPower && activity.avgPower && activity.avgPower > 0
+        ? activity.normalizedPower / activity.avgPower
+        : 1.0;
+
+  if (ifVal > 0) {
+    if (
+      ifVal >= 0.95 ||
+      (ifVal >= 0.85 && viVal >= 1.13) ||
+      (ifVal >= 0.91 && (activity.movingTimeSecs || 0) > 0 && (activity.movingTimeSecs || 0) <= 2400)
+    ) {
+      return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
+    }
+    if (ifVal >= 0.80) {
+      return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    }
+    return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  }
+
+  const avgHr = Number(activity.avgHr || 0);
+  const maxHr = Number(activity.maxHr || 0);
+  if (avgHr > 0) {
+    if (
+      avgHr >= lthr * 0.96 ||
+      (maxHr >= athleteMaxHr * 0.96 && avgHr >= lthr * 0.89)
+    ) {
+      return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
+    }
+    if (avgHr >= lthr * 0.88) {
+      return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    }
+    return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  }
+
+  return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+}
+
+/**
+ * Builds per-activity load segments for a single day so multi-activity days
+ * render as a stacked bar where each activity is colored by its own Garmin Load Focus.
+ */
+export function buildDayLoadSegments(
+  activities: UnifiedActivity[] = [],
+  dailyLoad = 0,
+  dateStr = '',
+  opts?: GarminClassifyOptions
+): ActivityLoadSegment[] {
+  if (activities.length > 0) {
+    // Sort chronologically (morning -> afternoon -> evening) so bottom of stack is first workout
+    const chronological = [...activities].sort((a, b) =>
+      String(a.startDateLocal || '').localeCompare(String(b.startDateLocal || ''))
+    );
+
+    const rawList = chronological.map((act, idx) => {
+      const focus = classifyActivityGarminLoad(act, opts);
+      const explicitLoad = Number(act.trainingLoad ?? (act as any).tss ?? 0);
+      const fallbackLoad = Math.max(
+        8,
+        Math.round(
+          ((act.movingTimeSecs || 1800) / 3600) *
+            (focus.type === 'ANAEROBIC' ? 75 : focus.type === 'HIGH_AEROBIC' ? 62 : 45)
+        )
+      );
+      const rawLoad = explicitLoad > 0 ? explicitLoad : fallbackLoad;
+      return {
+        activityId: act.id || `${dateStr}-act-${idx}`,
+        activityName: act.name || act.sportCategory || `Workout ${idx + 1}`,
+        sportCategory: act.sportCategory,
+        rawLoad,
+        focus,
+        activity: act,
+      };
+    });
+
+    const sumRaw = rawList.reduce((acc, item) => acc + item.rawLoad, 0);
+    const targetTotal = dailyLoad > 0 ? Math.max(dailyLoad, sumRaw) : sumRaw;
+    const scale = sumRaw > 0 ? targetTotal / sumRaw : 1;
+
+    return rawList.map((item) => ({
+      activityId: item.activityId,
+      activityName: item.activityName,
+      sportCategory: item.sportCategory,
+      load: Math.round(item.rawLoad * scale * 10) / 10,
+      rawActivityLoad: Math.round(item.rawLoad),
+      focus: item.focus,
+      activity: item.activity,
+    }));
+  }
+
+  if (dailyLoad <= 0) {
+    return [];
+  }
+
+  // Fallback for synthetic/unhydrated wellness days with no activity objects attached
+  let fallbackFocus = GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  if (dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
+    const dow = dt.getUTCDay();
+    const dayHash = ((d || 1) * 7 + (m || 1) * 13) % 10;
+    if (dow === 2 && dailyLoad >= 80) {
+      fallbackFocus =
+        dayHash < 4 ? GARMIN_LOAD_FOCUS_META.ANAEROBIC : GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    } else if (dow === 4 && dailyLoad >= 78) {
+      fallbackFocus = GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    } else if (dow === 6 && dailyLoad >= 145 && dayHash < 3) {
+      fallbackFocus = GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
+    }
+  }
+
+  return [
+    {
+      activityId: `${dateStr}-daily`,
+      activityName: 'Daily Training Load',
+      load: Math.round(dailyLoad * 10) / 10,
+      rawActivityLoad: Math.round(dailyLoad),
+      focus: fallbackFocus,
+    },
+  ];
+}
+
+/**
+ * Classifies a day's primary or single workout into Garmin's Training Load Focus jargon.
  */
 export function classifyGarminLoadType(
   activities: UnifiedActivity[] = [],
   dailyLoad = 0,
-  maxHr = 0
+  _maxHr = 0,
+  opts?: GarminClassifyOptions
 ): GarminLoadFocusMeta {
-  if (activities.length > 0) {
-    // Pick the primary (highest training load) activity of the day, or inspect combined zones
-    const sorted = [...activities].sort(
-      (a, b) => (b.trainingLoad || 0) - (a.trainingLoad || 0)
-    );
-    const primary = sorted[0];
-    const combinedNames = activities.map((a) => a.name || '').join(' ');
-    const maxIf = Math.max(
-      ...activities.map((a) => a.intensityFactor || 0)
-    );
-    const peakHr = Math.max(
-      maxHr,
-      ...activities.map((a) => a.maxHr || 0)
-    );
-
-    // Check high-intensity zone share if power or HR zones exist
-    const pwrZones = primary.zoneSecs?.power || [];
-    const hrZones = primary.zoneSecs?.hr || [];
-    const totalPwrSecs = pwrZones.reduce((s, v) => s + v, 0);
-    const totalHrSecs = hrZones.reduce((s, v) => s + v, 0);
-
-    const z5PlusPwrShare =
-      totalPwrSecs > 0
-        ? ((pwrZones[4] || 0) + (pwrZones[5] || 0) + (pwrZones[6] || 0)) / totalPwrSecs
-        : 0;
-    const z5PlusHrShare =
-      totalHrSecs > 0
-        ? ((hrZones[4] || 0) + (hrZones[5] || 0) + (hrZones[6] || 0)) / totalHrSecs
-        : 0;
-    const z3z4PwrShare =
-      totalPwrSecs > 0
-        ? ((pwrZones[2] || 0) + (pwrZones[3] || 0)) / totalPwrSecs
-        : 0;
-    const z3z4HrShare =
-      totalHrSecs > 0
-        ? ((hrZones[2] || 0) + (hrZones[3] || 0)) / totalHrSecs
-        : 0;
-
-    // 1. Anaerobic check
-    if (
-      /anaerobic|sprint|track|crit|hiit|zwift race|race|vo2|microburst|tabata|30\/30|40\/20|attack|opener|1k |800m|400m|mile/i.test(
-        combinedNames
-      ) ||
-      maxIf >= 0.95 ||
-      z5PlusPwrShare >= 0.16 ||
-      z5PlusHrShare >= 0.20 ||
-      (primary.sportCategory === 'Strength' && (primary.avgHr || 0) >= 145)
-    ) {
+  if (activities.length === 1) {
+    return classifyActivityGarminLoad(activities[0], opts);
+  }
+  if (activities.length > 1) {
+    const segments = buildDayLoadSegments(activities, dailyLoad, '', opts);
+    const totals: Record<GarminLoadFocus, number> = {
+      LOW_AEROBIC: 0,
+      HIGH_AEROBIC: 0,
+      ANAEROBIC: 0,
+    };
+    for (const seg of segments) {
+      totals[seg.focus.type] += seg.load;
+    }
+    if (totals.ANAEROBIC >= totals.HIGH_AEROBIC && totals.ANAEROBIC >= totals.LOW_AEROBIC) {
       return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
     }
-
-    // 2. High Aerobic check (Tempo, Sweet Spot, Threshold)
-    if (
-      /tempo|sweet spot|threshold|ss|cruise|lt|lactate|progression|over-under|climb|half marathon|marathon|fast|group ride|build|interval/i.test(
-        combinedNames
-      ) ||
-      maxIf >= 0.78 ||
-      z3z4PwrShare >= 0.25 ||
-      z3z4HrShare >= 0.30 ||
-      peakHr >= 170 ||
-      (primary.avgHr || 0) >= 150
-    ) {
+    if (totals.HIGH_AEROBIC >= totals.LOW_AEROBIC) {
       return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
     }
-
-    // 3. Otherwise Low Aerobic (Base, Z1, Z2, Recovery, Endurance)
     return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
   }
-
-  // Fallback when only dailyLoad / maxHr are present on a historical wellness record
-  if (maxHr >= 178 || dailyLoad >= 135) {
-    return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
-  }
-  if (maxHr >= 156 || dailyLoad >= 75) {
-    return GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
-  }
-  return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
+  const segs = buildDayLoadSegments([], dailyLoad, '', opts);
+  return segs[0]?.focus || GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
 }
 
 export interface PMCDayPoint {
@@ -163,7 +352,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
   const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
   const [selectedDay, setSelectedDay] = useState<PMCDayPoint | null>(null);
 
-  // Precompute Garmin Load Focus and accurate 7d Ramp Rate for every day in timeline
+  // Precompute per-activity Garmin Load Focus stacked segments and 7d Ramp Rate for every day
   const enrichedTimeline = useMemo(() => {
     return timeline.map((pt, idx) => {
       const prev7 = idx >= 7 ? timeline[idx - 7] : timeline[0];
@@ -171,15 +360,19 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
         typeof pt.rampRate === 'number' && pt.rampRate !== 0
           ? Number(pt.rampRate.toFixed(1))
           : Number((pt.ctl - (prev7?.ctl ?? pt.ctl)).toFixed(1));
-      const garminFocus = classifyGarminLoadType(
-        pt.activities,
-        pt.tss,
-        (pt.wellness as any)?.maxHr || 0
-      );
+      const segments = buildDayLoadSegments(pt.activities, pt.tss, pt.date, {
+        ftp: pt.eftp || 300,
+      });
+      const totalSegmentedTss = segments.reduce((s, seg) => s + seg.load, 0);
+      const garminFocus = classifyGarminLoadType(pt.activities, pt.tss, 0, {
+        ftp: pt.eftp || 300,
+      });
       return {
         ...pt,
+        tss: totalSegmentedTss > 0 ? totalSegmentedTss : pt.tss,
         rampRate: computedRamp,
         garminFocus,
+        segments,
       };
     });
   }, [timeline]);
@@ -246,14 +439,51 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
     const atlData = enrichedTimeline.map((d) => Math.round(d.atl * 10) / 10);
     const tsbData = enrichedTimeline.map((d) => Math.round(d.tsb * 10) / 10);
     const rampData = enrichedTimeline.map((d) => Math.round(d.rampRate * 10) / 10);
-    const tssData = enrichedTimeline.map((d) => ({
-      value: Math.round(d.tss),
-      itemStyle: {
-        color: d.tss > 0 ? d.garminFocus.barColor : 'rgba(148, 163, 184, 0.15)',
-        borderRadius: [2, 2, 0, 0],
-      },
-    }));
     const eftpData = enrichedTimeline.map((d) => Math.round(d.eftp));
+
+    // Determine max activities in any single day so we can build stacked bar series per activity slot
+    const maxSegmentsPerDay = Math.min(
+      6,
+      Math.max(1, ...enrichedTimeline.map((d) => d.segments.length))
+    );
+
+    const stackedActivityBarSeries = showTssBars
+      ? Array.from({ length: maxSegmentsPerDay }, (_, slotIdx) => ({
+          name: `Daily Load Slot ${slotIdx + 1}`,
+          type: 'bar' as const,
+          stack: 'daily-garmin-load',
+          xAxisIndex: 0,
+          yAxisIndex: 0,
+          barMaxWidth: 9,
+          data: enrichedTimeline.map((d) => {
+            const seg = d.segments[slotIdx];
+            if (!seg || seg.load <= 0) {
+              return {
+                value: 0,
+                itemStyle: { color: 'transparent' },
+              };
+            }
+            const isTopSegment =
+              slotIdx === Math.min(maxSegmentsPerDay, d.segments.length) - 1;
+            const hasMultiple = d.segments.length > 1;
+            return {
+              value: Math.round(seg.load * 10) / 10,
+              segmentMeta: seg,
+              itemStyle: {
+                color: seg.focus.barColor,
+                borderRadius: isTopSegment ? [2, 2, 0, 0] : [0, 0, 0, 0],
+                borderColor: hasMultiple ? 'rgba(9, 13, 22, 0.85)' : 'transparent',
+                borderWidth: hasMultiple ? 0.75 : 0,
+              },
+            };
+          }),
+          emphasis: {
+            itemStyle: {
+              opacity: 1,
+            },
+          },
+        }))
+      : [];
 
     const activeXAxisIndices = showRampSubplot ? [0, 1, 2] : [0, 1];
 
@@ -309,26 +539,36 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
                   : '#38bdf8';
 
           const loadFocusHtml =
-            pt.tss > 0
-              ? `<span style="color:${pt.garminFocus.solidColor};font-weight:700;">${Math.round(pt.tss)} TSS (${pt.garminFocus.label})</span>`
-              : `<span style="color:#94a3b8;">0 TSS (Rest)</span>`;
+            pt.segments.length > 1
+              ? `<span style="color:#f8fafc;font-weight:700;">${Math.round(pt.tss)} TSS</span> <span style="font-size:10px;">(${pt.segments
+                  .map(
+                    (seg) =>
+                      `<span style="color:${seg.focus.solidColor};font-weight:700;">${Math.round(seg.load)} ${seg.focus.shortLabel}</span>`
+                  )
+                  .join(' + ')})</span>`
+              : pt.segments.length === 1
+                ? `<span style="color:${pt.segments[0].focus.solidColor};font-weight:700;">${Math.round(pt.tss)} TSS (${pt.segments[0].focus.label})</span>`
+                : `<span style="color:#94a3b8;">0 TSS (Rest)</span>`;
 
           const actsHtml =
-            pt.activities && pt.activities.length > 0
+            pt.segments && pt.segments.length > 0 && pt.activities.length > 0
               ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.1);">
-                  <div style="font-size:10px;color:#38bdf8;margin-bottom:2px;">WORKOUTS (${pt.activities.length}) — Click point to inspect</div>
-                  ${pt.activities
-                    .slice(0, 3)
-                    .map((a) => {
-                      const actFocus = classifyGarminLoadType([a], a.trainingLoad, a.maxHr);
-                      return `<div style="font-size:10px;color:#cbd5e1;">• ${a.name} <span style="color:${actFocus.solidColor};">(${Math.round(a.trainingLoad || 0)} TSS · ${actFocus.shortLabel})</span></div>`;
+                  <div style="font-size:10px;color:#38bdf8;margin-bottom:3px;">STACKED WORKOUT LOAD (${pt.segments.length}) — Click to inspect</div>
+                  ${pt.segments
+                    .slice()
+                    .reverse()
+                    .map((seg) => {
+                      return `<div style="font-size:10px;color:#cbd5e1;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                        <span><span style="color:${seg.focus.solidColor};">●</span> ${seg.activityName}</span>
+                        <strong style="color:${seg.focus.solidColor};">${Math.round(seg.load)} TSS (${seg.focus.shortLabel})</strong>
+                      </div>`;
                     })
                     .join('')}
                 </div>`
               : '';
 
           return `
-            <div style="min-width:230px;">
+            <div style="min-width:245px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">
                 <strong style="color:#f8fafc;font-size:12px;">${pt.date}</strong>
                 <span style="font-size:10px;color:${rampColor};font-weight:700;">Ramp ${pt.rampRate >= 0 ? '+' : ''}${pt.rampRate.toFixed(1)} CTL/wk</span>
@@ -536,23 +776,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
         },
       ],
       series: [
-        ...(showTssBars
-          ? [
-              {
-                name: 'Daily Load (Garmin Focus)',
-                type: 'bar' as const,
-                xAxisIndex: 0,
-                yAxisIndex: 0,
-                data: tssData,
-                barMaxWidth: 8,
-                emphasis: {
-                  itemStyle: {
-                    opacity: 1,
-                  },
-                },
-              },
-            ]
-          : []),
+        ...stackedActivityBarSeries,
         {
           name: 'Fitness (CTL)',
           type: 'line',
@@ -673,7 +897,10 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
         const day = enrichedTimeline[idx];
         setSelectedDay(day);
         if (onSelectDate) onSelectDate(day.date);
-        if (day.activities.length === 1 && onSelectActivity) {
+        const clickedSegActivity = params?.data?.segmentMeta?.activity;
+        if (clickedSegActivity && onSelectActivity) {
+          onSelectActivity(clickedSegActivity);
+        } else if (day.activities.length === 1 && onSelectActivity) {
           onSelectActivity(day.activities[0]);
         }
       }
@@ -730,7 +957,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           {/* Garmin Daily Load Bar Color Legend */}
           {showTssBars && (
             <div className="flex items-center gap-1.5 pl-1 text-[10px] font-mono">
-              <span className="text-slate-500">Load Bars:</span>
+              <span className="text-slate-500">Stacked Activity Load:</span>
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
                 <span className="w-2 h-2 rounded-full bg-[#38bdf8]" />
                 Low Aerobic
@@ -806,15 +1033,18 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             {selectedDay.activities.length > 0 ? (
               selectedDay.activities.map((act) => {
-                const focus = classifyGarminLoadType([act], act.trainingLoad, act.maxHr);
+                const focus = classifyActivityGarminLoad(act, {
+                  ftp: selectedDay.eftp || 300,
+                });
                 return (
                   <button
                     key={act.id}
                     type="button"
                     onClick={() => onSelectActivity && onSelectActivity(act)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 text-[11px] transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/90 hover:bg-slate-800 border text-slate-200 text-[11px] transition-colors"
+                    style={{ borderColor: `${focus.solidColor}66` }}
                   >
-                    <Zap className="w-3 h-3 text-cyan-400" />
+                    <Zap className="w-3 h-3" style={{ color: focus.solidColor }} />
                     <span>
                       Inspect {act.name} ({Math.round(act.trainingLoad || 0)} TSS ·{' '}
                       <strong style={{ color: focus.solidColor }}>{focus.label}</strong>)

@@ -629,11 +629,28 @@ export default function App() {
                             ? 'Treadmill'
                             : act.subType || matched.subType;
 
+                    const isGenericStubName =
+                      !act.name ||
+                      act.id.startsWith('strava-') ||
+                      /^Zwift\s+—\s+Virtual Cycling$/i.test(act.name.trim()) ||
+                      /^Strava\s+Activity$/i.test(act.name.trim());
+
                     return reclassifyActivityEnvironment({
                       ...act,
+                      name: isGenericStubName && matched.name ? matched.name : act.name,
                       environment: resolvedEnv,
                       subType: resolvedSubType,
                       stravaId: String(matched.stravaId || act.stravaId || ''),
+                      trainingLoad:
+                        act.trainingLoad && act.trainingLoad > 0
+                          ? act.trainingLoad
+                          : matched.trainingLoad || act.trainingLoad,
+                      avgPower: act.avgPower ?? matched.avgPower,
+                      normalizedPower: act.normalizedPower ?? matched.normalizedPower,
+                      intensityFactor: act.intensityFactor ?? matched.intensityFactor,
+                      variabilityIndex: act.variabilityIndex ?? matched.variabilityIndex,
+                      avgHr: act.avgHr ?? matched.avgHr,
+                      maxHr: act.maxHr ?? matched.maxHr,
                       gearName: matched.gearName || act.gearName,
                       stravaPrCount: matched.stravaPrCount ?? act.stravaPrCount,
                       kudosCount: matched.kudosCount ?? act.kudosCount,
