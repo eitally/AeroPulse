@@ -60,6 +60,7 @@ import { AthleteProfileModal } from './components/AthleteProfileModal';
 import { OfficialRaceModal } from './components/OfficialRaceModal';
 import { StravaAuthGate } from './components/StravaAuthGate';
 import { AthleteRosterModal } from './components/AthleteRosterModal';
+import { AeroPulseLogo } from './components/AeroPulseLogo';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
@@ -208,6 +209,35 @@ export default function App() {
     redactedStravaCountRef.current = redactedStravaCount;
   }, [redactedStravaCount]);
 
+  const [readOnlyNotice, setReadOnlyNotice] = useState<string | null>(null);
+
+  const triggerReadOnlyAlert = useCallback((athleteName: string, actionLabel: string) => {
+    setReadOnlyNotice(
+      `Read-Only Friend View: You cannot ${actionLabel} while viewing ${athleteName}'s profile. Switch their role to Coach Edit in Roster to modify.`
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!readOnlyNotice) return;
+    const t = window.setTimeout(() => setReadOnlyNotice(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [readOnlyNotice]);
+
+  // Global Escape key listener to dismiss any open modal or slide-over drawer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsRosterModalOpen(false);
+        setIsOfficialRaceModalOpen(false);
+        setIsProfileModalOpen(false);
+        setIsDataSourcesOpen(false);
+        setIsCoachDrawerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     mode: 'SANDBOX_CALIBRATION',
     intervalsConnected: false,
@@ -217,12 +247,12 @@ export default function App() {
     stravaSource: 'NONE',
     hasGeminiServerKey: true,
     autoSyncCronActive: true,
-    devCallbackUrl: `${DEV_APP_URL}/auth/strava/callback`,
-    sharedCallbackUrl: `${SHARED_APP_URL}/auth/strava/callback`,
+    devCallbackUrl: `${DEV_APP_URL}/api/strava/callback`,
+    sharedCallbackUrl: `${SHARED_APP_URL}/api/strava/callback`,
     currentOriginCallbackUrl:
       typeof window !== 'undefined'
-        ? `${window.location.origin}/auth/strava/callback`
-        : `${DEV_APP_URL}/auth/strava/callback`,
+        ? `${window.location.origin}/api/strava/callback`
+        : `${DEV_APP_URL}/api/strava/callback`,
   });
 
   // Automatically persist telemetry state changes (streams, routes, segments, kudos) to IndexedDB
@@ -365,7 +395,7 @@ export default function App() {
         stravaSource: data.stravaSource || 'NONE',
         hasGeminiServerKey: Boolean(data.hasGeminiServerKey),
         currentOriginCallbackUrl:
-          data.callbackUrl || `${window.location.origin}/auth/strava/callback`,
+          data.callbackUrl || `${window.location.origin}/api/strava/callback`,
         lastSyncedAt: data.lastSyncedAt || prev.lastSyncedAt,
         nextHourlySyncAt: data.nextHourlySyncAt || prev.nextHourlySyncAt,
         autoSyncCronActive: true,
@@ -1421,7 +1451,16 @@ export default function App() {
     }
   };
 
-  // Calendar Planned Workout Creation & Deletion (syncs to Intervals.icu + local state)
+  // Multi-Athlete Context Resolution & Privacy Shield Enforcement
+  const activeConnectedAthlete = useMemo(
+    () =>
+      activeViewedAthleteId === 'SELF'
+        ? null
+        : connectedAthletes.find((a) => a.id === activeViewedAthleteId) || null,
+    [activeViewedAthleteId, connectedAthletes]
+  );
+
+  // Calendar Planned Workout Creation & Deletion (syncs to Intervals.icu + local state + COACH_EDIT roster)
   const handleCreatePlannedEvent = async (eventInput: {
     date: string;
     name: string;
@@ -1433,6 +1472,45 @@ export default function App() {
     description: string;
     replaceExistingDate?: boolean;
   }) => {
+    if (activeConnectedAthlete) {
+      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+        triggerReadOnlyAlert(activeConnectedAthlete.name, 'schedule workouts');
+        return;
+      }
+      const coachEvt: PlannedWorkoutEvent = {
+        id: `coach-evt-${Date.now()}`,
+        date: eventInput.date,
+        name: eventInput.name,
+        sportCategory: eventInput.sportCategory,
+        environmentPreference: eventInput.environmentPreference,
+        description: eventInput.description,
+        plannedLoad: eventInput.plannedLoad,
+        plannedDurationSecs: eventInput.plannedDurationSecs,
+        targetZoneSummary: 'Coach Prescribed Session',
+        workoutSyntax: eventInput.workoutSyntax,
+        source: 'USER',
+      };
+      setConnectedAthletes((prev) =>
+        prev.map((a) => {
+          if (a.id !== activeConnectedAthlete.id) return a;
+          const base = eventInput.replaceExistingDate
+            ? a.plannedEvents.filter(
+                (e) =>
+                  !(
+                    e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
+                    e.sportCategory === eventInput.sportCategory
+                  )
+              )
+            : a.plannedEvents;
+          return {
+            ...a,
+            plannedEvents: [...base, coachEvt].sort((x, y) => x.date.localeCompare(y.date)),
+          };
+        })
+      );
+      return;
+    }
+
     try {
       const resp = await fetch('/api/calendar/events', {
         method: 'POST',
@@ -1519,6 +1597,29 @@ export default function App() {
       workoutSyntax: item.workoutSyntax,
     }));
 
+    if (activeConnectedAthlete) {
+      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+        triggerReadOnlyAlert(activeConnectedAthlete.name, 'generate multi-week training plans');
+        return;
+      }
+      const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
+      setConnectedAthletes((prev) =>
+        prev.map((a) => {
+          if (a.id !== activeConnectedAthlete.id) return a;
+          const filtered = a.plannedEvents.filter(
+            (e) => !targetDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`)
+          );
+          return {
+            ...a,
+            plannedEvents: [...filtered, ...createdEvents].sort((x, y) =>
+              x.date.localeCompare(y.date)
+            ),
+          };
+        })
+      );
+      return;
+    }
+
     setPlannedEvents((prev) => {
       const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
       const filtered = prev.filter(
@@ -1565,33 +1666,64 @@ export default function App() {
     }
   }, []);
 
-  const handleSaveProfileOverride = useCallback(async (updatedProfile: AthleteProfile) => {
-    setAthleteProfile(updatedProfile);
-    athleteProfileRef.current = updatedProfile;
-    setConnectionStatus((prev) => ({
-      ...prev,
-      athleteFtp: updatedProfile.ftp,
-      athleteIndoorFtp: updatedProfile.indoorFtp,
-      athleteRunFtp: updatedProfile.runFtp,
-      athleteLthr: updatedProfile.lthr,
-      athleteMaxHr: updatedProfile.maxHr,
-      athleteProfile: updatedProfile,
-    }));
-    try {
-      await fetch('/api/athlete/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getSavedIntervalsHeaders(),
-        },
-        body: JSON.stringify({ athleteProfile: updatedProfile }),
-      });
-    } catch {
-      // ignore offline error
-    }
-  }, []);
+  const handleSaveProfileOverride = useCallback(
+    async (updatedProfile: AthleteProfile) => {
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'update physiological zones');
+          return;
+        }
+        setConnectedAthletes((prev) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id ? { ...a, athleteProfile: updatedProfile } : a
+          )
+        );
+        return;
+      }
+
+      setAthleteProfile(updatedProfile);
+      athleteProfileRef.current = updatedProfile;
+      setConnectionStatus((prev) => ({
+        ...prev,
+        athleteFtp: updatedProfile.ftp,
+        athleteIndoorFtp: updatedProfile.indoorFtp,
+        athleteRunFtp: updatedProfile.runFtp,
+        athleteLthr: updatedProfile.lthr,
+        athleteMaxHr: updatedProfile.maxHr,
+        athleteProfile: updatedProfile,
+      }));
+      try {
+        await fetch('/api/athlete/profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getSavedIntervalsHeaders(),
+          },
+          body: JSON.stringify({ athleteProfile: updatedProfile }),
+        });
+      } catch {
+        // ignore offline error
+      }
+    },
+    [activeConnectedAthlete, triggerReadOnlyAlert]
+  );
 
   const handleDeletePlannedEvent = async (id: string) => {
+    if (activeConnectedAthlete) {
+      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+        triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete planned workouts');
+        return;
+      }
+      setConnectedAthletes((prev) =>
+        prev.map((a) =>
+          a.id === activeConnectedAthlete.id
+            ? { ...a, plannedEvents: a.plannedEvents.filter((e) => e.id !== id) }
+            : a
+        )
+      );
+      return;
+    }
+
     setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
     try {
       await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
@@ -1607,6 +1739,20 @@ export default function App() {
   const handleImportOfficialRaces = useCallback(
     (importedRaces: UnifiedActivity[]) => {
       if (!importedRaces || importedRaces.length === 0) return;
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'import official race results');
+          return;
+        }
+        setConnectedAthletes((prev) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? { ...a, activities: mergeActivitiesNonDestructive(a.activities, importedRaces) }
+              : a
+          )
+        );
+        return;
+      }
       setActivities((prev) => {
         const merged = mergeActivitiesNonDestructive(prev, importedRaces);
         activitiesRef.current = merged;
@@ -1621,7 +1767,7 @@ export default function App() {
         return merged;
       });
     },
-    []
+    [activeConnectedAthlete, triggerReadOnlyAlert]
   );
 
   // Build concise physiological + Garmin Sleep/HRV + mileage telemetry payload for Gemini AI Coach
@@ -1709,14 +1855,7 @@ export default function App() {
     athleteProfile,
   ]);
 
-  // Multi-Athlete Context Resolution & Privacy Shield Enforcement
-  const activeConnectedAthlete = useMemo(
-    () =>
-      activeViewedAthleteId === 'SELF'
-        ? null
-        : connectedAthletes.find((a) => a.id === activeViewedAthleteId) || null,
-    [activeViewedAthleteId, connectedAthletes]
-  );
+  // Privacy Shield Enforcement for Connected Athletes
 
   const shieldedConnectedTelemetry = useMemo(
     () => (activeConnectedAthlete ? applyAthletePrivacyShield(activeConnectedAthlete) : null),
@@ -1930,10 +2069,39 @@ export default function App() {
   };
 
   const handleAddTargetGoal = (newGoal: Omit<TargetGoal, 'id'>) => {
+    if (activeConnectedAthlete) {
+      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+        triggerReadOnlyAlert(activeConnectedAthlete.name, 'add target race or power goals');
+        return;
+      }
+      const created: TargetGoal = { ...newGoal, id: `goal-${Date.now()}` };
+      setConnectedAthletes((prev) =>
+        prev.map((a) =>
+          a.id === activeConnectedAthlete.id
+            ? { ...a, targetGoals: [created, ...a.targetGoals] }
+            : a
+        )
+      );
+      return;
+    }
     setTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
   };
 
   const handleDeleteTargetGoal = (id: string) => {
+    if (activeConnectedAthlete) {
+      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+        triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete target goals');
+        return;
+      }
+      setConnectedAthletes((prev) =>
+        prev.map((a) =>
+          a.id === activeConnectedAthlete.id
+            ? { ...a, targetGoals: a.targetGoals.filter((g) => g.id !== id) }
+            : a
+        )
+      );
+      return;
+    }
     setTargetGoals((prev) => prev.filter((g) => g.id !== id));
   };
 
@@ -1978,10 +2146,9 @@ export default function App() {
                 e.preventDefault();
                 setActiveTab('fitness');
               }}
-              className="flex items-center gap-2 text-base sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap"
+              className="flex items-center whitespace-nowrap"
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-sky-400 to-blue-600 shadow-xs" />
-              <span>AeroPulse</span>
+              <AeroPulseLogo size="sm" />
             </a>
 
             {/* Intervals.icu-Style Top Header Athlete Context Switcher */}
@@ -2232,6 +2399,30 @@ export default function App() {
                 className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-mono font-semibold transition-colors"
               >
                 Return to My Profile
+              </button>
+            </div>
+          </div>
+        )}
+        {readOnlyNotice && (
+          <div className="rounded-2xl liquid-glass border-amber-500/50 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-300 font-medium">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>{readOnlyNotice}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsRosterModalOpen(true)}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-[11px] font-mono font-semibold"
+              >
+                Open Roster Roles
+              </button>
+              <button
+                type="button"
+                onClick={() => setReadOnlyNotice(null)}
+                className="px-2 py-1 rounded-lg hover:bg-white/10 text-[11px] font-mono"
+              >
+                Dismiss
               </button>
             </div>
           </div>
@@ -2509,6 +2700,11 @@ export default function App() {
             activities={effectiveActivities}
             athleteProfile={effectiveAthleteProfile}
             distanceUnit={distanceUnit}
+            selfName={athleteProfile.name || 'Primary Athlete'}
+            selfProfile={athleteProfile}
+            selfWellnessDays={wellnessDays}
+            connectedAthletes={connectedAthletes}
+            onOpenRosterModal={() => setIsRosterModalOpen(true)}
             onSelectActivity={(act) => {
               handleSelectActivity(act);
               setActiveTab('activities');

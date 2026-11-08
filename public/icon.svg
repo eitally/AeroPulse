@@ -1,8 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="112" fill="#0B0F17"/>
-  <rect x="24" y="24" width="464" height="464" rx="92" stroke="#1E293B" stroke-width="8"/>
-  <path d="M96 304H168L208 176L264 360L316 232L352 304H416" stroke="#3B82F6" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="208" cy="176" r="18" fill="#22C55E"/>
-  <circle cx="264" cy="360" r="18" fill="#F59E0B"/>
-  <circle cx="416" cy="304" r="18" fill="#3B82F6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B0F17" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+    <linearGradient id="cyan-wave" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="orange-pulse" x1="8" y1="44" x2="58" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F97316" />
+      <stop offset="100%" stop-color="#FB923C" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg-grad)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="2" />
+  <path d="M11 44L25 15L34 33" stroke="url(#cyan-wave)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M8 37H18L24.5 22L31.5 47L39.5 19L46 37H56" stroke="url(#orange-pulse)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="39.5" cy="19" r="3.8" fill="#38BDF8" />
 </svg>

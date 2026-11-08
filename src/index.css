@@ -176,3 +176,21 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.48);
 }
+
+/* ==========================================================================
+   AeroPulse Precision Telemetry Tokens & Light/Dark Contrast Safeguards
+   ========================================================================== */
+:root {
+  --ap-electric-cyan: #0EA5E9;
+  --ap-luminous-cyan: #38BDF8;
+  --ap-aero-orange: #F97316;
+  --ap-strava-orange: #FC4C02;
+}
+
+/* Ensure dark telemetry oscilloscope sub-canvases (#090B0E / #0F131A) maintain crisp light text even when the outer page is in Light Mode */
+.bg-\[\#090B0E\],
+.bg-\[\#0D1015\],
+.bg-\[\#0F131A\] {
+  color: #F1F5F9;
+}
+

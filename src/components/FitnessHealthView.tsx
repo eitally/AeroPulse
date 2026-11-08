@@ -1,7 +1,18 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Calendar, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import {
+  Activity,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Radar,
+  RotateCcw,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import {
   AthleteProfile,
+  ConnectedAthleteRecord,
   DistanceUnit,
   PlannedWorkoutEvent,
   SportCategory,
@@ -14,6 +25,8 @@ import {
 } from './FourteenDayReadinessLedger';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
+import { DualAthleteComparator } from './DualAthleteComparator';
+import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -21,6 +34,11 @@ interface FitnessHealthViewProps {
   activities?: UnifiedActivity[];
   athleteProfile?: AthleteProfile;
   distanceUnit?: DistanceUnit;
+  selfName?: string;
+  selfProfile?: AthleteProfile;
+  selfWellnessDays?: UnifiedWellnessDay[];
+  connectedAthletes?: ConnectedAthleteRecord[];
+  onOpenRosterModal?: () => void;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSyncMorphedToCalendar?: (eventInput: {
     date: string;
@@ -47,6 +65,19 @@ type DateRangePreset =
   | '2Y'
   | 'ALL'
   | 'CUSTOM';
+
+type MilestoneCategory =
+  | 'EFTP_BREAKTHROUGH'
+  | 'RACE_OR_DISTANCE_PR'
+  | 'POWER_OR_BENCHMARK_PR';
+
+interface PmcMilestone {
+  category: MilestoneCategory;
+  shortLabel: string;
+  detailLabel: string;
+  colorHex: string;
+  activity?: UnifiedActivity;
+}
 
 const SHORT_MONTHS = [
   'Jan',
@@ -92,6 +123,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   activities = [],
   athleteProfile,
   distanceUnit = 'mi',
+  selfName = 'Primary Athlete',
+  selfProfile,
+  selfWellnessDays,
+  connectedAthletes = [],
+  onOpenRosterModal,
   onSelectActivity,
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -261,8 +297,34 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     latestDay,
   ]);
 
-  // Enrich each day with Max HR and Workout/PR metadata + Weekly Load buckets
+  const [activeMilestoneFilter, setActiveMilestoneFilter] = useState<
+    'ALL' | MilestoneCategory | 'NONE'
+  >('ALL');
+
+  // Enrich each day with Max HR, Weekly Load buckets, and True Physiological / Race Milestones
   const enrichedSeries = useMemo(() => {
+    // Pre-scan window to find fastest running pace (>= 1500m) and top cycling NP breakthroughs
+    let bestRunPaceInWindow = Infinity;
+    let maxRideNpInWindow = 0;
+    for (const day of chartSeries) {
+      const acts = activitiesByDate.get(day.date) || [];
+      for (const a of acts) {
+        if (
+          a.sportCategory === 'Running' &&
+          a.distanceMeters >= 1500 &&
+          a.avgPaceSecsPerKm &&
+          a.avgPaceSecsPerKm > 140 &&
+          a.avgPaceSecsPerKm < bestRunPaceInWindow
+        ) {
+          bestRunPaceInWindow = a.avgPaceSecsPerKm;
+        }
+        const np = a.normalizedPower || a.avgPower || 0;
+        if (a.sportCategory === 'Cycling' && np > maxRideNpInWindow) {
+          maxRideNpInWindow = np;
+        }
+      }
+    }
+
     return chartSeries.map((day, idx) => {
       const dayActs = activitiesByDate.get(day.date) || [];
       let maxHr = 0;
@@ -276,13 +338,114 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       if (maxHr === 0 && day.dailyLoad > 12 && !day.isProjected) {
         const deterministicSeed =
           (day.date.charCodeAt(8) * 13 + day.date.charCodeAt(9) * 7 + idx) % 24;
-        maxHr = Math.min(186, Math.max(132, Math.round(142 + day.dailyLoad * 0.22 + deterministicSeed - 10)));
+        maxHr = Math.min(
+          186,
+          Math.max(132, Math.round(142 + day.dailyLoad * 0.22 + deterministicSeed - 10))
+        );
       }
+
+      // Detect true Milestone Performances for this day
+      const milestones: PmcMilestone[] = [];
+      if (!day.isProjected && idx > 0) {
+        const prevDay = chartSeries[idx - 1];
+        const prevRideEftp = prevDay?.rideEftp || 0;
+        const currRideEftp = day.rideEftp || 0;
+        const prevRunEftp = prevDay?.runEftp || 0;
+        const currRunEftp = day.runEftp || 0;
+
+        // 1. New Cycling or Running eFTP Breakthrough Increase
+        if (prevRideEftp > 0 && currRideEftp - prevRideEftp >= 2) {
+          const delta = Math.round(currRideEftp - prevRideEftp);
+          milestones.push({
+            category: 'EFTP_BREAKTHROUGH',
+            shortLabel: `eFTP ${currRideEftp}W (+${delta}W)`,
+            detailLabel: `New Cycling eFTP Breakthrough: ${currRideEftp}W (+${delta}W)`,
+            colorHex: '#F97316',
+            activity: dayActs.find((a) => a.sportCategory === 'Cycling') || dayActs[0],
+          });
+        } else if (prevRunEftp > 0 && currRunEftp - prevRunEftp >= 2) {
+          const delta = Math.round(currRunEftp - prevRunEftp);
+          milestones.push({
+            category: 'EFTP_BREAKTHROUGH',
+            shortLabel: `Run eFTP ${currRunEftp}W (+${delta}W)`,
+            detailLabel: `New Running eFTP Breakthrough: ${currRunEftp}W (+${delta}W)`,
+            colorHex: '#F97316',
+            activity: dayActs.find((a) => a.sportCategory === 'Running') || dayActs[0],
+          });
+        }
+
+        // 2. Official Race Results & Running Distance PRs
+        for (const a of dayActs) {
+          const isOfficialRace = Boolean(a.officialRaceData);
+          const isNamedRaceOrTt =
+            /\b(race|championship|marathon|half marathon|5k|10k|mile|1500m|3000m|5000m|time trial|\btt\b|gran fondo|criterium|crit)\b/i.test(
+              a.name
+            ) &&
+            ((a.intensityFactor || 0) >= 0.86 || (a.trainingLoad || 0) >= 85 || isOfficialRace);
+          const isWindowFastestRun =
+            a.sportCategory === 'Running' &&
+            a.distanceMeters >= 1500 &&
+            a.avgPaceSecsPerKm !== undefined &&
+            Math.abs(a.avgPaceSecsPerKm - bestRunPaceInWindow) <= 0.5;
+
+          if (isOfficialRace || isNamedRaceOrTt || isWindowFastestRun) {
+            const raceLabel = a.officialRaceData
+              ? `Official Race (${a.officialRaceData.eventLabel}: ${a.officialRaceData.displayFatTime})`
+              : isWindowFastestRun
+                ? `Running PR Pace: ${a.name}`
+                : `Race / TT Milestone: ${a.name}`;
+            milestones.push({
+              category: 'RACE_OR_DISTANCE_PR',
+              shortLabel: a.officialRaceData
+                ? `${a.officialRaceData.eventLabel} Race`
+                : 'Race / Run PR',
+              detailLabel: raceLabel,
+              colorHex: '#F59E0B',
+              activity: a,
+            });
+            break;
+          }
+        }
+
+        // 3. Power Curve Peak or Major Benchmark Segment PR
+        for (const a of dayActs) {
+          const np = a.normalizedPower || a.avgPower || 0;
+          const hasGoldBenchmarkSeg =
+            Array.isArray(a.segmentEfforts) &&
+            a.segmentEfforts.some((s) => s.prRank === 1 && s.elapsedTimeSecs >= 90);
+          const isWindowPeakPower =
+            a.sportCategory === 'Cycling' &&
+            maxRideNpInWindow >= 240 &&
+            np >= maxRideNpInWindow * 0.96 &&
+            (a.intensityFactor || 0) >= 0.88;
+          const isHighIntensityMultiPr =
+            (a.stravaPrCount || 0) >= 2 &&
+            ((a.intensityFactor || 0) >= 0.88 || (a.trainingLoad || 0) >= 95);
+
+          if (hasGoldBenchmarkSeg || isWindowPeakPower || isHighIntensityMultiPr) {
+            const segName = a.segmentEfforts?.find((s) => s.prRank === 1)?.name;
+            milestones.push({
+              category: 'POWER_OR_BENCHMARK_PR',
+              shortLabel: np > 0 ? `Peak ${np}W NP` : 'Benchmark PR',
+              detailLabel: segName
+                ? `Benchmark Segment Gold PR: ${segName}${np ? ` (${np}W NP)` : ''}`
+                : np > 0
+                  ? `Peak Power Output: ${a.name} (${np}W NP · ${a.stravaPrCount || 1} PRs)`
+                  : `Major Segment PR: ${a.name} (${a.stravaPrCount || 1} PRs)`,
+              colorHex: '#EC4899',
+              activity: a,
+            });
+            break;
+          }
+        }
+      }
+
       return {
         ...day,
         dayActivities: dayActs,
         maxHr,
         prCount,
+        milestones,
       };
     });
   }, [chartSeries, activitiesByDate]);
@@ -487,8 +650,130 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     setBrushEndIdx(null);
   };
 
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
+  >({
+    pmc: false,
+    ledger: false,
+    comparator: false,
+    radars: false,
+  });
+
+  const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const scrollToFitnessSection = (
+    sectionId: string,
+    key: 'pmc' | 'ledger' | 'comparator' | 'radars'
+  ) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: false }));
+    window.setTimeout(() => {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 40);
+  };
+
+  const allCollapsed =
+    collapsedSections.pmc &&
+    collapsedSections.ledger &&
+    collapsedSections.comparator &&
+    collapsedSections.radars;
+
   return (
     <div className="space-y-6">
+      {/* ==========================================================================
+          STICKY FITNESS LAB QUICK-JUMP & SECTION COLLAPSE BAR
+         ========================================================================== */}
+      <div className="sticky top-16 z-30 rounded-2xl liquid-glass px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 border border-sky-500/25 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-sky-600 dark:text-sky-400 font-semibold mr-1 flex items-center gap-1">
+            <Layers className="w-3.5 h-3.5" />
+            <span>Lab Jump:</span>
+          </span>
+          {(
+            [
+              {
+                key: 'pmc',
+                id: 'fitness-sec-pmc',
+                label: '1. Readiness & PMC',
+                icon: Activity,
+                accent: 'text-sky-500',
+              },
+              {
+                key: 'ledger',
+                id: 'fitness-sec-ledger',
+                label: '2. 14d Ledger & KPIs',
+                icon: Calendar,
+                accent: 'text-emerald-500',
+              },
+              {
+                key: 'comparator',
+                id: 'fitness-sec-comparator',
+                label: '3. Dual Comparator & Load/Hr',
+                icon: Users,
+                accent: 'text-orange-500',
+              },
+              {
+                key: 'radars',
+                id: 'fitness-sec-radars',
+                label: '4. 5-Axis & Coggan/WMA Radars',
+                icon: Radar,
+                accent: 'text-purple-500',
+              },
+            ] as const
+          ).map((sec) => {
+            const SecIcon = sec.icon;
+            const isCollapsed = collapsedSections[sec.key];
+            return (
+              <div
+                key={sec.key}
+                className="inline-flex items-center rounded-xl liquid-capsule-track p-0.5 border border-slate-300/60 dark:border-white/10"
+              >
+                <button
+                  type="button"
+                  onClick={() => scrollToFitnessSection(sec.id, sec.key)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 transition-colors"
+                >
+                  <SecIcon className={`w-3 h-3 ${sec.accent}`} />
+                  <span>{sec.label}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSection(sec.key)}
+                  title={isCollapsed ? `Expand ${sec.label}` : `Collapse ${sec.label}`}
+                  className={`px-1.5 py-1 rounded-lg text-[10px] font-mono transition-colors ${
+                    isCollapsed
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300'
+                      : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'
+                  }`}
+                >
+                  {isCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const nextState = !allCollapsed;
+            setCollapsedSections({
+              pmc: nextState,
+              ledger: nextState,
+              comparator: nextState,
+              radars: nextState,
+            });
+          }}
+          className="px-2.5 py-1 rounded-xl liquid-glass-subtle text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-sky-500 transition-colors"
+        >
+          {allCollapsed ? 'Expand All Lab Sections' : 'Collapse All Sections'}
+        </button>
+      </div>
+
       {/* ==========================================================================
           0. AUTONOMOUS READINESS-MORPHING DAILY WORKOUT TOP STRIP
          ========================================================================== */}
@@ -510,6 +795,28 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       {/* ==========================================================================
           1. FLAGSHIP INTERVALS.ICU FITNESS & FRESHNESS MULTI-PANE CHART (TOP HERO)
          ========================================================================== */}
+      <div id="fitness-sec-pmc" className="scroll-mt-28 space-y-2">
+        {collapsedSections.pmc ? (
+          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Activity className="w-4 h-4 text-sky-400" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                Intervals.icu Fitness (CTL), Fatigue (ATL) &amp; Form (TSB) Multi-Pane Chart
+              </span>
+              <span className="text-xs font-mono text-sky-500">
+                CTL {latestDay.ctl.toFixed(1)} · TSB {latestDay.tsb.toFixed(1)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSection('pmc')}
+              className="px-3 py-1 rounded-xl bg-sky-500/15 text-sky-500 text-xs font-mono font-semibold flex items-center gap-1"
+            >
+              <span>Expand PMC</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
       <section className="rounded-2xl liquid-glass overflow-hidden">
         {/* Top Intervals.icu Control Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-900/40">
@@ -749,8 +1056,29 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
             </span>
+            {activePoint.milestones &&
+              activePoint.milestones.map((ms, mIdx) => (
+                <button
+                  key={`ms-pill-${mIdx}`}
+                  type="button"
+                  onClick={() => ms.activity && onSelectActivity && onSelectActivity(ms.activity)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-mono text-[11px] font-bold border shadow-2xs transition-transform hover:scale-[1.01] shrink-0"
+                  style={{
+                    backgroundColor: `${ms.colorHex}1F`,
+                    borderColor: `${ms.colorHex}66`,
+                    color: ms.colorHex,
+                  }}
+                  title="Click to inspect milestone workout streams"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: ms.colorHex }}
+                  />
+                  <span className="truncate max-w-[300px]">{ms.detailLabel}</span>
+                </button>
+              ))}
             {activePoint.dayActivities.length > 0 ? (
-              activePoint.dayActivities.slice(0, 6).map((act) => (
+              activePoint.dayActivities.slice(0, 5).map((act) => (
                 <button
                   key={act.id}
                   type="button"
@@ -778,7 +1106,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
           <div className="hidden lg:flex flex-col items-end justify-center text-[11px] text-slate-400 dark:text-slate-500 shrink-0 leading-tight pt-0.5">
             <span>Drag horizontally across chart to zoom date range</span>
-            <span>Click any workout dot or pill to inspect streams</span>
+            <span>Hover milestone badges on X-axis or CTL line for details</span>
           </div>
         </div>
 
@@ -1073,45 +1401,142 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   points={ctlPolyline}
                 />
 
-                {/* Interactive Workout & PR Markers Along Baseline & CTL Curve */}
-                {enrichedSeries.map((d, i) => {
-                  const x = xFor(i);
-                  const hasPr = d.prCount > 0;
-                  const isPeakLoad = d.dailyLoad >= 115;
-                  const actCount = d.dayActivities.length;
-                  return (
-                    <g key={`p1-markers-${d.date}`}>
-                      {/* Red dot on CTL curve when a PR or high-peak workout occurred */}
-                      {(hasPr || isPeakLoad) && (
-                        <circle
-                          cx={x}
-                          cy={yLoad(d.ctl)}
-                          r={2.8}
-                          fill="#EF4444"
+                {/* Milestone Markers Along X-Axis Baseline & CTL Curve (A-Races & eFTP Only on CTL) */}
+                {activeMilestoneFilter !== 'NONE' &&
+                  enrichedSeries.map((d, i) => {
+                    if (!d.milestones || d.milestones.length === 0) return null;
+                    const visibleMilestones =
+                      activeMilestoneFilter === 'ALL'
+                        ? d.milestones
+                        : d.milestones.filter((m) => m.category === activeMilestoneFilter);
+                    if (visibleMilestones.length === 0) return null;
+
+                    const x = xFor(i);
+                    const primaryMs = visibleMilestones[0];
+                    const ctlMilestone = visibleMilestones.find(
+                      (m) =>
+                        m.category === 'EFTP_BREAKTHROUGH' || m.category === 'RACE_OR_DISTANCE_PR'
+                    );
+                    const isHoveredDay = activeIdx === i;
+                    const baseY = p1Bottom - 7;
+
+                    return (
+                      <g key={`p1-markers-${d.date}`}>
+                        {/* Subtle vertical guideline connecting X-axis milestone to CTL curve */}
+                        {ctlMilestone && (
+                          <line
+                            x1={x}
+                            y1={yLoad(d.ctl) + 4}
+                            x2={x}
+                            y2={baseY - 5}
+                            stroke={ctlMilestone.colorHex}
+                            strokeWidth={isHoveredDay ? '1.3' : '0.8'}
+                            strokeDasharray="2 2"
+                            opacity={isHoveredDay ? '0.85' : '0.4'}
+                          />
+                        )}
+
+                        {/* CTL Curve Node: ONLY for A-Races / Distance PRs and eFTP Breakthroughs */}
+                        {ctlMilestone && (
+                          <g>
+                            <circle
+                              cx={x}
+                              cy={yLoad(d.ctl)}
+                              r={isHoveredDay ? 5.2 : 3.8}
+                              fill={ctlMilestone.colorHex}
+                              stroke="#0F172A"
+                              strokeWidth="1.4"
+                            />
+                            <circle
+                              cx={x}
+                              cy={yLoad(d.ctl)}
+                              r={1.6}
+                              fill="#FFFFFF"
+                            />
+                          </g>
+                        )}
+
+                        {/* Color-Coded X-Axis Baseline Milestone Badge */}
+                        {primaryMs.category === 'EFTP_BREAKTHROUGH' && (
+                          /* Aero Orange Diamond Badge for New eFTP Breakthrough */
+                          <polygon
+                            points={`${x},${baseY - 5} ${x + 4.8},${baseY} ${x},${baseY + 5} ${x - 4.8},${baseY}`}
+                            fill="#F97316"
+                            stroke="#FFFFFF"
+                            strokeWidth={isHoveredDay ? '1.5' : '0.9'}
+                          />
+                        )}
+                        {primaryMs.category === 'RACE_OR_DISTANCE_PR' && (
+                          /* Gold Trophy / Hex Badge for Official Race or Running Distance PR */
+                          <g>
+                            <circle
+                              cx={x}
+                              cy={baseY}
+                              r={isHoveredDay ? 5.2 : 4.2}
+                              fill="#F59E0B"
+                              stroke="#FFFFFF"
+                              strokeWidth={isHoveredDay ? '1.5' : '1'}
+                            />
+                            <circle cx={x} cy={baseY} r={1.6} fill="#0F172A" />
+                          </g>
+                        )}
+                        {primaryMs.category === 'POWER_OR_BENCHMARK_PR' && (
+                          /* Magenta Triangle / Peak Badge for Power Curve or Benchmark Segment PR */
+                          <polygon
+                            points={`${x},${baseY - 5} ${x + 4.8},${baseY + 4.2} ${x - 4.8},${baseY + 4.2}`}
+                            fill="#EC4899"
+                            stroke="#FFFFFF"
+                            strokeWidth={isHoveredDay ? '1.5' : '0.9'}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+
+                {/* On-Canvas Floating Callout Tooltip When Hovering a Day with a Milestone */}
+                {activePoint.milestones &&
+                  activePoint.milestones.length > 0 &&
+                  activeMilestoneFilter !== 'NONE' &&
+                  (() => {
+                    const visible =
+                      activeMilestoneFilter === 'ALL'
+                        ? activePoint.milestones
+                        : activePoint.milestones.filter(
+                            (m) => m.category === activeMilestoneFilter
+                          );
+                    if (visible.length === 0) return null;
+                    const ms = visible[0];
+                    const rawX = xFor(activeIdx);
+                    const boxW = Math.min(340, Math.max(175, ms.detailLabel.length * 6.2 + 24));
+                    const boxX = Math.max(
+                      plotLeft + 6,
+                      Math.min(plotRight - boxW - 6, rawX - boxW / 2)
+                    );
+                    const boxY = p1Bottom - 36;
+                    return (
+                      <g pointerEvents="none">
+                        <rect
+                          x={boxX}
+                          y={boxY}
+                          width={boxW}
+                          height={22}
+                          rx={6}
+                          fill="#0F172A"
+                          fillOpacity="0.94"
+                          stroke={ms.colorHex}
+                          strokeWidth="1.2"
                         />
-                      )}
-                      {/* Bottom baseline track markers (like Intervals.icu notes/races/PRs) */}
-                      {hasPr && (
-                        <circle
-                          cx={x}
-                          cy={p1Bottom - 4.5}
-                          r={2.6}
-                          fill="#EF4444"
-                        />
-                      )}
-                      {!hasPr && actCount >= 2 && (
-                        <circle
-                          cx={x}
-                          cy={p1Bottom - 4.5}
-                          r={2.5}
-                          fill="none"
-                          stroke="#7C3AED"
-                          strokeWidth="1.4"
-                        />
-                      )}
-                    </g>
-                  );
-                })}
+                        <circle cx={boxX + 10} cy={boxY + 11} r={3.2} fill={ms.colorHex} />
+                        <text
+                          x={boxX + 18}
+                          y={boxY + 14.5}
+                          className="fill-white text-[10.5px] font-mono font-semibold"
+                        >
+                          {ms.detailLabel.slice(0, 50)}
+                        </text>
+                      </g>
+                    );
+                  })()}
 
                 {/* Active Hover Dots on CTL & ATL */}
                 <circle
@@ -1909,6 +2334,111 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           })()}
         </div>
 
+        {/* Interactive Milestone Badges Legend & Filter Strip */}
+        {(() => {
+          const eftpCount = enrichedSeries.filter((d) =>
+            d.milestones?.some((m) => m.category === 'EFTP_BREAKTHROUGH')
+          ).length;
+          const raceCount = enrichedSeries.filter((d) =>
+            d.milestones?.some((m) => m.category === 'RACE_OR_DISTANCE_PR')
+          ).length;
+          const powerCount = enrichedSeries.filter((d) =>
+            d.milestones?.some((m) => m.category === 'POWER_OR_BENCHMARK_PR')
+          ).length;
+          const totalMilestones = eftpCount + raceCount + powerCount;
+
+          return (
+            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono uppercase tracking-wider text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                  X-Axis &amp; CTL Milestone Markers ({totalMilestones}):
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveMilestoneFilter('ALL')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                    activeMilestoneFilter === 'ALL'
+                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <span>All Milestones</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveMilestoneFilter((prev) =>
+                      prev === 'EFTP_BREAKTHROUGH' ? 'ALL' : 'EFTP_BREAKTHROUGH'
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                    activeMilestoneFilter === 'EFTP_BREAKTHROUGH'
+                      ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/50 font-bold'
+                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-orange-500/40'
+                  }`}
+                  title="Plotted on both the X-Axis baseline (diamond) and the Cyan CTL curve (ringed node)"
+                >
+                  <span className="w-2.5 h-2.5 rotate-45 bg-[#F97316] inline-block shrink-0" />
+                  <span>New eFTP Breakthrough ({eftpCount})</span>
+                  <span className="text-[9px] opacity-75">· on CTL &amp; X-Axis</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveMilestoneFilter((prev) =>
+                      prev === 'RACE_OR_DISTANCE_PR' ? 'ALL' : 'RACE_OR_DISTANCE_PR'
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                    activeMilestoneFilter === 'RACE_OR_DISTANCE_PR'
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/50 font-bold'
+                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-amber-500/40'
+                  }`}
+                  title="Plotted on both the X-Axis baseline (gold badge) and the Cyan CTL curve (ringed node)"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] border border-white inline-block shrink-0" />
+                  <span>Official Race / Run Distance PR ({raceCount})</span>
+                  <span className="text-[9px] opacity-75">· on CTL &amp; X-Axis</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveMilestoneFilter((prev) =>
+                      prev === 'POWER_OR_BENCHMARK_PR' ? 'ALL' : 'POWER_OR_BENCHMARK_PR'
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                    activeMilestoneFilter === 'POWER_OR_BENCHMARK_PR'
+                      ? 'bg-pink-500/20 text-pink-600 dark:text-pink-300 border-pink-500/50 font-bold'
+                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-pink-500/40'
+                  }`}
+                  title="Plotted along the X-Axis baseline (triangle peak badge)"
+                >
+                  <span
+                    className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[9px] border-b-[#EC4899] inline-block shrink-0"
+                  />
+                  <span>Power Curve / Benchmark Segment PR ({powerCount})</span>
+                  <span className="text-[9px] opacity-75">· X-Axis only</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveMilestoneFilter((prev) => (prev === 'NONE' ? 'ALL' : 'NONE'))
+                }
+                className="px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
+              >
+                {activeMilestoneFilter === 'NONE' ? 'Show Milestone Badges' : 'Hide Badges'}
+              </button>
+            </div>
+          );
+        })()}
+
         {/* Intervals.icu Explanatory Footer Caption */}
         <div className="px-4 sm:px-6 py-3.5 border-t border-slate-200/60 dark:border-white/10 bg-white/30 dark:bg-slate-900/30 text-xs text-slate-500 dark:text-slate-400 leading-relaxed flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-5xl">
@@ -1944,11 +2474,36 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </button>
         </div>
       </section>
+        )}
+      </div>
 
       {/* ==========================================================================
-          2. 14-DAY AUTONOMIC RECOVERY, DAILY LOAD & INTERVALS.ICU PMC LEDGER
+          2. 14-DAY AUTONOMIC RECOVERY, DAILY LOAD & INTERVALS.ICU PMC LEDGER + KPIs
          ========================================================================== */}
-      <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
+      <div id="fitness-sec-ledger" className="scroll-mt-28 space-y-6">
+        {collapsedSections.ledger ? (
+          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Calendar className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                14-Day Autonomic Ledger, Garmin KPI Cards &amp; Aerobic Durability Audit
+              </span>
+              <span className="text-xs font-mono text-emerald-500">
+                HRV {latestWithHrv.hrvRMSSD}ms · EF {aerobicDurabilityStats.avgEf28}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSection('ledger')}
+              className="px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-500 text-xs font-mono font-semibold flex items-center gap-1"
+            >
+              <span>Expand Ledger &amp; KPIs</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
 
       {/* ==========================================================================
           3. GARMIN TRAINING STATUS, SLEEP, HRV & THRESHOLD READINESS CARDS
@@ -2203,6 +2758,82 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         </div>
       </section>
+          </>
+        )}
+      </div>
+
+      {/* ==========================================================================
+          5. DUAL ATHLETE COMPARATOR (SIDE-BY-SIDE CTL, TSB & HRV ROSTER OVERLAY)
+         ========================================================================== */}
+      <div id="fitness-sec-comparator" className="scroll-mt-28">
+        {collapsedSections.comparator ? (
+          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Users className="w-4 h-4 text-orange-400" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                Dual Athlete Comparator, CTL×RHR Scatter &amp; Coach Load-per-Hour Dashboard
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSection('comparator')}
+              className="px-3 py-1 rounded-xl bg-orange-500/15 text-orange-500 text-xs font-mono font-semibold flex items-center gap-1"
+            >
+              <span>Expand Comparator</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <DualAthleteComparator
+            selfName={selfName}
+            selfProfile={selfProfile || athleteProfile}
+            selfWellnessDays={
+              selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+            }
+            selfActivities={activities}
+            connectedAthletes={connectedAthletes}
+            onOpenRosterModal={onOpenRosterModal}
+            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+          />
+        )}
+      </div>
+
+      {/* ==========================================================================
+          6. ATHLETE PERFORMANCE RADAR & AGE-GRADED COGGAN / WMA SCALES
+         ========================================================================== */}
+      <div id="fitness-sec-radars" className="scroll-mt-28">
+        {collapsedSections.radars ? (
+          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Radar className="w-4 h-4 text-purple-400" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                5-Axis Athlete Performance Radar &amp; Age-Graded Coggan / WMA Standards
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSection('radars')}
+              className="px-3 py-1 rounded-xl bg-purple-500/15 text-purple-500 text-xs font-mono font-semibold flex items-center gap-1"
+            >
+              <span>Expand Radars</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <AthletePerformanceRadar
+            selfName={selfName}
+            selfProfile={selfProfile || athleteProfile}
+            selfWellnessDays={
+              selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+            }
+            selfActivities={activities}
+            selfPlannedEvents={plannedEvents}
+            connectedAthletes={connectedAthletes}
+            onOpenRosterModal={onOpenRosterModal}
+            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+          />
+        )}
+      </div>
     </div>
   );
 };

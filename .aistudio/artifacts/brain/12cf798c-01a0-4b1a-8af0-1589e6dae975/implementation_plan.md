@@ -1,96 +1,37 @@
-# Multi-Athlete Strava Authentication, Friend/Coach Roster & Granular Privacy Architecture
+# PMC Milestone Markers & CTL Line Redesign Plan
 
-To launch AeroPulse as a collaborative endurance platform like **Intervals.icu**, this update introduces a **Strava OAuth Sign-Up & Login Landing Gate** (with a 1-click **Live Athlete Sandbox** bypass), a **Top Header Athlete Context Switcher** for inspecting a friend's or coached athlete's dashboard, a **Team & Friends Roster Hub** comparing live `CTL`, `TSB`, `HRV`, and race objectives, **Coach Calendar Workout Push**, and a **Granular Privacy & Strava API Compliance Shield**.
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> The following product and security decisions reflect your confirmed selections:
-
-- **Confirmed Decision 1 — Strava Auth Landing Gate with 1-Click Demo Sandbox Bypass**:
-  - New or signed-out visitors see a dedicated **AeroPulse × Strava Sign-Up / Sign-In Gate** that launches popup-based Strava OAuth (`https://www.strava.com/oauth/authorize`) and provisions their athlete account.
-  - Includes a prominent **"Enter Live Athlete Sandbox (1-Click Demo)"** button so anyone can test all features immediately without waiting for OAuth credentials, plus a header account control to switch back to the Auth Gate or sign out anytime.
-- **Confirmed Decision 2 — Role-Based Access (`Friend` vs. `Coach`), Invite Codes & Granular Privacy Shield**:
-  - **Two Relationship Tiers**:
-    - **Friend (`FRIEND_VIEW`)**: Read-only access to permitted fitness metrics, calendar summaries, and PRs.
-    - **Coach (`COACH_EDIT`)**: Full physiological visibility plus permission to **push, schedule, and morph structured workouts** directly onto the athlete's Training Calendar.
-  - **Granular Privacy & Strava API Compliance Toggles**: Athletes control whether **HRV / Sleep Wellness**, **Outdoor GPS Route Maps**, **Power/Pace Curves**, and **Strava-Sourced Activity Details** are visible to Friends, Coaches Only, or Private.
-  - **Shareable Invite Codes & 1-Click Follow Requests**: Athletes can share a unique invite code (e.g., `AP-8492-TALLY`), search athletes by name or Strava ID, and approve/revoke incoming Friend or Coach requests with one click.
-- **Confirmed Decision 3 — Top Header Athlete Switcher, Team Roster & Coach Workout Push**:
-  - **Top Header Athlete Switcher**: Switch the entire AeroPulse workspace between **Your Profile** and any followed **Friend** or **Coached Athlete** to inspect their Calendar, PMC (`CTL/ATL/TSB`), and Goals.
-  - **Team & Friends Roster Leaderboard**: Side-by-side comparison table of all followed athletes showing live **CTL (Fitness)**, **TSB (Form)**, **HRV Status**, **7d Load**, **W/kg & Threshold Pace**, and **Primary Race Goal**, with 1-click **Coach Workout Push**.
+## 1. Root Cause Analysis of Current PMC Chart Dots
+In `src/components/FitnessHealthView.tsx`, the Fitness & Freshness (PMC) chart currently renders two sets of noisy markers:
+- **CTL Curve Dots (`cy={yLoad(d.ctl)}`)**: Plotted on any day where `dailyLoad >= 115` (`isPeakLoad`) or `stravaPrCount > 0`. Because normal endurance rides and workouts frequently exceed 115 TSS, red dots appear along the cyan Fitness curve even when no physiological breakthrough or race occurred.
+- **X-Axis Baseline Dots (`cy={p1Bottom - 4.5}`)**: Plotted for any minor Strava segment PR (`hasPr`) or any day with 2+ logged workouts (`actCount >= 2`, hollow purple ring), without distinguishing true milestone performances or explaining what the markers mean.
 
 ---
 
-## 1. Overview & Core Concept
+## 2. Planned Changes (`src/components/FitnessHealthView.tsx`)
 
-- **What It Does**: Transforms AeroPulse from a single-user analytics dashboard into a multi-athlete social and coaching platform where athletes authenticate with Strava, follow teammates and friends, grant coaches calendar-editing rights, and enforce strict privacy over biometric and GPS data.
-- **Target Audience / Persona**: Endurance athletes, training partners, track/XC clubs, and cycling/running coaches who want Intervals.icu's multi-athlete switching and workout prescription combined with Strava's social following.
-- **Key Value**: Lets coaches and teammates collaborate in real time—comparing readiness and fitness across a squad and pushing structured workouts directly to an athlete's calendar—without compromising sensitive health telemetry or violating Strava API data-sharing rules.
+### A. Milestone Classification Engine (`enrichedSeries`)
+For each day in the active PMC date window, detect and classify true **Milestone Performances** into three distinct categories:
+1. **New eFTP Breakthrough (`EFTP_BREAKTHROUGH` — Aero Orange `#F97316`)**:
+   - Triggered when Cycling `rideEftp` or Running `runEftp` increases step-wise compared to the prior day (e.g., `+4W Cycling eFTP (316W)` or `+3W Running eFTP (340W)`).
+2. **Official Race Result / A-Race / Running Distance PR (`RACE_OR_DISTANCE_PR` — Gold/Amber `#F59E0B`)**:
+   - Triggered when an activity on that day has `officialRaceData` (FAT Track / Road Race / XC Meet), matches a high-priority race/time-trial keyword (`Race`, `TT`, `Championship`, `Marathon`, `Half`, `5K`, `10K`, `Mile`, `1500m`, `3000m`, `5000m`), or represents the fastest pace/time in the window for a standard running distance.
+3. **Power Curve Peak or Major Benchmark Segment PR (`POWER_OR_BENCHMARK_PR` — Rose/Magenta `#EC4899`)**:
+   - Triggered when an activity achieves a peak Normalized Power / 20-min CP effort in the top 98th percentile of the athlete's archive or records a Rank #1 Gold PR (`prRank === 1`) on a primary benchmark climb/segment (`duration >= 120s` or `stravaPrCount >= 2` with `intensityFactor >= 0.88`), filtering out routine short segment noise.
 
----
+*(Routine `dailyLoad >= 115` TSS days and `actCount >= 2` double-workout days are completely removed from the marker layer.)*
 
-## 2. User Experience & Visual Design
+### B. Clean Cyan Fitness (`CTL`) Curve Markers
+- Remove the `dailyLoad >= 115` and generic `stravaPrCount > 0` dots from the cyan CTL line.
+- Render a crisp, ringed milestone node on the `CTL` curve **only** on days with an **A-Race / Official Race (`RACE_OR_DISTANCE_PR`)** or a **New eFTP Breakthrough (`EFTP_BREAKTHROUGH`)**:
+  - **Aero Orange (`#F97316`)** node with white core for eFTP increases.
+  - **Gold (`#F59E0B`)** node with white core for Official Races & Running Distance PRs.
 
-- **Key User Flows**:
-  1. **Strava Sign-Up / Sign-In Gate & 1-Click Sandbox**:
-     - Visitors see a clean split-screen landing gate showcasing AeroPulse's core capabilities (Intervals.icu Effort Skylines, Readiness-Morphing Workouts, Watchless FAT Track Synthesizer, and Team/Coach Roster).
-     - Clicking **"Continue with Strava"** opens the Strava OAuth popup directly (`https://www.strava.com/oauth/authorize`), exchanges the authorization code via `/api/strava/callback`, and signs the user in.
-     - Clicking **"Explore Live Athlete Sandbox"** enters the authenticated workspace immediately with realistic multi-athlete squad data.
-  2. **Top Header Athlete Context Switcher & Active Viewing Banner**:
-     - A compact **Athlete Switcher** button in the top navigation bar shows who you are currently viewing (e.g., `Elliot Tally (You)` or `Viewing: Maya Lin · Coached`).
-     - When viewing a **Friend** or **Coached Athlete**, a high-contrast contextual bar appears at the top of the workspace showing their relationship badge (`Coach Access · Can Prescribe Workouts` or `Friend View · Read-Only`), their active privacy shield status, a **"Push Workout to Athlete's Calendar"** button (for Coaches), and a 1-click **"Return to My Dashboard"** button.
-  3. **Athletes, Friends & Coaching Hub Modal**:
-     - **Tab 1 — Team & Friends Leaderboard**: High-density tabular comparison of your squad (`CTL`, `ATL`, `TSB`, `HRV rMSSD & Readiness`, `7d TSS`, `FTP / W/kg`, `Threshold Pace`, `Active Goal`), with 1-click **"Switch to Athlete"** and **"Prescribe Workout"** actions.
-     - **Tab 2 — Find Friends, Invite Code & Pending Requests**: Copy your personal **Athlete Invite Code** (`AP-8492-TALLY`), paste a teammate's code or search directory profiles to send a **Friend (View)** or **Coach (Edit Calendar)** request, and approve/decline incoming requests.
-     - **Tab 3 — Security, Privacy & Strava API Compliance Shield**: Toggle granular sharing permissions (`Share Morning HRV & Sleep`, `Share PMC & Zones`, `Redact GPS Start/End & Strava-Only Routes for Friends`, `Allow Approved Coaches to Edit Calendar`).
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Popup-Based Strava OAuth + Signed Session Token (`SameSite=None; Secure` + Bearer Header)**
-  - *Chosen Approach*: Open `https://www.strava.com/oauth/authorize` directly in a browser popup, handle the code exchange at `/api/strava/callback`, and broadcast the authenticated athlete profile back to the iframe via `window.opener.postMessage` + `BroadcastChannel`, storing a session token in both `SameSite=None; Secure` cookies and client storage.
-  - *Why*: Complies with cross-origin iframe security constraints while supporting seamless multi-device login and 1-click sandbox testing.
-- **Decision 2: Strava API Compliance & Privacy Redaction Layer**
-  - *Chosen Approach*: Implement a server-and-client privacy filter (`applyAthletePrivacyShield`) that automatically redacts raw GPS route coordinates or biometric wellness metrics when viewing a Friend whose privacy shield restricts those fields.
-  - *Why*: Protects athlete home-location privacy and honors Strava API rules regarding third-party visibility of Strava-sourced activities while keeping derived fitness (`CTL/TSB`), official FAT race results, and coach-prescribed workouts shareable.
-
----
-
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│           StravaAuthLandingGate (Sign Up with Strava | Demo Bypass)          │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │ OAuth Popup (/api/strava/callback)
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│            Top Header Athlete Context Switcher & Active View Banner          │
-│  [Viewing: Elliot Tally (You) ▼]  ──►  Switch to Friend or Coached Athlete   │
-└───────────┬──────────────────────────────────────────┬───────────────────────┘
-            │                                          │
-            ▼                                          ▼
-┌───────────────────────────────────────┐  ┌───────────────────────────────────┐
-│   Athletes, Friends & Coaching Hub    │  │ Privacy & Coach Permission Engine │
-│ • Team Leaderboard (CTL/TSB/HRV/Goal) │  │ • FRIEND_VIEW (Read-Only + Redact)│
-│ • Invite Codes (AP-XXXX) & Requests   │  │ • COACH_EDIT (Push Workouts to    │
-│ • Granular Privacy & API Shield       │  │   Athlete's Calendar & Morph)     │
-└───────────────────────────────────────┘  └───────────────────────────────────┘
-```
-
-- **Data Model & State**:
-  - `AthleteConnectionRole`: `'SELF' | 'COACH_EDIT' | 'FRIEND_VIEW'`
-  - `AthletePrivacySettings`:
-    - `shareWellnessAndHrv`: `'ALL_CONNECTIONS' | 'COACHES_ONLY' | 'PRIVATE'`
-    - `sharePmcAndZones`: `'ALL_CONNECTIONS' | 'COACHES_ONLY' | 'PRIVATE'`
-    - `shareGpsRoutes`: `'COACHES_ONLY' | 'ALL_CONNECTIONS' | 'PRIVATE'`
-    - `stravaComplianceShield`: `boolean` (auto-redacts raw Strava-only GPS polylines for non-owners while preserving multi-source Garmin/Intervals.icu/FAT metrics)
-    - `allowCoachCalendarEdits`: `boolean`
-  - `ConnectedAthleteRecord`:
-    - `id`, `name`, `avatarInitials`, `location`, `stravaAthleteId`, `inviteCode`, `role` (`'COACH_EDIT' | 'FRIEND_VIEW'`), `status` (`'CONNECTED' | 'PENDING_INCOMING' | 'PENDING_OUTGOING'`), `primaryGoalSummary`, `athleteProfile`, `privacySettings`, `wellnessDays`, `activities`, `plannedEvents`, `targetGoals`
-- **Interactive Component & State Mapping**:
-  - **Authentication Gate (`StravaAuthGate.tsx`)**: Renders when `authSession.status === 'UNAUTHENTICATED'`; provides live Strava OAuth popup launch, inline OAuth callback code paste fallback, and 1-click Demo Sandbox entry.
-  - **Header Context Switcher & Banner (`App.tsx`)**: Swaps the active `activities`, `wellnessDays`, `plannedEvents`, `athleteProfile`, and `targetGoals` passed to all child views (`CalendarView`, `FitnessHealthView`, `ActivitiesView`, `GoalsView`) to the selected athlete's privacy-filtered dataset, and enables **Coach Workout Push** onto the selected athlete's calendar.
-  - **Athletes & Friends Hub Modal (`AthleteRosterModal.tsx`)**: Full CRUD for following athletes by invite code/search, approving incoming Friend/Coach requests, toggling role permissions, updating your own Privacy Shield, and pushing structured coach workouts to any coached athlete.
+### C. Color-Coded X-Axis Milestone Badges, Hover Details & Legend Strip
+- Along the bottom baseline of Pane 1 (`p1Bottom - 6`), render distinct color-coded milestone markers for all three milestone categories:
+  - **Orange Diamond / Badge (`#F97316`)**: New Cycling or Running eFTP Breakthrough.
+  - **Gold Star / Trophy Badge (`#F59E0B`)**: Official Race Result or Running Distance PR.
+  - **Magenta Peak Badge (`#EC4899`)**: Power Curve Peak or Major Benchmark Segment PR.
+- **Interactive Hover & Daily Activity Bar Readout**:
+  - When hovering or clicking a day with a milestone, display the exact milestone badge and label (e.g., `★ New Ride eFTP: 316W (+5W)`, `🏆 Official Race: 5000m Track PR`, or `⚡ Peak NP: 328W + Benchmark Segment PR`) in the top Daily Activities bar and as an SVG callout pill above the X-axis marker.
+- **Milestone Legend Pill Bar**:
+  - Add a compact, scannable legend strip in the PMC chart footer/header explaining the three X-axis milestone badges and the CTL breakthrough nodes, with a toggle to filter/highlight milestones on the chart.

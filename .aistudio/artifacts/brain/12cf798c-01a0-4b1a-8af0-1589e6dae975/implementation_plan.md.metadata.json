@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for launching AeroPulse as a multi-athlete web application with Strava OAuth Sign-Up/Login landing gate (plus 1-click Demo Sandbox bypass), Top Header Athlete Context Switcher, Team & Friends Roster Leaderboard, Coach Calendar Workout Push, and Granular Privacy & Strava API Compliance Controls.",
-  "updatedAt":  "2026-11-07T19:36:11.141111796Z",
+  "summary":  "Implementation plan for redesigning the Fitness & Freshness (PMC) chart markers in FitnessHealthView.tsx: replacing routine TSS/double-day dots with true physiological and race milestones (eFTP breakthroughs, Official Races & Running PRs, and Power Curve / Benchmark Segment PRs), restricting CTL curve dots to A-Races and eFTP breakthroughs, and adding color-coded X-axis milestone badges with hover tooltip details and an interactive legend.",
+  "updatedAt":  "2026-11-08T02:05:52.106484729Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

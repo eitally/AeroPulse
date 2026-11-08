@@ -17,6 +17,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { ConnectionStatus } from '../types';
+import { AeroPulseLogo } from './AeroPulseLogo';
 
 interface StravaAuthGateProps {
   status: ConnectionStatus;
@@ -72,22 +73,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     <div className="min-h-screen bg-[#090B0E] text-[#F1F5F9] flex flex-col justify-between selection:bg-[#FC4C02]/30 selection:text-white">
       {/* Top Diagnostic Telemetry Header */}
       <header className="border-b border-[#1E2530] bg-[#0D1015]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-[#F97316] to-[#3B82F6] flex items-center justify-center shadow-lg shadow-orange-500/10">
-            <Activity className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold tracking-tight text-sm text-[#F1F5F9]">AEROPULSE</span>
-              <span className="text-[10px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#14181F] text-[#F97316] border border-[#262F3D]">
-                INTERVALS × RUNNA × STRAVA LAB
-              </span>
-            </div>
-            <p className="text-[11px] text-[#64748B]">
-              Multi-Athlete Physiological Telemetry, Adaptive Goal Architect &amp; Coaching Platform
-            </p>
-          </div>
-        </div>
+        <AeroPulseLogo
+          size="md"
+          showTagline
+          badgeText="INTERVALS × RUNNA × STRAVA LAB"
+          badgeTone="orange"
+        />
 
         <div className="flex items-center gap-3">
           <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-[#94A3B8] bg-[#14181F] border border-[#1E2530] px-2.5 py-1 rounded">
