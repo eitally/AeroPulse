@@ -8,10 +8,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { formatPace } from '../utils/formatters';
-import {
-  buildRepeatedSegmentsFromActivities,
-  SegmentEffortOverTimeChart,
-} from './SegmentEffortOverTimeChart';
+import { buildRepeatedSegmentsFromActivities } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 interface PhysiologyViewProps {
@@ -25,6 +22,7 @@ interface PhysiologyViewProps {
   onScanMoreSegments?: () => Promise<void>;
   isScanningSegments?: boolean;
   onSelectActivity?: (activity: UnifiedActivity) => void;
+  onOpenActivitiesSegments?: () => void;
 }
 
 export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
@@ -34,13 +32,10 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   envFilter,
   distanceUnit,
   athleteWeightKg,
-  onScanMoreSegments,
-  isScanningSegments = false,
-  onSelectActivity,
+  onOpenActivitiesSegments,
 }) => {
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
 
   // Dynamically calibrate Power & Pace Duration Curves from athlete's real eFTP, W', Pmax & synced activities
   const calibratedCurves = useMemo(() => {
@@ -133,10 +128,13 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
       <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                Power &amp; Pace Duration Curves
+                Peak Power &amp; Pace Duration Curves
               </h1>
+              <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/25 text-[11px] font-mono font-semibold text-blue-600 dark:text-sky-300">
+                CP · W&apos; · Pmax
+              </span>
               <ChartInfoTooltip
                 title="Critical Power (CP) & Pace Duration Curve (5s – 2hr)"
                 subtitle="3-Parameter Bioenergetic Model (Pmax · W' · CP/eFTP)"
@@ -514,23 +512,25 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         </div>
       </section>
 
-      {/* 2. Segment 'Effort Over Time' Chart (Segments with Multiple Recorded Attempts) */}
-      <SegmentEffortOverTimeChart
-        segments={repeatedSegments}
-        selectedSegmentId={selectedSegmentId}
-        onSelectSegmentId={setSelectedSegmentId}
-        distanceUnit={distanceUnit}
-        athleteWeightKg={athleteWeightKg}
-        onSelectActivity={(actId) => {
-          if (onSelectActivity) {
-            const found = activities.find((a) => a.id === actId);
-            if (found) onSelectActivity(found);
-          }
-        }}
-        onScanMoreSegments={onScanMoreSegments}
-        isScanningSegments={isScanningSegments}
-        showSegmentPicker={true}
-      />
+      {/* Canonical Segment Analytics Pointer (Deduplicated from PhysiologyView) */}
+      <section className="rounded-2xl liquid-glass px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-slate-600 dark:text-slate-300">
+          <strong className="text-slate-900 dark:text-white">
+            Segment Trophy Case &amp; Repeated Climb/Loop Progression ({repeatedSegments.length} tracked segments):
+          </strong>{' '}
+          Segment PRs and effort-over-time charts now live canonically inside the{' '}
+          <strong>Activities</strong> workspace alongside your route maps and workout logs.
+        </div>
+        {onOpenActivitiesSegments && (
+          <button
+            type="button"
+            onClick={onOpenActivitiesSegments}
+            className="min-h-[34px] px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-600 dark:text-amber-300 text-xs font-semibold transition-colors whitespace-nowrap"
+          >
+            Open Segment Trophy Case in Activities →
+          </button>
+        )}
+      </section>
     </div>
   );
 };

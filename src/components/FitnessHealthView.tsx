@@ -735,10 +735,18 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         ) : (
       <section className="rounded-2xl liquid-glass overflow-hidden">
-        {/* Top Intervals.icu Control Bar */}
+        {/* Top Control Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-900/40">
-          {/* Left: Date Range Dropdown + Calendar Picker + Span Summary */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Left: Plain-English Title + Date Range Dropdown + Calendar Picker + Span Summary */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 pr-1">
+              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                Fitness, Fatigue &amp; Freshness
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/25 text-[10px] font-mono font-semibold text-sky-600 dark:text-sky-300">
+                CTL · ATL · TSB
+              </span>
+            </div>
             <div className="relative">
               <button
                 type="button"
@@ -2499,12 +2507,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           3. TRAINING STATUS, SLEEP, HRV & THRESHOLD READINESS CARDS
          ========================================================================== */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Training Status & Load Ratio */}
+        {/* Card 1: Fitness & Workload Ratio (CTL / ACWR) */}
         <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Training Status
+                Fitness &amp; Status
               </span>
               <span
                 className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
@@ -2519,11 +2527,13 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
                   {latestDay.ctl.toFixed(1)}
                 </span>
-                <span className="text-xs text-slate-500 ml-1">CTL</span>
+                <span className="text-[11px] font-sans text-slate-500 ml-1.5">
+                  Fitness <span className="font-mono opacity-75">(CTL)</span>
+                </span>
               </div>
               <div className="text-right">
                 <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  ACWR {(latestDay.loadRatio || 0.85).toFixed(2)}
+                  Load Ratio {(latestDay.loadRatio || 0.85).toFixed(2)}x
                 </span>
                 <span className="block text-[11px] text-slate-500">
                   Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
@@ -2533,7 +2543,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
             {latestDay.trainingStatusReason ||
-              'Optimal acute-to-chronic workload ratio building aerobic fitness.'}
+              'Optimal workload ratio building long-term aerobic fitness.'}
           </p>
         </div>
 
@@ -2542,7 +2552,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Sleep Score
+                Overnight Sleep
               </span>
               <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold">
                 {latestWithSleep.date}
@@ -2573,12 +2583,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Overnight HRV rMSSD & 60d Normal Corridor */}
+        {/* Card 3: Autonomic Recovery (Overnight HRV rMSSD) */}
         <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Overnight HRV
+                Autonomic Recovery <span className="font-mono text-[10px] opacity-75">(HRV)</span>
               </span>
               <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 {latestWithHrv.hrvStatus || 'Balanced'}
@@ -2596,7 +2606,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   7d Base: {latestWithHrv.hrvBaseline7d} ms
                 </span>
                 <span className="block text-[11px] text-slate-500">
-                  Corridor {latestWithHrv.hrvNormalBandLow || 44}–{latestWithHrv.hrvNormalBandHigh || 62} ms
+                  Normal {latestWithHrv.hrvNormalBandLow || 44}–{latestWithHrv.hrvNormalBandHigh || 62} ms
                 </span>
               </div>
             </div>
@@ -2606,15 +2616,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         </div>
 
-        {/* Card 4: Cycling & Running eFTP + W' Anaerobic Capacity */}
+        {/* Card 4: Threshold Power & Anaerobic Reserve (eFTP / W') */}
         <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Threshold Power (eFTP)
+                Threshold Power <span className="font-mono text-[10px] opacity-75">(eFTP)</span>
               </span>
               <span className="text-xs font-mono text-orange-500 font-bold">
-                3-Param CP Model
+                CP · W&apos; Model
               </span>
             </div>
             <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
@@ -2629,26 +2639,32 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   Run {latestDay.runEftp || 340}W
                 </span>
                 <span className="block text-[11px] text-slate-500">
-                  W&apos; {((latestDay.rideWPrime || 25120) / 1000).toFixed(1)} kJ · Pmax {latestDay.ridePMax || 1204}W
+                  Reserve W&apos; {((latestDay.rideWPrime || 25120) / 1000).toFixed(1)} kJ · Peak {latestDay.ridePMax || 1204}W
                 </span>
               </div>
             </div>
           </div>
           <div className="text-xs text-slate-500 font-mono">
-            Weight: <strong className="text-slate-900 dark:text-slate-100">{latestDay.weightKg || 70} kg</strong> ({((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg)
+            Weight:{' '}
+            <strong className="text-slate-900 dark:text-slate-100">
+              {distanceUnit === 'mi'
+                ? `${Math.round((latestDay.weightKg || 70) * 2.20462262)} lbs`
+                : `${latestDay.weightKg || 70} kg`}
+            </strong>{' '}
+            ({((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg)
           </div>
         </div>
       </section>
 
       {/* ==========================================================================
-          4. AEROBIC EFFICIENCY (EF = NP/HR) & CARDIAC DRIFT (Pa:Hr DECOUPLING)
+          4. AEROBIC STAMINA (CARDIAC DRIFT) & EFFICIENCY SUMMARY
          ========================================================================== */}
       <section className="rounded-2xl liquid-glass p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1 max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Aerobic Efficiency &amp; Durability
+                Aerobic Stamina &amp; Cardiovascular Economy
               </span>
               <span
                 className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${
@@ -2663,9 +2679,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </span>
               <ChartInfoTooltip
                 title="Aerobic Efficiency Factor (EF) & Cardiac Drift (Pa:Hr%)"
-                subtitle="Mitochondrial Economy & First-Half vs. Second-Half Durability"
-                whatItMeasures="Efficiency Factor (EF = Normalized Power ÷ Average Heart Rate) quantifies how many watts your cardiovascular system produces per heartbeat. Aerobic Decoupling (Pa:Hr%) measures how much your EF degrades from the first half to the second half of endurance sessions."
-                benchmarks="Endurance Decoupling < 3.5%: Strong aerobic base ready for threshold progression. 3.5% – 5.0%: Moderate drift. > 5.0%: Incomplete aerobic durability or glycogen/hydration depletion."
+                subtitle="Mitochondrial Economy & First-Half vs. Second-Half Stamina"
+                whatItMeasures="Aerobic Efficiency (EF = Normalized Power ÷ Average Heart Rate) quantifies how much output your cardiovascular system produces per heartbeat. Cardiac Drift (Pa:Hr%) measures how much your efficiency fades from the first half to the second half of endurance workouts."
+                benchmarks="Cardiac Drift < 3.5%: Strong aerobic stamina ready for threshold progression. 3.5% – 5.0%: Moderate drift. > 5.0%: Incomplete aerobic base or fueling/hydration depletion."
                 liveStatus={{
                   label: `28d EF: ${aerobicDurabilityStats.avgEf28} (${
                     aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''
@@ -2678,22 +2694,25 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       ? 'Your cardiac drift on endurance workouts is well below the 5% physiological threshold, confirming strong stroke-volume stability.'
                       : 'Your heart rate drifts upward relative to power in the second half of long rides/runs; prioritize Z2 duration and in-ride fueling.',
                 }}
-                coachingAction="When 28-day EF rises and endurance decoupling stays under 3.5%, increase Z4/Z5 interval density; if decoupling exceeds 5%, extend steady Z2 aerobic volume."
+                coachingAction="When 28-day Efficiency rises and Cardiac Drift stays under 3.5%, increase Z4/Z5 interval density; if drift exceeds 5%, extend steady Z2 aerobic volume."
               />
             </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Efficiency Factor (EF) &amp; Cardiac Drift Summary
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
+              <span>Aerobic Efficiency &amp; Cardiac Drift</span>
+              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-mono font-semibold text-emerald-600 dark:text-emerald-300">
+                EF · Pa:Hr
+              </span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              While CTL tracks mechanical training load, <strong>Efficiency Factor (NP ÷ HR)</strong> and{' '}
-              <strong>Pa:Hr Decoupling</strong> reveal whether your internal cardiovascular cost is improving across outdoor and indoor trainer workouts.
+              While Fitness (CTL) tracks mechanical workload, <strong>Aerobic Efficiency (Output ÷ Heart Rate)</strong> and{' '}
+              <strong>Cardiac Drift (First-Half vs. Second-Half Stamina)</strong> reveal whether your internal cardiovascular cost is improving.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-4 font-mono tabular-nums">
             <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
               <span className="block text-[11px] font-sans text-slate-500">
-                28d vs 90d Efficiency (EF)
+                Aerobic Efficiency <span className="font-mono opacity-75">(EF)</span>
               </span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-xl font-extrabold text-slate-900 dark:text-white">
@@ -2716,7 +2735,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
             <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
               <span className="block text-[11px] font-sans text-slate-500">
-                Endurance Pa:Hr Decoupling
+                Aerobic Stamina / Drift <span className="font-mono opacity-75">(Pa:Hr)</span>
               </span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span
@@ -2743,7 +2762,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               }
               className="min-h-[38px] px-4 py-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-sans text-xs font-semibold shadow-sm transition-all"
             >
-              Ask Coach: Durability Rx
+              Ask Coach: Stamina Rx
             </button>
           </div>
         </div>
@@ -2753,38 +2772,59 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       </div>
 
       {/* ==========================================================================
-          5. DUAL ATHLETE COMPARISON
+          5. ON-DEMAND BENCHMARKING & ATHLETE COMPARISON TOOLS (HIDDEN BY DEFAULT)
          ========================================================================== */}
-      <div id="fitness-sec-comparator" className="scroll-mt-28 space-y-2">
-        {collapsedSections.comparator ? (
-          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Users className="w-4 h-4 text-orange-400" />
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Dual Athlete Comparison
-              </span>
-            </div>
+      <div className="rounded-2xl liquid-glass px-4 sm:px-5 py-3.5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <Radar className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>
+              <strong className="text-slate-900 dark:text-white">
+                Benchmarking &amp; Peer Comparison:
+              </strong>{' '}
+              Compare your telemetry side-by-side with a training partner or inspect your Age-Graded Percentile Radars.
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => toggleSection('comparator')}
-              className="px-3 py-1 rounded-xl bg-orange-500/15 text-orange-500 text-xs font-mono font-semibold flex items-center gap-1"
+              className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
+                !collapsedSections.comparator
+                  ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/40'
+                  : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/25'
+              }`}
             >
-              <span>Expand Comparator</span>
-              <ChevronDown className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5" />
+              <span>
+                {collapsedSections.comparator
+                  ? 'Compare with Another Athlete ▾'
+                  : 'Hide Athlete Comparison ▴'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleSection('radars')}
+              className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
+                !collapsedSections.radars
+                  ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300 border-purple-500/40'
+                  : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/25'
+              }`}
+            >
+              <Radar className="w-3.5 h-3.5" />
+              <span>
+                {collapsedSections.radars
+                  ? 'Age-Graded Percentile Radars ▾'
+                  : 'Hide Percentile Radars ▴'}
+              </span>
             </button>
           </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => toggleSection('comparator')}
-                className="px-3 py-1 rounded-xl liquid-glass-subtle text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-orange-500 flex items-center gap-1"
-              >
-                <span>Collapse Comparator</span>
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        </div>
+
+        {!collapsedSections.comparator && (
+          <div id="fitness-sec-comparator" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
             <DualAthleteComparator
               selfName={selfName}
               selfProfile={selfProfile || athleteProfile}
@@ -2798,41 +2838,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             />
           </div>
         )}
-      </div>
 
-      {/* ==========================================================================
-          6. ATHLETE PERFORMANCE & AGE-GRADED RADARS
-         ========================================================================== */}
-      <div id="fitness-sec-radars" className="scroll-mt-28 space-y-2">
-        {collapsedSections.radars ? (
-          <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Radar className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Athlete Performance &amp; Age-Graded Radars
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => toggleSection('radars')}
-              className="px-3 py-1 rounded-xl bg-purple-500/15 text-purple-500 text-xs font-mono font-semibold flex items-center gap-1"
-            >
-              <span>Expand Radars</span>
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => toggleSection('radars')}
-                className="px-3 py-1 rounded-xl liquid-glass-subtle text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-purple-500 flex items-center gap-1"
-              >
-                <span>Collapse Radars</span>
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        {!collapsedSections.radars && (
+          <div id="fitness-sec-radars" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
             <AthletePerformanceRadar
               selfName={selfName}
               selfProfile={selfProfile || athleteProfile}

@@ -2336,9 +2336,9 @@ export default function App() {
                   [
                     {
                       id: 'fitness',
-                      label: 'Fitness & Freshness',
+                      label: 'Today',
                       icon: HeartPulse,
-                      match: ['fitness', 'curves', 'trends', 'charts'],
+                      match: ['fitness'],
                     },
                     {
                       id: 'calendar',
@@ -2348,15 +2348,15 @@ export default function App() {
                     },
                     {
                       id: 'activities',
-                      label: 'Workouts & Routes',
+                      label: 'Activities',
                       icon: Activity,
                       match: ['activities'],
                     },
                     {
                       id: 'totals',
-                      label: 'Goals & Totals',
+                      label: 'Lab & Goals',
                       icon: Target,
-                      match: ['totals'],
+                      match: ['totals', 'curves', 'trends', 'charts'],
                     },
                   ] as const
                 ).map((item) => {
@@ -2918,6 +2918,8 @@ export default function App() {
               }
             }}
             onDeletePlannedEvent={handleDeletePlannedEvent}
+            onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+            onOpenTodayWorkout={() => setActiveTab('fitness')}
             onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
             onOpenGoalsArchitect={() => setActiveTab('totals')}
             onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
@@ -2925,8 +2927,8 @@ export default function App() {
           />
         )}
 
-        {/* Contextual Recessed Liquid Glass Sub-Switcher for Fitness & Physiology Workspace */}
-        {(activeTab === 'fitness' ||
+        {/* Contextual Recessed Liquid Glass Sub-Switcher for Lab & Goals Workspace */}
+        {(activeTab === 'totals' ||
           activeTab === 'curves' ||
           activeTab === 'trends' ||
           activeTab === 'charts') && (
@@ -2936,26 +2938,26 @@ export default function App() {
                 {(
                   [
                     {
-                      id: 'fitness',
-                      label: 'PMC & Daily Readiness',
-                      sub: 'Fitness, Fatigue & Form',
-                      icon: HeartPulse,
+                      id: 'totals',
+                      label: 'Goals & Race PRs',
+                      sub: 'Targets, PRs & Volume',
+                      icon: Target,
                     },
                     {
                       id: 'curves',
-                      label: 'Power/Pace Curves & Segments',
-                      sub: 'PRs & Peak Outputs',
+                      label: 'Power & Pace Curves',
+                      sub: 'CP, W\' & Peak Outputs',
                       icon: BarChart3,
                     },
                     {
                       id: 'trends',
-                      label: 'Long-Term Physiological Trends',
-                      sub: 'VO2max, eFTP & HRV',
+                      label: 'Aerobic Durability & Trends',
+                      sub: 'VO2max, eFTP & Drift',
                       icon: TrendingUp,
                     },
                     {
                       id: 'charts',
-                      label: 'Custom Chart Lab',
+                      label: 'Custom Correlation Lab',
                       sub: 'Compare Any 2 Metrics',
                       icon: LineChart,
                     },
@@ -2992,7 +2994,7 @@ export default function App() {
                     ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/35'
                     : 'liquid-glass-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
-                title="Toggle quick glossary for CTL, ATL, TSB, and EF"
+                title="Toggle quick glossary for Fitness (CTL), Fatigue (ATL), Form (TSB), and Efficiency (EF)"
               >
                 <span className="w-4 h-4 rounded-full bg-sky-500/20 text-sky-500 font-mono text-[11px] font-bold inline-flex items-center justify-center">
                   ?
@@ -3006,19 +3008,19 @@ export default function App() {
               <div className="px-3 py-2 rounded-xl bg-slate-900/5 dark:bg-slate-950/50 border border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span>
-                    <strong className="font-mono text-[#0EA5E9]">CTL (Fitness):</strong> 42-day exponential training load
+                    <strong className="font-mono text-[#0EA5E9]">Fitness (CTL):</strong> 42-day exponential training load
                   </span>
                   <span>·</span>
                   <span>
-                    <strong className="font-mono text-[#8B5CF6]">ATL (Fatigue):</strong> 7-day acute training load
+                    <strong className="font-mono text-[#8B5CF6]">Fatigue (ATL):</strong> 7-day acute training load
                   </span>
                   <span>·</span>
                   <span>
-                    <strong className="font-mono text-emerald-500">TSB (Form):</strong> Net Freshness (CTL − ATL)
+                    <strong className="font-mono text-emerald-500">Freshness / Form (TSB):</strong> Net Freshness (CTL − ATL)
                   </span>
                   <span>·</span>
                   <span>
-                    <strong className="font-mono text-amber-500">EF:</strong> Aerobic Efficiency (Output ÷ Heart Rate)
+                    <strong className="font-mono text-amber-500">Aerobic Efficiency (EF):</strong> Output ÷ Heart Rate
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-500 dark:text-slate-400">
@@ -3056,6 +3058,7 @@ export default function App() {
             wellnessDays={effectiveWellnessDays}
             activities={effectiveActivities}
             athleteWeightKg={latestWeightKg}
+            distanceUnit={distanceUnit}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           />
         )}
@@ -3109,6 +3112,7 @@ export default function App() {
               handleSelectActivity(act);
               setActiveTab('activities');
             }}
+            onOpenActivitiesSegments={() => setActiveTab('activities')}
           />
         )}
 
@@ -3147,13 +3151,18 @@ export default function App() {
           [
             {
               id: 'fitness',
-              label: 'Fitness',
+              label: 'Today',
               icon: HeartPulse,
-              match: ['fitness', 'curves', 'trends', 'charts'],
+              match: ['fitness'],
             },
             { id: 'calendar', label: 'Calendar', icon: Calendar, match: ['calendar'] },
-            { id: 'activities', label: 'Workouts', icon: Activity, match: ['activities'] },
-            { id: 'totals', label: 'Goals', icon: Target, match: ['totals'] },
+            { id: 'activities', label: 'Activities', icon: Activity, match: ['activities'] },
+            {
+              id: 'totals',
+              label: 'Lab & Goals',
+              icon: Target,
+              match: ['totals', 'curves', 'trends', 'charts'],
+            },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;

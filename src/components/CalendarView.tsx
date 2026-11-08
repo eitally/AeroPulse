@@ -28,7 +28,6 @@ import {
 } from '../types';
 import { formatDistance } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
-import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 
 interface CalendarViewProps {
   activities: UnifiedActivity[];
@@ -53,6 +52,20 @@ interface CalendarViewProps {
     replaceExistingDate?: boolean;
   }) => Promise<void>;
   onDeletePlannedEvent: (id: string) => Promise<void>;
+  onBatchCreatePlannedEvents?: (
+    events: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+    }[],
+    clearFutureEvents?: boolean
+  ) => Promise<void>;
+  onOpenTodayWorkout?: () => void;
   onOpenAthleteProfileModal?: () => void;
   onOpenGoalsArchitect?: () => void;
   onOpenOfficialRaceModal?: () => void;
@@ -875,6 +888,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onSelectActivity,
   onCreatePlannedEvent,
   onDeletePlannedEvent,
+  onBatchCreatePlannedEvents,
+  onOpenTodayWorkout,
   onOpenAthleteProfileModal,
   onOpenGoalsArchitect,
   onOpenOfficialRaceModal,
@@ -883,6 +898,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [sportFilter, setSportFilter] = useState<SportCategory | 'ALL'>(selectedSport);
   const [cardDensity, setCardDensity] = useState<'intervals' | 'compact'>('intervals');
   const [showDayEffortStripe, setShowDayEffortStripe] = useState<boolean>(true);
+  const [isBlockPlannerOpen, setIsBlockPlannerOpen] = useState(false);
+  const [blockFocus, setBlockFocus] = useState<'FTP_PEAK' | 'SUB20_5K' | 'HYBRID_BASE'>('FTP_PEAK');
+  const [blockWeeks, setBlockWeeks] = useState<4 | 8 | 12>(4);
+  const [blockWeeklyHours, setBlockWeeklyHours] = useState<number>(8);
+  const [isGeneratingBlock, setIsGeneratingBlock] = useState(false);
+  const [blockGeneratedMsg, setBlockGeneratedMsg] = useState<string | null>(null);
 
   // Default to the month of the most recent activity or wellness entry
   const initialDate = useMemo(() => {
@@ -1344,34 +1365,262 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onBatchCreatePlannedEvents && (
+            <button
+              type="button"
+              onClick={() => setIsBlockPlannerOpen((prev) => !prev)}
+              className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shadow-xs"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{isBlockPlannerOpen ? 'Hide Block Planner ▴' : 'Generate Training Block ▾'}</span>
+            </button>
+          )}
+          {onOpenTodayWorkout && (
+            <button
+              type="button"
+              onClick={onOpenTodayWorkout}
+              className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl liquid-glass-subtle hover:border-sky-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap"
+            >
+              <span>Today&apos;s Readiness &amp; Workout →</span>
+            </button>
+          )}
           {onOpenGoalsArchitect && (
             <button
               type="button"
               onClick={onOpenGoalsArchitect}
               className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-600 dark:text-sky-300 text-xs font-semibold transition-colors whitespace-nowrap"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Training Plan &amp; Race Predictor</span>
+              <Trophy className="w-3.5 h-3.5" />
+              <span>Edit Race Goals</span>
             </button>
           )}
         </div>
       </section>
 
-      {/* Top Adaptive Workout Header Card (Collapsed by default so Calendar is front-and-center) */}
-      {athleteProfile && onOpenAthleteProfileModal && (
-        <ReadinessMorphingCard
-          wellnessDays={wellnessDays}
-          activities={activities}
-          plannedEvents={plannedEvents}
-          athleteProfile={athleteProfile}
-          distanceUnit={distanceUnit}
-          defaultExpanded={false}
-          placementLabel="Today's Adapted Workout"
-          onSyncMorphedToCalendar={onCreatePlannedEvent}
-          onOpenAthleteProfileModal={onOpenAthleteProfileModal}
-          onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-        />
+      {/* Inline Adaptive Block Generator (On-Demand inside Calendar & Plan) */}
+      {isBlockPlannerOpen && onBatchCreatePlannedEvents && (
+        <section className="rounded-2xl liquid-glass p-4 sm:p-5 border border-blue-500/35 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-blue-500 font-bold">
+                Periodized Block Architect (3:1 Overload-to-Deload)
+              </div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                Populate Your Calendar with an Adaptive Training Block
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBlockPlannerOpen(false)}
+              className="px-2.5 py-1 rounded-lg text-xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Primary Block Focus
+              </label>
+              <select
+                value={blockFocus}
+                onChange={(e) =>
+                  setBlockFocus(e.target.value as 'FTP_PEAK' | 'SUB20_5K' | 'HYBRID_BASE')
+                }
+                className="w-full min-h-[36px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 font-semibold text-slate-900 dark:text-slate-100"
+              >
+                <option value="FTP_PEAK">Cycling FTP &amp; Threshold Builder</option>
+                <option value="SUB20_5K">Running LT Pace &amp; 5K/10K Speed</option>
+                <option value="HYBRID_BASE">Hybrid Cycling + Running Polarized</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Block Length
+              </label>
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl liquid-capsule-track font-mono">
+                {([4, 8, 12] as const).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setBlockWeeks(w)}
+                    className={`min-h-[28px] rounded-lg transition-all ${
+                      blockWeeks === w
+                        ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-bold'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {w} wks
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Target Weekly Availability: <strong className="font-mono text-blue-500">{blockWeeklyHours} hrs/wk</strong>
+              </label>
+              <input
+                type="range"
+                min={4}
+                max={16}
+                step={1}
+                value={blockWeeklyHours}
+                onChange={(e) => setBlockWeeklyHours(Number(e.target.value))}
+                className="w-full accent-blue-600 mt-2"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                disabled={isGeneratingBlock}
+                onClick={async () => {
+                  setIsGeneratingBlock(true);
+                  setBlockGeneratedMsg(null);
+                  try {
+                    const start = new Date();
+                    const ftpW = athleteProfile?.ftp || athleteFtp || 310;
+                    const ltPaceSecs = athleteProfile?.thresholdPaceSecsPerKm || 232;
+                    const ltStr = formatPaceWithUnit(ltPaceSecs, distanceUnit);
+                    const ezStr = formatPaceWithUnit(Math.round(ltPaceSecs * 1.22), distanceUnit);
+                    const newEvents: {
+                      date: string;
+                      name: string;
+                      sportCategory: SportCategory;
+                      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+                      plannedDurationSecs: number;
+                      plannedLoad: number;
+                      workoutSyntax: string;
+                      description: string;
+                    }[] = [];
+
+                    const scale = blockWeeklyHours / 8;
+                    for (let w = 0; w < blockWeeks; w++) {
+                      const isDeload = (w + 1) % 4 === 0;
+                      const wkMult = isDeload ? 0.72 : 1 + (w % 4) * 0.06;
+                      for (let d = 0; d < 7; d++) {
+                        const cur = new Date(start);
+                        cur.setDate(start.getDate() + w * 7 + d);
+                        const iso = cur.toISOString().slice(0, 10);
+                        const dow = cur.getDay(); // 0 Sun .. 6 Sat
+                        if (dow === 1 || dow === 5) continue; // Mon/Fri rest or optional spin
+
+                        if (blockFocus === 'SUB20_5K') {
+                          if (dow === 2) {
+                            newEvents.push({
+                              date: iso,
+                              name: isDeload ? `Wk ${w + 1} Deload Strides` : `Wk ${w + 1} VO2max Track Repeats`,
+                              sportCategory: 'Running',
+                              environmentPreference: 'OUTDOOR',
+                              plannedDurationSecs: Math.round(3300 * scale * wkMult),
+                              plannedLoad: Math.round(72 * scale * wkMult),
+                              workoutSyntax: `- 15m 65% FTP Warmup (${ezStr})\n- 5x4m 104% FTP Interval\n- 10m 60% FTP Cooldown`,
+                              description: `Target threshold reference ${ltStr}. Keep recoveries controlled.`,
+                            });
+                          } else if (dow === 4) {
+                            newEvents.push({
+                              date: iso,
+                              name: `Wk ${w + 1} Lactate Threshold Cruise (${ltStr})`,
+                              sportCategory: 'Running',
+                              environmentPreference: 'OUTDOOR',
+                              plannedDurationSecs: Math.round(3600 * scale * wkMult),
+                              plannedLoad: Math.round(76 * scale * wkMult),
+                              workoutSyntax: `- 12m 65% FTP Warmup\n- 3x10m 98% FTP Threshold (${ltStr})\n- 10m 60% FTP Cooldown`,
+                              description: `Cruise intervals at ${ltStr} to raise Lactate Threshold pace.`,
+                            });
+                          } else {
+                            newEvents.push({
+                              date: iso,
+                              name: dow === 0 ? `Wk ${w + 1} Long Aerobic Run (${ezStr})` : `Wk ${w + 1} Z2 Aerobic Run`,
+                              sportCategory: 'Running',
+                              environmentPreference: 'OUTDOOR',
+                              plannedDurationSecs: Math.round((dow === 0 ? 5400 : 3000) * scale * wkMult),
+                              plannedLoad: Math.round((dow === 0 ? 88 : 48) * scale * wkMult),
+                              workoutSyntax: `- 10m 60% FTP Warmup\n- ${dow === 0 ? 70 : 35}m 72% FTP Z2 Aerobic (${ezStr})\n- 10m 58% FTP Cooldown`,
+                              description: `Steady aerobic volume at ${ezStr} with <3.5% cardiac drift.`,
+                            });
+                          }
+                        } else {
+                          const isRunDay = blockFocus === 'HYBRID_BASE' && (dow === 3 || dow === 0);
+                          if (isRunDay) {
+                            newEvents.push({
+                              date: iso,
+                              name: dow === 0 ? `Wk ${w + 1} Hybrid Long Run (${ezStr})` : `Wk ${w + 1} Threshold Run (${ltStr})`,
+                              sportCategory: 'Running',
+                              environmentPreference: 'OUTDOOR',
+                              plannedDurationSecs: Math.round((dow === 0 ? 4800 : 3300) * scale * wkMult),
+                              plannedLoad: Math.round((dow === 0 ? 82 : 68) * scale * wkMult),
+                              workoutSyntax:
+                                dow === 0
+                                  ? `- 10m 60% FTP Warmup\n- 60m 72% FTP Z2 Endurance\n- 10m 58% FTP Cooldown`
+                                  : `- 12m 65% FTP Warmup\n- 3x8m 98% FTP Threshold (${ltStr})\n- 10m 60% FTP Cooldown`,
+                              description: `Hybrid running stimulus calibrated to ${ltStr} LT pace.`,
+                            });
+                          } else if (dow === 2) {
+                            newEvents.push({
+                              date: iso,
+                              name: isDeload
+                                ? `Wk ${w + 1} Deload Tempo Opener`
+                                : `Wk ${w + 1} VO2max Ceiling (5x4m @ ${Math.round(ftpW * 1.12)}W)`,
+                              sportCategory: 'Cycling',
+                              environmentPreference: 'FLEXIBLE',
+                              plannedDurationSecs: Math.round(3600 * scale * wkMult),
+                              plannedLoad: Math.round(80 * scale * wkMult),
+                              workoutSyntax: `- 15m 62% FTP Warmup\n- 5x4m 112% FTP Z5 VO2max\n- 10m 52% FTP Cooldown`,
+                              description: `Aerobic ceiling progression anchored to ${ftpW}W FTP.`,
+                            });
+                          } else if (dow === 4) {
+                            newEvents.push({
+                              date: iso,
+                              name: `Wk ${w + 1} Threshold / Sweet Spot (4x8m @ ${Math.round(ftpW * 0.94)}W)`,
+                              sportCategory: 'Cycling',
+                              environmentPreference: 'FLEXIBLE',
+                              plannedDurationSecs: Math.round(3900 * scale * wkMult),
+                              plannedLoad: Math.round(78 * scale * wkMult),
+                              workoutSyntax: `- 12m 60% FTP Warmup\n- 4x8m 94% FTP Sweet Spot / Threshold\n- 10m 52% FTP Cooldown`,
+                              description: `Sustained threshold torque progression.`,
+                            });
+                          } else {
+                            newEvents.push({
+                              date: iso,
+                              name: dow === 6 ? `Wk ${w + 1} Long Z2 Endurance Ride (${Math.round(ftpW * 0.68)}W)` : `Wk ${w + 1} Z2 Aerobic Base`,
+                              sportCategory: 'Cycling',
+                              environmentPreference: 'OUTDOOR',
+                              plannedDurationSecs: Math.round((dow === 6 ? 7200 : 3600) * scale * wkMult),
+                              plannedLoad: Math.round((dow === 6 ? 110 : 54) * scale * wkMult),
+                              workoutSyntax: `- 10m 55% FTP Warmup\n- ${dow === 6 ? 100 : 40}m 68% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`,
+                              description: `Mitochondrial base endurance with cardiac drift <3.5%.`,
+                            });
+                          }
+                        }
+                      }
+                    }
+
+                    await onBatchCreatePlannedEvents(newEvents, true);
+                    setBlockGeneratedMsg(
+                      `Scheduled ${newEvents.length} periodized workouts across ${blockWeeks} weeks onto your calendar.`
+                    );
+                  } finally {
+                    setIsGeneratingBlock(false);
+                  }
+                }}
+                className="w-full min-h-[38px] px-4 py-2 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:opacity-50 text-white font-semibold transition-all shadow-sm"
+              >
+                {isGeneratingBlock ? 'Scheduling Block...' : `Populate ${blockWeeks}-Week Block`}
+              </button>
+            </div>
+          </div>
+
+          {blockGeneratedMsg && (
+            <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+              ✓ {blockGeneratedMsg}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Top Calendar Header & Controls */}
