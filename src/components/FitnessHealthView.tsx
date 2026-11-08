@@ -27,7 +27,11 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { DualAthleteComparator } from './DualAthleteComparator';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
-import { EChartsPMCDashboard, PMCDayPoint } from './charts/EChartsPMCDashboard';
+import {
+  classifyGarminLoadType,
+  EChartsPMCDashboard,
+  PMCDayPoint,
+} from './charts/EChartsPMCDashboard';
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 
 interface FitnessHealthViewProps {
@@ -154,6 +158,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
   // Synchronized Subplots toggles
   const [showTsbSubplot, setShowTsbSubplot] = useState<boolean>(true);
+  const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
   const [showMaxHrSubplot, setShowMaxHrSubplot] = useState<boolean>(true);
   const [showEftpSubplot, setShowEftpSubplot] = useState<boolean>(true);
   const [showWeeklyLoadSubplot, setShowWeeklyLoadSubplot] = useState<boolean>(true);
@@ -442,8 +447,17 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         }
       }
 
+      const prev7 = idx >= 7 ? chartSeries[idx - 7] : chartSeries[0];
+      const computedRamp =
+        typeof day.rampRate === 'number' && day.rampRate !== 0
+          ? Number(day.rampRate.toFixed(1))
+          : Number((day.ctl - (prev7?.ctl ?? day.ctl)).toFixed(1));
+      const garminFocus = classifyGarminLoadType(dayActs, day.dailyLoad || 0, maxHr);
+
       return {
         ...day,
+        rampRate: computedRamp,
+        garminFocus,
         dayActivities: dayActs,
         maxHr,
         prCount,
@@ -452,24 +466,33 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     });
   }, [chartSeries, activitiesByDate]);
 
-  // Group into 7-day calendar week buckets for the Weekly Load (Work) bar subplot
+  // Group into 7-day calendar week buckets for the Weekly Load (Work) bar subplot (split by Garmin Load Focus)
   const weeklyLoadBuckets = useMemo(() => {
     const buckets: {
       startIdx: number;
       endIdx: number;
       totalLoad: number;
-      highIntensityLoad: number;
+      lowAerobicLoad: number;
+      highAerobicLoad: number;
+      anaerobicLoad: number;
     }[] = [];
     if (enrichedSeries.length === 0) return buckets;
 
     let bucketStart = 0;
     let sumLoad = 0;
+    let sumLow = 0;
     let sumHigh = 0;
+    let sumAnaerobic = 0;
 
     enrichedSeries.forEach((d, idx) => {
-      sumLoad += d.dailyLoad || 0;
-      if ((d.dailyLoad || 0) > 85 || d.prCount > 0) {
-        sumHigh += (d.dailyLoad || 0) * 0.25;
+      const load = d.dailyLoad || 0;
+      sumLoad += load;
+      if (d.garminFocus.type === 'ANAEROBIC') {
+        sumAnaerobic += load;
+      } else if (d.garminFocus.type === 'HIGH_AEROBIC') {
+        sumHigh += load;
+      } else {
+        sumLow += load;
       }
       const [y, m, dayNum] = d.date.split('-').map(Number);
       const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, dayNum || 1));
@@ -479,11 +502,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           startIdx: bucketStart,
           endIdx: idx,
           totalLoad: Math.round(sumLoad),
-          highIntensityLoad: Math.round(sumHigh),
+          lowAerobicLoad: Math.round(sumLow),
+          highAerobicLoad: Math.round(sumHigh),
+          anaerobicLoad: Math.round(sumAnaerobic),
         });
         bucketStart = idx + 1;
         sumLoad = 0;
+        sumLow = 0;
         sumHigh = 0;
+        sumAnaerobic = 0;
       }
     });
     return buckets;
@@ -932,6 +959,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     set: setShowTsbSubplot,
                   },
                   {
+                    label: '7-Day Ramp Rate (CTL/wk)',
+                    checked: showRampSubplot,
+                    set: setShowRampSubplot,
+                  },
+                  {
                     label: 'Daily Max HR Spikes',
                     checked: showMaxHrSubplot,
                     set: setShowMaxHrSubplot,
@@ -1035,6 +1067,44 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
             </span>
+            {activePoint.dailyLoad > 0 && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border shrink-0"
+                style={{
+                  backgroundColor: activePoint.garminFocus.badgeBg,
+                  borderColor: `${activePoint.garminFocus.solidColor}55`,
+                  color: activePoint.garminFocus.solidColor,
+                }}
+                title={`Garmin Load Focus: ${activePoint.garminFocus.label}`}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: activePoint.garminFocus.solidColor }}
+                />
+                <span>
+                  {activePoint.garminFocus.label} ({activePoint.dailyLoad} TSS)
+                </span>
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/5 font-mono text-[10.5px] text-slate-600 dark:text-slate-300 shrink-0">
+              <span>Ramp:</span>
+              <span
+                className={`font-bold ${
+                  activePoint.rampRate > 7
+                    ? 'text-rose-500'
+                    : activePoint.rampRate > 5
+                      ? 'text-amber-500'
+                      : activePoint.rampRate >= 0
+                        ? 'text-emerald-500'
+                        : 'text-sky-400'
+                }`}
+              >
+                {activePoint.rampRate > 0
+                  ? `+${activePoint.rampRate.toFixed(1)}`
+                  : activePoint.rampRate.toFixed(1)}
+                /wk
+              </span>
+            </span>
             {activePoint.milestones &&
               activePoint.milestones.map((ms, mIdx) => (
                 <button
@@ -1064,7 +1134,10 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   onClick={() => onSelectActivity && onSelectActivity(act)}
                   className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-sky-300 border border-blue-500/25 font-medium transition-colors max-w-[280px] shrink-0"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: activePoint.garminFocus.solidColor }}
+                  />
                   <span className="truncate max-w-[165px]">{act.name}</span>
                   <span className="font-mono text-[11px] opacity-85 shrink-0">
                     ({act.trainingLoad} TSS
@@ -1090,7 +1163,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         </div>
 
         {/* ==========================================================================
-            APACHE ECHARTS CHRONIC FITNESS DECAY MODEL (CTL / ATL / TSB WITH DATAZOOM)
+            APACHE ECHARTS CHRONIC FITNESS DECAY MODEL (CTL / ATL / TSB / RAMP WITH DATAZOOM)
            ========================================================================== */}
         {(pmcEngine === 'ECHARTS' || pmcEngine === 'BOTH') && (
           <div className="px-3 sm:px-5 pt-3 pb-1">
@@ -1101,7 +1174,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
                 if (foundIdx >= 0) setHoverIdx(foundIdx);
               }}
-              height={420}
+              height={530}
             />
           </div>
         )}
@@ -1168,6 +1241,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             const p2Height = showTsbSubplot ? 185 : 0;
             const p2Bottom = p2Top + p2Height;
             if (showTsbSubplot) cursorY = p2Bottom + 10;
+
+            // Pane 2B: 7-Day Ramp Rate (CTL/wk) — 88px tall (directly beneath Form chart)
+            const pRampTop = cursorY;
+            const pRampHeight = showRampSubplot ? 88 : 0;
+            const pRampBottom = pRampTop + pRampHeight;
+            if (showRampSubplot) cursorY = pRampBottom + 10;
 
             // Pane 3: Max HR — 96px tall
             const p3Top = cursorY;
@@ -1371,6 +1450,29 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   strokeDasharray="2 2"
                   opacity="0.7"
                 />
+
+                {/* Daily Training Load Bars Colored by Garmin Load Focus (Low Aerobic / High Aerobic / Anaerobic) */}
+                {enrichedSeries.map((d, i) => {
+                  const load = d.dailyLoad || 0;
+                  if (load <= 0) return null;
+                  const x = xFor(i);
+                  const maxBarH = p1Height * 0.42;
+                  const barH = Math.min(maxBarH, Math.max(3, (load / 180) * maxBarH));
+                  const barW = Math.max(1.8, Math.min(5.5, (plotW / len) * 0.68));
+                  const isHovered = activeIdx === i;
+                  return (
+                    <rect
+                      key={`p1-garmin-load-${d.date}`}
+                      x={x - barW / 2}
+                      y={p1Bottom - barH}
+                      width={barW}
+                      height={barH}
+                      rx={1}
+                      fill={d.garminFocus.solidColor}
+                      opacity={isHovered ? 0.92 : d.isProjected ? 0.25 : 0.48}
+                    />
+                  );
+                })}
 
                 {/* CTL Shaded Cyan Area */}
                 <polygon
@@ -1848,6 +1950,170 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 )}
 
                 {/* ==============================================================
+                    PANE 2B: 7-DAY RAMP RATE (CTL/WK) SUB-CHART BENEATH FORM
+                   ============================================================== */}
+                {showRampSubplot &&
+                  (() => {
+                    const rampMin = -8;
+                    const rampMax = 12;
+                    const yRamp = (v: number) => {
+                      const clamped = Math.max(rampMin, Math.min(rampMax, v));
+                      return (
+                        pRampTop +
+                        ((rampMax - clamped) / (rampMax - rampMin)) * pRampHeight
+                      );
+                    };
+                    const zeroY = yRamp(0);
+                    const optY = yRamp(5);
+                    const riskY = yRamp(7);
+                    const barW = Math.max(1.8, Math.min(5.2, (plotW / len) * 0.65));
+
+                    return (
+                      <g>
+                        {/* Optimal Ramp Zone Band (0 to +5.0 CTL/wk) */}
+                        <rect
+                          x={plotLeft}
+                          y={optY}
+                          width={plotW}
+                          height={Math.max(0, zeroY - optY)}
+                          fill="rgba(16, 185, 129, 0.07)"
+                        />
+                        {/* Caution Ramp Zone Band (+5.0 to +7.0 CTL/wk) */}
+                        <rect
+                          x={plotLeft}
+                          y={riskY}
+                          width={plotW}
+                          height={Math.max(0, optY - riskY)}
+                          fill="rgba(245, 158, 11, 0.07)"
+                        />
+                        {/* High Risk Ramp Zone Band (> +7.0 CTL/wk) */}
+                        <rect
+                          x={plotLeft}
+                          y={pRampTop}
+                          width={plotW}
+                          height={Math.max(0, riskY - pRampTop)}
+                          fill="rgba(244, 63, 94, 0.07)"
+                        />
+
+                        <rect
+                          x={plotLeft}
+                          y={pRampTop}
+                          width={plotW}
+                          height={pRampHeight}
+                          fill="none"
+                          stroke="currentColor"
+                          className="text-slate-200 dark:text-slate-800"
+                        />
+
+                        <text
+                          x={15}
+                          y={pRampTop + pRampHeight / 2}
+                          transform={`rotate(-90 15 ${pRampTop + pRampHeight / 2})`}
+                          textAnchor="middle"
+                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                        >
+                          Ramp (/wk)
+                        </text>
+
+                        {[-5, 0, 5, 10].map((v) => (
+                          <g key={`ramp-grid-${v}`}>
+                            <line
+                              x1={plotLeft}
+                              y1={yRamp(v)}
+                              x2={plotRight}
+                              y2={yRamp(v)}
+                              stroke={v === 0 ? '#64748B' : v === 5 ? '#10B981' : 'currentColor'}
+                              strokeDasharray={v === 5 ? '3 3' : undefined}
+                              strokeWidth={v === 0 ? '1.1' : '1'}
+                              opacity={v === 0 || v === 5 ? '0.6' : '1'}
+                              className={
+                                v === 0 || v === 5
+                                  ? undefined
+                                  : 'text-slate-100 dark:text-slate-800/80'
+                              }
+                            />
+                            <text
+                              x={plotLeft - 6}
+                              y={yRamp(v) + 3}
+                              textAnchor="end"
+                              className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                            >
+                              {v > 0 ? `+${v}` : v}
+                            </text>
+                          </g>
+                        ))}
+
+                        {enrichedSeries.map((d, i) => {
+                          const r = d.rampRate || 0;
+                          const x = xFor(i);
+                          const valY = yRamp(r);
+                          const top = Math.min(zeroY, valY);
+                          const h = Math.max(1.5, Math.abs(valY - zeroY));
+                          const fillHex =
+                            r > 7
+                              ? '#F43F5E'
+                              : r > 5
+                                ? '#F59E0B'
+                                : r >= 0
+                                  ? '#10B981'
+                                  : '#38BDF8';
+                          return (
+                            <rect
+                              key={`ramp-bar-${d.date}`}
+                              x={x - barW / 2}
+                              y={top}
+                              width={barW}
+                              height={h}
+                              rx={0.8}
+                              fill={fillHex}
+                              opacity={activeIdx === i ? '1' : d.isProjected ? '0.35' : '0.78'}
+                            />
+                          );
+                        })}
+
+                        {/* Right-margin readout */}
+                        <text
+                          x={gutterLeft + 4}
+                          y={pRampTop + pRampHeight / 2 - 4}
+                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                        >
+                          Ramp{' '}
+                          <tspan
+                            fill={
+                              activePoint.rampRate > 7
+                                ? '#F43F5E'
+                                : activePoint.rampRate > 5
+                                  ? '#F59E0B'
+                                  : activePoint.rampRate >= 0
+                                    ? '#10B981'
+                                    : '#38BDF8'
+                            }
+                            className="font-bold font-mono"
+                          >
+                            {activePoint.rampRate > 0
+                              ? `+${activePoint.rampRate.toFixed(1)}`
+                              : activePoint.rampRate.toFixed(1)}
+                            /wk
+                          </tspan>
+                        </text>
+                        <text
+                          x={gutterLeft + 4}
+                          y={pRampTop + pRampHeight / 2 + 12}
+                          className="fill-slate-400 dark:fill-slate-500 text-[10px] font-sans"
+                        >
+                          {activePoint.rampRate > 7
+                            ? 'High Risk (>+7)'
+                            : activePoint.rampRate > 5
+                              ? 'Heavy Build'
+                              : activePoint.rampRate >= 0
+                                ? 'Optimal (0..+5)'
+                                : 'Taper / Recov'}
+                        </text>
+                      </g>
+                    );
+                  })()}
+
+                {/* ==============================================================
                     PANE 3: DAILY MAX HR VERTICAL IMPULSE SPIKES
                    ============================================================== */}
                 {showMaxHrSubplot &&
@@ -2048,7 +2314,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   })()}
 
                 {/* ==============================================================
-                    PANE 5: WEEKLY TRAINING LOAD (WORK / TSS) BARS
+                    PANE 5: WEEKLY TRAINING LOAD (WORK / TSS) BARS BY GARMIN FOCUS
                    ============================================================== */}
                 {showWeeklyLoadSubplot &&
                   (() => {
@@ -2115,26 +2381,42 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           const xStart = xFor(b.startIdx);
                           const xEnd = xFor(b.endIdx);
                           const barW = Math.max(4, xEnd - xStart - 2);
-                          const topY = yWk(b.totalLoad);
-                          const hiTopY = yWk(b.highIntensityLoad);
+                          const lowTopY = yWk(b.lowAerobicLoad);
+                          const highTopY = yWk(b.lowAerobicLoad + b.highAerobicLoad);
+                          const totalTopY = yWk(b.totalLoad);
                           return (
                             <g key={`wk-bar-${bIdx}`}>
-                              <rect
-                                x={xStart + 1}
-                                y={topY}
-                                width={barW}
-                                height={Math.max(1, p5Bottom - topY)}
-                                fill="#A78BFA"
-                                opacity="0.65"
-                              />
-                              {b.highIntensityLoad > 0 && (
+                              {/* Low Aerobic Base (Sky Blue) */}
+                              {b.lowAerobicLoad > 0 && (
                                 <rect
                                   x={xStart + 1}
-                                  y={hiTopY}
+                                  y={lowTopY}
                                   width={barW}
-                                  height={Math.max(1, p5Bottom - hiTopY)}
-                                  fill="#F87171"
-                                  opacity="0.7"
+                                  height={Math.max(1, p5Bottom - lowTopY)}
+                                  fill="#38BDF8"
+                                  opacity="0.72"
+                                />
+                              )}
+                              {/* High Aerobic Stack (Orange) */}
+                              {b.highAerobicLoad > 0 && (
+                                <rect
+                                  x={xStart + 1}
+                                  y={highTopY}
+                                  width={barW}
+                                  height={Math.max(1, lowTopY - highTopY)}
+                                  fill="#F97316"
+                                  opacity="0.78"
+                                />
+                              )}
+                              {/* Anaerobic Stack (Magenta-Purple) */}
+                              {b.anaerobicLoad > 0 && (
+                                <rect
+                                  x={xStart + 1}
+                                  y={totalTopY}
+                                  width={barW}
+                                  height={Math.max(1, highTopY - totalTopY)}
+                                  fill="#D946EF"
+                                  opacity="0.82"
                                 />
                               )}
                             </g>
@@ -2146,7 +2428,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
                         >
                           Week{' '}
-                          <tspan className="fill-[#8B5CF6] font-bold">
+                          <tspan className="fill-[#38BDF8] font-bold">
                             {activeBucket ? `${activeBucket.totalLoad} TSS` : '—'}
                           </tspan>
                         </text>
