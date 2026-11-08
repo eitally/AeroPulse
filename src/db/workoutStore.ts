@@ -213,27 +213,31 @@ export function useLiveActivities(filters?: {
   environment?: 'COMBINED' | 'OUTDOOR' | 'INDOOR';
 }): UnifiedActivity[] | undefined {
   return useLiveQuery(async () => {
-    let collection = db.activities.orderBy('start_date').reverse();
-    const rows = await collection.toArray();
-    return rows
-      .filter((r) => {
-        if (
-          filters?.sportCategory &&
-          filters.sportCategory !== 'ALL' &&
-          r.sportCategory !== filters.sportCategory
-        ) {
-          return false;
-        }
-        if (
-          filters?.environment &&
-          filters.environment !== 'COMBINED' &&
-          r.environment !== filters.environment
-        ) {
-          return false;
-        }
-        return true;
-      })
-      .map((r) => hydrateUnifiedActivity(r));
+    try {
+      const collection = db.activities.orderBy('start_date').reverse();
+      const rows = await collection.toArray();
+      return rows
+        .filter((r) => {
+          if (
+            filters?.sportCategory &&
+            filters.sportCategory !== 'ALL' &&
+            r.sportCategory !== filters.sportCategory
+          ) {
+            return false;
+          }
+          if (
+            filters?.environment &&
+            filters.environment !== 'COMBINED' &&
+            r.environment !== filters.environment
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .map((r) => hydrateUnifiedActivity(r));
+    } catch {
+      return [];
+    }
   }, [filters?.sportCategory, filters?.environment]);
 }
 
@@ -245,7 +249,11 @@ export function useLiveActivityStream(
 ): StoredActivityStreamRecord | undefined {
   return useLiveQuery(async () => {
     if (!activityId) return undefined;
-    return await db.activityStreams.get(activityId);
+    try {
+      return await db.activityStreams.get(activityId);
+    } catch {
+      return undefined;
+    }
   }, [activityId]);
 }
 
@@ -254,7 +262,11 @@ export function useLiveActivityStream(
  */
 export function useLiveWellnessDays(): UnifiedWellnessDay[] | undefined {
   return useLiveQuery(async () => {
-    return await db.wellnessDays.orderBy('date').toArray();
+    try {
+      return await db.wellnessDays.orderBy('date').toArray();
+    } catch {
+      return [];
+    }
   }, []);
 }
 
@@ -268,19 +280,28 @@ export function useLiveWorkoutStoreStats(): {
   savedAt: string | null;
 } {
   const stats = useLiveQuery(async () => {
-    const [activitiesCount, streamsCount, wellnessDaysCount, metaSaved] = await Promise.all([
-      db.activities.count(),
-      db.activityStreams.count(),
-      db.wellnessDays.count(),
-      db.metadata.get('snapshot_meta'),
-    ]);
-    const metaVal = metaSaved?.value as { savedAt?: string } | undefined;
-    return {
-      activitiesCount,
-      streamsCount,
-      wellnessDaysCount,
-      savedAt: metaVal?.savedAt || metaSaved?.updatedAt || null,
-    };
+    try {
+      const [activitiesCount, streamsCount, wellnessDaysCount, metaSaved] = await Promise.all([
+        db.activities.count(),
+        db.activityStreams.count(),
+        db.wellnessDays.count(),
+        db.metadata.get('snapshot_meta'),
+      ]);
+      const metaVal = metaSaved?.value as { savedAt?: string } | undefined;
+      return {
+        activitiesCount,
+        streamsCount,
+        wellnessDaysCount,
+        savedAt: metaVal?.savedAt || metaSaved?.updatedAt || null,
+      };
+    } catch {
+      return {
+        activitiesCount: 0,
+        streamsCount: 0,
+        wellnessDaysCount: 0,
+        savedAt: null,
+      };
+    }
   }, []);
 
   return (
@@ -297,14 +318,22 @@ export function useLiveWorkoutStoreStats(): {
  * Saves auxiliary metadata (e.g. AthleteProfile, earliestActivityDate, redactedStravaCount) to Dexie.
  */
 export async function saveStoreMetadata<T>(key: string, value: T): Promise<void> {
-  await db.metadata.put({
-    key,
-    value,
-    updatedAt: new Date().toISOString(),
-  });
+  try {
+    await db.metadata.put({
+      key,
+      value,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    // Ignore storage errors in restricted iframe sandboxes
+  }
 }
 
 export async function getStoreMetadata<T>(key: string): Promise<T | undefined> {
-  const rec = await db.metadata.get(key);
-  return rec ? (rec.value as T) : undefined;
+  try {
+    const rec = await db.metadata.get(key);
+    return rec ? (rec.value as T) : undefined;
+  } catch {
+    return undefined;
+  }
 }
