@@ -872,42 +872,94 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               />
             </div>
 
-            {onOpenOfficialRaceModal && (
-              <button
-                type="button"
-                onClick={onOpenOfficialRaceModal}
-                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
-                title="Import watchless official race results from Athletic.net, TFRRS, or MileSplit"
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                <span>Official Race / FAT</span>
-              </button>
-            )}
+            {/* Consolidated + Import & Actions Dropdown Menu */}
+            <div className="relative">
+              <details className="group">
+                <summary className="list-none cursor-pointer min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
+                  <Upload className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{isWorkerProcessing ? 'Parsing File...' : '+ Import & Actions ▾'}</span>
+                </summary>
+                <div className="absolute right-0 mt-2 w-64 rounded-2xl liquid-glass border border-slate-300/80 dark:border-white/15 shadow-2xl p-2 z-40 space-y-1 text-xs">
+                  <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    Import &amp; Telemetry Actions
+                  </div>
 
-            <label
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-xs font-bold text-cyan-700 dark:text-cyan-300 transition-colors whitespace-nowrap cursor-pointer"
-              title="Parse raw .FIT, .GPX, or .TCX file on background Web Worker thread and persist to Dexie IndexedDB"
-            >
-              <Upload className="w-3.5 h-3.5 text-cyan-500" />
-              <span>{isWorkerProcessing ? 'Worker Parsing...' : 'Import .FIT / .GPX'}</span>
-              <input
-                type="file"
-                accept=".fit,.gpx,.tcx,.json"
-                onChange={handleWorkoutFileUpload}
-                className="hidden"
-              />
-            </label>
+                  <label className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 font-medium cursor-pointer transition-colors">
+                    <Upload className="w-4 h-4 text-cyan-500 shrink-0" />
+                    <div className="flex-1">
+                      <div className="font-semibold">Import .FIT / .GPX / .TCX File</div>
+                      <div className="text-[10px] text-slate-500">Parse 1Hz streams in Web Worker</div>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".fit,.gpx,.tcx,.json"
+                      onChange={handleWorkoutFileUpload}
+                      className="hidden"
+                    />
+                  </label>
 
-            <button
-              type="button"
-              onClick={handleSimulate1HzGpxInWorker}
-              disabled={isWorkerProcessing}
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-colors whitespace-nowrap disabled:opacity-50"
-              title="Generate and parse a 1Hz GPX telemetry stream on the Web Worker thread"
-            >
-              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
-              <span>1Hz Worker Demo</span>
-            </button>
+                  {onOpenOfficialRaceModal && (
+                    <button
+                      type="button"
+                      onClick={onOpenOfficialRaceModal}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors"
+                    >
+                      <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+                      <div>
+                        <div className="font-semibold">Log Official Race / FAT Result</div>
+                        <div className="text-[10px] text-slate-500">Athletic.net, TFRRS, or chip time</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {onScanMoreSegments && (
+                    <button
+                      type="button"
+                      onClick={() => onScanMoreSegments()}
+                      disabled={isScanningSegments}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <div>
+                        <div className="font-semibold">
+                          {isScanningSegments ? 'Scanning Segments...' : 'Scan Strava Segments'}
+                        </div>
+                        <div className="text-[10px] text-slate-500">Index PRs &amp; repeated climbs</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {onHydrateMoreRoutes && (
+                    <button
+                      type="button"
+                      onClick={() => onHydrateMoreRoutes()}
+                      disabled={isHydratingRoutes}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors disabled:opacity-50"
+                    >
+                      <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
+                      <div>
+                        <div className="font-semibold">
+                          {isHydratingRoutes ? 'Hydrating GPS...' : 'Hydrate Missing GPS Routes'}
+                        </div>
+                        <div className="text-[10px] text-slate-500">Backfill outdoor route polylines</div>
+                      </div>
+                    </button>
+                  )}
+
+                  <div className="border-t border-slate-200/70 dark:border-white/10 pt-1 mt-1">
+                    <button
+                      type="button"
+                      onClick={handleSimulate1HzGpxInWorker}
+                      disabled={isWorkerProcessing}
+                      className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-600 dark:text-slate-300 font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Cpu className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="text-[11px]">Run 1Hz Worker Stream Demo</span>
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </div>
           </div>
         </div>
 

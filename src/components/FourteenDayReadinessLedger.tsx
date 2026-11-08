@@ -195,19 +195,44 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
       dailyLoad: avgOf(rows.map((r) => r.dailyLoad), true),
     };
 
-    const maxCtlAtl = Math.max(
-      100,
-      ...rows.map((r) => Math.max(r.ctl, r.atl, r.dailyLoad * 0.6))
-    );
+    const ctlVals = rows.map((r) => r.ctl);
+    const atlVals = rows.map((r) => r.atl);
+
+    const ctlMinRaw = Math.min(...ctlVals, means.ctl);
+    const ctlMaxRaw = Math.max(...ctlVals, means.ctl);
+    const ctlSpan = Math.max(2.5, ctlMaxRaw - ctlMinRaw);
+    const ctlBounds = {
+      min: ctlMinRaw - ctlSpan * 0.18,
+      max: ctlMaxRaw + ctlSpan * 0.18,
+    };
+
+    const atlMinRaw = Math.min(...atlVals, means.atl);
+    const atlMaxRaw = Math.max(...atlVals, means.atl);
+    const atlSpan = Math.max(6.0, atlMaxRaw - atlMinRaw);
+    const atlBounds = {
+      min: atlMinRaw - atlSpan * 0.15,
+      max: atlMaxRaw + atlSpan * 0.15,
+    };
 
     return {
-      rows: [...rows].reverse(), // Most recent day first in table
+      rows: [...rows].reverse(), // Most recent day first in table (index 0 = Today, index 13 = 14d ago)
       means,
-      maxCtlAtl,
+      ctlBounds,
+      atlBounds,
     };
   }, [chronological14]);
 
-  const { rows, means, maxCtlAtl } = enrichedRowsAndMeans;
+  const { rows, means, ctlBounds, atlBounds } = enrichedRowsAndMeans;
+
+  // Map a value into horizontal coordinate [6, 50] inside a 56px-wide vertical trend track
+  const normTrackX = (val: number, bounds: { min: number; max: number }): number => {
+    const span = Math.max(0.001, bounds.max - bounds.min);
+    const ratio = Math.max(0, Math.min(1, (val - bounds.min) / span));
+    return Number((6 + ratio * 44).toFixed(1));
+  };
+
+  const ctlMeanX = normTrackX(means.ctl, ctlBounds);
+  const atlMeanX = normTrackX(means.atl, atlBounds);
 
   return (
     <section className="rounded-2xl liquid-glass p-5 space-y-4">
@@ -218,10 +243,10 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
               14-Day Autonomic Recovery, Daily Load &amp; Intervals.icu PMC Ledger
             </h2>
             <ChartInfoTooltip
-              title="14-Day Autonomic Readiness & Daily Load Deviation Ledger"
-              subtitle="Acute-vs-Baseline Homeostasis & Intervals.icu TSB Matrix"
-              whatItMeasures="Compares each day's Readiness, Overnight HRV rMSSD, Resting HR, Sleep Score, and Daily Training Load against your rolling 14-day mean while tracking CTL, ATL, and 5-zone TSB Form."
-              benchmarks="Green: Within ±25% of your 14-day mean (consistent homeostasis). Red: >25% below your 14-day mean (autonomic suppression or recovery day). Gray: >25% above your 14-day mean (acute overload spike)."
+              title="14-Day Autonomic Readiness & Vertical CTL/ATL Trend Ledger"
+              subtitle="Acute-vs-Baseline Homeostasis & Vertical 14-Day Trajectory"
+              whatItMeasures="Compares each day's Readiness, Overnight HRV rMSSD, Resting HR, Sleep Score, and Daily Training Load against your rolling 14-day mean while plotting a continuous 14-day vertical trend line (and day-over-day delta) for Fitness (CTL) and Fatigue (ATL)."
+              benchmarks="Green: Within ±25% of your 14-day mean (consistent homeostasis). Red: >25% below your 14-day mean (autonomic suppression or recovery day). Gray: >25% above your 14-day mean (acute overload spike). In the CTL & ATL columns, the vertical curve flows from 14 days ago (bottom) to Today (top) against the dashed 14-day mean reference line."
               liveStatus={{
                 label: `14d Mean Load: ${means.dailyLoad.toFixed(0)} TSS · Mean HRV: ${means.hrvRMSSD.toFixed(1)}ms · Mean Form: ${means.tsb > 0 ? `+${means.tsb.toFixed(1)}` : means.tsb.toFixed(1)}`,
                 state:
@@ -232,11 +257,11 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                       : 'neutral',
                 interpretation: `Your 14-day average daily load is ${means.dailyLoad.toFixed(0)} TSS (green consistency band: ${Math.round(means.dailyLoad * 0.75)}–${Math.round(means.dailyLoad * 1.25)} TSS) with a mean HRV of ${means.hrvRMSSD.toFixed(1)}ms.`,
               }}
-              coachingAction="Watch for 2+ consecutive Red HRV or Sleep cells following Gray (> +25%) Daily Load spikes—this signals incomplete parasympathetic rebound and warrants an active recovery day."
+              coachingAction="Watch the vertical CTL (cyan) and ATL (purple) trajectories alongside HRV: when ATL curves sharply right (rising fatigue) and triggers 2+ Red HRV cells, schedule an active recovery day."
             />
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Daily Load &amp; recovery metrics are colored vs. the 14-day mean (Green within ±25%, Red &gt;25% below, Gray &gt;25% above) · CTL, ATL &amp; TSB use Intervals.icu colors
+            Recovery &amp; Daily Load cells are colored vs. the 14-day mean (±25% Green) · CTL &amp; ATL plot a continuous 14-day vertical trend curve (bottom → top) with day-over-day deltas
           </p>
         </div>
 
@@ -262,18 +287,18 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
 
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-slate-400 font-mono uppercase text-[10px] mr-1">
-              Intervals.icu PMC:
+              Vertical PMC Trend:
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
               <span className="w-2 h-2 rounded-full bg-[#0EA5E9]" />
-              <span>CTL Fitness</span>
+              <span>CTL 14d Curve (Cyan)</span>
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
               <span className="w-2 h-2 rounded-full bg-[#A855F7]" />
-              <span>ATL Fatigue</span>
+              <span>ATL 14d Curve (Purple)</span>
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md liquid-capsule-track text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-              <span>TSB Form Zones:</span>
+              <span>TSB Zones:</span>
               <span className="text-rose-500 font-bold">High Risk (&lt;-30)</span>·
               <span className="text-emerald-500 font-bold">Optimal (-30..-10)</span>·
               <span className="text-slate-400 font-bold">Grey (-10..+5)</span>·
@@ -295,10 +320,10 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
               <th className="py-2.5 px-3 text-right font-semibold">Resting HR (vs 14d)</th>
               <th className="py-2.5 px-3 text-right font-semibold">Sleep Score (vs 14d)</th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#0EA5E9]">
-                CTL (Fitness)
+                CTL Fitness (14d Trend)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#A855F7]">
-                ATL (Fatigue)
+                ATL Fatigue (14d Trend)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
                 TSB (Intervals.icu Form)
@@ -326,11 +351,17 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
               <td className="py-2 px-3 text-right font-bold">
                 {means.sleepScore > 0 ? `${means.sleepScore.toFixed(1)}/100` : '—'}
               </td>
-              <td className="py-2 px-3 text-right font-bold text-[#0EA5E9]">
-                {means.ctl.toFixed(1)}
+              <td className="py-2 px-3 text-right font-bold text-[#0EA5E9] whitespace-nowrap">
+                <div className="inline-flex items-center justify-end gap-2">
+                  <span className="text-[10px] font-normal text-slate-500">dashed line =</span>
+                  <span>{means.ctl.toFixed(1)}</span>
+                </div>
               </td>
-              <td className="py-2 px-3 text-right font-bold text-[#A855F7]">
-                {means.atl.toFixed(1)}
+              <td className="py-2 px-3 text-right font-bold text-[#A855F7] whitespace-nowrap">
+                <div className="inline-flex items-center justify-end gap-2">
+                  <span className="text-[10px] font-normal text-slate-500">dashed line =</span>
+                  <span>{means.atl.toFixed(1)}</span>
+                </div>
               </td>
               <td className="py-2 px-3 text-right font-bold">
                 {(() => {
@@ -353,7 +384,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
           </thead>
 
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums text-xs">
-            {rows.map((w) => {
+            {rows.map((w, rowIdx) => {
               // 14-day mean rule: Green if within ±25% of 14d mean, Red if >25% below mean, Gray if >25% above mean
               const readinessEval = evaluateVs14dMeanBand(
                 w.readinessScore,
@@ -373,9 +404,30 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                   : null;
               const loadEval = evaluateVs14dMeanBand(w.dailyLoad, means.dailyLoad);
 
-              // Intervals.icu coloring & inline bar scaling for CTL, ATL, and TSB
-              const ctlPctWidth = Math.min(100, Math.max(8, (w.ctl / maxCtlAtl) * 100));
-              const atlPctWidth = Math.min(100, Math.max(8, (w.atl / maxCtlAtl) * 100));
+              // Neighboring rows: rowIdx - 1 is newer (above), rowIdx + 1 is older/yesterday (below)
+              const newerRow = rowIdx > 0 ? rows[rowIdx - 1] : null;
+              const olderRow = rowIdx < rows.length - 1 ? rows[rowIdx + 1] : null;
+
+              // Vertical CTL coordinates ( seamlessly connecting row-to-row from bottom to top )
+              const ctlXCurr = normTrackX(w.ctl, ctlBounds);
+              const ctlXTop = newerRow
+                ? Number(((ctlXCurr + normTrackX(newerRow.ctl, ctlBounds)) / 2).toFixed(1))
+                : ctlXCurr;
+              const ctlXBot = olderRow
+                ? Number(((ctlXCurr + normTrackX(olderRow.ctl, ctlBounds)) / 2).toFixed(1))
+                : ctlXCurr;
+              const ctlDayDelta = olderRow ? Number((w.ctl - olderRow.ctl).toFixed(1)) : 0;
+
+              // Vertical ATL coordinates ( seamlessly connecting row-to-row from bottom to top )
+              const atlXCurr = normTrackX(w.atl, atlBounds);
+              const atlXTop = newerRow
+                ? Number(((atlXCurr + normTrackX(newerRow.atl, atlBounds)) / 2).toFixed(1))
+                : atlXCurr;
+              const atlXBot = olderRow
+                ? Number(((atlXCurr + normTrackX(olderRow.atl, atlBounds)) / 2).toFixed(1))
+                : atlXCurr;
+              const atlDayDelta = olderRow ? Number((w.atl - olderRow.atl).toFixed(1)) : 0;
+
               const formMeta = getIntervalsFormZone(w.tsb);
 
               return (
@@ -484,36 +536,136 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                     )}
                   </td>
 
-                  {/* CTL (Fitness) — Intervals.icu Cyan (#0EA5E9) + Inline Bar */}
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap bg-sky-500/8 dark:bg-sky-500/12 border-l-2 border-l-[#0EA5E9]">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span className="font-bold text-sky-700 dark:text-sky-300">
-                          {w.ctl.toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="w-20 ml-auto h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#0EA5E9]"
-                          style={{ width: `${ctlPctWidth}%` }}
+                  {/* CTL (Fitness) — Continuous Vertical 14-Day Trend Track + Value + d/d Delta */}
+                  <td
+                    className="py-0 px-3 text-right whitespace-nowrap bg-sky-500/8 dark:bg-sky-500/12 border-l-2 border-l-[#0EA5E9]"
+                    title={`CTL Fitness on ${w.date}: ${w.ctl.toFixed(1)} (${ctlDayDelta >= 0 ? '+' : ''}${ctlDayDelta.toFixed(1)} vs prior day · 14d Mean: ${means.ctl.toFixed(1)})`}
+                  >
+                    <div className="flex items-center justify-end gap-2.5 h-11">
+                      {/* Continuous Vertical Trend Segment (connects seamlessly across all 14 rows) */}
+                      <div className="relative w-14 h-full shrink-0 bg-slate-900/5 dark:bg-slate-950/45 border-x border-sky-500/15">
+                        <svg
+                          viewBox="0 0 56 44"
+                          preserveAspectRatio="none"
+                          className="w-full h-full block overflow-visible"
+                        >
+                          {/* Shaded area under the vertical curve */}
+                          <polygon
+                            points={`0,${newerRow ? 0 : 22} ${ctlXTop},${newerRow ? 0 : 22} ${ctlXCurr},22 ${ctlXBot},${olderRow ? 44 : 22} 0,${olderRow ? 44 : 22}`}
+                            fill="rgba(14, 165, 233, 0.18)"
+                          />
+                          {/* Dashed vertical 14-Day Mean reference line */}
+                          <line
+                            x1={ctlMeanX}
+                            y1={0}
+                            x2={ctlMeanX}
+                            y2={44}
+                            stroke="rgba(14, 165, 233, 0.45)"
+                            strokeWidth="1"
+                            strokeDasharray="2 2"
+                          />
+                          {/* Continuous vertical trend polyline */}
+                          <polyline
+                            fill="none"
+                            stroke="#0EA5E9"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            points={`${ctlXTop},${newerRow ? 0 : 22} ${ctlXCurr},22 ${ctlXBot},${olderRow ? 44 : 22}`}
+                          />
+                        </svg>
+                        {/* Non-distorted circular node at current day's exact coordinate */}
+                        <span
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#0EA5E9] ring-2 ring-white dark:ring-slate-950 shadow-xs pointer-events-none"
+                          style={{ left: `${(ctlXCurr / 56) * 100}%` }}
                         />
+                      </div>
+
+                      {/* Actual Value + Day-over-Day Delta */}
+                      <div className="min-w-[54px] text-right leading-tight">
+                        <div className="font-bold text-sky-700 dark:text-sky-300">
+                          {w.ctl.toFixed(1)}
+                        </div>
+                        <div
+                          className={`text-[10px] font-semibold ${
+                            ctlDayDelta > 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : ctlDayDelta < 0
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-slate-400'
+                          }`}
+                        >
+                          {olderRow
+                            ? `${ctlDayDelta > 0 ? '+' : ''}${ctlDayDelta.toFixed(1)} d/d`
+                            : 'base'}
+                        </div>
                       </div>
                     </div>
                   </td>
 
-                  {/* ATL (Fatigue) — Intervals.icu Purple (#A855F7) + Inline Bar */}
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap bg-purple-500/8 dark:bg-purple-500/12 border-l-2 border-l-[#A855F7]">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span className="font-bold text-purple-700 dark:text-purple-300">
-                          {w.atl.toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="w-20 ml-auto h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#A855F7]"
-                          style={{ width: `${atlPctWidth}%` }}
+                  {/* ATL (Fatigue) — Continuous Vertical 14-Day Trend Track + Value + d/d Delta */}
+                  <td
+                    className="py-0 px-3 text-right whitespace-nowrap bg-purple-500/8 dark:bg-purple-500/12 border-l-2 border-l-[#A855F7]"
+                    title={`ATL Fatigue on ${w.date}: ${w.atl.toFixed(1)} (${atlDayDelta >= 0 ? '+' : ''}${atlDayDelta.toFixed(1)} vs prior day · 14d Mean: ${means.atl.toFixed(1)})`}
+                  >
+                    <div className="flex items-center justify-end gap-2.5 h-11">
+                      {/* Continuous Vertical Trend Segment (connects seamlessly across all 14 rows) */}
+                      <div className="relative w-14 h-full shrink-0 bg-slate-900/5 dark:bg-slate-950/45 border-x border-purple-500/15">
+                        <svg
+                          viewBox="0 0 56 44"
+                          preserveAspectRatio="none"
+                          className="w-full h-full block overflow-visible"
+                        >
+                          {/* Shaded area under the vertical curve */}
+                          <polygon
+                            points={`0,${newerRow ? 0 : 22} ${atlXTop},${newerRow ? 0 : 22} ${atlXCurr},22 ${atlXBot},${olderRow ? 44 : 22} 0,${olderRow ? 44 : 22}`}
+                            fill="rgba(168, 85, 247, 0.18)"
+                          />
+                          {/* Dashed vertical 14-Day Mean reference line */}
+                          <line
+                            x1={atlMeanX}
+                            y1={0}
+                            x2={atlMeanX}
+                            y2={44}
+                            stroke="rgba(168, 85, 247, 0.45)"
+                            strokeWidth="1"
+                            strokeDasharray="2 2"
+                          />
+                          {/* Continuous vertical trend polyline */}
+                          <polyline
+                            fill="none"
+                            stroke="#A855F7"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            points={`${atlXTop},${newerRow ? 0 : 22} ${atlXCurr},22 ${atlXBot},${olderRow ? 44 : 22}`}
+                          />
+                        </svg>
+                        {/* Non-distorted circular node at current day's exact coordinate */}
+                        <span
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#A855F7] ring-2 ring-white dark:ring-slate-950 shadow-xs pointer-events-none"
+                          style={{ left: `${(atlXCurr / 56) * 100}%` }}
                         />
+                      </div>
+
+                      {/* Actual Value + Day-over-Day Delta */}
+                      <div className="min-w-[54px] text-right leading-tight">
+                        <div className="font-bold text-purple-700 dark:text-purple-300">
+                          {w.atl.toFixed(1)}
+                        </div>
+                        <div
+                          className={`text-[10px] font-semibold ${
+                            atlDayDelta > 5
+                              ? 'text-rose-500 dark:text-rose-400'
+                              : atlDayDelta < 0
+                                ? 'text-sky-600 dark:text-sky-400'
+                                : 'text-slate-400'
+                          }`}
+                        >
+                          {olderRow
+                            ? `${atlDayDelta > 0 ? '+' : ''}${atlDayDelta.toFixed(1)} d/d`
+                            : 'base'}
+                        </div>
                       </div>
                     </div>
                   </td>

@@ -681,125 +681,16 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   >({
     pmc: false,
     ledger: false,
-    comparator: false,
-    radars: false,
+    comparator: true,
+    radars: true,
   });
 
   const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const scrollToFitnessSection = (
-    sectionId: string,
-    key: 'pmc' | 'ledger' | 'comparator' | 'radars'
-  ) => {
-    setCollapsedSections((prev) => ({ ...prev, [key]: false }));
-    window.setTimeout(() => {
-      const el = document.getElementById(sectionId);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 40);
-  };
-
-  const allCollapsed =
-    collapsedSections.pmc &&
-    collapsedSections.ledger &&
-    collapsedSections.comparator &&
-    collapsedSections.radars;
-
   return (
     <div className="space-y-6">
-      {/* ==========================================================================
-          STICKY FITNESS LAB QUICK-JUMP & SECTION COLLAPSE BAR
-         ========================================================================== */}
-      <div className="sticky top-[3.75rem] sm:top-16 z-30 rounded-2xl liquid-glass px-3 sm:px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 border border-sky-500/25 shadow-sm">
-        <div className="ap-toolbar-scroll max-w-full">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-sky-600 dark:text-sky-400 font-semibold mr-1 flex items-center gap-1 whitespace-nowrap">
-            <Layers className="w-3.5 h-3.5" />
-            <span>Lab Jump:</span>
-          </span>
-          {(
-            [
-              {
-                key: 'pmc',
-                id: 'fitness-sec-pmc',
-                label: '1. Readiness & PMC',
-                icon: Activity,
-                accent: 'text-sky-500',
-              },
-              {
-                key: 'ledger',
-                id: 'fitness-sec-ledger',
-                label: '2. 14d Ledger & KPIs',
-                icon: Calendar,
-                accent: 'text-emerald-500',
-              },
-              {
-                key: 'comparator',
-                id: 'fitness-sec-comparator',
-                label: '3. Dual Comparator & Load/Hr',
-                icon: Users,
-                accent: 'text-orange-500',
-              },
-              {
-                key: 'radars',
-                id: 'fitness-sec-radars',
-                label: '4. 5-Axis & Coggan/WMA Radars',
-                icon: Radar,
-                accent: 'text-purple-500',
-              },
-            ] as const
-          ).map((sec) => {
-            const SecIcon = sec.icon;
-            const isCollapsed = collapsedSections[sec.key];
-            return (
-              <div
-                key={sec.key}
-                className="inline-flex items-center rounded-xl liquid-capsule-track p-0.5 border border-slate-300/60 dark:border-white/10 whitespace-nowrap"
-              >
-                <button
-                  type="button"
-                  onClick={() => scrollToFitnessSection(sec.id, sec.key)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 transition-colors"
-                >
-                  <SecIcon className={`w-3 h-3 ${sec.accent}`} />
-                  <span>{sec.label}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSection(sec.key)}
-                  title={isCollapsed ? `Expand ${sec.label}` : `Collapse ${sec.label}`}
-                  className={`px-1.5 py-1 rounded-lg text-[10px] font-mono transition-colors ${
-                    isCollapsed
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300'
-                      : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'
-                  }`}
-                >
-                  {isCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            const nextState = !allCollapsed;
-            setCollapsedSections({
-              pmc: nextState,
-              ledger: nextState,
-              comparator: nextState,
-              radars: nextState,
-            });
-          }}
-          className="hidden sm:inline-flex px-2.5 py-1 rounded-xl liquid-glass-subtle text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-sky-500 transition-colors whitespace-nowrap"
-        >
-          {allCollapsed ? 'Expand All Lab Sections' : 'Collapse All Sections'}
-        </button>
-      </div>
-
       {/* ==========================================================================
           0. AUTONOMOUS READINESS-MORPHING DAILY WORKOUT TOP STRIP
          ========================================================================== */}
@@ -980,39 +871,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             ))}
           </div>
 
-          {/* Right: Engine Switcher + Forward Projection + Customize Strips Popover */}
+          {/* Right: Forward Projection + Customize Chart Popover */}
           <div className="flex flex-wrap items-center gap-2 relative min-w-0">
-            <span
-              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-600 dark:text-emerald-300"
-              title="Live reactive IndexedDB query via Dexie.js workoutStore"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Dexie IDB: {dexieStats.activitiesCount} acts · {dexieStats.streamsCount} 1Hz streams
-            </span>
-
-            <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-mono">
-              {(
-                [
-                  { id: 'ECHARTS', label: 'ECharts PMC' },
-                  { id: 'SVG', label: '6-Pane SVG' },
-                  { id: 'BOTH', label: 'Dual Engine' },
-                ] as const
-              ).map((eng) => (
-                <button
-                  key={eng.id}
-                  type="button"
-                  onClick={() => setPmcEngine(eng.id)}
-                  className={`px-2 py-0.5 rounded-lg transition-all ${
-                    pmcEngine === eng.id
-                      ? 'liquid-capsule-active text-cyan-600 dark:text-cyan-300 font-bold'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {eng.label}
-                </button>
-              ))}
-            </div>
-
             <select
               value={forwardDays}
               onChange={(e) =>
@@ -1033,13 +893,29 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-blue-500/35 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-sky-300 text-xs font-bold tracking-wide transition-colors"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Customize</span>
+              <span>Customize Chart ▾</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleSection('pmc')}
+              title="Collapse PMC Chart"
+              className="min-h-[32px] px-2 py-1 rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
             </button>
 
             {isCustomizeOpen && (
-              <div className="absolute right-0 top-10 z-30 w-64 rounded-2xl liquid-glass p-4 space-y-2.5 text-xs">
-                <div className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/70 dark:border-white/10 pb-1.5">
-                  Synchronized Chart Strips
+              <div className="absolute right-0 top-10 z-30 w-72 rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl border border-slate-300/80 dark:border-white/15">
+                <div className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/70 dark:border-white/10 pb-1.5 flex items-center justify-between">
+                  <span>Synchronized Chart Strips</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomizeOpen(false)}
+                    className="text-[11px] font-mono text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                  >
+                    Done
+                  </button>
                 </div>
                 {[
                   {
@@ -1102,6 +978,44 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     />
                   </div>
                 )}
+
+                {/* Chart Rendering Engine & Local Cache Diagnostics */}
+                <div className="pt-2.5 border-t border-slate-200/70 dark:border-white/10 space-y-2">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Rendering Engine
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-mono">
+                    {(
+                      [
+                        { id: 'SVG', label: '6-Pane SVG' },
+                        { id: 'ECHARTS', label: 'ECharts' },
+                        { id: 'BOTH', label: 'Dual' },
+                      ] as const
+                    ).map((eng) => (
+                      <button
+                        key={eng.id}
+                        type="button"
+                        onClick={() => setPmcEngine(eng.id)}
+                        className={`px-2 py-1 rounded-lg transition-all ${
+                          pmcEngine === eng.id
+                            ? 'liquid-capsule-active text-cyan-600 dark:text-cyan-300 font-bold'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        {eng.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-emerald-600 dark:text-emerald-400 pt-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      Local IndexedDB Cache
+                    </span>
+                    <span>
+                      {dexieStats.activitiesCount} acts · {dexieStats.streamsCount} streams
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -2841,7 +2755,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       {/* ==========================================================================
           5. DUAL ATHLETE COMPARATOR (SIDE-BY-SIDE CTL, TSB & HRV ROSTER OVERLAY)
          ========================================================================== */}
-      <div id="fitness-sec-comparator" className="scroll-mt-28">
+      <div id="fitness-sec-comparator" className="scroll-mt-28 space-y-2">
         {collapsedSections.comparator ? (
           <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -2860,24 +2774,36 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             </button>
           </div>
         ) : (
-          <DualAthleteComparator
-            selfName={selfName}
-            selfProfile={selfProfile || athleteProfile}
-            selfWellnessDays={
-              selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
-            }
-            selfActivities={activities}
-            connectedAthletes={connectedAthletes}
-            onOpenRosterModal={onOpenRosterModal}
-            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-          />
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => toggleSection('comparator')}
+                className="px-3 py-1 rounded-xl liquid-glass-subtle text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-orange-500 flex items-center gap-1"
+              >
+                <span>Collapse Comparator</span>
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <DualAthleteComparator
+              selfName={selfName}
+              selfProfile={selfProfile || athleteProfile}
+              selfWellnessDays={
+                selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+              }
+              selfActivities={activities}
+              connectedAthletes={connectedAthletes}
+              onOpenRosterModal={onOpenRosterModal}
+              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+            />
+          </div>
         )}
       </div>
 
       {/* ==========================================================================
           6. ATHLETE PERFORMANCE RADAR & AGE-GRADED COGGAN / WMA SCALES
          ========================================================================== */}
-      <div id="fitness-sec-radars" className="scroll-mt-28">
+      <div id="fitness-sec-radars" className="scroll-mt-28 space-y-2">
         {collapsedSections.radars ? (
           <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -2896,18 +2822,30 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             </button>
           </div>
         ) : (
-          <AthletePerformanceRadar
-            selfName={selfName}
-            selfProfile={selfProfile || athleteProfile}
-            selfWellnessDays={
-              selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
-            }
-            selfActivities={activities}
-            selfPlannedEvents={plannedEvents}
-            connectedAthletes={connectedAthletes}
-            onOpenRosterModal={onOpenRosterModal}
-            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-          />
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => toggleSection('radars')}
+                className="px-3 py-1 rounded-xl liquid-glass-subtle text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 hover:text-purple-500 flex items-center gap-1"
+              >
+                <span>Collapse Radars</span>
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <AthletePerformanceRadar
+              selfName={selfName}
+              selfProfile={selfProfile || athleteProfile}
+              selfWellnessDays={
+                selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+              }
+              selfActivities={activities}
+              selfPlannedEvents={plannedEvents}
+              connectedAthletes={connectedAthletes}
+              onOpenRosterModal={onOpenRosterModal}
+              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+            />
+          </div>
         )}
       </div>
     </div>

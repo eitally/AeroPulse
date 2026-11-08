@@ -91,6 +91,10 @@ import {
   Lightning,
   MagnifyingGlassPlus,
   MagnifyingGlassMinus,
+  SignOut,
+  GearSix,
+  User,
+  UserCircle,
 } from '@phosphor-icons/react';
 
 export {
@@ -142,6 +146,10 @@ export {
   Link,
   Lock,
   SignIn,
+  SignOut,
+  GearSix,
+  User,
+  UserCircle,
   MapTrifold,
   MapPin,
   CornersOut,
@@ -210,6 +218,8 @@ export {
   ChartLine as LineChart,
   Link as Link2,
   SignIn as LogIn,
+  SignOut as LogOut,
+  GearSix as Settings,
   MapTrifold as Map,
   CornersOut as Maximize2,
   CornersIn as Minimize2,

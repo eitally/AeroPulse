@@ -15,16 +15,20 @@ import {
   Sparkles,
   Trophy,
   Flame,
+  LogOut,
+  UserCheck,
 } from "./icons/PhosphorIcons";
 import { ConnectionStatus } from '../types';
 import { AeroPulseLogo } from './AeroPulseLogo';
 
 interface StravaAuthGateProps {
   status: ConnectionStatus;
+  athleteName?: string;
   onLaunchStravaOAuth: () => Promise<void>;
   onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
   onSaveStravaCredentials: (clientId: string, clientSecret: string) => Promise<void>;
   onEnterSandbox: () => void;
+  onDisconnectCredentials?: () => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
 }
@@ -36,10 +40,12 @@ const SHARED_CALLBACK_URL =
 
 export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   status,
+  athleteName,
   onLaunchStravaOAuth,
   onExchangeStravaCode,
   onSaveStravaCredentials,
   onEnterSandbox,
+  onDisconnectCredentials,
   isSyncing,
   errorMessage,
 }) => {
@@ -48,6 +54,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [clientSecretInput, setClientSecretInput] = useState('');
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
+  const hasSavedSession = Boolean(status.stravaConnected || status.intervalsConnected);
+  const resolvedAthleteName =
+    athleteName ||
+    status.stravaAthleteName ||
+    status.intervalsAthleteName ||
+    'Elliot';
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -89,7 +102,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             onClick={onEnterSandbox}
             className="text-xs font-mono text-[#38BDF8] hover:text-white bg-[#38BDF8]/10 hover:bg-[#38BDF8]/20 border border-[#38BDF8]/30 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
           >
-            <span>Enter Live Sandbox</span>
+            <span>{hasSavedSession ? `Resume as ${resolvedAthleteName}` : 'Enter Live Sandbox'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -213,12 +226,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   ATHLETE &amp; COACH AUTHENTICATION
                 </span>
                 <h2 className="text-lg font-bold text-white mt-0.5">
-                  Sign Up or Log In with Strava
+                  {hasSavedSession ? 'Session Locked — Welcome Back' : 'Sign Up or Log In with Strava'}
                 </h2>
               </div>
               <div className="px-2 py-1 rounded bg-[#14181F] border border-[#1E2530] text-[11px] font-mono text-[#94A3B8]">
                 {status.stravaConnected ? (
                   <span className="text-[#10B981]">● Strava Connected</span>
+                ) : status.intervalsConnected ? (
+                  <span className="text-[#10B981]">● Intervals.icu Connected</span>
                 ) : status.stravaClientId ? (
                   <span className="text-[#38BDF8]">● OAuth Ready</span>
                 ) : (
@@ -233,9 +248,22 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               </div>
             )}
 
-            {/* Primary CTA: Continue with Strava */}
+            {/* Primary & Secondary CTAs */}
             <div className="space-y-3">
+              {hasSavedSession && (
+                <button
+                  type="button"
+                  onClick={onEnterSandbox}
+                  className="w-full py-3 px-4 rounded-lg bg-[#10B981] hover:bg-[#059669] text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-[#10B981]/20 transition-all cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4" weight="bold" />
+                  <span>Continue as {resolvedAthleteName}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+
               <button
+                type="button"
                 onClick={onLaunchStravaOAuth}
                 disabled={isSyncing}
                 className="w-full py-3 px-4 rounded-lg bg-[#FC4C02] hover:bg-[#E34402] disabled:opacity-50 text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-[#FC4C02]/20 transition-all cursor-pointer"
@@ -244,22 +272,35 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 <span>
                   {isSyncing
                     ? 'Connecting to Strava OAuth...'
-                    : status.stravaConnected
-                    ? 'Re-Sync Strava Account & Enter Workspace'
+                    : hasSavedSession
+                    ? 'Sign In with Another Strava Account'
                     : 'Continue with Strava (OAuth 2.0 Popup)'}
                 </span>
                 <ExternalLink className="w-3.5 h-3.5 opacity-80" />
               </button>
 
-              {/* Secondary CTA: 1-Click Live Athlete & Coach Sandbox */}
-              <button
-                onClick={onEnterSandbox}
-                className="w-full py-2.5 px-4 rounded-lg bg-[#14181F] hover:bg-[#1C222C] border border-[#262F3D] hover:border-[#38BDF8]/50 text-[#F1F5F9] font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#38BDF8]" />
-                <span>Enter Live Athlete &amp; Coach Sandbox (Instant Demo Bypass)</span>
-                <ArrowRight className="w-3.5 h-3.5 text-[#94A3B8]" />
-              </button>
+              {!hasSavedSession && (
+                <button
+                  type="button"
+                  onClick={onEnterSandbox}
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#14181F] hover:bg-[#1C222C] border border-[#262F3D] hover:border-[#38BDF8]/50 text-[#F1F5F9] font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#38BDF8]" />
+                  <span>Enter Live Athlete &amp; Coach Sandbox (Instant Demo Bypass)</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#94A3B8]" />
+                </button>
+              )}
+
+              {hasSavedSession && onDisconnectCredentials && (
+                <button
+                  type="button"
+                  onClick={onDisconnectCredentials}
+                  className="w-full py-2 px-4 rounded-lg bg-[#14181F] hover:bg-rose-500/15 border border-[#262F3D] hover:border-rose-500/40 text-slate-400 hover:text-rose-300 font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Disconnect Saved Credentials &amp; Clear Device Data</span>
+                </button>
+              )}
             </div>
 
             {/* Scopes & Security Summary */}

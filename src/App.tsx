@@ -18,6 +18,11 @@ import {
   Lock,
   CalendarPlus,
   LogIn,
+  LogOut,
+  Settings,
+  ChevronDown,
+  HelpCircle,
+  Database,
   IconContext,
 } from "./components/icons/PhosphorIcons";
 import {
@@ -110,9 +115,20 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState<boolean>(false);
+  const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+
   const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
     try {
       return localStorage.getItem('aeropulse_auth_gate_passed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [isSessionLoggedOut, setIsSessionLoggedOut] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aeropulse_logged_out') === '1';
     } catch {
       return false;
     }
@@ -1954,24 +1970,103 @@ export default function App() {
   const athleteFtp =
     effectiveAthleteProfile.ftp || connectionStatus.athleteFtp || latestWellness?.rideEftp || 300;
 
-  // Multi-athlete roster & coach handlers
+  // Close Account & Settings Menu on outside click or Escape key
+  useEffect(() => {
+    if (!isAccountMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsAccountMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAccountMenuOpen]);
+
+  const primaryAthleteDisplayName = useMemo(() => {
+    const raw =
+      athleteProfile.name ||
+      connectionStatus.stravaAthleteName ||
+      connectionStatus.intervalsAthleteName ||
+      'Elliot';
+    return raw === 'Primary Athlete' ? 'Elliot' : raw;
+  }, [
+    athleteProfile.name,
+    connectionStatus.stravaAthleteName,
+    connectionStatus.intervalsAthleteName,
+  ]);
+
+  const primaryAthleteInitials = useMemo(() => {
+    const parts = primaryAthleteDisplayName.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
+    }
+    return primaryAthleteDisplayName.slice(0, 2).toUpperCase() || 'EL';
+  }, [primaryAthleteDisplayName]);
+
+  // Multi-athlete roster & session auth handlers
   const handleEnterSandbox = useCallback(() => {
+    setIsSessionLoggedOut(false);
     setHasEnteredWorkspace(true);
     try {
+      localStorage.removeItem('aeropulse_logged_out');
       localStorage.setItem('aeropulse_auth_gate_passed', '1');
     } catch {
       // ignore
     }
   }, []);
 
-  const handleOpenStravaAuthGate = useCallback(() => {
+  const handleLogoutSession = useCallback(() => {
+    setIsAccountMenuOpen(false);
+    setIsSessionLoggedOut(true);
     setHasEnteredWorkspace(false);
     try {
+      localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
     } catch {
       // ignore
     }
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clearCredentials: false }),
+    }).catch(() => {});
   }, []);
+
+  const handleLogoutAndClearData = useCallback(async () => {
+    setIsAccountMenuOpen(false);
+    setIsSessionLoggedOut(true);
+    setHasEnteredWorkspace(false);
+    try {
+      localStorage.setItem('aeropulse_logged_out', '1');
+      localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_intervals_api_key');
+      localStorage.removeItem('aeropulse_intervals_athlete_id');
+      localStorage.removeItem('aeropulse_strava_access_token');
+      localStorage.removeItem('aeropulse_strava_refresh_token');
+      localStorage.removeItem('aeropulse_strava_expires_at');
+    } catch {
+      // ignore
+    }
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearCredentials: true }),
+      });
+    } catch {
+      // ignore
+    }
+    await clearPersistedTelemetrySnapshot();
+    setIdbSavedAt(null);
+    await fetchServerConfigStatus();
+  }, [fetchServerConfigStatus]);
 
   const handleApproveAthleteRequest = useCallback(
     (athleteId: string, role: 'COACH_EDIT' | 'FRIEND_VIEW') => {
@@ -2172,13 +2267,15 @@ export default function App() {
     }
   };
 
-  if (!hasEnteredWorkspace && !connectionStatus.stravaConnected) {
+  if (isSessionLoggedOut || (!hasEnteredWorkspace && !connectionStatus.stravaConnected)) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
           status={connectionStatus}
+          athleteName={primaryAthleteDisplayName}
           onLaunchStravaOAuth={async () => {
             await handleLaunchStravaOAuth('cloud');
+            handleEnterSandbox();
           }}
           onExchangeStravaCode={async (codeOrUrl) => {
             await handleExchangeStravaCode(codeOrUrl);
@@ -2186,6 +2283,7 @@ export default function App() {
           }}
           onSaveStravaCredentials={handleSaveStravaCredentials}
           onEnterSandbox={handleEnterSandbox}
+          onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
         />
@@ -2198,11 +2296,11 @@ export default function App() {
       <div className="ap-shell text-slate-900 dark:text-slate-100">
         <OfflineIndicator />
 
-        {/* Unified Floating macOS Liquid Glass Header Bar (Responsive Mobile & Desktop) */}
+        {/* Simplified 5-Element Global Header Bar (Responsive Mobile & Desktop) */}
         <div className="sticky top-2 z-40 ap-container pt-1">
-          <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2 space-y-2 sm:space-y-0">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-              {/* Left: Brand Wordmark + Athlete Context Switcher + Compact Live Sync Pill */}
+          <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
+            <div className="flex items-center justify-between gap-2 sm:gap-3">
+              {/* 1. Brand Wordmark + Subtle Live Sync Pill */}
               <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <a
                   href="#fitness"
@@ -2215,65 +2313,24 @@ export default function App() {
                   <AeroPulseLogo size="sm" />
                 </a>
 
-                {/* Intervals.icu-Style Top Header Athlete Context Switcher */}
-                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-sky-500/25 min-w-0">
-                  <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" weight="duotone" />
-                  <select
-                    value={activeViewedAthleteId}
-                    onChange={(e) => {
-                      setActiveViewedAthleteId(e.target.value);
-                      setSelectedActivity(null);
-                    }}
-                    aria-label="Switch Active Athlete Profile"
-                    className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1 max-w-[115px] sm:max-w-[175px] truncate"
-                  >
-                    <option value="SELF" className="bg-slate-900 text-white">
-                      You ({athleteProfile.name || 'Primary Athlete'})
-                    </option>
-                    {connectedAthletes
-                      .filter((a) => a.status === 'CONNECTED')
-                      .map((a) => (
-                        <option key={a.id} value={a.id} className="bg-slate-900 text-white">
-                          {a.name} ({a.role === 'COACH_EDIT' ? 'Coach Edit' : 'Friend View'})
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setIsRosterModalOpen(true)}
-                    className="ml-0.5 px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-mono font-semibold transition-colors flex items-center gap-1 shrink-0"
-                    title="Open Friends, Team Leaderboard & Coaching Hub"
-                  >
-                    <span className="hidden xs:inline">Roster</span>
-                    {connectedAthletes.some((a) => a.status !== 'CONNECTED') && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                    )}
-                  </button>
-                </div>
-
                 <button
+                  type="button"
                   onClick={() => syncLiveTelemetry(false)}
                   disabled={isSyncing}
-                  className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                  title="Hourly Auto-Sync Cron Active (0 * * * *) — Click to sync now"
+                  className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  title="Click to sync live telemetry now"
                 >
                   <RefreshCw
                     weight="bold"
-                    className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
+                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
                   />
-                  <span>{effectiveActivities.length.toLocaleString()} acts</span>
-                  {latestWellness && (
-                    <>
-                      <span className="opacity-40">·</span>
-                      <span className="text-sky-600 dark:text-sky-300 font-semibold">
-                        CTL {latestWellness.ctl.toFixed(0)}
-                      </span>
-                    </>
-                  )}
+                  <span className="text-sky-600 dark:text-sky-300 font-semibold">
+                    CTL {latestWellness ? latestWellness.ctl.toFixed(0) : '—'}
+                  </span>
                 </button>
               </div>
 
-              {/* Center: 4 Primary Workspaces in a Recessed macOS Capsule Switcher */}
+              {/* 2. Center: 4 Primary Workspaces in a Recessed macOS Capsule Switcher */}
               <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
                 {(
                   [
@@ -2313,7 +2370,7 @@ export default function App() {
                         e.preventDefault();
                         setActiveTab(item.id);
                       }}
-                      className={`min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
+                      className={`min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
                         isActive
                           ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -2329,160 +2386,270 @@ export default function App() {
                 })}
               </nav>
 
-              {/* Right: Compact Environment Pill + Units + AI Coach + Data Sources + Theme */}
+              {/* Right: 3. Athlete Switcher Pill + 4. AI Coach CTA + 5. Account & Settings Menu */}
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                {/* Compact Environment Capsule (All / Outdoor / Virtual) */}
-                <div
-                  className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-medium"
-                  title="Filter Outdoor GPS vs Virtual / Smart Trainer / Treadmill"
-                >
-                  {(
-                    [
-                      { id: 'COMBINED', label: 'All' },
-                      { id: 'OUTDOOR', label: 'Outdoor' },
-                      { id: 'INDOOR', label: 'Virtual' },
-                    ] as const
-                  ).map((env) => (
-                    <button
-                      key={env.id}
-                      onClick={() => setEnvFilter(env.id)}
-                      className={`min-h-[26px] px-2 py-0.5 rounded-lg transition-all whitespace-nowrap ${
-                        envFilter === env.id
-                          ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      {env.label}
-                    </button>
-                  ))}
+                {/* 3. Athlete Context Switcher */}
+                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-sky-500/20 min-w-0">
+                  <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" weight="duotone" />
+                  <select
+                    value={activeViewedAthleteId}
+                    onChange={(e) => {
+                      setActiveViewedAthleteId(e.target.value);
+                      setSelectedActivity(null);
+                    }}
+                    aria-label="Switch Active Athlete Profile"
+                    className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1 max-w-[105px] sm:max-w-[155px] truncate"
+                  >
+                    <option value="SELF" className="bg-slate-900 text-white">
+                      {primaryAthleteDisplayName} (You)
+                    </option>
+                    {connectedAthletes
+                      .filter((a) => a.status === 'CONNECTED')
+                      .map((a) => (
+                        <option key={a.id} value={a.id} className="bg-slate-900 text-white">
+                          {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Friend'})
+                        </option>
+                      ))}
+                  </select>
                 </div>
 
-                {/* Compact Units Capsule (mi / km) */}
-                <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track font-mono text-[11px]">
-                  {(['mi', 'km'] as const).map((u) => (
-                    <button
-                      key={u}
-                      onClick={() => setDistanceUnit(u)}
-                      className={`min-h-[26px] px-2 py-0.5 rounded-lg transition-all ${
-                        distanceUnit === u
-                          ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      {u}
-                    </button>
-                  ))}
-                </div>
-
+                {/* 4. AI Coach Primary Action Button */}
                 <button
+                  type="button"
                   onClick={() => setIsCoachDrawerOpen(true)}
-                  className="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 rounded-xl shadow-xs transition-all whitespace-nowrap"
+                  className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 text-xs font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 rounded-xl shadow-xs transition-all whitespace-nowrap"
                 >
                   <Bot className="w-3.5 h-3.5" weight="fill" />
                   <span className="hidden xs:inline">AI Coach</span>
                 </button>
 
-                <button
-                  onClick={() => setIsProfileModalOpen(true)}
-                  className="min-h-[32px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl liquid-glass-subtle hover:border-blue-500/40 transition-colors whitespace-nowrap"
-                  title="Inspect & Sync Athlete Profile, FTP, Weight & Power/HR Zones from Intervals.icu & Garmin"
-                >
-                  <Sliders className="w-3.5 h-3.5 text-blue-500" weight="duotone" />
-                  <span className="hidden lg:inline">Zones</span>
-                  <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-sky-300">
-                    {effectiveAthleteProfile.ftp}W
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[32px] px-2 sm:px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl liquid-glass-subtle hover:border-blue-500/40 transition-colors whitespace-nowrap"
-                >
-                  Sources
-                </button>
-
-                <button
-                  onClick={handleOpenStravaAuthGate}
-                  className="hidden sm:inline-flex min-h-[32px] items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-[#FC4C02] hover:bg-[#E34402] rounded-xl transition-colors whitespace-nowrap"
-                  title="Open Strava OAuth Sign-Up / Sign-In Gate"
-                >
-                  <LogIn className="w-3.5 h-3.5" weight="bold" />
-                  <span className="hidden xl:inline">
-                    {connectionStatus.stravaConnected ? 'Strava Active' : 'Strava Login'}
-                  </span>
-                </button>
-
-                <PWAInstallButton variant="compact" />
-
-                <button
-                  onClick={() => setIsDark(!isDark)}
-                  className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-700 dark:text-slate-200 hover:border-blue-500/40 transition-colors"
-                  aria-label="Toggle color theme"
-                >
-                  {isDark ? (
-                    <Sun className="w-4 h-4 text-amber-400" weight="fill" />
-                  ) : (
-                    <Moon className="w-4 h-4 text-slate-700" weight="fill" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Mobile Quick-Filter Utility Bar (< sm): Modality, Units, Sync & Strava */}
-            <div className="sm:hidden ap-toolbar-scroll pt-1.5 border-t border-slate-200/60 dark:border-white/10 justify-between">
-              <div className="flex items-center gap-1 p-0.5 rounded-lg liquid-capsule-track text-[11px] font-medium shrink-0">
-                {(
-                  [
-                    { id: 'COMBINED', label: 'All' },
-                    { id: 'OUTDOOR', label: 'Outdoor' },
-                    { id: 'INDOOR', label: 'Virtual' },
-                  ] as const
-                ).map((env) => (
+                {/* 5. Unified Account, Preferences & Logout Menu (Elliot ▾) */}
+                <div className="relative" ref={accountMenuRef}>
                   <button
-                    key={env.id}
                     type="button"
-                    onClick={() => setEnvFilter(env.id)}
-                    className={`min-h-[24px] px-2 py-0.5 rounded-md transition-all whitespace-nowrap ${
-                      envFilter === env.id
-                        ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}
+                    onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+                    className="min-h-[34px] inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all"
+                    aria-expanded={isAccountMenuOpen}
+                    aria-haspopup="menu"
+                    title="Account, Profile Zones, Data Sources, Preferences & Log Out"
                   >
-                    {env.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-[11px]">
-                  {(['mi', 'km'] as const).map((u) => (
-                    <button
-                      key={u}
-                      type="button"
-                      onClick={() => setDistanceUnit(u)}
-                      className={`min-h-[24px] px-2 py-0.5 rounded-md transition-all ${
-                        distanceUnit === u
-                          ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                          : 'text-slate-500 dark:text-slate-400'
+                    <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-sky-400 text-white font-mono text-[11px] font-bold flex items-center justify-center shadow-xs">
+                      {primaryAthleteInitials}
+                    </span>
+                    <span className="hidden sm:inline max-w-[90px] truncate">
+                      {primaryAthleteDisplayName}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                        isAccountMenuOpen ? 'rotate-180 text-sky-400' : ''
                       }`}
-                    >
-                      {u}
-                    </button>
-                  ))}
-                </div>
+                    />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => syncLiveTelemetry(false)}
-                  disabled={isSyncing}
-                  className="min-h-[26px] inline-flex items-center gap-1 px-2 py-0.5 rounded-lg liquid-capsule-track text-[10px] font-mono text-slate-700 dark:text-slate-200"
-                >
-                  <RefreshCw
-                    weight="bold"
-                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
-                  />
-                  <span>CTL {latestWellness ? latestWellness.ctl.toFixed(0) : '—'}</span>
-                </button>
+                  {isAccountMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 mt-2 w-80 rounded-2xl bg-white/95 dark:bg-[#0D131F]/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xl p-3 space-y-3 z-50 text-xs"
+                    >
+                      {/* Account Identity & Connection Summary */}
+                      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-sky-400 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                            {primaryAthleteInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 dark:text-white truncate">
+                              {primaryAthleteDisplayName}
+                            </div>
+                            <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span className="truncate">
+                                {effectiveActivities.length.toLocaleString()} workouts synced
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            syncLiveTelemetry(false);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          disabled={isSyncing}
+                          className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-300 font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>Sync</span>
+                        </button>
+                      </div>
+
+                      {/* Section 1: Athlete & Coaching Settings */}
+                      <div className="space-y-1">
+                        <div className="px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                          Athlete &amp; Connections
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileModalOpen(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Sliders className="w-4 h-4 text-blue-500" />
+                            <span>Profile, FTP &amp; Sport Zones</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-sky-300 bg-blue-500/10 px-2 py-0.5 rounded-md">
+                            {effectiveAthleteProfile.ftp}W
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRosterModalOpen(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Users className="w-4 h-4 text-sky-500" />
+                            <span>Friends &amp; Coaching Roster</span>
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-400">
+                            {connectedAthletes.length} athletes
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDataSourcesOpen(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Database className="w-4 h-4 text-emerald-500" />
+                            <span>Data Sources (Strava &amp; Intervals)</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-emerald-500">
+                            {connectionStatus.stravaConnected ? 'Strava ●' : 'Setup'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Section 2: Quick Display Preferences (Units, Modality, Theme) */}
+                      <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-white/10">
+                        <div className="px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                          Display &amp; Filter Preferences
+                        </div>
+
+                        {/* Modality Filter */}
+                        <div className="flex items-center justify-between px-2">
+                          <span className="text-slate-600 dark:text-slate-300 font-medium">
+                            Modality
+                          </span>
+                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[11px]">
+                            {(
+                              [
+                                { id: 'COMBINED', label: 'All' },
+                                { id: 'OUTDOOR', label: 'Outdoor' },
+                                { id: 'INDOOR', label: 'Virtual' },
+                              ] as const
+                            ).map((env) => (
+                              <button
+                                key={env.id}
+                                type="button"
+                                onClick={() => setEnvFilter(env.id)}
+                                className={`px-2 py-0.5 rounded-md transition-all ${
+                                  envFilter === env.id
+                                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400'
+                                }`}
+                              >
+                                {env.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Distance Units & Theme Row */}
+                        <div className="flex items-center justify-between px-2">
+                          <span className="text-slate-600 dark:text-slate-300 font-medium">
+                            Units &amp; Theme
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-[11px]">
+                              {(['mi', 'km'] as const).map((u) => (
+                                <button
+                                  key={u}
+                                  type="button"
+                                  onClick={() => setDistanceUnit(u)}
+                                  className={`px-2 py-0.5 rounded-md transition-all ${
+                                    distanceUnit === u
+                                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                      : 'text-slate-500 dark:text-slate-400'
+                                  }`}
+                                >
+                                  {u}
+                                </button>
+                              ))}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setIsDark(!isDark)}
+                              className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-[11px] font-medium"
+                            >
+                              {isDark ? (
+                                <>
+                                  <Sun className="w-3.5 h-3.5 text-amber-400" weight="fill" />
+                                  <span>Dark</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Moon className="w-3.5 h-3.5 text-slate-700" weight="fill" />
+                                  <span>Light</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="px-2 pt-0.5">
+                          <PWAInstallButton variant="compact" />
+                        </div>
+                      </div>
+
+                      {/* Section 3: Session & Logout Controls */}
+                      <div className="pt-2 border-t border-slate-200/80 dark:border-white/10 space-y-1">
+                        <button
+                          type="button"
+                          onClick={handleLogoutSession}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors"
+                        >
+                          <span className="flex items-center gap-2">
+                            <LogOut className="w-4 h-4" weight="bold" />
+                            <span>Log Out ({primaryAthleteDisplayName})</span>
+                          </span>
+                          <span className="text-[10px] font-mono opacity-80">Lock Session</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleLogoutAndClearData}
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-rose-500/10 text-slate-500 dark:text-slate-400 hover:text-rose-400 text-[11px] transition-colors"
+                        >
+                          <span>Log Out &amp; Disconnect Credentials</span>
+                          <span className="font-mono text-[10px]">Reset</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </header>
@@ -2764,81 +2931,101 @@ export default function App() {
           activeTab === 'trends' ||
           activeTab === 'charts') && (
           <div className="rounded-2xl liquid-glass p-2 space-y-2">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
-              {(
-                [
-                  {
-                    id: 'fitness',
-                    label: 'PMC & Daily Readiness',
-                    sub: 'Fitness, Fatigue & Form',
-                    icon: HeartPulse,
-                  },
-                  {
-                    id: 'curves',
-                    label: 'Power/Pace Curves & Segments',
-                    sub: 'PRs & Peak Outputs',
-                    icon: BarChart3,
-                  },
-                  {
-                    id: 'trends',
-                    label: 'Long-Term Physiological Trends',
-                    sub: 'VO2max, eFTP & HRV',
-                    icon: TrendingUp,
-                  },
-                  {
-                    id: 'charts',
-                    label: 'Custom Chart Lab',
-                    sub: 'Compare Any 2 Metrics',
-                    icon: LineChart,
-                  },
-                ] as const
-              ).map((sub) => {
-                const SubIcon = sub.icon;
-                const isSubActive = activeTab === sub.id;
-                return (
-                  <button
-                    key={sub.id}
-                    type="button"
-                    onClick={() => setActiveTab(sub.id)}
-                    className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
-                      isSubActive
-                        ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
-                    }`}
-                  >
-                    <SubIcon className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{sub.label}</span>
-                    <span className="hidden xl:inline text-[10px] opacity-65 font-normal truncate">
-                      · {sub.sub}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
+                {(
+                  [
+                    {
+                      id: 'fitness',
+                      label: 'PMC & Daily Readiness',
+                      sub: 'Fitness, Fatigue & Form',
+                      icon: HeartPulse,
+                    },
+                    {
+                      id: 'curves',
+                      label: 'Power/Pace Curves & Segments',
+                      sub: 'PRs & Peak Outputs',
+                      icon: BarChart3,
+                    },
+                    {
+                      id: 'trends',
+                      label: 'Long-Term Physiological Trends',
+                      sub: 'VO2max, eFTP & HRV',
+                      icon: TrendingUp,
+                    },
+                    {
+                      id: 'charts',
+                      label: 'Custom Chart Lab',
+                      sub: 'Compare Any 2 Metrics',
+                      icon: LineChart,
+                    },
+                  ] as const
+                ).map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = activeTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => setActiveTab(sub.id)}
+                      className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                        isSubActive
+                          ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                      }`}
+                    >
+                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{sub.label}</span>
+                      <span className="hidden xl:inline text-[10px] opacity-65 font-normal truncate">
+                        · {sub.sub}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowMetricsGuide((prev) => !prev)}
+                className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 ${
+                  showMetricsGuide
+                    ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/35'
+                    : 'liquid-glass-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="Toggle quick glossary for CTL, ATL, TSB, and EF"
+              >
+                <span className="w-4 h-4 rounded-full bg-sky-500/20 text-sky-500 font-mono text-[11px] font-bold inline-flex items-center justify-center">
+                  ?
+                </span>
+                <span className="hidden sm:inline">Metrics Guide</span>
+              </button>
             </div>
 
-            {/* Scannable Key Metrics Glossary Strip for New Users */}
-            <div className="px-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span>
-                  <strong className="font-mono text-[#0EA5E9]">CTL (Fitness):</strong> 42-day load
-                </span>
-                <span>·</span>
-                <span>
-                  <strong className="font-mono text-[#8B5CF6]">ATL (Fatigue):</strong> 7-day load
-                </span>
-                <span>·</span>
-                <span>
-                  <strong className="font-mono text-emerald-500">TSB (Form):</strong> Freshness (CTL − ATL)
-                </span>
-                <span>·</span>
-                <span>
-                  <strong className="font-mono text-amber-500">EF:</strong> Output ÷ Heart Rate
+            {/* Expandable Key Metrics Glossary Strip */}
+            {showMetricsGuide && (
+              <div className="px-3 py-2 rounded-xl bg-slate-900/5 dark:bg-slate-950/50 border border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    <strong className="font-mono text-[#0EA5E9]">CTL (Fitness):</strong> 42-day exponential training load
+                  </span>
+                  <span>·</span>
+                  <span>
+                    <strong className="font-mono text-[#8B5CF6]">ATL (Fatigue):</strong> 7-day acute training load
+                  </span>
+                  <span>·</span>
+                  <span>
+                    <strong className="font-mono text-emerald-500">TSB (Form):</strong> Net Freshness (CTL − ATL)
+                  </span>
+                  <span>·</span>
+                  <span>
+                    <strong className="font-mono text-amber-500">EF:</strong> Aerobic Efficiency (Output ÷ Heart Rate)
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Hover or click any <strong className="text-blue-500">(i)</strong> icon for Coach &amp; Physiologist benchmarks
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                Hover or click any <strong className="text-blue-500">(i)</strong> icon for Coach &amp; Physiologist benchmarks
-              </span>
-            </div>
+            )}
           </div>
         )}
 

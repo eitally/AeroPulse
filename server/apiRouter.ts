@@ -4088,3 +4088,29 @@ ${combinedInput}`,
   }
 });
 
+// Log out active session and optionally clear runtime Strava / Intervals.icu credentials
+apiRouter.post('/api/auth/logout', (req: Request, res: Response) => {
+  try {
+    const clearCredentials = Boolean(req.body?.clearCredentials);
+    if (clearCredentials) {
+      runtimeStore.stravaAccessToken = '';
+      runtimeStore.stravaRefreshToken = '';
+      runtimeStore.stravaExpiresAt = 0;
+      runtimeStore.stravaAthleteName = '';
+      runtimeStore.intervalsApiKey = '';
+      runtimeStore.intervalsAthleteId = '0';
+      runtimeStore.intervalsAthleteName = '';
+      saveJsonFile(SESSION_CACHE_FILE, runtimeStore);
+    }
+    res.json({
+      ok: true,
+      clearedCredentials: clearCredentials,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to log out session.',
+    });
+  }
+});
+
+
