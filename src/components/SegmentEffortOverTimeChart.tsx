@@ -9,7 +9,7 @@ import {
   TrendingDown,
   Trophy,
   ZoomIn,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import { DistanceUnit, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';

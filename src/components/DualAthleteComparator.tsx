@@ -15,7 +15,7 @@ import {
   TrendingUp,
   Users,
   Zap,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AthleteProfile,
   ConnectedAthleteRecord,

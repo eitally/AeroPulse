@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Compass, KeyRound, Layers, Maximize2, Navigation, Sparkles } from 'lucide-react';
+import { Compass, KeyRound, Layers, Maximize2, Navigation, Sparkles } from "./icons/PhosphorIcons";
 import { DistanceUnit, MapTileProvider, StravaSegmentEffort, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
 

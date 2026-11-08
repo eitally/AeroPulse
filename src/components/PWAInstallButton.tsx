@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Smartphone, WifiOff, X } from 'lucide-react';
+import { Download, Smartphone, WifiOff, X } from "./icons/PhosphorIcons";
 import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 
 export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ variant = 'compact' }) => {

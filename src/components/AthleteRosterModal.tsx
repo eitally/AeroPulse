@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Trash2,
   ArrowUpRight,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AthleteConnectionRole,
   AthletePrivacySettings,

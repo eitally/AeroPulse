@@ -15,7 +15,7 @@ import {
   Trophy,
   Waves,
   X,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AthleteProfile,
   DistanceUnit,

@@ -9,7 +9,7 @@ import {
   Shield,
   Sparkles,
   Users,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AthleteProfile,
   ConnectedAthleteRecord,

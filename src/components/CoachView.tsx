@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, RefreshCw, Send } from 'lucide-react';
+import { Check, RefreshCw, Send } from "./icons/PhosphorIcons";
 import {
   ActivityEnvironment,
   CoachChatMessage,

@@ -15,7 +15,7 @@ import {
   Sparkles,
   Trophy,
   Flame,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import { ConnectionStatus } from '../types';
 import { AeroPulseLogo } from './AeroPulseLogo';
 

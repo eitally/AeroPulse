@@ -17,7 +17,7 @@ import {
   Trophy,
   Wrench,
   Zap,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AnnualMileageGoal,
   AthleteGearItem,

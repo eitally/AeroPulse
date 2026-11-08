@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowRight, Calendar, Compass, Flame, HeartPulse, Moon, Trophy } from 'lucide-react';
+import { ArrowRight, Calendar, Compass, Flame, HeartPulse, Moon, Trophy } from "./icons/PhosphorIcons";
 import {
   AnnualMileageGoal,
   DailyWorkoutOption,

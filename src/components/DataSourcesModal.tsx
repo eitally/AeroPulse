@@ -10,7 +10,7 @@ import {
   Map as MapIcon,
   RefreshCw,
   X,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import { ConnectionStatus, MapTileProvider } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 

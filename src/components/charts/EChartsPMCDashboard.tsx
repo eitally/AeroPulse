@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as echarts from 'echarts';
 import { UnifiedActivity, UnifiedWellnessDay } from '../../types';
-import { TrendingUp, Zap } from 'lucide-react';
+import { TrendingUp, Zap } from "../icons/PhosphorIcons";
 
 export interface PMCDayPoint {
   date: string;

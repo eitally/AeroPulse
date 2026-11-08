@@ -6,7 +6,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   TrendingUp,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   DistanceUnit,
   EnvironmentFilter,

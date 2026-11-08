@@ -8,7 +8,7 @@ import {
   Sparkles,
   ZoomIn,
   ZoomOut,
-} from 'lucide-react';
+} from "../icons/PhosphorIcons";
 import type {
   ActivityInterval,
   ActivityStreamSet,

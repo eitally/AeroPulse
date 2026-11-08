@@ -11,7 +11,7 @@ import {
   Sliders,
   Sparkles,
   Zap,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import {
   AthleteProfile,
   DistanceUnit,

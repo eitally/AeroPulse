@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Activity, CheckCircle2, HelpCircle, Info, Sparkles, TriangleAlert } from 'lucide-react';
+import { Activity, CheckCircle2, HelpCircle, Info, Sparkles, TriangleAlert } from "./icons/PhosphorIcons";
 
 export interface ChartInfoLiveStatus {
   label: string;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, CalendarPlus, Check, Send, Sparkles, X } from 'lucide-react';
+import { Bot, CalendarPlus, Check, Send, Sparkles, X } from "./icons/PhosphorIcons";
 import {
   CoachChatMessage,
   PlannedWorkoutEvent,

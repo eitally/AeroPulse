@@ -11,7 +11,7 @@ import {
   UserCheck,
   X,
   Zap,
-} from 'lucide-react';
+} from "./icons/PhosphorIcons";
 import { AthleteProfile, DistanceUnit, UnifiedWellnessDay } from '../types';
 import {
   buildCompleteAthleteProfile,
