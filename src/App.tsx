@@ -44,9 +44,12 @@ import {
   UnifiedWellnessDay,
 } from './types';
 import {
+  INITIAL_ACTIVITIES,
   INITIAL_ANNUAL_MILEAGE_GOALS,
   INITIAL_CHAT_MESSAGES,
+  INITIAL_PLANNED_EVENTS,
   INITIAL_POWER_PACE_CURVES,
+  INITIAL_WELLNESS_DAYS,
 } from './data/mockTelemetry';
 import {
   DEFAULT_SELF_PRIVACY_SETTINGS,
@@ -874,6 +877,14 @@ export default function App() {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        setIsSessionLoggedOut(false);
+        setHasEnteredWorkspace(true);
+        try {
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.setItem('aeropulse_auth_gate_passed', '1');
+        } catch {
+          // ignore
+        }
         syncLiveTelemetry(true);
       }
     };
@@ -884,6 +895,14 @@ export default function App() {
       bc = new BroadcastChannel('aeropulse_oauth');
       bc.onmessage = (ev) => {
         if (ev.data?.type === 'OAUTH_AUTH_SUCCESS') {
+          setIsSessionLoggedOut(false);
+          setHasEnteredWorkspace(true);
+          try {
+            localStorage.removeItem('aeropulse_logged_out');
+            localStorage.setItem('aeropulse_auth_gate_passed', '1');
+          } catch {
+            // ignore
+          }
           syncLiveTelemetry(true);
         }
       };
@@ -915,9 +934,13 @@ export default function App() {
         'aeropulse_intervals_athlete_id',
         (data.athleteId || athleteId || '0').trim()
       );
+      localStorage.removeItem('aeropulse_logged_out');
+      localStorage.setItem('aeropulse_auth_gate_passed', '1');
     } catch {
       // ignore
     }
+    setIsSessionLoggedOut(false);
+    setHasEnteredWorkspace(true);
     await syncLiveTelemetry(true);
   };
 
@@ -998,7 +1021,9 @@ export default function App() {
             data.error ||
               'Strava Client ID not set. Enter your Strava Client ID & Secret in Data Sources.'
           );
-          setIsDataSourcesOpen(true);
+          if (hasEnteredWorkspace) {
+            setIsDataSourcesOpen(true);
+          }
           return;
         }
         popup = window.open(data.url, 'strava_oauth_popup', 'width=620,height=740');
@@ -1022,6 +1047,14 @@ export default function App() {
         window.clearInterval(pollTimer);
         try {
           if (popup && !popup.closed) popup.close();
+        } catch {
+          // ignore
+        }
+        setIsSessionLoggedOut(false);
+        setHasEnteredWorkspace(true);
+        try {
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.setItem('aeropulse_auth_gate_passed', '1');
         } catch {
           // ignore
         }
@@ -2043,6 +2076,19 @@ export default function App() {
 
   // Multi-athlete roster & session auth handlers
   const handleEnterSandbox = useCallback(() => {
+    if (
+      activitiesRef.current.length === 0 &&
+      wellnessDaysRef.current.length === 0 &&
+      !connectionStatus.stravaConnected &&
+      !connectionStatus.intervalsConnected
+    ) {
+      setWellnessDays(INITIAL_WELLNESS_DAYS);
+      wellnessDaysRef.current = INITIAL_WELLNESS_DAYS;
+      setActivities(INITIAL_ACTIVITIES);
+      activitiesRef.current = INITIAL_ACTIVITIES;
+      setPlannedEvents(INITIAL_PLANNED_EVENTS);
+      plannedEventsRef.current = INITIAL_PLANNED_EVENTS;
+    }
     setIsSessionLoggedOut(false);
     setHasEnteredWorkspace(true);
     try {
@@ -2051,7 +2097,72 @@ export default function App() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [connectionStatus.intervalsConnected, connectionStatus.stravaConnected]);
+
+  const handleCreateLocalAthleteProfile = useCallback(
+    async (profileInput: {
+      name: string;
+      ftp: number;
+      thresholdPaceSecsPerKm: number;
+      weightKg: number;
+      seedSampleTelemetry: boolean;
+    }) => {
+      setSyncError(null);
+      const updatedProf = buildCompleteAthleteProfile(
+        {
+          ...athleteProfileRef.current,
+          name: profileInput.name,
+          ftp: profileInput.ftp,
+          indoorFtp: Math.round(profileInput.ftp * 0.97),
+          eFtp: profileInput.ftp,
+          thresholdPaceSecsPerKm: profileInput.thresholdPaceSecsPerKm,
+          weightKg: profileInput.weightKg,
+          source: 'CUSTOM_OVERRIDE',
+        },
+        wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
+      );
+      setAthleteProfile(updatedProf);
+      athleteProfileRef.current = updatedProf;
+
+      try {
+        await fetch('/api/athlete/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ athleteProfile: updatedProf }),
+        });
+      } catch {
+        // non-fatal offline fallback
+      }
+
+      if (profileInput.seedSampleTelemetry) {
+        if (activitiesRef.current.length === 0 && wellnessDaysRef.current.length === 0) {
+          setWellnessDays(INITIAL_WELLNESS_DAYS);
+          wellnessDaysRef.current = INITIAL_WELLNESS_DAYS;
+          setActivities(INITIAL_ACTIVITIES);
+          activitiesRef.current = INITIAL_ACTIVITIES;
+          setPlannedEvents(INITIAL_PLANNED_EVENTS);
+          plannedEventsRef.current = INITIAL_PLANNED_EVENTS;
+        }
+      } else {
+        setWellnessDays([]);
+        wellnessDaysRef.current = [];
+        setActivities([]);
+        activitiesRef.current = [];
+        setPlannedEvents([]);
+        plannedEventsRef.current = [];
+      }
+
+      setIsSessionLoggedOut(false);
+      setHasEnteredWorkspace(true);
+      try {
+        localStorage.removeItem('aeropulse_logged_out');
+        localStorage.setItem('aeropulse_auth_gate_passed', '1');
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
 
   const handleLogoutSession = useCallback(() => {
     setIsAccountMenuOpen(false);
@@ -2298,21 +2409,25 @@ export default function App() {
     }
   };
 
-  if (isSessionLoggedOut || (!hasEnteredWorkspace && !connectionStatus.stravaConnected)) {
+  if (
+    isSessionLoggedOut ||
+    (!hasEnteredWorkspace && !connectionStatus.stravaConnected && !connectionStatus.intervalsConnected)
+  ) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
           status={connectionStatus}
           athleteName={primaryAthleteDisplayName}
-          onLaunchStravaOAuth={async () => {
-            await handleLaunchStravaOAuth('cloud');
-            handleEnterSandbox();
+          onLaunchStravaOAuth={async (mode = 'cloud') => {
+            await handleLaunchStravaOAuth(mode);
           }}
           onExchangeStravaCode={async (codeOrUrl) => {
             await handleExchangeStravaCode(codeOrUrl);
             handleEnterSandbox();
           }}
           onSaveStravaCredentials={handleSaveStravaCredentials}
+          onConnectIntervals={handleConnectIntervals}
+          onCreateAthleteProfile={handleCreateLocalAthleteProfile}
           onEnterSandbox={handleEnterSandbox}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}

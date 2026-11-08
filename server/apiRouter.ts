@@ -2801,7 +2801,15 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
   }
 };
 
-apiRouter.get(['/auth/strava/callback', '/auth/strava/callback/'], stravaCallbackHandler);
+apiRouter.get(
+  [
+    '/auth/strava/callback',
+    '/auth/strava/callback/',
+    '/api/strava/callback',
+    '/api/strava/callback/',
+  ],
+  stravaCallbackHandler
+);
 
 async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly = false) {
   await ensureValidStravaAccessToken(req, false);
