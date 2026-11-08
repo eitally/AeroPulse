@@ -575,12 +575,12 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
         </div>
       </div>
 
-      {/* Web Worker Computed NP / TSS / TRIMP Telemetry Strip */}
+      {/* Computed NP / TSS / TRIMP Telemetry Strip */}
       {workerMetrics && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-indigo-500/8 dark:bg-indigo-500/12 border border-indigo-500/25 px-3 py-1.5 text-[11px] font-mono">
           <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300 font-bold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Web Worker Telemetry:</span>
+            <span>Stream Summary:</span>
           </span>
           <div className="flex flex-wrap items-center gap-3 text-slate-700 dark:text-slate-200">
             {workerMetrics.normalizedPower ? (

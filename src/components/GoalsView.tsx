@@ -128,7 +128,7 @@ interface GoalArchetypeTemplate {
   subtitle: string;
   sportCategory: SportCategory;
   targetLabel: string;
-  defaultWeeks: 8 | 12 | 16;
+  defaultWeeks: 4 | 8 | 12 | 16;
   targetProgressionLevels: [number, number, number, number, number, number]; // Z2, Z3, Z4, Z5, Z6, Sprint
 }
 
@@ -218,7 +218,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
 
   // Goal-to-Calendar Adaptive Plan Architect State
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<GoalArchetypeId>('FTP_350W');
-  const [blockWeeks, setBlockWeeks] = useState<8 | 12 | 16>(12);
+  const [blockWeeks, setBlockWeeks] = useState<4 | 8 | 12 | 16>(12);
   const [daysPerWeek, setDaysPerWeek] = useState<4 | 5 | 6>(5);
   const [longDayPreference, setLongDayPreference] = useState<'Saturday' | 'Sunday'>('Saturday');
   const [blockEnvPref, setBlockEnvPref] = useState<'FLEXIBLE' | 'OUTDOOR' | 'INDOOR'>('FLEXIBLE');
@@ -1391,8 +1391,8 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <label className="block text-[11px] font-semibold text-slate-500 mb-1">
               Block Horizon (with Every-4th-Wk Deload)
             </label>
-            <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg liquid-capsule-track text-xs font-mono">
-              {([8, 12, 16] as const).map((wks) => (
+            <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg liquid-capsule-track text-xs font-mono">
+              {([4, 8, 12, 16] as const).map((wks) => (
                 <button
                   key={wks}
                   type="button"

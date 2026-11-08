@@ -836,7 +836,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
         />
 
         {/* Legend Overlay Pill in Bottom-Left */}
-        <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex flex-wrap items-center gap-2.5 rounded-lg bg-slate-950/85 backdrop-blur-xs border border-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-200 shadow-lg">
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[15] flex flex-wrap items-center gap-2.5 rounded-lg bg-slate-950/85 backdrop-blur-xs border border-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-200 shadow-lg">
           {props.mode === 'SINGLE' ? (
             <>
               <span className="inline-flex items-center gap-1.5">

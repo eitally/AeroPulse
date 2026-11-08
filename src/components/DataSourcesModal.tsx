@@ -146,8 +146,14 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto">
-      <div className="w-full max-w-3xl rounded-2xl liquid-glass shadow-2xl overflow-hidden my-auto">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-3xl rounded-2xl liquid-glass shadow-2xl overflow-hidden my-auto"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
@@ -196,7 +202,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                   <Database className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Browser IndexedDB Archive (Deployment-Safe)</span>
+                  <span>Local Workout Archive (Deployment-Safe)</span>
                 </span>
                 <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                   {persistedWorkoutCount > 0 ? 'Persisted Locally' : 'Ready'}

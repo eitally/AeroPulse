@@ -68,6 +68,7 @@ import { StravaAuthGate } from './components/StravaAuthGate';
 import { AthleteRosterModal } from './components/AthleteRosterModal';
 import { AeroPulseLogo } from './components/AeroPulseLogo';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
+import { UserGuideModal } from './components/UserGuideModal';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
   buildCompleteAthleteProfile,
@@ -254,11 +255,24 @@ export default function App() {
         setIsProfileModalOpen(false);
         setIsDataSourcesOpen(false);
         setIsCoachDrawerOpen(false);
+        setSelectedActivity(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const lastLabTabRef = useRef<'totals' | 'curves' | 'trends' | 'charts'>('totals');
+  useEffect(() => {
+    if (
+      activeTab === 'totals' ||
+      activeTab === 'curves' ||
+      activeTab === 'trends' ||
+      activeTab === 'charts'
+    ) {
+      lastLabTabRef.current = activeTab;
+    }
+  }, [activeTab]);
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     mode: 'SANDBOX_CALIBRATION',
@@ -2382,10 +2396,10 @@ export default function App() {
                   return (
                     <a
                       key={item.id}
-                      href={`#${item.id}`}
+                      href={`#${item.id === 'totals' ? lastLabTabRef.current : item.id}`}
                       onClick={(e) => {
                         e.preventDefault();
-                        setActiveTab(item.id);
+                        setActiveTab(item.id === 'totals' ? lastLabTabRef.current : item.id);
                       }}
                       className={`min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
                         isActive
@@ -2417,13 +2431,13 @@ export default function App() {
                     aria-label="Switch Active Athlete Profile"
                     className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1 max-w-[105px] sm:max-w-[155px] truncate"
                   >
-                    <option value="SELF" className="bg-slate-900 text-white">
+                    <option value="SELF" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                       {primaryAthleteDisplayName} (You)
                     </option>
                     {connectedAthletes
                       .filter((a) => a.status === 'CONNECTED')
                       .map((a) => (
-                        <option key={a.id} value={a.id} className="bg-slate-900 text-white">
+                        <option key={a.id} value={a.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                           {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Friend'})
                         </option>
                       ))}
@@ -2438,6 +2452,17 @@ export default function App() {
                 >
                   <Bot className="w-3.5 h-3.5" weight="fill" />
                   <span className="hidden xs:inline">AI Coach</span>
+                </button>
+
+                {/* 4b. Interactive User Guide & Feature Tour Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowMetricsGuide(true)}
+                  className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap"
+                  title="Open Interactive AeroPulse User Guide, Walkthrough & Physiology Glossary"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400" weight="duotone" />
+                  <span className="hidden lg:inline">Guide</span>
                 </button>
 
                 {/* 5. Unified Account, Preferences & Logout Menu (Elliot ▾) */}
@@ -2554,6 +2579,23 @@ export default function App() {
                           </span>
                           <span className="font-mono text-[10px] text-emerald-500">
                             {connectionStatus.stravaConnected ? 'Strava ●' : 'Setup'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMetricsGuide(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <HelpCircle className="w-4 h-4 text-amber-500" />
+                            <span>Interactive User Guide &amp; Glossary</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-blue-600 dark:text-sky-400">
+                            7 Chapters
                           </span>
                         </button>
                       </div>
@@ -2912,6 +2954,7 @@ export default function App() {
             targetGoals={effectiveTargetGoals}
             envFilter={envFilter}
             selectedSport={selectedSport}
+            onSelectSport={setSelectedSport}
             distanceUnit={distanceUnit}
             athleteFtp={athleteFtp}
             athleteProfile={effectiveAthleteProfile}
@@ -3187,7 +3230,7 @@ export default function App() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab.id === 'totals' ? lastLabTabRef.current : tab.id)}
               className={`min-h-[44px] flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
                   ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
@@ -3297,6 +3340,24 @@ export default function App() {
         onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
         onPushCoachWorkout={handlePushCoachWorkout}
         distanceUnit={distanceUnit}
+      />
+
+      {/* Interactive Online User Guide, Feature Tour & Physiology Glossary Modal */}
+      <UserGuideModal
+        isOpen={showMetricsGuide}
+        onClose={() => setShowMetricsGuide(false)}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onOpenDataSources={() => setIsDataSourcesOpen(true)}
+        onOpenRosterModal={() => setIsRosterModalOpen(true)}
+        onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+        onOpenAICoach={(prompt) => {
+          if (prompt) {
+            handleOpenCoachWithPrompt(prompt);
+          } else {
+            setIsCoachDrawerOpen(true);
+          }
+        }}
       />
       </div>
     </IconContext.Provider>

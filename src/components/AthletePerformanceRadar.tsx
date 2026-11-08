@@ -621,7 +621,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
 
     return (
       <div className="flex flex-col items-center">
-        <div className="w-full flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-slate-400 px-2 mb-1">
+        <div className="w-full flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 mb-1">
           <span>{titleBadge}</span>
           <span>{subtitle}</span>
         </div>
@@ -641,16 +641,21 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
               <g key={`ring-${ringPct}`}>
                 <polygon
                   points={pts}
-                  fill={ringPct === 100 ? '#0D1117' : 'none'}
-                  fillOpacity={ringPct === 100 ? 0.65 : 0}
-                  stroke={ringPct === 75 ? '#334155' : '#1E2530'}
+                  className={
+                    ringPct === 100
+                      ? 'fill-stone-100/80 dark:fill-[#0D1117]/65 text-slate-300 dark:text-slate-800'
+                      : ringPct === 75
+                        ? 'fill-none text-slate-400 dark:text-slate-700'
+                        : 'fill-none text-slate-300 dark:text-slate-800'
+                  }
+                  stroke="currentColor"
                   strokeWidth={ringPct === 100 ? '1.4' : '1'}
                   strokeDasharray={ringPct === 75 ? '3 3' : undefined}
                 />
                 <text
                   x={cx + 4}
                   y={cy - (ringPct / 100) * maxR + 9}
-                  className="fill-slate-500 text-[8px] font-mono"
+                  className="fill-slate-500 dark:fill-slate-500 text-[8px] font-mono"
                 >
                   {ringPct}%
                 </text>
@@ -681,14 +686,15 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                   y1={cy}
                   x2={xEnd}
                   y2={yEnd}
-                  stroke="#1E2530"
+                  stroke="currentColor"
+                  className="text-slate-300 dark:text-slate-800"
                   strokeWidth="1"
                 />
                 <text
                   x={xLabel}
                   y={yLabel - 2}
                   textAnchor={anchor}
-                  className="fill-slate-200 text-[10px] font-mono font-bold"
+                  className="fill-slate-800 dark:fill-slate-200 text-[10px] font-mono font-bold"
                 >
                   {axis.shortLabel}
                 </text>
@@ -696,10 +702,10 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                   x={xLabel}
                   y={yLabel + 9}
                   textAnchor={anchor}
-                  className="fill-sky-400 text-[8.5px] font-mono"
+                  className="fill-sky-600 dark:fill-sky-400 text-[8.5px] font-mono"
                 >
                   {axis.scoreA} vs{' '}
-                  <tspan className="fill-orange-400">{axis.scoreB}</tspan>
+                  <tspan className="fill-orange-600 dark:fill-orange-400">{axis.scoreB}</tspan>
                 </text>
               </g>
             );
@@ -736,7 +742,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                   cy={cy + rB * Math.sin(angle)}
                   r={3.5}
                   fill="#F97316"
-                  stroke="#090B0E"
+                  className="stroke-white dark:stroke-[#090B0E]"
                   strokeWidth="1.2"
                 />
                 <circle
@@ -744,7 +750,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                   cy={cy + rA * Math.sin(angle)}
                   r={3.8}
                   fill="#38BDF8"
-                  stroke="#090B0E"
+                  className="stroke-white dark:stroke-[#090B0E]"
                   strokeWidth="1.2"
                 />
               </g>
@@ -758,7 +764,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
   return (
     <section className="rounded-2xl liquid-glass p-5 space-y-5 border border-indigo-500/25">
       {/* Top Header & Mode Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/70 dark:border-slate-800/80 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200/80 dark:border-slate-800/80 pb-4">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30">
@@ -828,7 +834,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                 className="bg-transparent text-sm font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer truncate"
               >
                 {athletes.map((a) => (
-                  <option key={`rad-a-${a.id}`} value={a.id} className="bg-slate-900 text-white">
+                  <option key={`rad-a-${a.id}`} value={a.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                     {a.name} ({a.wPerKg} W/kg)
                   </option>
                 ))}
@@ -841,12 +847,12 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-sky-500/20 text-xs font-mono">
-            <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <label className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
               <span>Age Bracket (Coggan/WMA):</span>
               <select
                 value={ageBracketA}
                 onChange={(e) => setAgeBracketA(e.target.value as AgeBracketCode)}
-                className="bg-slate-900 text-sky-300 border border-sky-500/40 rounded px-2 py-0.5 text-xs font-mono"
+                className="bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 border border-sky-500/40 rounded px-2 py-0.5 text-xs font-mono"
               >
                 {AGE_BRACKETS.map((b) => (
                   <option key={`age-a-${b.code}`} value={b.code}>
@@ -855,7 +861,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                 ))}
               </select>
             </label>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
               Factor: {(bracketConfigA.cyclingAgeFactor * 100).toFixed(0)}% Sr Std
             </span>
           </div>
@@ -863,21 +869,21 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
 
         {/* Center Summary / Roster Action */}
         <div className="lg:col-span-2 flex flex-col items-center justify-center gap-1.5 text-center font-mono">
-          <div className="text-[10px] uppercase tracking-wider text-slate-400">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
             5-AXIS COMPOSITE
           </div>
           <div className="text-base font-extrabold">
-            <span className="text-[#38BDF8]">{avgFiveDimA}</span>
+            <span className="text-sky-600 dark:text-[#38BDF8]">{avgFiveDimA}</span>
             <span className="text-slate-500 mx-1.5">vs</span>
-            <span className="text-[#F97316]">{avgFiveDimB}</span>
+            <span className="text-orange-600 dark:text-[#F97316]">{avgFiveDimB}</span>
           </div>
           {onOpenRosterModal && (
             <button
               type="button"
               onClick={onOpenRosterModal}
-              className="px-2.5 py-1 rounded-lg liquid-glass-subtle text-[11px] text-slate-600 dark:text-slate-300 hover:text-white flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg liquid-glass-subtle text-[11px] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1"
             >
-              <Users className="w-3 h-3 text-sky-400" />
+              <Users className="w-3 h-3 text-sky-500 dark:text-sky-400" />
               <span>Roster</span>
             </button>
           )}
@@ -899,7 +905,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                 className="bg-transparent text-sm font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer truncate"
               >
                 {athletes.map((b) => (
-                  <option key={`rad-b-${b.id}`} value={b.id} className="bg-slate-900 text-white">
+                  <option key={`rad-b-${b.id}`} value={b.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                     {b.name} ({b.wPerKg} W/kg)
                   </option>
                 ))}
@@ -912,12 +918,12 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-orange-500/20 text-xs font-mono">
-            <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <label className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
               <span>Age Bracket (Coggan/WMA):</span>
               <select
                 value={ageBracketB}
                 onChange={(e) => setAgeBracketB(e.target.value as AgeBracketCode)}
-                className="bg-slate-900 text-orange-300 border border-orange-500/40 rounded px-2 py-0.5 text-xs font-mono"
+                className="bg-white dark:bg-slate-900 text-orange-700 dark:text-orange-300 border border-orange-500/40 rounded px-2 py-0.5 text-xs font-mono"
               >
                 {AGE_BRACKETS.map((b) => (
                   <option key={`age-b-${b.code}`} value={b.code}>
@@ -926,7 +932,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
                 ))}
               </select>
             </label>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
               Factor: {(bracketConfigB.cyclingAgeFactor * 100).toFixed(0)}% Sr Std
             </span>
           </div>
@@ -940,26 +946,26 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
         } gap-4`}
       >
         {/* RADAR 1: 5-Dimension Dual Athlete Performance Radar */}
-        <div className="rounded-xl bg-[#090B0E] border border-[#1E2530] p-4 flex flex-col justify-between space-y-3">
+        <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-slate-800/80 p-4 flex flex-col justify-between space-y-3">
           {renderRadarSvg(
             fiveDimensions,
             '01 // 5-AXIS ATHLETE PERFORMANCE RADAR',
             'NORMALIZED 0–100'
           )}
 
-          <div className="space-y-1.5 pt-2 border-t border-[#1E2530]">
+          <div className="space-y-1.5 pt-2 border-t border-stone-200/80 dark:border-slate-800/80">
             {fiveDimensions.map((dim) => (
               <div
                 key={dim.key}
-                className="flex items-center justify-between text-[11px] font-mono bg-[#0F131A] rounded px-2.5 py-1.5 border border-[#1E2530]"
+                className="flex items-center justify-between text-[11px] font-mono bg-white/80 dark:bg-[#0F131A] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
               >
-                <span className="text-slate-300 font-semibold">{dim.label}</span>
+                <span className="text-slate-800 dark:text-slate-300 font-semibold">{dim.label}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-[#38BDF8]" title={dim.displayA}>
+                  <span className="text-sky-600 dark:text-[#38BDF8]" title={dim.displayA}>
                     {dim.scoreA} pts ({dim.displayA})
                   </span>
-                  <span className="text-slate-600">vs</span>
-                  <span className="text-[#F97316]" title={dim.displayB}>
+                  <span className="text-slate-400 dark:text-slate-600">vs</span>
+                  <span className="text-orange-600 dark:text-[#F97316]" title={dim.displayB}>
                     {dim.scoreB} pts ({dim.displayB})
                   </span>
                 </div>
@@ -970,32 +976,32 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
 
         {/* RADAR 2: Coggan Age-Graded Cycling Power Profile (Standardized Time Durations) */}
         {(scaleSportMode === 'BOTH' || scaleSportMode === 'CYCLING') && (
-          <div className="rounded-xl bg-[#090B0E] border border-[#1E2530] p-4 flex flex-col justify-between space-y-3">
+          <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-slate-800/80 p-4 flex flex-col justify-between space-y-3">
             {renderRadarSvg(
               cogganCyclingAxes,
               `02 // COGGAN CYCLING SCALE (${ageBracketA} vs ${ageBracketB})`,
               'BY TIME DURATION'
             )}
 
-            <div className="space-y-1.5 pt-2 border-t border-[#1E2530]">
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
-                <span className="flex items-center gap-1 text-sky-400">
+            <div className="space-y-1.5 pt-2 border-t border-stone-200/80 dark:border-slate-800/80">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 px-1">
+                <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
                   <Bike className="w-3 h-3" /> {athleteA.name.split(' ')[0]}: {cogganTierA.tier}
                 </span>
-                <span className="text-orange-400">
+                <span className="text-orange-600 dark:text-orange-400">
                   {athleteB.name.split(' ')[0]}: {cogganTierB.cat}
                 </span>
               </div>
               {cogganCyclingAxes.map((ax) => (
                 <div
                   key={ax.key}
-                  className="flex items-center justify-between text-[11px] font-mono bg-[#0F131A] rounded px-2.5 py-1.5 border border-[#1E2530]"
+                  className="flex items-center justify-between text-[11px] font-mono bg-white/80 dark:bg-[#0F131A] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
                 >
-                  <span className="text-slate-300 font-semibold">{ax.label}</span>
+                  <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[#38BDF8]">{ax.displayA}</span>
-                    <span className="text-slate-600">/</span>
-                    <span className="text-[#F97316]">{ax.displayB}</span>
+                    <span className="text-sky-600 dark:text-[#38BDF8]">{ax.displayA}</span>
+                    <span className="text-slate-400 dark:text-slate-600">/</span>
+                    <span className="text-orange-600 dark:text-[#F97316]">{ax.displayB}</span>
                   </div>
                 </div>
               ))}
@@ -1005,32 +1011,32 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
 
         {/* RADAR 3: WMA / Daniels Age-Graded Running Scale (Standardized Distances) */}
         {(scaleSportMode === 'BOTH' || scaleSportMode === 'RUNNING') && (
-          <div className="rounded-xl bg-[#090B0E] border border-[#1E2530] p-4 flex flex-col justify-between space-y-3">
+          <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-slate-800/80 p-4 flex flex-col justify-between space-y-3">
             {renderRadarSvg(
               wmaRunningAxes,
               `03 // WMA RUNNING SCALE (${ageBracketA} vs ${ageBracketB})`,
               'BY RACE DISTANCE'
             )}
 
-            <div className="space-y-1.5 pt-2 border-t border-[#1E2530]">
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
-                <span className="flex items-center gap-1 text-sky-400">
+            <div className="space-y-1.5 pt-2 border-t border-stone-200/80 dark:border-slate-800/80">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 px-1">
+                <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
                   <Footprints className="w-3 h-3" /> {athleteA.name.split(' ')[0]}: {avgWmaRunA}% Age-Graded ({wmaTierA.cat})
                 </span>
-                <span className="text-orange-400">
+                <span className="text-orange-600 dark:text-orange-400">
                   {athleteB.name.split(' ')[0]}: {avgWmaRunB}% AG
                 </span>
               </div>
               {wmaRunningAxes.map((ax) => (
                 <div
                   key={ax.key}
-                  className="flex items-center justify-between text-[11px] font-mono bg-[#0F131A] rounded px-2.5 py-1.5 border border-[#1E2530]"
+                  className="flex items-center justify-between text-[11px] font-mono bg-white/80 dark:bg-[#0F131A] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
                 >
-                  <span className="text-slate-300 font-semibold">{ax.shortLabel}</span>
+                  <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.shortLabel}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[#38BDF8]">{ax.displayA}</span>
-                    <span className="text-slate-600">/</span>
-                    <span className="text-[#F97316]">{ax.displayB}</span>
+                    <span className="text-sky-600 dark:text-[#38BDF8]">{ax.displayA}</span>
+                    <span className="text-slate-400 dark:text-slate-600">/</span>
+                    <span className="text-orange-600 dark:text-[#F97316]">{ax.displayB}</span>
                   </div>
                 </div>
               ))}
@@ -1040,21 +1046,21 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
       </div>
 
       {/* Bottom Coaching Summary & AI Coach Synthesis Bar */}
-      <div className="rounded-xl bg-[#0F131A] border border-[#1E2530] p-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1 max-w-3xl">
-          <div className="text-xs font-mono font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <div className="text-xs font-mono font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
             <span>
               Age-Graded Phenotype &amp; Multi-Axis Radar Synthesis ({athleteA.name} [{ageBracketA}] vs {athleteB.name} [{ageBracketB}])
             </span>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {athleteA.name} scores <strong className="text-[#38BDF8]">{avgFiveDimA}/100</strong> on the 5-Axis Performance Radar, grading at{' '}
-            <strong className="text-[#38BDF8]">{avgCogganA}% ({cogganTierA.cat})</strong> on the Coggan Cycling Time Scale and{' '}
-            <strong className="text-[#38BDF8]">{avgWmaRunA}%</strong> on the WMA Running Distance Scale.{' '}
-            {athleteB.name} scores <strong className="text-[#F97316]">{avgFiveDimB}/100</strong> overall, grading at{' '}
-            <strong className="text-[#F97316]">{avgCogganB}% ({cogganTierB.cat})</strong> for cycling and{' '}
-            <strong className="text-[#F97316]">{avgWmaRunB}%</strong> for running.
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            {athleteA.name} scores <strong className="text-sky-600 dark:text-[#38BDF8]">{avgFiveDimA}/100</strong> on the 5-Axis Performance Radar, grading at{' '}
+            <strong className="text-sky-600 dark:text-[#38BDF8]">{avgCogganA}% ({cogganTierA.cat})</strong> on the Coggan Cycling Time Scale and{' '}
+            <strong className="text-sky-600 dark:text-[#38BDF8]">{avgWmaRunA}%</strong> on the WMA Running Distance Scale.{' '}
+            {athleteB.name} scores <strong className="text-orange-600 dark:text-[#F97316]">{avgFiveDimB}/100</strong> overall, grading at{' '}
+            <strong className="text-orange-600 dark:text-[#F97316]">{avgCogganB}% ({cogganTierB.cat})</strong> for cycling and{' '}
+            <strong className="text-orange-600 dark:text-[#F97316]">{avgWmaRunB}%</strong> for running.
           </p>
         </div>
 

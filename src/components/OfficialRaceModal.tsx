@@ -327,8 +327,14 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-6">
-      <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl liquid-glass border border-slate-200 dark:border-slate-800 shadow-2xl overflow-y-auto">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-6"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-4xl max-h-[92vh] rounded-2xl liquid-glass border border-slate-200 dark:border-slate-800 shadow-2xl overflow-y-auto"
+      >
         {/* Modal Header */}
         <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   ChevronLeft,
@@ -38,7 +38,6 @@ import {
 } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { UPlotStreamChart } from './charts/UPlotStreamChart';
-import { EChartsHistogram } from './charts/EChartsHistogram';
 import {
   buildSample1HzGpxString,
   parseWorkoutFileInWorker,
@@ -267,6 +266,29 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [workerAnalytics, setWorkerAnalytics] = useState<ComputedStreamAnalytics | null>(null);
   const liveDexieStream = useLiveActivityStream(selectedActivity?.id || null);
   const dexieStats = useLiveWorkoutStoreStats();
+  const importMenuDetailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (e: MouseEvent) => {
+      if (
+        importMenuDetailsRef.current?.hasAttribute('open') &&
+        !importMenuDetailsRef.current.contains(e.target as Node)
+      ) {
+        importMenuDetailsRef.current.removeAttribute('open');
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && importMenuDetailsRef.current?.hasAttribute('open')) {
+        importMenuDetailsRef.current.removeAttribute('open');
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Automatically compute or upsample 1Hz stream analytics in Web Worker when selectedActivity changes
   useEffect(() => {
@@ -768,7 +790,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Filter, Summary KPI Strip & 4-Mode Workspace Switcher Header Card */}
-      <section className="rounded-2xl liquid-glass p-5 space-y-4">
+      <section className="relative z-20 rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -874,7 +896,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
             {/* Consolidated + Import & Actions Dropdown Menu */}
             <div className="relative">
-              <details className="group">
+              <details ref={importMenuDetailsRef} className="group">
                 <summary className="list-none cursor-pointer min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
                   <Upload className="w-3.5 h-3.5 text-blue-500" />
                   <span>{isWorkerProcessing ? 'Parsing File...' : '+ Import & Actions ▾'}</span>
@@ -893,7 +915,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     <input
                       type="file"
                       accept=".fit,.gpx,.tcx,.json"
-                      onChange={handleWorkoutFileUpload}
+                      onChange={(e) => {
+                        importMenuDetailsRef.current?.removeAttribute('open');
+                        handleWorkoutFileUpload(e);
+                      }}
                       className="hidden"
                     />
                   </label>
@@ -901,7 +926,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   {onOpenOfficialRaceModal && (
                     <button
                       type="button"
-                      onClick={onOpenOfficialRaceModal}
+                      onClick={() => {
+                        importMenuDetailsRef.current?.removeAttribute('open');
+                        onOpenOfficialRaceModal();
+                      }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors"
                     >
                       <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
@@ -915,7 +943,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   {onScanMoreSegments && (
                     <button
                       type="button"
-                      onClick={() => onScanMoreSegments()}
+                      onClick={() => {
+                        importMenuDetailsRef.current?.removeAttribute('open');
+                        onScanMoreSegments();
+                      }}
                       disabled={isScanningSegments}
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors disabled:opacity-50"
                     >
@@ -932,7 +963,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   {onHydrateMoreRoutes && (
                     <button
                       type="button"
-                      onClick={() => onHydrateMoreRoutes()}
+                      onClick={() => {
+                        importMenuDetailsRef.current?.removeAttribute('open');
+                        onHydrateMoreRoutes();
+                      }}
                       disabled={isHydratingRoutes}
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-800 dark:text-slate-100 font-medium transition-colors disabled:opacity-50"
                     >
@@ -949,7 +983,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   <div className="border-t border-slate-200/70 dark:border-white/10 pt-1 mt-1">
                     <button
                       type="button"
-                      onClick={handleSimulate1HzGpxInWorker}
+                      onClick={() => {
+                        importMenuDetailsRef.current?.removeAttribute('open');
+                        handleSimulate1HzGpxInWorker();
+                      }}
                       disabled={isWorkerProcessing}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-600 dark:text-slate-300 font-medium transition-colors disabled:opacity-50"
                     >
@@ -3038,12 +3075,15 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
       {/* Deep Activity Stream, Auto-Detected Intervals & Similar Workout Inspector Modal */}
       {selectedActivity && (
-        <div className="ap-modal-backdrop">
-          <div className="ap-modal-sheet max-w-5xl liquid-glass shadow-2xl">
+        <div className="ap-modal-backdrop" onClick={() => onSelectActivity(null)}>
+          <div
+            className="ap-modal-sheet max-w-5xl liquid-glass shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3" />
 
             {/* Header */}
-            <div className="flex flex-wrap items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md flex flex-wrap items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedActivity.sportCategory} ·{' '}
@@ -4898,21 +4938,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         </div>
                       )}
                     </div>
-
-                    {/* Apache ECharts Time-in-Zone Histogram + Detailed Zone Breakdown */}
-                    <EChartsHistogram
-                      title="Apache ECharts Time-in-Zone Histogram (Z1–Z6)"
-                      subtitle={`Compliance ${complianceScore}% vs ${expectedProfile.shortLabel} Archetype`}
-                      buckets={zoneMeta.map((z) => ({
-                        zone: z.zone,
-                        label: z.shortLabel,
-                        pct: z.pct,
-                        seconds: z.secs,
-                        expectedPct: showAutoZoneInsight ? z.expectedPct : undefined,
-                        color: z.colorHex,
-                      }))}
-                      height={210}
-                    />
 
                     {/* Interactive SVG Vertical Column Chart + Detailed Horizontal Zone Breakdown */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">

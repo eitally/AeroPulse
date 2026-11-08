@@ -543,7 +543,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     return buckets;
   }, [enrichedSeries]);
 
-  const [pmcEngine, setPmcEngine] = useState<'ECHARTS' | 'SVG' | 'BOTH'>('BOTH');
+  const [pmcEngine, setPmcEngine] = useState<'ECHARTS' | 'SVG' | 'BOTH'>('ECHARTS');
   const dexieStats = useLiveWorkoutStoreStats();
 
   const echartsTimeline: PMCDayPoint[] = useMemo(() => {
@@ -2397,7 +2397,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         >
                           Run{' '}
                           <tspan className="fill-[#8B5CF6] font-bold">
-                            {activePoint.runEftp || 340}w
+                            {activePoint.runEftp || 340}W
                           </tspan>
                         </text>
                         <text
@@ -2407,7 +2407,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         >
                           eFTP{' '}
                           <tspan className="fill-[#F97316] font-bold">
-                            {activePoint.rideEftp || 310}w
+                            {activePoint.rideEftp || 310}W
                           </tspan>
                         </text>
                       </g>
@@ -2715,8 +2715,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         </div>
         )}
 
-        {/* Interactive Milestone Badges Legend & Filter Strip */}
-        {(() => {
+        {/* Interactive Milestone Badges Legend & Filter Strip (SVG Multi-Pane mode) */}
+        {(pmcEngine === 'SVG' || pmcEngine === 'BOTH') && (() => {
           const eftpCount = enrichedSeries.filter((d) =>
             d.milestones?.some((m) => m.category === 'EFTP_BREAKTHROUGH')
           ).length;

@@ -206,23 +206,29 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[#0D1015] border border-[#262F3D] rounded-xl max-w-6xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-2xl liquid-glass shadow-2xl border border-stone-200/90 dark:border-white/10 text-slate-900 dark:text-slate-100 max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+      >
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-[#1E2530] flex flex-wrap items-center justify-between gap-4 bg-[#11151C]">
+        <div className="px-6 py-4 border-b border-stone-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-4 liquid-glass-subtle">
           <div className="flex items-center gap-3">
             <AeroPulseLogo size="sm" />
-            <div className="h-6 w-px bg-[#1E2530] hidden sm:block" />
+            <div className="h-6 w-px bg-stone-300 dark:bg-slate-800 hidden sm:block" />
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   Athletes, Friends &amp; Coaching Hub
                 </h2>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#14181F] text-[#38BDF8] border border-[#262F3D]">
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-sky-500/10 text-sky-700 dark:text-[#38BDF8] border border-sky-500/30">
                   ROSTER &amp; PRIVACY SHIELD
                 </span>
               </div>
-              <p className="text-xs text-[#94A3B8]">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 Switch athlete calendars, compare live CTL/ATL/TSB fitness load, manage friend follow requests, or push coach workouts.
               </p>
             </div>
@@ -230,12 +236,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
           <div className="flex items-center gap-3">
             {/* Personal Invite Code Pill */}
-            <div className="hidden sm:flex items-center gap-2 bg-[#090B0E] border border-[#1E2530] rounded-lg px-3 py-1.5">
-              <span className="text-[10px] font-mono uppercase text-[#64748B]">Your Invite Code:</span>
+            <div className="hidden sm:flex items-center gap-2 liquid-glass-subtle border border-stone-200/80 dark:border-white/10 rounded-lg px-3 py-1.5">
+              <span className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">Your Invite Code:</span>
               <span className="text-xs font-mono font-bold text-[#F97316]">{selfInviteCode}</span>
               <button
                 onClick={handleCopyInvite}
-                className="text-[#94A3B8] hover:text-white transition-colors"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                 title="Copy your AeroPulse Invite Code"
               >
                 {copiedCode ? (
@@ -248,7 +254,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
             <button
               onClick={onClose}
-              className="px-2.5 py-1.5 rounded-lg bg-[#14181F] hover:bg-[#1E2530] border border-[#262F3D] text-[#94A3B8] hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono"
+              className="px-2.5 py-1.5 rounded-lg liquid-glass-subtle hover:bg-stone-200/70 dark:hover:bg-slate-800 border border-stone-200/80 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono"
               title="Close Roster Hub (Esc)"
             >
               <span>Esc</span>
@@ -258,14 +264,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="px-6 border-b border-[#1E2530] bg-[#0F131A] flex items-center justify-between flex-wrap gap-2">
+        <div className="px-6 border-b border-stone-200/80 dark:border-slate-800/80 bg-[#F3EFEA]/80 dark:bg-[#0F131A] flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-1">
             <button
               onClick={() => setActiveTab('LEADERBOARD')}
               className={`px-4 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'LEADERBOARD'
-                  ? 'border-[#F97316] text-white font-semibold'
-                  : 'border-transparent text-[#94A3B8] hover:text-white'
+                  ? 'border-[#F97316] text-slate-900 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Activity className="w-3.5 h-3.5 text-[#F97316]" />
@@ -276,8 +282,8 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               onClick={() => setActiveTab('CONNECT_INVITE')}
               className={`px-4 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'CONNECT_INVITE'
-                  ? 'border-[#38BDF8] text-white font-semibold'
-                  : 'border-transparent text-[#94A3B8] hover:text-white'
+                  ? 'border-[#38BDF8] text-slate-900 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5 text-[#38BDF8]" />
@@ -293,8 +299,8 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               onClick={() => setActiveTab('PRIVACY_SHIELD')}
               className={`px-4 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'PRIVACY_SHIELD'
-                  ? 'border-[#10B981] text-white font-semibold'
-                  : 'border-transparent text-[#94A3B8] hover:text-white'
+                  ? 'border-[#10B981] text-slate-900 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-[#10B981]" />
@@ -302,9 +308,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             </button>
           </div>
 
-          <div className="text-[11px] font-mono text-[#64748B] py-2">
+          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 py-2">
             Viewing Context:{' '}
-            <span className="text-white font-semibold">
+            <span className="text-slate-900 dark:text-white font-semibold">
               {activeAthleteId === 'SELF'
                 ? `${selfName} (You)`
                 : roster.find((r) => r.id === activeAthleteId)?.name || 'Athlete'}
@@ -315,7 +321,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         {/* Body Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {pushSuccessBanner && (
-            <div className="bg-[#10B981]/15 border border-[#10B981]/40 rounded-lg px-4 py-3 flex items-center justify-between text-xs text-[#10B981] font-mono">
+            <div className="bg-[#10B981]/15 border border-[#10B981]/40 rounded-lg px-4 py-3 flex items-center justify-between text-xs text-emerald-700 dark:text-[#10B981] font-mono">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>{pushSuccessBanner}</span>
@@ -329,28 +335,28 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           {/* TAB 1: TEAM & FRIENDS ROSTER LEADERBOARD */}
           {activeTab === 'LEADERBOARD' && (
             <div className="space-y-5">
-              <div className="overflow-x-auto border border-[#1E2530] rounded-xl bg-[#090B0E]">
+              <div className="overflow-x-auto rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[#1E2530] text-[10px] font-mono uppercase text-[#64748B] bg-[#0F131A]">
+                    <tr className="border-b border-stone-200/80 dark:border-slate-800/80 text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400 bg-stone-200/40 dark:bg-[#0F131A]">
                       <th className="py-3 px-4">Athlete / Strava ID</th>
                       <th className="py-3 px-3">Access Role</th>
                       <th className="py-3 px-3">Fitness (CTL)</th>
                       <th className="py-3 px-3">Fatigue (ATL)</th>
                       <th className="py-3 px-3">Form (TSB)</th>
                       <th className="py-3 px-3">Morning HRV</th>
-                      <th className="py-3 px-3">FTP / W·kg⁻¹</th>
+                      <th className="py-3 px-3">FTP / W/kg</th>
                       <th className="py-3 px-3">Target Objective</th>
                       <th className="py-3 px-4 text-right">Workspace Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#1E2530] text-xs">
+                  <tbody className="divide-y divide-stone-200/70 dark:divide-slate-800/80 text-xs">
                     {/* Row 0: Self */}
                     <tr
                       className={`transition-colors ${
                         activeAthleteId === 'SELF'
                           ? 'bg-[#F97316]/10'
-                          : 'hover:bg-[#14181F]/60'
+                          : 'hover:bg-stone-200/40 dark:hover:bg-[#14181F]/60'
                       }`}
                     >
                       <td className="py-3.5 px-4">
@@ -359,49 +365,49 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             YOU
                           </div>
                           <div>
-                            <div className="font-semibold text-white flex items-center gap-1.5">
+                            <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                               <span>{selfName}</span>
-                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#F97316]/20 text-[#F97316]">
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#F97316]/20 text-orange-600 dark:text-[#F97316]">
                                 Primary Account
                               </span>
                             </div>
-                            <div className="text-[11px] font-mono text-[#64748B]">
+                            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                               Invite: {selfInviteCode}
                             </div>
                           </div>
                         </div>
                       </td>
                       <td className="py-3.5 px-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
                           Owner (Full Control)
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 font-mono font-semibold text-[#38BDF8]">
+                      <td className="py-3.5 px-3 font-mono font-semibold text-sky-600 dark:text-[#38BDF8]">
                         {Math.round(selfCtl)}
                       </td>
-                      <td className="py-3.5 px-3 font-mono text-[#A855F7]">
+                      <td className="py-3.5 px-3 font-mono text-purple-600 dark:text-[#A855F7]">
                         {Math.round(selfAtl)}
                       </td>
                       <td className="py-3.5 px-3 font-mono">
                         <span
                           className={
                             selfTsb >= 0
-                              ? 'text-[#10B981] font-semibold'
+                              ? 'text-emerald-600 dark:text-[#10B981] font-semibold'
                               : selfTsb >= -15
-                              ? 'text-[#38BDF8]'
-                              : 'text-[#F59E0B]'
+                              ? 'text-sky-600 dark:text-[#38BDF8]'
+                              : 'text-amber-600 dark:text-[#F59E0B]'
                           }
                         >
                           {selfTsb > 0 ? `+${Math.round(selfTsb)}` : Math.round(selfTsb)}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 font-mono text-[#10B981]">{selfHrv} ms</td>
-                      <td className="py-3.5 px-3 font-mono text-[#CBD5E1]">
+                      <td className="py-3.5 px-3 font-mono text-emerald-600 dark:text-[#10B981]">{selfHrv} ms</td>
+                      <td className="py-3.5 px-3 font-mono text-slate-700 dark:text-slate-300">
                         {selfProfile.ftp}W ({(selfProfile.ftp / Math.max(40, selfProfile.weightKg)).toFixed(2)} W/kg)
                       </td>
                       <td className="py-3.5 px-3">
-                        <div className="text-xs text-white font-medium">Sub-20 5K / 350W FTP</div>
-                        <div className="text-[10px] font-mono text-[#64748B]">Active Plan Architect</div>
+                        <div className="text-xs text-slate-900 dark:text-white font-medium">Sub-20 5K / 350W FTP</div>
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">Active Plan Architect</div>
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
@@ -412,7 +418,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           className={`px-3 py-1.5 rounded text-xs font-mono transition-colors ${
                             activeAthleteId === 'SELF'
                               ? 'bg-[#F97316] text-white font-semibold'
-                              : 'bg-[#14181F] hover:bg-[#1E2530] text-[#CBD5E1] border border-[#262F3D]'
+                              : 'bg-white dark:bg-[#14181F] hover:bg-stone-100 dark:hover:bg-[#1E2530] text-slate-800 dark:text-slate-200 border border-stone-300 dark:border-slate-800'
                           }`}
                         >
                           {activeAthleteId === 'SELF' ? 'Active Viewport' : 'Switch to My Profile'}
@@ -450,13 +456,13 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         <tr
                           key={rawAthlete.id}
                           className={`transition-colors ${
-                            isSelected ? 'bg-[#38BDF8]/10' : 'hover:bg-[#14181F]/60'
+                            isSelected ? 'bg-[#38BDF8]/10' : 'hover:bg-stone-200/40 dark:hover:bg-[#14181F]/60'
                           }`}
                         >
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-3">
                               <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-xs text-white border"
+                                className="w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-xs text-slate-900 dark:text-white border"
                                 style={{
                                   backgroundColor: `${avatarColor}25`,
                                   borderColor: `${avatarColor}80`,
@@ -465,13 +471,13 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                                 {rawAthlete.avatarInitials}
                               </div>
                               <div>
-                                <div className="font-semibold text-white flex items-center gap-1.5">
+                                <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                                   <span>{rawAthlete.name}</span>
-                                  <span className="text-[10px] font-mono text-[#64748B]">
+                                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                                     #{rawAthlete.stravaAthleteId}
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-[#94A3B8]">
+                                <div className="text-[11px] text-slate-600 dark:text-slate-400">
                                   {rawAthlete.location} • {rawAthlete.primarySport}
                                 </div>
                               </div>
@@ -483,16 +489,16 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               {formatRoleBadge(rawAthlete.role, rawAthlete.status)}
                               <button
                                 onClick={() => onToggleAthleteRole(rawAthlete.id)}
-                                className="text-[10px] font-mono text-[#64748B] hover:text-white underline"
+                                className="text-[10px] font-mono text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white underline"
                               >
                                 Switch to {rawAthlete.role === 'COACH_EDIT' ? 'Friend View' : 'Coach Edit'}
                               </button>
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-3 font-mono font-semibold text-[#38BDF8]">
+                          <td className="py-3.5 px-3 font-mono font-semibold text-sky-600 dark:text-[#38BDF8]">
                             {pmcMasked ? (
-                              <span className="text-[#64748B] flex items-center gap-1">
+                              <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1">
                                 <Lock className="w-3 h-3" /> Private
                               </span>
                             ) : (
@@ -500,7 +506,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3 font-mono text-[#A855F7]">
+                          <td className="py-3.5 px-3 font-mono text-purple-600 dark:text-[#A855F7]">
                             {pmcMasked ? '—' : Math.round(atlVal)}
                           </td>
 
@@ -511,10 +517,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               <span
                                 className={
                                   tsbVal >= 0
-                                    ? 'text-[#10B981] font-semibold'
+                                    ? 'text-emerald-600 dark:text-[#10B981] font-semibold'
                                     : tsbVal >= -15
-                                    ? 'text-[#38BDF8]'
-                                    : 'text-[#F59E0B]'
+                                    ? 'text-sky-600 dark:text-[#38BDF8]'
+                                    : 'text-amber-600 dark:text-[#F59E0B]'
                                 }
                               >
                                 {tsbVal > 0 ? `+${Math.round(tsbVal)}` : Math.round(tsbVal)}
@@ -525,27 +531,27 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           <td className="py-3.5 px-3 font-mono">
                             {hrvMasked ? (
                               <span
-                                className="inline-flex items-center gap-1 text-[10px] text-[#F59E0B] bg-[#F59E0B]/10 border border-[#F59E0B]/30 px-1.5 py-0.5 rounded"
+                                className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-[#F59E0B] bg-[#F59E0B]/10 border border-[#F59E0B]/30 px-1.5 py-0.5 rounded"
                                 title="Hidden by Athlete's Privacy Shield for Friend View"
                               >
                                 <Lock className="w-3 h-3" /> Coaches Only
                               </span>
                             ) : (
-                              <span className="text-[#10B981]">
+                              <span className="text-emerald-600 dark:text-[#10B981]">
                                 {shieldedLatest?.hrvRMSSD || rawLatest?.hrvRMSSD || 58} ms
                               </span>
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3 font-mono text-[#CBD5E1]">
+                          <td className="py-3.5 px-3 font-mono text-slate-700 dark:text-slate-300">
                             {rawAthlete.athleteProfile.ftp}W ({wPerKg} W/kg)
                           </td>
 
                           <td className="py-3.5 px-3">
-                            <div className="text-xs text-white font-medium">
+                            <div className="text-xs text-slate-900 dark:text-white font-medium">
                               {rawAthlete.primaryGoalSummary}
                             </div>
-                            <div className="text-[10px] font-mono text-[#64748B]">
+                            <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                               7d Load: {weeklyTss} TSS
                             </div>
                           </td>
@@ -556,7 +562,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                                 rawAthlete.privacySettings.allowCoachCalendarEdits && (
                                   <button
                                     onClick={() => handleOpenCoachPush(rawAthlete)}
-                                    className="px-2.5 py-1.5 rounded text-xs font-mono bg-[#F97316]/15 hover:bg-[#F97316]/25 text-[#F97316] border border-[#F97316]/40 flex items-center gap-1 transition-colors"
+                                    className="px-2.5 py-1.5 rounded text-xs font-mono bg-[#F97316]/15 hover:bg-[#F97316]/25 text-orange-700 dark:text-[#F97316] border border-[#F97316]/40 flex items-center gap-1 transition-colors"
                                     title="Push Structured Workout to Athlete's Calendar"
                                   >
                                     <CalendarPlus className="w-3.5 h-3.5" />
@@ -572,7 +578,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                                 className={`px-3 py-1.5 rounded text-xs font-mono flex items-center gap-1 transition-colors ${
                                   isSelected
                                     ? 'bg-[#38BDF8] text-black font-semibold'
-                                    : 'bg-[#14181F] hover:bg-[#1E2530] text-white border border-[#262F3D]'
+                                    : 'bg-white dark:bg-[#14181F] hover:bg-stone-100 dark:hover:bg-[#1E2530] text-slate-900 dark:text-white border border-stone-300 dark:border-slate-800'
                                 }`}
                               >
                                 <span>{isSelected ? 'Viewing' : 'View Dashboard'}</span>
@@ -591,12 +597,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               {pushTargetAthleteId && (
                 <form
                   onSubmit={handleConfirmPushWorkout}
-                  className="bg-[#11151C] border border-[#F97316]/50 rounded-xl p-5 space-y-4 shadow-xl"
+                  className="rounded-xl liquid-glass-subtle border border-[#F97316]/50 p-5 space-y-4 shadow-xl"
                 >
-                  <div className="flex items-center justify-between border-b border-[#1E2530] pb-3">
+                  <div className="flex items-center justify-between border-b border-stone-200/80 dark:border-slate-800 pb-3">
                     <div className="flex items-center gap-2">
                       <CalendarPlus className="w-4 h-4 text-[#F97316]" />
-                      <h3 className="text-sm font-bold text-white">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                         Coach Workout Prescription Desk — Target:{' '}
                         <span className="text-[#F97316]">
                           {roster.find((r) => r.id === pushTargetAthleteId)?.name}
@@ -606,7 +612,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setPushTargetAthleteId(null)}
-                      className="text-xs font-mono text-[#94A3B8] hover:text-white"
+                      className="text-xs font-mono text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     >
                       Cancel
                     </button>
@@ -614,40 +620,40 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Workout Title
                       </label>
                       <input
                         type="text"
                         value={workoutName}
                         onChange={(e) => setWorkoutName(e.target.value)}
-                        className="w-full bg-[#090B0E] border border-[#262F3D] rounded px-3 py-1.5 text-xs text-white font-mono"
+                        className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Scheduled Date
                       </label>
                       <input
                         type="date"
                         value={workoutDate}
                         onChange={(e) => setWorkoutDate(e.target.value)}
-                        className="w-full bg-[#090B0E] border border-[#262F3D] rounded px-3 py-1.5 text-xs text-white font-mono"
+                        className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Sport &amp; Target Load
                       </label>
                       <div className="flex gap-2">
                         <select
                           value={workoutSport}
                           onChange={(e) => setWorkoutSport(e.target.value as 'Running' | 'Cycling')}
-                          className="bg-[#090B0E] border border-[#262F3D] rounded px-2 py-1.5 text-xs text-white font-mono"
+                          className="bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         >
                           <option value="Running">Running</option>
                           <option value="Cycling">Cycling</option>
@@ -656,7 +662,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           type="number"
                           value={workoutLoad}
                           onChange={(e) => setWorkoutLoad(Number(e.target.value))}
-                          className="w-20 bg-[#090B0E] border border-[#262F3D] rounded px-2 py-1.5 text-xs text-white font-mono"
+                          className="w-20 bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
                           placeholder="TSS"
                         />
                       </div>
@@ -665,34 +671,34 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Intervals.icu Structured Workout Syntax
                       </label>
                       <textarea
                         rows={3}
                         value={workoutSyntax}
                         onChange={(e) => setWorkoutSyntax(e.target.value)}
-                        className="w-full bg-[#090B0E] border border-[#262F3D] rounded p-2.5 text-xs font-mono text-[#38BDF8]"
+                        className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded p-2.5 text-xs font-mono text-sky-700 dark:text-[#38BDF8]"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Coach Execution Notes &amp; Duration (Mins)
                       </label>
                       <textarea
                         rows={2}
                         value={workoutNotes}
                         onChange={(e) => setWorkoutNotes(e.target.value)}
-                        className="w-full bg-[#090B0E] border border-[#262F3D] rounded p-2.5 text-xs text-white mb-2"
+                        className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded p-2.5 text-xs text-slate-900 dark:text-slate-100 mb-2"
                       />
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs font-mono text-[#94A3B8]">
+                        <div className="flex items-center gap-2 text-xs font-mono text-slate-600 dark:text-slate-400">
                           <span>Duration (min):</span>
                           <input
                             type="number"
                             value={workoutDurationMins}
                             onChange={(e) => setWorkoutDurationMins(Number(e.target.value))}
-                            className="w-16 bg-[#090B0E] border border-[#262F3D] rounded px-2 py-1 text-xs text-white"
+                            className="w-16 bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100"
                           />
                         </div>
                         <button
@@ -714,28 +720,28 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left 6 cols: Add Athlete by Invite Code or Strava Name */}
               <div className="lg:col-span-6 space-y-4">
-                <div className="bg-[#0F131A] border border-[#1E2530] rounded-xl p-5 space-y-4">
+                <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-4">
                   <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#38BDF8]">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-sky-600 dark:text-[#38BDF8]">
                       ADD FRIEND OR COACHED ATHLETE
                     </span>
-                    <h3 className="text-sm font-bold text-white mt-0.5">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
                       Follow Athlete by Invite Code or Strava Handle
                     </h3>
-                    <p className="text-xs text-[#94A3B8] mt-1">
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                       Enter a friend&apos;s AeroPulse Invite Code (e.g. <code className="text-[#F97316]">AP-4401-TRACK</code>) or name to add them to your athlete switcher.
                     </p>
                   </div>
 
                   {followFeedback && (
-                    <div className="p-3 rounded-lg bg-[#10B981]/15 border border-[#10B981]/30 text-xs text-[#10B981] font-mono">
+                    <div className="p-3 rounded-lg bg-[#10B981]/15 border border-[#10B981]/30 text-xs text-emerald-700 dark:text-[#10B981] font-mono">
                       {followFeedback}
                     </div>
                   )}
 
                   <form onSubmit={handleFollowSubmit} className="space-y-3">
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                      <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                         Athlete Name, Strava ID, or Invite Code
                       </label>
                       <input
@@ -743,14 +749,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         value={inviteQuery}
                         onChange={(e) => setInviteQuery(e.target.value)}
                         placeholder="e.g. Jordan Mercer or AP-5120-VELO"
-                        className="w-full bg-[#090B0E] border border-[#262F3D] rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#38BDF8]"
+                        className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:border-[#38BDF8]"
                         required
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                        <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                           Connection Permission Tier
                         </label>
                         <select
@@ -758,7 +764,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           onChange={(e) =>
                             setInviteRole(e.target.value as 'COACH_EDIT' | 'FRIEND_VIEW')
                           }
-                          className="w-full bg-[#090B0E] border border-[#262F3D] rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         >
                           <option value="FRIEND_VIEW">Friend (View Telemetry)</option>
                           <option value="COACH_EDIT">Coached Athlete (Edit Calendar)</option>
@@ -766,7 +772,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-mono uppercase text-[#94A3B8] mb-1">
+                        <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
                           Primary Discipline
                         </label>
                         <select
@@ -774,7 +780,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           onChange={(e) =>
                             setInviteSpecialty(e.target.value as 'Running' | 'Cycling')
                           }
-                          className="w-full bg-[#090B0E] border border-[#262F3D] rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         >
                           <option value="Running">Running / Track</option>
                           <option value="Cycling">Cycling / Power</option>
@@ -792,21 +798,21 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </div>
 
                 {/* Share Your Invite Code Card */}
-                <div className="bg-[#0F131A] border border-[#1E2530] rounded-xl p-5 flex items-center justify-between gap-4">
+                <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 flex items-center justify-between gap-4">
                   <div>
                     <div className="text-[10px] font-mono uppercase text-[#F97316]">
                       SHARE YOUR INVITE CODE WITH COACHES OR TEAMMATES
                     </div>
-                    <div className="text-lg font-mono font-bold text-white mt-0.5">
+                    <div className="text-lg font-mono font-bold text-slate-900 dark:text-white mt-0.5">
                       {selfInviteCode}
                     </div>
-                    <div className="text-xs text-[#64748B]">
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
                       Anyone with this code can request Friend View or Coach access to your telemetry.
                     </div>
                   </div>
                   <button
                     onClick={handleCopyInvite}
-                    className="px-3.5 py-2 rounded-lg bg-[#14181F] hover:bg-[#1E2530] border border-[#262F3D] text-xs font-mono text-white flex items-center gap-1.5 shrink-0"
+                    className="px-3.5 py-2 rounded-lg bg-white dark:bg-[#14181F] hover:bg-stone-100 dark:hover:bg-[#1E2530] border border-stone-300 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white flex items-center gap-1.5 shrink-0"
                   >
                     {copiedCode ? (
                       <>
@@ -825,15 +831,15 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
               {/* Right 6 cols: Pending Incoming Requests & Connected Roster Management */}
               <div className="lg:col-span-6 space-y-4">
-                <div className="bg-[#0F131A] border border-[#1E2530] rounded-xl p-5 space-y-3">
+                <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#F59E0B]">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-amber-600 dark:text-[#F59E0B]">
                       INCOMING FOLLOW &amp; COACHING REQUESTS ({pendingRequests.length})
                     </span>
                   </div>
 
                   {pendingRequests.length === 0 ? (
-                    <div className="text-xs text-[#64748B] font-mono py-4 text-center">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 font-mono py-4 text-center">
                       No pending follow requests.
                     </div>
                   ) : (
@@ -842,23 +848,23 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       return (
                         <div
                           key={req.id}
-                          className="bg-[#090B0E] border border-[#262F3D] rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3"
+                          className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3"
                         >
                           <div className="flex items-center gap-3">
                             <div
-                              className="w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-xs text-white"
+                              className="w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-xs text-slate-900 dark:text-white"
                               style={{ backgroundColor: `${avatarColor}30` }}
                             >
                               {req.avatarInitials}
                             </div>
                             <div>
-                              <div className="text-xs font-bold text-white">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white">
                                 {req.name}{' '}
-                                <span className="font-mono text-[10px] text-[#64748B]">
+                                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
                                   ({req.inviteCode})
                                 </span>
                               </div>
-                              <div className="text-[11px] text-[#94A3B8]">
+                              <div className="text-[11px] text-slate-600 dark:text-slate-400">
                                 {req.location} • Goal: {req.primaryGoalSummary}
                               </div>
                             </div>
@@ -867,19 +873,19 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => onApproveRequest(req.id, 'FRIEND_VIEW')}
-                              className="px-2.5 py-1.5 rounded bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border border-[#38BDF8]/40 text-[#38BDF8] text-[11px] font-mono"
+                              className="px-2.5 py-1.5 rounded bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border border-[#38BDF8]/40 text-sky-700 dark:text-[#38BDF8] text-[11px] font-mono"
                             >
                               Approve as Friend
                             </button>
                             <button
                               onClick={() => onApproveRequest(req.id, 'COACH_EDIT')}
-                              className="px-2.5 py-1.5 rounded bg-[#F97316]/15 hover:bg-[#F97316]/25 border border-[#F97316]/40 text-[#F97316] text-[11px] font-mono"
+                              className="px-2.5 py-1.5 rounded bg-[#F97316]/15 hover:bg-[#F97316]/25 border border-[#F97316]/40 text-orange-700 dark:text-[#F97316] text-[11px] font-mono"
                             >
                               Approve as Coach
                             </button>
                             <button
                               onClick={() => onRemoveOrDeclineAthlete(req.id)}
-                              className="p-1.5 rounded bg-[#14181F] hover:bg-red-500/20 text-[#64748B] hover:text-red-400"
+                              className="p-1.5 rounded bg-stone-100 dark:bg-[#14181F] hover:bg-red-500/20 text-slate-500 dark:text-slate-400 hover:text-red-500"
                               title="Decline request"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -892,8 +898,8 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </div>
 
                 {/* Connected Athletes Role Manager */}
-                <div className="bg-[#0F131A] border border-[#1E2530] rounded-xl p-5 space-y-3">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#94A3B8]">
+                <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-3">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                     CONNECTED ATHLETES ({connectedRoster.length})
                   </div>
                   <div className="space-y-2">
@@ -903,11 +909,11 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       return (
                         <div
                           key={ath.id}
-                          className="bg-[#090B0E] border border-[#1E2530] rounded-lg px-3.5 py-2.5 flex items-center justify-between gap-2"
+                          className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg px-3.5 py-2.5 flex items-center justify-between gap-2"
                         >
                           <div>
-                            <div className="text-xs font-semibold text-white">{ath.name}</div>
-                            <div className="text-[10px] font-mono text-[#64748B]">
+                            <div className="text-xs font-semibold text-slate-900 dark:text-white">{ath.name}</div>
+                            <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                               {ath.inviteCode} • CTL {Math.round(latestCtlVal)}
                             </div>
                           </div>
@@ -915,7 +921,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             {formatRoleBadge(ath.role, ath.status)}
                             <button
                               onClick={() => onRemoveOrDeclineAthlete(ath.id)}
-                              className="p-1 rounded hover:bg-red-500/20 text-[#64748B] hover:text-red-400"
+                              className="p-1 rounded hover:bg-red-500/20 text-slate-500 dark:text-slate-400 hover:text-red-500"
                               title="Remove Connection"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -933,20 +939,20 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           {/* TAB 3: GRANULAR PRIVACY & STRAVA API SECURITY SHIELD */}
           {activeTab === 'PRIVACY_SHIELD' && (
             <div className="space-y-5">
-              <div className="bg-[#0F131A] border border-[#1E2530] rounded-xl p-5 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1E2530] pb-4">
+              <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200/80 dark:border-slate-800 pb-4">
                   <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#10B981]">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-600 dark:text-[#10B981]">
                       ZERO-TRUST BIOMETRIC &amp; STRAVA API DATA GOVERNANCE
                     </span>
-                    <h3 className="text-base font-bold text-white mt-0.5">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
                       Your Outbound Athlete Privacy &amp; Sharing Permissions
                     </h3>
-                    <p className="text-xs text-[#94A3B8]">
-                      Control exactly which physiological streams and wellness markers your Friends (<code className="text-[#38BDF8]">FRIEND_VIEW</code>) and Coaches (<code className="text-[#F97316]">COACH_EDIT</code>) can inspect when they switch to your profile.
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Control exactly which physiological streams and wellness markers your Friends (<code className="text-sky-600 dark:text-[#38BDF8]">FRIEND_VIEW</code>) and Coaches (<code className="text-[#F97316]">COACH_EDIT</code>) can inspect when they switch to your profile.
                     </p>
                   </div>
-                  <div className="px-3 py-1.5 rounded bg-[#10B981]/10 border border-[#10B981]/30 text-xs font-mono text-[#10B981]">
+                  <div className="px-3 py-1.5 rounded bg-[#10B981]/10 border border-[#10B981]/30 text-xs font-mono text-emerald-700 dark:text-[#10B981]">
                     ● Shield Active
                   </div>
                 </div>
@@ -954,14 +960,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 {/* 3 Granular Visibility Selectors */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* 1. Morning HRV & Wellness */}
-                  <div className="bg-[#090B0E] border border-[#1E2530] rounded-lg p-4 space-y-3">
+                  <div className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <HeartPulse className="w-4 h-4 text-[#10B981]" />
                         Morning HRV, RHR &amp; Sleep
                       </span>
                     </div>
-                    <p className="text-[11px] text-[#94A3B8]">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       Controls visibility of daily HRV (ms), resting heart rate, and sleep quality scores.
                     </p>
                     <select
@@ -972,7 +978,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           shareWellnessAndHrv: e.target.value as PrivacyVisibilityTier,
                         })
                       }
-                      className="w-full bg-[#14181F] border border-[#262F3D] rounded px-2.5 py-2 text-xs font-mono text-white"
+                      className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2.5 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
                     >
                       <option value="ALL_CONNECTIONS">Friends &amp; Coaches (All Connections)</option>
                       <option value="COACHES_ONLY">Coaches Only (Hidden from Friends)</option>
@@ -981,14 +987,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   </div>
 
                   {/* 2. PMC Load & Power/Pace Zones */}
-                  <div className="bg-[#090B0E] border border-[#1E2530] rounded-lg p-4 space-y-3">
+                  <div className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <Activity className="w-4 h-4 text-[#38BDF8]" />
                         PMC Fitness (CTL/ATL) &amp; Zones
                       </span>
                     </div>
-                    <p className="text-[11px] text-[#94A3B8]">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       Controls visibility of your Chronic Training Load, Form (TSB), FTP, and Effort Stripes.
                     </p>
                     <select
@@ -999,7 +1005,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           sharePmcAndZones: e.target.value as PrivacyVisibilityTier,
                         })
                       }
-                      className="w-full bg-[#14181F] border border-[#262F3D] rounded px-2.5 py-2 text-xs font-mono text-white"
+                      className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2.5 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
                     >
                       <option value="ALL_CONNECTIONS">Friends &amp; Coaches (All Connections)</option>
                       <option value="COACHES_ONLY">Coaches Only (Hidden from Friends)</option>
@@ -1008,14 +1014,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   </div>
 
                   {/* 3. Outdoor GPS Route Polylines */}
-                  <div className="bg-[#090B0E] border border-[#1E2530] rounded-lg p-4 space-y-3">
+                  <div className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <MapPin className="w-4 h-4 text-[#F97316]" />
                         Outdoor GPS Maps &amp; Start Times
                       </span>
                     </div>
-                    <p className="text-[11px] text-[#94A3B8]">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       Masks exact GPS home/work start coordinates while preserving distance, pace, and lap splits.
                     </p>
                     <select
@@ -1026,7 +1032,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           shareGpsRoutes: e.target.value as PrivacyVisibilityTier,
                         })
                       }
-                      className="w-full bg-[#14181F] border border-[#262F3D] rounded px-2.5 py-2 text-xs font-mono text-white"
+                      className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded px-2.5 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
                     >
                       <option value="ALL_CONNECTIONS">Friends &amp; Coaches (All Connections)</option>
                       <option value="COACHES_ONLY">Coaches Only (Hidden from Friends)</option>
@@ -1037,12 +1043,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
                 {/* Boolean Security Toggles */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                  <label className="bg-[#090B0E] border border-[#1E2530] rounded-lg p-4 flex items-start justify-between gap-4 cursor-pointer">
+                  <label className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-4 flex items-start justify-between gap-4 cursor-pointer">
                     <div>
-                      <div className="text-xs font-semibold text-white">
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white">
                         Allow Assigned Coaches to Push Workouts to My Calendar
                       </div>
-                      <div className="text-[11px] text-[#94A3B8] mt-0.5">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                         When enabled, connections granted the <code className="text-[#F97316]">COACH_EDIT</code> role can schedule structured workouts onto your Training Calendar.
                       </div>
                     </div>
@@ -1059,12 +1065,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     />
                   </label>
 
-                  <label className="bg-[#090B0E] border border-[#1E2530] rounded-lg p-4 flex items-start justify-between gap-4 cursor-pointer">
+                  <label className="bg-white/80 dark:bg-[#090B0E] border border-stone-200/90 dark:border-slate-800 rounded-lg p-4 flex items-start justify-between gap-4 cursor-pointer">
                     <div>
-                      <div className="text-xs font-semibold text-white">
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white">
                         Strava API Compliance Shield (Explicit Opt-In Enforcement)
                       </div>
-                      <div className="text-[11px] text-[#94A3B8] mt-0.5">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                         Ensures your Strava-synced activity streams are never exposed to third parties without an approved Friend or Coach connection.
                       </div>
                     </div>

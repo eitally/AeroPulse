@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 
 export interface ZoneBucket {
@@ -36,6 +36,19 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const [isDark, setIsDark] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true
+  );
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const syncTheme = () => setIsDark(root.classList.contains('dark'));
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -64,6 +77,12 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
     if (!chart || !buckets.length) return;
 
     const hasExpected = buckets.some((b) => typeof b.expectedPct === 'number');
+    const tooltipBg = isDark ? 'rgba(15, 20, 28, 0.95)' : 'rgba(255, 253, 250, 0.96)';
+    const tooltipText = isDark ? '#f8fafc' : '#0f172a';
+    const axisLabelColor = isDark ? '#94a3b8' : '#475569';
+    const xLabelColor = isDark ? '#cbd5e1' : '#334155';
+    const axisLineColor = isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(15, 23, 42, 0.16)';
+    const splitLineColor = isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.08)';
 
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
@@ -71,11 +90,11 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        backgroundColor: 'rgba(9, 13, 22, 0.95)',
-        borderColor: 'rgba(56, 189, 248, 0.35)',
+        backgroundColor: tooltipBg,
+        borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(15, 23, 42, 0.15)',
         borderWidth: 1,
         textStyle: {
-          color: '#e2e8f0',
+          color: tooltipText,
           fontFamily: 'JetBrains Mono, monospace',
           fontSize: 11,
         },
@@ -87,11 +106,11 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
           if (!b) return '';
           return `
             <div>
-              <div style="font-weight:700;color:#f8fafc;margin-bottom:4px;">${b.zone} — ${b.label}</div>
+              <div style="font-weight:700;color:${tooltipText};margin-bottom:4px;">${b.zone} — ${b.label}</div>
               <div style="color:${b.color};">Actual: <strong>${b.pct.toFixed(1)}%</strong> (${formatSeconds(b.seconds)})</div>
               ${
                 typeof b.expectedPct === 'number'
-                  ? `<div style="color:#94a3b8;">Archetype Target: <strong>${b.expectedPct.toFixed(1)}%</strong></div>`
+                  ? `<div style="color:${axisLabelColor};">Archetype Target: <strong>${b.expectedPct.toFixed(1)}%</strong></div>`
                   : ''
               }
             </div>
@@ -107,9 +126,9 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
       xAxis: {
         type: 'category',
         data: buckets.map((b) => b.zone),
-        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.25)' } },
+        axisLine: { lineStyle: { color: axisLineColor } },
         axisLabel: {
-          color: '#cbd5e1',
+          color: xLabelColor,
           fontFamily: 'JetBrains Mono, monospace',
           fontSize: 10,
         },
@@ -117,9 +136,9 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
       yAxis: {
         type: 'value',
         max: (val) => Math.min(100, Math.max(40, Math.ceil(val.max / 10) * 10 + 10)),
-        splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.08)' } },
+        splitLine: { lineStyle: { color: splitLineColor } },
         axisLabel: {
-          color: '#64748b',
+          color: axisLabelColor,
           fontFamily: 'JetBrains Mono, monospace',
           fontSize: 9,
           formatter: '{value}%',
@@ -140,7 +159,7 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
           label: {
             show: true,
             position: 'top',
-            color: '#cbd5e1',
+            color: xLabelColor,
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 9,
             formatter: (p: any) => (p.value > 0 ? `${p.value}%` : ''),
@@ -155,13 +174,13 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
                 symbol: 'circle',
                 symbolSize: 6,
                 lineStyle: {
-                  color: '#f8fafc',
+                  color: tooltipText,
                   width: 1.5,
                   type: 'dashed' as const,
                 },
                 itemStyle: {
                   color: '#38bdf8',
-                  borderColor: '#f8fafc',
+                  borderColor: tooltipText,
                   borderWidth: 1,
                 },
               },
@@ -171,15 +190,19 @@ export const EChartsHistogram: React.FC<EChartsHistogramProps> = ({
     };
 
     chart.setOption(option, true);
-  }, [buckets]);
+  }, [buckets, isDark]);
 
   return (
-    <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3">
+    <div className="rounded-xl liquid-glass-subtle p-3.5 border border-stone-200/80 dark:border-slate-800/80">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] font-mono uppercase tracking-wider text-slate-300 font-semibold">
+        <span className="text-[11px] font-mono uppercase tracking-wider text-slate-900 dark:text-slate-100 font-semibold">
           {title}
         </span>
-        {subtitle && <span className="text-[10px] font-mono text-slate-400">{subtitle}</span>}
+        {subtitle && (
+          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+            {subtitle}
+          </span>
+        )}
       </div>
       <div ref={containerRef} style={{ width: '100%', height: `${height}px` }} />
     </div>

@@ -926,11 +926,11 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
           <div>
             <span className="text-slate-400 mr-1.5">Load/Hr (FTP-Norm):</span>
             <span className="text-[#38BDF8] font-bold">
-              {activePoint.aLoadPerHour} TSS/h ({activePoint.aEffectivePctFtp}% FTP)
+              {activePoint.aLoadPerHour} TSS/hr ({activePoint.aEffectivePctFtp}% FTP)
             </span>
             <span className="text-slate-500 mx-1">vs</span>
             <span className="text-[#F97316] font-bold">
-              {activePoint.bLoadPerHour} TSS/h ({activePoint.bEffectivePctFtp}% FTP)
+              {activePoint.bLoadPerHour} TSS/hr ({activePoint.bEffectivePctFtp}% FTP)
             </span>
           </div>
 
@@ -1390,10 +1390,10 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
 
               {/* Horizontal Gridlines & FTP-Normalized Benchmarks */}
               {[
-                { val: 100, label: '100 TSS/h (100% FTP · Z4)', color: '#F43F5E' },
-                { val: 78, label: '78 TSS/h (88% FTP · Z3/Z4)', color: '#F59E0B' },
-                { val: 62, label: '62 TSS/h (78% FTP · Z2 Ceiling)', color: '#10B981' },
-                { val: 45, label: '45 TSS/h (67% FTP · Recovery)', color: '#334155' },
+                { val: 100, label: '100 TSS/hr (100% FTP · Z4)', color: '#F43F5E' },
+                { val: 78, label: '78 TSS/hr (88% FTP · Z3/Z4)', color: '#F59E0B' },
+                { val: 62, label: '62 TSS/hr (78% FTP · Z2 Ceiling)', color: '#10B981' },
+                { val: 45, label: '45 TSS/hr (67% FTP · Recovery)', color: '#334155' },
               ].map((bm) => {
                 const y = yLoadHr(bm.val);
                 return (
@@ -1550,33 +1550,33 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
           {/* Side-by-Side Athlete Intensity Archetype & Zone Density Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 pt-1">
             {/* Athlete A Intensity Density Card */}
-            <div className="lg:col-span-5 rounded-xl bg-[#0F131A] border border-sky-500/30 p-3.5 space-y-2.5">
+            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-[#0F131A] border border-sky-500/30 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" />
-                  <span className="text-xs font-bold text-white">{athleteA.name}</span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">{athleteA.name}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
                   {coachLoadSummary.archetypeA.zoneTag}
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 font-mono text-xs bg-[#090B0E] rounded-lg p-2.5 border border-[#1E2530]">
+              <div className="grid grid-cols-3 gap-2 font-mono text-xs bg-stone-100/80 dark:bg-[#090B0E] rounded-lg p-2.5 border border-stone-200/80 dark:border-slate-800/80">
                 <div>
-                  <span className="text-[10px] text-slate-400 block">AVG LOAD/HR</span>
-                  <span className="text-sm font-extrabold text-[#38BDF8]">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">AVG LOAD/HR</span>
+                  <span className="text-sm font-extrabold text-sky-600 dark:text-[#38BDF8]">
                     {coachLoadSummary.avgLoadPerHrA} TSS/h
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block">NORM % FTP</span>
-                  <span className="text-sm font-extrabold text-white">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">NORM % FTP</span>
+                  <span className="text-sm font-extrabold text-slate-900 dark:text-white">
                     {coachLoadSummary.avgIfPctA}% (~{coachLoadSummary.avgWattsA}W)
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block">{windowDays}D VOLUME</span>
-                  <span className="text-sm font-extrabold text-emerald-400">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">{windowDays}D VOLUME</span>
+                  <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
                     {coachLoadSummary.totalHoursA}h ({coachLoadSummary.totalLoadA} TSS)
                   </span>
                 </div>
@@ -1584,12 +1584,12 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
 
               {/* 3-Zone Session Intensity Bar */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
                   <span>Z1/Z2 Base: {coachLoadSummary.binsA.lowPct}%</span>
                   <span>Z3 Tempo: {coachLoadSummary.binsA.modPct}%</span>
                   <span>Z4/Z5 Threshold+: {coachLoadSummary.binsA.highPct}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                <div className="h-2 rounded-full bg-stone-200 dark:bg-slate-800 overflow-hidden flex">
                   <div
                     style={{ width: `${coachLoadSummary.binsA.lowPct}%` }}
                     className="bg-emerald-500"
@@ -1604,40 +1604,40 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                <strong className="text-slate-200">{coachLoadSummary.archetypeA.label}:</strong>{' '}
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                <strong className="text-slate-900 dark:text-slate-200">{coachLoadSummary.archetypeA.label}:</strong>{' '}
                 {coachLoadSummary.archetypeA.description}
               </p>
             </div>
 
             {/* Athlete B Intensity Density Card */}
-            <div className="lg:col-span-5 rounded-xl bg-[#0F131A] border border-orange-500/30 p-3.5 space-y-2.5">
+            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-[#0F131A] border border-orange-500/30 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
-                  <span className="text-xs font-bold text-white">{athleteB.name}</span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">{athleteB.name}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-orange-500/15 text-orange-300 border border-orange-500/30">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/30">
                   {coachLoadSummary.archetypeB.zoneTag}
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 font-mono text-xs bg-[#090B0E] rounded-lg p-2.5 border border-[#1E2530]">
+              <div className="grid grid-cols-3 gap-2 font-mono text-xs bg-stone-100/80 dark:bg-[#090B0E] rounded-lg p-2.5 border border-stone-200/80 dark:border-slate-800/80">
                 <div>
-                  <span className="text-[10px] text-slate-400 block">AVG LOAD/HR</span>
-                  <span className="text-sm font-extrabold text-[#F97316]">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">AVG LOAD/HR</span>
+                  <span className="text-sm font-extrabold text-orange-600 dark:text-[#F97316]">
                     {coachLoadSummary.avgLoadPerHrB} TSS/h
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block">NORM % FTP</span>
-                  <span className="text-sm font-extrabold text-white">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">NORM % FTP</span>
+                  <span className="text-sm font-extrabold text-slate-900 dark:text-white">
                     {coachLoadSummary.avgIfPctB}% (~{coachLoadSummary.avgWattsB}W)
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block">{windowDays}D VOLUME</span>
-                  <span className="text-sm font-extrabold text-emerald-400">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block">{windowDays}D VOLUME</span>
+                  <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
                     {coachLoadSummary.totalHoursB}h ({coachLoadSummary.totalLoadB} TSS)
                   </span>
                 </div>
@@ -1645,12 +1645,12 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
 
               {/* 3-Zone Session Intensity Bar */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
                   <span>Z1/Z2 Base: {coachLoadSummary.binsB.lowPct}%</span>
                   <span>Z3 Tempo: {coachLoadSummary.binsB.modPct}%</span>
                   <span>Z4/Z5 Threshold+: {coachLoadSummary.binsB.highPct}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                <div className="h-2 rounded-full bg-stone-200 dark:bg-slate-800 overflow-hidden flex">
                   <div
                     style={{ width: `${coachLoadSummary.binsB.lowPct}%` }}
                     className="bg-emerald-500"
@@ -1665,26 +1665,26 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                <strong className="text-slate-200">{coachLoadSummary.archetypeB.label}:</strong>{' '}
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                <strong className="text-slate-900 dark:text-slate-200">{coachLoadSummary.archetypeB.label}:</strong>{' '}
                 {coachLoadSummary.archetypeB.description}
               </p>
             </div>
 
             {/* Right 2 Cols: Head-to-Head Intensity Delta & Coach Action */}
-            <div className="lg:col-span-2 rounded-xl bg-[#0F131A] border border-[#1E2530] p-3.5 flex flex-col justify-between gap-3 font-mono">
+            <div className="lg:col-span-2 rounded-xl bg-white/80 dark:bg-[#0F131A] border border-stone-200/80 dark:border-slate-800/80 p-3.5 flex flex-col justify-between gap-3 font-mono">
               <div className="space-y-1.5">
-                <span className="text-[10px] uppercase text-slate-400 block">
+                <span className="text-[10px] uppercase text-slate-500 dark:text-slate-400 block">
                   INTENSITY DENSITY Δ
                 </span>
-                <div className="text-base font-extrabold text-white">
+                <div className="text-base font-extrabold text-slate-900 dark:text-white">
                   {coachLoadSummary.avgLoadPerHrA - coachLoadSummary.avgLoadPerHrB >= 0 ? '+' : ''}
                   {(coachLoadSummary.avgLoadPerHrA - coachLoadSummary.avgLoadPerHrB).toFixed(1)}{' '}
-                  <span className="text-xs font-normal text-slate-400">TSS/hr</span>
+                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400">TSS/hr</span>
                 </div>
-                <div className="text-[11px] text-slate-400">
-                  Peak: <span className="text-[#38BDF8]">{coachLoadSummary.peakLoadPerHrA}</span> vs{' '}
-                  <span className="text-[#F97316]">{coachLoadSummary.peakLoadPerHrB}</span> TSS/h
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Peak: <span className="text-sky-600 dark:text-[#38BDF8]">{coachLoadSummary.peakLoadPerHrA}</span> vs{' '}
+                  <span className="text-orange-600 dark:text-[#F97316]">{coachLoadSummary.peakLoadPerHrB}</span> TSS/h
                 </div>
               </div>
 
@@ -1695,7 +1695,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                     `Coach Load-per-Hour Comparison (${windowDays}D): ${athleteA.name} (FTP ${athleteA.ftp}W, ${athleteA.wPerKg} W/kg) averages ${coachLoadSummary.avgLoadPerHrA} TSS/hr (${coachLoadSummary.avgIfPctA}% FTP, ${coachLoadSummary.totalHoursA}h total, ${coachLoadSummary.archetypeA.label}) vs ${athleteB.name} (FTP ${athleteB.ftp}W, ${athleteB.wPerKg} W/kg) averaging ${coachLoadSummary.avgLoadPerHrB} TSS/hr (${coachLoadSummary.avgIfPctB}% FTP, ${coachLoadSummary.totalHoursB}h total, ${coachLoadSummary.archetypeB.label}). How should we rebalance their volume vs. intensity density for optimal progression?`
                   )
                 }
-                className="w-full py-2 px-2.5 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/40 text-orange-300 text-[11px] font-sans font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                className="w-full py-2 px-2.5 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/40 text-orange-700 dark:text-orange-300 text-[11px] font-sans font-semibold flex items-center justify-center gap-1.5 transition-colors"
               >
                 <Flame className="w-3.5 h-3.5 shrink-0" />
                 <span>Coach Load Audit</span>
@@ -1709,15 +1709,15 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
           CTL vs. RESTING HEART RATE (RHR) CORRELATION SCATTER PLOT & QUADRANT LAB
          ======================================================================== */}
       {focusMode !== 'COACH_LOAD_HOUR' && (
-        <div className="rounded-xl bg-[#090B0E] border border-[#1E2530] p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#1E2530] pb-3">
+        <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-slate-800/80 p-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200/80 dark:border-slate-800/80 pb-3">
             <div className="space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
                   <ScatterChart className="w-3 h-3" />
                   CARDIOVASCULAR DOSE-RESPONSE SCATTER LAB
                 </span>
-                <span className="text-[11px] font-mono text-slate-400">
+                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                   X: CHRONIC TRAINING LOAD (CTL) vs. Y: MORNING RESTING HR (BPM)
                 </span>
                 <ChartInfoTooltip
@@ -1738,33 +1738,33 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                   coachingAction="If an athlete's points migrate into the top-right High CTL + Elevated RHR quadrant with a positive regression slope, prescribe a 48–72h Z1 recovery microcycle."
                 />
               </div>
-              <h4 className="text-sm font-bold text-white">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                 CTL × Resting Heart Rate Physiological Adaptation &amp; Overtraining Quadrant Analyzer ({windowDays}D Window)
               </h4>
             </div>
 
             {/* Live Regression Badges for Athlete A & Athlete B */}
             <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-              <div className="px-3 py-1.5 rounded-lg bg-[#0F131A] border border-sky-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-[#0F131A] border border-sky-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" />
-                <span className="text-white font-semibold">{athleteA.name.split(' ')[0]}:</span>
+                <span className="text-slate-900 dark:text-white font-semibold">{athleteA.name.split(' ')[0]}:</span>
                 {athleteA.redactedWellness ? (
-                  <span className="text-amber-400 flex items-center gap-1">
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
                     <Lock className="w-3 h-3" /> RHR Masked
                   </span>
                 ) : (
                   <>
-                    <span className="text-[#38BDF8] font-bold">r = {regressionA.r}</span>
-                    <span className="text-slate-400">
+                    <span className="text-sky-600 dark:text-[#38BDF8] font-bold">r = {regressionA.r}</span>
+                    <span className="text-slate-500 dark:text-slate-400">
                       ({regressionA.slopePer10Ctl >= 0 ? `+${regressionA.slopePer10Ctl}` : regressionA.slopePer10Ctl} bpm/10 CTL)
                     </span>
                     <span
                       className={`px-1.5 py-0.2 rounded text-[10px] ${
                         regressionA.statusTone === 'optimal'
-                          ? 'bg-emerald-500/20 text-emerald-300'
+                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                           : regressionA.statusTone === 'strain'
-                            ? 'bg-rose-500/20 text-rose-300'
-                            : 'bg-sky-500/20 text-sky-300'
+                            ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
+                            : 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
                       }`}
                     >
                       {regressionA.statusLabel}
@@ -1773,26 +1773,26 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 )}
               </div>
 
-              <div className="px-3 py-1.5 rounded-lg bg-[#0F131A] border border-orange-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-[#0F131A] border border-orange-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
-                <span className="text-white font-semibold">{athleteB.name.split(' ')[0]}:</span>
+                <span className="text-slate-900 dark:text-white font-semibold">{athleteB.name.split(' ')[0]}:</span>
                 {athleteB.redactedWellness ? (
-                  <span className="text-amber-400 flex items-center gap-1">
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
                     <Lock className="w-3 h-3" /> RHR Masked
                   </span>
                 ) : (
                   <>
-                    <span className="text-[#F97316] font-bold">r = {regressionB.r}</span>
-                    <span className="text-slate-400">
+                    <span className="text-orange-600 dark:text-[#F97316] font-bold">r = {regressionB.r}</span>
+                    <span className="text-slate-500 dark:text-slate-400">
                       ({regressionB.slopePer10Ctl >= 0 ? `+${regressionB.slopePer10Ctl}` : regressionB.slopePer10Ctl} bpm/10 CTL)
                     </span>
                     <span
                       className={`px-1.5 py-0.2 rounded text-[10px] ${
                         regressionB.statusTone === 'optimal'
-                          ? 'bg-emerald-500/20 text-emerald-300'
+                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                           : regressionB.statusTone === 'strain'
-                            ? 'bg-rose-500/20 text-rose-300'
-                            : 'bg-amber-500/20 text-amber-300'
+                            ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
+                            : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
                       }`}
                     >
                       {regressionB.statusLabel}
@@ -1814,8 +1814,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 y={sTop}
                 width={sPlotW}
                 height={sPlotH}
-                fill="#0D1117"
-                stroke="#1E2530"
+                className="fill-stone-100/80 dark:fill-[#0D1117] stroke-stone-300 dark:stroke-[#1E2530]"
               />
 
               {/* Top-Right: High CTL + Elevated RHR -> Sympathetic Overreaching Warning */}
@@ -1831,7 +1830,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 x={sRight - 10}
                 y={sTop + 16}
                 textAnchor="end"
-                className="fill-rose-400/80 text-[10px] font-mono uppercase tracking-wider"
+                className="fill-rose-600 dark:fill-rose-400/80 text-[10px] font-mono uppercase tracking-wider"
               >
                 ▲ HIGH CTL + ELEVATED RHR (SYMPATHETIC OVERREACHING / OVERTRAINING RISK)
               </text>
@@ -1849,7 +1848,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 x={sRight - 10}
                 y={sBottom - 10}
                 textAnchor="end"
-                className="fill-emerald-400/85 text-[10px] font-mono uppercase tracking-wider"
+                className="fill-emerald-700 dark:fill-emerald-400/85 text-[10px] font-mono uppercase tracking-wider"
               >
                 ▼ HIGH CTL + LOWER RHR (AEROBIC ADAPTATION &amp; STROKE VOLUME EXPANSION)
               </text>
@@ -1858,7 +1857,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 x={sLeft + 10}
                 y={sTop + 16}
                 textAnchor="start"
-                className="fill-amber-400/75 text-[10px] font-mono uppercase tracking-wider"
+                className="fill-amber-700 dark:fill-amber-400/75 text-[10px] font-mono uppercase tracking-wider"
               >
                 ▲ LOW CTL + ELEVATED RHR (ACUTE STRESS / RECOVERY DEBT)
               </text>
@@ -1867,7 +1866,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 x={sLeft + 10}
                 y={sBottom - 10}
                 textAnchor="start"
-                className="fill-sky-400/75 text-[10px] font-mono uppercase tracking-wider"
+                className="fill-sky-700 dark:fill-sky-400/75 text-[10px] font-mono uppercase tracking-wider"
               >
                 ▼ MODERATE CTL + LOW RHR (FRESH PARASYMPATHETIC BASELINE)
               </text>
@@ -1878,7 +1877,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 y1={sTop}
                 x2={xScatterCtl(midCtl)}
                 y2={sBottom}
-                stroke="#334155"
+                className="stroke-slate-400 dark:stroke-[#334155]"
                 strokeWidth="1"
                 strokeDasharray="4 4"
               />
@@ -1887,7 +1886,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 y1={yScatterRhr(midRhr)}
                 x2={sRight}
                 y2={yScatterRhr(midRhr)}
-                stroke="#334155"
+                className="stroke-slate-400 dark:stroke-[#334155]"
                 strokeWidth="1"
                 strokeDasharray="4 4"
               />
@@ -1902,14 +1901,14 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                       y1={sTop}
                       x2={x}
                       y2={sBottom}
-                      stroke="#1E2530"
+                      className="stroke-stone-300 dark:stroke-[#1E2530]"
                       strokeDasharray="2 3"
                     />
                     <text
                       x={x}
                       y={sBottom + 16}
                       textAnchor="middle"
-                      className="fill-slate-400 text-[10px] font-mono"
+                      className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
                     >
                       {ctlTick} CTL
                     </text>
@@ -1927,14 +1926,14 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                       y1={y}
                       x2={sRight}
                       y2={y}
-                      stroke="#1E2530"
+                      className="stroke-stone-300 dark:stroke-[#1E2530]"
                       strokeDasharray="2 3"
                     />
                     <text
                       x={sLeft - 8}
                       y={y + 3}
                       textAnchor="end"
-                      className="fill-slate-400 text-[10px] font-mono"
+                      className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
                     >
                       {rhrTick} bpm
                     </text>
@@ -1947,7 +1946,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 x={sLeft + sPlotW / 2}
                 y={scatterH - 6}
                 textAnchor="middle"
-                className="fill-slate-300 text-[11px] font-mono uppercase tracking-wider"
+                className="fill-slate-600 dark:fill-slate-300 text-[11px] font-mono uppercase tracking-wider"
               >
                 CHRONIC TRAINING LOAD (CTL — 42-DAY FITNESS) →
               </text>
@@ -1956,7 +1955,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                 y={sTop + sPlotH / 2}
                 transform={`rotate(-90 16 ${sTop + sPlotH / 2})`}
                 textAnchor="middle"
-                className="fill-slate-300 text-[11px] font-mono uppercase tracking-wider"
+                className="fill-slate-600 dark:fill-slate-300 text-[11px] font-mono uppercase tracking-wider"
               >
                 RESTING HR (BPM) →
               </text>
@@ -2026,7 +2025,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                         r={isLatest || isSelected ? 5.2 : 3.8}
                         fill="#38BDF8"
                         fillOpacity={alpha}
-                        stroke="#090B0E"
+                        className="stroke-white dark:stroke-[#090B0E]"
                         strokeWidth="1.2"
                       />
                     </g>
@@ -2070,7 +2069,7 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
                         r={isLatest || isSelected ? 5.2 : 3.8}
                         fill="#F97316"
                         fillOpacity={alpha}
-                        stroke="#090B0E"
+                        className="stroke-white dark:stroke-[#090B0E]"
                         strokeWidth="1.2"
                       />
                     </g>
@@ -2081,18 +2080,18 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
 
           {/* Scatter Point Inspector & Physiological Interpretation Footer */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1">
-            <div className="lg:col-span-5 rounded-lg bg-[#0F131A] border border-[#1E2530] p-3 flex items-start gap-2.5">
+            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-[#0F131A] border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
               {regressionA.statusTone === 'strain' ? (
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
               ) : (
-                <CheckCircle2 className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-sky-600 dark:text-[#38BDF8] shrink-0 mt-0.5" />
               )}
               <div className="text-xs leading-relaxed">
-                <div className="font-mono font-bold text-white">
+                <div className="font-mono font-bold text-slate-900 dark:text-white">
                   {athleteA.name}:{' '}
-                  <span className="text-[#38BDF8]">{regressionA.statusLabel}</span>
+                  <span className="text-sky-600 dark:text-[#38BDF8]">{regressionA.statusLabel}</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                   {athleteA.redactedWellness
                     ? 'Resting HR and HRV are hidden by this friend’s Privacy Shield.'
                     : regressionA.interpretation}
@@ -2100,18 +2099,18 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-5 rounded-lg bg-[#0F131A] border border-[#1E2530] p-3 flex items-start gap-2.5">
+            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-[#0F131A] border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
               {regressionB.statusTone === 'strain' ? (
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
               ) : (
-                <CheckCircle2 className="w-4 h-4 text-[#F97316] shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-orange-600 dark:text-[#F97316] shrink-0 mt-0.5" />
               )}
               <div className="text-xs leading-relaxed">
-                <div className="font-mono font-bold text-white">
+                <div className="font-mono font-bold text-slate-900 dark:text-white">
                   {athleteB.name}:{' '}
-                  <span className="text-[#F97316]">{regressionB.statusLabel}</span>
+                  <span className="text-orange-600 dark:text-[#F97316]">{regressionB.statusLabel}</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                   {athleteB.redactedWellness
                     ? 'Resting HR and HRV are hidden by this friend’s Privacy Shield.'
                     : regressionB.interpretation}
@@ -2119,15 +2118,15 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-2 rounded-lg bg-[#0F131A] border border-[#1E2530] p-3 flex flex-col justify-between font-mono text-[11px]">
-              <span className="text-slate-400 uppercase text-[10px]">
+            <div className="lg:col-span-2 rounded-lg bg-white/80 dark:bg-[#0F131A] border border-stone-200/80 dark:border-slate-800/80 p-3 flex flex-col justify-between font-mono text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400 uppercase text-[10px]">
                 POINT ({activeScatterRow.date})
               </span>
-              <div className="text-[#38BDF8]">
+              <div className="text-sky-600 dark:text-[#38BDF8]">
                 A: {activeScatterRow.aCtl.toFixed(0)} CTL ·{' '}
                 {athleteA.redactedWellness ? '—' : `${activeScatterRow.aRhr}bpm`}
               </div>
-              <div className="text-[#F97316]">
+              <div className="text-orange-600 dark:text-[#F97316]">
                 B: {activeScatterRow.bCtl.toFixed(0)} CTL ·{' '}
                 {athleteB.redactedWellness ? '—' : `${activeScatterRow.bRhr}bpm`}
               </div>

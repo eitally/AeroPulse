@@ -2,11 +2,71 @@
 @import "leaflet/dist/leaflet.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ==========================================================================
+   AeroPulse Design System — "Editorial Endurance Lab" (Tailwind v4 @theme)
+   Inspired by Tracksmith, Strava Metro & Apple Health:
+   - Light Mode: Warm Stone / Archival Paper (#F6F4EF) & Crisp Ivory Cards
+   - Dark Mode: Deep Obsidian (#0B0C0F) & Carbon Slate Instrument Panels
+   ========================================================================== */
+
+@theme {
+  /* Typography Families */
+  --font-display: 'Space Grotesk', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Editorial Brand Palette */
+  --color-ap-cobalt: #2563eb;
+  --color-ap-sky: #38bdf8;
+  --color-ap-signal: #ea580c;
+  --color-ap-amber: #d97706;
+  --color-ap-emerald: #10b981;
+  --color-ap-rose: #f43f5e;
+  --color-ap-magenta: #d946ef;
+
+  /* Banister PMC & Readiness Semantic Tokens */
+  --color-ap-ctl: #38bdf8;
+  --color-ap-atl: #f43f5e;
+  --color-ap-tsb-opt: #10b981;
+  --color-ap-tsb-fresh: #38bdf8;
+  --color-ap-tsb-warn: #f59e0b;
+  --color-ap-tsb-high: #ef4444;
+
+  /* Garmin Load Focus Tokens */
+  --color-ap-load-low: #38bdf8;
+  --color-ap-load-high: #f97316;
+  --color-ap-load-anaerobic: #d946ef;
+
+  /* 6-Zone Physiological Effort Spectrum */
+  --color-ap-z1: #10b981;
+  --color-ap-z2: #38bdf8;
+  --color-ap-z3: #eab308;
+  --color-ap-z4: #f97316;
+  --color-ap-z5: #ef4444;
+  --color-ap-z6: #d946ef;
+}
+
 @layer base {
   :root {
-    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', sans-serif;
-    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', 'Inter', sans-serif;
-    --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    --ap-canvas-bg: #f6f4ef;
+    --ap-card-bg-start: rgba(255, 254, 251, 0.94);
+    --ap-card-bg-end: rgba(250, 248, 243, 0.86);
+    --ap-card-border: rgba(214, 211, 204, 0.88);
+    --ap-inset-bg: rgba(247, 244, 238, 0.78);
+    --ap-inset-border: rgba(220, 216, 208, 0.9);
+    --ap-electric-cyan: #0ea5e9;
+    --ap-luminous-cyan: #38bdf8;
+    --ap-aero-orange: #ea580c;
+    --ap-strava-orange: #fc4c02;
+  }
+
+  .dark {
+    --ap-canvas-bg: #0b0c0f;
+    --ap-card-bg-start: rgba(22, 24, 30, 0.86);
+    --ap-card-bg-end: rgba(15, 17, 22, 0.76);
+    --ap-card-border: rgba(255, 255, 255, 0.095);
+    --ap-inset-bg: rgba(16, 18, 24, 0.65);
+    --ap-inset-border: rgba(255, 255, 255, 0.075);
   }
 
   body {
@@ -14,21 +74,23 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
-    background-color: #eef2f7;
+    background-color: var(--ap-canvas-bg);
     background-image:
-      radial-gradient(at 12% 8%, rgba(56, 189, 248, 0.14) 0px, transparent 48%),
-      radial-gradient(at 88% 12%, rgba(129, 140, 248, 0.12) 0px, transparent 52%),
-      radial-gradient(at 50% 92%, rgba(16, 185, 129, 0.08) 0px, transparent 55%);
+      radial-gradient(at 10% 6%, rgba(37, 99, 235, 0.07) 0px, transparent 48%),
+      radial-gradient(at 90% 10%, rgba(234, 88, 12, 0.06) 0px, transparent 50%),
+      radial-gradient(at 50% 94%, rgba(16, 185, 129, 0.05) 0px, transparent 55%);
     background-attachment: fixed;
+    color: #0f172a;
   }
 
   .dark body {
-    background-color: #060a12;
+    background-color: var(--ap-canvas-bg);
     background-image:
-      radial-gradient(at 15% 6%, rgba(14, 165, 233, 0.13) 0px, transparent 46%),
-      radial-gradient(at 85% 10%, rgba(139, 92, 246, 0.11) 0px, transparent 50%),
-      radial-gradient(at 50% 95%, rgba(16, 185, 129, 0.07) 0px, transparent 55%);
+      radial-gradient(at 14% 6%, rgba(37, 99, 235, 0.12) 0px, transparent 46%),
+      radial-gradient(at 86% 10%, rgba(234, 88, 12, 0.08) 0px, transparent 50%),
+      radial-gradient(at 50% 95%, rgba(16, 185, 129, 0.06) 0px, transparent 55%);
     background-attachment: fixed;
+    color: #f1f5f9;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -43,119 +105,184 @@
 }
 
 /* ==========================================================================
-   macOS Tahoe / visionOS Liquid Glass Surface System (Adaptive Light & Dark)
+   Editorial Endurance Lab Surface & Component System (Adaptive Light & Dark)
    ========================================================================== */
 
-/* Primary Translucent Specular Card */
-.liquid-glass {
+/* Primary Card Surface (.ap-card & .liquid-glass) */
+.liquid-glass,
+.ap-card {
   background: linear-gradient(
     165deg,
-    rgba(255, 255, 255, 0.84) 0%,
-    rgba(255, 255, 255, 0.68) 100%
+    var(--ap-card-bg-start) 0%,
+    var(--ap-card-bg-end) 100%
   );
-  backdrop-filter: blur(24px) saturate(185%);
-  -webkit-backdrop-filter: blur(24px) saturate(185%);
-  border: 1px solid rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--ap-card-border);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
-    0 10px 30px -10px rgba(15, 23, 42, 0.07),
-    0 2px 8px -2px rgba(15, 23, 42, 0.04);
+    0 8px 26px -10px rgba(28, 25, 23, 0.07),
+    0 2px 6px -1px rgba(28, 25, 23, 0.04);
 }
 
-.dark .liquid-glass {
+.dark .liquid-glass,
+.dark .ap-card {
   background: linear-gradient(
     165deg,
-    rgba(19, 28, 46, 0.74) 0%,
-    rgba(11, 17, 30, 0.62) 100%
+    var(--ap-card-bg-start) 0%,
+    var(--ap-card-bg-end) 100%
   );
-  backdrop-filter: blur(26px) saturate(190%);
-  -webkit-backdrop-filter: blur(26px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(22px) saturate(175%);
+  -webkit-backdrop-filter: blur(22px) saturate(175%);
+  border: 1px solid var(--ap-card-border);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 18px 42px -12px rgba(0, 0, 0, 0.52),
-    0 4px 12px -2px rgba(0, 0, 0, 0.32);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    0 18px 40px -12px rgba(0, 0, 0, 0.55),
+    0 4px 12px -2px rgba(0, 0, 0, 0.35);
 }
 
-/* Floating Navigation Dock Glass */
-.liquid-glass-header {
+/* Floating Navigation Header Surface (.liquid-glass-header & .ap-header-bar) */
+.liquid-glass-header,
+.ap-header-bar {
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.86) 0%,
-    rgba(248, 250, 252, 0.74) 100%
+    rgba(255, 254, 251, 0.92) 0%,
+    rgba(248, 246, 240, 0.85) 100%
   );
-  backdrop-filter: blur(28px) saturate(200%);
-  -webkit-backdrop-filter: blur(28px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 1),
-    0 12px 32px -8px rgba(15, 23, 42, 0.08),
-    0 2px 6px -1px rgba(15, 23, 42, 0.04);
-}
-
-.dark .liquid-glass-header {
-  background: linear-gradient(
-    180deg,
-    rgba(17, 25, 42, 0.80) 0%,
-    rgba(10, 15, 27, 0.70) 100%
-  );
-  backdrop-filter: blur(28px) saturate(200%);
-  -webkit-backdrop-filter: blur(28px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-    0 16px 38px -10px rgba(0, 0, 0, 0.6),
-    0 4px 10px -2px rgba(0, 0, 0, 0.4);
-}
-
-/* Subtle Nested Inset Glass (KPI Tiles, Table Containers) */
-.liquid-glass-subtle {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
-}
-
-.dark .liquid-glass-subtle {
-  background: rgba(15, 23, 42, 0.46);
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
-}
-
-/* Recessed macOS Capsule Switcher Track */
-.liquid-capsule-track {
-  background: rgba(15, 23, 42, 0.055);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
-}
-
-.dark .liquid-capsule-track {
-  background: rgba(3, 7, 18, 0.52);
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
-}
-
-/* Raised Specular Capsule Active Pill */
-.liquid-capsule-active {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(214, 211, 204, 0.9);
   box-shadow:
     inset 0 1px 0 0 #ffffff,
-    0 2px 6px -1px rgba(15, 23, 42, 0.08),
-    0 1px 2px 0 rgba(15, 23, 42, 0.05);
+    0 10px 28px -8px rgba(28, 25, 23, 0.08),
+    0 2px 6px -1px rgba(28, 25, 23, 0.04);
 }
 
-.dark .liquid-capsule-active {
+.dark .liquid-glass-header,
+.dark .ap-header-bar {
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.16) 0%,
-    rgba(255, 255, 255, 0.09) 100%
+    rgba(20, 22, 28, 0.88) 0%,
+    rgba(13, 15, 20, 0.80) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.24),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
+    0 16px 36px -10px rgba(0, 0, 0, 0.62),
+    0 4px 10px -2px rgba(0, 0, 0, 0.42);
+}
+
+/* Nested Inset Surface (.liquid-glass-subtle & .ap-card-inset) */
+.liquid-glass-subtle,
+.ap-card-inset {
+  background: var(--ap-inset-bg);
+  border: 1px solid var(--ap-inset-border);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.82);
+}
+
+.dark .liquid-glass-subtle,
+.dark .ap-card-inset {
+  background: var(--ap-inset-bg);
+  border: 1px solid var(--ap-inset-border);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Segmented Switcher Track (.liquid-capsule-track & .ap-pill-track) */
+.liquid-capsule-track,
+.ap-pill-track {
+  background: rgba(28, 25, 23, 0.055);
+  border: 1px solid rgba(28, 25, 23, 0.075);
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.05);
+}
+
+.dark .liquid-capsule-track,
+.dark .ap-pill-track {
+  background: rgba(6, 7, 10, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.48);
+}
+
+/* Raised Active Switcher Pill (.liquid-capsule-active & .ap-pill-active) */
+.liquid-capsule-active,
+.ap-pill-active {
+  background: linear-gradient(180deg, #ffffff 0%, #faf8f5 100%);
+  border: 1px solid rgba(214, 211, 204, 0.95);
+  box-shadow:
+    inset 0 1px 0 0 #ffffff,
+    0 2px 5px -1px rgba(28, 25, 23, 0.08),
+    0 1px 2px 0 rgba(28, 25, 23, 0.04);
+}
+
+.dark .liquid-capsule-active,
+.dark .ap-pill-active {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.085) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
     0 2px 8px -1px rgba(0, 0, 0, 0.45);
+}
+
+/* Standardized Typography & Button Tokens */
+.ap-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem; /* 11px minimum for crisp legibility */
+  line-height: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.dark .ap-eyebrow {
+  color: #94a3b8;
+}
+
+.ap-kpi-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.ap-btn-primary {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
+  transition: all 150ms ease;
+}
+
+.ap-btn-primary:hover {
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.ap-btn-secondary {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--ap-inset-bg);
+  border: 1px solid var(--ap-inset-border);
+  transition: all 150ms ease;
 }
 
 /* Custom subtle scrollbars for data tables and drawers */
@@ -169,36 +296,25 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.32);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.48);
+  background: rgba(148, 163, 184, 0.52);
 }
 
-/* ==========================================================================
-   AeroPulse Precision Telemetry Tokens & Light/Dark Contrast Safeguards
-   ========================================================================== */
-:root {
-  --ap-electric-cyan: #0EA5E9;
-  --ap-luminous-cyan: #38BDF8;
-  --ap-aero-orange: #F97316;
-  --ap-strava-orange: #FC4C02;
-}
-
-/* Ensure dark telemetry oscilloscope sub-canvases (#090B0E / #0F131A) maintain crisp light text even when the outer page is in Light Mode */
+/* Safeguard for any legacy dark telemetry oscilloscope sub-canvases */
 .bg-\[\#090B0E\],
 .bg-\[\#0D1015\],
 .bg-\[\#0F131A\] {
-  color: #F1F5F9;
+  color: #f1f5f9;
 }
 
 /* ==========================================================================
    Flexible Mobile & Desktop Responsive CSS Layout Architecture
    ========================================================================== */
 
-/* App Shell: Prevents horizontal page overflow on narrow viewports while supporting sticky headers */
 .ap-shell {
   min-height: 100dvh;
   display: flex;
@@ -214,7 +330,6 @@
   }
 }
 
-/* Fluid Container: Scales from compact mobile gutters (12px) up to widescreen telemetry monitors (1536px) */
 .ap-container {
   width: 100%;
   max-width: 96rem; /* 1536px */
@@ -222,7 +337,6 @@
   padding-inline: clamp(0.75rem, 2.2vw, 2rem);
 }
 
-/* Touch-Friendly Horizontal Scroll Strip for Mobile Filter Bars & Segmented Capsules */
 .ap-toolbar-scroll {
   display: flex;
   align-items: center;
@@ -245,7 +359,6 @@
   }
 }
 
-/* Hide scrollbars utility for compact pill carousels */
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -254,7 +367,6 @@
   display: none;
 }
 
-/* Flexible Dashboard CSS Grid where every track child shrinks cleanly (min-width: 0) for uPlot/ECharts/Leaflet */
 .ap-grid-dashboard {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -283,7 +395,7 @@
   position: fixed;
   inset: 0;
   z-index: 50;
-  background-color: rgba(2, 6, 23, 0.72);
+  background-color: rgba(12, 12, 14, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -317,7 +429,6 @@
   }
 }
 
-/* Safe-Area Bottom Navigation Dock for Mobile PWA */
 .ap-mobile-dock {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
