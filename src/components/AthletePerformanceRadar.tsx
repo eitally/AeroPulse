@@ -763,10 +763,10 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30">
               <Award className="w-3 h-3" />
-              5-Axis Performance &amp; Age-Graded Coggan / WMA Radar Suite
+              Performance &amp; Age-Graded Radars
             </span>
             <ChartInfoTooltip
-              title="Athlete Performance Radar & Age-Graded Coggan / WMA Scales"
+              title="Athlete Performance & Age-Graded Radars"
               subtitle="Multi-Dimensional Normalization + Age-Bracket Power & Distance Profiling"
               whatItMeasures="1) Compares two athletes across 5 normalized (0–100) training dimensions: CTL Efficiency, HRV Stability, Workout Compliance, Peak Power-to-Weight, and Weekly Load Consistency. 2) Evaluates each athlete against Dr. Andrew Coggan's Cycling Power Profile (5s, 1m, 5m, 20m, 60m FTP, 180m) and World Masters Athletics (WMA) / Daniels Running Distance Standards (400m, 800m, 1500m, 5K, 10K, Half Marathon) scaled to their selected age bracket."
               benchmarks="90–100%: World-Class / Domestic Pro (Cat 1). 80–89%: National Class (Cat 1/2). 70–79%: Regional Competitive (Cat 2/3). 60–69%: Trained Endurance Athlete (Cat 3/4)."
@@ -779,7 +779,7 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
             />
           </div>
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-            Athlete Performance Radar &amp; Age-Graded Coggan (Cycling Time) / WMA (Running Distance) Scales
+            Athlete Performance &amp; Age-Graded Radars
           </h3>
         </div>
 
@@ -788,9 +788,9 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
           <div className="flex items-center gap-0.5 p-1 rounded-xl liquid-capsule-track text-xs font-mono">
             {(
               [
-                { id: 'BOTH', label: 'All Radars (5-Dim + Cycling + Running)' },
-                { id: 'CYCLING', label: '5-Dim + Coggan Cycling (Time)' },
-                { id: 'RUNNING', label: '5-Dim + WMA Running (Distance)' },
+                { id: 'BOTH', label: 'All Radars' },
+                { id: 'CYCLING', label: 'Cycling Power Profile' },
+                { id: 'RUNNING', label: 'Running Distance Profile' },
               ] as const
             ).map((tab) => (
               <button

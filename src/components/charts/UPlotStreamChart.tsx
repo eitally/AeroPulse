@@ -472,15 +472,15 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-950/60 p-4 space-y-3">
-      {/* Top Header: uPlot 1Hz Engine Badge, Smoothing, Series Toggles & Worker Controls */}
+      {/* Top Header: 1Hz Telemetry Badge, Smoothing, Series Toggles & Recalculate Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
             <Maximize2 className="w-3 h-3" />
-            uPlot 1Hz Canvas ({totalSamples.toLocaleString()} pts)
+            1Hz Telemetry Stream ({totalSamples.toLocaleString()} pts)
           </span>
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            High-Frequency 1Hz Activity Stream Timeline ({sportCategory})
+            Second-by-Second Workout Telemetry ({sportCategory})
           </h3>
         </div>
 
@@ -536,7 +536,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             type="button"
             onClick={() => handleStepZoom(0.55)}
             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
-            title="Zoom In (uPlot X Scale)"
+            title="Zoom In"
           >
             <ZoomIn className="w-3.5 h-3.5 text-blue-500" />
           </button>
@@ -566,10 +566,10 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
               onClick={onTriggerWorker1HzUpsample}
               disabled={isWorkerProcessing}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-xs font-mono font-semibold transition-colors"
-              title="Run Web Worker 1Hz synthesis & NP/TSS/TRIMP calculation off the main thread"
+              title="Recalculate 1Hz power, heart rate, and load metrics"
             >
               <Cpu className={`w-3.5 h-3.5 ${isWorkerProcessing ? 'animate-spin' : ''}`} />
-              <span>{isWorkerProcessing ? 'Worker Computing...' : '1Hz Worker Re-Analyze'}</span>
+              <span>{isWorkerProcessing ? 'Calculating...' : 'Recalculate 1Hz Metrics'}</span>
             </button>
           )}
         </div>

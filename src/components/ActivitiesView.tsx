@@ -783,13 +783,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 liveStatus={{
                   label: `${modalityCounts.indoor.toLocaleString()} Virtual/Trainer · ${modalityCounts.outdoor.toLocaleString()} Outdoor · Avg EF ${summaryStats.avgEf}`,
                   state: 'optimal',
-                  interpretation: `Both outdoor GPS and virtual/smart-trainer sessions (Zwift, TrainerRoad, Wahoo SYSTM, Treadmill) are indexed. Filter by Outdoor vs. Virtual/Trainer below to compare modality-specific output and cardiac drift.`,
+                  interpretation: `Both outdoor GPS and indoor virtual/smart-trainer sessions are indexed. Filter by Outdoor vs. Virtual/Trainer below to compare modality-specific output and cardiac drift.`,
                 }}
                 coachingAction="Compare Virtual/Trainer vs. Outdoor sessions separately when setting interval power targets, and check Pa:Hr decoupling on endurance rides >90m before progressing threshold volume."
               />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Switch cleanly between your searchable Activity Log, GPS Route Map &amp; Strava Kudos Feed, Segment Effort Over Time chart, and 2-Workout Comparator
+              Switch between your searchable Activity Log, GPS Route Map, Segment Progression, and 2-Workout Comparison
             </p>
           </div>
 
@@ -867,7 +867,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search Zwift, road, bike..."
+                placeholder="Search workouts, routes, gear..."
                 className="w-full min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -888,7 +888,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     <Upload className="w-4 h-4 text-cyan-500 shrink-0" />
                     <div className="flex-1">
                       <div className="font-semibold">Import .FIT / .GPX / .TCX File</div>
-                      <div className="text-[10px] text-slate-500">Parse 1Hz streams in Web Worker</div>
+                      <div className="text-[10px] text-slate-500">Parse 1Hz workout telemetry</div>
                     </div>
                     <input
                       type="file"
@@ -906,8 +906,8 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     >
                       <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
                       <div>
-                        <div className="font-semibold">Log Official Race / FAT Result</div>
-                        <div className="text-[10px] text-slate-500">Athletic.net, TFRRS, or chip time</div>
+                        <div className="font-semibold">Log Official Race Result</div>
+                        <div className="text-[10px] text-slate-500">Track, XC, or road chip times</div>
                       </div>
                     </button>
                   )}
@@ -922,7 +922,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
                       <div>
                         <div className="font-semibold">
-                          {isScanningSegments ? 'Scanning Segments...' : 'Scan Strava Segments'}
+                          {isScanningSegments ? 'Scanning Segments...' : 'Scan Route Segments'}
                         </div>
                         <div className="text-[10px] text-slate-500">Index PRs &amp; repeated climbs</div>
                       </div>
@@ -954,7 +954,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-600 dark:text-slate-300 font-medium transition-colors disabled:opacity-50"
                     >
                       <Cpu className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <span className="text-[11px]">Run 1Hz Worker Stream Demo</span>
+                      <span className="text-[11px]">Load Sample 1Hz Workout</span>
                     </button>
                   </div>
                 </div>
@@ -2677,7 +2677,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   <div>
                     <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#FC4C02]">
                       <Trophy className="w-3.5 h-3.5" />
-                      <span>Strava-Style Matched Runs &amp; Rides · Longitudinal Loop Progression</span>
+                      <span>Matched Runs &amp; Rides · Route Progression</span>
                     </div>
                     <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       Repeated Route &amp; Course Efficiency Progression ({clusters.length} Matched Loops)
@@ -4366,7 +4366,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   Number(rawHrZones[5] || 0) + Number(rawHrZones[6] || 0),
                 ];
 
-                let zoneSourceLabel = 'Intervals.icu / Garmin FIT HR Zones';
+                let zoneSourceLabel = 'Synced FIT Heart Rate Zones';
                 const rawSum = sixZones.reduce((a, b) => a + b, 0);
 
                 // Fallback 1: Compute exact time in each HR zone from second-by-second heartrate stream if rawHrZones is empty
@@ -5237,7 +5237,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       Auto-Detected Intervals &amp; Lap Splits ({selectedActivity.intervals.length} Intervals)
                     </h3>
                     <span className="text-xs font-mono text-slate-500">
-                      Synced via Intervals.icu FIT Interval Detection
+                      Auto-Detected Lap &amp; Interval Splits
                     </span>
                   </div>
                   <div className="overflow-x-auto">

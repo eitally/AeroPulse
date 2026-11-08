@@ -334,13 +334,13 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
           <div>
             <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 font-semibold">
               <Trophy className="w-3.5 h-3.5" />
-              <span>Athletic.net · TFRRS · MileSplit · RunSignup · Watchless FAT Synthesizer</span>
+              <span>Official Race &amp; Track Result Importer</span>
             </div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-              Official Race Results Importer &amp; Watchless Track Logger
+              Log Official Race Results
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Pull in official Fully Automatic Timing (<span className="font-mono">0.01s</span>) race marks when racing without a GPS watch (e.g., 800m, 1500m, 1600m/Mile, 3200m, XC) and synthesize Training Load, Lap Split Streams, VDOT, and Track PR Trophies.
+              Import official timing (<span className="font-mono">0.01s</span>) race marks when racing without a GPS watch (e.g., 800m, 1500m, 1600m/Mile, 3200m, XC, road races) to update your Training Load, Lap Splits, VDOT, and Personal Records.
             </p>
           </div>
           <button
@@ -367,7 +367,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 }`}
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>Athletic.net / TFRRS / MileSplit URL &amp; Table Parser</span>
+                <span>Import from URL or Table</span>
               </button>
               <button
                 type="button"
@@ -379,12 +379,12 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 }`}
               >
                 <Timer className="w-3.5 h-3.5" />
-                <span>Quick Watchless FAT Track Race Logger (200m / 400m Splits)</span>
+                <span>Log Track / Road Race (Splits)</span>
               </button>
             </div>
 
             <div className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-              {existingOfficialRaces.length} Official FAT Race{existingOfficialRaces.length === 1 ? '' : 's'} in Archive
+              {existingOfficialRaces.length} Official Race{existingOfficialRaces.length === 1 ? '' : 's'} in Archive
             </div>
           </div>
 
@@ -422,12 +422,12 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       setParsedCandidates(matches);
                       setSelectedCandidateIds(matches.map((m) => m.id));
                       setParseStatusNote(
-                        'Loaded sample Athletic.net, TFRRS & MileSplit middle-distance season (800m, 1500m, 1600m, 3200m, XC 5K).'
+                        'Loaded sample middle-distance season (800m, 1500m, 1600m, 3200m, XC 5K).'
                       );
                     }}
                     className="min-h-[32px] px-3 py-1 rounded-lg border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-xs font-semibold transition-colors whitespace-nowrap"
                   >
-                    Load Sample Athletic.net / TFRRS Season
+                    Load Sample Track Season
                   </button>
                 </div>
 

@@ -84,13 +84,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   return (
     <div className="min-h-screen bg-[#090B0E] text-[#F1F5F9] flex flex-col justify-between selection:bg-[#FC4C02]/30 selection:text-white">
-      {/* Top Diagnostic Telemetry Header */}
+      {/* Top Header */}
       <header className="border-b border-[#1E2530] bg-[#0D1015]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
         <AeroPulseLogo
           size="md"
           showTagline
-          badgeText="INTERVALS × RUNNA × STRAVA LAB"
-          badgeTone="orange"
         />
 
         <div className="flex items-center gap-3">
@@ -112,11 +110,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 py-8 lg:py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         {/* Left 7 Columns: Value Proposition & Multi-Athlete Capabilities */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#FC4C02]/10 border border-[#FC4C02]/30 text-[#FC4C02] text-xs font-mono uppercase tracking-wider">
-            <Flame className="w-3.5 h-3.5" />
-            <span>Direct Strava OAuth Athlete &amp; Coaching Network</span>
-          </div>
-
           <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-bold tracking-tight text-white leading-[1.12]">
             One Telemetry Lab for Your Training, Official Track PRs &amp; Coaching Roster.
           </h1>
@@ -175,15 +168,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             <div className="bg-[#0F131A] border border-[#1E2530] rounded-lg p-4 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#A855F7] font-semibold">
-                  04 / ADAPTIVE GOAL ARCHITECT
+                  04 / TRAINING PLAN &amp; RACE PRs
                 </span>
                 <Trophy className="w-4 h-4 text-[#A855F7]" />
               </div>
               <h3 className="text-sm font-semibold text-white">
-                Watchless Track PRs &amp; Periodized Plans
+                Official Race PRs &amp; Periodized Plans
               </h3>
               <p className="text-xs text-[#94A3B8] leading-relaxed">
-                Generate multi-week Runna/TrainerRoad periodized blocks and import official Athletic.net, TFRRS, and MileSplit FAT track races.
+                Generate multi-week periodized training blocks with automatic recovery weeks and log official track, cross-country, and road race results.
               </p>
             </div>
           </div>

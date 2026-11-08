@@ -692,7 +692,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==========================================================================
-          0. AUTONOMOUS READINESS-MORPHING DAILY WORKOUT TOP STRIP
+          0. DAILY WORKOUT PRESCRIPTION TOP STRIP
          ========================================================================== */}
       {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
         <ReadinessMorphingCard
@@ -702,7 +702,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           athleteProfile={athleteProfile}
           distanceUnit={distanceUnit}
           defaultExpanded={true}
-          placementLabel="Readiness-Morphing Daily Workout"
+          placementLabel="Daily Workout Prescription"
           onSyncMorphedToCalendar={onSyncMorphedToCalendar}
           onOpenAthleteProfileModal={onOpenAthleteProfileModal}
           onOpenCoachWithPrompt={onOpenCoachWithPrompt}
@@ -710,7 +710,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       )}
 
       {/* ==========================================================================
-          1. FLAGSHIP INTERVALS.ICU FITNESS & FRESHNESS MULTI-PANE CHART (TOP HERO)
+          1. FITNESS (CTL), FATIGUE (ATL) & FORM (TSB) MULTI-PANE CHART
          ========================================================================== */}
       <div id="fitness-sec-pmc" className="scroll-mt-28 space-y-2">
         {collapsedSections.pmc ? (
@@ -718,7 +718,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Activity className="w-4 h-4 text-sky-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Intervals.icu Fitness (CTL), Fatigue (ATL) &amp; Form (TSB) Multi-Pane Chart
+                Fitness (CTL), Fatigue (ATL) &amp; Form (TSB)
               </span>
               <span className="text-xs font-mono text-sky-500">
                 CTL {latestDay.ctl.toFixed(1)} · TSB {latestDay.tsb.toFixed(1)}
@@ -729,7 +729,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               onClick={() => toggleSection('pmc')}
               className="px-3 py-1 rounded-xl bg-sky-500/15 text-sky-500 text-xs font-mono font-semibold flex items-center gap-1"
             >
-              <span>Expand PMC</span>
+              <span>Expand Chart</span>
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -979,17 +979,17 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   </div>
                 )}
 
-                {/* Chart Rendering Engine & Local Cache Diagnostics */}
+                {/* Chart Layout & Local Cache Diagnostics */}
                 <div className="pt-2.5 border-t border-slate-200/70 dark:border-white/10 space-y-2">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Rendering Engine
+                    Chart Layout
                   </div>
                   <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-mono">
                     {(
                       [
-                        { id: 'SVG', label: '6-Pane SVG' },
-                        { id: 'ECHARTS', label: 'ECharts' },
-                        { id: 'BOTH', label: 'Dual' },
+                        { id: 'SVG', label: 'Multi-Pane' },
+                        { id: 'ECHARTS', label: 'Interactive' },
+                        { id: 'BOTH', label: 'Split View' },
                       ] as const
                     ).map((eng) => (
                       <button
@@ -1009,7 +1009,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <div className="flex items-center justify-between text-[10px] font-mono text-emerald-600 dark:text-emerald-400 pt-1">
                     <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      Local IndexedDB Cache
+                      Local Cache
                     </span>
                     <span>
                       {dexieStats.activitiesCount} acts · {dexieStats.streamsCount} streams
@@ -2468,7 +2468,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       </div>
 
       {/* ==========================================================================
-          2. 14-DAY AUTONOMIC RECOVERY, DAILY LOAD & INTERVALS.ICU PMC LEDGER + KPIs
+          2. 14-DAY READINESS LEDGER & KEY BIOMETRICS
          ========================================================================== */}
       <div id="fitness-sec-ledger" className="scroll-mt-28 space-y-6">
         {collapsedSections.ledger ? (
@@ -2476,7 +2476,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Calendar className="w-4 h-4 text-emerald-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                14-Day Autonomic Ledger, Garmin KPI Cards &amp; Aerobic Durability Audit
+                14-Day Readiness Ledger &amp; Key Biometrics
               </span>
               <span className="text-xs font-mono text-emerald-500">
                 HRV {latestWithHrv.hrvRMSSD}ms · EF {aerobicDurabilityStats.avgEf28}
@@ -2496,15 +2496,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
 
       {/* ==========================================================================
-          3. GARMIN TRAINING STATUS, SLEEP, HRV & THRESHOLD READINESS CARDS
+          3. TRAINING STATUS, SLEEP, HRV & THRESHOLD READINESS CARDS
          ========================================================================== */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Garmin 8-State Training Status & Load Ratio */}
+        {/* Card 1: Training Status & Load Ratio */}
         <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Garmin Training Status
+                Training Status
               </span>
               <span
                 className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
@@ -2537,12 +2537,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </p>
         </div>
 
-        {/* Card 2: Garmin Overnight Sleep Score & Duration */}
+        {/* Card 2: Overnight Sleep Score & Duration */}
         <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Garmin Sleep Score
+                Sleep Score
               </span>
               <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold">
                 {latestWithSleep.date}
@@ -2578,7 +2578,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Overnight HRV Status
+                Overnight HRV
               </span>
               <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 {latestWithHrv.hrvStatus || 'Balanced'}
@@ -2641,14 +2641,14 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       </section>
 
       {/* ==========================================================================
-          4. AEROBIC EFFICIENCY (EF = NP/HR) & CARDIAC DRIFT (Pa:Hr DECOUPLING) COACH CARD
+          4. AEROBIC EFFICIENCY (EF = NP/HR) & CARDIAC DRIFT (Pa:Hr DECOUPLING)
          ========================================================================== */}
       <section className="rounded-2xl liquid-glass p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1 max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Exercise Physiologist Durability &amp; Aerobic Economy Audit
+                Aerobic Efficiency &amp; Durability
               </span>
               <span
                 className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${
@@ -2682,11 +2682,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               />
             </div>
             <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Aerobic Efficiency Factor (EF) &amp; Cardiac Drift Durability Summary
+              Efficiency Factor (EF) &amp; Cardiac Drift Summary
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
               While CTL tracks mechanical training load, <strong>Efficiency Factor (NP ÷ HR)</strong> and{' '}
-              <strong>Pa:Hr Decoupling</strong> reveal whether your internal cardiovascular cost is actually improving across Outdoor and Virtual/Smart-Trainer workouts.
+              <strong>Pa:Hr Decoupling</strong> reveal whether your internal cardiovascular cost is improving across outdoor and indoor trainer workouts.
             </p>
           </div>
 
@@ -2753,7 +2753,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       </div>
 
       {/* ==========================================================================
-          5. DUAL ATHLETE COMPARATOR (SIDE-BY-SIDE CTL, TSB & HRV ROSTER OVERLAY)
+          5. DUAL ATHLETE COMPARISON
          ========================================================================== */}
       <div id="fitness-sec-comparator" className="scroll-mt-28 space-y-2">
         {collapsedSections.comparator ? (
@@ -2761,7 +2761,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Users className="w-4 h-4 text-orange-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Dual Athlete Comparator, CTL×RHR Scatter &amp; Coach Load-per-Hour Dashboard
+                Dual Athlete Comparison
               </span>
             </div>
             <button
@@ -2801,7 +2801,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       </div>
 
       {/* ==========================================================================
-          6. ATHLETE PERFORMANCE RADAR & AGE-GRADED COGGAN / WMA SCALES
+          6. ATHLETE PERFORMANCE & AGE-GRADED RADARS
          ========================================================================== */}
       <div id="fitness-sec-radars" className="scroll-mt-28 space-y-2">
         {collapsedSections.radars ? (
@@ -2809,7 +2809,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Radar className="w-4 h-4 text-purple-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                5-Axis Athlete Performance Radar &amp; Age-Graded Coggan / WMA Standards
+                Athlete Performance &amp; Age-Graded Radars
               </span>
             </div>
             <button

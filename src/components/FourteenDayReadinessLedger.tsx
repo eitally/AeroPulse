@@ -240,10 +240,10 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              14-Day Autonomic Recovery, Daily Load &amp; Intervals.icu PMC Ledger
+              14-Day Readiness &amp; Training Load Ledger
             </h2>
             <ChartInfoTooltip
-              title="14-Day Autonomic Readiness & Vertical CTL/ATL Trend Ledger"
+              title="14-Day Readiness & Vertical CTL/ATL Trend Ledger"
               subtitle="Acute-vs-Baseline Homeostasis & Vertical 14-Day Trajectory"
               whatItMeasures="Compares each day's Readiness, Overnight HRV rMSSD, Resting HR, Sleep Score, and Daily Training Load against your rolling 14-day mean while plotting a continuous 14-day vertical trend line (and day-over-day delta) for Fitness (CTL) and Fatigue (ATL)."
               benchmarks="Green: Within ±25% of your 14-day mean (consistent homeostasis). Red: >25% below your 14-day mean (autonomic suppression or recovery day). Gray: >25% above your 14-day mean (acute overload spike). In the CTL & ATL columns, the vertical curve flows from 14 days ago (bottom) to Today (top) against the dashed 14-day mean reference line."
@@ -265,7 +265,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
           </p>
         </div>
 
-        {/* Legends: 14-Day Mean Rule + Intervals.icu CTL/ATL/TSB Colors */}
+        {/* Legends: 14-Day Mean Rule + CTL/ATL/TSB Colors */}
         <div className="flex flex-col sm:items-end gap-1.5 text-[11px] font-medium">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-slate-400 font-mono uppercase text-[10px] mr-1">
@@ -315,21 +315,21 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
           <thead>
             <tr className="bg-slate-100/70 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider">
               <th className="py-2.5 px-3 font-semibold">Date</th>
-              <th className="py-2.5 px-3 font-semibold">Readiness (vs 14d)</th>
-              <th className="py-2.5 px-3 text-right font-semibold">HRV rMSSD (vs 14d)</th>
-              <th className="py-2.5 px-3 text-right font-semibold">Resting HR (vs 14d)</th>
-              <th className="py-2.5 px-3 text-right font-semibold">Sleep Score (vs 14d)</th>
+              <th className="py-2.5 px-3 font-semibold">Readiness</th>
+              <th className="py-2.5 px-3 text-right font-semibold">HRV (rMSSD)</th>
+              <th className="py-2.5 px-3 text-right font-semibold">Resting HR</th>
+              <th className="py-2.5 px-3 text-right font-semibold">Sleep Score</th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#0EA5E9]">
-                CTL Fitness (14d Trend)
+                CTL Fitness (14d)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#A855F7]">
-                ATL Fatigue (14d Trend)
+                ATL Fatigue (14d)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
-                TSB (Intervals.icu Form)
+                Form (TSB)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
-                Daily Load (vs 14d Mean)
+                Daily Load
               </th>
             </tr>
 

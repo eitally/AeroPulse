@@ -1343,13 +1343,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-600 dark:text-sky-300 text-xs font-semibold transition-colors whitespace-nowrap"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Goal Plan Architect &amp; Race Predictor</span>
+              <span>Training Plan &amp; Race Predictor</span>
             </button>
           )}
         </div>
       </section>
 
-      {/* Top Autonomous Readiness-Morphing Workout Header Card */}
+      {/* Top Adaptive Workout Header Card */}
       {athleteProfile && onOpenAthleteProfileModal && (
         <ReadinessMorphingCard
           wellnessDays={wellnessDays}
@@ -1358,21 +1358,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           athleteProfile={athleteProfile}
           distanceUnit={distanceUnit}
           defaultExpanded={true}
-          placementLabel="Calendar Readiness-Morphing Prescription"
+          placementLabel="Today's Adapted Workout"
           onSyncMorphedToCalendar={onCreatePlannedEvent}
           onOpenAthleteProfileModal={onOpenAthleteProfileModal}
           onOpenCoachWithPrompt={onOpenCoachWithPrompt}
         />
       )}
 
-      {/* Top Intervals.icu Calendar Header & Controls */}
+      {/* Top Calendar Header & Controls */}
       <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3.5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <CalendarIcon className="w-3.5 h-3.5 text-blue-500" />
               <span>
-                Intervals.icu Training Calendar · Chronological Effort Zones &amp; Morning Readiness
+                Training Schedule, Effort Zones &amp; Morning Readiness
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
@@ -1380,7 +1380,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 {MONTH_NAMES[viewMonth]} {viewYear}
               </h1>
               <ChartInfoTooltip
-                title="Intervals.icu Training Calendar & Activity Effort Zones"
+                title="Training Calendar & Activity Effort Zones"
                 subtitle="Weekly Load Architecture, Morning Readiness & Intra-Workout Zone Skyline"
                 whatItMeasures="Combines your weekly physiological summary on the left (Total Time, Training Load, Fitness CTL, Fatigue ATL, Form TSB, and Sport Breakdown) with daily morning autonomic metrics (Sleep, Resting HR, HRV) and individual activity cards displaying the effort zones (Z1–Z6+) through each workout."
                 benchmarks="Polarized / Base Weeks: 75–85% of weekly duration in Z1–Z2 (Teal-Green) and 15–20% in Z4–Z6 (Orange/Red/Purple). Threshold Weeks: >20% in Z3–Z4. Steady Z2 rides display a smooth green bar; interval, race, and track workouts display a multi-color effort skyline."
@@ -1443,10 +1443,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 type="button"
                 onClick={onOpenOfficialRaceModal}
                 className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
-                title="Import watchless official race results from Athletic.net, TFRRS, or MileSplit"
+                title="Log official track or road race results"
               >
                 <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                <span>Official Race / FAT</span>
+                <span>Log Race</span>
               </button>
             )}
 
@@ -2234,7 +2234,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div>
                 <div className="text-xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
-                  Intervals.icu Structured Workout Builder
+                  Structured Workout Builder
                 </div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                   Schedule Planned Session for {builderDate}
@@ -2349,7 +2349,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                    Intervals.icu Workout Syntax (one step per line starting with <code>-</code>)
+                    Workout Steps (one step per line starting with <code>-</code>)
                   </label>
                   <span className="text-[11px] font-mono text-blue-600 dark:text-sky-400">
                     Est. {Math.round(computedBuilderSummary.durationSecs / 60)}m ·{' '}
@@ -2393,7 +2393,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Execution &amp; Decoupling Guardrail Notes
+                  Execution &amp; Pacing Notes
                 </label>
                 <input
                   type="text"
@@ -2416,7 +2416,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   disabled={isSavingWorkout}
                   className="min-h-[38px] px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
                 >
-                  {isSavingWorkout ? 'Scheduling...' : 'Save & Sync to Intervals.icu Calendar'}
+                  {isSavingWorkout ? 'Saving...' : 'Save to Calendar'}
                 </button>
               </div>
             </form>

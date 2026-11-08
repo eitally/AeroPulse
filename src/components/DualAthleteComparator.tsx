@@ -737,14 +737,11 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/30">
               <Users className="w-3 h-3" />
-              Team &amp; Coach Telemetry Lab
-            </span>
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              SYNCHRONIZED CTL · TSB · HRV · LOAD/HR · RHR CORRELATION
+              Athlete Comparison
             </span>
           </div>
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-            Dual Athlete Comparator, Coach Load-per-Hour &amp; CTL × RHR Lab
+            Dual Athlete Comparison
           </h3>
         </div>
 

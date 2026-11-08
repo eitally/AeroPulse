@@ -416,7 +416,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
         <div className="flex items-center gap-2.5">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono uppercase tracking-wider text-cyan-300">
             <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
-            Apache ECharts PMC Decay Engine
+            Interactive Fitness &amp; Form Chart
           </span>
           <span className="text-[11px] font-mono text-slate-400">
             CTL <strong className="text-cyan-400">{summaryMetrics.latestCtl.toFixed(1)}</strong> · ATL{' '}

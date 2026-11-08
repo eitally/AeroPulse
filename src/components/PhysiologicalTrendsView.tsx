@@ -50,13 +50,13 @@ interface TrendMetricMeta {
 const TREND_METRICS: TrendMetricMeta[] = [
   {
     key: 'vo2Max',
-    label: 'Garmin VO2max',
+    label: 'VO2max',
     shortLabel: 'VO2max',
     unit: 'mL/kg/min',
     color: '#0EA5E9',
     axisGroup: 'RIGHT_AUTONOMIC_EF',
     decimals: 1,
-    description: 'Maximal aerobic oxygen uptake ceiling (Firstbeat / Garmin)',
+    description: 'Maximal aerobic oxygen uptake ceiling',
   },
   {
     key: 'rideEftp',
@@ -86,7 +86,7 @@ const TREND_METRICS: TrendMetricMeta[] = [
     color: '#EC4899',
     axisGroup: 'LEFT_POWER_VO2',
     decimals: 0,
-    description: 'Running metabolic threshold power from Intervals.icu / Stryd model',
+    description: 'Running metabolic threshold power',
   },
   {
     key: 'hrvRMSSD',
@@ -486,7 +486,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               />
             </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-              Long-Term Physiological Trends — Select Metrics to Compare
+              Long-Term Physiological Trends
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Click any metric pill below to include or remove it from the graph, or switch to{' '}

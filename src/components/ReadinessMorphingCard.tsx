@@ -219,7 +219,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   plannedEvents,
   athleteProfile,
   defaultExpanded = true,
-  placementLabel = 'Autonomous Readiness-Morphing Engine',
+  placementLabel = 'Daily Workout Prescription',
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
@@ -366,7 +366,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         },
         {
           id: 'sleep',
-          label: 'Garmin Sleep Architecture',
+          label: 'Sleep Score',
           value: `Score ${sleepScore}`,
           detail: `${sleepHrs.toFixed(1)}h duration`,
           state: sleepState,
@@ -605,7 +605,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         replaceExistingDate: true,
       });
       setSyncedBanner(
-        `Synced "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Intervals.icu Calendar for ${todayIso}.`
+        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Training Calendar for ${todayIso}.`
       );
       window.setTimeout(() => setSyncedBanner(null), 5000);
     } finally {
@@ -693,9 +693,9 @@ ${dataLines.join('\n')}
           </span>
 
           <ChartInfoTooltip
-            title="Autonomous Readiness-Morphing Daily Workout Engine"
+            title="Adaptive Daily Workout Prescription"
             subtitle="Closed-Loop Autonomic & Zone-Calibrated Prescription"
-            whatItMeasures="Evaluates 5 daily physiological signals (Overnight HRV vs. 7d baseline, Garmin Sleep Score, Resting HR delta, Form/TSB, and last workout Cardiac Decoupling %) against your synced Intervals.icu & Garmin Power/HR zones to dynamically adapt today's scheduled workout."
+            whatItMeasures="Evaluates 5 daily physiological signals (Overnight HRV vs. 7d baseline, Sleep Score, Resting HR delta, Form/TSB, and last workout Cardiac Decoupling %) against your synced Power and HR zones to dynamically adapt today's scheduled workout."
             benchmarks="Optimal Supercompensation: HRV >= +2ms vs 7d avg & Sleep >= 78 (+3% FTP progression). Caution Pivot: HRV depressed 3–6ms or Sleep < 74 (morphs Z5/Z4 into Z3 Sweet Spot). Strain Recovery: HRV below 60d floor or decoupling > 6.5% (caps session at Z1/Z2 <65% FTP)."
             liveStatus={{
               label: `${morphedWorkout.title} · ${morphedWorkout.tss} TSS (${morphedWorkout.tssDelta >= 0 ? `+${morphedWorkout.tssDelta}` : morphedWorkout.tssDelta} vs baseline)`,
@@ -705,7 +705,7 @@ ${dataLines.join('\n')}
                   : 'optimal',
               interpretation: morphedWorkout.rationale,
             }}
-            coachingAction="Review the side-by-side Effort Zone Skylines below, then click 'Sync Morphed Workout to Intervals.icu' to update today's calendar or export a .ZWO / .ERG file for Zwift and Garmin."
+            coachingAction="Review the side-by-side Effort Zone Skylines below, then click 'Save Workout to Calendar' to update today's schedule or export a .ZWO / .ERG workout file."
           />
         </div>
 
@@ -715,7 +715,7 @@ ${dataLines.join('\n')}
             type="button"
             onClick={onOpenAthleteProfileModal}
             className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/50 text-[11px] font-mono text-slate-700 dark:text-slate-200 transition-colors"
-            title="Inspect or Sync Athlete Profile, FTP, Weight & 7-Zone Power/HR Tables from Intervals.icu & Garmin"
+            title="Inspect or edit Athlete Profile, FTP, Weight & 7-Zone Power/HR Tables"
           >
             <Sliders className="w-3 h-3 text-blue-500" />
             <span>
@@ -948,7 +948,7 @@ ${dataLines.join('\n')}
                   <div>
                     <div className="text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-bold flex items-center gap-1">
                       <Zap className="w-3 h-3" />
-                      <span>2. Readiness-Morphed Prescription</span>
+                      <span>2. Adapted Workout Prescription</span>
                     </div>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
                       {morphedWorkout.title}
@@ -978,7 +978,7 @@ ${dataLines.join('\n')}
                 {/* Morphed Effort Zone Skyline */}
                 <div className="rounded-lg bg-white dark:bg-slate-950/90 border border-blue-500/30 p-2.5 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] font-mono text-blue-600 dark:text-sky-300">
-                    <span>Morphed Effort Zone Skyline (Z1–Z6+)</span>
+                    <span>Adapted Effort Zone Skyline (Z1–Z6+)</span>
                     <span>
                       {envMode === 'INDOOR' ? 'Virtual' : 'Outdoor'} FTP {activeFtp}W ·{' '}
                       {(activeFtp / Math.max(35, athleteProfile.weightKg)).toFixed(2)} W/kg
@@ -1052,8 +1052,8 @@ ${dataLines.join('\n')}
                 <CalendarCheck className="w-3.5 h-3.5" />
                 <span>
                   {isSyncingCalendar
-                    ? 'Syncing to Intervals.icu...'
-                    : '1-Click Sync Morphed Workout to Intervals.icu Calendar'}
+                    ? 'Saving to Calendar...'
+                    : 'Save Workout to Calendar'}
                 </span>
               </button>
 
@@ -1061,17 +1061,17 @@ ${dataLines.join('\n')}
                 type="button"
                 onClick={handleDownloadZwo}
                 className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="Download structured .ZWO workout file for Zwift"
+                title="Download structured .ZWO workout file"
               >
                 <Download className="w-3.5 h-3.5 text-orange-500" />
-                <span>Export .ZWO (Zwift)</span>
+                <span>Export .ZWO</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleDownloadErg}
                 className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="Download .ERG file calibrated to your synced FTP for Wahoo / Garmin / TrainerRoad"
+                title="Download .ERG workout file calibrated to your synced FTP"
               >
                 <Download className="w-3.5 h-3.5 text-sky-500" />
                 <span>Export .ERG ({activeFtp}W)</span>

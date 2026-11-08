@@ -134,7 +134,7 @@ interface GoalArchetypeTemplate {
 const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   {
     id: 'FTP_350W',
-    badge: 'TrainerRoad / Xert Block',
+    badge: 'Cycling Threshold',
     title: '350W Cycling FTP Builder',
     subtitle: 'Progressive Sweet Spot, Over-Unders & VO2max Ceiling Expansion',
     sportCategory: 'Cycling',
@@ -144,7 +144,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'SUB20_5K',
-    badge: 'Runna Speed Block',
+    badge: '5K Speed & VO2max',
     title: 'Sub-20:00 5K Speed & VO2max',
     subtitle: 'Track 400m/800m Repeats, Lactate Threshold & Aerobic Economy',
     sportCategory: 'Running',
@@ -154,7 +154,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'HALF_MARATHON',
-    badge: 'Runna Endurance Block',
+    badge: 'Half Marathon Build',
     title: 'Half Marathon in 12 Weeks',
     subtitle: 'Progressive Long Runs, Cruise Threshold & Deload Recovery Weeks',
     sportCategory: 'Running',
@@ -164,7 +164,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'GRAN_FONDO',
-    badge: 'Durability Block',
+    badge: 'Endurance & Gran Fondo',
     title: '100-Mile Gran Fondo Peak',
     subtitle: 'High-Durability Z2 Volume, Late-Ride Tempo & <3% Cardiac Drift',
     sportCategory: 'Cycling',
@@ -1254,25 +1254,25 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==========================================================================
-          MODULE A: GOAL-TO-CALENDAR ADAPTIVE PLAN ARCHITECT (RUNNA + TRAINERROAD ENGINE)
+          MODULE A: GOAL-TO-CALENDAR ADAPTIVE PLAN BUILDER
          ========================================================================== */}
       <section className="rounded-2xl liquid-glass p-5 space-y-5 border border-blue-500/25">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-400">
               <Target className="w-3.5 h-3.5" />
-              <span>Adaptive Goal-to-Calendar Plan Architect · Runna + TrainerRoad Engine</span>
+              <span>Training Block Builder</span>
             </div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                Multi-Week Periodized Block Generator with Auto-Deloads
+                Periodized Training Plan
               </h1>
               <ChartInfoTooltip
-                title="Goal-to-Calendar Periodized Plan Generator"
+                title="Periodized Training Plan Builder"
                 subtitle="Automated Base → Build → Every-4th-Week Deload → Taper Architecture"
                 whatItMeasures="Builds a complete multi-week structured training block tailored to your primary performance objective (e.g., 350W FTP, Sub-20:00 5K, or Half Marathon in 12 Weeks), automatically inserting a -30% recovery Deload Week every 4th week."
                 benchmarks="Optimal block progression increases weekly TSS by +5–8% during 3-week loading microcycles followed by a -30% Deload week to allow supercompensation and prevent autonomic overreaching."
-                coachingAction="Select your target goal and weekly schedule below, inspect the week-by-week progression and Effort Stripes, and click 'Populate Block to Training Calendar' to schedule all workouts onto your Intervals.icu Calendar."
+                coachingAction="Select your target goal and weekly schedule below, inspect the week-by-week progression and Effort Stripes, and click 'Populate Block to Training Calendar' to schedule all workouts onto your Training Calendar."
               />
             </div>
           </div>
@@ -1285,7 +1285,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
               >
                 <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                <span>Import Official Race / FAT (Athletic.net · TFRRS · MileSplit)</span>
+                <span>Log Official Race</span>
               </button>
             )}
             {onSwitchToCalendar && (
@@ -1487,10 +1487,10 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  {blockWeeks}-Week Mesocycle Load Progression (Click Any Week to Inspect)
+                  {blockWeeks}-Week Load Progression (Click Any Week to Inspect)
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  Every 4th week automatically drops volume &amp; load by 30% (Runna / Periodization Deload standard)
+                  Every 4th week automatically reduces volume &amp; load by 30% for recovery
                 </div>
               </div>
               <div className="flex items-center gap-2 text-[10px] font-mono">
@@ -1629,23 +1629,23 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           MODULE B: PACE & POWER INSIGHTS LOOP + LIVE RACE & 350W FTP PREDICTOR
          ========================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left 6 Cols: Runna-Style Pace & Power Insights + Running Race Time Predictor */}
+        {/* Left 6 Cols: Pace & Power Insights + Running Race Time Predictor */}
         <section className="lg:col-span-6 rounded-2xl liquid-glass p-5 space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  Runna Race Predictor &amp; Pace Insights
+                  Race Predictor &amp; Pace Insights
                 </span>
                 <div className="flex items-center gap-1.5">
                   <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                     <Timer className="w-4 h-4 text-emerald-500" />
-                    <span>Live Running Race Time Predictor &amp; Goal Gap</span>
+                    <span>Running Race Time Predictor</span>
                   </h2>
                   <ChartInfoTooltip
-                    title="Runna-Style Race Predictor & Pace Insights"
+                    title="Race Predictor & Pace Insights"
                     subtitle="Critical Speed + Riegel Endurance Decay + Interval Compliance"
-                    whatItMeasures="Projects finish times from 1 Mile to the Marathon using your synced Threshold Pace, Running eFTP, and Garmin VO2max, and compares them directly against benchmark targets like a Sub-20:00 5K or 1:32 Half Marathon."
+                    whatItMeasures="Projects finish times from 1 Mile to the Marathon using your synced Threshold Pace, Running eFTP, and VO2max, and compares them directly against benchmark targets like a Sub-20:00 5K or 1:32 Half Marathon."
                     benchmarks="Sub-20:00 5K requires a sustained pace of 3:59/km (6:25/mi) and a Lactate Threshold pace near 4:08–4:12/km."
                     coachingAction="Review the Pace & Power Insights banner below—when you consistently execute intervals with low cardiac drift (<3.5%), accept the 1-click target calibration."
                   />
@@ -1936,7 +1936,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       </div>
 
       {/* ==========================================================================
-          MODULE C: TRAINERROAD PROGRESSION LEVELS (1.0-10.0) & GARMIN LOAD FOCUS
+          MODULE C: ENERGY SYSTEM PROGRESSION LEVELS (1.0-10.0) & 4-WEEK LOAD BALANCE
          ========================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left 7 Cols: Energy-System Progression Levels (1.0 - 10.0) */}
@@ -1944,12 +1944,12 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                TrainerRoad-Style Energy System Profile
+                Energy System Progression
               </span>
               <div className="flex items-center gap-1.5">
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <Gauge className="w-4 h-4 text-purple-500" />
-                  <span>Progression Levels (1.0–10.0) vs. {selectedArchetype.title} Target</span>
+                  <span>Zone Levels (1.0–10.0) vs. {selectedArchetype.title}</span>
                 </h2>
                 <ChartInfoTooltip
                   title="Energy-System Progression Levels (1.0–10.0)"
@@ -2010,24 +2010,24 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           </div>
         </section>
 
-        {/* Right 5 Cols: Garmin-Style 4-Week Load Focus Tunnels */}
+        {/* Right 5 Cols: 4-Week Load Balance */}
         <section className="lg:col-span-5 rounded-2xl liquid-glass p-5 space-y-4 flex flex-col justify-between">
           <div className="space-y-3">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                Garmin Firstbeat Load Focus
+                4-Week Load Balance
               </span>
               <div className="flex items-center gap-1.5">
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-amber-500" />
-                  <span>4-Week Load Focus Target Tunnels</span>
+                  <span>Aerobic vs. Anaerobic Load Focus</span>
                 </h2>
                 <ChartInfoTooltip
                   title="4-Week Physiological Load Focus"
                   subtitle="Low Aerobic vs. High Aerobic vs. Anaerobic Balance"
                   whatItMeasures="Breaks your last 28 days of training load into Low Aerobic (Z1–Z2), High Aerobic (Z3–Z4), and Anaerobic (Z5–Z6+) buckets compared against optimal dashed target tunnels."
                   benchmarks="Balanced endurance development requires ~55–70% Low Aerobic, ~20–32% High Aerobic, and ~8–15% Anaerobic load."
-                  coachingAction="If Anaerobic or High Aerobic shows 'Shortage', schedule an interval session from the Goal Plan Architect above."
+                  coachingAction="If Anaerobic or High Aerobic shows 'Shortage', schedule an interval session from the Training Block Builder above."
                 />
               </div>
             </div>
@@ -2080,7 +2080,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           </div>
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
-            <span>Dashed box = Optimal Physiological Tunnel</span>
+            <span>Dashed box = Optimal Target Range</span>
             <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
               Rolling 28-Day Window
             </span>
@@ -2099,7 +2099,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             </span>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <Trophy className="w-4 h-4 text-amber-500" />
-              <span>Peak Power &amp; Best Running Efforts Trophy Matrix</span>
+              <span>Personal Records &amp; Peak Efforts</span>
             </h2>
           </div>
 
@@ -2111,15 +2111,15 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 className="min-h-[34px] px-3 py-1 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Import Official FAT Results (Athletic.net / TFRRS / MileSplit)</span>
+                <span>Log Official Race</span>
               </button>
             )}
             <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-xs font-semibold">
               {(
                 [
-                  { id: 'TrackFAT', label: 'Track & Middle-Distance PRs (FAT 0.01s)' },
+                  { id: 'TrackFAT', label: 'Track PRs (0.01s)' },
                   { id: 'Running', label: 'Road & Endurance PRs' },
-                  { id: 'Cycling', label: 'Cycling Peak Power (W & W/kg)' },
+                  { id: 'Cycling', label: 'Cycling Peak Power' },
                 ] as const
               ).map((sp) => (
                 <button
@@ -2181,7 +2181,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <table className="w-full text-left border-collapse text-xs sm:text-sm font-mono tabular-nums">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans">
-                  <th className="py-2.5 pr-4">Track Distance (Watchless FAT / GPS)</th>
+                  <th className="py-2.5 pr-4">Track Distance (FAT / GPS)</th>
                   <th className="py-2.5 px-4 text-right">All-Time Best</th>
                   <th className="py-2.5 px-4 text-right">2026 Season</th>
                   <th className="py-2.5 pl-4 text-right">Last 90 Days</th>
@@ -2269,16 +2269,16 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Intervals.icu Totals &amp; Intensity Distribution
+              Training Totals &amp; Intensity Distribution
             </span>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                Training Volume, Sport Breakdown &amp; Seiler 80/20 Polarization
+                Training Volume &amp; 80/20 Intensity Distribution
               </h2>
               <ChartInfoTooltip
-                title="Seiler 3-Zone Intensity Distribution (80/20 Polarization)"
+                title="3-Zone Intensity Distribution (80/20 Polarization)"
                 subtitle="Autonomic Stress & Mitochondrial Volume Allocation"
-                whatItMeasures="Categorizes total training time into Dr. Stephen Seiler's 3 physiological intensity zones: Zone 1 Low Aerobic (<LT1 / Z1–Z2), Zone 2 Moderate 'Grey Zone' Tempo (LT1–LT2 / Z3), and Zone 3 High Intensity (>LT2 / Z4–Z6)."
+                whatItMeasures="Categorizes total training time into 3 physiological intensity zones: Zone 1 Low Aerobic (<LT1 / Z1–Z2), Zone 2 Moderate 'Grey Zone' Tempo (LT1–LT2 / Z3), and Zone 3 High Intensity (>LT2 / Z4–Z6)."
                 benchmarks="Polarized 80/20 Target: ~75–80% Low Aerobic (Z1–Z2), <5–10% Moderate Tempo (Z3), and ~15–20% High Intensity (Z4+)."
                 liveStatus={{
                   label: `${totalsAndPolarization.distributionStyle}: ${totalsAndPolarization.lowPct}% Low · ${totalsAndPolarization.modPct}% Mod · ${totalsAndPolarization.highPct}% High`,
@@ -2389,12 +2389,12 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
           </div>
         </div>
 
-        {/* Seiler 3-Zone Polarization Chart + Sport Breakdown */}
+        {/* 3-Zone Polarization Chart + Sport Breakdown */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
           <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Seiler 3-Zone Intensity Distribution (
+                3-Zone Intensity Distribution (
                 {isAllSportsSelected ? 'All Sports' : selectedPolarizationSports.join(', ')})
               </div>
               <span className="text-xs font-mono text-slate-500">
@@ -2497,7 +2497,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 textAnchor="middle"
                 className="fill-slate-500 text-[11px] font-sans font-bold"
               >
-                Seiler Physiological Intensity Zone
+                Physiological Intensity Zone
               </text>
             </svg>
           </div>
@@ -2539,7 +2539,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              Synced Athlete Equipment &amp; Wear Alerts
+              Equipment &amp; Mileage Alerts
             </span>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <Wrench className="w-4 h-4 text-amber-500" />
@@ -2613,7 +2613,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
               2026 Annual Mileage Targets (Running &amp; Cycling · Deduplicated YTD)
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Calculated strictly from your deduplicated 2026 workouts across Garmin Connect, Intervals.icu, and Strava
+              Calculated strictly from your deduplicated 2026 workouts across all synced sources
             </p>
           </div>
 

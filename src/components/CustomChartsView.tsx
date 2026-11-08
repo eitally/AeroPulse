@@ -28,20 +28,20 @@ interface MetricDefinition {
 }
 
 const METRIC_DEFINITIONS: MetricDefinition[] = [
-  // Garmin Health & PMC Metrics
+  // Health & PMC Metrics
   { key: 'ctl', label: 'Fitness (CTL)', unit: 'load', source: 'WELLNESS', color: '#3B82F6', aggMode: 'AVG' },
   { key: 'atl', label: 'Fatigue (ATL)', unit: 'load', source: 'WELLNESS', color: '#A855F7', aggMode: 'AVG' },
   { key: 'tsb', label: 'Form (TSB = CTL-ATL)', unit: 'form', source: 'WELLNESS', color: '#10B981', aggMode: 'AVG' },
   { key: 'dailyLoad', label: 'Daily Training Load', unit: 'TSS', source: 'WELLNESS', color: '#F59E0B', aggMode: 'SUM' },
   { key: 'loadRatio', label: 'Load Ratio (ACWR)', unit: 'x', source: 'WELLNESS', color: '#06B6D4', aggMode: 'AVG' },
-  { key: 'sleepScore', label: 'Garmin Sleep Score', unit: '/100', source: 'WELLNESS', color: '#6366F1', aggMode: 'AVG' },
-  { key: 'sleepHours', label: 'Garmin Sleep Duration', unit: 'hrs', source: 'WELLNESS', color: '#38BDF8', aggMode: 'AVG' },
-  { key: 'hrvRMSSD', label: 'Garmin Overnight HRV (rMSSD)', unit: 'ms', source: 'WELLNESS', color: '#10B981', aggMode: 'AVG' },
-  { key: 'restingHR', label: 'Garmin Resting HR', unit: 'bpm', source: 'WELLNESS', color: '#F43F5E', aggMode: 'AVG' },
-  { key: 'vo2MaxCycling', label: 'Garmin VO2max', unit: 'mL/kg', source: 'WELLNESS', color: '#06B6D4', aggMode: 'AVG' },
+  { key: 'sleepScore', label: 'Sleep Score', unit: '/100', source: 'WELLNESS', color: '#6366F1', aggMode: 'AVG' },
+  { key: 'sleepHours', label: 'Sleep Duration', unit: 'hrs', source: 'WELLNESS', color: '#38BDF8', aggMode: 'AVG' },
+  { key: 'hrvRMSSD', label: 'Overnight HRV (rMSSD)', unit: 'ms', source: 'WELLNESS', color: '#10B981', aggMode: 'AVG' },
+  { key: 'restingHR', label: 'Resting HR', unit: 'bpm', source: 'WELLNESS', color: '#F43F5E', aggMode: 'AVG' },
+  { key: 'vo2MaxCycling', label: 'VO2max', unit: 'mL/kg', source: 'WELLNESS', color: '#06B6D4', aggMode: 'AVG' },
   { key: 'rideEftp', label: 'Cycling eFTP', unit: 'W', source: 'WELLNESS', color: '#0EA5E9', aggMode: 'AVG' },
   { key: 'runEftp', label: 'Running eFTP', unit: 'W', source: 'WELLNESS', color: '#F97316', aggMode: 'AVG' },
-  { key: 'steps', label: 'Garmin Daily Steps', unit: 'steps', source: 'WELLNESS', color: '#14B8A6', aggMode: 'SUM' },
+  { key: 'steps', label: 'Daily Steps', unit: 'steps', source: 'WELLNESS', color: '#14B8A6', aggMode: 'SUM' },
   { key: 'weightKg', label: 'Body Weight', unit: 'kg', source: 'WELLNESS', color: '#94A3B8', aggMode: 'AVG' },
 
   // Activity / Workout Metrics
@@ -62,7 +62,7 @@ const METRIC_DEFINITIONS: MetricDefinition[] = [
 const DEFAULT_SAVED_CHARTS: CustomChartConfig[] = [
   {
     id: 'preset-sleep-hrv',
-    title: 'Garmin Sleep Score vs. Overnight HRV (7d Rolling)',
+    title: 'Sleep Score vs. Overnight HRV (7d Rolling)',
     chartType: 'TIME_SERIES',
     primaryMetric: 'sleepScore',
     secondaryMetric: 'hrvRMSSD',
@@ -508,10 +508,10 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Arbitrary Custom Chart Builder &amp; Multi-Metric Correlation Studio
+                Custom Chart Builder &amp; Correlation Lab
               </h1>
               <ChartInfoTooltip
-                title="Custom Multi-Metric Time-Series & Pearson Correlation Lab"
+                title="Custom Multi-Metric Time-Series & Correlation Lab"
                 subtitle="Bivariate Physiological Regression (r, R², Linear Fit)"
                 whatItMeasures="Lets you pair any wellness biomarker (Sleep Score, HRV rMSSD, Resting HR, CTL, ATL, TSB, Weight) with any workout performance metric (Normalized Power, Efficiency Factor, Decoupling, Load) as either a Dual-Axis Time-Series or X-vs-Y Scatter Plot."
                 benchmarks="|r| ≥ 0.50 indicates a strong physiological correlation; |r| between 0.25 and 0.49 indicates a moderate relationship."
@@ -524,7 +524,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
               />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Plot any combination of Garmin Sleep, HRV, CTL/ATL/TSB, Power, Heart Rate, Pace, and Efficiency over any custom date window
+              Plot any combination of Sleep, HRV, CTL/ATL/TSB, Power, Heart Rate, Pace, and Efficiency over any custom date window
             </p>
           </div>
           <button
