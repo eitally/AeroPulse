@@ -1527,7 +1527,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   const totalBarH = Math.min(maxBarH, Math.max(3, (load / 180) * maxBarH));
                   const barW = Math.max(1.8, Math.min(5.5, (plotW / len) * 0.68));
                   const isHovered = activeIdx === i;
-                  const baseOpacity = isHovered ? 0.95 : d.isProjected ? 0.25 : 0.62;
+                  const baseOpacity = isHovered ? 0.96 : d.isProjected ? 0.25 : 0.78;
                   const segments =
                     d.activitySegments && d.activitySegments.length > 0
                       ? d.activitySegments
@@ -1540,18 +1540,22 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                             focus: d.garminFocus,
                           },
                         ];
+                  const minSlice = segments.length > 1 ? Math.max(7, load * 0.11) : 0;
+                  const boostedLoads = segments.map((s) =>
+                    s.load > 0 ? Math.max(s.load, minSlice) : 0
+                  );
                   const segTotalLoad =
-                    segments.reduce((acc, s) => acc + Math.max(0, s.load), 0) || load;
+                    boostedLoads.reduce((acc, v) => acc + v, 0) || load;
                   let currentBottom = p1Bottom;
 
                   return (
                     <g key={`p1-garmin-load-stack-${d.date}`}>
                       {segments.map((seg, sIdx) => {
-                        const frac = Math.max(0, seg.load) / segTotalLoad;
+                        const frac = boostedLoads[sIdx] / segTotalLoad;
                         const segH =
                           sIdx === segments.length - 1
-                            ? Math.max(1, currentBottom - (p1Bottom - totalBarH))
-                            : Math.max(1, frac * totalBarH);
+                            ? Math.max(1.5, currentBottom - (p1Bottom - totalBarH))
+                            : Math.max(2, frac * totalBarH);
                         const yTop = currentBottom - segH;
                         currentBottom = yTop;
                         return (

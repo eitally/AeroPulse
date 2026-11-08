@@ -74,6 +74,24 @@
             }
           });
         });
+
+        // Purge legacy Stale-While-Revalidate UI cache ('aeropulse-ui-assets-swr') and auto-activate new Service Worker builds
+        if (typeof window !== 'undefined' && 'caches' in window) {
+          window.caches.delete('aeropulse-ui-assets-swr').catch(function () {});
+        }
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          var refreshingSw = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (refreshingSw) return;
+            refreshingSw = true;
+            window.location.reload();
+          });
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (reg) {
+              reg.update().catch(function () {});
+            });
+          });
+        }
       })();
     </script>
     <meta charset="UTF-8" />

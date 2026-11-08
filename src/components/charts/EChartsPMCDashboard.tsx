@@ -19,7 +19,7 @@ export const GARMIN_LOAD_FOCUS_META: Record<GarminLoadFocus, GarminLoadFocusMeta
     type: 'LOW_AEROBIC',
     label: 'Low Aerobic',
     shortLabel: 'Low Aer',
-    barColor: 'rgba(56, 189, 248, 0.72)',
+    barColor: 'rgba(56, 189, 248, 0.92)',
     solidColor: '#38bdf8',
     badgeBg: 'rgba(56, 189, 248, 0.16)',
   },
@@ -27,7 +27,7 @@ export const GARMIN_LOAD_FOCUS_META: Record<GarminLoadFocus, GarminLoadFocusMeta
     type: 'HIGH_AEROBIC',
     label: 'High Aerobic',
     shortLabel: 'High Aer',
-    barColor: 'rgba(249, 115, 22, 0.80)',
+    barColor: 'rgba(249, 115, 22, 0.94)',
     solidColor: '#f97316',
     badgeBg: 'rgba(249, 115, 22, 0.18)',
   },
@@ -35,7 +35,7 @@ export const GARMIN_LOAD_FOCUS_META: Record<GarminLoadFocus, GarminLoadFocusMeta
     type: 'ANAEROBIC',
     label: 'Anaerobic',
     shortLabel: 'Anaerobic',
-    barColor: 'rgba(217, 70, 239, 0.86)',
+    barColor: 'rgba(217, 70, 239, 0.92)',
     solidColor: '#d946ef',
     badgeBg: 'rgba(217, 70, 239, 0.18)',
   },
@@ -72,18 +72,20 @@ export function classifyActivityGarminLoad(
   const ftp = opts?.ftp && opts.ftp > 80 ? opts.ftp : 300;
   const lthr = opts?.lthr && opts.lthr > 110 ? opts.lthr : 168;
   const athleteMaxHr = opts?.maxHr && opts.maxHr > 140 ? opts.maxHr : 190;
+  const explicitLoad = Number(activity.trainingLoad ?? (activity as any).tss ?? 0);
 
   const hasHighIntensityTitleKeyword =
     /\b(race|interval|intervals|tempo|threshold|vo2|vo2max|anaerobic|sprint|sprints|track|crit|criterium|hiit|over-under|over\/under|sweet\s*spot|\bsst\b|time trial|\btt\b)\b/i.test(
       name
     );
 
-  // 1. Explicit Warmup / Cooldown / Recovery / Easy / Z1-Z2 Base Title Intent
+  // 1. Explicit Warmup / Cooldown / Recovery / Easy / Z1-Z2 Base Title Intent or very short <= 12 TSS spin/commute
   if (
     !hasHighIntensityTitleKeyword &&
-    /\b(warmup|warm-up|warm up|cooldown|cool-down|cool down|recovery|shakeout|easy|zone 1|zone 2|\bz1\b|\bz2\b|base|endurance spin|aerobic spin|commute|walk|yoga|mobility|stretch|stretching|foundation)\b/i.test(
+    (/\b(warmup|warm-up|warm up|cooldown|cool-down|cool down|recovery|shakeout|easy|zone 1|zone 2|\bz1\b|\bz2\b|base|endurance spin|aerobic spin|commute|walk|yoga|mobility|stretch|stretching|foundation)\b/i.test(
       name
-    )
+    ) ||
+      (explicitLoad > 0 && explicitLoad <= 14 && (activity.movingTimeSecs || 0) <= 1800))
   ) {
     return GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
   }
@@ -97,9 +99,9 @@ export function classifyActivityGarminLoad(
     return GARMIN_LOAD_FOCUS_META.ANAEROBIC;
   }
 
-  // 3. Explicit High Aerobic (Tempo / Sweet Spot / Threshold / Cruise) Title Intent
+  // 3. Explicit High Aerobic (Tempo / Sweet Spot / Threshold / Cruise / Structured Virtual Cycling Session) Title Intent
   if (
-    /\b(tempo|sweet\s*spot|\bsweetspot\b|\bsst\b|threshold|\blt1\b|\blt2\b|lactate|cruise|over-under|over\/under|time trial|\btt\b|half marathon|marathon pace|progression)\b/i.test(
+    /\b(tempo|sweet\s*spot|\bsweetspot\b|\bsst\b|threshold|\blt1\b|\blt2\b|lactate|cruise|over-under|over\/under|time trial|\btt\b|half marathon|marathon pace|progression|virtual cycling session)\b/i.test(
       name
     )
   ) {
@@ -329,6 +331,8 @@ export interface PMCDayPoint {
   eftp: number;
   rampRate: number;
   activities: UnifiedActivity[];
+  segments?: ActivityLoadSegment[];
+  classifyOpts?: GarminClassifyOptions;
   wellness?: UnifiedWellnessDay;
 }
 
@@ -360,19 +364,36 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
         typeof pt.rampRate === 'number' && pt.rampRate !== 0
           ? Number(pt.rampRate.toFixed(1))
           : Number((pt.ctl - (prev7?.ctl ?? pt.ctl)).toFixed(1));
-      const segments = buildDayLoadSegments(pt.activities, pt.tss, pt.date, {
+      const opts = pt.classifyOpts || {
         ftp: pt.eftp || 300,
-      });
+      };
+      const segments =
+        pt.segments && pt.segments.length > 0
+          ? pt.segments
+          : buildDayLoadSegments(pt.activities, pt.tss, pt.date, opts);
       const totalSegmentedTss = segments.reduce((s, seg) => s + seg.load, 0);
-      const garminFocus = classifyGarminLoadType(pt.activities, pt.tss, 0, {
-        ftp: pt.eftp || 300,
-      });
+      const effectiveTss = totalSegmentedTss > 0 ? totalSegmentedTss : pt.tss;
+
+      // Ensure small non-zero workouts on multi-activity days (e.g. a 3 TSS spin on a 97 TSS day)
+      // have at least a ~10% visual band height while keeping the total stacked bar height = effectiveTss
+      let visualLoads = segments.map((s) => s.load);
+      if (segments.length > 1 && effectiveTss > 0) {
+        const minSlice = Math.max(7, effectiveTss * 0.11);
+        const boosted = segments.map((s) => (s.load > 0 ? Math.max(s.load, minSlice) : 0));
+        const boostedSum = boosted.reduce((a, b) => a + b, 0);
+        if (boostedSum > 0) {
+          visualLoads = boosted.map((v) => Math.round((v / boostedSum) * effectiveTss * 10) / 10);
+        }
+      }
+
+      const garminFocus = classifyGarminLoadType(pt.activities, effectiveTss, 0, opts);
       return {
         ...pt,
-        tss: totalSegmentedTss > 0 ? totalSegmentedTss : pt.tss,
+        tss: effectiveTss,
         rampRate: computedRamp,
         garminFocus,
         segments,
+        visualLoads,
       };
     });
   }, [timeline]);
@@ -443,7 +464,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
 
     // Determine max activities in any single day so we can build stacked bar series per activity slot
     const maxSegmentsPerDay = Math.min(
-      6,
+      10,
       Math.max(1, ...enrichedTimeline.map((d) => d.segments.length))
     );
 
@@ -454,6 +475,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           stack: 'daily-garmin-load',
           xAxisIndex: 0,
           yAxisIndex: 0,
+          z: 5,
           barMaxWidth: 9,
           data: enrichedTimeline.map((d) => {
             const seg = d.segments[slotIdx];
@@ -465,15 +487,16 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
             }
             const isTopSegment =
               slotIdx === Math.min(maxSegmentsPerDay, d.segments.length) - 1;
-            const hasMultiple = d.segments.length > 1;
+            const visualVal =
+              d.visualLoads && d.visualLoads[slotIdx] != null
+                ? d.visualLoads[slotIdx]
+                : Math.round(seg.load * 10) / 10;
             return {
-              value: Math.round(seg.load * 10) / 10,
+              value: visualVal,
               segmentMeta: seg,
               itemStyle: {
                 color: seg.focus.barColor,
                 borderRadius: isTopSegment ? [2, 2, 0, 0] : [0, 0, 0, 0],
-                borderColor: hasMultiple ? 'rgba(9, 13, 22, 0.85)' : 'transparent',
-                borderWidth: hasMultiple ? 0.75 : 0,
               },
             };
           }),

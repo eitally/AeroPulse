@@ -53,18 +53,19 @@ export default defineConfig(() => {
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
-              // Stale-While-Revalidate for UI scripts, stylesheets, HTML documents, and Web Worker chunks
+              // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks so deployments take effect immediately
               urlPattern: ({ request }) =>
                 request.destination === 'script' ||
                 request.destination === 'style' ||
                 request.destination === 'worker' ||
                 request.destination === 'document',
-              handler: 'StaleWhileRevalidate',
+              handler: 'NetworkFirst',
               options: {
-                cacheName: 'aeropulse-ui-assets-swr',
+                cacheName: 'aeropulse-ui-assets-network-first-v2',
+                networkTimeoutSeconds: 4,
                 expiration: {
                   maxEntries: 120,
-                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
