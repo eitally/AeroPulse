@@ -27,6 +27,8 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { DualAthleteComparator } from './DualAthleteComparator';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
+import { EChartsPMCDashboard, PMCDayPoint } from './charts/EChartsPMCDashboard';
+import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -486,6 +488,30 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     });
     return buckets;
   }, [enrichedSeries]);
+
+  const [pmcEngine, setPmcEngine] = useState<'ECHARTS' | 'SVG' | 'BOTH'>('BOTH');
+  const dexieStats = useLiveWorkoutStoreStats();
+
+  const echartsTimeline: PMCDayPoint[] = useMemo(() => {
+    return enrichedSeries.map((d) => ({
+      date: d.date,
+      ctl: d.ctl,
+      atl: d.atl,
+      tsb: d.tsb,
+      tss: d.dailyLoad || 0,
+      eftp: d.rideEftp || d.runEftp || athleteProfile?.ftp || 310,
+      rampRate: d.rampRate || 0,
+      activities: d.dayActivities.map((a) => ({
+        ...a,
+        type: a.sportCategory,
+        start_date: a.startDateLocal,
+        distance: a.distanceMeters,
+        moving_time: a.movingTimeSecs,
+        tss: a.trainingLoad,
+      })),
+      wellness: d,
+    }));
+  }, [enrichedSeries, athleteProfile?.ftp]);
 
   const activeIdx =
     hoverIdx !== null && enrichedSeries[hoverIdx]
@@ -954,8 +980,39 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             ))}
           </div>
 
-          {/* Right: Forward Projection + Customize Strips Popover */}
-          <div className="flex items-center gap-2 relative">
+          {/* Right: Engine Switcher + Forward Projection + Customize Strips Popover */}
+          <div className="flex flex-wrap items-center gap-2 relative">
+            <span
+              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-600 dark:text-emerald-300"
+              title="Live reactive IndexedDB query via Dexie.js workoutStore"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Dexie IDB: {dexieStats.activitiesCount} acts · {dexieStats.streamsCount} 1Hz streams
+            </span>
+
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-mono">
+              {(
+                [
+                  { id: 'ECHARTS', label: 'ECharts PMC' },
+                  { id: 'SVG', label: '6-Pane SVG' },
+                  { id: 'BOTH', label: 'Dual Engine' },
+                ] as const
+              ).map((eng) => (
+                <button
+                  key={eng.id}
+                  type="button"
+                  onClick={() => setPmcEngine(eng.id)}
+                  className={`px-2 py-0.5 rounded-lg transition-all ${
+                    pmcEngine === eng.id
+                      ? 'liquid-capsule-active text-cyan-600 dark:text-cyan-300 font-bold'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {eng.label}
+                </button>
+              ))}
+            </div>
+
             <select
               value={forwardDays}
               onChange={(e) =>
@@ -1111,8 +1168,26 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         </div>
 
         {/* ==========================================================================
+            APACHE ECHARTS CHRONIC FITNESS DECAY MODEL (CTL / ATL / TSB WITH DATAZOOM)
+           ========================================================================== */}
+        {(pmcEngine === 'ECHARTS' || pmcEngine === 'BOTH') && (
+          <div className="px-3 sm:px-5 pt-3 pb-1">
+            <EChartsPMCDashboard
+              timeline={echartsTimeline}
+              onSelectActivity={(act) => onSelectActivity && onSelectActivity(act)}
+              onSelectDate={(dateStr) => {
+                const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
+                if (foundIdx >= 0) setHoverIdx(foundIdx);
+              }}
+              height={420}
+            />
+          </div>
+        )}
+
+        {/* ==========================================================================
             UNIFIED MULTI-PANE INTERVALS.ICU SVG CANVAS + RIGHT-MARGIN READOUT GUTTER
            ========================================================================== */}
+        {(pmcEngine === 'SVG' || pmcEngine === 'BOTH') && (
         <div className="px-2 sm:px-4 pt-3 pb-2 select-none overflow-x-auto">
           {(() => {
             const len = Math.max(1, enrichedSeries.length);
@@ -2333,6 +2408,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             );
           })()}
         </div>
+        )}
 
         {/* Interactive Milestone Badges Legend & Filter Strip */}
         {(() => {

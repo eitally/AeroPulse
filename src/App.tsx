@@ -73,6 +73,11 @@ import {
   savePersistedTelemetrySnapshot,
   saveRotatedStravaTokensToStorage,
 } from './utils/telemetryStorage';
+import {
+  getActivityStreamFromDexie,
+  saveActivityStreamToDexie,
+} from './db/workoutStore';
+import { upsampleAndAnalyzeActivityInWorker } from './workers/activityWorkerClient';
 
 type ActiveTab =
   | 'calendar'
@@ -1293,9 +1298,26 @@ export default function App() {
   // Load real streams + auto-detected intervals + Strava segment efforts + GPS route for any activity
   const loadStreamsForActivity = useCallback(
     async (activity: UnifiedActivity) => {
+      // 1. Check Dexie.js activityStreams table first for high-frequency 1Hz stream cache
+      const cachedDexieRecord = await getActivityStreamFromDexie(activity.id);
+      const cachedDexieStream = cachedDexieRecord?.streams;
+      if (
+        cachedDexieStream &&
+        Array.isArray(cachedDexieStream.time) &&
+        cachedDexieStream.time.length >= 60 &&
+        (!activity.streams || activity.streams.time.length < cachedDexieStream.time.length)
+      ) {
+        setActivities((prev) =>
+          prev.map((a) => (a.id === activity.id ? { ...a, streams: cachedDexieStream } : a))
+        );
+        setSelectedActivity((curr) =>
+          curr && curr.id === activity.id ? { ...curr, streams: cachedDexieStream } : curr
+        );
+      }
+
       if (
         activity.streams &&
-        activity.streams.time.length > 0 &&
+        activity.streams.time.length >= 60 &&
         activity.segmentEfforts &&
         activity.segmentEfforts.length > 0 &&
         (activity.environment === 'INDOOR' ||
@@ -1321,6 +1343,9 @@ export default function App() {
               (streams && Array.isArray(streams.time) && streams.time.length > 0) ||
               (segmentEfforts && segmentEfforts.length > 0)
             ) {
+              if (streams && Array.isArray(streams.time) && streams.time.length > 0) {
+                void saveActivityStreamToDexie(activity.id, streams);
+              }
               setActivities((prev) => {
                 const updated = prev.map((a) =>
                   a.id === activity.id
@@ -1371,6 +1396,9 @@ export default function App() {
               (streams && Array.isArray(streams.time) && streams.time.length > 0) ||
               (segmentEfforts && segmentEfforts.length > 0)
             ) {
+              if (streams && Array.isArray(streams.time) && streams.time.length > 0) {
+                void saveActivityStreamToDexie(activity.id, streams);
+              }
               setActivities((prev) => {
                 const updated = prev.map((a) =>
                   a.id === activity.id
@@ -1400,8 +1428,39 @@ export default function App() {
                 }
                 return ranked;
               });
+              return;
             }
           }
+        }
+
+        // 2. Offline / Sandbox fallback: upsample & compute 1Hz telemetry stream on the Web Worker thread
+        if (!activity.streams || activity.streams.time.length < 60) {
+          const { streams: workerStreams, analytics } =
+            await upsampleAndAnalyzeActivityInWorker(activity);
+          setActivities((prev) =>
+            prev.map((a) =>
+              a.id === activity.id
+                ? {
+                    ...a,
+                    streams: workerStreams,
+                    intervals:
+                      a.intervals && a.intervals.length > 0 ? a.intervals : analytics.intervals,
+                  }
+                : a
+            )
+          );
+          setSelectedActivity((curr) =>
+            curr && curr.id === activity.id
+              ? {
+                  ...curr,
+                  streams: workerStreams,
+                  intervals:
+                    curr.intervals && curr.intervals.length > 0
+                      ? curr.intervals
+                      : analytics.intervals,
+                }
+              : curr
+          );
         }
       } catch {
         // Fallback handled in view if stream endpoint unavailable
@@ -2751,6 +2810,9 @@ export default function App() {
             onToggleKudos={handleToggleActivityKudos}
             onAddComment={handleAddActivityComment}
             onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+            onImportParsedActivity={(newAct) => {
+              setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+            }}
             athleteWeightKg={latestWeightKg}
           />
         )}

@@ -7,6 +7,18 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import {
+  bulkUpsertActivitiesToDexie,
+  db,
+  getStoreMetadata,
+  hydrateUnifiedActivity,
+  saveStoreMetadata,
+} from '../db/workoutStore';
+import {
+  INITIAL_ACTIVITIES,
+  INITIAL_PLANNED_EVENTS,
+  INITIAL_WELLNESS_DAYS,
+} from '../data/mockTelemetry';
 
 const IDB_NAME = 'aeropulse_telemetry_db';
 const IDB_VERSION = 1;
@@ -329,11 +341,11 @@ function openTelemetryDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot | null> {
+async function loadLegacyTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot | null> {
   try {
-    const db = await openTelemetryDb();
+    const idb = await openTelemetryDb();
     return await new Promise<PersistedTelemetrySnapshot | null>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
+      const tx = idb.transaction(IDB_STORE, 'readonly');
       const store = tx.objectStore(IDB_STORE);
       const getReq = store.get(SNAPSHOT_KEY);
       getReq.onsuccess = () => {
@@ -354,26 +366,107 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
   }
 }
 
+export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot | null> {
+  try {
+    const [storedActivities, storedStreams, wellnessDays, plannedEvents, gearItems, snapshotMeta] =
+      await Promise.all([
+        db.activities.orderBy('start_date').reverse().toArray(),
+        db.activityStreams.toArray(),
+        db.wellnessDays.orderBy('date').toArray(),
+        db.plannedEvents.orderBy('date').toArray(),
+        db.gearItems.toArray(),
+        getStoreMetadata<{
+          athleteProfile?: AthleteProfile;
+          redactedStravaCount?: number;
+          earliestActivityDate?: string;
+          savedAt?: string;
+        }>('snapshot_meta'),
+      ]);
+
+    if (storedActivities.length > 0 || wellnessDays.length > 0) {
+      const streamByActId = new Map(storedStreams.map((s) => [s.activityId, s]));
+      const hydratedActivities = storedActivities.map((rec) =>
+        reclassifyActivityEnvironment(hydrateUnifiedActivity(rec, streamByActId.get(rec.id)))
+      );
+      return {
+        activities: hydratedActivities,
+        wellnessDays,
+        plannedEvents,
+        gearItems,
+        athleteProfile: snapshotMeta?.athleteProfile,
+        redactedStravaCount: snapshotMeta?.redactedStravaCount || 0,
+        earliestActivityDate:
+          snapshotMeta?.earliestActivityDate ||
+          hydratedActivities[hydratedActivities.length - 1]?.startDateLocal?.slice(0, 10),
+        savedAt: snapshotMeta?.savedAt || new Date().toISOString(),
+      };
+    }
+
+    // Check legacy raw IndexedDB snapshot and migrate into Dexie relational store
+    const legacy = await loadLegacyTelemetrySnapshot();
+    if (legacy && (legacy.activities.length > 0 || legacy.wellnessDays.length > 0)) {
+      await savePersistedTelemetrySnapshot(legacy);
+      return legacy;
+    }
+
+    // Seed initial high-frequency telemetry into Dexie relational store for offline/sandbox boot
+    const seededAt = new Date().toISOString();
+    const seedSnapshot: PersistedTelemetrySnapshot = {
+      activities: INITIAL_ACTIVITIES.map(reclassifyActivityEnvironment),
+      wellnessDays: INITIAL_WELLNESS_DAYS,
+      plannedEvents: INITIAL_PLANNED_EVENTS,
+      gearItems: [],
+      redactedStravaCount: 0,
+      earliestActivityDate:
+        INITIAL_ACTIVITIES[INITIAL_ACTIVITIES.length - 1]?.startDateLocal?.slice(0, 10),
+      savedAt: seededAt,
+    };
+    await savePersistedTelemetrySnapshot(seedSnapshot);
+    return seedSnapshot;
+  } catch {
+    return null;
+  }
+}
+
 export async function savePersistedTelemetrySnapshot(
   snapshot: Omit<PersistedTelemetrySnapshot, 'savedAt'> & { savedAt?: string }
 ): Promise<string | null> {
   try {
-    const db = await openTelemetryDb();
     const savedAt = snapshot.savedAt || new Date().toISOString();
-    const record: PersistedTelemetrySnapshot = {
-      ...snapshot,
-      activities: Array.isArray(snapshot.activities)
-        ? snapshot.activities.map(reclassifyActivityEnvironment)
-        : [],
-      savedAt,
-    };
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      const store = tx.objectStore(IDB_STORE);
-      store.put(record, SNAPSHOT_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    const normalizedActivities = Array.isArray(snapshot.activities)
+      ? snapshot.activities.map(reclassifyActivityEnvironment)
+      : [];
+
+    await bulkUpsertActivitiesToDexie(normalizedActivities);
+
+    await db.transaction(
+      'rw',
+      db.wellnessDays,
+      db.plannedEvents,
+      db.gearItems,
+      db.metadata,
+      async () => {
+        if (Array.isArray(snapshot.wellnessDays) && snapshot.wellnessDays.length > 0) {
+          await db.wellnessDays.bulkPut(snapshot.wellnessDays);
+        }
+        if (Array.isArray(snapshot.plannedEvents)) {
+          await db.plannedEvents.clear();
+          if (snapshot.plannedEvents.length > 0) {
+            await db.plannedEvents.bulkPut(snapshot.plannedEvents);
+          }
+        }
+        if (Array.isArray(snapshot.gearItems) && snapshot.gearItems.length > 0) {
+          await db.gearItems.bulkPut(snapshot.gearItems);
+        }
+        await saveStoreMetadata('snapshot_meta', {
+          athleteProfile: snapshot.athleteProfile,
+          redactedStravaCount: snapshot.redactedStravaCount || 0,
+          earliestActivityDate: snapshot.earliestActivityDate,
+          savedAt,
+        });
+      }
+    );
+
     return savedAt;
   } catch {
     return null;
@@ -382,9 +475,27 @@ export async function savePersistedTelemetrySnapshot(
 
 export async function clearPersistedTelemetrySnapshot(): Promise<void> {
   try {
-    const db = await openTelemetryDb();
+    await db.transaction(
+      'rw',
+      [db.activities, db.activityStreams, db.wellnessDays, db.plannedEvents, db.gearItems, db.metadata],
+      async () => {
+        await Promise.all([
+          db.activities.clear(),
+          db.activityStreams.clear(),
+          db.wellnessDays.clear(),
+          db.plannedEvents.clear(),
+          db.gearItems.clear(),
+          db.metadata.clear(),
+        ]);
+      }
+    );
+  } catch {
+    // ignore
+  }
+  try {
+    const idb = await openTelemetryDb();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const tx = idb.transaction(IDB_STORE, 'readwrite');
       const store = tx.objectStore(IDB_STORE);
       store.delete(SNAPSHOT_KEY);
       tx.oncomplete = () => resolve();

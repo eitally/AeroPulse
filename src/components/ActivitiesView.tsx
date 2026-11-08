@@ -13,6 +13,8 @@ import {
   Sparkles,
   ThumbsUp,
   Trophy,
+  Upload,
+  Cpu,
   X,
   ZoomIn,
   ZoomOut,
@@ -35,6 +37,15 @@ import {
   SegmentEffortOverTimeChart,
 } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { UPlotStreamChart } from './charts/UPlotStreamChart';
+import { EChartsHistogram } from './charts/EChartsHistogram';
+import {
+  buildSample1HzGpxString,
+  parseWorkoutFileInWorker,
+  upsampleAndAnalyzeActivityInWorker,
+  ComputedStreamAnalytics,
+} from '../workers/activityWorkerClient';
+import { useLiveActivityStream, useLiveWorkoutStoreStats } from '../db/workoutStore';
 
 interface ActivitiesViewProps {
   activities: UnifiedActivity[];
@@ -53,6 +64,7 @@ interface ActivitiesViewProps {
   onToggleKudos?: (activity: UnifiedActivity) => Promise<void>;
   onAddComment?: (activity: UnifiedActivity, commentText: string) => Promise<void>;
   onOpenOfficialRaceModal?: () => void;
+  onImportParsedActivity?: (activity: UnifiedActivity) => void;
   athleteWeightKg?: number;
 }
 
@@ -211,6 +223,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   onToggleKudos,
   onAddComment,
   onOpenOfficialRaceModal,
+  onImportParsedActivity,
   athleteWeightKg = 72.5,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,6 +261,78 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [smoothStreams, setSmoothStreams] = useState<boolean>(true);
   const [compareHoverStep, setCompareHoverStep] = useState<number | null>(null);
   const [selectedMatchedClusterKey, setSelectedMatchedClusterKey] = useState<string | null>(null);
+
+  // Web Worker & Dexie Live Stream State
+  const [isWorkerProcessing, setIsWorkerProcessing] = useState<boolean>(false);
+  const [workerAnalytics, setWorkerAnalytics] = useState<ComputedStreamAnalytics | null>(null);
+  const liveDexieStream = useLiveActivityStream(selectedActivity?.id || null);
+  const dexieStats = useLiveWorkoutStoreStats();
+
+  // Automatically compute or upsample 1Hz stream analytics in Web Worker when selectedActivity changes
+  useEffect(() => {
+    if (!selectedActivity) {
+      setWorkerAnalytics(null);
+      return;
+    }
+    let cancelled = false;
+    setIsWorkerProcessing(true);
+    upsampleAndAnalyzeActivityInWorker(selectedActivity)
+      .then(({ analytics }) => {
+        if (!cancelled) {
+          setWorkerAnalytics(analytics);
+          setIsWorkerProcessing(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsWorkerProcessing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedActivity?.id]);
+
+  const handleWorkoutFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsWorkerProcessing(true);
+    try {
+      const parsed = await parseWorkoutFileInWorker(file);
+      if (onImportParsedActivity) {
+        onImportParsedActivity(parsed.activity);
+      }
+      onSelectActivity(parsed.activity);
+      setWorkerAnalytics(parsed.analytics);
+    } catch (err) {
+      console.error('Worker file parse error:', err);
+    } finally {
+      setIsWorkerProcessing(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSimulate1HzGpxInWorker = async () => {
+    setIsWorkerProcessing(true);
+    try {
+      const gpxStr = buildSample1HzGpxString(
+        'Hawk Hill & Coastal Headlands Threshold Repeat (1Hz GPX)',
+        1200,
+        305
+      );
+      const parsed = await parseWorkoutFileInWorker(
+        gpxStr,
+        'AeroPulse-1Hz-Threshold-Telemetry.gpx'
+      );
+      if (onImportParsedActivity) {
+        onImportParsedActivity(parsed.activity);
+      }
+      onSelectActivity(parsed.activity);
+      setWorkerAnalytics(parsed.analytics);
+    } catch (err) {
+      console.error('Worker 1Hz GPX simulation failed:', err);
+    } finally {
+      setIsWorkerProcessing(false);
+    }
+  };
 
   const availableYears = useMemo(() => {
     const yrs = new Set<string>();
@@ -798,6 +883,31 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 <span>Official Race / FAT</span>
               </button>
             )}
+
+            <label
+              className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-xs font-bold text-cyan-700 dark:text-cyan-300 transition-colors whitespace-nowrap cursor-pointer"
+              title="Parse raw .FIT, .GPX, or .TCX file on background Web Worker thread and persist to Dexie IndexedDB"
+            >
+              <Upload className="w-3.5 h-3.5 text-cyan-500" />
+              <span>{isWorkerProcessing ? 'Worker Parsing...' : 'Import .FIT / .GPX'}</span>
+              <input
+                type="file"
+                accept=".fit,.gpx,.tcx,.json"
+                onChange={handleWorkoutFileUpload}
+                className="hidden"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={handleSimulate1HzGpxInWorker}
+              disabled={isWorkerProcessing}
+              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-colors whitespace-nowrap disabled:opacity-50"
+              title="Generate and parse a 1Hz GPX telemetry stream on the Web Worker thread"
+            >
+              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
+              <span>1Hz Worker Demo</span>
+            </button>
           </div>
         </div>
 
@@ -1622,6 +1732,34 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
           {/* Overlaid Power & Heart Rate Charts + Head-to-Head Delta Analysis */}
           {compareActivityA && compareActivityB && overlaidComparisonData && (
             <div className="space-y-5">
+              {/* SYNCHRONIZED 1HZ UPLOT TELEMETRY COMPARATOR (Shared uPlot.sync crosshair) */}
+              {(compareActivityA.streams || compareActivityB.streams) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {compareActivityA.streams && (
+                    <UPlotStreamChart
+                      streams={compareActivityA.streams}
+                      sportCategory={compareActivityA.sportCategory}
+                      distanceUnit={distanceUnit}
+                      athleteWeightKg={athleteWeightKg}
+                      intervals={compareActivityA.intervals}
+                      syncKey="aeropulse-compare-sync"
+                      height={220}
+                    />
+                  )}
+                  {compareActivityB.streams && (
+                    <UPlotStreamChart
+                      streams={compareActivityB.streams}
+                      sportCategory={compareActivityB.sportCategory}
+                      distanceUnit={distanceUnit}
+                      athleteWeightKg={athleteWeightKg}
+                      intervals={compareActivityB.intervals}
+                      syncKey="aeropulse-compare-sync"
+                      height={220}
+                    />
+                  )}
+                </div>
+              )}
+
               {/* 1. OVERLAID POWER / OUTPUT COMPARISON CHART */}
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3435,6 +3573,31 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 />
               )}
 
+              {/* High-Frequency 1Hz uPlot Telemetry Canvas + Web Worker Analytics Strip */}
+              {(liveDexieStream?.streams || selectedActivity.streams) && (
+                <UPlotStreamChart
+                  streams={(liveDexieStream?.streams || selectedActivity.streams)!}
+                  sportCategory={selectedActivity.sportCategory}
+                  distanceUnit={distanceUnit}
+                  athleteWeightKg={athleteWeightKg}
+                  intervals={workerAnalytics?.intervals || selectedActivity.intervals}
+                  peakWindows={workerAnalytics?.peakWindows}
+                  workerMetrics={workerAnalytics}
+                  isWorkerProcessing={isWorkerProcessing}
+                  onTriggerWorker1HzUpsample={() => {
+                    setIsWorkerProcessing(true);
+                    upsampleAndAnalyzeActivityInWorker(selectedActivity)
+                      .then(({ analytics }) => setWorkerAnalytics(analytics))
+                      .finally(() => setIsWorkerProcessing(false));
+                  }}
+                  syncKey="aeropulse-activity-inspector"
+                  onHoverIndex={setStreamHoverIndex}
+                  zoomRange={streamZoomRange}
+                  onZoomRangeChange={setStreamZoomRange}
+                  height={280}
+                />
+              )}
+
               {/* Interactive Zoomable Time-Series Stream Scrubber with Drag-to-Zoom Brush, Interval Presets & Mini-Map */}
               {selectedActivity.streams && selectedActivity.streams.time.length > 0 && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
@@ -4673,6 +4836,21 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {/* Apache ECharts Time-in-Zone Histogram + Detailed Zone Breakdown */}
+                    <EChartsHistogram
+                      title="Apache ECharts Time-in-Zone Histogram (Z1–Z6)"
+                      subtitle={`Compliance ${complianceScore}% vs ${expectedProfile.shortLabel} Archetype`}
+                      buckets={zoneMeta.map((z) => ({
+                        zone: z.zone,
+                        label: z.shortLabel,
+                        pct: z.pct,
+                        seconds: z.secs,
+                        expectedPct: showAutoZoneInsight ? z.expectedPct : undefined,
+                        color: z.colorHex,
+                      }))}
+                      height={210}
+                    />
 
                     {/* Interactive SVG Vertical Column Chart + Detailed Horizontal Zone Breakdown */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">

@@ -44,16 +44,70 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
+            {
+              // Stale-While-Revalidate for UI scripts, stylesheets, HTML documents, and Web Worker chunks
+              urlPattern: ({ request }) =>
+                request.destination === 'script' ||
+                request.destination === 'style' ||
+                request.destination === 'worker' ||
+                request.destination === 'document',
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'aeropulse-ui-assets-swr',
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // Stale-While-Revalidate for API telemetry endpoints so offline mode serves cached snapshots immediately
+              urlPattern: /\/api\/(telemetry|intervals|strava|athlete|activities|calendar)\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'aeropulse-telemetry-api-swr',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 14,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // Cache-First for structural app dependencies, icons, and immutable static media
+              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2|ttf)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'aeropulse-structural-static-cache-first',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'google-fonts-cache',
                 expiration: {
-                  maxEntries: 10,
+                  maxEntries: 15,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
                 },
                 cacheableResponse: {
@@ -67,8 +121,23 @@ export default defineConfig(() => {
               options: {
                 cacheName: 'gstatic-fonts-cache',
                 expiration: {
-                  maxEntries: 10,
+                  maxEntries: 15,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // Stale-While-Revalidate for GPS route map tiles (OpenStreetMap / CartoDB)
+              urlPattern: /^https:\/\/(?:[abc]\.tile\.openstreetmap\.org|[abcd]\.basemaps\.cartocdn\.com)\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'aeropulse-map-tiles-swr',
+                expiration: {
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -85,8 +154,11 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
+    },
+    build: {
+      chunkSizeWarningLimit: 3000,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
