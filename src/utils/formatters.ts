@@ -26,6 +26,53 @@ export function formatPace(secsPerKm: number | undefined, unit: DistanceUnit): s
   return `${mins}:${rem.toString().padStart(2, '0')} /${unit}`;
 }
 
+export function formatPaceDelta(diffSecsPerKm: number, unit: DistanceUnit): string {
+  const scaled = unit === 'mi' ? Math.round(diffSecsPerKm * 1.609344) : Math.round(diffSecsPerKm);
+  const sign = scaled > 0 ? '+' : '';
+  return `${sign}${scaled}s/${unit}`;
+}
+
+export function formatElevation(meters: number | undefined, unit: DistanceUnit): string {
+  const m = meters || 0;
+  if (unit === 'mi') {
+    return `${Math.round(m * 3.28084).toLocaleString()} ft`;
+  }
+  return `${Math.round(m).toLocaleString()} m`;
+}
+
+export function formatWeight(kg: number | undefined, unit: DistanceUnit, decimals = 1): string {
+  const valKg = kg || 0;
+  if (unit === 'mi') {
+    return `${(valKg * 2.20462).toFixed(decimals)} lbs`;
+  }
+  return `${valKg.toFixed(decimals)} kg`;
+}
+
+export function formatGoalMetricValue(
+  value: number,
+  goalUnit: string,
+  distanceUnit: DistanceUnit,
+  goalTitle?: string
+): string {
+  const u = (goalUnit || '').toLowerCase();
+  const t = (goalTitle || '').toLowerCase();
+  if (
+    u === 'sec/km' ||
+    u === 'secs/km' ||
+    u === 's/km' ||
+    u === 'pace' ||
+    u === 'min/mi' ||
+    u === 'min/km' ||
+    t.includes('pace')
+  ) {
+    return formatPace(value, distanceUnit);
+  }
+  if (u === 'kg' || u === 'lbs') {
+    return formatWeight(value, distanceUnit);
+  }
+  return `${value} ${goalUnit}`;
+}
+
 export function formatDuration(totalSecs: number): string {
   const hrs = Math.floor(totalSecs / 3600);
   const mins = Math.floor((totalSecs % 3600) / 60);

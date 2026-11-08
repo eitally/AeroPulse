@@ -138,7 +138,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   activities,
   wellnessDays,
   envFilter = 'COMBINED',
-  distanceUnit = 'km',
+  distanceUnit = 'mi',
   athleteWeightKg,
   onOpenCoachWithPrompt,
 }) => {

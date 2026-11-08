@@ -36,6 +36,7 @@ import {
   convertUnitToMeters,
   formatDistance,
   formatDuration,
+  formatGoalMetricValue,
   formatPace,
 } from '../utils/formatters';
 import {
@@ -782,29 +783,33 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       // Session 1 (Tuesday - offset 1): Key Interval Session
       const tueDate = addDaysIso(weekMondayIso, 1);
       if (selectedArchetype.id === 'SUB20_5K') {
+        const pRace = formatPace(238, distanceUnit);
+        const pTrack = formatPace(236, distanceUnit);
+        const pFast = formatPace(235, distanceUnit);
         sessions.push({
           date: tueDate,
           name: isDeload
             ? `Wk${weekNum} Deload: 4x400m Economy Repeats`
             : isTaper
-              ? `Wk${weekNum} Taper: 3x1km Race Pace Sharpener (3:58/km)`
-              : `Wk${weekNum} Key Track: 6x800m Sub-20 5K Pace (3:56/km)`,
+              ? `Wk${weekNum} Taper: 3x1km Race Pace Sharpener (${pRace})`
+              : `Wk${weekNum} Key Track: 6x800m Sub-20 5K Pace (${pTrack})`,
           sportCategory: 'Running',
           environmentPreference: blockEnvPref,
           plannedDurationSecs: isDeload ? 2400 : 3300,
           plannedLoad: isDeload ? 52 : 78,
           workoutSyntax: isDeload
             ? `- 10m 62% FTP Warmup\n- 4m 102% FTP Track Repeat\n- 3m 52% FTP Jog\n- 4m 102% FTP Track Repeat\n- 3m 52% FTP Jog\n- 10m 52% FTP Cooldown`
-            : `- 12m 64% FTP Warmup\n- 3m 110% FTP 800m @ 3:56/km\n- 2m 52% FTP Recovery\n- 3m 110% FTP 800m @ 3:56/km\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ 3:55/km\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ 3:55/km\n- 10m 52% FTP Cooldown`,
-          description: `Target pace 3:56–3:59/km. Maintain relaxed shoulders and >180 spm cadence.`,
+            : `- 12m 64% FTP Warmup\n- 3m 110% FTP 800m @ ${pTrack}\n- 2m 52% FTP Recovery\n- 3m 110% FTP 800m @ ${pTrack}\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ ${pFast}\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ ${pFast}\n- 10m 52% FTP Cooldown`,
+          description: `Target pace ${pTrack}–${pRace}. Maintain relaxed shoulders and >180 spm cadence.`,
           replaceExistingDate: true,
         });
       } else if (selectedArchetype.id === 'HALF_MARATHON') {
+        const pLt = formatPace(252, distanceUnit);
         sessions.push({
           date: tueDate,
           name: isDeload
             ? `Wk${weekNum} Deload: 3x6m Smooth Threshold Cruise`
-            : `Wk${weekNum} HM Build: ${3 + Math.min(2, Math.floor(w / 3))}x8m Lactate Threshold (4:12/km)`,
+            : `Wk${weekNum} HM Build: ${3 + Math.min(2, Math.floor(w / 3))}x8m Lactate Threshold (${pLt})`,
           sportCategory: 'Running',
           environmentPreference: blockEnvPref,
           plannedDurationSecs: isDeload ? 2700 : 3600,
@@ -2831,7 +2836,24 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
 
                   <div className="flex items-center justify-between text-xs font-mono tabular-nums pt-2 border-t border-slate-200 dark:border-slate-800">
                     <span>
-                      Current: {goal.currentValue} {goal.unit} → Target: {goal.targetValue} {goal.unit}
+                      Current:{' '}
+                      <strong>
+                        {formatGoalMetricValue(
+                          goal.currentValue,
+                          goal.unit,
+                          distanceUnit,
+                          goal.title
+                        )}
+                      </strong>{' '}
+                      → Target:{' '}
+                      <strong className="text-emerald-600 dark:text-emerald-400">
+                        {formatGoalMetricValue(
+                          goal.targetValue,
+                          goal.unit,
+                          distanceUnit,
+                          goal.title
+                        )}
+                      </strong>
                     </span>
                     {goal.targetCtl && (
                       <span className="text-blue-600 dark:text-blue-400 font-semibold">

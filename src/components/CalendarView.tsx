@@ -1274,6 +1274,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         98,
         Math.max(20, Math.round((aRace.currentValue / Math.max(1, aRace.targetValue)) * 100))
       );
+      const isPaceGoal =
+        /pace|sec\/km|s\/km|min\/mi|min\/km/i.test(aRace.unit || '') ||
+        /pace/i.test(aRace.title || '');
+      const currentStr = isPaceGoal
+        ? formatPaceWithUnit(aRace.currentValue, distanceUnit)
+        : `${aRace.currentValue} ${aRace.unit}`;
+      const targetStr = isPaceGoal
+        ? formatPaceWithUnit(aRace.targetValue, distanceUnit)
+        : `${aRace.targetValue} ${aRace.unit}`;
       return {
         title: aRace.title,
         sport: aRace.sportCategory,
@@ -1281,8 +1290,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         weeksOut,
         daysOut,
         phase,
-        currentStr: `${aRace.currentValue} ${aRace.unit}`,
-        targetStr: `${aRace.targetValue} ${aRace.unit}`,
+        currentStr,
+        targetStr,
         pct,
       };
     }
@@ -1298,11 +1307,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       targetStr: '350W FTP',
       pct: Math.min(98, Math.round((curFtp / 350) * 100)),
     };
-  }, [targetGoals, athleteProfile, athleteFtp]);
+  }, [targetGoals, athleteProfile, athleteFtp, distanceUnit]);
 
   return (
     <div className="space-y-4">
-      {/* Garmin Race-Glance / Primary Objective & Block Phase Ribbon */}
+      {/* Primary Objective & Block Phase Ribbon */}
       <section className="rounded-2xl liquid-glass px-4 py-3 border border-blue-500/25 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-mono font-bold uppercase tracking-wider">
@@ -1349,7 +1358,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </section>
 
-      {/* Top Adaptive Workout Header Card */}
+      {/* Top Adaptive Workout Header Card (Collapsed by default so Calendar is front-and-center) */}
       {athleteProfile && onOpenAthleteProfileModal && (
         <ReadinessMorphingCard
           wellnessDays={wellnessDays}
@@ -1357,7 +1366,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           plannedEvents={plannedEvents}
           athleteProfile={athleteProfile}
           distanceUnit={distanceUnit}
-          defaultExpanded={true}
+          defaultExpanded={false}
           placementLabel="Today's Adapted Workout"
           onSyncMorphedToCalendar={onCreatePlannedEvent}
           onOpenAthleteProfileModal={onOpenAthleteProfileModal}
@@ -1885,7 +1894,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   )}
                                   {w.weightKg > 0 && (
                                     <span className="text-slate-400 dark:text-slate-500">
-                                      {w.weightKg.toFixed(1)}kg
+                                      {distanceUnit === 'mi'
+                                        ? `${Math.round(w.weightKg * 2.20462)}lbs`
+                                        : `${w.weightKg.toFixed(1)}kg`}
                                     </span>
                                   )}
                                 </div>

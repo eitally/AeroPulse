@@ -260,21 +260,23 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span>Body Weight</span>
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-              {weightKg.toFixed(1)} kg
+              {distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}
             </div>
-            <div className="text-[10px] font-mono text-slate-400">{weightLbs} lbs</div>
+            <div className="text-[10px] font-mono text-slate-400">
+              {distanceUnit === 'mi' ? `${weightKg.toFixed(1)} kg` : `${weightLbs} lbs`}
+            </div>
           </div>
 
           <div className="rounded-xl liquid-glass-subtle p-3 space-y-0.5">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <Footprints className="w-3 h-3 text-emerald-500" />
-              <span>Run FTP &amp; Pace</span>
+              <span>Run LT Pace &amp; FTP</span>
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-              {runFtp}W
+              {formatPace(thresholdPaceSecsPerKm)}
             </div>
             <div className="text-[10px] font-mono text-slate-400">
-               LT Pace {formatPace(thresholdPaceSecsPerKm)} · LTHR {runLthr}
+              Run FTP {runFtp}W · LTHR {runLthr} bpm
             </div>
           </div>
 
@@ -308,15 +310,22 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
             <div>
               <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                Weight (kg)
+                Weight ({distanceUnit === 'mi' ? 'lbs' : 'kg'})
               </label>
               <input
                 type="number"
                 step="0.1"
-                min={35}
-                max={160}
-                value={weightKg}
-                onChange={(e) => setWeightKg(Number(e.target.value))}
+                min={distanceUnit === 'mi' ? 80 : 35}
+                max={distanceUnit === 'mi' ? 350 : 160}
+                value={
+                  distanceUnit === 'mi'
+                    ? Number((weightKg * 2.20462).toFixed(1))
+                    : Number(weightKg.toFixed(1))
+                }
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setWeightKg(distanceUnit === 'mi' ? Number((val / 2.20462).toFixed(2)) : val);
+                }}
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
               />
             </div>
@@ -351,7 +360,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                Indoor / Zwift FTP (W)
+                Indoor Trainer FTP (W)
               </label>
               <input
                 type="number"
@@ -422,6 +431,22 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Run LT Pace ({formatPace(thresholdPaceSecsPerKm)})
+              </label>
+              <input
+                type="range"
+                min={180}
+                max={360}
+                step={1}
+                value={thresholdPaceSecsPerKm}
+                onChange={(e) => setThresholdPaceSecsPerKm(Number(e.target.value))}
+                className="w-full accent-blue-600 mt-2"
+                title={`Adjust Lactate Threshold Run Pace: ${formatPace(thresholdPaceSecsPerKm)}`}
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
                 Run LTHR (bpm)
               </label>
               <input
@@ -448,20 +473,6 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                VO2max Bike
-              </label>
-              <input
-                type="number"
-                min={25}
-                max={90}
-                value={vo2MaxCycling}
-                onChange={(e) => setVo2MaxCycling(Number(e.target.value))}
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
-
             <div className="flex items-end">
               <button
                 type="submit"
@@ -480,10 +491,11 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Cycling 7-Zone Power Table (Intervals.icu)
+                  Cycling 7-Zone Power Table
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Calibrated for Outdoor ({ftp}W) &amp; Virtual/Indoor ({indoorFtp}W) @ {weightKg.toFixed(1)}kg
+                  Calibrated for Outdoor ({ftp}W) &amp; Virtual/Indoor ({indoorFtp}W) @{' '}
+                  {distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}
                 </p>
               </div>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-sky-300 font-semibold">

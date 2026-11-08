@@ -1326,7 +1326,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   Elev / HR
                                 </div>
                                 <div className="font-bold text-slate-900 dark:text-slate-100">
-                                  +{act.elevationGainMeters}m
+                                  +{distanceUnit === 'mi' ? `${Math.round(act.elevationGainMeters * 3.28084).toLocaleString()}ft` : `${act.elevationGainMeters}m`}
                                   {act.avgHr > 0 ? ` · ${act.avgHr}bpm` : ''}
                                 </div>
                               </div>
@@ -2470,7 +2470,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               delta:
                                 compareActivityA.avgPaceSecsPerKm &&
                                 compareActivityB.avgPaceSecsPerKm
-                                  ? `${compareActivityA.avgPaceSecsPerKm - compareActivityB.avgPaceSecsPerKm <= 0 ? '' : '+'}${compareActivityA.avgPaceSecsPerKm - compareActivityB.avgPaceSecsPerKm}s/km`
+                                  ? (() => {
+                                      const rawDiff =
+                                        compareActivityA.avgPaceSecsPerKm -
+                                        compareActivityB.avgPaceSecsPerKm;
+                                      const scaledDiff =
+                                        distanceUnit === 'mi'
+                                          ? Math.round(rawDiff * 1.609344)
+                                          : Math.round(rawDiff);
+                                      return `${scaledDiff <= 0 ? '' : '+'}${scaledDiff}s/${distanceUnit}`;
+                                    })()
                                   : '—',
                               good:
                                 (compareActivityA.avgPaceSecsPerKm || 0) <=
@@ -2906,7 +2915,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             : '—'}
                         </div>
                         <div className="text-slate-500 text-xs">
-                          {formatDuration(act.movingTimeSecs)} · +{act.elevationGainMeters}m
+                          {formatDuration(act.movingTimeSecs)} · +{distanceUnit === 'mi' ? `${Math.round(act.elevationGainMeters * 3.28084).toLocaleString()}ft` : `${act.elevationGainMeters}m`}
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums">
@@ -3086,7 +3095,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     · {formatDuration(selectedActivity.movingTimeSecs)}
                   </div>
                   <div className="text-xs font-mono text-slate-500 mt-0.5">
-                    Elevation +{selectedActivity.elevationGainMeters} m
+                    Elevation +{distanceUnit === 'mi' ? `${Math.round(selectedActivity.elevationGainMeters * 3.28084).toLocaleString()} ft` : `${selectedActivity.elevationGainMeters} m`}
                   </div>
                 </div>
 

@@ -484,7 +484,9 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                   );
                 }
 
-                const diffSecs = pt.runningIndoorPaceSecsKm - pt.runningOutdoorPaceSecsKm;
+                const rawDiffSecs = pt.runningIndoorPaceSecsKm - pt.runningOutdoorPaceSecsKm;
+                const diffSecs =
+                  distanceUnit === 'mi' ? Math.round(rawDiffSecs * 1.609344) : rawDiffSecs;
                 return (
                   <tr key={pt.durationLabel} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
                     <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100">
@@ -498,8 +500,8 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                     </td>
                     <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-300">
                       {diffSecs >= 0
-                        ? `-${diffSecs}s/km faster Outdoor`
-                        : `${Math.abs(diffSecs)}s/km faster Treadmill`}
+                        ? `-${diffSecs}s/${distanceUnit} faster Outdoor`
+                        : `${Math.abs(diffSecs)}s/${distanceUnit} faster Treadmill`}
                     </td>
                     <td className="py-3 px-4 text-right text-slate-900 dark:text-slate-100 font-semibold">
                       {formatPace(pt.runningSeasonBestPaceSecsKm, distanceUnit)}

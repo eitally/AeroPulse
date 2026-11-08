@@ -113,6 +113,7 @@ const DEFAULT_SAVED_CHARTS: CustomChartConfig[] = [
 export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
   activities,
   wellnessDays,
+  distanceUnit = 'mi',
   onOpenCoachWithPrompt,
 }) => {
   const [savedCharts, setSavedCharts] = useState<CustomChartConfig[]>(() => {
@@ -140,11 +141,31 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
+  const metricDefinitions = useMemo(
+    () =>
+      METRIC_DEFINITIONS.map((m) => {
+        if (m.key === 'weightKg') {
+          return { ...m, unit: distanceUnit === 'mi' ? 'lbs' : 'kg' };
+        }
+        if (m.key === 'activityDistanceKm') {
+          return { ...m, unit: distanceUnit === 'mi' ? 'mi' : 'km' };
+        }
+        if (m.key === 'avgPaceMinKm') {
+          return { ...m, unit: distanceUnit === 'mi' ? 'min/mi' : 'min/km' };
+        }
+        if (m.key === 'elevationGainMeters') {
+          return { ...m, unit: distanceUnit === 'mi' ? 'ft' : 'm' };
+        }
+        return m;
+      }),
+    [distanceUnit]
+  );
+
   const primaryDef =
-    METRIC_DEFINITIONS.find((m) => m.key === primaryMetric) || METRIC_DEFINITIONS[0];
+    metricDefinitions.find((m) => m.key === primaryMetric) || metricDefinitions[0];
   const secondaryDef =
     secondaryMetric !== 'NONE'
-      ? METRIC_DEFINITIONS.find((m) => m.key === secondaryMetric)
+      ? metricDefinitions.find((m) => m.key === secondaryMetric)
       : undefined;
 
   const loadPresetChart = (cfg: CustomChartConfig) => {
@@ -277,11 +298,18 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         case 'steps':
           return w && w.steps ? w.steps : null;
         case 'weightKg':
-          return w && w.weightKg ? w.weightKg : null;
+          return w && w.weightKg
+            ? distanceUnit === 'mi'
+              ? Number((w.weightKg * 2.20462262).toFixed(1))
+              : w.weightKg
+            : null;
         case 'activityDistanceKm':
           return dayActs.length > 0
             ? Number(
-                (dayActs.reduce((acc, a) => acc + a.distanceMeters, 0) / 1000).toFixed(2)
+                (
+                  dayActs.reduce((acc, a) => acc + a.distanceMeters, 0) /
+                  (distanceUnit === 'mi' ? 1609.344 : 1000)
+                ).toFixed(2)
               )
             : 0;
         case 'activityDurationMins':
@@ -338,11 +366,14 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         }
         case 'avgPaceMinKm': {
           const withPace = dayActs.filter((a) => (a.avgPaceSecsPerKm || 0) > 0);
+          const paceMultiplier = distanceUnit === 'mi' ? 1.609344 : 1;
           return withPace.length > 0
             ? Number(
                 (
-                  withPace.reduce((acc, a) => acc + (a.avgPaceSecsPerKm || 0) / 60, 0) /
-                  withPace.length
+                  withPace.reduce(
+                    (acc, a) => acc + ((a.avgPaceSecsPerKm || 0) * paceMultiplier) / 60,
+                    0
+                  ) / withPace.length
                 ).toFixed(2)
               )
             : null;
@@ -357,7 +388,10 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         }
         case 'elevationGainMeters':
           return dayActs.length > 0
-            ? dayActs.reduce((acc, a) => acc + a.elevationGainMeters, 0)
+            ? Math.round(
+                dayActs.reduce((acc, a) => acc + a.elevationGainMeters, 0) *
+                  (distanceUnit === 'mi' ? 3.28084 : 1)
+              )
             : 0;
         default:
           return null;
@@ -458,6 +492,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
     chartType,
     primaryDef,
     secondaryDef,
+    distanceUnit,
   ]);
 
   // Compute Pearson Correlation (r), R^2, and Linear Regression for Scatter Plots
@@ -590,7 +625,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
               onChange={(e) => setPrimaryMetric(e.target.value as ChartMetricKey)}
               className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
-              {METRIC_DEFINITIONS.map((m) => (
+              {metricDefinitions.map((m) => (
                 <option key={m.key} value={m.key}>
                   {m.label} ({m.unit})
                 </option>
@@ -611,7 +646,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
               className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               {chartType === 'TIME_SERIES' && <option value="NONE">None (Single Metric)</option>}
-              {METRIC_DEFINITIONS.map((m) => (
+              {metricDefinitions.map((m) => (
                 <option key={m.key} value={m.key}>
                   {m.label} ({m.unit})
                 </option>

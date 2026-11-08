@@ -672,10 +672,10 @@ export const INITIAL_TARGET_GOALS: TargetGoal[] = [
     sportCategory: 'Running',
     targetDate: '2026-12-31',
     priority: 'Milestone',
-    currentValue: 242, // 4:02 /km
-    targetValue: 232, // 3:52 /km
-    unit: 'sec/km',
-    notes: 'Measured via 30-min field test and Intervals.icu critical pace model.',
+    currentValue: 242, // 6:30 /mi (4:02 /km)
+    targetValue: 232, // 6:13 /mi (3:52 /km)
+    unit: 'pace',
+    notes: 'Measured via 30-min field test and critical pace model.',
   },
 ];
 
@@ -700,7 +700,7 @@ export const INITIAL_PLANNED_EVENTS: PlannedWorkoutEvent[] = [
     description: 'Easy conversational Zone 2 aerobic run with 6 neuromuscular hill strides at the finish.',
     plannedLoad: 62,
     plannedDurationSecs: 3600, // 60m
-    targetZoneSummary: 'Z2 Aerobic (4:45–5:00/km · HR 136–146 bpm)',
+    targetZoneSummary: 'Z2 Aerobic (7:38–8:02 /mi · HR 136–146 bpm)',
   },
 ];
 
