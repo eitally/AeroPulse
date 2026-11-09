@@ -21,6 +21,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { ThreshBrandWatermark } from './AeroPulseLogo';
 
 export type MorphReadinessMode =
   | 'AUTO'
@@ -678,18 +679,22 @@ ${dataLines.join('\n')}
   };
 
   return (
-    <section className="rounded-2xl liquid-glass border border-blue-500/25 overflow-hidden">
+    <section className="relative rounded-2xl liquid-glass overflow-hidden">
+      {/* Signature 2px THRESH Top Hairline */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
+      <ThreshBrandWatermark className="w-28 h-28 absolute -right-4 -top-4 text-[#0B4F9E] dark:text-sky-400" />
+
       {/* Top Bar: Collapsible Summary Header */}
       <div
-        className={`px-4 sm:px-5 py-3 bg-gradient-to-r from-blue-500/10 via-sky-500/5 to-emerald-500/10 ${
-          isExpanded ? 'border-b border-slate-200/70 dark:border-white/10' : ''
+        className={`relative px-4 sm:px-5 py-3 bg-slate-50/70 dark:bg-white/[0.02] ${
+          isExpanded ? 'border-b border-slate-200 dark:border-white/10' : ''
         } flex flex-wrap items-center justify-between gap-3`}
       >
         <div
           className="flex flex-wrap items-center gap-2.5 cursor-pointer select-none"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B4F9E] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs">
             <Sparkles className="w-3 h-3" />
             <span>{placementLabel}</span>
           </span>

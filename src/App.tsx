@@ -3437,7 +3437,41 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces in Floating Liquid Glass */}
+      {/* Subtle THRESH Branded Footer */}
+      <footer className="ap-container mt-8 pt-5 pb-4 border-t border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-3">
+          <AeroPulseLogo size="sm" />
+          <span className="hidden sm:inline text-slate-400 dark:text-slate-500">·</span>
+          <span className="hidden sm:inline font-mono text-[11px]">
+            Run &amp; Ride Threshold Telemetry
+          </span>
+        </div>
+        <div className="flex items-center gap-4 font-medium">
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            Zones &amp; FTP ({effectiveAthleteProfile.ftp}W)
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDataSourcesOpen(true)}
+            className="hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            Data Sources
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMetricsGuide(true)}
+            className="hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            Guide
+          </button>
+        </div>
+      </footer>
+
+      {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces */}
       <nav className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock">
         {(
           [
@@ -3451,7 +3485,7 @@ export default function App() {
             { id: 'activities', label: 'Activities', icon: Activity, match: ['activities'] },
             {
               id: 'totals',
-              label: 'Lab & Goals',
+              label: 'Lab',
               icon: Target,
               match: ['totals', 'curves', 'trends', 'charts'],
             },

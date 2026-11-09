@@ -111,15 +111,16 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         className="w-full max-w-lg h-full bg-white dark:bg-[#0B0F17] border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
       >
         {/* Drawer Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#111827]">
+        <div className="relative px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-white dark:bg-[#111827] overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-500 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[#0B4F9E]/10 dark:bg-sky-500/15 border border-[#0B4F9E]/25 dark:border-sky-500/30 flex items-center justify-center text-[#0B4F9E] dark:text-sky-400 shrink-0">
               <Bot className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                  AeroPulse AI Coach
+                  THRESH AI Coach
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -127,7 +128,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Context: {activeViewName} · Schedules directly to Training Calendar
+                Context: {activeViewName} · Schedules to Training Calendar
               </p>
             </div>
           </div>

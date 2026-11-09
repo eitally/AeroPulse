@@ -161,22 +161,23 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0] dark:bg-[#0C0C0E] text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-[#FC4C02]/30 selection:text-white">
+    <div className="min-h-screen bg-white dark:bg-[#0B0C0F] text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-[#EA580C]/30 selection:text-white">
       {/* Top Header */}
-      <header className="border-b border-stone-200/90 dark:border-slate-800/80 bg-[#FAF8F5]/90 dark:bg-[#0D1015]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
+      <header className="relative border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-[#0D1015]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
         <AeroPulseLogo
           size="md"
           showTagline
         />
 
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-400 liquid-glass-subtle border border-stone-200/80 dark:border-slate-800 px-2.5 py-1 rounded">
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-400 liquid-glass-subtle px-2.5 py-1 rounded-lg">
             <Lock className="w-3 h-3 text-[#10B981]" />
-            OAuth 2.0 PKCE / Local IndexedDB Vault
+            OAuth 2.0 PKCE / Local Vault
           </span>
           <button
             onClick={onEnterSandbox}
-            className="text-xs font-mono text-sky-700 dark:text-[#38BDF8] hover:text-slate-900 dark:hover:text-white bg-[#38BDF8]/10 hover:bg-[#38BDF8]/20 border border-[#38BDF8]/30 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
+            className="text-xs font-mono text-[#0B4F9E] dark:text-[#38BDF8] hover:text-slate-900 dark:hover:text-white bg-[#0B4F9E]/10 dark:bg-[#38BDF8]/10 hover:bg-[#0B4F9E]/20 border border-[#0B4F9E]/25 dark:border-[#38BDF8]/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-semibold"
           >
             <span>{hasSavedSession ? `Resume as ${resolvedAthleteName}` : 'Enter Live Sandbox'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -189,7 +190,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         {/* Left 7 Columns: Value Proposition & Multi-Athlete Capabilities */}
         <div className="lg:col-span-7 space-y-6">
           <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-bold tracking-tight text-slate-900 dark:text-white leading-[1.12]">
-            One Telemetry Lab for Your Training, Official Track PRs &amp; Coaching Roster.
+            Run &amp; Ride Threshold Intelligence, Official PRs &amp; AI Coaching.
           </h1>
 
           <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">

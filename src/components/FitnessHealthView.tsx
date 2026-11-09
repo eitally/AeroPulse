@@ -2852,128 +2852,257 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         ) : (
           <>
-            <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
-
       {/* ==========================================================================
-          3. TRAINING STATUS, SLEEP, HRV, THRESHOLD & AEROBIC STAMINA KPI CARDS
+          3. GRAPHIC BIOMETRIC INSTRUMENT KPI CARDS (CTL/ACWR, SLEEP RING, HRV CORRIDOR, THRESHOLD)
          ========================================================================== */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Fitness & Workload Ratio (CTL / ACWR) */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Fitness &amp; Status
-            </span>
-            <span
-              className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
-                latestDay.garminTrainingStatus
-              )}`}
-            >
-              {latestDay.garminTrainingStatus || 'Productive'}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between font-mono tabular-nums">
-            <div>
-              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                {latestDay.ctl.toFixed(1)}
-              </span>
-              <span className="text-[11px] font-sans text-slate-500 ml-1.5">CTL</span>
+        {/* Card 1: Fitness & Workload Ratio (CTL + ACWR Sweet-Spot Gauge) */}
+        {(() => {
+          const acwr = latestDay.loadRatio || 0.92;
+          const acwrMarkerPct = Math.max(4, Math.min(96, ((acwr - 0.5) / 1.1) * 100));
+          return (
+            <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Fitness &amp; Load
+                </span>
+                <span
+                  className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
+                    latestDay.garminTrainingStatus
+                  )}`}
+                >
+                  {latestDay.garminTrainingStatus || 'Productive'}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between font-mono tabular-nums">
+                <div>
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                    {latestDay.ctl.toFixed(1)}
+                  </span>
+                  <span className="text-xs font-sans text-slate-500 ml-1.5">CTL</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-[#0B4F9E] dark:text-sky-400">
+                    ACWR {acwr.toFixed(2)}x
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
+                  </span>
+                </div>
+              </div>
+              {/* Graphic ACWR Sweet-Spot Gauge Bar */}
+              <div className="space-y-1 pt-0.5">
+                <div className="relative h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800/90 overflow-hidden">
+                  {/* Optimal 0.80 - 1.30x Sweet Spot Band */}
+                  <div
+                    className="absolute top-0 bottom-0 bg-emerald-500/25 border-x border-emerald-500/50"
+                    style={{ left: '27%', width: '45%' }}
+                  />
+                  {/* High Strain Zone > 1.30x */}
+                  <div
+                    className="absolute top-0 bottom-0 right-0 bg-rose-500/20"
+                    style={{ width: '28%' }}
+                  />
+                  {/* Live Marker Dot */}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#0B4F9E] dark:bg-sky-400 ring-2 ring-white dark:ring-slate-950"
+                    style={{ left: `${acwrMarkerPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span>0.5x</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Optimal 0.8–1.3x</span>
+                  <span>1.6x</span>
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                ACWR {(latestDay.loadRatio || 0.85).toFixed(2)}x
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
-              </span>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
-        {/* Card 2: Overnight Sleep Score & Duration */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Overnight Sleep
-            </span>
-            <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold">
-              {latestWithSleep.date}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between font-mono tabular-nums">
-            <div>
-              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                {latestWithSleep.sleepScore || 78}
-              </span>
-              <span className="text-xs text-slate-500 ml-1">/ 100</span>
-            </div>
-            <div className="text-right">
-              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                {(latestWithSleep.sleepSecs / 3600).toFixed(1)} hrs
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                7d Debt {((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h
-              </span>
-            </div>
-          </div>
-        </div>
+        {/* Card 2: Overnight Sleep Score Radial Ring + 4-Stage Ribbon */}
+        {(() => {
+          const score = Math.max(0, Math.min(100, latestWithSleep.sleepScore || 78));
+          const circumference = 2 * Math.PI * 15.5;
+          const dashOffset = circumference - (score / 100) * circumference;
+          const ringColor = score >= 80 ? '#10b981' : score >= 68 ? '#0284c7' : '#f59e0b';
+          const deepPct = Math.min(30, Math.max(16, Math.round(score * 0.27)));
+          const remPct = Math.min(28, Math.max(16, Math.round(score * 0.25)));
+          const lightPct = Math.max(10, 95 - deepPct - remPct);
+          return (
+            <div className="rounded-2xl liquid-glass p-4 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Garmin Sleep
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h debt
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 font-mono tabular-nums">
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                    {(latestWithSleep.sleepSecs / 3600).toFixed(1)}
+                  </span>
+                  <span className="text-xs text-slate-500">hrs</span>
+                </div>
+                {/* 4-Stage Sleep Distribution Ribbon */}
+                <div className="space-y-1">
+                  <div className="h-2 w-full rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800">
+                    <div className="bg-[#0B4F9E]" style={{ width: `${deepPct}%` }} title={`Deep ${deepPct}%`} />
+                    <div className="bg-sky-400" style={{ width: `${remPct}%` }} title={`REM ${remPct}%`} />
+                    <div className="bg-emerald-500" style={{ width: `${lightPct}%` }} title={`Light ${lightPct}%`} />
+                    <div className="bg-amber-500 flex-1" title="Awake" />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                    <span>Deep {deepPct}%</span>
+                    <span>REM {remPct}%</span>
+                  </div>
+                </div>
+              </div>
 
-        {/* Card 3: Autonomic Recovery (Overnight HRV rMSSD) */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              HRV &amp; RHR
-            </span>
-            <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-              {latestWithHrv.hrvStatus || 'Balanced'}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between font-mono tabular-nums">
-            <div>
-              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                {latestWithHrv.hrvRMSSD}
-              </span>
-              <span className="text-xs text-slate-500 ml-1">ms</span>
+              {/* Circular Radial Score Gauge */}
+              <div className="relative w-14 h-14 flex items-center justify-center shrink-0">
+                <svg className="w-14 h-14 -rotate-90" viewBox="0 0 38 38">
+                  <circle
+                    cx="19"
+                    cy="19"
+                    r="15.5"
+                    fill="none"
+                    stroke="currentColor"
+                    className="text-slate-100 dark:text-slate-800"
+                    strokeWidth="3.4"
+                  />
+                  <circle
+                    cx="19"
+                    cy="19"
+                    r="15.5"
+                    fill="none"
+                    stroke={ringColor}
+                    strokeWidth="3.4"
+                    strokeDasharray={circumference.toFixed(1)}
+                    strokeDashoffset={dashOffset.toFixed(1)}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute text-center leading-none">
+                  <span className="text-sm font-mono font-extrabold text-slate-900 dark:text-white">
+                    {score}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                7d: {latestWithHrv.hrvBaseline7d} ms
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                RHR {latestDay.restingHR} bpm · VO2 {latestDay.vo2MaxCycling || 51}
-              </span>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
-        {/* Card 4: Threshold Power & Anaerobic Reserve (eFTP / W') */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Threshold <span className="font-mono text-[10px] opacity-75">(eFTP)</span>
-            </span>
-            <span className="text-xs font-mono text-orange-500 font-bold">
-              {((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between font-mono tabular-nums">
-            <div>
-              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                {latestDay.rideEftp || 316}W
-              </span>
-              <span className="text-xs text-slate-500 ml-1">Bike</span>
+        {/* Card 3: Autonomic Recovery (HRV rMSSD + 60d Baseline Corridor Gauge) */}
+        {(() => {
+          const hrv = latestWithHrv.hrvRMSSD || 54;
+          const low = latestWithHrv.hrvNormalBandLow || Math.round(hrv * 0.85);
+          const high = latestWithHrv.hrvNormalBandHigh || Math.round(hrv * 1.15);
+          const scaleMin = Math.max(15, low - 12);
+          const scaleMax = high + 12;
+          const span = Math.max(1, scaleMax - scaleMin);
+          const bandLeft = Math.max(5, Math.min(80, ((low - scaleMin) / span) * 100));
+          const bandWidth = Math.max(12, Math.min(85 - bandLeft, ((high - low) / span) * 100));
+          const dotLeft = Math.max(4, Math.min(96, ((hrv - scaleMin) / span) * 100));
+          return (
+            <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  HRV &amp; RHR
+                </span>
+                <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                  {latestWithHrv.hrvStatus || 'Balanced'}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between font-mono tabular-nums">
+                <div>
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                    {hrv}
+                  </span>
+                  <span className="text-xs text-slate-500 ml-1">ms</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    7d: {latestWithHrv.hrvBaseline7d} ms
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    RHR {latestDay.restingHR} bpm
+                  </span>
+                </div>
+              </div>
+              {/* 60-Day Baseline Corridor Gauge */}
+              <div className="space-y-1 pt-0.5">
+                <div className="relative h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800/90">
+                  <div
+                    className="absolute top-0 bottom-0 rounded-full bg-emerald-500/30 border border-emerald-500/60"
+                    style={{ left: `${bandLeft}%`, width: `${bandWidth}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-950"
+                    style={{ left: `${dotLeft}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span>Floor {low}ms</span>
+                  <span>Ceiling {high}ms</span>
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                Run {latestDay.runEftp || 340}W
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                W&apos; {((latestDay.rideWPrime || 25120) / 1000).toFixed(1)} kJ · Pmax {latestDay.ridePMax || 1204}W
-              </span>
+          );
+        })()}
+
+        {/* Card 4: Dual-Sport Threshold Power (Bike & Run eFTP + W' Gauge) */}
+        {(() => {
+          const bikeEftp = latestDay.rideEftp || 316;
+          const runEftp = latestDay.runEftp || 340;
+          const wPrimeKj = Number(((latestDay.rideWPrime || 25120) / 1000).toFixed(1));
+          const wPrimePct = Math.max(15, Math.min(100, Math.round((wPrimeKj / 32) * 100)));
+          return (
+            <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  THRESH · eFTP
+                </span>
+                <span className="text-xs font-mono text-[#EA580C] font-bold">
+                  {(bikeEftp / (latestDay.weightKg || 70)).toFixed(2)} W/kg
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between font-mono tabular-nums">
+                <div>
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                    {bikeEftp}W
+                  </span>
+                  <span className="text-xs text-slate-500 ml-1">Bike</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-[#0B4F9E] dark:text-sky-400">
+                    Run {runEftp}W
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    W&apos; {wPrimeKj} kJ · Pmax {latestDay.ridePMax || 1204}W
+                  </span>
+                </div>
+              </div>
+              {/* Dual-Sport Threshold & Anaerobic Capacity Bar */}
+              <div className="space-y-1 pt-0.5">
+                <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex gap-0.5">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#0B4F9E] to-[#EA580C] rounded-full"
+                    style={{ width: `${wPrimePct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span>Anaerobic Reserve (W&apos;)</span>
+                  <span className="text-[#EA580C] font-semibold">{wPrimeKj} kJ</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
       </section>
+
+      <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
 
       {/* ==========================================================================
           4. COMPACT AEROBIC STAMINA (CARDIAC DRIFT) & EFFICIENCY BAR

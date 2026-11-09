@@ -48,13 +48,13 @@
 
 @layer base {
   :root {
-    --ap-canvas-bg: #f6f4ef;
-    --ap-card-bg-start: rgba(255, 254, 251, 0.94);
-    --ap-card-bg-end: rgba(250, 248, 243, 0.86);
-    --ap-card-border: rgba(214, 211, 204, 0.88);
-    --ap-inset-bg: rgba(247, 244, 238, 0.78);
-    --ap-inset-border: rgba(220, 216, 208, 0.9);
-    --ap-electric-cyan: #0ea5e9;
+    --ap-canvas-bg: #ffffff;
+    --ap-card-bg-start: #ffffff;
+    --ap-card-bg-end: #ffffff;
+    --ap-card-border: #e2e8f0;
+    --ap-inset-bg: #f8fafc;
+    --ap-inset-border: #e2e8f0;
+    --ap-electric-cyan: #0b4f9e;
     --ap-luminous-cyan: #38bdf8;
     --ap-aero-orange: #ea580c;
     --ap-strava-orange: #fc4c02;
@@ -62,10 +62,10 @@
 
   .dark {
     --ap-canvas-bg: #0b0c0f;
-    --ap-card-bg-start: rgba(22, 24, 30, 0.86);
-    --ap-card-bg-end: rgba(15, 17, 22, 0.76);
-    --ap-card-border: rgba(255, 255, 255, 0.095);
-    --ap-inset-bg: rgba(16, 18, 24, 0.65);
+    --ap-card-bg-start: rgba(18, 21, 28, 0.92);
+    --ap-card-bg-end: rgba(13, 15, 21, 0.88);
+    --ap-card-border: rgba(255, 255, 255, 0.085);
+    --ap-inset-bg: rgba(15, 18, 25, 0.72);
     --ap-inset-border: rgba(255, 255, 255, 0.075);
   }
 
@@ -74,21 +74,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
-    background-color: var(--ap-canvas-bg);
-    background-image:
-      radial-gradient(at 10% 6%, rgba(37, 99, 235, 0.07) 0px, transparent 48%),
-      radial-gradient(at 90% 10%, rgba(234, 88, 12, 0.06) 0px, transparent 50%),
-      radial-gradient(at 50% 94%, rgba(16, 185, 129, 0.05) 0px, transparent 55%);
-    background-attachment: fixed;
+    background-color: #ffffff;
+    background-image: none;
     color: #0f172a;
   }
 
   .dark body {
     background-color: var(--ap-canvas-bg);
     background-image:
-      radial-gradient(at 14% 6%, rgba(37, 99, 235, 0.12) 0px, transparent 46%),
-      radial-gradient(at 86% 10%, rgba(234, 88, 12, 0.08) 0px, transparent 50%),
-      radial-gradient(at 50% 95%, rgba(16, 185, 129, 0.06) 0px, transparent 55%);
+      radial-gradient(at 14% 6%, rgba(11, 79, 158, 0.12) 0px, transparent 46%),
+      radial-gradient(at 86% 10%, rgba(234, 88, 12, 0.07) 0px, transparent 50%);
     background-attachment: fixed;
     color: #f1f5f9;
   }
@@ -105,24 +100,22 @@
 }
 
 /* ==========================================================================
-   Editorial Endurance Lab Surface & Component System (Adaptive Light & Dark)
+   THRESH Studio Surface & Component System (Pure White Light & Obsidian Dark)
    ========================================================================== */
+
+/* Signature THRESH Top Brand Hairline */
+.ap-brand-hairline {
+  background: linear-gradient(90deg, #0b4f9e 0%, #0284c7 55%, #ea580c 100%);
+}
 
 /* Primary Card Surface (.ap-card & .liquid-glass) */
 .liquid-glass,
 .ap-card {
-  background: linear-gradient(
-    165deg,
-    var(--ap-card-bg-start) 0%,
-    var(--ap-card-bg-end) 100%
-  );
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background: #ffffff;
   border: 1px solid var(--ap-card-border);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
-    0 8px 26px -10px rgba(28, 25, 23, 0.07),
-    0 2px 6px -1px rgba(28, 25, 23, 0.04);
+    0 4px 16px -6px rgba(15, 23, 42, 0.05),
+    0 1px 3px 0 rgba(15, 23, 42, 0.03);
 }
 
 .dark .liquid-glass,
@@ -132,99 +125,91 @@
     var(--ap-card-bg-start) 0%,
     var(--ap-card-bg-end) 100%
   );
-  backdrop-filter: blur(22px) saturate(175%);
-  -webkit-backdrop-filter: blur(22px) saturate(175%);
+  backdrop-filter: blur(20px) saturate(165%);
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
   border: 1px solid var(--ap-card-border);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
-    0 18px 40px -12px rgba(0, 0, 0, 0.55),
-    0 4px 12px -2px rgba(0, 0, 0, 0.35);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.09),
+    0 16px 36px -12px rgba(0, 0, 0, 0.52),
+    0 4px 10px -2px rgba(0, 0, 0, 0.32);
 }
 
 /* Floating Navigation Header Surface (.liquid-glass-header & .ap-header-bar) */
 .liquid-glass-header,
 .ap-header-bar {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 254, 251, 0.92) 0%,
-    rgba(248, 246, 240, 0.85) 100%
-  );
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(214, 211, 204, 0.9);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid #e2e8f0;
   box-shadow:
-    inset 0 1px 0 0 #ffffff,
-    0 10px 28px -8px rgba(28, 25, 23, 0.08),
-    0 2px 6px -1px rgba(28, 25, 23, 0.04);
+    0 8px 24px -8px rgba(15, 23, 42, 0.06),
+    0 1px 3px 0 rgba(15, 23, 42, 0.04);
 }
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
   background: linear-gradient(
     180deg,
-    rgba(20, 22, 28, 0.88) 0%,
-    rgba(13, 15, 20, 0.80) 100%
+    rgba(18, 21, 28, 0.92) 0%,
+    rgba(12, 14, 20, 0.86) 100%
   );
-  backdrop-filter: blur(24px) saturate(190%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
-    0 16px 36px -10px rgba(0, 0, 0, 0.62),
-    0 4px 10px -2px rgba(0, 0, 0, 0.42);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    0 16px 36px -10px rgba(0, 0, 0, 0.6),
+    0 4px 10px -2px rgba(0, 0, 0, 0.4);
 }
 
 /* Nested Inset Surface (.liquid-glass-subtle & .ap-card-inset) */
 .liquid-glass-subtle,
 .ap-card-inset {
-  background: var(--ap-inset-bg);
-  border: 1px solid var(--ap-inset-border);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.82);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
 .dark .liquid-glass-subtle,
 .dark .ap-card-inset {
   background: var(--ap-inset-bg);
   border: 1px solid var(--ap-inset-border);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
 }
 
 /* Segmented Switcher Track (.liquid-capsule-track & .ap-pill-track) */
 .liquid-capsule-track,
 .ap-pill-track {
-  background: rgba(28, 25, 23, 0.055);
-  border: 1px solid rgba(28, 25, 23, 0.075);
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.05);
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
 }
 
 .dark .liquid-capsule-track,
 .dark .ap-pill-track {
-  background: rgba(6, 7, 10, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.48);
+  background: rgba(8, 10, 15, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 /* Raised Active Switcher Pill (.liquid-capsule-active & .ap-pill-active) */
 .liquid-capsule-active,
 .ap-pill-active {
-  background: linear-gradient(180deg, #ffffff 0%, #faf8f5 100%);
-  border: 1px solid rgba(214, 211, 204, 0.95);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   box-shadow:
-    inset 0 1px 0 0 #ffffff,
-    0 2px 5px -1px rgba(28, 25, 23, 0.08),
-    0 1px 2px 0 rgba(28, 25, 23, 0.04);
+    0 1px 3px 0 rgba(15, 23, 42, 0.06),
+    0 1px 2px -1px rgba(15, 23, 42, 0.04);
 }
 
 .dark .liquid-capsule-active,
 .dark .ap-pill-active {
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.15) 0%,
-    rgba(255, 255, 255, 0.085) 100%
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.08) 100%
   );
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
     0 2px 8px -1px rgba(0, 0, 0, 0.45);
 }
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 interface AeroPulseLogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -7,43 +7,49 @@ interface AeroPulseLogoProps {
   badgeTone?: 'cyan' | 'orange' | 'emerald';
 }
 
+/**
+ * THRESH — "01: The Inflection Ring" Brand Mark & Wordmark
+ * Models the physiological S-curve shared by runners (Lactate Threshold Pace)
+ * and cyclists (FTP deflection) crossing the aerobic ring into Signal Orange.
+ * Automatically adapts to a Pure White badge in Light Mode and Obsidian in Dark Mode.
+ */
 export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   size = 'md',
   showTagline = false,
   badgeText,
   badgeTone = 'cyan',
 }) => {
+  const gradId = useId();
   const boxClass =
     size === 'sm'
-      ? 'w-7 h-7 rounded-lg'
+      ? 'w-8 h-8 rounded-xl'
       : size === 'lg'
-        ? 'w-10 h-10 rounded-xl'
-        : 'w-8 h-8 rounded-xl';
+        ? 'w-11 h-11 rounded-2xl'
+        : 'w-9 h-9 rounded-xl';
 
   const svgClass =
-    size === 'sm' ? 'w-4 h-4' : size === 'lg' ? 'w-6 h-6' : 'w-5 h-5';
+    size === 'sm' ? 'w-5 h-5' : size === 'lg' ? 'w-7 h-7' : 'w-6 h-6';
 
   const titleClass =
     size === 'sm'
-      ? 'text-sm font-extrabold tracking-tight'
+      ? 'text-sm sm:text-base font-black tracking-tight'
       : size === 'lg'
-        ? 'text-lg sm:text-xl font-extrabold tracking-tight'
-        : 'text-base sm:text-lg font-extrabold tracking-tight';
+        ? 'text-xl sm:text-2xl font-black tracking-tight'
+        : 'text-base sm:text-lg font-black tracking-tight';
 
   const badgeToneClasses =
     badgeTone === 'orange'
-      ? 'bg-[#F97316]/15 text-[#F97316] border-[#F97316]/40'
+      ? 'bg-[#EA580C]/10 text-[#EA580C] border-[#EA580C]/30'
       : badgeTone === 'emerald'
-        ? 'bg-[#10B981]/15 text-[#10B981] border-[#10B981]/40'
-        : 'bg-[#38BDF8]/15 text-[#38BDF8] border-[#38BDF8]/40';
+        ? 'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30'
+        : 'bg-[#0B4F9E]/10 dark:bg-[#38BDF8]/15 text-[#0B4F9E] dark:text-[#38BDF8] border-[#0B4F9E]/25 dark:border-[#38BDF8]/35';
 
   return (
     <div className="inline-flex items-center gap-2.5 select-none">
-      {/* Vector Pulse Crest */}
+      {/* Adaptive Vector Inflection Ring Badge (Pure White in Light Mode, Obsidian in Dark Mode) */}
       <div
-        className={`${boxClass} relative flex items-center justify-center bg-[#0B0F17] border border-sky-500/40 shadow-sm overflow-hidden shrink-0`}
+        className={`${boxClass} relative flex items-center justify-center bg-white dark:bg-[#0B0F17] border border-slate-200 dark:border-sky-500/30 shadow-2xs overflow-hidden shrink-0 transition-colors`}
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-[#38BDF8]/25 via-transparent to-[#F97316]/25 pointer-events-none" />
         <svg
           viewBox="0 0 32 32"
           fill="none"
@@ -52,41 +58,50 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
           aria-hidden="true"
         >
           <defs>
-            <linearGradient id="ap-cyan-grad" x1="2" y1="4" x2="30" y2="28" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#38BDF8" />
-              <stop offset="100%" stopColor="#0284C7" />
-            </linearGradient>
-            <linearGradient id="ap-orange-grad" x1="4" y1="24" x2="29" y2="8" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#F97316" />
-              <stop offset="100%" stopColor="#FB923C" />
+            <linearGradient
+              id={gradId}
+              x1="4"
+              y1="24"
+              x2="28"
+              y2="8"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop offset="0%" stopColor="#0B4F9E" />
+              <stop offset="48%" stopColor="#0284C7" />
+              <stop offset="68%" stopColor="#EA580C" />
+              <stop offset="100%" stopColor="#F97316" />
             </linearGradient>
           </defs>
-          {/* Outer Aerodynamic Chevrons */}
-          <path
-            d="M5 22L12.5 7.5L17 16.5"
-            stroke="url(#ap-cyan-grad)"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          {/* Outer Aerobic Base Ring */}
+          <circle
+            cx="16"
+            cy="16"
+            r="10.2"
+            className="stroke-[#0B4F9E] dark:stroke-[#38BDF8]"
+            strokeWidth="3.2"
           />
-          {/* High-Frequency Pulse Wave */}
+          {/* White / Obsidian Knockout Halo for Crisp Crossover */}
           <path
-            d="M3.5 18.5H9L12.2 11L15.8 23.5L19.8 9.5L23 18.5H28.5"
-            stroke="url(#ap-orange-grad)"
-            strokeWidth="2.4"
+            d="M3.5 23.5C11 23.5 13.5 19.5 16 16C18.5 12.5 21 8.5 28.5 8.5"
+            className="stroke-white dark:stroke-[#0B0F17]"
+            strokeWidth="5.4"
             strokeLinecap="round"
-            strokeLinejoin="round"
           />
-          {/* Telemetry Apex Node */}
-          <circle cx="19.8" cy="9.5" r="2" fill="#38BDF8" />
+          {/* Lactate / Power Threshold S-Curve Inflection */}
+          <path
+            d="M3.5 23.5C11 23.5 13.5 19.5 16 16C18.5 12.5 21 8.5 28.5 8.5"
+            stroke={`url(#${gradId})`}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+          />
         </svg>
       </div>
 
-      {/* Brand Wordmark & Optional Tagline */}
+      {/* THRESH Brand Wordmark & Optional Tagline */}
       <div className="leading-none">
         <div className="flex items-center gap-1.5">
-          <span className={`${titleClass} text-slate-900 dark:text-white`}>
-            Aero<span className="text-[#38BDF8]">Pulse</span>
+          <span className={`${titleClass} font-display text-slate-900 dark:text-white`}>
+            THR<span className="text-[#EA580C]">ESH</span>
           </span>
           {badgeText && (
             <span
@@ -97,11 +112,34 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
           )}
         </div>
         {showTagline && (
-          <span className="block text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
-            PRECISION PHYSIOLOGY &amp; COACHING TELEMETRY
+          <span className="block text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5 tracking-wider uppercase">
+            RUN &amp; RIDE THRESHOLD INTELLIGENCE
           </span>
         )}
       </div>
     </div>
   );
 };
+
+/**
+ * Subtle non-interactive THRESH Inflection Ring watermark for hero cards
+ */
+export const ThreshBrandWatermark: React.FC<{ className?: string }> = ({
+  className = 'w-36 h-36',
+}) => (
+  <svg
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`pointer-events-none select-none opacity-[0.04] dark:opacity-[0.06] ${className}`}
+    aria-hidden="true"
+  >
+    <circle cx="32" cy="32" r="21" stroke="currentColor" strokeWidth="5.5" />
+    <path
+      d="M6 47C22 47 27 39 32 32C37 25 42 17 58 17"
+      stroke="#EA580C"
+      strokeWidth="6"
+      strokeLinecap="round"
+    />
+  </svg>
+);
