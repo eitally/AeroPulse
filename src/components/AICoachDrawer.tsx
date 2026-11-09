@@ -44,14 +44,22 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
+  const submitChatMessage = () => {
+    if (isSendingChat) return;
+    const textToSend =
+      input.trim() ||
+      'Analyze my Garmin Sleep, HRV, and CTL/TSB readiness and prescribe today’s optimal workout.';
+    onSendChatMessage(textToSend);
+    setInput('');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isSendingChat) return;
-    onSendChatMessage(input.trim());
-    setInput('');
+    submitChatMessage();
   };
 
   const handleSaveKeySubmit = async (e: React.FormEvent) => {
@@ -93,33 +101,36 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
               <Bot className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                AeroPulse AI Training & Program Coach
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                  AeroPulse AI Coach
+                </h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  {hasGeminiKey ? 'Gemini Live' : 'AI Ready'}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 Context: {activeViewName} · Schedules directly to Training Calendar
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {onSaveGeminiApiKey && (
+            {onSaveGeminiApiKey && !hasGeminiKey && (
               <button
                 type="button"
                 onClick={() => setShowKeyForm((prev) => !prev)}
-                className={`min-h-[30px] px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold flex items-center gap-1.5 border transition-colors ${
-                  hasGeminiKey
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                }`}
-                title="Configure Google AI Studio Gemini API Key"
+                className="min-h-[30px] px-2 py-1 rounded-lg text-[10px] font-mono text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-800 transition-colors flex items-center gap-1"
+                title="Optional: Override or add custom Gemini API Key"
               >
                 <KeyRound className="w-3 h-3" />
-                <span>{hasGeminiKey ? 'Gemini Live' : 'Set API Key'}</span>
+                <span>Key</span>
               </button>
             )}
             <button
+              type="button"
               onClick={onClose}
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               aria-label="Close AI Coach drawer"
             >
               <X className="w-4 h-4" />
@@ -127,7 +138,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
           </div>
         </div>
 
-        {/* Collapsible Gemini API Key Bar */}
+        {/* Optional Collapsible Gemini API Key Override Bar */}
         {showKeyForm && onSaveGeminiApiKey && (
           <form
             onSubmit={handleSaveKeySubmit}
@@ -135,36 +146,32 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
           >
             <div className="flex items-center justify-between text-[11px]">
               <span className="font-semibold text-slate-800 dark:text-slate-200">
-                Google AI Studio API Key (<code className="font-mono">GEMINI_API_KEY</code>)
+                Optional Custom Gemini API Key (<code className="font-mono">GEMINI_API_KEY</code>)
               </span>
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-600 dark:text-sky-400 hover:underline font-mono text-[10px]"
+              <button
+                type="button"
+                onClick={() => setShowKeyForm(false)}
+                className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-[10px] font-mono"
               >
-                Get free key at aistudio.google.com ↗
-              </a>
+                Close ✕
+              </button>
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="password"
                 value={apiKeyDraft}
                 onChange={(e) => setApiKeyDraft(e.target.value)}
-                placeholder="Paste AIzaSy... Gemini API key (or leave blank for built-in Physiology Engine)"
+                placeholder="Paste AIzaSy... key (or leave blank to use server env / Physiology Engine)"
                 className="flex-1 min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
                 type="submit"
                 disabled={savingKey}
-                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors cursor-pointer"
               >
-                {savingKey ? 'Saving...' : 'Save Key'}
+                {savingKey ? 'Saving...' : 'Save'}
               </button>
             </div>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              Saved locally in your browser & synced to your active server session. When no key is set, AeroPulse automatically uses its built-in deterministic Physiology Engine so workout generation and readiness coaching always work offline.
-            </p>
           </form>
         )}
 
@@ -318,19 +325,24 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
           className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] flex items-center gap-2"
         >
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about cycling/running plans, sleep, or schedule workouts..."
+            placeholder="Ask about cycling/running plans, sleep, or click Send for today's Rx..."
             className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             type="submit"
-            disabled={isSendingChat || !input.trim()}
-            className="min-h-[40px] px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            disabled={isSendingChat}
+            onClick={(e) => {
+              e.preventDefault();
+              submitChatMessage();
+            }}
+            className="min-h-[40px] px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Send</span>
+            <span>{isSendingChat ? 'Sending...' : 'Send'}</span>
           </button>
         </form>
       </div>

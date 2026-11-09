@@ -114,8 +114,17 @@ const initialEnvGeminiKey = [
   cachedSession.geminiApiKey,
   process.env.GEMINI_API_KEY,
   process.env.GOOGLE_API_KEY,
+  process.env.VITE_GEMINI_API_KEY,
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+  process.env.API_KEY,
 ]
-  .map((k) => (k || '').trim())
+  .map((k) =>
+    (k || '')
+      .trim()
+      .replace(/^["']+|["']+$/g, '')
+      .trim()
+  )
   .find((k) => k && k !== 'MY_GEMINI_API_KEY' && k !== 'YOUR_GEMINI_API_KEY') || '';
 
 const runtimeStore: RuntimeSessionStore = {
@@ -455,9 +464,16 @@ function getEffectiveGeminiApiKey(req?: Request): string {
     runtimeStore.geminiApiKey,
     process.env.GEMINI_API_KEY,
     process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+    process.env.API_KEY,
   ];
   for (const c of candidates) {
-    const clean = (c || '').trim();
+    const clean = (c || '')
+      .trim()
+      .replace(/^["']+|["']+$/g, '')
+      .trim();
     if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
       return clean;
     }
@@ -473,11 +489,6 @@ function getGeminiClient(req?: Request): GoogleGenAI | null {
   }
   return new GoogleGenAI({
     apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
   });
 }
 
@@ -485,7 +496,12 @@ async function generateGeminiContentWithFallback(
   ai: GoogleGenAI,
   params: { contents: string; config?: Record<string, any> }
 ) {
-  const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-2.0-flash'];
+  const candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-3.8-flash',
+  ];
   let lastError: unknown = null;
   for (const model of candidateModels) {
     try {
@@ -4060,7 +4076,7 @@ function buildDeterministicCoachChatResponse(
     ? `Your overnight **HRV is ${hrv} ms (${hrvStatus})** alongside a **CTL of ${ctl}** and **TSB of ${tsb}** (${statusLabel}). Because your autonomic nervous system shows mild suppression relative to your **${hrvBaseline} ms** baseline, today's optimal physiological move is to **modulate high-glycolytic VO2/Anaerobic stress** and focus on **Zone 2 Aerobic Base (${Math.round(ftp * 0.65)}–${Math.round(ftp * 0.73)}W, HR < ${Math.round(lthr * 0.85)} bpm)** for the next 24–36 hours before hitting your key threshold session.`
     : `Your morning **HRV is ${hrv} ms (${hrvStatus})**, **Sleep Score is ${sleepScore}/100 (${sleepHours}h)**, and **Fitness (CTL) stands at ${ctl}** with **Form (TSB) at ${tsb}** (${statusLabel}). Your autonomic baseline is well-positioned to absorb a structured **Sweet Spot / Lactate Threshold progression (~${Math.round(ftp * 0.9)}–${Math.round(ftp * 0.95)}W, LTHR ${lthr} bpm)** today.`;
 
-  const reply = `${readinessAnalysis}\n\nI have generated **${proposedWorkouts.length} structured workouts** below tailored to your **${ftp}W FTP** and current readiness—click **Schedule** on any card to push it directly to your Training Calendar.\n\n*(Note: Running on AeroPulse's built-in Physiology Engine. To enable live generative Gemini LLM responses, click **API Key** in the top-right of this drawer and paste a free key from [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) or set \`GEMINI_API_KEY\` in your environment variables.)*`;
+  const reply = `${readinessAnalysis}\n\nI have generated **${proposedWorkouts.length} structured workouts** below tailored to your **${ftp}W FTP** and current readiness—click **Schedule** on any card to push it directly to your Training Calendar.`;
 
   return {
     reply,
