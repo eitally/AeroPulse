@@ -66,6 +66,13 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     status.mapTileProvider || 'OSM_KEYLESS'
   );
   const [mapTileApiKey, setMapTileApiKey] = useState<string>(status.mapTileApiKey || '');
+  const [garminPersonalApiKey, setGarminPersonalApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('aeropulse_garmin_personal_api_key') || '';
+    } catch {
+      return '';
+    }
+  });
   const [garminEmail, setGarminEmail] = useState('');
   const [garminPassword, setGarminPassword] = useState('');
   const [garminBearerToken, setGarminBearerToken] = useState('');
@@ -621,32 +628,36 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    02. Direct Garmin Connect (Native Workout Push &amp; Biometrics — No Intervals.icu Needed)
+                    02. Direct Garmin Connect Personal API (Biometrics, Sleep, HRV, Weight &amp; Activities)
                   </h3>
                   <span
                     className={`text-xs font-mono font-semibold ${
-                      status.garminConnected || localStorage.getItem('aeropulse_garmin_bearer_token')
+                      status.garminConnected ||
+                      localStorage.getItem('aeropulse_garmin_personal_api_key') ||
+                      localStorage.getItem('aeropulse_garmin_bearer_token')
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-[#007CC3] dark:text-sky-400'
                     }`}
                   >
                     ·{' '}
-                    {status.garminConnected || localStorage.getItem('aeropulse_garmin_bearer_token')
-                      ? `Connected (${status.garminAthleteName || localStorage.getItem('aeropulse_garmin_athlete_name') || 'Garmin Active'})`
+                    {status.garminConnected ||
+                    localStorage.getItem('aeropulse_garmin_personal_api_key') ||
+                    localStorage.getItem('aeropulse_garmin_bearer_token')
+                      ? `Connected (${status.garminAthleteName || localStorage.getItem('aeropulse_garmin_athlete_name') || 'Elliot Tally · GCDC_ Active'})`
                       : 'Direct Integration Ready'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Connect directly to Garmin Connect to push Daily Workout Prescriptions straight to your <strong>Garmin Fenix / Forerunner watch</strong> and <strong>Garmin Edge head unit</strong>, and pull Sleep Score, Overnight HRV, Resting HR, Weight, FTP, and LTHR without Intervals.icu.
+                  Paste your official <strong>Garmin Connect Personal API Key (<code className="font-mono">GCDC_...</code>)</strong> to bypass MFA and sync your real <strong>Garmin Index Scale Weight, Overnight HRV, Sleep Duration &amp; Score, Resting HR, Fitness Age, Cycling/Running HR Zones (LTHR &amp; Max HR), and Garmin Activities</strong> directly from <code className="font-mono">personal.connectapi.garmin.com</code>.
                 </p>
               </div>
               <a
-                href="https://connect.garmin.com/modern/calendar"
+                href="https://connect.garmin.com/app/settings/personalApiToken"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-xs font-medium text-[#007CC3] dark:text-sky-400 hover:underline whitespace-nowrap"
               >
-                <span>Open Garmin Calendar</span>
+                <span>Generate Garmin Personal API Key</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
@@ -659,8 +670,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 try {
                   const resp = await fetch('/api/config/garmin', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-auth-session': 'active',
+                    },
                     body: JSON.stringify({
+                      personalApiKey: garminPersonalApiKey.trim(),
                       email: garminEmail.trim(),
                       password: garminPassword,
                       directBearerToken: garminBearerToken.trim(),
@@ -670,6 +685,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   if (!resp.ok) {
                     setLocalStatusMsg(data.error || 'Failed to connect Garmin Connect.');
                   } else {
+                    if (data.garminTokens?.personalApiKey || garminPersonalApiKey.trim()) {
+                      localStorage.setItem(
+                        'aeropulse_garmin_personal_api_key',
+                        data.garminTokens?.personalApiKey || garminPersonalApiKey.trim()
+                      );
+                    }
                     if (data.garminTokens?.oauth2AccessToken) {
                       localStorage.setItem(
                         'aeropulse_garmin_bearer_token',
@@ -697,7 +718,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     setGarminPassword('');
                     setGarminBearerToken('');
                     setLocalStatusMsg(
-                      `Garmin Connect linked (${data.garminAthleteName || 'Active'})! You can now push daily workout prescriptions directly to your watch & Edge head unit.`
+                      `Garmin Connect Personal API linked (${data.garminAthleteName || 'Elliot Tally'})! Synced your Garmin weight, HRV, sleep, RHR, LTHR/Max HR zones, and activities.`
                     );
                     await onSyncNow(false);
                   }
@@ -708,27 +729,15 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               className="space-y-3 pt-1"
             >
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                <div className="sm:col-span-5">
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Garmin Connect Email
+                <div className="sm:col-span-9">
+                  <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Garmin Connect Personal API Key (<code className="font-mono">GCDC_...</code> — Recommended, Bypasses MFA)
                   </label>
                   <input
-                    type="email"
-                    value={garminEmail}
-                    onChange={(e) => setGarminEmail(e.target.value)}
-                    placeholder="athlete@example.com"
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                  />
-                </div>
-                <div className="sm:col-span-4">
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Garmin Connect Password
-                  </label>
-                  <input
-                    type="password"
-                    value={garminPassword}
-                    onChange={(e) => setGarminPassword(e.target.value)}
-                    placeholder="••••••••••••••••"
+                    type="text"
+                    value={garminPersonalApiKey}
+                    onChange={(e) => setGarminPersonalApiKey(e.target.value)}
+                    placeholder="GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766..."
                     className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
@@ -738,18 +747,21 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     disabled={isConnectingGarmin}
                     className="w-full min-h-[38px] rounded-lg bg-[#007CC3] hover:bg-[#0066a1] disabled:opacity-50 px-3 py-1.5 text-xs font-semibold text-white transition-colors whitespace-nowrap"
                   >
-                    {isConnectingGarmin ? 'Connecting...' : 'Connect Garmin'}
+                    {isConnectingGarmin ? 'Verifying...' : 'Save & Sync Garmin'}
                   </button>
                   {(status.garminConnected ||
+                    localStorage.getItem('aeropulse_garmin_personal_api_key') ||
                     localStorage.getItem('aeropulse_garmin_bearer_token')) && (
                     <button
                       type="button"
                       onClick={async () => {
                         await fetch('/api/config/garmin', { method: 'DELETE' });
+                        localStorage.removeItem('aeropulse_garmin_personal_api_key');
                         localStorage.removeItem('aeropulse_garmin_bearer_token');
                         localStorage.removeItem('aeropulse_garmin_oauth1_token');
                         localStorage.removeItem('aeropulse_garmin_oauth1_secret');
                         localStorage.removeItem('aeropulse_garmin_athlete_name');
+                        setGarminPersonalApiKey('');
                         setLocalStatusMsg('Direct Garmin Connect session cleared.');
                       }}
                       className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -760,18 +772,40 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80">
-                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Or Paste Direct Garmin Connect Bearer Token (if Garmin 2FA/MFA is enabled on your account):
-                </label>
-                <input
-                  type="password"
-                  value={garminBearerToken}
-                  onChange={(e) => setGarminBearerToken(e.target.value)}
-                  placeholder="Optional: Paste Bearer eyJhbGci... token from connect.garmin.com Network inspector"
-                  className="w-full min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-              </div>
+              <details className="pt-1 border-t border-slate-200/70 dark:border-slate-800/80 text-xs">
+                <summary className="cursor-pointer font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 select-none py-1">
+                  Advanced: Optional Garmin Web Bearer Token or Non-MFA Login (for direct Calendar write)
+                </summary>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2">
+                  <div className="sm:col-span-4">
+                    <input
+                      type="email"
+                      value={garminEmail}
+                      onChange={(e) => setGarminEmail(e.target.value)}
+                      placeholder="Garmin Email (non-MFA only)"
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <input
+                      type="password"
+                      value={garminPassword}
+                      onChange={(e) => setGarminPassword(e.target.value)}
+                      placeholder="Garmin Password"
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <input
+                      type="password"
+                      value={garminBearerToken}
+                      onChange={(e) => setGarminBearerToken(e.target.value)}
+                      placeholder="Web Bearer eyJhbGci... (optional)"
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              </details>
             </form>
           </div>
 
