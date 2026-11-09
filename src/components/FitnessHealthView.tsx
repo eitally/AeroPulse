@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Calendar,
@@ -154,6 +154,16 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   );
   const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState<boolean>(false);
+  const [isCompactMobile, setIsCompactMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setIsCompactMobile(window.innerWidth < 640);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Forward PMC "What-If" Tapering / Build Simulator state
   const [forwardDays, setForwardDays] = useState<0 | 14 | 28 | 42>(0);
@@ -851,7 +861,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </button>
 
               {isDatePickerOpen && (
-                <div className="absolute left-0 mt-2 z-30 w-72 rounded-2xl liquid-glass p-4 space-y-3 text-xs">
+                <div className="absolute left-0 mt-2 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl">
                   <div className="font-bold text-slate-900 dark:text-slate-100">
                     Custom Date Range
                   </div>
@@ -995,7 +1005,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             </button>
 
             {isCustomizeOpen && (
-              <div className="absolute right-0 top-10 z-30 w-72 rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl border border-slate-300/80 dark:border-white/15">
+              <div className="absolute right-0 top-10 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl border border-slate-300/80 dark:border-white/15">
                 <div className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/70 dark:border-white/10 pb-1.5 flex items-center justify-between">
                   <span>Synchronized Chart Strips</span>
                   <button
@@ -1115,9 +1125,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           </div>
         </div>
 
-        {/* Fixed 2-Line Daily Activities Bar (58px static height so the SVG chart NEVER shifts vertically) */}
-        <div className="px-4 sm:px-5 py-1.5 bg-white/30 dark:bg-slate-950/35 border-b border-slate-200/60 dark:border-white/10 h-[58px] min-h-[58px] max-h-[58px] overflow-hidden flex items-start justify-between gap-3 text-xs">
-          <div className="flex flex-wrap items-center gap-1.5 max-h-[46px] overflow-hidden flex-1">
+        {/* Daily Activities Bar (responsive wrapping on mobile, static 58px height on sm+ so desktop SVG never shifts) */}
+        <div className="px-3 sm:px-5 py-1.5 bg-white/30 dark:bg-slate-950/35 border-b border-slate-200/60 dark:border-white/10 min-h-[52px] sm:h-[58px] sm:min-h-[58px] sm:max-h-[58px] overflow-hidden flex items-start justify-between gap-2 sm:gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 sm:max-h-[46px] sm:overflow-hidden flex-1">
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
             </span>
@@ -1269,7 +1279,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 setCustomEnd(endStr);
                 setRangePreset('CUSTOM');
               }}
-              height={530}
+              height={isCompactMobile ? 380 : 530}
             />
           </div>
         )}

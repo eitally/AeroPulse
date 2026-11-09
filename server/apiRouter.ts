@@ -3,18 +3,29 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
-  DEFAULT_GARMIN_PERSONAL_API_KEY,
   GarminSessionStore,
   authenticateGarminConnect,
   clearGarminSession,
   fetchDirectGarminProfileAndWellness,
+  getEnvGarminPersonalApiKey,
   loadGarminSession,
   normalizeGarminPersonalApiActivities,
   pushWorkoutToGarminConnect,
   saveGarminSession,
 } from './garminConnectService';
+import {
+  clearSessionCookie,
+  escapeHtml,
+  hasValidSessionToken,
+  isSafeExternalUrl,
+  resolveSafeOrigin,
+  safeJsonForScript,
+  securityHeadersMiddleware,
+  setSessionCookie,
+} from './securityUtils';
 
 export const apiRouter = express.Router();
+apiRouter.use(securityHeadersMiddleware);
 
 const SESSION_CACHE_FILE = '/tmp/aeropulse-runtime-session.json';
 const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-segments-by-activity.json';
@@ -22,17 +33,32 @@ const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-routes-by-activity.json';
 const STRAVA_KUDOS_CACHE_FILE = '/tmp/aeropulse-strava-kudos.json';
 const GARMIN_SESSION_DIR = '/tmp/aeropulse-garmin';
 
-function isAuthenticatedRequest(req?: Request): boolean {
-  if (!req) return true;
+function hasExplicitCredentialHeader(req?: Request): boolean {
+  if (!req) return false;
   return Boolean(
-    req.headers['x-auth-session'] === 'active' ||
-      String(req.headers['x-strava-refresh-token'] || '').trim() ||
+    String(req.headers['x-strava-refresh-token'] || '').trim() ||
       String(req.headers['x-strava-access-token'] || '').trim() ||
       String(req.headers['x-intervals-api-key'] || '').trim() ||
       String(req.headers['x-garmin-personal-api-key'] || '').trim() ||
       String(req.headers['x-garmin-bearer-token'] || '').trim() ||
       String(req.headers['x-garmin-oauth1-token'] || '').trim()
   );
+}
+
+function isAuthenticatedRequest(req?: Request): boolean {
+  if (!req) return true;
+  if (hasValidSessionToken(req) || hasExplicitCredentialHeader(req)) {
+    return true;
+  }
+  // Allow same-origin browser sessions that already passed the client auth gate
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (
+    req.headers['x-auth-session'] === 'active' &&
+    (secFetchSite === 'same-origin' || secFetchSite === 'same-site')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function getGarminScopeKey(req?: Request): string {
@@ -80,16 +106,12 @@ function getActiveGarminSession(req?: Request): GarminSessionStore | null {
       oauth1TokenSecret: headerOauth1Secret || undefined,
     };
   }
-  const fallbackPersonalKey = (
-    process.env.GARMIN_PERSONAL_API_KEY ||
-    DEFAULT_GARMIN_PERSONAL_API_KEY ||
-    ''
-  ).trim();
+  const fallbackPersonalKey = getEnvGarminPersonalApiKey();
   if (fallbackPersonalKey) {
+    const envGarminName = (process.env.GARMIN_ATHLETE_NAME || '').trim();
     return {
       personalApiKey: fallbackPersonalKey,
-      displayName: 'eitally',
-      fullName: 'Elliot Tally',
+      ...(envGarminName ? { fullName: envGarminName } : {}),
     };
   }
   return null;
@@ -916,7 +938,10 @@ function isGenericName(name?: string | null): boolean {
 }
 
 function getStravaTokenRotationPayload(req?: Request) {
-  const { clientId, clientSecret, refreshToken, accessToken, expiresAt } =
+  if (req && !isAuthenticatedRequest(req)) {
+    return undefined;
+  }
+  const { clientId, refreshToken, accessToken, expiresAt } =
     getEffectiveStravaClientConfig(req);
   if (!refreshToken && !accessToken) {
     return undefined;
@@ -927,7 +952,6 @@ function getStravaTokenRotationPayload(req?: Request) {
     refreshToken: refreshToken || undefined,
     expiresAt: expiresAt || undefined,
     clientId: clientId || undefined,
-    clientSecret: clientSecret || undefined,
     athleteId: cached?.athleteId || undefined,
     athleteName: cached?.athleteName || undefined,
   };
@@ -1128,17 +1152,26 @@ async function resolveIntervalsAthleteIdentity(req?: Request) {
 }
 
 function resolveCallbackUrl(req: Request): string {
-  const explicitOrigin = (req.query.origin as string | undefined)?.replace(/\/$/, '');
-  if (explicitOrigin) {
-    return `${explicitOrigin}/auth/strava/callback`;
+  const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
+  if (safeOrigin) {
+    return `${safeOrigin}/auth/strava/callback`;
   }
-  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+  const appUrl = resolveSafeOrigin(process.env.APP_URL || '');
   if (appUrl && !appUrl.includes('MY_APP_URL')) {
     return `${appUrl}/auth/strava/callback`;
   }
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
-  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000';
-  return `${proto}://${host}/auth/strava/callback`;
+  const rawProto = String((req.headers['x-forwarded-proto'] as string) || req.protocol || 'http')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const proto = rawProto === 'https' ? 'https' : 'http';
+  const rawHost = String(
+    (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000'
+  )
+    .split(',')[0]
+    .trim()
+    .replace(/[^a-zA-Z0-9.:-]/g, '');
+  return `${proto}://${rawHost || 'localhost:3000'}/auth/strava/callback`;
 }
 
 // Parse Intervals.icu workout syntax into structured visual steps
@@ -1196,6 +1229,7 @@ export function parseWorkoutSyntaxToSteps(syntax: string, fallbackDurationSecs =
 // 1. Configuration & Connection Status
 // ----------------------------------------------------------------------------
 apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
+  const isAuthed = isAuthenticatedRequest(req);
   const { apiKey: intervalsKey, athleteId } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
@@ -1281,6 +1315,11 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
   const resolvedGarminName =
     activeGarminSession?.fullName || activeGarminSession?.displayName || undefined;
 
+  let sessionToken: string | undefined;
+  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected)) {
+    sessionToken = setSessionCookie(req, res, resolvedStravaName || resolvedGarminName || 'athlete');
+  }
+
   res.json({
     garminConnected: isGarminConnected,
     garminAthleteName: resolvedGarminName,
@@ -1307,9 +1346,10 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
     gearItems: [],
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
+    sessionToken,
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
-    mapTileApiKey: effectiveMapKey || undefined,
+    mapTileApiKey: isAuthed && effectiveMapKey ? effectiveMapKey : undefined,
   });
 });
 
@@ -1373,6 +1413,8 @@ apiRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
       [...normalizedGarminActs, ...sActs]
     );
 
+    const sessionToken = setSessionCookie(req, res, syncedProfile.name || 'garmin-athlete');
+
     res.json({
       ok: true,
       garminConnected: true,
@@ -1382,6 +1424,7 @@ apiRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
         session.displayName ||
         syncedProfile.name,
       athleteProfile: syncedProfile,
+      sessionToken,
       garminTokens: {
         personalApiKey: session.personalApiKey,
         oauth2AccessToken: session.oauth2AccessToken,
@@ -1567,6 +1610,10 @@ apiRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
 });
 
 apiRouter.delete('/api/config/garmin', (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    res.status(401).json({ error: 'Authentication required to disconnect Garmin Connect.' });
+    return;
+  }
   const scopeKey = getGarminScopeKey(req);
   clearGarminSession(GARMIN_SESSION_DIR, scopeKey);
   clearGarminSession(GARMIN_SESSION_DIR, 'default');
@@ -3621,7 +3668,6 @@ interface PendingStravaOAuthEntry {
   refreshToken: string;
   expiresAt: number;
   clientId?: string;
-  clientSecret?: string;
   athleteId?: string;
   athleteName?: string;
   createdAt: number;
@@ -3675,14 +3721,15 @@ apiRouter.get('/api/strava/auth/poll', (req: Request, res: Response) => {
     return;
   }
   pendingOAuthByState.delete(state);
+  const sessionToken = setSessionCookie(req, res, found.athleteName || 'strava-athlete');
   res.json({
     completed: true,
+    sessionToken,
     tokens: {
       accessToken: found.accessToken,
       refreshToken: found.refreshToken,
       expiresAt: found.expiresAt,
       clientId: found.clientId,
-      clientSecret: found.clientSecret,
       athleteId: found.athleteId,
       athleteName: found.athleteName,
     },
@@ -3758,15 +3805,17 @@ apiRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) 
     if (!isGenericName(athleteName)) runtimeStore.stravaAthleteName = athleteName;
     saveSessionCache();
 
+    const sessionToken = setSessionCookie(req, res, athleteName);
+
     res.json({
       connected: true,
+      sessionToken,
       athleteId,
       athleteName,
       expiresAt: tokenData.expires_at,
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       clientId: clientId || undefined,
-      clientSecret: clientSecret || undefined,
     });
   } catch (error) {
     res.status(400).json({
@@ -3867,15 +3916,17 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     if (!isGenericName(athleteName)) runtimeStore.stravaAthleteName = athleteName;
     saveSessionCache();
 
+    const sessionToken = setSessionCookie(req, res, athleteName);
+
     res.json({
       connected: true,
+      sessionToken,
       athleteId,
       athleteName,
       accessToken: resolvedAccessToken,
       refreshToken: resolvedRefreshToken,
       expiresAt: resolvedExpiresAt,
       clientId: clientId || undefined,
-      clientSecret: clientSecret || undefined,
     });
   } catch (error) {
     res.status(500).json({
@@ -3888,13 +3939,16 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
   try {
     const oauthErr = req.query.error as string | undefined;
     if (oauthErr) {
-      res.status(400).send(`Strava authorization declined or failed: ${oauthErr}`);
+      res
+        .status(400)
+        .type('html')
+        .send(`Strava authorization declined or failed: ${escapeHtml(oauthErr)}`);
       return;
     }
 
     const code = req.query.code as string | undefined;
     if (!code) {
-      res.status(400).send('Missing authorization code from Strava.');
+      res.status(400).type('html').send('Missing authorization code from Strava.');
       return;
     }
 
@@ -3920,28 +3974,29 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
         refreshToken: tokenData.refresh_token,
         expiresAt: tokenData.expires_at,
         clientId: clientId || undefined,
-        clientSecret: clientSecret || undefined,
         athleteId,
         athleteName,
         createdAt: Date.now(),
       });
     }
 
-    const oauthPayloadJson = JSON.stringify({
+    const sessionToken = setSessionCookie(req, res, athleteName);
+
+    const oauthPayloadJson = safeJsonForScript({
       type: 'OAUTH_AUTH_SUCCESS',
       provider: 'strava',
+      sessionToken,
       tokens: {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt: tokenData.expires_at,
         clientId: clientId || undefined,
-        clientSecret: clientSecret || undefined,
         athleteId,
         athleteName,
       },
     });
 
-    res.send(`
+    res.type('html').send(`
       <!doctype html>
       <html>
         <head><title>Strava Connected</title></head>
@@ -3959,12 +4014,14 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
             (function() {
               var payload = ${oauthPayloadJson};
               try {
+                if (payload.sessionToken) {
+                  localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+                }
                 if (payload.tokens) {
                   if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
                   if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
                   if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
                   if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
-                  if (payload.tokens.clientSecret) localStorage.setItem('aeropulse_strava_client_secret', payload.tokens.clientSecret);
                   if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
                   if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
                   localStorage.removeItem('aeropulse_logged_out');
@@ -3973,7 +4030,7 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
               } catch (e) {}
               try {
                 if (window.opener) {
-                  window.opener.postMessage(payload, '*');
+                  window.opener.postMessage(payload, window.location.origin);
                 }
               } catch (e) {}
               try {
@@ -3989,9 +4046,12 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
       </html>
     `);
   } catch (error) {
-    res.status(500).send(
-      `Strava callback error: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    res
+      .status(500)
+      .type('html')
+      .send(
+        `Strava callback error: ${escapeHtml(error instanceof Error ? error.message : 'Unknown error')}`
+      );
   }
 };
 
@@ -5466,41 +5526,46 @@ ${message}
 });
 
 // Parse Official Race Results from Athletic.net, TFRRS, MileSplit, or RunSignup URL / Raw Text
-apiRouter.post('/races/parse', async (req: Request, res: Response) => {
+apiRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res: Response) => {
   try {
     const { url, rawText } = req.body as { url?: string; rawText?: string };
     let fetchedTextSnippet = '';
     let fetchNote = '';
 
     if (url && typeof url === 'string' && /^https?:\/\//i.test(url.trim())) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6500);
-        const remoteResp = await fetch(url.trim(), {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (remoteResp.ok) {
-          const html = await remoteResp.text();
-          fetchedTextSnippet = html
-            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-            .replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, '\n')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/[ \t]+/g, ' ')
-            .replace(/\n{2,}/g, '\n')
-            .slice(0, 18000);
-        } else {
-          fetchNote = `Remote site returned HTTP ${remoteResp.status} (anti-bot protection); parsed provided text.`;
+      if (!isSafeExternalUrl(url.trim())) {
+        fetchNote = 'Blocked unsafe or private network URL; parsed provided text only.';
+      } else {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6500);
+          const remoteResp = await fetch(url.trim(), {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+              Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+            },
+            redirect: 'follow',
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (remoteResp.ok && isSafeExternalUrl(remoteResp.url || url.trim())) {
+            const html = await remoteResp.text();
+            fetchedTextSnippet = html
+              .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+              .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+              .replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, '\n')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/[ \t]+/g, ' ')
+              .replace(/\n{2,}/g, '\n')
+              .slice(0, 18000);
+          } else {
+            fetchNote = `Remote site returned HTTP ${remoteResp.status} (anti-bot protection); parsed provided text.`;
+          }
+        } catch {
+          fetchNote =
+            'Remote platform throttled direct crawler access; parsed pasted results text.';
         }
-      } catch {
-        fetchNote =
-          'Remote platform throttled direct crawler access; parsed pasted results text.';
       }
     }
 
@@ -5589,7 +5654,8 @@ ${combinedInput}`,
 // Log out active session and optionally clear runtime Strava / Intervals.icu credentials
 apiRouter.post('/api/auth/logout', (req: Request, res: Response) => {
   try {
-    const clearCredentials = Boolean(req.body?.clearCredentials);
+    clearSessionCookie(res);
+    const clearCredentials = Boolean(req.body?.clearCredentials) && isAuthenticatedRequest(req);
     if (clearCredentials) {
       runtimeStore.stravaAccessToken = '';
       runtimeStore.stravaRefreshToken = '';

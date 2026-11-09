@@ -56,32 +56,32 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
         createPortal(
           <div
             onClick={() => setShowGuideModal(false)}
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+            className="ap-modal-backdrop z-[90]"
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl liquid-glass border border-slate-200 dark:border-slate-800 p-6 shadow-2xl"
+              className="ap-modal-sheet max-w-md liquid-glass border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Install AeroPulse as a Standalone App
+              <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Install THRESH as a Standalone App
                 </h3>
                 <button
                   onClick={() => setShowGuideModal(false)}
-                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 shrink-0"
                   aria-label="Close install guide"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+              <div className="mt-4 space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                 <p>
-                  AeroPulse includes a full Web App Manifest and offline Service Worker so you can launch it directly from your phone or desktop home screen:
+                  THRESH includes a Web App Manifest and offline Service Worker so you can launch it directly from your phone or desktop home screen:
                 </p>
                 <div className="rounded-lg bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2">
                   <p className="font-medium text-slate-900 dark:text-slate-100">On iPhone / iPad (Safari):</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
-                    <li>Open the deployed app URL directly in Safari.</li>
+                    <li>Open the app URL directly in Safari.</li>
                     <li>Tap the <strong>Share</strong> icon in the bottom toolbar.</li>
                     <li>Select <strong>Add to Home Screen</strong>.</li>
                   </ol>
@@ -89,8 +89,8 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
                 <div className="rounded-lg bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2">
                   <p className="font-medium text-slate-900 dark:text-slate-100">On Android / Desktop (Chrome or Edge):</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
-                    <li>Open the app in a top-level browser tab (or your Vercel URL).</li>
-                    <li>Click the <strong>Install AeroPulse</strong> icon in the address bar or browser menu.</li>
+                    <li>Open the app in a top-level browser tab.</li>
+                    <li>Tap <strong>Install THRESH</strong> (or <strong>Install App</strong>) in the browser menu or address bar.</li>
                   </ol>
                 </div>
               </div>
@@ -113,9 +113,9 @@ export const OfflineIndicator: React.FC = () => {
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-20 md:bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-medium text-white shadow-lg">
+    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-medium text-white shadow-lg">
       <WifiOff className="w-3.5 h-3.5 shrink-0" />
-      <span>Offline Mode · Viewing cached physiological & workout telemetry</span>
+      <span className="truncate">Offline Mode · Viewing cached workout telemetry</span>
     </div>
   );
 };

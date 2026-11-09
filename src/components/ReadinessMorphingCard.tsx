@@ -23,6 +23,12 @@ import {
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ThreshBrandWatermark } from './AeroPulseLogo';
 import { downloadGarminFitWorkoutFile } from '../utils/fitWorkoutEncoder';
+import {
+  EffortZoneCode,
+  ZONE_META,
+  classifyZoneFromPct,
+  parseWorkoutSteps,
+} from '../utils/workoutParser';
 
 export type MorphReadinessMode =
   | 'AUTO'
@@ -63,87 +69,10 @@ interface SkylineStep {
   targetWatts: number;
   targetWkg: string;
   hrCeilingBpm: number;
-  zoneCode: 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6+';
+  zoneCode: EffortZoneCode;
   zoneName: string;
   zoneColor: string;
   diffBadge?: string;
-}
-
-const ZONE_META: Record<
-  'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6+',
-  { name: string; color: string; heightPct: number }
-> = {
-  Z1: { name: 'Recovery', color: '#52B788', heightPct: 28 },
-  Z2: { name: 'Endurance', color: '#2A9D8F', heightPct: 44 },
-  Z3: { name: 'Tempo / Sweet Spot', color: '#EAB308', heightPct: 62 },
-  Z4: { name: 'Threshold', color: '#F97316', heightPct: 78 },
-  Z5: { name: 'VO2max', color: '#EF4444', heightPct: 92 },
-  'Z6+': { name: 'Anaerobic', color: '#9333EA', heightPct: 100 },
-};
-
-function classifyZoneFromPct(
-  pctFtp: number,
-  profile: AthleteProfile
-): {
-  code: 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6+';
-  name: string;
-  color: string;
-  hrCeilingBpm: number;
-} {
-  const pz = profile.powerZones || [];
-  const hz = profile.hrZones || [];
-  const z1Max = pz[0]?.maxPct || 55;
-  const z2Max = pz[1]?.maxPct || 75;
-  const z3Max = pz[2]?.maxPct || 90;
-  const z4Max = pz[3]?.maxPct || 105;
-  const z5Max = pz[4]?.maxPct || 120;
-
-  if (pctFtp <= z1Max) {
-    return {
-      code: 'Z1',
-      name: pz[0]?.name || ZONE_META.Z1.name,
-      color: ZONE_META.Z1.color,
-      hrCeilingBpm: hz[0]?.maxBpm || Math.round(profile.lthr * 0.81),
-    };
-  }
-  if (pctFtp <= z2Max) {
-    return {
-      code: 'Z2',
-      name: pz[1]?.name || ZONE_META.Z2.name,
-      color: ZONE_META.Z2.color,
-      hrCeilingBpm: hz[1]?.maxBpm || Math.round(profile.lthr * 0.89),
-    };
-  }
-  if (pctFtp <= z3Max) {
-    return {
-      code: 'Z3',
-      name: pz[2]?.name || ZONE_META.Z3.name,
-      color: ZONE_META.Z3.color,
-      hrCeilingBpm: hz[2]?.maxBpm || Math.round(profile.lthr * 0.94),
-    };
-  }
-  if (pctFtp <= z4Max) {
-    return {
-      code: 'Z4',
-      name: pz[3]?.name || ZONE_META.Z4.name,
-      color: ZONE_META.Z4.color,
-      hrCeilingBpm: hz[3]?.maxBpm || profile.lthr,
-    };
-  }
-  if (pctFtp <= z5Max) {
-    return {
-      code: 'Z5',
-      name: pz[4]?.name || ZONE_META.Z5.name,
-      color: ZONE_META.Z5.color,
-      hrCeilingBpm: hz[4]?.maxBpm || Math.round(profile.lthr * 1.04),
-    };
-  }
-  return {
-    code: 'Z6+',
-    name: pz[5]?.name || ZONE_META['Z6+'].name,
-    color: ZONE_META['Z6+'].color,
-    hrCeilingBpm: profile.maxHr,
-  };
 }
 
 function parseStepsToSkyline(
@@ -151,50 +80,14 @@ function parseStepsToSkyline(
   activeFtp: number,
   profile: AthleteProfile
 ): SkylineStep[] {
-  const lines = (syntax || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('-'));
-
-  const steps: SkylineStep[] = [];
-  for (const line of lines) {
-    const clean = line.replace(/^-+\s*/, '');
-    const durMatch = clean.match(/(\d+)\s*(m|min|mins|h|hr|s|sec)/i);
-    let durationMins = 10;
-    if (durMatch) {
-      const val = Number(durMatch[1]);
-      const unit = durMatch[2].toLowerCase();
-      if (unit.startsWith('h')) durationMins = val * 60;
-      else if (unit.startsWith('s')) durationMins = Math.max(1, Math.round(val / 60));
-      else durationMins = val;
-    }
-
-    const rangeMatch = clean.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
-    const pctMatch = clean.match(/(\d{2,3})\s*%/);
-    let pctFtp = 68;
-    if (rangeMatch) {
-      pctFtp = Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
-    } else if (pctMatch) {
-      pctFtp = Number(pctMatch[1]);
-    } else if (/warmup|cooldown|recovery|z1/i.test(clean)) {
-      pctFtp = 54;
-    } else if (/z2|endurance|aerobic/i.test(clean)) {
-      pctFtp = 70;
-    } else if (/z3|tempo|sweet\s*spot/i.test(clean)) {
-      pctFtp = 89;
-    } else if (/z4|threshold|ftp/i.test(clean)) {
-      pctFtp = 98;
-    } else if (/z5|vo2/i.test(clean)) {
-      pctFtp = 112;
-    }
-
+  return parseWorkoutSteps(syntax).map((parsed) => {
+    const pctFtp = parsed.intensityPct;
     const targetWatts = Math.round((pctFtp / 100) * activeFtp);
     const targetWkg = (targetWatts / Math.max(35, profile.weightKg)).toFixed(2);
     const zInfo = classifyZoneFromPct(pctFtp, profile);
-
-    steps.push({
-      label: clean,
-      durationMins,
+    return {
+      label: parsed.label,
+      durationMins: parsed.durationMins,
       pctFtp,
       targetWatts,
       targetWkg,
@@ -202,9 +95,8 @@ function parseStepsToSkyline(
       zoneCode: zInfo.code,
       zoneName: zInfo.name,
       zoneColor: zInfo.color,
-    });
-  }
-  return steps;
+    };
+  });
 }
 
 function computeSummaryFromSkyline(steps: SkylineStep[]) {

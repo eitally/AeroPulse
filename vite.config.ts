@@ -14,12 +14,13 @@ export default defineConfig(() => {
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
-          name: 'AeroPulse — Multi-Sport Physiology, Load & AI Coaching',
-          short_name: 'AeroPulse',
-          description: 'Unified fitness, physiology, Strava segment, and AI recovery coaching PWA bridging Intervals.icu, Garmin Connect wellness, and Strava OAuth2.',
-          theme_color: '#0B0F17',
-          background_color: '#0B0F17',
+          name: 'THRESH — Endurance Physiology, Load & AI Coaching',
+          short_name: 'THRESH',
+          description: 'THRESH — Unified running & cycling threshold physiology, Banister PMC load, Strava segments, Garmin Connect workouts, and AI readiness coaching.',
+          theme_color: '#FFFFFF',
+          background_color: '#FFFFFF',
           display: 'standalone',
+          orientation: 'any',
           start_url: '/',
           scope: '/',
           icons: [
@@ -50,7 +51,7 @@ export default defineConfig(() => {
           clientsClaim: true,
           skipWaiting: true,
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
           runtimeCaching: [
             {
               // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks so deployments take effect immediately
@@ -73,8 +74,11 @@ export default defineConfig(() => {
               },
             },
             {
-              // Stale-While-Revalidate for API telemetry endpoints so offline mode serves cached snapshots immediately
-              urlPattern: /\/api\/(telemetry|intervals|strava|athlete|activities|calendar)\/.*/i,
+              // Stale-While-Revalidate for read-only API telemetry endpoints (explicitly excluding auth, config, and token endpoints)
+              urlPattern: ({ url, request }) =>
+                request.method === 'GET' &&
+                /^\/api\/(telemetry|intervals|strava|athlete|activities|calendar)\//i.test(url.pathname) &&
+                !/^\/api\/(config|auth|strava\/(auth|callback|token|exchange-code|credentials))/i.test(url.pathname),
               handler: 'StaleWhileRevalidate',
               options: {
                 cacheName: 'aeropulse-telemetry-api-swr',

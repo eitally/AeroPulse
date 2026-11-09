@@ -10,11 +10,20 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  app.disable('x-powered-by');
   const httpServer = http.createServer(app);
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '2mb' }));
   app.use(apiRouter);
+
+  app.get('/manifest.webmanifest', (_req, res, next) => {
+    const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');
+    res.type('application/manifest+json');
+    res.sendFile(builtManifest, (err) => {
+      if (err) next();
+    });
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

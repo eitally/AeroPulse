@@ -1307,8 +1307,10 @@ export async function fetchDirectGarminProfileAndWellness(
   return { rawProfile, wellnessRows, activities: [] };
 }
 
-export const DEFAULT_GARMIN_PERSONAL_API_KEY =
-  'GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766.5ac0d701-08fa-40ce-b132-0f635bfcc455.EnKLpYLMB3o9M18nEsqBjUEPd7vAS/SJMVW3r+DzAz0.3482173667';
+export function getEnvGarminPersonalApiKey(): string {
+  return String(process.env.GARMIN_PERSONAL_API_KEY || '').trim();
+}
+
 
 export function normalizeGarminPersonalApiActivities(
   rawActivities: Record<string, any>[],

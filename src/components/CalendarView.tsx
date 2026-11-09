@@ -29,6 +29,15 @@ import {
 } from '../types';
 import { formatDistance } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import {
+  INTERVALS_EFFORT_ZONES,
+  ParsedWorkoutStep as ParsedStep,
+  computeAmplitudeHeightPct,
+  getIntervalsZoneFromIntensityPct,
+  parseWorkoutSteps,
+} from '../utils/workoutParser';
+
+export { INTERVALS_EFFORT_ZONES };
 
 interface CalendarViewProps {
   activities: UnifiedActivity[];
@@ -115,129 +124,11 @@ const MONTH_NAMES = [
   'December',
 ];
 
-// Intervals.icu canonical 6-Zone Effort Palette (matching the Intervals.icu Calendar screenshot)
-export const INTERVALS_EFFORT_ZONES = [
-  {
-    zone: 1,
-    code: 'Z1',
-    name: 'Recovery',
-    color: '#52B788', // Soft emerald-teal
-    heightPct: 28,
-  },
-  {
-    zone: 2,
-    code: 'Z2',
-    name: 'Endurance',
-    color: '#2A9D8F', // Classic Intervals.icu Z2 teal-green
-    heightPct: 42,
-  },
-  {
-    zone: 3,
-    code: 'Z3',
-    name: 'Tempo / Sweet Spot',
-    color: '#EAB308', // Warm yellow-gold
-    heightPct: 58,
-  },
-  {
-    zone: 4,
-    code: 'Z4',
-    name: 'Threshold',
-    color: '#F97316', // Vibrant orange
-    heightPct: 74,
-  },
-  {
-    zone: 5,
-    code: 'Z5',
-    name: 'VO2max',
-    color: '#EF4444', // Crimson red-pink
-    heightPct: 88,
-  },
-  {
-    zone: 6,
-    code: 'Z6+',
-    name: 'Anaerobic / Sprint',
-    color: '#9333EA', // Deep violet-purple
-    heightPct: 100,
-  },
-] as const;
-
-interface ParsedStep {
-  label: string;
-  durationMins: number;
-  intensityPct: number;
-  zone: 1 | 2 | 3 | 4 | 5 | 6;
-  zoneCode: string;
-  zoneColor: string;
-}
-
-function getIntervalsZoneFromIntensityPct(intensityPct: number): {
-  zone: 1 | 2 | 3 | 4 | 5 | 6;
-  code: string;
-  name: string;
-  color: string;
-  heightPct: number;
-} {
-  if (intensityPct < 56) return INTERVALS_EFFORT_ZONES[0];
-  if (intensityPct <= 75) return INTERVALS_EFFORT_ZONES[1];
-  if (intensityPct <= 90) return INTERVALS_EFFORT_ZONES[2];
-  if (intensityPct <= 105) return INTERVALS_EFFORT_ZONES[3];
-  if (intensityPct <= 120) return INTERVALS_EFFORT_ZONES[4];
-  return INTERVALS_EFFORT_ZONES[5];
-}
-
-function parseWorkoutSteps(syntax: string): ParsedStep[] {
-  if (!syntax || !syntax.trim()) return [];
-  const lines = syntax
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('-'));
-
-  const steps: ParsedStep[] = [];
-  for (const line of lines) {
-    const clean = line.replace(/^-+\s*/, '');
-    const durMatch = clean.match(/(\d+)\s*(m|min|mins|h|hr|s|sec)/i);
-    let durationMins = 10;
-    if (durMatch) {
-      const val = Number(durMatch[1]);
-      const unit = durMatch[2].toLowerCase();
-      if (unit.startsWith('h')) durationMins = val * 60;
-      else if (unit.startsWith('s')) durationMins = Math.max(1, Math.round(val / 60));
-      else durationMins = val;
-    }
-
-    const pctMatch = clean.match(/(\d{2,3})\s*%/);
-    const rangeMatch = clean.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
-    let intensityPct = 65;
-    if (rangeMatch) {
-      intensityPct = Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
-    } else if (pctMatch) {
-      intensityPct = Number(pctMatch[1]);
-    } else if (/z1|recovery|easy|warmup|cooldown/i.test(clean)) {
-      intensityPct = 52;
-    } else if (/z2|endurance|aerobic/i.test(clean)) {
-      intensityPct = 68;
-    } else if (/z3|tempo|sweet\s*spot/i.test(clean)) {
-      intensityPct = 86;
-    } else if (/z4|threshold|ftp/i.test(clean)) {
-      intensityPct = 98;
-    } else if (/z5|vo2/i.test(clean)) {
-      intensityPct = 112;
-    } else if (/z6|sprint|anaerobic/i.test(clean)) {
-      intensityPct = 130;
-    }
-
-    const zoneMeta = getIntervalsZoneFromIntensityPct(intensityPct);
-
-    steps.push({
-      label: clean,
-      durationMins,
-      intensityPct,
-      zone: zoneMeta.zone,
-      zoneCode: zoneMeta.code,
-      zoneColor: zoneMeta.color,
-    });
-  }
-  return steps;
+function formatHeaderDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${SHORT_WEEKDAYS[dt.getUTCDay()]}, ${SHORT_MONTHS[m - 1]} ${d}`;
 }
 
 export interface DayPlannedEffortStripe {
@@ -265,12 +156,6 @@ export interface DayPlannedEffortStripe {
     color: string;
   }[];
   zoneSharesPct: [number, number, number, number, number, number];
-}
-
-function computeAmplitudeHeightPct(intensityPct: number, fallbackHeightPct: number): number {
-  if (!Number.isFinite(intensityPct) || intensityPct <= 0) return fallbackHeightPct;
-  // Map 45% -> 22% height, 70% (Z2) -> 48% height, 100% (Threshold) -> 78% height, 120%+ (VO2/Anaerobic) -> 100% height
-  return Math.max(20, Math.min(100, Math.round(((intensityPct - 35) / 85) * 100)));
 }
 
 /**
@@ -973,6 +858,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [selectedSport]);
 
   const [cardDensity, setCardDensity] = useState<'intervals' | 'compact'>('intervals');
+  const [mobileLayout, setMobileLayout] = useState<'agenda' | 'grid'>('agenda');
   const [showDayEffortStripe, setShowDayEffortStripe] = useState<boolean>(true);
   const [hoveredPrescription, setHoveredPrescription] = useState<{
     dateStr: string;
@@ -1604,6 +1490,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Mobile View Mode Toggle (Agenda vs 8-Column Grid) */}
+            <div className="flex md:hidden items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[10px]">
+              <button
+                type="button"
+                onClick={() => setMobileLayout('agenda')}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  mobileLayout === 'agenda'
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                Agenda
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileLayout('grid')}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  mobileLayout === 'grid'
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                Full Grid
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setShowDayEffortStripe((v) => !v)}
@@ -1644,8 +1555,289 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </section>
 
+      {/* Mobile Week & Day Agenda View (< md when mobileLayout === 'agenda') */}
+      {mobileLayout === 'agenda' && (
+        <section className="md:hidden space-y-3">
+          {calendarWeeks.map((week) => {
+            const eow = week.endOfWeekWellness;
+            const tsbVal = eow ? Math.round(eow.tsb) : null;
+            const activeDays = week.days.filter(
+              (d) =>
+                d.isCurrentMonth ||
+                d.dayActivities.length > 0 ||
+                d.dayPlanned.length > 0 ||
+                d.dateStr === todayIso
+            );
+            if (activeDays.length === 0) return null;
+
+            return (
+              <div
+                key={`mob-wk-${week.weekIndex}`}
+                className="rounded-2xl liquid-glass overflow-hidden border border-slate-200/90 dark:border-slate-800/90"
+              >
+                {/* Mobile Week Summary Header */}
+                <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-extrabold font-mono">
+                        W{week.isoWeekNum}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                        {formatHeaderDate(week.days[0].dateStr)} –{' '}
+                        {formatHeaderDate(week.days[6].dateStr)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenCoachWithPrompt(
+                          `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
+                        )
+                      }
+                      className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-sky-400 text-[11px] font-semibold"
+                    >
+                      AI Coach
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 text-[11px] font-mono">
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                      <span className="text-[9px] uppercase text-slate-400 block">Time</span>
+                      <strong className="text-slate-900 dark:text-white">
+                        {week.totalDurationSecs > 0
+                          ? formatCompactDuration(week.totalDurationSecs)
+                          : '0m'}
+                      </strong>
+                    </div>
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                      <span className="text-[9px] uppercase text-slate-400 block">Load</span>
+                      <strong className="text-slate-900 dark:text-white">{week.totalLoad}</strong>
+                    </div>
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                      <span className="text-[9px] uppercase text-slate-400 block">CTL</span>
+                      <strong className="text-[#7C3AED] dark:text-purple-400">
+                        {eow ? Math.round(eow.ctl) : '—'}
+                      </strong>
+                    </div>
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                      <span className="text-[9px] uppercase text-slate-400 block">Form</span>
+                      <strong className="text-emerald-600 dark:text-emerald-400">
+                        {tsbVal !== null ? (tsbVal > 0 ? `+${tsbVal}` : tsbVal) : '—'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile Daily Cards */}
+                <div className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
+                  {activeDays.map((day) => {
+                    const isToday = day.dateStr === todayIso;
+                    const dayStripe = buildDayPlannedEffortStripe(
+                      day.dateStr,
+                      day.dayPlanned,
+                      day.wellness,
+                      day.dayActivities
+                    );
+                    const w = day.wellness;
+                    const sleepH =
+                      w && w.sleepSecs > 0 ? `${(w.sleepSecs / 3600).toFixed(1)}h` : null;
+
+                    return (
+                      <div
+                        key={`mob-day-${day.dateStr}`}
+                        className={`p-3 space-y-2 ${
+                          isToday
+                            ? 'bg-sky-500/[0.06] dark:bg-sky-500/[0.08]'
+                            : !day.isCurrentMonth
+                              ? 'bg-slate-100/70 dark:bg-slate-900/60'
+                              : 'bg-white/75 dark:bg-slate-950/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`text-xs font-bold font-mono ${
+                                isToday
+                                  ? 'px-2 py-0.5 rounded-md bg-blue-600 text-white'
+                                  : 'text-slate-900 dark:text-slate-100'
+                              }`}
+                            >
+                              {formatHeaderDate(day.dateStr)}
+                            </span>
+                            {w && (
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                {sleepH && <span>{sleepH}</span>}
+                                {w.restingHR > 0 && <span>{w.restingHR}bpm</span>}
+                                {w.hrvRMSSD > 0 && (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    {Math.round(w.hrvRMSSD)}ms
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenBuilderForDate(day.dateStr, {
+                                name: dayStripe.workoutName,
+                                sportCategory: dayStripe.sportCategory,
+                                workoutSyntax: dayStripe.workoutSyntax,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] font-semibold"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Plan</span>
+                          </button>
+                        </div>
+
+                        {/* Planned Effort Stripe */}
+                        {showDayEffortStripe && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenBuilderForDate(day.dateStr, {
+                                name: dayStripe.workoutName,
+                                sportCategory: dayStripe.sportCategory,
+                                workoutSyntax: dayStripe.workoutSyntax,
+                              })
+                            }
+                            className="w-full text-left rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-2 space-y-1"
+                          >
+                            <div className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
+                                {dayStripe.sportCategory === 'Running' ? 'Run' : 'Bike'} Rx:{' '}
+                                {dayStripe.workoutName}
+                              </span>
+                              <span
+                                className="font-mono font-bold shrink-0"
+                                style={{ color: dayStripe.dominantZone.color }}
+                              >
+                                {dayStripe.dominantZone.code} · {dayStripe.totalDurationMins}m
+                              </span>
+                            </div>
+                            <div className="h-3 w-full flex items-end gap-[1px] rounded-xs bg-slate-200/50 dark:bg-slate-800/60 px-0.5 pt-0.5 overflow-hidden">
+                              {dayStripe.steps.map((s, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    width: `${s.widthPct}%`,
+                                    height: `${s.heightPct}%`,
+                                    backgroundColor: s.color,
+                                  }}
+                                  className="rounded-t-[1px]"
+                                />
+                              ))}
+                            </div>
+                          </button>
+                        )}
+
+                        {/* Completed Activities */}
+                        {day.dayActivities.map((act) => {
+                          const effort = buildActivityEffortPresentation(
+                            act,
+                            athleteFtp,
+                            athleteProfile
+                          );
+                          return (
+                            <div
+                              key={`mob-act-${act.id}`}
+                              onClick={() => onSelectActivity(act)}
+                              className="cursor-pointer rounded-xl overflow-hidden border border-slate-300/90 dark:border-slate-700/90 bg-white dark:bg-[#1E222B] shadow-xs"
+                            >
+                              <div
+                                className={`px-2.5 py-1.5 flex items-center justify-between gap-2 ${getSportHeaderColor(
+                                  act.sportCategory
+                                )}`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0 text-xs font-bold truncate">
+                                  {getSportIcon(act.sportCategory, 'w-3.5 h-3.5 shrink-0')}
+                                  <span className="truncate">{act.name}</span>
+                                </div>
+                                <span className="text-[11px] font-mono font-extrabold shrink-0">
+                                  {formatCompactDuration(act.movingTimeSecs)} · Load{' '}
+                                  {act.trainingLoad}
+                                </span>
+                              </div>
+                              <div className="p-2 flex items-center justify-between gap-3 text-[11px] font-mono text-slate-700 dark:text-slate-200">
+                                <span>
+                                  {act.distanceMeters > 0
+                                    ? formatDistance(act.distanceMeters, distanceUnit, 1)
+                                    : act.subType}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  {(act.normalizedPower || act.avgPower) && (
+                                    <span className="font-bold text-blue-600 dark:text-sky-400">
+                                      {act.normalizedPower || act.avgPower}W
+                                    </span>
+                                  )}
+                                  {act.avgHr && (
+                                    <span className="text-rose-600 dark:text-rose-400">
+                                      {act.avgHr}bpm
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="px-2 pb-2">
+                                <div className="h-3.5 w-full flex items-end gap-[1px] bg-slate-100 dark:bg-slate-900/70 rounded-xs overflow-hidden">
+                                  {effort.slices.map((sl, sIdx) => (
+                                    <div
+                                      key={sIdx}
+                                      style={{
+                                        width: `${sl.widthPct}%`,
+                                        height: `${sl.heightPct}%`,
+                                        backgroundColor: sl.color,
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Explicitly Scheduled Planned Events */}
+                        {day.dayPlanned.map((ev) => (
+                          <div
+                            key={`mob-plan-${ev.id}`}
+                            className="rounded-xl border border-dashed border-blue-500/45 bg-blue-500/[0.05] p-2.5 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-mono uppercase text-blue-600 dark:text-sky-400 font-semibold">
+                                Planned · {ev.sportCategory} ·{' '}
+                                {formatCompactDuration(ev.plannedDurationSecs)} · ~{ev.plannedLoad}{' '}
+                                TSS
+                              </div>
+                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                {ev.name}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onDeletePlannedEvent(ev.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500"
+                              title="Delete planned workout"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {/* Intervals.icu 8-Column Calendar Grid (Left Week Summary Column + 7 Day Columns) */}
-      <section className="rounded-2xl liquid-glass overflow-hidden border border-slate-200/90 dark:border-slate-800/90">
+      <section
+        className={`${
+          mobileLayout === 'agenda' ? 'hidden md:block' : 'block'
+        } rounded-2xl liquid-glass overflow-hidden border border-slate-200/90 dark:border-slate-800/90`}
+      >
         <div className="overflow-x-auto">
           <div className="min-w-[1140px]">
             {/* Sticky 8-Column Day Header Row */}

@@ -737,6 +737,13 @@ export async function clearPersistedTelemetrySnapshot(): Promise<void> {
   } catch {
     // ignore
   }
+  try {
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      await window.caches.delete('aeropulse-telemetry-api-swr');
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -966,7 +973,6 @@ export interface RotatedStravaTokenPayload {
   refreshToken?: string;
   expiresAt?: number;
   clientId?: string;
-  clientSecret?: string;
   athleteId?: string;
   athleteName?: string;
 }
@@ -985,9 +991,6 @@ export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayl
     }
     if (tokens.clientId) {
       localStorage.setItem('aeropulse_strava_client_id', tokens.clientId.trim());
-    }
-    if (tokens.clientSecret) {
-      localStorage.setItem('aeropulse_strava_client_secret', tokens.clientSecret.trim());
     }
     if (tokens.athleteId) {
       localStorage.setItem('aeropulse_strava_athlete_id', String(tokens.athleteId).trim());

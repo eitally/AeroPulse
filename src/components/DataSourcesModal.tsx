@@ -643,7 +643,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     {status.garminConnected ||
                     localStorage.getItem('aeropulse_garmin_personal_api_key') ||
                     localStorage.getItem('aeropulse_garmin_bearer_token')
-                      ? `Connected (${status.garminAthleteName || localStorage.getItem('aeropulse_garmin_athlete_name') || 'Elliot Tally · GCDC_ Active'})`
+                      ? `Connected (${status.garminAthleteName || localStorage.getItem('aeropulse_garmin_athlete_name') || 'Garmin Personal API Active'})`
                       : 'Direct Integration Ready'}
                   </span>
                 </div>
@@ -718,7 +718,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     setGarminPassword('');
                     setGarminBearerToken('');
                     setLocalStatusMsg(
-                      `Garmin Connect Personal API linked (${data.garminAthleteName || 'Elliot Tally'})! Synced your Garmin weight, HRV, sleep, RHR, LTHR/Max HR zones, and activities.`
+                      `Garmin Connect Personal API linked (${data.garminAthleteName || 'Garmin Account'})! Synced your Garmin weight, HRV, sleep, RHR, LTHR/Max HR zones, and activities.`
                     );
                     await onSyncNow(false);
                   }
@@ -734,10 +734,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     Garmin Connect Personal API Key (<code className="font-mono">GCDC_...</code> — Recommended, Bypasses MFA)
                   </label>
                   <input
-                    type="text"
+                    type="password"
+                    autoComplete="off"
                     value={garminPersonalApiKey}
                     onChange={(e) => setGarminPersonalApiKey(e.target.value)}
-                    placeholder="GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766..."
+                    placeholder="GCDC_00000000-0000-0000-0000-000000000000..."
                     className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
@@ -755,7 +756,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <button
                       type="button"
                       onClick={async () => {
-                        await fetch('/api/config/garmin', { method: 'DELETE' });
+                        const tok = localStorage.getItem('aeropulse_session_token') || '';
+                        await fetch('/api/config/garmin', {
+                          method: 'DELETE',
+                          credentials: 'same-origin',
+                          headers: tok ? { 'x-session-token': tok } : undefined,
+                        });
                         localStorage.removeItem('aeropulse_garmin_personal_api_key');
                         localStorage.removeItem('aeropulse_garmin_bearer_token');
                         localStorage.removeItem('aeropulse_garmin_oauth1_token');

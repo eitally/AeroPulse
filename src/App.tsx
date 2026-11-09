@@ -127,14 +127,9 @@ export default function App() {
       const isGatePassed =
         localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
         localStorage.getItem('aeropulse_logged_out') !== '1';
-      if (isGatePassed && !localStorage.getItem('aeropulse_garmin_personal_api_key')) {
-        localStorage.setItem(
-          'aeropulse_garmin_personal_api_key',
-          'GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766.5ac0d701-08fa-40ce-b132-0f635bfcc455.EnKLpYLMB3o9M18nEsqBjUEPd7vAS/SJMVW3r+DzAz0.3482173667'
-        );
-      }
       const hasAuthCreds = Boolean(
-        localStorage.getItem('aeropulse_strava_access_token') ||
+        localStorage.getItem('aeropulse_session_token') ||
+          localStorage.getItem('aeropulse_strava_access_token') ||
           localStorage.getItem('aeropulse_strava_refresh_token') ||
           localStorage.getItem('aeropulse_garmin_personal_api_key')
       );
@@ -383,6 +378,10 @@ export default function App() {
       if (isGatePassed) {
         headers['x-auth-session'] = 'active';
       }
+      const sessionToken = localStorage.getItem('aeropulse_session_token') || '';
+      if (sessionToken && isGatePassed) {
+        headers['x-session-token'] = sessionToken;
+      }
       const apiKey = localStorage.getItem('aeropulse_intervals_api_key') || '';
       const athleteId = localStorage.getItem('aeropulse_intervals_athlete_id') || '0';
       if (apiKey) {
@@ -422,7 +421,8 @@ export default function App() {
   const hasStravaClientCredentials = (): boolean => {
     try {
       return Boolean(
-        localStorage.getItem('aeropulse_strava_access_token') ||
+        localStorage.getItem('aeropulse_session_token') ||
+          localStorage.getItem('aeropulse_strava_access_token') ||
           localStorage.getItem('aeropulse_strava_refresh_token') ||
           (localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
             localStorage.getItem('aeropulse_logged_out') !== '1')
@@ -459,6 +459,13 @@ export default function App() {
       });
       if (!resp.ok) return null;
       const data = await resp.json();
+      if (hasLocalAuth && data.sessionToken) {
+        try {
+          localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+        } catch {
+          // ignore
+        }
+      }
       if (hasLocalAuth && data.stravaTokens) {
         saveRotatedStravaTokensToStorage(data.stravaTokens);
       }
@@ -1198,7 +1205,14 @@ export default function App() {
 
   // Listen for OAuth popup completion via window.postMessage and BroadcastChannel
   useEffect(() => {
-    const applyNewStravaOAuthTokens = async (tokens?: any) => {
+    const applyNewStravaOAuthTokens = async (tokens?: any, sessionToken?: string) => {
+      if (sessionToken) {
+        try {
+          localStorage.setItem('aeropulse_session_token', sessionToken);
+        } catch {
+          // ignore
+        }
+      }
       if (tokens) {
         try {
           const prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
@@ -1228,15 +1242,14 @@ export default function App() {
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
       if (
-        !origin.endsWith('.run.app') &&
-        !origin.endsWith('.vercel.app') &&
-        !origin.includes('localhost') &&
-        origin !== window.location.origin
+        origin !== window.location.origin &&
+        origin !== DEV_APP_URL &&
+        origin !== SHARED_APP_URL
       ) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        applyNewStravaOAuthTokens(event.data?.tokens);
+        applyNewStravaOAuthTokens(event.data?.tokens, event.data?.sessionToken);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -1246,7 +1259,7 @@ export default function App() {
       bc = new BroadcastChannel('aeropulse_oauth');
       bc.onmessage = (ev) => {
         if (ev.data?.type === 'OAUTH_AUTH_SUCCESS') {
-          applyNewStravaOAuthTokens(ev.data?.tokens);
+          applyNewStravaOAuthTokens(ev.data?.tokens, ev.data?.sessionToken);
         }
       };
     } catch {
@@ -1455,7 +1468,6 @@ export default function App() {
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,
       clientId: data.clientId,
-      clientSecret: data.clientSecret,
       athleteId: data.athleteId,
       athleteName: data.athleteName,
     });
@@ -1487,7 +1499,6 @@ export default function App() {
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,
       clientId: data.clientId,
-      clientSecret: data.clientSecret,
     });
     try {
       localStorage.removeItem('aeropulse_logged_out');
@@ -2537,9 +2548,11 @@ export default function App() {
     setIsAccountMenuOpen(false);
     setIsSessionLoggedOut(true);
     setHasEnteredWorkspace(false);
+    const activeHeaders = getSavedIntervalsHeaders();
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_session_token');
       localStorage.removeItem('aeropulse_strava_access_token');
       localStorage.removeItem('aeropulse_strava_refresh_token');
       localStorage.removeItem('aeropulse_strava_expires_at');
@@ -2548,7 +2561,7 @@ export default function App() {
     }
     fetch('/api/auth/logout', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...activeHeaders },
       body: JSON.stringify({ clearCredentials: false }),
     }).catch(() => {});
   }, []);
@@ -2557,16 +2570,23 @@ export default function App() {
     setIsAccountMenuOpen(false);
     setIsSessionLoggedOut(true);
     setHasEnteredWorkspace(false);
+    const activeHeaders = getSavedIntervalsHeaders();
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_session_token');
       localStorage.removeItem('aeropulse_intervals_api_key');
       localStorage.removeItem('aeropulse_intervals_athlete_id');
       localStorage.removeItem('aeropulse_strava_access_token');
       localStorage.removeItem('aeropulse_strava_refresh_token');
       localStorage.removeItem('aeropulse_strava_expires_at');
+      localStorage.removeItem('aeropulse_strava_client_secret');
       localStorage.removeItem('aeropulse_strava_athlete_id');
       localStorage.removeItem('aeropulse_strava_athlete_name');
+      localStorage.removeItem('aeropulse_garmin_personal_api_key');
+      localStorage.removeItem('aeropulse_garmin_bearer_token');
+      localStorage.removeItem('aeropulse_garmin_oauth1_token');
+      localStorage.removeItem('aeropulse_garmin_oauth1_secret');
     } catch {
       // ignore
     }
@@ -2586,8 +2606,8 @@ export default function App() {
     try {
       await fetch('/api/auth/logout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clearCredentials: false }),
+        headers: { 'Content-Type': 'application/json', ...activeHeaders },
+        body: JSON.stringify({ clearCredentials: true }),
       });
     } catch {
       // ignore
@@ -2951,7 +2971,7 @@ export default function App() {
         <OfflineIndicator />
 
         {/* Simplified 5-Element Global Header Bar (Responsive Mobile & Desktop) */}
-        <div className="sticky top-2 z-40 ap-container pt-1">
+        <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
               {/* 1. Brand Wordmark + Background Strava History Sync Pill */}
@@ -3043,9 +3063,9 @@ export default function App() {
               </nav>
 
               {/* Right: 3. Athlete Switcher Pill + 4. AI Coach CTA + 5. Account & Settings Menu */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 {/* 3. Athlete Context Switcher */}
-                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-sky-500/20 min-w-0">
+                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-1.5 sm:px-2 py-1 border border-sky-500/20 min-w-0">
                   <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" weight="duotone" />
                   <select
                     value={activeViewedAthleteId}
@@ -3054,7 +3074,7 @@ export default function App() {
                       setSelectedActivity(null);
                     }}
                     aria-label="Switch Active Athlete Profile"
-                    className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1 max-w-[105px] sm:max-w-[155px] truncate"
+                    className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[88px] sm:max-w-[155px] truncate"
                   >
                     <option value="SELF" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                       {primaryAthleteDisplayName} (You)
@@ -3076,15 +3096,15 @@ export default function App() {
                   className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 text-xs font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 rounded-xl shadow-xs transition-all whitespace-nowrap"
                 >
                   <Bot className="w-3.5 h-3.5" weight="fill" />
-                  <span className="hidden xs:inline">AI Coach</span>
+                  <span className="hidden sm:inline">AI Coach</span>
                 </button>
 
-                {/* 4b. Interactive User Guide & Feature Tour Button */}
+                {/* 4b. Interactive User Guide & Feature Tour Button (also accessible inside Account menu on mobile) */}
                 <button
                   type="button"
                   onClick={() => setShowMetricsGuide(true)}
-                  className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap"
-                  title="Open Interactive AeroPulse User Guide, Walkthrough & Physiology Glossary"
+                  className="hidden sm:inline-flex min-h-[34px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap"
+                  title="Open Interactive THRESH User Guide, Walkthrough & Physiology Glossary"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400" weight="duotone" />
                   <span className="hidden lg:inline">Guide</span>
@@ -3095,7 +3115,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsAccountMenuOpen((prev) => !prev)}
-                    className="min-h-[34px] inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all"
+                    className="min-h-[34px] inline-flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all"
                     aria-expanded={isAccountMenuOpen}
                     aria-haspopup="menu"
                     title="Account, Profile Zones, Data Sources, Preferences & Log Out"
@@ -3116,7 +3136,7 @@ export default function App() {
                   {isAccountMenuOpen && (
                     <div
                       role="menu"
-                      className="absolute right-0 mt-2 w-80 rounded-2xl bg-white/95 dark:bg-[#0D131F]/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xl p-3 space-y-3 z-50 text-xs"
+                      className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white/95 dark:bg-[#0D131F]/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xl p-3 space-y-3 z-50 text-xs"
                     >
                       {/* Account Identity & Connection Summary */}
                       <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">

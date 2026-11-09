@@ -111,7 +111,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         className="w-full max-w-lg h-full bg-white dark:bg-[#0B0F17] border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
       >
         {/* Drawer Header */}
-        <div className="relative px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-white dark:bg-[#111827] overflow-hidden">
+        <div className="relative px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-white dark:bg-[#111827] overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-[#0B4F9E]/10 dark:bg-sky-500/15 border border-[#0B4F9E]/25 dark:border-sky-500/30 flex items-center justify-center text-[#0B4F9E] dark:text-sky-400 shrink-0">
@@ -348,7 +348,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         {/* Input Form */}
         <form
           onSubmit={handleSubmit}
-          className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] flex items-center gap-2"
+          className="px-3.5 pt-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] flex items-center gap-2"
         >
           <input
             ref={inputRef}
