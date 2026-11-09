@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ThreshBrandWatermark } from './AeroPulseLogo';
+import { downloadGarminFitWorkoutFile } from '../utils/fitWorkoutEncoder';
 
 export type MorphReadinessMode =
   | 'AUTO'
@@ -619,9 +620,9 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         replaceExistingDate: true,
       });
       setSyncedBanner(
-        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Training Calendar for ${todayIso}.`
+        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Training Calendar for ${todayIso} and pushed structured steps to Intervals.icu (syncs automatically to Garmin Connect watches & Edge head units if linked).`
       );
-      window.setTimeout(() => setSyncedBanner(null), 5000);
+      window.setTimeout(() => setSyncedBanner(null), 6500);
     } finally {
       setIsSyncingCalendar(false);
     }
@@ -688,6 +689,91 @@ ${dataLines.join('\n')}
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadFit = () => {
+    downloadGarminFitWorkoutFile(
+      {
+        name: morphedWorkout.title,
+        sport: sportMode,
+        steps: morphedWorkout.steps.map((s, idx) => ({
+          label: s.label,
+          durationSecs: s.durationMins * 60,
+          targetMinWatts: Math.max(40, s.targetWatts - 10),
+          targetMaxWatts: s.targetWatts + 10,
+          targetMinHrBpm: Math.max(90, s.hrCeilingBpm - 12),
+          targetMaxHrBpm: s.hrCeilingBpm,
+          intensity:
+            idx === 0
+              ? 'warmup'
+              : idx === morphedWorkout.steps.length - 1 && morphedWorkout.steps.length > 1
+                ? 'cooldown'
+                : s.pctFtp <= 60
+                  ? 'rest'
+                  : 'active',
+        })),
+      },
+      todayIso
+    );
+  };
+
+  const handlePushDirectGarmin = async () => {
+    setIsSyncingCalendar(true);
+    setSyncedBanner(null);
+    try {
+      const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token') || '';
+      const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token') || '';
+      const garminSecret = localStorage.getItem('aeropulse_garmin_oauth1_secret') || '';
+      const resp = await fetch('/api/garmin/workout/push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(garminBearer ? { 'x-garmin-bearer-token': garminBearer } : {}),
+          ...(garminOauth1 ? { 'x-garmin-oauth1-token': garminOauth1 } : {}),
+          ...(garminSecret ? { 'x-garmin-oauth1-secret': garminSecret } : {}),
+        },
+        body: JSON.stringify({
+          date: todayIso,
+          name: morphedWorkout.title,
+          sportCategory: sportMode,
+          ftpWatts: activeFtp,
+          lthrBpm: athleteProfile.lthr,
+          description: `${morphedWorkout.rationale} [Calibrated to ${activeFtp}W FTP · LTHR ${athleteProfile.lthr}bpm]`,
+          steps: morphedWorkout.steps.map((s, idx) => ({
+            label: s.label,
+            durationSecs: s.durationMins * 60,
+            targetPctFtp: s.pctFtp,
+            targetWatts: s.targetWatts,
+            targetMinWatts: Math.max(40, s.targetWatts - 10),
+            targetMaxWatts: s.targetWatts + 10,
+            hrCeilingBpm: s.hrCeilingBpm,
+            stepType:
+              idx === 0
+                ? 'warmup'
+                : idx === morphedWorkout.steps.length - 1 && morphedWorkout.steps.length > 1
+                  ? 'cooldown'
+                  : s.pctFtp <= 60
+                    ? 'recovery'
+                    : 'interval',
+          })),
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.pushed) {
+        setSyncedBanner(
+          data.message ||
+            `Pushed "${morphedWorkout.title}" directly to Garmin Connect Calendar (${todayIso})!`
+        );
+      } else {
+        setSyncedBanner(
+          data.error ||
+            'Connect your Garmin account in Data Sources to push directly, or click "Export Garmin .FIT" below.'
+        );
+      }
+      window.setTimeout(() => setSyncedBanner(null), 7000);
+    } finally {
+      setIsSyncingCalendar(false);
+    }
   };
 
   return (
@@ -1071,6 +1157,27 @@ ${dataLines.join('\n')}
                     ? 'Saving to Calendar...'
                     : 'Save Workout to Calendar'}
                 </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePushDirectGarmin}
+                disabled={isSyncingCalendar}
+                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl bg-[#007CC3] hover:bg-[#0066a1] disabled:opacity-60 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors"
+                title="Push structured workout directly to your Garmin Connect Calendar for wireless sync to your Garmin watch or Edge head unit"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Push to Garmin Connect</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadFit}
+                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                title="Download native Garmin .FIT binary workout file for Garmin watches & Edge head units"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Export Garmin .FIT</span>
               </button>
 
               <button

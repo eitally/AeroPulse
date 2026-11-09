@@ -450,6 +450,8 @@ export interface AthleteProfile {
 
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
+  garminConnected?: boolean;
+  garminAthleteName?: string;
   intervalsConnected: boolean;
   intervalsAthleteId: string;
   intervalsAthleteName?: string;

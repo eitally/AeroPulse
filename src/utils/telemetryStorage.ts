@@ -159,30 +159,245 @@ export function isGenericAthleteName(name?: string | null): boolean {
   );
 }
 
+export function calibrateMetricsFromActivitiesClient(
+  activities?: UnifiedActivity[] | null,
+  weightKg = 70
+) {
+  let maxBikeWatts20m = 0;
+  let maxBikePeakWatts = 0;
+  let maxBikeHr = 0;
+  let maxBikeSustainedHr = 0;
+  let maxRunHr = 0;
+  let maxRunSustainedHr = 0;
+  let bestRunPaceSecsPerKm = 0;
+
+  if (Array.isArray(activities)) {
+    for (const a of activities) {
+      if (!a) continue;
+      const isBike = a.sportCategory === 'Cycling';
+      const isRun = a.sportCategory === 'Running';
+      const dur = Number(a.movingTimeSecs || 0);
+      const dist = Number(a.distanceMeters || 0);
+      const np = Number(a.normalizedPower || a.avgPower || 0);
+      const avgHr = Number(a.avgHr || 0);
+      const peakHr = Number(a.maxHr || 0);
+
+      if (isBike) {
+        if (dur >= 1200 && np >= 80 && np <= 600 && np > maxBikeWatts20m) {
+          maxBikeWatts20m = np;
+        }
+        if (np > 0 && np * 2.3 > maxBikePeakWatts) {
+          maxBikePeakWatts = Math.round(np * 2.3);
+        }
+        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxBikeHr) {
+          maxBikeHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
+          maxBikeSustainedHr = avgHr;
+        }
+      } else if (isRun) {
+        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxRunHr) {
+          maxRunHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
+          maxRunSustainedHr = avgHr;
+        }
+        const pace =
+          Number(a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 0) ||
+          (dist >= 3000 && dur >= 900 ? Math.round(dur / (dist / 1000)) : 0);
+        if (dur >= 1200 && dist >= 3000 && pace >= 165 && pace <= 600) {
+          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
+            bestRunPaceSecsPerKm = pace;
+          }
+        }
+      }
+    }
+  }
+
+  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
+  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
+  const obsBikeLthr =
+    maxBikeSustainedHr >= 130
+      ? Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
+      : obsBikeMaxHr
+        ? Math.round(obsBikeMaxHr * 0.9)
+        : 0;
+  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
+  const obsRunLthr =
+    maxRunSustainedHr >= 135
+      ? Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
+      : obsRunMaxHr
+        ? Math.round(obsRunMaxHr * 0.91)
+        : obsBikeLthr
+          ? obsBikeLthr + 4
+          : 0;
+  const obsFtp = maxBikeWatts20m >= 90 ? Math.round(maxBikeWatts20m * 0.95) : 0;
+  const obsPMax =
+    maxBikePeakWatts >= 400
+      ? Math.round(maxBikePeakWatts)
+      : obsFtp > 0
+        ? Math.round(obsFtp * 3.6)
+        : 0;
+  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
+  const obsThresholdPace =
+    bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
+  const safeW = weightKg > 30 ? weightKg : 70;
+  const obsRunFtp =
+    obsThresholdPace > 0 ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98) : 0;
+  const obsVo2Bike =
+    obsFtp > 0 && safeW > 30
+      ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7)))
+      : 0;
+  const obsVo2Run =
+    obsThresholdPace > 0
+      ? Math.max(
+          32,
+          Math.min(88, Math.round((1000 / obsThresholdPace) * 60 * 0.2 + 3.5))
+        )
+      : obsVo2Bike;
+
+  return {
+    obsFtp,
+    obsPMax,
+    obsWPrime,
+    obsBikeMaxHr,
+    obsBikeLthr,
+    obsRunMaxHr,
+    obsRunLthr,
+    obsThresholdPace,
+    obsRunFtp,
+    obsVo2Bike,
+    obsVo2Run,
+  };
+}
+
 export function buildCompleteAthleteProfile(
   partial?: Partial<AthleteProfile> | null,
-  latestWellness?: UnifiedWellnessDay
+  latestWellness?: UnifiedWellnessDay,
+  activities?: UnifiedActivity[] | null
 ): AthleteProfile {
-  const ftp = Number(partial?.ftp || latestWellness?.rideEftp || 300);
-  const indoorFtp = Number(partial?.indoorFtp || ftp);
-  const eFtp = Number(partial?.eFtp || latestWellness?.rideEftp || ftp);
-  const wPrime = Number(partial?.wPrime || latestWellness?.rideWPrime || 24500);
-  const pMax = Number(partial?.pMax || latestWellness?.ridePMax || 1180);
-  const lthr = Number(partial?.lthr || 163);
-  const maxHr = Number(partial?.maxHr || 182);
-  const weightKg = Number(partial?.weightKg || latestWellness?.weightKg || 70.0);
-  const restingHr = Number(partial?.restingHr || latestWellness?.restingHR || 49);
-  const vo2MaxCycling = Number(partial?.vo2MaxCycling || latestWellness?.vo2MaxCycling || 56);
-  const vo2MaxRunning = Number(partial?.vo2MaxRunning || latestWellness?.vo2MaxRunning || 55);
+  // Detect if `partial` was saved with the old hardcoded synthetic defaults
+  const isLegacyHardcodedProfile =
+    partial?.source !== 'CUSTOM_OVERRIDE' &&
+    ((partial?.wPrime === 24500 && partial?.pMax === 1180) ||
+      (partial?.lthr === 163 &&
+        partial?.maxHr === 182 &&
+        partial?.vo2MaxCycling === 56 &&
+        partial?.restingHr === 49));
 
-  const runFtp = Number(partial?.runFtp || latestWellness?.runEftp || 340);
-  const runEFtp = Number(partial?.runEFtp || latestWellness?.runEftp || runFtp);
-  const runLthr = Number(partial?.runLthr || lthr + 4);
-  const runMaxHr = Number(partial?.runMaxHr || maxHr + 3);
-  const thresholdPaceSecsPerKm = Number(partial?.thresholdPaceSecsPerKm || 245); // 4:05/km
+  const storedWeight =
+    typeof window !== 'undefined'
+      ? Number(window.localStorage.getItem('aeropulse_strava_athlete_weight_kg') || 0)
+      : 0;
+  const storedFtp =
+    typeof window !== 'undefined'
+      ? Number(window.localStorage.getItem('aeropulse_strava_athlete_ftp') || 0)
+      : 0;
+
+  const weightKg = Number(
+    (partial?.weightKg && partial.weightKg !== 70 ? partial.weightKg : 0) ||
+      (storedWeight > 30 ? storedWeight : 0) ||
+      (latestWellness?.weightKg && latestWellness.weightKg !== 70 ? latestWellness.weightKg : 0) ||
+      partial?.weightKg ||
+      latestWellness?.weightKg ||
+      70.0
+  );
+
+  const obs = calibrateMetricsFromActivitiesClient(activities, weightKg);
+
+  const rawFtp = isLegacyHardcodedProfile && (partial?.ftp === 280 || partial?.ftp === 300)
+    ? storedFtp || latestWellness?.rideEftp || obs.obsFtp || partial?.ftp
+    : partial?.ftp;
+
+  const ftp = Number(rawFtp || storedFtp || latestWellness?.rideEftp || obs.obsFtp || 250);
+  const indoorFtp = Number(
+    (!isLegacyHardcodedProfile && partial?.indoorFtp) || ftp
+  );
+  const eFtp = Number(
+    latestWellness?.rideEftp ||
+      (!isLegacyHardcodedProfile && partial?.eFtp) ||
+      obs.obsFtp ||
+      ftp
+  );
+  const wPrime = Number(
+    latestWellness?.rideWPrime ||
+      (!isLegacyHardcodedProfile && partial?.wPrime) ||
+      obs.obsWPrime ||
+      Math.round(ftp * 75)
+  );
+  const pMax = Number(
+    latestWellness?.ridePMax ||
+      (!isLegacyHardcodedProfile && partial?.pMax) ||
+      obs.obsPMax ||
+      Math.round(ftp * 3.6)
+  );
+  const lthr = Number(
+    (!isLegacyHardcodedProfile && partial?.lthr) ||
+      obs.obsBikeLthr ||
+      partial?.lthr ||
+      163
+  );
+  const maxHr = Number(
+    (!isLegacyHardcodedProfile && partial?.maxHr) ||
+      obs.obsBikeMaxHr ||
+      partial?.maxHr ||
+      Math.max(lthr + 15, 182)
+  );
+  const restingHr = Number(
+    (latestWellness?.restingHR && latestWellness.restingHR > 25 ? latestWellness.restingHR : 0) ||
+      (!isLegacyHardcodedProfile && partial?.restingHr) ||
+      partial?.restingHr ||
+      50
+  );
+  const vo2MaxCycling = Number(
+    (latestWellness?.vo2MaxCycling && latestWellness.vo2MaxCycling !== 50
+      ? latestWellness.vo2MaxCycling
+      : 0) ||
+      (!isLegacyHardcodedProfile && partial?.vo2MaxCycling) ||
+      obs.obsVo2Bike ||
+      Math.max(35, Math.min(85, Math.round(10.8 * (ftp / weightKg) + 7)))
+  );
+  const vo2MaxRunning = Number(
+    (latestWellness?.vo2MaxRunning && latestWellness.vo2MaxRunning !== 50
+      ? latestWellness.vo2MaxRunning
+      : 0) ||
+      (!isLegacyHardcodedProfile && partial?.vo2MaxRunning) ||
+      obs.obsVo2Run ||
+      vo2MaxCycling
+  );
+
+  const thresholdPaceSecsPerKm = Number(
+    (!isLegacyHardcodedProfile && partial?.thresholdPaceSecsPerKm) ||
+      obs.obsThresholdPace ||
+      partial?.thresholdPaceSecsPerKm ||
+      255
+  );
+  const runFtp = Number(
+    latestWellness?.runEftp ||
+      (!isLegacyHardcodedProfile && partial?.runFtp) ||
+      obs.obsRunFtp ||
+      Math.round(weightKg * (1000 / Math.max(160, thresholdPaceSecsPerKm)) * 0.98)
+  );
+  const runEFtp = Number(
+    latestWellness?.runEftp ||
+      (!isLegacyHardcodedProfile && partial?.runEFtp) ||
+      runFtp
+  );
+  const runLthr = Number(
+    (!isLegacyHardcodedProfile && partial?.runLthr) ||
+      obs.obsRunLthr ||
+      Math.min(maxHr - 4, lthr + 4)
+  );
+  const runMaxHr = Number(
+    (!isLegacyHardcodedProfile && partial?.runMaxHr) ||
+      obs.obsRunMaxHr ||
+      Math.max(runLthr + 12, maxHr)
+  );
 
   const powerZones =
-    Array.isArray(partial?.powerZones) && partial!.powerZones!.length >= 5
+    !isLegacyHardcodedProfile &&
+    Array.isArray(partial?.powerZones) &&
+    partial!.powerZones!.length >= 5
       ? partial!.powerZones!.map((pz, idx) => ({
           ...pz,
           minWatts:
@@ -201,12 +416,14 @@ export function buildCompleteAthleteProfile(
       : buildPowerZonesFromCeilings(ftp, indoorFtp);
 
   const hrZones =
-    Array.isArray(partial?.hrZones) && partial!.hrZones!.length >= 5
+    !isLegacyHardcodedProfile && Array.isArray(partial?.hrZones) && partial!.hrZones!.length >= 5
       ? partial!.hrZones!
       : buildHrZonesFromCeilings(lthr, maxHr);
 
   const runHrZones =
-    Array.isArray(partial?.runHrZones) && partial!.runHrZones!.length >= 5
+    !isLegacyHardcodedProfile &&
+    Array.isArray(partial?.runHrZones) &&
+    partial!.runHrZones!.length >= 5
       ? partial!.runHrZones!
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
 
@@ -214,12 +431,18 @@ export function buildCompleteAthleteProfile(
     typeof window !== 'undefined'
       ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
       : undefined;
+  const storedIntervalsName =
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('aeropulse_intervals_athlete_name')?.trim()
+      : undefined;
   const resolvedName =
     partial?.name && !isGenericAthleteName(partial.name)
       ? partial.name.trim()
       : storedStravaName && !isGenericAthleteName(storedStravaName)
         ? storedStravaName
-        : partial?.name?.trim() || 'Athlete';
+        : storedIntervalsName && !isGenericAthleteName(storedIntervalsName)
+          ? storedIntervalsName
+          : 'Athlete';
 
   return {
     athleteId: partial?.athleteId || '0',

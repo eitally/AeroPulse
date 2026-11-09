@@ -393,6 +393,12 @@ export default function App() {
       if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
       if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
       if (geminiApiKey) headers['x-gemini-api-key'] = geminiApiKey;
+      const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token');
+      const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token');
+      const garminSecret = localStorage.getItem('aeropulse_garmin_oauth1_secret');
+      if (garminBearer) headers['x-garmin-bearer-token'] = garminBearer;
+      if (garminOauth1) headers['x-garmin-oauth1-token'] = garminOauth1;
+      if (garminSecret) headers['x-garmin-oauth1-secret'] = garminSecret;
     } catch {
       // ignore
     }
@@ -450,20 +456,32 @@ export default function App() {
           // ignore
         }
       }
-      if (hasLocalAuth && data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)) {
+      if (hasLocalAuth) {
         try {
-          localStorage.setItem('aeropulse_strava_athlete_name', String(data.stravaAthleteName).trim());
+          if (data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)) {
+            localStorage.setItem(
+              'aeropulse_strava_athlete_name',
+              String(data.stravaAthleteName).trim()
+            );
+          }
+          if (data.intervalsAthleteName && !isGenericAthleteName(data.intervalsAthleteName)) {
+            localStorage.setItem(
+              'aeropulse_intervals_athlete_name',
+              String(data.intervalsAthleteName).trim()
+            );
+          }
+          if (data.stravaAthleteWeightKg && Number(data.stravaAthleteWeightKg) > 30) {
+            localStorage.setItem(
+              'aeropulse_strava_athlete_weight_kg',
+              String(data.stravaAthleteWeightKg)
+            );
+          }
+          if (data.stravaAthleteFtp && Number(data.stravaAthleteFtp) > 80) {
+            localStorage.setItem('aeropulse_strava_athlete_ftp', String(data.stravaAthleteFtp));
+          }
         } catch {
           // ignore
         }
-      }
-      if (hasLocalAuth && data.athleteProfile) {
-        const mergedProf = buildCompleteAthleteProfile(
-          data.athleteProfile,
-          wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
-        );
-        setAthleteProfile(mergedProf);
-        athleteProfileRef.current = mergedProf;
       }
       const isClientIntervalsConnected = Boolean(hasLocalAuth && data.intervalsConnected);
       const isClientStravaConnected = Boolean(hasLocalAuth && data.stravaConnected);
@@ -473,20 +491,64 @@ export default function App() {
           : savedStravaName && !isGenericAthleteName(savedStravaName)
             ? savedStravaName
             : undefined;
+      const resolvedIntervalsName =
+        data.intervalsAthleteName && !isGenericAthleteName(data.intervalsAthleteName)
+          ? String(data.intervalsAthleteName).trim()
+          : undefined;
+      const bestRealName = resolvedStravaName || resolvedIntervalsName;
+
+      if (hasLocalAuth) {
+        const currentProf = athleteProfileRef.current;
+        const needsNameUpdate = bestRealName && isGenericAthleteName(currentProf?.name);
+        const needsCalibration =
+          currentProf?.source !== 'CUSTOM_OVERRIDE' &&
+          ((currentProf?.wPrime === 24500 && currentProf?.pMax === 1180) ||
+            (currentProf?.lthr === 163 &&
+              currentProf?.maxHr === 182 &&
+              currentProf?.vo2MaxCycling === 56));
+        if (needsNameUpdate || needsCalibration || data.athleteProfile) {
+          const mergedProf = buildCompleteAthleteProfile(
+            {
+              ...(data.athleteProfile || currentProf),
+              name: bestRealName || data.athleteProfile?.name || currentProf?.name,
+              weightKg:
+                currentProf?.weightKg && currentProf.weightKg !== 70
+                  ? currentProf.weightKg
+                  : data.stravaAthleteWeightKg || currentProf?.weightKg,
+              ftp:
+                currentProf?.ftp && currentProf.ftp !== 280 && currentProf.ftp !== 300
+                  ? currentProf.ftp
+                  : data.stravaAthleteFtp || currentProf?.ftp,
+            },
+            wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
+            activitiesRef.current
+          );
+          setAthleteProfile(mergedProf);
+          athleteProfileRef.current = mergedProf;
+        }
+      }
       setConnectionStatus((prev) => ({
         ...prev,
         mode:
           isClientIntervalsConnected || isClientStravaConnected ? 'LIVE' : 'SANDBOX_CALIBRATION',
+        garminConnected: Boolean(
+          hasLocalAuth &&
+            (data.garminConnected || localStorage.getItem('aeropulse_garmin_bearer_token'))
+        ),
+        garminAthleteName:
+          data.garminAthleteName ||
+          localStorage.getItem('aeropulse_garmin_athlete_name') ||
+          prev.garminAthleteName,
         intervalsConnected: isClientIntervalsConnected,
         intervalsAthleteId: isClientIntervalsConnected ? data.intervalsAthleteId || '0' : '0',
         intervalsAthleteName: isClientIntervalsConnected
-          ? data.intervalsAthleteName || prev.intervalsAthleteName
+          ? resolvedIntervalsName || prev.intervalsAthleteName
           : undefined,
         intervalsSource: isClientIntervalsConnected ? data.intervalsSource || 'USER_INPUT' : 'NONE',
         stravaConnected: isClientStravaConnected,
         stravaClientId: data.stravaClientId || prev.stravaClientId,
         stravaAthleteName: isClientStravaConnected
-          ? resolvedStravaName || prev.stravaAthleteName
+          ? bestRealName || prev.stravaAthleteName
           : undefined,
         stravaSource: isClientStravaConnected ? data.stravaSource || 'OAUTH' : 'NONE',
         hasGeminiServerKey: Boolean(data.hasGeminiServerKey),
@@ -497,14 +559,12 @@ export default function App() {
           ? data.nextHourlySyncAt || prev.nextHourlySyncAt
           : prev.nextHourlySyncAt,
         autoSyncCronActive: true,
-        athleteFtp: hasLocalAuth ? data.athleteFtp || prev.athleteFtp : prev.athleteFtp,
-        athleteIndoorFtp: hasLocalAuth
-          ? data.athleteIndoorFtp || prev.athleteIndoorFtp
-          : prev.athleteIndoorFtp,
-        athleteRunFtp: hasLocalAuth ? data.athleteRunFtp || prev.athleteRunFtp : prev.athleteRunFtp,
-        athleteLthr: hasLocalAuth ? data.athleteLthr || prev.athleteLthr : prev.athleteLthr,
-        athleteMaxHr: hasLocalAuth ? data.athleteMaxHr || prev.athleteMaxHr : prev.athleteMaxHr,
-        athleteProfile: hasLocalAuth ? data.athleteProfile || prev.athleteProfile : prev.athleteProfile,
+        athleteFtp: athleteProfileRef.current.ftp || prev.athleteFtp,
+        athleteIndoorFtp: athleteProfileRef.current.indoorFtp || prev.athleteIndoorFtp,
+        athleteRunFtp: athleteProfileRef.current.runFtp || prev.athleteRunFtp,
+        athleteLthr: athleteProfileRef.current.lthr || prev.athleteLthr,
+        athleteMaxHr: athleteProfileRef.current.maxHr || prev.athleteMaxHr,
+        athleteProfile: athleteProfileRef.current || prev.athleteProfile,
         stravaActivitiesCount:
           hasLocalAuth && data.stravaActivitiesCount && data.stravaActivitiesCount > 0
             ? data.stravaActivitiesCount
@@ -575,12 +635,33 @@ export default function App() {
               nextPlannedEvents = intData.plannedEvents;
               setPlannedEvents(nextPlannedEvents);
             }
+            if (Array.isArray(intData.activities)) {
+              mergedActivities = intData.activities;
+              earliestDate = intData.earliestActivityDate || undefined;
+            }
             if (intData.athleteProfile) {
+              if (
+                intData.athleteProfile.name &&
+                !isGenericAthleteName(intData.athleteProfile.name)
+              ) {
+                try {
+                  localStorage.setItem(
+                    'aeropulse_intervals_athlete_name',
+                    String(intData.athleteProfile.name).trim()
+                  );
+                } catch {
+                  // ignore
+                }
+              }
               const latestW =
                 nextWellnessDays.length > 0
                   ? nextWellnessDays[nextWellnessDays.length - 1]
                   : undefined;
-              const completeProf = buildCompleteAthleteProfile(intData.athleteProfile, latestW);
+              const completeProf = buildCompleteAthleteProfile(
+                intData.athleteProfile,
+                latestW,
+                mergedActivities || activitiesRef.current
+              );
               setAthleteProfile(completeProf);
               athleteProfileRef.current = completeProf;
               if (
@@ -590,10 +671,6 @@ export default function App() {
                 nextGearItems = intData.athleteProfile.gearItems;
                 setGearItems(nextGearItems);
               }
-            }
-            if (Array.isArray(intData.activities)) {
-              mergedActivities = intData.activities;
-              earliestDate = intData.earliestActivityDate || undefined;
             }
           }
         }
@@ -623,17 +700,34 @@ export default function App() {
                 athleteName: stravaData.athleteName,
               });
             }
-            if (!statusData.intervalsConnected && stravaData.athleteProfile) {
-              const latestW =
-                nextWellnessDays.length > 0
-                  ? nextWellnessDays[nextWellnessDays.length - 1]
-                  : undefined;
-              const completeProf = buildCompleteAthleteProfile(stravaData.athleteProfile, latestW);
-              setAthleteProfile(completeProf);
-              athleteProfileRef.current = completeProf;
-              if (Array.isArray(stravaData.gearItems) && stravaData.gearItems.length > 0) {
-                nextGearItems = stravaData.gearItems;
-                setGearItems(nextGearItems);
+            if (stravaData.athleteProfile) {
+              if (!statusData.intervalsConnected) {
+                const latestW =
+                  nextWellnessDays.length > 0
+                    ? nextWellnessDays[nextWellnessDays.length - 1]
+                    : undefined;
+                const completeProf = buildCompleteAthleteProfile(
+                  stravaData.athleteProfile,
+                  latestW,
+                  stravaData.activities || activitiesRef.current
+                );
+                setAthleteProfile(completeProf);
+                athleteProfileRef.current = completeProf;
+                if (Array.isArray(stravaData.gearItems) && stravaData.gearItems.length > 0) {
+                  nextGearItems = stravaData.gearItems;
+                  setGearItems(nextGearItems);
+                }
+              } else if (
+                stravaData.athleteProfile.name &&
+                !isGenericAthleteName(stravaData.athleteProfile.name) &&
+                isGenericAthleteName(athleteProfileRef.current.name)
+              ) {
+                const updatedWithStravaName = {
+                  ...athleteProfileRef.current,
+                  name: stravaData.athleteProfile.name,
+                };
+                setAthleteProfile(updatedWithStravaName);
+                athleteProfileRef.current = updatedWithStravaName;
               }
             }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
@@ -816,6 +910,15 @@ export default function App() {
             wellnessDaysRef.current = nextWellnessDays;
           }
 
+          // Re-run profile calibration with the full merged activity archive
+          const calibratedProf = buildCompleteAthleteProfile(
+            athleteProfileRef.current,
+            nextWellnessDays[nextWellnessDays.length - 1],
+            combinedArchive
+          );
+          setAthleteProfile(calibratedProf);
+          athleteProfileRef.current = calibratedProf;
+
           const oldestLoaded =
             combinedArchive.length > 0
               ? combinedArchive[combinedArchive.length - 1].startDateLocal.slice(0, 10)
@@ -883,7 +986,11 @@ export default function App() {
               Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0
                 ? cached.wellnessDays[cached.wellnessDays.length - 1]
                 : undefined;
-            const hydratedProf = buildCompleteAthleteProfile(cached.athleteProfile, latestW);
+            const hydratedProf = buildCompleteAthleteProfile(
+              cached.athleteProfile,
+              latestW,
+              cached.activities
+            );
             setAthleteProfile(hydratedProf);
             athleteProfileRef.current = hydratedProf;
           }
@@ -1993,11 +2100,27 @@ export default function App() {
       if (resp.ok) {
         const data = await resp.json();
         if (data.athleteProfile) {
+          if (
+            data.athleteProfile.name &&
+            data.athleteProfile.name !== 'Athlete' &&
+            data.athleteProfile.name !== 'Strava Athlete' &&
+            data.athleteProfile.name !== 'Strava User'
+          ) {
+            try {
+              localStorage.setItem('aeropulse_strava_athlete_name', data.athleteProfile.name);
+            } catch {
+              // ignore storage errors
+            }
+          }
           const latestW =
             wellnessDaysRef.current.length > 0
               ? wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
               : undefined;
-          const synced = buildCompleteAthleteProfile(data.athleteProfile, latestW);
+          const synced = buildCompleteAthleteProfile(
+            data.athleteProfile,
+            latestW,
+            activitiesRef.current
+          );
           setAthleteProfile(synced);
           athleteProfileRef.current = synced;
           setConnectionStatus((prev) => ({

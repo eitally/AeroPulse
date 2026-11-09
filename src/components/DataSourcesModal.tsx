@@ -66,6 +66,10 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     status.mapTileProvider || 'OSM_KEYLESS'
   );
   const [mapTileApiKey, setMapTileApiKey] = useState<string>(status.mapTileApiKey || '');
+  const [garminEmail, setGarminEmail] = useState('');
+  const [garminPassword, setGarminPassword] = useState('');
+  const [garminBearerToken, setGarminBearerToken] = useState('');
+  const [isConnectingGarmin, setIsConnectingGarmin] = useState(false);
   const [bundleInput, setBundleInput] = useState('');
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
@@ -611,13 +615,173 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Intervals.icu + Garmin Connect Sync */}
+          {/* Section 2A: Direct Garmin Connect Integration (No Intervals.icu Required) */}
+          <div className="rounded-xl border border-[#007CC3]/40 bg-[#007CC3]/[0.03] p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    02. Direct Garmin Connect (Native Workout Push &amp; Biometrics — No Intervals.icu Needed)
+                  </h3>
+                  <span
+                    className={`text-xs font-mono font-semibold ${
+                      status.garminConnected || localStorage.getItem('aeropulse_garmin_bearer_token')
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-[#007CC3] dark:text-sky-400'
+                    }`}
+                  >
+                    ·{' '}
+                    {status.garminConnected || localStorage.getItem('aeropulse_garmin_bearer_token')
+                      ? `Connected (${status.garminAthleteName || localStorage.getItem('aeropulse_garmin_athlete_name') || 'Garmin Active'})`
+                      : 'Direct Integration Ready'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                  Connect directly to Garmin Connect to push Daily Workout Prescriptions straight to your <strong>Garmin Fenix / Forerunner watch</strong> and <strong>Garmin Edge head unit</strong>, and pull Sleep Score, Overnight HRV, Resting HR, Weight, FTP, and LTHR without Intervals.icu.
+                </p>
+              </div>
+              <a
+                href="https://connect.garmin.com/modern/calendar"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#007CC3] dark:text-sky-400 hover:underline whitespace-nowrap"
+              >
+                <span>Open Garmin Calendar</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsConnectingGarmin(true);
+                setLocalStatusMsg(null);
+                try {
+                  const resp = await fetch('/api/config/garmin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      email: garminEmail.trim(),
+                      password: garminPassword,
+                      directBearerToken: garminBearerToken.trim(),
+                    }),
+                  });
+                  const data = await resp.json().catch(() => ({}));
+                  if (!resp.ok) {
+                    setLocalStatusMsg(data.error || 'Failed to connect Garmin Connect.');
+                  } else {
+                    if (data.garminTokens?.oauth2AccessToken) {
+                      localStorage.setItem(
+                        'aeropulse_garmin_bearer_token',
+                        data.garminTokens.oauth2AccessToken
+                      );
+                    }
+                    if (data.garminTokens?.oauth1Token) {
+                      localStorage.setItem(
+                        'aeropulse_garmin_oauth1_token',
+                        data.garminTokens.oauth1Token
+                      );
+                    }
+                    if (data.garminTokens?.oauth1TokenSecret) {
+                      localStorage.setItem(
+                        'aeropulse_garmin_oauth1_secret',
+                        data.garminTokens.oauth1TokenSecret
+                      );
+                    }
+                    if (data.garminAthleteName) {
+                      localStorage.setItem(
+                        'aeropulse_garmin_athlete_name',
+                        data.garminAthleteName
+                      );
+                    }
+                    setGarminPassword('');
+                    setGarminBearerToken('');
+                    setLocalStatusMsg(
+                      `Garmin Connect linked (${data.garminAthleteName || 'Active'})! You can now push daily workout prescriptions directly to your watch & Edge head unit.`
+                    );
+                    await onSyncNow(false);
+                  }
+                } finally {
+                  setIsConnectingGarmin(false);
+                }
+              }}
+              className="space-y-3 pt-1"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Garmin Connect Email
+                  </label>
+                  <input
+                    type="email"
+                    value={garminEmail}
+                    onChange={(e) => setGarminEmail(e.target.value)}
+                    placeholder="athlete@example.com"
+                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Garmin Connect Password
+                  </label>
+                  <input
+                    type="password"
+                    value={garminPassword}
+                    onChange={(e) => setGarminPassword(e.target.value)}
+                    placeholder="••••••••••••••••"
+                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div className="sm:col-span-3 flex items-end gap-2">
+                  <button
+                    type="submit"
+                    disabled={isConnectingGarmin}
+                    className="w-full min-h-[38px] rounded-lg bg-[#007CC3] hover:bg-[#0066a1] disabled:opacity-50 px-3 py-1.5 text-xs font-semibold text-white transition-colors whitespace-nowrap"
+                  >
+                    {isConnectingGarmin ? 'Connecting...' : 'Connect Garmin'}
+                  </button>
+                  {(status.garminConnected ||
+                    localStorage.getItem('aeropulse_garmin_bearer_token')) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await fetch('/api/config/garmin', { method: 'DELETE' });
+                        localStorage.removeItem('aeropulse_garmin_bearer_token');
+                        localStorage.removeItem('aeropulse_garmin_oauth1_token');
+                        localStorage.removeItem('aeropulse_garmin_oauth1_secret');
+                        localStorage.removeItem('aeropulse_garmin_athlete_name');
+                        setLocalStatusMsg('Direct Garmin Connect session cleared.');
+                      }}
+                      className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Or Paste Direct Garmin Connect Bearer Token (if Garmin 2FA/MFA is enabled on your account):
+                </label>
+                <input
+                  type="password"
+                  value={garminBearerToken}
+                  onChange={(e) => setGarminBearerToken(e.target.value)}
+                  placeholder="Optional: Paste Bearer eyJhbGci... token from connect.garmin.com Network inspector"
+                  className="w-full min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </form>
+          </div>
+
+          {/* Section 2B: Optional Intervals.icu Bridge */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    02. Additional Data Sources: Garmin Connect &amp; Intervals.icu Bridge
+                    02B. Optional Legacy Bridge: Intervals.icu API
                   </h3>
                   <span
                     className={`text-xs font-mono font-semibold ${
@@ -629,11 +793,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     ·{' '}
                     {status.intervalsConnected
                       ? `Connected (${status.intervalsAthleteName || status.intervalsAthleteId})`
-                      : 'Optional — Not Connected'}
+                      : 'Optional — Not Required'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Optionally connect Garmin Connect &amp; Intervals.icu alongside Strava to enrich your telemetry with nightly Garmin Sleep Score, Sleep Duration, Overnight HRV, Resting HR, VO2max, eFTP, and structured planned workouts.
+                  Optional secondary bridge if you also maintain an Intervals.icu account alongside Strava and Garmin Connect.
                 </p>
               </div>
               <a

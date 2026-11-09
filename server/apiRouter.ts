@@ -2,6 +2,15 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  GarminSessionStore,
+  authenticateGarminConnect,
+  clearGarminSession,
+  fetchDirectGarminProfileAndWellness,
+  loadGarminSession,
+  pushWorkoutToGarminConnect,
+  saveGarminSession,
+} from './garminConnectService';
 
 export const apiRouter = express.Router();
 
@@ -9,6 +18,37 @@ const SESSION_CACHE_FILE = '/tmp/aeropulse-runtime-session.json';
 const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-segments-by-activity.json';
 const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-routes-by-activity.json';
 const STRAVA_KUDOS_CACHE_FILE = '/tmp/aeropulse-strava-kudos.json';
+const GARMIN_SESSION_DIR = '/tmp/aeropulse-garmin';
+
+function getGarminScopeKey(req?: Request): string {
+  const rawIdentity = (
+    (req ? String(req.headers['x-strava-refresh-token'] || '').trim() : '') ||
+    (req ? String(req.headers['x-strava-access-token'] || '').trim() : '') ||
+    (req ? String(req.headers['x-intervals-api-key'] || '').trim() : '') ||
+    'default'
+  ).trim();
+  return crypto.createHash('sha256').update(rawIdentity).digest('hex').slice(0, 16);
+}
+
+function getActiveGarminSession(req?: Request): GarminSessionStore | null {
+  const scopeKey = getGarminScopeKey(req);
+  const stored = loadGarminSession(GARMIN_SESSION_DIR, scopeKey) || loadGarminSession(GARMIN_SESSION_DIR, 'default');
+  const headerBearer = req ? String(req.headers['x-garmin-bearer-token'] || '').trim() : '';
+  const headerOauth1 = req ? String(req.headers['x-garmin-oauth1-token'] || '').trim() : '';
+  const headerOauth1Secret = req ? String(req.headers['x-garmin-oauth1-secret'] || '').trim() : '';
+
+  if (stored && (stored.oauth2AccessToken || stored.oauth1Token)) {
+    return stored;
+  }
+  if (headerBearer || (headerOauth1 && headerOauth1Secret)) {
+    return {
+      oauth2AccessToken: headerBearer || undefined,
+      oauth1Token: headerOauth1 || undefined,
+      oauth1TokenSecret: headerOauth1Secret || undefined,
+    };
+  }
+  return null;
+}
 
 function getScopedPlannedEventsFile(req?: Request, explicitApiKey?: string): string | null {
   const rawIdentity = (
@@ -184,32 +224,215 @@ const SERVER_ZONE_COLORS = [
   '#EC4899',
 ];
 
+function deriveObservedPhysiologyFromActivities(
+  activities?: Record<string, any>[] | null,
+  weightKg = 70
+) {
+  let maxBikeWatts20m = 0;
+  let maxBikePeakWatts = 0;
+  let maxBikeHr = 0;
+  let maxBikeSustainedHr = 0;
+  let maxRunHr = 0;
+  let maxRunSustainedHr = 0;
+  let bestRunPaceSecsPerKm = 0;
+
+  if (Array.isArray(activities)) {
+    for (const a of activities) {
+      if (!a) continue;
+      const sport = String(a.sportCategory || a.sport_type || a.type || '');
+      const isBike = /ride|cycling|virtualride|bike/i.test(sport);
+      const isRun = /run|trailrun|virtualrun/i.test(sport);
+      const dur = Number(a.movingTimeSecs ?? a.moving_time ?? a.elapsed_time ?? 0);
+      const dist = Number(a.distanceMeters ?? a.distance ?? 0);
+      const np = Number(
+        a.normalizedPower ??
+          a.icu_weighted_avg_watts ??
+          a.weighted_average_watts ??
+          a.avgPower ??
+          a.icu_average_watts ??
+          a.average_watts ??
+          0
+      );
+      const maxW = Number(a.max_watts ?? a.pMax ?? np * 2.2);
+      const avgHr = Number(a.avgHr ?? a.average_heartrate ?? 0);
+      const peakHr = Number(a.maxHr ?? a.max_heartrate ?? 0);
+
+      if (isBike) {
+        if (dur >= 1200 && np >= 80 && np <= 600 && np > maxBikeWatts20m) {
+          maxBikeWatts20m = np;
+        }
+        if (maxW >= 250 && maxW <= 2500 && maxW > maxBikePeakWatts) {
+          maxBikePeakWatts = maxW;
+        }
+        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxBikeHr) {
+          maxBikeHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
+          maxBikeSustainedHr = avgHr;
+        }
+      } else if (isRun) {
+        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxRunHr) {
+          maxRunHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
+          maxRunSustainedHr = avgHr;
+        }
+        const pace =
+          Number(a.gapPaceSecsPerKm ?? a.avgPaceSecsPerKm ?? 0) ||
+          (dist >= 3000 && dur >= 900 ? Math.round(dur / (dist / 1000)) : 0);
+        if (dur >= 1200 && dist >= 3000 && pace >= 165 && pace <= 600) {
+          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
+            bestRunPaceSecsPerKm = pace;
+          }
+        }
+      }
+    }
+  }
+
+  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
+  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
+  const obsBikeLthr =
+    maxBikeSustainedHr >= 130
+      ? Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
+      : obsBikeMaxHr
+        ? Math.round(obsBikeMaxHr * 0.9)
+        : 0;
+  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
+  const obsRunLthr =
+    maxRunSustainedHr >= 135
+      ? Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
+      : obsRunMaxHr
+        ? Math.round(obsRunMaxHr * 0.91)
+        : obsBikeLthr
+          ? obsBikeLthr + 4
+          : 0;
+  const obsFtp = maxBikeWatts20m >= 90 ? Math.round(maxBikeWatts20m * 0.95) : 0;
+  const obsPMax =
+    maxBikePeakWatts >= 400
+      ? Math.round(maxBikePeakWatts)
+      : obsFtp > 0
+        ? Math.round(obsFtp * 3.6)
+        : 0;
+  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
+  const obsThresholdPace =
+    bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
+  const safeW = weightKg > 30 ? weightKg : 70;
+  const obsRunFtp =
+    obsThresholdPace > 0 ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98) : 0;
+  const obsVo2Bike =
+    obsFtp > 0 && safeW > 30
+      ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7)))
+      : 0;
+  const obsVo2Run =
+    obsThresholdPace > 0
+      ? Math.max(
+          32,
+          Math.min(88, Math.round((1000 / obsThresholdPace) * 60 * 0.2 + 3.5))
+        )
+      : obsVo2Bike;
+
+  return {
+    obsFtp,
+    obsPMax,
+    obsWPrime,
+    obsBikeMaxHr,
+    obsBikeLthr,
+    obsRunMaxHr,
+    obsRunLthr,
+    obsThresholdPace,
+    obsRunFtp,
+    obsVo2Bike,
+    obsVo2Run,
+  };
+}
+
 function buildServerAthleteProfile(
   rawProfile?: Record<string, any> | null,
-  latestWellness?: Record<string, any> | null
+  latestWellness?: Record<string, any> | null,
+  activities?: Record<string, any>[] | null
 ) {
   const prev: Record<string, any> = {};
-  const bikeSetting = Array.isArray(rawProfile?.sportSettings)
-    ? rawProfile!.sportSettings.find(
-        (s: any) =>
-          Array.isArray(s.types) &&
-          (s.types.includes('Ride') || s.types.includes('VirtualRide'))
-      )
-    : undefined;
-  const runSetting = Array.isArray(rawProfile?.sportSettings)
-    ? rawProfile!.sportSettings.find(
-        (s: any) =>
-          Array.isArray(s.types) &&
-          (s.types.includes('Run') || s.types.includes('VirtualRun') || s.types.includes('TrailRun'))
-      )
-    : undefined;
+  const sportSettingsList: Record<string, any>[] = Array.isArray(rawProfile?.sportSettings)
+    ? rawProfile!.sportSettings
+    : rawProfile?.sportSettings && typeof rawProfile.sportSettings === 'object'
+      ? Object.values(rawProfile.sportSettings)
+      : [];
+
+  const bikeSetting = sportSettingsList.find(
+    (s: any) =>
+      (Array.isArray(s?.types) &&
+        (s.types.includes('Ride') ||
+          s.types.includes('VirtualRide') ||
+          s.types.includes('GravelRide') ||
+          s.types.includes('MountainBikeRide'))) ||
+      /ride|bike|cycling/i.test(String(s?.type || ''))
+  );
+  const runSetting = sportSettingsList.find(
+    (s: any) =>
+      (Array.isArray(s?.types) &&
+        (s.types.includes('Run') ||
+          s.types.includes('VirtualRun') ||
+          s.types.includes('TrailRun'))) ||
+      /run/i.test(String(s?.type || ''))
+  );
+
+  // Extract Strava /api/v3/athlete/zones if present
+  const stravaHrZonesRaw = Array.isArray(rawProfile?.stravaZones?.heart_rate?.zones)
+    ? rawProfile!.stravaZones.heart_rate.zones
+    : [];
+  const stravaPowerZonesRaw = Array.isArray(rawProfile?.stravaZones?.power?.zones)
+    ? rawProfile!.stravaZones.power.zones
+    : [];
+
+  let stravaDerivedMaxHr = 0;
+  let stravaDerivedLthr = 0;
+  if (stravaHrZonesRaw.length >= 4) {
+    const z4Max = Number(stravaHrZonesRaw[3]?.max || 0);
+    const z3Max = Number(stravaHrZonesRaw[2]?.max || 0);
+    const z5Min = Number(stravaHrZonesRaw[4]?.min || z4Max);
+    if (z4Max >= 135 && z4Max <= 215) {
+      stravaDerivedLthr = z4Max;
+      stravaDerivedMaxHr = Math.round(z4Max / 0.91);
+    } else if (z3Max >= 125 && z3Max <= 200) {
+      stravaDerivedLthr = Math.round(z3Max * 1.07);
+      stravaDerivedMaxHr = Math.round(stravaDerivedLthr / 0.91);
+    }
+    if (z5Min > stravaDerivedLthr) {
+      stravaDerivedLthr = z5Min;
+    }
+  }
+
+  let stravaDerivedFtp = 0;
+  if (stravaPowerZonesRaw.length >= 4) {
+    const pZ4Max = Number(stravaPowerZonesRaw[3]?.max || 0);
+    if (pZ4Max >= 90 && pZ4Max <= 600) {
+      stravaDerivedFtp = Math.round(pZ4Max / 1.05);
+    }
+  }
+
+  const explicitWeight = Number(
+    rawProfile?.icu_weight ||
+      rawProfile?.weight ||
+      rawProfile?.weightKg ||
+      (latestWellness?.weightKg && Number(latestWellness.weightKg) !== 70
+        ? latestWellness.weightKg
+        : 0) ||
+      latestWellness?.weightKg ||
+      prev.weightKg ||
+      70.0
+  );
+  const weightKg = explicitWeight > 30 ? explicitWeight : 70.0;
+
+  const obs = deriveObservedPhysiologyFromActivities(activities, weightKg);
 
   const ftp = Number(
     bikeSetting?.ftp ||
       rawProfile?.ftp ||
-      prev.ftp ||
       latestWellness?.rideEftp ||
-      300
+      stravaDerivedFtp ||
+      obs.obsFtp ||
+      prev.ftp ||
+      250
   );
   const indoorFtp = Number(
     bikeSetting?.indoor_ftp ||
@@ -219,8 +442,10 @@ function buildServerAthleteProfile(
   );
   const eFtp = Number(
     latestWellness?.rideEftp ||
+      bikeSetting?.eftp ||
       bikeSetting?.eFtp ||
       rawProfile?.eFtp ||
+      obs.obsFtp ||
       prev.eFtp ||
       ftp
   );
@@ -228,27 +453,33 @@ function buildServerAthleteProfile(
     bikeSetting?.w_prime ||
       latestWellness?.rideWPrime ||
       rawProfile?.wPrime ||
+      obs.obsWPrime ||
       prev.wPrime ||
-      24500
+      Math.round(ftp * 75)
   );
   const pMax = Number(
     bikeSetting?.p_max ||
       latestWellness?.ridePMax ||
       rawProfile?.pMax ||
+      obs.obsPMax ||
       prev.pMax ||
-      1180
+      Math.round(ftp * 3.6)
   );
   const lthr = Number(
     bikeSetting?.lthr ||
       rawProfile?.lthr ||
+      stravaDerivedLthr ||
+      obs.obsBikeLthr ||
       prev.lthr ||
       163
   );
   const maxHr = Number(
     bikeSetting?.max_hr ||
       rawProfile?.maxHr ||
+      stravaDerivedMaxHr ||
+      obs.obsBikeMaxHr ||
       prev.maxHr ||
-      182
+      Math.max(lthr + 15, 182)
   );
   const sweetSpotMinPct = Number(
     bikeSetting?.sweet_spot_min || rawProfile?.sweetSpotMinPct || prev.sweetSpotMinPct || 84
@@ -257,52 +488,75 @@ function buildServerAthleteProfile(
     bikeSetting?.sweet_spot_max || rawProfile?.sweetSpotMaxPct || prev.sweetSpotMaxPct || 97
   );
 
-  const weightKg = Number(
-    latestWellness?.weightKg ||
-      rawProfile?.icu_weight ||
-      rawProfile?.weight ||
-      rawProfile?.weightKg ||
-      prev.weightKg ||
-      70.0
-  );
   const restingHr = Number(
-    latestWellness?.restingHR ||
+    (latestWellness?.restingHR && Number(latestWellness.restingHR) > 25
+      ? latestWellness.restingHR
+      : 0) ||
       rawProfile?.icu_resting_hr ||
       rawProfile?.restingHr ||
       prev.restingHr ||
-      49
+      50
   );
   const vo2MaxCycling = Number(
-    latestWellness?.vo2MaxCycling || rawProfile?.vo2MaxCycling || prev.vo2MaxCycling || 56
+    (latestWellness?.vo2MaxCycling && Number(latestWellness.vo2MaxCycling) !== 50
+      ? latestWellness.vo2MaxCycling
+      : 0) ||
+      rawProfile?.vo2MaxCycling ||
+      obs.obsVo2Bike ||
+      prev.vo2MaxCycling ||
+      Math.max(35, Math.min(85, Math.round(10.8 * (ftp / weightKg) + 7)))
   );
   const vo2MaxRunning = Number(
-    latestWellness?.vo2MaxRunning || rawProfile?.vo2MaxRunning || prev.vo2MaxRunning || 55
+    (latestWellness?.vo2MaxRunning && Number(latestWellness.vo2MaxRunning) !== 50
+      ? latestWellness.vo2MaxRunning
+      : 0) ||
+      rawProfile?.vo2MaxRunning ||
+      obs.obsVo2Run ||
+      prev.vo2MaxRunning ||
+      vo2MaxCycling
   );
 
-  const runFtp = Number(
-    runSetting?.ftp ||
-      rawProfile?.runFtp ||
-      prev.runFtp ||
-      latestWellness?.runEftp ||
-      340
-  );
-  const runEFtp = Number(
-    latestWellness?.runEftp || rawProfile?.runEFtp || prev.runEFtp || runFtp
-  );
-  const runLthr = Number(
-    runSetting?.lthr || rawProfile?.runLthr || prev.runLthr || lthr + 4
-  );
-  const runMaxHr = Number(
-    runSetting?.max_hr || rawProfile?.runMaxHr || prev.runMaxHr || maxHr + 3
-  );
   // threshold_pace in Intervals.icu is m/s; convert to secs/km if < 15
   let thresholdPaceSecsPerKm = Number(
-    rawProfile?.thresholdPaceSecsPerKm || prev.thresholdPaceSecsPerKm || 245
+    rawProfile?.thresholdPaceSecsPerKm ||
+      obs.obsThresholdPace ||
+      prev.thresholdPaceSecsPerKm ||
+      255
   );
   if (runSetting?.threshold_pace && Number(runSetting.threshold_pace) > 0) {
     const rawTp = Number(runSetting.threshold_pace);
     thresholdPaceSecsPerKm = rawTp < 15 ? Math.round(1000 / rawTp) : Math.round(rawTp);
   }
+
+  const runFtp = Number(
+    runSetting?.ftp ||
+      rawProfile?.runFtp ||
+      latestWellness?.runEftp ||
+      obs.obsRunFtp ||
+      prev.runFtp ||
+      Math.round(weightKg * (1000 / Math.max(160, thresholdPaceSecsPerKm)) * 0.98)
+  );
+  const runEFtp = Number(
+    latestWellness?.runEftp ||
+      runSetting?.eftp ||
+      rawProfile?.runEFtp ||
+      prev.runEFtp ||
+      runFtp
+  );
+  const runLthr = Number(
+    runSetting?.lthr ||
+      rawProfile?.runLthr ||
+      obs.obsRunLthr ||
+      prev.runLthr ||
+      Math.min(maxHr - 4, lthr + 4)
+  );
+  const runMaxHr = Number(
+    runSetting?.max_hr ||
+      rawProfile?.runMaxHr ||
+      obs.obsRunMaxHr ||
+      prev.runMaxHr ||
+      Math.max(runLthr + 12, maxHr)
+  );
 
   // Power Zones (Z1..Z7)
   const rawPowerCeilings: number[] =
@@ -420,13 +674,16 @@ function buildServerAthleteProfile(
     };
   });
 
+  const candidateName =
+    rawProfile?.name ||
+    [rawProfile?.firstname, rawProfile?.lastname].filter(Boolean).join(' ') ||
+    rawProfile?.username ||
+    prev.name ||
+    '';
+
   return {
     athleteId: String(rawProfile?.id || prev.athleteId || '0'),
-    name:
-      rawProfile?.name ||
-      [rawProfile?.firstname, rawProfile?.lastname].filter(Boolean).join(' ') ||
-      prev.name ||
-      'Athlete',
+    name: !isGenericName(candidateName) ? String(candidateName).trim() : 'Athlete',
     weightKg: Number(weightKg.toFixed(1)),
     restingHr: Math.round(restingHr),
     vo2MaxCycling: Math.round(vo2MaxCycling),
@@ -703,11 +960,19 @@ async function resolveStravaAthleteIdentity(req?: Request): Promise<CachedStrava
     return cached;
   }
   try {
-    const validToken = await ensureValidStravaAccessToken(req, false);
+    let validToken = await ensureValidStravaAccessToken(req, false);
     if (!validToken) return null;
-    const resp = await fetch('https://www.strava.com/api/v3/athlete', {
+    let resp = await fetch('https://www.strava.com/api/v3/athlete', {
       headers: { Authorization: `Bearer ${validToken}` },
     });
+    if (resp.status === 401 && refreshToken) {
+      validToken = await ensureValidStravaAccessToken(req, true);
+      if (validToken) {
+        resp = await fetch('https://www.strava.com/api/v3/athlete', {
+          headers: { Authorization: `Bearer ${validToken}` },
+        });
+      }
+    }
     if (!resp.ok) return null;
     const rawAthlete = (await resp.json()) as Record<string, any>;
     const athleteId = String(rawAthlete.id || '');
@@ -727,6 +992,49 @@ async function resolveStravaAthleteIdentity(req?: Request): Promise<CachedStrava
     stravaIdentityByToken.set(validToken, entry);
     runtimeStore.stravaAthleteName = fullName;
     saveSessionCache();
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+const intervalsIdentityByKey = new Map<
+  string,
+  { athleteId: string; athleteName: string; rawProfile: Record<string, any> }
+>();
+
+async function resolveIntervalsAthleteIdentity(req?: Request) {
+  const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+  if (!apiKey) return null;
+  const cached = intervalsIdentityByKey.get(apiKey);
+  if (cached && !isGenericName(cached.athleteName)) {
+    return cached;
+  }
+  try {
+    const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+    const resp = await fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId || '0')}`,
+      {
+        headers: { Authorization: authHeader, Accept: 'application/json' },
+      }
+    );
+    if (!resp.ok) return null;
+    const rawProfile = (await resp.json()) as Record<string, any>;
+    const resolvedId = String(rawProfile.id || athleteId || '0');
+    const fullName =
+      String(rawProfile.name || '').trim() ||
+      [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(' ').trim() ||
+      '';
+    if (fullName && !isGenericName(fullName)) {
+      runtimeStore.intervalsAthleteName = fullName;
+      saveSessionCache();
+    }
+    const entry = {
+      athleteId: resolvedId,
+      athleteName: fullName,
+      rawProfile,
+    };
+    intervalsIdentityByKey.set(apiKey, entry);
     return entry;
   } catch {
     return null;
@@ -864,36 +1172,42 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
   const isIntervalsConnected = Boolean(intervalsKey);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
 
-  const stravaIdentity = isStravaConnected ? await resolveStravaAthleteIdentity(req) : null;
+  const [stravaIdentity, intervalsIdentity] = await Promise.all([
+    isStravaConnected ? resolveStravaAthleteIdentity(req) : Promise.resolve(null),
+    isIntervalsConnected ? resolveIntervalsAthleteIdentity(req) : Promise.resolve(null),
+  ]);
+
   const resolvedStravaName =
     stravaIdentity?.athleteName ||
     (!isGenericName(runtimeStore.stravaAthleteName) ? runtimeStore.stravaAthleteName : undefined);
-  const resolvedProfile =
-    isStravaConnected && resolvedStravaName
-      ? buildServerAthleteProfile(
-          {
-            id: stravaIdentity?.athleteId || '0',
-            name: resolvedStravaName,
-            ftp: stravaIdentity?.ftp || 280,
-            weightKg: stravaIdentity?.weightKg || 70,
-            source: 'STRAVA_OAUTH',
-          },
-          null
-        )
-      : undefined;
+  const resolvedIntervalsName =
+    intervalsIdentity?.athleteName ||
+    (!isGenericName(runtimeStore.intervalsAthleteName)
+      ? runtimeStore.intervalsAthleteName
+      : undefined);
+
+  const activeGarminSession = getActiveGarminSession(req);
+  const isGarminConnected = Boolean(
+    activeGarminSession?.oauth2AccessToken || activeGarminSession?.oauth1Token
+  );
+  const resolvedGarminName =
+    activeGarminSession?.fullName || activeGarminSession?.displayName || undefined;
 
   res.json({
+    garminConnected: isGarminConnected,
+    garminAthleteName: resolvedGarminName,
     intervalsConnected: isIntervalsConnected,
-    intervalsAthleteId: isIntervalsConnected ? athleteId : '0',
-    intervalsAthleteName:
-      isIntervalsConnected && !isGenericName(runtimeStore.intervalsAthleteName)
-        ? runtimeStore.intervalsAthleteName
-        : undefined,
+    intervalsAthleteId: isIntervalsConnected
+      ? intervalsIdentity?.athleteId || athleteId || '0'
+      : '0',
+    intervalsAthleteName: resolvedIntervalsName,
     intervalsSource: isIntervalsConnected ? 'USER_INPUT' : 'NONE',
     stravaConfigured: Boolean(stravaClientId),
     stravaClientId: stravaClientId || undefined,
     stravaConnected: isStravaConnected,
-    stravaAthleteName: resolvedStravaName,
+    stravaAthleteName: resolvedStravaName || resolvedGarminName || resolvedIntervalsName,
+    stravaAthleteFtp: stravaIdentity?.ftp,
+    stravaAthleteWeightKg: stravaIdentity?.weightKg,
     stravaSource: isStravaConnected ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
     hasGeminiServerKey,
     autoSyncCronActive: true,
@@ -902,12 +1216,6 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
     garminActivitiesCount: 0,
     stravaActivitiesCount: 0,
     redactedStravaCount: 0,
-    athleteFtp: resolvedProfile?.ftp || 280,
-    athleteIndoorFtp: resolvedProfile?.indoorFtp || 280,
-    athleteRunFtp: resolvedProfile?.runFtp || 340,
-    athleteLthr: resolvedProfile?.lthr || 163,
-    athleteMaxHr: resolvedProfile?.maxHr || 182,
-    athleteProfile: resolvedProfile,
     gearItems: [],
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
@@ -917,11 +1225,201 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
   });
 });
 
-// Sync or Override Athlete Profile & Sport Zones from Intervals.icu & Garmin
+// Connect Direct Garmin Connect Account (No Intervals.icu Required)
+apiRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const session = await authenticateGarminConnect({
+      email: body.email,
+      password: body.password,
+      directBearerToken: body.directBearerToken,
+      oauth1Token: body.oauth1Token,
+      oauth1TokenSecret: body.oauth1TokenSecret,
+    });
+
+    const scopeKey = getGarminScopeKey(req);
+    saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+    saveGarminSession(GARMIN_SESSION_DIR, 'default', session);
+
+    // Fetch direct Garmin profile & recent sleep/HRV biometrics
+    const garminData = await fetchDirectGarminProfileAndWellness(session, 14).catch(
+      () => null
+    );
+    saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+
+    const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
+    const sId = String(stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
+    const sActs = sId
+      ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
+      : [];
+
+    const latestW =
+      garminData?.wellnessRows && garminData.wellnessRows.length > 0
+        ? garminData.wellnessRows[garminData.wellnessRows.length - 1]
+        : null;
+
+    const syncedProfile = buildServerAthleteProfile(
+      {
+        ...(garminData?.rawProfile || {}),
+        name:
+          garminData?.rawProfile?.name ||
+          session.fullName ||
+          session.displayName ||
+          stravaIdentity?.athleteName,
+        source: 'INTERVALS_GARMIN',
+      },
+      latestW,
+      sActs
+    );
+
+    res.json({
+      ok: true,
+      garminConnected: true,
+      garminAthleteName:
+        session.fullName || session.displayName || syncedProfile.name,
+      athleteProfile: syncedProfile,
+      garminTokens: {
+        oauth2AccessToken: session.oauth2AccessToken,
+        oauth1Token: session.oauth1Token,
+        oauth1TokenSecret: session.oauth1TokenSecret,
+      },
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      error:
+        err instanceof Error
+          ? err.message
+          : 'Failed to authenticate with Garmin Connect',
+    });
+  }
+});
+
+apiRouter.delete('/api/config/garmin', (req: Request, res: Response) => {
+  const scopeKey = getGarminScopeKey(req);
+  clearGarminSession(GARMIN_SESSION_DIR, scopeKey);
+  clearGarminSession(GARMIN_SESSION_DIR, 'default');
+  res.json({ ok: true, garminConnected: false });
+});
+
+// Direct Workout Push to Garmin Connect Calendar (Watches & Edge Head Units)
+apiRouter.post('/api/garmin/workout/push', async (req: Request, res: Response) => {
+  try {
+    const session = getActiveGarminSession(req);
+    if (!session) {
+      res.status(400).json({
+        error:
+          'Garmin Connect is not connected yet. Connect your Garmin account in Data Sources first.',
+      });
+      return;
+    }
+
+    const body = req.body || {};
+    const date = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const name = String(body.name || 'Thresh Daily Prescription');
+    const sportCategory = body.sportCategory || 'Cycling';
+    const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
+    const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);
+    const workoutSyntax = String(body.workoutSyntax || '');
+    const plannedDurationSecs = Number(body.plannedDurationSecs || 3600);
+
+    const parsedSteps =
+      Array.isArray(body.steps) && body.steps.length > 0
+        ? body.steps
+        : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs).map((st) => ({
+            label: st.label,
+            durationSecs: st.durationSecs || 600,
+            targetPctFtp: st.targetPctFtp || 75,
+          }));
+
+    const pushRes = await pushWorkoutToGarminConnect(session, {
+      date,
+      name,
+      sportCategory,
+      description: body.description || workoutSyntax,
+      ftpWatts,
+      lthrBpm,
+      steps: parsedSteps,
+    });
+
+    saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), session);
+    res.json(pushRes);
+  } catch (err: any) {
+    res.status(500).json({
+      error:
+        err instanceof Error
+          ? err.message
+          : 'Failed to push workout to Garmin Connect',
+    });
+  }
+});
+
+// Sync or Override Athlete Profile & Sport Zones from Intervals.icu, Garmin, or Strava
 apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response) => {
   try {
     const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    const stravaIdentity = await resolveStravaAthleteIdentity(req);
+    const garminSession = getActiveGarminSession(req);
+
     if (!apiKey) {
+      // Check Direct Garmin Connect + Live Strava OAuth profile + /athlete/zones + cached Strava activities
+      const [garminDirect, validStravaToken] = await Promise.all([
+        garminSession
+          ? fetchDirectGarminProfileAndWellness(garminSession, 14).catch(() => null)
+          : Promise.resolve(null),
+        ensureValidStravaAccessToken(req, false),
+      ]);
+
+      if (validStravaToken || garminDirect) {
+        let sAth: Record<string, any> = {};
+        let sZones: Record<string, any> | null = null;
+        if (validStravaToken) {
+          const sHeaders = { Authorization: `Bearer ${validStravaToken}` };
+          const [sAthResp, sZonesResp] = await Promise.all([
+            fetch('https://www.strava.com/api/v3/athlete', { headers: sHeaders }),
+            fetch('https://www.strava.com/api/v3/athlete/zones', { headers: sHeaders }),
+          ]);
+          sAth = sAthResp.ok ? ((await sAthResp.json()) as Record<string, any>) : {};
+          sZones = sZonesResp.ok ? ((await sZonesResp.json()) as Record<string, any>) : null;
+        }
+        const sId = String(sAth.id || stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
+        const sActs = sId
+          ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
+          : [];
+        const sName =
+          garminDirect?.rawProfile?.name ||
+          [sAth.firstname, sAth.lastname].filter(Boolean).join(' ').trim() ||
+          String(sAth.username || '').trim() ||
+          stravaIdentity?.athleteName ||
+          'Athlete';
+
+        const latestGarminW =
+          garminDirect?.wellnessRows && garminDirect.wellnessRows.length > 0
+            ? garminDirect.wellnessRows[garminDirect.wellnessRows.length - 1]
+            : null;
+
+        const directSyncedProfile = buildServerAthleteProfile(
+          {
+            ...(garminDirect?.rawProfile || {}),
+            id: sId || garminDirect?.rawProfile?.id || '0',
+            name: sName,
+            ftp:
+              garminDirect?.rawProfile?.sportSettings?.[0]?.ftp ??
+              (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : undefined),
+            weightKg:
+              garminDirect?.rawProfile?.weight ??
+              (Number(sAth.weight) > 30 ? Number(sAth.weight) : undefined),
+            stravaZones: sZones,
+            source: garminDirect ? 'INTERVALS_GARMIN' : 'STRAVA_OAUTH',
+          },
+          latestGarminW,
+          sActs
+        );
+        runtimeStore.athleteProfile = directSyncedProfile;
+        saveSessionCache();
+        res.json({ ok: true, athleteProfile: directSyncedProfile, mode: 'LIVE' });
+        return;
+      }
+
       const fallbackProfile = buildServerAthleteProfile(req.body?.overrides || null, null);
       res.json({ ok: true, athleteProfile: fallbackProfile, mode: 'SANDBOX' });
       return;
@@ -929,14 +1427,20 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
 
     const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
     const todayStr = new Date().toISOString().slice(0, 10);
-    const oldest14d = new Date(Date.now() - 14 * 86400 * 1000).toISOString().slice(0, 10);
+    const oldest60d = new Date(Date.now() - 60 * 86400 * 1000).toISOString().slice(0, 10);
 
-    const [profileResp, wellnessResp] = await Promise.all([
+    const [profileResp, wellnessResp, actsResp] = await Promise.all([
       fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
         headers: { Authorization: authHeader, Accept: 'application/json' },
       }),
       fetch(
-        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest14d}&newest=${todayStr}`,
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest60d}&newest=${todayStr}`,
+        {
+          headers: { Authorization: authHeader, Accept: 'application/json' },
+        }
+      ),
+      fetch(
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/activities?oldest=${oldest60d}&newest=${todayStr}`,
         {
           headers: { Authorization: authHeader, Accept: 'application/json' },
         }
@@ -954,8 +1458,11 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
     const rawWellnessList = wellnessResp.ok
       ? ((await wellnessResp.json()) as Record<string, any>[])
       : [];
+    const rawActsList = actsResp.ok
+      ? ((await actsResp.json()) as Record<string, any>[])
+      : [];
 
-    let latestWellnessSummary: Record<string, any> = {};
+    const latestWellnessSummary: Record<string, any> = {};
     for (const w of rawWellnessList) {
       if (w.weight && Number(w.weight) > 25) latestWellnessSummary.weightKg = Number(w.weight);
       if (w.restingHR && Number(w.restingHR) > 25)
@@ -974,7 +1481,21 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
       }
     }
 
-    const syncedProfile = buildServerAthleteProfile(rawProfile, latestWellnessSummary);
+    const mergedRawProfile = {
+      ...rawProfile,
+      name:
+        rawProfile.name ||
+        [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(' ') ||
+        stravaIdentity?.athleteName,
+      weight: rawProfile.icu_weight || rawProfile.weight || stravaIdentity?.weightKg,
+      ftp: rawProfile.ftp || stravaIdentity?.ftp,
+    };
+
+    const syncedProfile = buildServerAthleteProfile(
+      mergedRawProfile,
+      latestWellnessSummary,
+      rawActsList
+    );
     runtimeStore.athleteFtp = syncedProfile.ftp;
     runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
     runtimeStore.athleteRunFtp = syncedProfile.runFtp;
@@ -1387,9 +1908,15 @@ async function syncIntervalsAllHistory(
   ).length;
 
   // Normalize all-time Wellness + Garmin Sleep, HRV Corridor & 8-State Garmin Training Status
-  let lastValidWeight = 70.0;
+  let lastValidWeight =
+    Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight || 0) > 30
+      ? Number(Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight).toFixed(1))
+      : 70.0;
   let lastValidVo2 = 50;
-  let lastValidRhr = 49;
+  let lastValidRhr =
+    Number(parsedRawProfile?.icu_resting_hr || 0) > 25
+      ? Math.round(Number(parsedRawProfile?.icu_resting_hr))
+      : 49;
 
   const wellnessDays = rawWellness.map((w, idx, arr) => {
     const ctl = Number((w.ctl ?? 0).toFixed(1));
@@ -2115,9 +2642,30 @@ async function syncIntervalsAllHistory(
     activities.length > 0
       ? activities[activities.length - 1].startDateLocal.slice(0, 10)
       : runtimeStore.earliestActivityDate;
-  const latestWellnessRecord =
-    wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : null;
-  const fullProfile = buildServerAthleteProfile(parsedRawProfile, latestWellnessRecord);
+  const accumulatedWellnessSummary: Record<string, any> = {};
+  for (const w of wellnessDays) {
+    if (w.weightKg && w.weightKg > 30 && w.weightKg !== 70) {
+      accumulatedWellnessSummary.weightKg = w.weightKg;
+    }
+    if (w.restingHR && w.restingHR > 25 && w.restingHR !== 49) {
+      accumulatedWellnessSummary.restingHR = w.restingHR;
+    }
+    if (w.vo2MaxCycling && w.vo2MaxCycling > 25 && w.vo2MaxCycling !== 50) {
+      accumulatedWellnessSummary.vo2MaxCycling = w.vo2MaxCycling;
+    }
+    if (w.vo2MaxRunning && w.vo2MaxRunning > 25 && w.vo2MaxRunning !== 50) {
+      accumulatedWellnessSummary.vo2MaxRunning = w.vo2MaxRunning;
+    }
+    if (w.rideEftp && w.rideEftp > 60) accumulatedWellnessSummary.rideEftp = w.rideEftp;
+    if (w.rideWPrime && w.rideWPrime > 5000) accumulatedWellnessSummary.rideWPrime = w.rideWPrime;
+    if (w.ridePMax && w.ridePMax > 300) accumulatedWellnessSummary.ridePMax = w.ridePMax;
+    if (w.runEftp && w.runEftp > 80) accumulatedWellnessSummary.runEftp = w.runEftp;
+  }
+  const fullProfile = buildServerAthleteProfile(
+    parsedRawProfile,
+    accumulatedWellnessSummary,
+    activities
+  );
   runtimeStore.athleteProfile = fullProfile;
   runtimeStore.lastSyncedAt = new Date().toISOString();
   runtimeStore.nextHourlySyncAt = new Date(Date.now() + 3600 * 1000).toISOString();
@@ -2725,7 +3273,41 @@ apiRouter.post('/api/calendar/events', async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ event: newEvent, pushedToIntervals, events: updated });
+    // Also push directly to Garmin Connect Calendar if Direct Garmin is connected
+    let pushedToGarmin = false;
+    let garminWorkoutId: string | number | undefined;
+    const garminSession = getActiveGarminSession(req);
+    if (garminSession && body.syncToGarmin !== false) {
+      try {
+        const garminSteps = (newEvent.structuredSteps || []).map((st: any) => ({
+          label: st.label || 'Interval',
+          durationSecs: Number(st.durationSecs || 600),
+          targetPctFtp: Number(st.targetPctFtp || 75),
+        }));
+        const garminRes = await pushWorkoutToGarminConnect(garminSession, {
+          date,
+          name,
+          sportCategory,
+          description: newEvent.description,
+          ftpWatts: Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250),
+          lthrBpm: Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165),
+          steps: garminSteps,
+        });
+        pushedToGarmin = garminRes.pushed;
+        garminWorkoutId = garminRes.workoutId;
+        saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), garminSession);
+      } catch {
+        // Non-fatal if Garmin token expired
+      }
+    }
+
+    res.json({
+      event: newEvent,
+      pushedToGarmin,
+      garminWorkoutId,
+      pushedToIntervals,
+      events: updated,
+    });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to schedule workout event',
@@ -3215,29 +3797,49 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     saveJsonFile(scopedArchiveFile, activitiesList);
   }
 
-  const [starredResp, stravaProfileResp] = firstPageResp.ok
-    ? await Promise.all([
-        fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', { headers }),
-        fetch('https://www.strava.com/api/v3/athlete', { headers }),
-      ])
-    : [null, null];
+  const [starredResp, stravaProfileResp, stravaZonesResp] = await Promise.all([
+    firstPageResp.ok
+      ? fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', { headers })
+      : Promise.resolve(null),
+    fetch('https://www.strava.com/api/v3/athlete', { headers }),
+    fetch('https://www.strava.com/api/v3/athlete/zones', { headers }),
+  ]);
   const starredSegments =
     starredResp && starredResp.ok
       ? ((await starredResp.json()) as Record<string, any>[])
       : [];
+  const stravaZonesData =
+    stravaZonesResp && stravaZonesResp.ok
+      ? ((await stravaZonesResp.json()) as Record<string, any>)
+      : null;
 
-  let stravaAthleteName = 'Strava Athlete';
+  let stravaAthleteName = '';
   let stravaAthleteId = '';
-  let stravaFtp = 280;
-  let stravaWeightKg = 70.0;
+  let stravaFtp: number | undefined;
+  let stravaWeightKg: number | undefined;
   let stravaGearItems: any[] = [];
   if (stravaProfileResp && stravaProfileResp.ok) {
     const rawAthlete = (await stravaProfileResp.json()) as Record<string, any>;
     stravaAthleteId = String(rawAthlete.id || '');
     stravaAthleteName =
-      [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ') || 'Strava Athlete';
+      [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ').trim() ||
+      String(rawAthlete.username || '').trim();
     if (Number(rawAthlete.ftp) > 80) stravaFtp = Math.round(Number(rawAthlete.ftp));
     if (Number(rawAthlete.weight) > 30) stravaWeightKg = Number(rawAthlete.weight);
+    if (stravaAthleteName && !isGenericName(stravaAthleteName)) {
+      runtimeStore.stravaAthleteName = stravaAthleteName;
+      const { refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
+      const entry: CachedStravaIdentity = {
+        athleteId: stravaAthleteId,
+        athleteName: stravaAthleteName,
+        ftp: stravaFtp,
+        weightKg: stravaWeightKg,
+      };
+      if (refreshToken) stravaIdentityByToken.set(refreshToken, entry);
+      if (accessToken) stravaIdentityByToken.set(accessToken, entry);
+      stravaIdentityByToken.set(activeAccessToken, entry);
+      saveSessionCache();
+    }
     const bikes = Array.isArray(rawAthlete.bikes)
       ? rawAthlete.bikes.map((b: any) => ({
           id: String(b.id),
@@ -3531,17 +4133,19 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
   const stravaAthleteProfile = buildServerAthleteProfile(
     {
       id: stravaAthleteId || '0',
-      name: stravaAthleteName,
+      name: stravaAthleteName || runtimeStore.stravaAthleteName || undefined,
       ftp: stravaFtp,
       weightKg: stravaWeightKg,
+      stravaZones: stravaZonesData,
       source: 'STRAVA_OAUTH',
     },
-    null
+    null,
+    normalizedStravaActivities
   );
 
   return {
     athleteId: stravaAthleteId || undefined,
-    athleteName: stravaAthleteName,
+    athleteName: stravaAthleteProfile.name !== 'Athlete' ? stravaAthleteProfile.name : undefined,
     athleteProfile: {
       ...stravaAthleteProfile,
       gearItems: stravaGearItems,
