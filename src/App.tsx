@@ -74,6 +74,7 @@ import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
+  isGenericAthleteName,
   loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
@@ -101,7 +102,7 @@ const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-w
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('fitness');
-  const [isDark, setIsDark] = useState<boolean>(true);
+  const [isDark, setIsDark] = useState<boolean>(false);
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi');
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
   const [selectedSport, setSelectedSport] = useState<SportCategory | 'ALL'>('ALL');
@@ -449,6 +450,13 @@ export default function App() {
           // ignore
         }
       }
+      if (hasLocalAuth && data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)) {
+        try {
+          localStorage.setItem('aeropulse_strava_athlete_name', String(data.stravaAthleteName).trim());
+        } catch {
+          // ignore
+        }
+      }
       if (hasLocalAuth && data.athleteProfile) {
         const mergedProf = buildCompleteAthleteProfile(
           data.athleteProfile,
@@ -459,6 +467,12 @@ export default function App() {
       }
       const isClientIntervalsConnected = Boolean(hasLocalAuth && data.intervalsConnected);
       const isClientStravaConnected = Boolean(hasLocalAuth && data.stravaConnected);
+      const resolvedStravaName =
+        data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)
+          ? String(data.stravaAthleteName).trim()
+          : savedStravaName && !isGenericAthleteName(savedStravaName)
+            ? savedStravaName
+            : undefined;
       setConnectionStatus((prev) => ({
         ...prev,
         mode:
@@ -472,7 +486,7 @@ export default function App() {
         stravaConnected: isClientStravaConnected,
         stravaClientId: data.stravaClientId || prev.stravaClientId,
         stravaAthleteName: isClientStravaConnected
-          ? data.stravaAthleteName || savedStravaName || prev.stravaAthleteName
+          ? resolvedStravaName || prev.stravaAthleteName
           : undefined,
         stravaSource: isClientStravaConnected ? data.stravaSource || 'OAUTH' : 'NONE',
         hasGeminiServerKey: Boolean(data.hasGeminiServerKey),
@@ -2250,18 +2264,22 @@ export default function App() {
   }, [isAccountMenuOpen]);
 
   const primaryAthleteDisplayName = useMemo(() => {
-    const customName =
-      athleteProfile.name &&
-      athleteProfile.name !== 'Athlete' &&
-      athleteProfile.name !== 'Primary Athlete'
-        ? athleteProfile.name
+    const storedStravaName =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
         : undefined;
-    return (
-      customName ||
-      connectionStatus.stravaAthleteName ||
-      connectionStatus.intervalsAthleteName ||
-      'Athlete'
-    );
+    const candidates = [
+      athleteProfile.name,
+      connectionStatus.stravaAthleteName,
+      storedStravaName,
+      connectionStatus.intervalsAthleteName,
+    ];
+    for (const candidate of candidates) {
+      if (candidate && !isGenericAthleteName(candidate)) {
+        return candidate.trim();
+      }
+    }
+    return 'Athlete';
   }, [
     athleteProfile.name,
     connectionStatus.stravaAthleteName,
@@ -3544,6 +3562,7 @@ export default function App() {
             envFilter={envFilter}
             distanceUnit={distanceUnit}
             athleteWeightKg={latestWeightKg}
+            athleteProfile={athleteProfile}
             onScanMoreSegments={handleScanMoreSegments}
             isScanningSegments={isScanningSegments}
             onSelectActivity={(act) => {

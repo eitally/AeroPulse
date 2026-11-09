@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bike,
   Calendar as CalendarIcon,
@@ -242,6 +243,7 @@ function parseWorkoutSteps(syntax: string): ParsedStep[] {
 export interface DayPlannedEffortStripe {
   source: 'SCHEDULED' | 'MICROCYCLE_TARGET';
   workoutName: string;
+  description: string;
   sportCategory: SportCategory;
   totalDurationMins: number;
   plannedLoad: number;
@@ -255,6 +257,7 @@ export interface DayPlannedEffortStripe {
   steps: {
     label: string;
     durationMins: number;
+    intensityPct: number;
     widthPct: number;
     heightPct: number;
     zone: 1 | 2 | 3 | 4 | 5 | 6;
@@ -262,6 +265,12 @@ export interface DayPlannedEffortStripe {
     color: string;
   }[];
   zoneSharesPct: [number, number, number, number, number, number];
+}
+
+function computeAmplitudeHeightPct(intensityPct: number, fallbackHeightPct: number): number {
+  if (!Number.isFinite(intensityPct) || intensityPct <= 0) return fallbackHeightPct;
+  // Map 45% -> 22% height, 70% (Z2) -> 48% height, 100% (Threshold) -> 78% height, 120%+ (VO2/Anaerobic) -> 100% height
+  return Math.max(20, Math.min(100, Math.round(((intensityPct - 35) / 85) * 100)));
 }
 
 /**
@@ -363,6 +372,7 @@ function buildDayPlannedEffortStripe(
       }
     }
     const domMeta = INTERVALS_EFFORT_ZONES[domIdx];
+    const unitLabel = primary.sportCategory === 'Running' ? 'Threshold Pace' : 'FTP';
 
     return {
       source: 'SCHEDULED',
@@ -370,77 +380,132 @@ function buildDayPlannedEffortStripe(
         dayPlanned.length > 1
           ? `${primary.name} (+${dayPlanned.length - 1})`
           : primary.name,
+      description:
+        primary.description ||
+        `Scheduled ${primary.sportCategory.toLowerCase()} session targeting ${domMeta.code} (${domMeta.name}) with ${totalMins}m total duration.`,
       sportCategory: primary.sportCategory,
       totalDurationMins: totalMins,
       plannedLoad: dayPlanned.reduce((acc, e) => acc + (e.plannedLoad || 0), 0),
       workoutSyntax:
         primary.workoutSyntax ||
-        stepsRaw.map((s) => `- ${s.durationMins}m ${s.intensityPct}% FTP ${s.label}`).join('\n'),
+        stepsRaw.map((s) => `- ${s.durationMins}m ${s.intensityPct}% ${unitLabel} ${s.label}`).join('\n'),
       dominantZone: {
         zone: domMeta.zone,
         code: domMeta.code,
         name: domMeta.name,
         color: domMeta.color,
       },
-      steps: stepsRaw.map((s) => ({
-        label: s.label,
-        durationMins: s.durationMins,
-        widthPct: (s.durationMins / totalMins) * 100,
-        heightPct: getIntervalsZoneFromIntensityPct(s.intensityPct).heightPct,
-        zone: s.zone,
-        zoneCode: s.zoneCode,
-        color: s.zoneColor,
-      })),
+      steps: stepsRaw.map((s) => {
+        const zInfo = getIntervalsZoneFromIntensityPct(s.intensityPct);
+        return {
+          label: s.label,
+          durationMins: s.durationMins,
+          intensityPct: s.intensityPct,
+          widthPct: (s.durationMins / totalMins) * 100,
+          heightPct: computeAmplitudeHeightPct(s.intensityPct, zInfo.heightPct),
+          zone: s.zone,
+          zoneCode: s.zoneCode,
+          color: s.zoneColor,
+        };
+      }),
       zoneSharesPct,
     };
   }
 
-  // 2. Periodized Daily Microcycle Target (calibrated to weekday + morning TSB/readiness)
+  // 2. Periodized Daily Microcycle Target (calibrated to weekday + morning TSB/readiness + sport)
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
   const dow = dt.getUTCDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
   const tsb = wellness?.tsb ?? 0;
   const primarySport: SportCategory =
     dayActivities[0]?.sportCategory || (dow === 3 || dow === 0 ? 'Running' : 'Cycling');
+  const isRun = primarySport === 'Running';
 
-  let workoutName = '60m Z2 Aerobic Base';
+  let workoutName = isRun ? '50m Z2 Aerobic Base Run' : '60m Z2 Aerobic Base Ride';
+  let description = isRun
+    ? 'Steady aerobic endurance run in Zone 2 to build mitochondrial density and running economy.'
+    : 'Steady aerobic base ride in Zone 2 (68% FTP) to build capillary density and fat oxidation.';
   let plannedLoad = 52;
   let syntax = `- 10m 54% FTP Warmup\n- 40m 68% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
 
   if (dow === 1) {
-    workoutName = '45m Z1 Active Recovery Spin';
+    workoutName = isRun ? '35m Z1 Easy Recovery Jog' : '45m Z1 Active Recovery Spin';
+    description = isRun
+      ? 'Low-impact parasympathetic recovery jog strictly capped in Zone 1 to flush legs after weekend volume.'
+      : 'Easy high-cadence Zone 1 active recovery spin (<55% FTP) to accelerate autonomic recovery.';
     plannedLoad = 28;
-    syntax = `- 10m 50% FTP Easy Spin\n- 25m 54% FTP Z1 Recovery Flush\n- 10m 48% FTP Cooldown`;
+    syntax = isRun
+      ? `- 8m 50% Pace Easy Walk/Jog\n- 20m 54% Pace Z1 Recovery Jog\n- 7m 48% Pace Cooldown`
+      : `- 10m 50% FTP Easy Spin\n- 25m 54% FTP Z1 Recovery Flush\n- 10m 48% FTP Cooldown`;
   } else if (dow === 2) {
     if (tsb < -18) {
-      workoutName = '3x10m Tempo / Sweet Spot Control';
+      workoutName = isRun
+        ? '3x8m Z3 Tempo Cruise Intervals'
+        : '3x10m Tempo / Sweet Spot Control';
+      description = isRun
+        ? 'Controlled marathon/half-marathon tempo intervals in Zone 3 with 3m easy jog recoveries (adapted for current fatigue).'
+        : 'Sub-threshold Sweet Spot blocks (86–88% FTP) with 4m Z1 recoveries to build muscular endurance without excessive strain.';
       plannedLoad = 68;
-      syntax = `- 12m 62% FTP Warmup\n- 10m 86% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 10m 52% FTP Cooldown`;
+      syntax = isRun
+        ? `- 10m 62% Pace Warmup\n- 8m 86% Pace Z3 Tempo\n- 3m 54% Pace Z1 Jog\n- 8m 88% Pace Z3 Tempo\n- 3m 54% Pace Z1 Jog\n- 8m 88% Pace Z3 Tempo\n- 10m 52% Pace Cooldown`
+        : `- 12m 62% FTP Warmup\n- 10m 86% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 10m 52% FTP Cooldown`;
     } else {
-      workoutName = '5x4m VO2max Aerobic Ceiling';
+      workoutName = isRun
+        ? '5x4m Z5 VO2max Track Intervals'
+        : '5x4m VO2max Aerobic Ceiling';
+      description = isRun
+        ? 'High-velocity 5K/3K pace VO2max intervals in Zone 5 with equal 4m recovery jogs to elevate maximal oxygen uptake.'
+        : 'High-output Zone 5 VO2max intervals (112–114% FTP) with 4m Z1 spinning recoveries to raise aerobic ceiling.';
       plannedLoad = 82;
       syntax = `- 15m 65% FTP Warmup\n- 4m 112% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 112% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 114% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 114% FTP Z5 VO2max\n- 10m 52% FTP Cooldown`;
     }
   } else if (dow === 3) {
-    workoutName = '60m Z2 Aerobic Foundation';
+    workoutName = isRun ? '50m Z2 Aerobic Foundation Run' : '60m Z2 Aerobic Foundation Ride';
+    description = isRun
+      ? 'Mid-week conversational Zone 2 aerobic run to reinforce running economy between quality sessions.'
+      : 'Mid-week steady Zone 2 endurance ride (70% FTP) to consolidate aerobic volume.';
     plannedLoad = 54;
-    syntax = `- 10m 54% FTP Warmup\n- 40m 70% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
+    syntax = isRun
+      ? `- 10m 54% Pace Warmup\n- 32m 70% Pace Z2 Aerobic Run\n- 8m 52% Pace Cooldown`
+      : `- 10m 54% FTP Warmup\n- 40m 70% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
   } else if (dow === 4) {
-    workoutName = '4x8m Threshold / Sweet Spot';
+    workoutName = isRun
+      ? '4x6m Z4 Lactate Threshold Run'
+      : '4x8m Threshold / Sweet Spot';
+    description = isRun
+      ? 'Cruise threshold intervals at 10K/Half-Marathon lactate turnpoint (Zone 4) with 3m float recoveries.'
+      : 'Sustained Zone 4 lactate threshold intervals (95–98% FTP) with 4m Z1 recovery valleys to raise functional threshold power.';
     plannedLoad = 76;
-    syntax = `- 12m 64% FTP Warmup\n- 8m 95% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 96% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 8m 52% FTP Cooldown`;
+    syntax = isRun
+      ? `- 12m 64% Pace Warmup\n- 6m 96% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 97% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 98% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 98% Pace Z4 Threshold\n- 8m 52% Pace Cooldown`
+      : `- 12m 64% FTP Warmup\n- 8m 95% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 96% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 8m 52% FTP Cooldown`;
   } else if (dow === 5) {
-    workoutName = '45m Z1/Z2 Neuromuscular Openers';
+    workoutName = isRun
+      ? '40m Z1/Z2 Shakeout + Strides'
+      : '45m Z1/Z2 Neuromuscular Openers';
+    description = isRun
+      ? 'Easy pre-weekend aerobic shakeout run with brief neuromuscular activation strides.'
+      : 'Easy Zone 1/2 spin with a short Zone 4/5 neuromuscular opener ahead of weekend endurance volume.';
     plannedLoad = 36;
     syntax = `- 15m 54% FTP Z1 Warmup\n- 20m 66% FTP Z2 Easy Base\n- 2m 105% FTP Z4 Opener\n- 8m 50% FTP Z1 Cooldown`;
   } else if (dow === 6) {
-    workoutName = '2h Z2 Endurance + Z3 Progression';
+    workoutName = isRun
+      ? '75m Z2 Endurance + Z3 Progression Run'
+      : '2h Z2 Endurance + Z3 Progression';
+    description = isRun
+      ? 'Weekend progressive endurance run starting in Zone 2 and finishing with 20m in Zone 3 marathon tempo.'
+      : 'Long weekend endurance ride in Zone 2 with a 25-minute Zone 3 tempo progression in the final hour.';
     plannedLoad = 108;
     syntax = `- 15m 55% FTP Warmup\n- 65m 70% FTP Z2 Endurance\n- 25m 84% FTP Z3 Tempo Finish\n- 15m 52% FTP Cooldown`;
   } else {
-    workoutName = '90m Steady Z2 Aerobic Volume';
+    workoutName = isRun ? '75m Steady Z2 Long Aerobic Run' : '90m Steady Z2 Aerobic Volume';
+    description = isRun
+      ? 'Sunday long aerobic endurance run strictly in Zone 2 to build durability and glycogen sparing.'
+      : 'Sunday steady Zone 2 aerobic endurance ride (69% FTP) for volume accumulation.';
     plannedLoad = 74;
-    syntax = `- 10m 54% FTP Warmup\n- 70m 69% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
+    syntax = isRun
+      ? `- 10m 54% Pace Warmup\n- 55m 69% Pace Z2 Long Run\n- 10m 52% Pace Cooldown`
+      : `- 10m 54% FTP Warmup\n- 70m 69% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
   }
 
   const stepsRaw = parseWorkoutSteps(syntax);
@@ -468,6 +533,7 @@ function buildDayPlannedEffortStripe(
   return {
     source: 'MICROCYCLE_TARGET',
     workoutName,
+    description,
     sportCategory: primarySport,
     totalDurationMins: totalMins,
     plannedLoad,
@@ -478,15 +544,19 @@ function buildDayPlannedEffortStripe(
       name: domMeta.name,
       color: domMeta.color,
     },
-    steps: stepsRaw.map((s) => ({
-      label: s.label,
-      durationMins: s.durationMins,
-      widthPct: (s.durationMins / totalMins) * 100,
-      heightPct: getIntervalsZoneFromIntensityPct(s.intensityPct).heightPct,
-      zone: s.zone,
-      zoneCode: s.zoneCode,
-      color: s.zoneColor,
-    })),
+    steps: stepsRaw.map((s) => {
+      const zInfo = getIntervalsZoneFromIntensityPct(s.intensityPct);
+      return {
+        label: s.label,
+        durationMins: s.durationMins,
+        intensityPct: s.intensityPct,
+        widthPct: (s.durationMins / totalMins) * 100,
+        heightPct: computeAmplitudeHeightPct(s.intensityPct, zInfo.heightPct),
+        zone: s.zone,
+        zoneCode: s.zoneCode,
+        color: s.zoneColor,
+      };
+    }),
     zoneSharesPct,
   };
 }
@@ -904,6 +974,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const [cardDensity, setCardDensity] = useState<'intervals' | 'compact'>('intervals');
   const [showDayEffortStripe, setShowDayEffortStripe] = useState<boolean>(true);
+  const [hoveredPrescription, setHoveredPrescription] = useState<{
+    dateStr: string;
+    stripe: DayPlannedEffortStripe;
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   // Default to the month of the most recent activity or wellness entry
   const initialDate = useMemo(() => {
@@ -1759,7 +1836,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           key={cell.dateStr}
                           className={`p-2 border-r last:border-r-0 border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors group ${
                             !cell.isCurrentMonth
-                              ? 'bg-slate-100/45 dark:bg-slate-950/75 opacity-60'
+                              ? 'bg-slate-200/55 dark:bg-slate-950/80'
                               : isToday
                                 ? 'bg-blue-50/40 dark:bg-blue-950/20'
                                 : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/30'
@@ -1804,7 +1881,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 </button>
                               </div>
 
-                              {/* SMALL DAILY PLANNED WORKOUT EFFORT STRIPE (Intervals.icu Zone Color Standard) */}
+                              {/* SMALL DIMENSIONAL DAILY PLANNED WORKOUT EFFORT SKYLINE (With Y-Axis Amplitude & Hover Tooltip) */}
                               {showDayEffortStripe && (
                                 <button
                                   type="button"
@@ -1815,31 +1892,76 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                       workoutSyntax: plannedStripe.workoutSyntax,
                                     })
                                   }
-                                  className="w-full text-left group/stripe rounded-xs overflow-hidden focus:outline-hidden"
-                                  title={`${
+                                  onMouseEnter={(e) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+                                    const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+                                    const cardW = 310;
+                                    let left = rect.left + rect.width / 2 - cardW / 2;
+                                    if (left + cardW > vw - 12) left = vw - cardW - 12;
+                                    if (left < 12) left = 12;
+                                    let top = rect.bottom + 6;
+                                    if (top + 230 > vh - 12 && rect.top > 240) {
+                                      top = rect.top - 225;
+                                    }
+                                    setHoveredPrescription({
+                                      dateStr: cell.dateStr,
+                                      stripe: plannedStripe,
+                                      top,
+                                      left,
+                                      width: cardW,
+                                    });
+                                  }}
+                                  onMouseLeave={() =>
+                                    setHoveredPrescription((prev) =>
+                                      prev?.dateStr === cell.dateStr ? null : prev
+                                    )
+                                  }
+                                  className="w-full text-left group/stripe rounded-xs overflow-hidden border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/60 transition-colors focus:outline-hidden"
+                                  title={`${plannedStripe.sportCategory} (${
                                     plannedStripe.source === 'SCHEDULED'
                                       ? 'Scheduled Workout'
-                                      : 'Planned Microcycle Target'
-                                  }: ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\nZones: ${plannedZoneBreakdownTooltip}\nClick to customize or sync workout`}
+                                      : 'Daily Prescription'
+                                  }): ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\n${plannedStripe.description}\nZones: ${plannedZoneBreakdownTooltip}`}
                                 >
-                                  {/* Top Crisp Chronological Intensity Zone Effort Stripe */}
-                                  <div className="h-[5px] w-full flex rounded-t-[2px] overflow-hidden bg-slate-200/80 dark:bg-slate-800/80">
-                                    {plannedStripe.steps.map((st, sIdx) => (
+                                  {/* Dimensional Mini Effort Skyline with Y-Axis Amplitude */}
+                                  <div className="relative h-[18px] w-full flex items-stretch bg-slate-100/90 dark:bg-slate-900/90">
+                                    {/* Mini Y-Axis Amplitude Scale Gutter */}
+                                    <div className="w-[14px] shrink-0 border-r border-slate-300/70 dark:border-slate-700/70 flex flex-col justify-between items-end pr-[2px] py-[1px] text-[6.5px] leading-none font-mono text-slate-400 dark:text-slate-500 select-none">
+                                      <span>100</span>
+                                      <span>50</span>
+                                    </div>
+                                    {/* Proportional Effort Amplitude Bars */}
+                                    <div className="relative flex-1 flex items-end px-[1px] pt-[2px]">
+                                      {/* 100% FTP / Threshold Reference Dashed Line */}
                                       <div
-                                        key={sIdx}
-                                        style={{
-                                          width: `${st.widthPct}%`,
-                                          backgroundColor: st.color,
-                                        }}
-                                        className="h-full border-r last:border-r-0 border-white/25 dark:border-slate-950/35"
+                                        className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-slate-400/45 dark:border-slate-500/45"
+                                        style={{ bottom: '74%' }}
                                       />
-                                    ))}
+                                      {plannedStripe.steps.map((st, sIdx) => (
+                                        <div
+                                          key={sIdx}
+                                          style={{
+                                            width: `${st.widthPct}%`,
+                                            height: `${st.heightPct}%`,
+                                            backgroundColor: st.color,
+                                          }}
+                                          className="border-r last:border-r-0 border-white/25 dark:border-slate-950/35 rounded-t-[1px] transition-all"
+                                        />
+                                      ))}
+                                    </div>
                                   </div>
-                                  {/* Subtle Intervals.icu Gradient Glow + Micro Label */}
-                                  <div className="flex items-center justify-between px-1 py-0.5 bg-slate-100/80 dark:bg-slate-900/80 group-hover/stripe:bg-blue-500/10 transition-colors">
-                                    <span className="text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[88px]">
-                                      {plannedStripe.source === 'SCHEDULED' ? 'Plan: ' : 'Target: '}
-                                      {plannedStripe.workoutName}
+                                  {/* Compact Micro Label with Cycling / Running Modality Icon */}
+                                  <div className="flex items-center justify-between gap-1 px-1 py-0.5 bg-slate-100/80 dark:bg-slate-900/80 group-hover/stripe:bg-blue-500/10 border-t border-slate-200/60 dark:border-slate-800/60 transition-colors">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-mono text-slate-600 dark:text-slate-300 truncate min-w-0">
+                                      {plannedStripe.sportCategory === 'Running' ? (
+                                        <Footprints className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                      ) : (
+                                        <Bike className="w-2.5 h-2.5 text-blue-600 dark:text-sky-400 shrink-0" />
+                                      )}
+                                      <span className="truncate">
+                                        {plannedStripe.workoutName}
+                                      </span>
                                     </span>
                                     <span className="text-[9px] font-mono font-semibold text-slate-600 dark:text-slate-300 shrink-0">
                                       {plannedStripe.totalDurationMins}m
@@ -2029,9 +2151,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                                       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                                                       : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
                                                   }`}
-                                                  title={`Planned vs. Actual Execution Compliance: ${compliancePct}% match against ${plannedStripe.workoutName}`}
+                                                  title={`Planned vs. Actual Execution Compliance: ${compliancePct}% compliance against ${plannedStripe.workoutName} (${plannedStripe.sportCategory})`}
                                                 >
-                                                  {compliancePct}% Match
+                                                  {compliancePct}% Compliance
                                                 </span>
                                               );
                                             })()}
@@ -2045,42 +2167,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         </div>
                                       )}
 
-                                    {/* 3. Effort Zones Strip Through the Activity (Steady Bar vs Chronological Skyline) */}
+                                    {/* 3. Dimensional Effort Zones Skyline Through the Activity (With Y-Axis Amplitude) */}
                                     <div
                                       className="w-full px-0.5 pt-1"
-                                      title={`Effort Zones — ${zoneTooltip}`}
+                                      title={`Completed Effort Zones (${act.sportCategory}) — ${zoneTooltip}`}
                                     >
-                                      {effort.mode === 'steady-bar' ? (
-                                        <div className="relative h-[18px] w-full overflow-hidden rounded-xs">
-                                          {/* Top Crisp Effort Zone Bar */}
-                                          <div className="h-[4px] w-full flex">
-                                            {effort.slices.map((s, idx) => (
-                                              <div
-                                                key={idx}
-                                                style={{
-                                                  width: `${s.widthPct}%`,
-                                                  backgroundColor: s.color,
-                                                }}
-                                                className="h-full"
-                                              />
-                                            ))}
-                                          </div>
-                                          {/* Soft Vertical Gradient Fade Underneath (Intervals.icu signature look) */}
-                                          <div className="h-[14px] w-full flex">
-                                            {effort.slices.map((s, idx) => (
-                                              <div
-                                                key={idx}
-                                                style={{
-                                                  width: `${s.widthPct}%`,
-                                                  background: `linear-gradient(to bottom, ${s.color}55, ${s.color}08)`,
-                                                }}
-                                                className="h-full"
-                                              />
-                                            ))}
-                                          </div>
+                                      <div className="relative h-[22px] w-full flex items-stretch bg-slate-100/75 dark:bg-slate-800/45 rounded-xs overflow-hidden">
+                                        {/* Small Y-Axis Amplitude Scale */}
+                                        <div className="w-[13px] shrink-0 border-r border-slate-300/60 dark:border-slate-700/60 flex flex-col justify-between items-end pr-[1.5px] py-[1px] text-[6px] leading-none font-mono text-slate-400 dark:text-slate-500 select-none">
+                                          <span>Z5</span>
+                                          <span>Z1</span>
                                         </div>
-                                      ) : (
-                                        <div className="relative h-[22px] w-full flex items-end bg-slate-100/70 dark:bg-slate-800/40 px-[1px] pt-[2px]">
+                                        <div className="relative flex-1 flex items-end px-[1px] pt-[2px]">
+                                          <div
+                                            className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-slate-400/40 dark:border-slate-500/40"
+                                            style={{ bottom: '74%' }}
+                                          />
                                           {effort.slices.map((s, idx) => (
                                             <div
                                               key={idx}
@@ -2089,13 +2191,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                                 height: `${s.heightPct}%`,
                                                 backgroundColor: s.color,
                                               }}
-                                              className="transition-all first:rounded-tl-[1px] last:rounded-tr-[1px]"
+                                              className="transition-all border-r last:border-r-0 border-white/15 dark:border-slate-950/25 first:rounded-tl-[1px] last:rounded-tr-[1px]"
                                             />
                                           ))}
                                           {/* Continuous Z2 baseline rule along the bottom */}
-                                          <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#2A9D8F]/85" />
+                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/85" />
                                         </div>
-                                      )}
+                                      </div>
                                     </div>
 
                                     {/* 4. Centered Activity Title Footer */}
@@ -2417,6 +2519,149 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Instant Floating Hover Tooltip for Daily Prescribed Workout Stripes */}
+      {hoveredPrescription &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              top: `${hoveredPrescription.top}px`,
+              left: `${hoveredPrescription.left}px`,
+              width: `${hoveredPrescription.width}px`,
+              zIndex: 9999,
+            }}
+            className="pointer-events-none rounded-2xl liquid-glass p-3.5 shadow-2xl border border-slate-300/90 dark:border-slate-700/90 text-xs space-y-2.5 animate-in fade-in duration-100"
+          >
+            {/* Header: Sport Badge (Cycling vs. Running) + Date */}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 pb-2">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                  hoveredPrescription.stripe.sportCategory === 'Running'
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35'
+                    : 'bg-blue-500/15 text-blue-700 dark:text-sky-300 border border-blue-500/35'
+                }`}
+              >
+                {hoveredPrescription.stripe.sportCategory === 'Running' ? (
+                  <Footprints className="w-3 h-3" />
+                ) : (
+                  <Bike className="w-3 h-3" />
+                )}
+                <span>
+                  {hoveredPrescription.stripe.sportCategory}{' '}
+                  {hoveredPrescription.stripe.source === 'SCHEDULED'
+                    ? 'Scheduled Workout'
+                    : 'Prescription'}
+                </span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                {hoveredPrescription.dateStr}
+              </span>
+            </div>
+
+            {/* Workout Title, Duration, Target Load & Dominant Zone */}
+            <div>
+              <div className="font-bold text-slate-900 dark:text-white text-[13px] leading-snug">
+                {hoveredPrescription.stripe.workoutName}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] font-mono">
+                <span className="text-slate-700 dark:text-slate-200 font-semibold">
+                  {hoveredPrescription.stripe.totalDurationMins} min
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="text-blue-600 dark:text-sky-400 font-semibold">
+                  ~{hoveredPrescription.stripe.plannedLoad} TSS
+                </span>
+                <span className="text-slate-400">·</span>
+                <span
+                  className="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                  style={{
+                    backgroundColor: `${hoveredPrescription.stripe.dominantZone.color}22`,
+                    color: hoveredPrescription.stripe.dominantZone.color,
+                  }}
+                >
+                  {hoveredPrescription.stripe.dominantZone.code}{' '}
+                  {hoveredPrescription.stripe.dominantZone.name}
+                </span>
+              </div>
+            </div>
+
+            {/* Plain-English Prescription Description */}
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+              {hoveredPrescription.stripe.description}
+            </p>
+
+            {/* Dimensional Skyline with Y-Axis (% FTP or % Threshold Pace) */}
+            <div className="rounded-lg bg-slate-100/90 dark:bg-slate-900/90 p-2 border border-slate-200/70 dark:border-slate-800/70 space-y-1.5">
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 dark:text-slate-400">
+                <span>
+                  Y-Axis Amplitude:{' '}
+                  {hoveredPrescription.stripe.sportCategory === 'Running'
+                    ? '% Threshold Pace'
+                    : '% FTP'}
+                </span>
+                <span>Click stripe to edit</span>
+              </div>
+              <div className="relative h-8 w-full flex items-stretch">
+                <div className="w-7 shrink-0 border-r border-slate-300/70 dark:border-slate-700/70 flex flex-col justify-between items-end pr-1 text-[8px] font-mono text-slate-400">
+                  <span>100%</span>
+                  <span>50%</span>
+                </div>
+                <div className="relative flex-1 flex items-end gap-[1px] pl-1">
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-slate-400/50"
+                    style={{ bottom: '74%' }}
+                  />
+                  {hoveredPrescription.stripe.steps.map((st, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        width: `${st.widthPct}%`,
+                        height: `${st.heightPct}%`,
+                        backgroundColor: st.color,
+                      }}
+                      className="rounded-t-[2px]"
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step Intervals Breakdown */}
+            <div className="space-y-1 pt-0.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
+                Prescribed Structure ({hoveredPrescription.stripe.steps.length} steps)
+              </div>
+              <div className="space-y-0.5 max-h-28 overflow-hidden">
+                {hoveredPrescription.stripe.steps.slice(0, 6).map((st, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-2 text-[10.5px] font-mono"
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200 truncate">
+                      <span
+                        className="w-2 h-2 rounded-xs shrink-0"
+                        style={{ backgroundColor: st.color }}
+                      />
+                      <span className="truncate">{st.label}</span>
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">
+                      {st.durationMins}m · {st.intensityPct}% ({st.zoneCode})
+                    </span>
+                  </div>
+                ))}
+                {hoveredPrescription.stripe.steps.length > 6 && (
+                  <div className="text-[10px] font-mono text-slate-400 italic">
+                    +{hoveredPrescription.stripe.steps.length - 6} more interval steps…
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

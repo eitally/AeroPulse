@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AthleteProfile,
   BenchmarkSegmentHistory,
   DistanceUnit,
   EnvironmentFilter,
@@ -10,6 +11,7 @@ import {
 import { formatPace } from '../utils/formatters';
 import { buildRepeatedSegmentsFromActivities } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -19,6 +21,7 @@ interface PhysiologyViewProps {
   envFilter: EnvironmentFilter;
   distanceUnit: DistanceUnit;
   athleteWeightKg: number;
+  athleteProfile?: AthleteProfile;
   onScanMoreSegments?: () => Promise<void>;
   isScanningSegments?: boolean;
   onSelectActivity?: (activity: UnifiedActivity) => void;
@@ -32,6 +35,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   envFilter,
   distanceUnit,
   athleteWeightKg,
+  athleteProfile,
   onOpenActivitiesSegments,
 }) => {
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
@@ -511,6 +515,18 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
           </table>
         </div>
       </section>
+
+      {/* 2. Coggan Power Profile & WMA Age-Graded Percentile Radars */}
+      {athleteProfile && (
+        <AthletePerformanceRadar
+          selfName={athleteProfile.name || 'Athlete'}
+          selfProfile={athleteProfile}
+          selfWellnessDays={wellnessDays}
+          selfActivities={activities}
+          connectedAthletes={[]}
+          onOpenCoachWithPrompt={() => {}}
+        />
+      )}
 
       {/* Canonical Segment Analytics Pointer (Deduplicated from PhysiologyView) */}
       <section className="rounded-2xl liquid-glass px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">

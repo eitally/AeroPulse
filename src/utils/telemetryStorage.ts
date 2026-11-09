@@ -147,6 +147,18 @@ export function buildHrZonesFromCeilings(
   return zones;
 }
 
+export function isGenericAthleteName(name?: string | null): boolean {
+  if (!name) return true;
+  const normalized = name.trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === 'athlete' ||
+    normalized === 'primary athlete' ||
+    normalized === 'strava athlete' ||
+    normalized === 'strava user'
+  );
+}
+
 export function buildCompleteAthleteProfile(
   partial?: Partial<AthleteProfile> | null,
   latestWellness?: UnifiedWellnessDay
@@ -198,9 +210,20 @@ export function buildCompleteAthleteProfile(
       ? partial!.runHrZones!
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
 
+  const storedStravaName =
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
+      : undefined;
+  const resolvedName =
+    partial?.name && !isGenericAthleteName(partial.name)
+      ? partial.name.trim()
+      : storedStravaName && !isGenericAthleteName(storedStravaName)
+        ? storedStravaName
+        : partial?.name?.trim() || 'Athlete';
+
   return {
     athleteId: partial?.athleteId || '0',
-    name: partial?.name || 'Athlete',
+    name: resolvedName,
     weightKg: Number(weightKg.toFixed(1)),
     restingHr: Math.round(restingHr),
     vo2MaxCycling: Math.round(vo2MaxCycling),
@@ -746,7 +769,7 @@ export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayl
     if (tokens.athleteId) {
       localStorage.setItem('aeropulse_strava_athlete_id', String(tokens.athleteId).trim());
     }
-    if (tokens.athleteName) {
+    if (tokens.athleteName && !isGenericAthleteName(tokens.athleteName)) {
       localStorage.setItem('aeropulse_strava_athlete_name', tokens.athleteName.trim());
     }
   } catch {

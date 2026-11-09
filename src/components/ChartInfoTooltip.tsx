@@ -123,14 +123,14 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
           setIsOpen((prev) => !prev);
         }}
         aria-label={`Physiological & Coaching Guide: ${title}`}
-        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all select-none ${
+        title={`What is ${title}?`}
+        className={`inline-flex items-center justify-center w-5 h-5 rounded-full transition-all select-none ${
           isOpen
             ? 'bg-blue-500/20 text-blue-600 dark:text-sky-300 border border-blue-500/40 shadow-xs'
             : 'liquid-capsule-track text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-sky-300 border border-transparent hover:border-blue-500/30'
         }`}
       >
-        <Info className="w-3.5 h-3.5 shrink-0 text-blue-500 dark:text-sky-400" />
-        <span className="hidden sm:inline font-sans">Why It Matters</span>
+        <HelpCircle className="w-3.5 h-3.5 shrink-0 text-blue-500 dark:text-sky-400" />
       </button>
 
       {isOpen &&

@@ -37,6 +37,8 @@ interface ReadinessMorphingCardProps {
   athleteProfile: AthleteProfile;
   distanceUnit: DistanceUnit;
   defaultExpanded?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   placementLabel?: string;
   onSyncMorphedToCalendar: (eventInput: {
     date: string;
@@ -221,12 +223,22 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   athleteProfile,
   distanceUnit,
   defaultExpanded = false,
+  isExpanded: controlledExpanded,
+  onToggleExpand,
   placementLabel = 'Daily Workout Prescription',
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
 }) => {
-  const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
+  const [internalExpanded, setInternalExpanded] = useState<boolean>(defaultExpanded);
+  const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
+  const handleToggleExpand = () => {
+    if (onToggleExpand) {
+      onToggleExpand();
+    } else {
+      setInternalExpanded((prev) => !prev);
+    }
+  };
   const [selectedMode, setSelectedMode] = useState<MorphReadinessMode>('AUTO');
   const [sportMode, setSportMode] = useState<'Cycling' | 'Running'>('Cycling');
   const [envMode, setEnvMode] = useState<'INDOOR' | 'OUTDOOR'>('INDOOR');
@@ -690,27 +702,20 @@ ${dataLines.join('\n')}
           isExpanded ? 'border-b border-slate-200 dark:border-white/10' : ''
         } flex flex-wrap items-center justify-between gap-3`}
       >
-        <div
-          className="flex flex-wrap items-center gap-2.5 cursor-pointer select-none"
-          onClick={() => setIsExpanded((prev) => !prev)}
-        >
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B4F9E] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2 select-none">
+          <button
+            type="button"
+            onClick={handleToggleExpand}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B4F9E] hover:bg-[#093e7d] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors cursor-pointer"
+          >
             <Sparkles className="w-3 h-3" />
             <span>{placementLabel}</span>
-          </span>
-
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-lg border text-xs font-bold ${morphedWorkout.badgeTone}`}
-          >
-            {morphedWorkout.badgeLabel}
-          </span>
-
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-            {morphedWorkout.title} ·{' '}
-            <span className="font-mono text-blue-600 dark:text-sky-400">
-              {morphedWorkout.tss} TSS
-            </span>
-          </span>
+            {isExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5 ml-0.5 opacity-80" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-80" />
+            )}
+          </button>
 
           <div onClick={(e) => e.stopPropagation()}>
             <ChartInfoTooltip
@@ -731,92 +736,77 @@ ${dataLines.join('\n')}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {isExpanded && (
-            <>
-              {/* Live Synced Athlete Profile & Zones Trigger Button */}
+        {isExpanded && (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Live Synced Athlete Profile & Zones Trigger Button */}
+            <button
+              type="button"
+              onClick={onOpenAthleteProfileModal}
+              className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/50 text-[11px] font-mono text-slate-700 dark:text-slate-200 transition-colors"
+              title="Inspect or edit Athlete Profile, FTP, Weight & 7-Zone Power/HR Tables"
+            >
+              <Sliders className="w-3 h-3 text-blue-500" />
+              <span>
+                {envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP{' '}
+                <strong className="text-blue-600 dark:text-sky-300">{activeFtp}W</strong>
+              </span>
+              <span className="opacity-40">·</span>
+              <span>LTHR {athleteProfile.lthr}bpm</span>
+              <span className="opacity-40">·</span>
+              <span>
+                {distanceUnit === 'mi'
+                  ? `${(athleteProfile.weightKg * 2.20462).toFixed(1)} lbs`
+                  : `${athleteProfile.weightKg.toFixed(1)} kg`}
+              </span>
+            </button>
+
+            {/* Sport & Modality Toggle */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px]">
               <button
                 type="button"
-                onClick={onOpenAthleteProfileModal}
-                className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/50 text-[11px] font-mono text-slate-700 dark:text-slate-200 transition-colors"
-                title="Inspect or edit Athlete Profile, FTP, Weight & 7-Zone Power/HR Tables"
+                onClick={() => {
+                  setSportMode('Cycling');
+                  setEnvMode('INDOOR');
+                }}
+                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                  sportMode === 'Cycling' && envMode === 'INDOOR'
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
               >
-                <Sliders className="w-3 h-3 text-blue-500" />
-                <span>
-                  {envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP{' '}
-                  <strong className="text-blue-600 dark:text-sky-300">{activeFtp}W</strong>
-                </span>
-                <span className="opacity-40">·</span>
-                <span>LTHR {athleteProfile.lthr}bpm</span>
-                <span className="opacity-40">·</span>
-                <span>
-                  {distanceUnit === 'mi'
-                    ? `${(athleteProfile.weightKg * 2.20462).toFixed(1)} lbs`
-                    : `${athleteProfile.weightKg.toFixed(1)} kg`}
-                </span>
+                <Bike className="w-3 h-3" />
+                <span>Virtual Bike</span>
               </button>
-
-              {/* Sport & Modality Toggle */}
-              <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSportMode('Cycling');
-                    setEnvMode('INDOOR');
-                  }}
-                  className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
-                    sportMode === 'Cycling' && envMode === 'INDOOR'
-                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  <Bike className="w-3 h-3" />
-                  <span>Virtual Bike</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSportMode('Cycling');
-                    setEnvMode('OUTDOOR');
-                  }}
-                  className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
-                    sportMode === 'Cycling' && envMode === 'OUTDOOR'
-                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  <Bike className="w-3 h-3" />
-                  <span>Outdoor Bike</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSportMode('Running')}
-                  className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
-                    sportMode === 'Running'
-                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  <Footprints className="w-3 h-3" />
-                  <span>Run</span>
-                </button>
-              </div>
-            </>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
-            className="min-h-[30px] inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-glass-subtle text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-500/40 transition-colors"
-          >
-            <span>{isExpanded ? 'Collapse' : 'Expand Workout'}</span>
-            {isExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSportMode('Cycling');
+                  setEnvMode('OUTDOOR');
+                }}
+                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                  sportMode === 'Cycling' && envMode === 'OUTDOOR'
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                <Bike className="w-3 h-3" />
+                <span>Outdoor Bike</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSportMode('Running')}
+                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                  sportMode === 'Running'
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                <Footprints className="w-3 h-3" />
+                <span>Run</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {syncedBanner && (

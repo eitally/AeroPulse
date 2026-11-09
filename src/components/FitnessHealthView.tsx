@@ -8,6 +8,7 @@ import {
   Radar,
   RotateCcw,
   SlidersHorizontal,
+  Sparkles,
   Users,
 } from "./icons/PhosphorIcons";
 import {
@@ -730,13 +731,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     setBrushEndIdx(null);
   };
 
+  const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(false);
+
   const [collapsedSections, setCollapsedSections] = useState<
     Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
   >({
     pmc: false,
     ledger: false,
     comparator: true,
-    radars: true,
+    radars: false,
   });
 
   const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
@@ -746,22 +749,28 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==========================================================================
-          0. DAILY WORKOUT PRESCRIPTION TOP STRIP
+          0. EXPANDED DAILY WORKOUT PRESCRIPTION PANEL (Hidden in default view;
+             triggered from the inline "Daily Workout Prescription" button in the
+             Fitness chart header bar so the homepage stays ultra-clean)
          ========================================================================== */}
-      {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
-        <ReadinessMorphingCard
-          wellnessDays={wellnessDays}
-          activities={activities}
-          plannedEvents={plannedEvents}
-          athleteProfile={athleteProfile}
-          distanceUnit={distanceUnit}
-          defaultExpanded={false}
-          placementLabel="Daily Workout Prescription"
-          onSyncMorphedToCalendar={onSyncMorphedToCalendar}
-          onOpenAthleteProfileModal={onOpenAthleteProfileModal}
-          onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-        />
-      )}
+      {isPrescriptionExpanded &&
+        athleteProfile &&
+        onSyncMorphedToCalendar &&
+        onOpenAthleteProfileModal && (
+          <ReadinessMorphingCard
+            wellnessDays={wellnessDays}
+            activities={activities}
+            plannedEvents={plannedEvents}
+            athleteProfile={athleteProfile}
+            distanceUnit={distanceUnit}
+            isExpanded={isPrescriptionExpanded}
+            onToggleExpand={() => setIsPrescriptionExpanded((prev) => !prev)}
+            placementLabel="Daily Workout Prescription"
+            onSyncMorphedToCalendar={onSyncMorphedToCalendar}
+            onOpenAthleteProfileModal={onOpenAthleteProfileModal}
+            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+          />
+        )}
 
       {/* ==========================================================================
           1. FITNESS (CTL), FATIGUE (ATL) & FORM (TSB) MULTI-PANE CHART
@@ -772,34 +781,62 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Activity className="w-4 h-4 text-sky-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Fitness (CTL), Fatigue (ATL) &amp; Form (TSB)
+                Fitness, Fatigue &amp; Freshness
               </span>
               <span className="text-xs font-mono text-sky-500">
                 CTL {latestDay.ctl.toFixed(1)} · TSB {latestDay.tsb.toFixed(1)}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => toggleSection('pmc')}
-              className="px-3 py-1 rounded-xl bg-sky-500/15 text-sky-500 text-xs font-mono font-semibold flex items-center gap-1"
-            >
-              <span>Expand Chart</span>
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
+                <button
+                  type="button"
+                  onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
+                  className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#0B4F9E] hover:bg-[#093e7d] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Daily Workout Prescription</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => toggleSection('pmc')}
+                className="px-3 py-1 rounded-xl bg-sky-500/15 text-sky-500 text-xs font-mono font-semibold flex items-center gap-1"
+              >
+                <span>Expand Chart</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         ) : (
       <section className="rounded-2xl liquid-glass overflow-hidden">
         {/* Top Control Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-900/40">
-          {/* Left: Plain-English Title + Date Range Dropdown + Calendar Picker + Span Summary */}
+          {/* Left: Plain-English Title + Info Icon + Date Range Picker */}
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="flex items-center gap-1.5 pr-1">
               <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                 Fitness, Fatigue &amp; Freshness
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/25 text-[10px] font-mono font-semibold text-sky-600 dark:text-sky-300">
-                CTL · ATL · TSB
-              </span>
+              <ChartInfoTooltip
+                title="Performance Management Chart (PMC) — CTL, ATL & TSB Form"
+                subtitle="Banister Impulse-Response & Intervals.icu 5-Zone Form Model"
+                whatItMeasures="Models Chronic Training Load (CTL, 42-day exponential fitness average), Acute Training Load (ATL, 7-day fatigue average), and Training Stress Balance (TSB = CTL − ATL, net freshness/form) alongside Max HR spikes, eFTP step progressions, and weekly TSS bars."
+                benchmarks="Optimal Productive Training: TSB between -10 and -30 (Green). Race-Ready Freshness: TSB between +5 and +20 (Blue). Overreaching High Risk: TSB below -30 (Red) or weekly CTL ramp > 7 TSS/day/week."
+                liveStatus={{
+                  label: `CTL ${latestDay.ctl.toFixed(0)} · ATL ${latestDay.atl.toFixed(0)} · Form ${
+                    latestDay.tsb > 0 ? `+${latestDay.tsb.toFixed(0)}` : latestDay.tsb.toFixed(0)
+                  } (${getIntervalsFormZone(latestDay.tsb).label})`,
+                  state:
+                    latestDay.tsb < -30
+                      ? 'warning'
+                      : latestDay.tsb <= -10 || (latestDay.tsb >= 5 && latestDay.tsb <= 20)
+                        ? 'optimal'
+                        : 'neutral',
+                  interpretation: `Your Form is currently in the ${getIntervalsFormZone(latestDay.tsb).label} zone with a 7-day HRV baseline of ${latestWithHrv.hrvBaseline7d}ms.`,
+                }}
+                coachingAction="Maintain purple Fatigue (ATL) above cyan Fitness (CTL) during build blocks to keep Form in the green Optimal zone (-10 to -30), then shed ATL 10–14 days before A-races so Form rises into the blue Fresh zone (+5 to +20)."
+              />
             </div>
             <div className="relative">
               <button
@@ -861,37 +898,6 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               )}
             </div>
 
-            <span className="text-xs text-slate-600 dark:text-slate-400 font-mono tabular-nums">
-              <strong className="font-bold text-slate-900 dark:text-slate-100">
-                {totalWeeksCount}
-              </strong>{' '}
-              weeks{' '}
-              <strong className="font-bold text-slate-900 dark:text-slate-100">
-                {totalDaysCount}
-              </strong>{' '}
-              days
-            </span>
-
-            <ChartInfoTooltip
-              title="Performance Management Chart (PMC) — CTL, ATL & TSB Form"
-              subtitle="Banister Impulse-Response & Intervals.icu 5-Zone Form Model"
-              whatItMeasures="Models Chronic Training Load (CTL, 42-day exponential fitness average), Acute Training Load (ATL, 7-day fatigue average), and Training Stress Balance (TSB = CTL − ATL, net freshness/form) alongside Max HR spikes, eFTP step progressions, and weekly TSS bars."
-              benchmarks="Optimal Productive Training: TSB between -10 and -30 (Green). Race-Ready Freshness: TSB between +5 and +20 (Blue). Overreaching High Risk: TSB below -30 (Red) or weekly CTL ramp > 7 TSS/day/week."
-              liveStatus={{
-                label: `CTL ${latestDay.ctl.toFixed(0)} · ATL ${latestDay.atl.toFixed(0)} · Form ${
-                  latestDay.tsb > 0 ? `+${latestDay.tsb.toFixed(0)}` : latestDay.tsb.toFixed(0)
-                } (${getIntervalsFormZone(latestDay.tsb).label})`,
-                state:
-                  latestDay.tsb < -30
-                    ? 'warning'
-                    : latestDay.tsb <= -10 || (latestDay.tsb >= 5 && latestDay.tsb <= 20)
-                      ? 'optimal'
-                      : 'neutral',
-                interpretation: `Your Form is currently in the ${getIntervalsFormZone(latestDay.tsb).label} zone with a 7-day HRV baseline of ${latestWithHrv.hrvBaseline7d}ms.`,
-              }}
-              coachingAction="Maintain purple Fatigue (ATL) above cyan Fitness (CTL) during build blocks to keep Form in the green Optimal zone (-10 to -30), then shed ATL 10–14 days before A-races so Form rises into the blue Fresh zone (+5 to +20)."
-            />
-
             {rangePreset === 'CUSTOM' && (
               <button
                 type="button"
@@ -933,8 +939,29 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             ))}
           </div>
 
-          {/* Right: Forward Projection + Customize Chart Popover */}
+          {/* Right: Inline Daily Workout Prescription Trigger + Forward Projection + Customize Chart Popover */}
           <div className="flex flex-wrap items-center gap-2 relative min-w-0">
+            {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
+              <button
+                type="button"
+                onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
+                className={`min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-all cursor-pointer ${
+                  isPrescriptionExpanded
+                    ? 'bg-sky-500/20 text-blue-700 dark:text-sky-300 border border-sky-500/40'
+                    : 'bg-[#0B4F9E] hover:bg-[#093e7d] text-white'
+                }`}
+                title="Open or collapse today's readiness-calibrated Daily Workout Prescription"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Daily Workout Prescription</span>
+                {isPrescriptionExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 opacity-80" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+                )}
+              </button>
+            )}
+
             <select
               value={forwardDays}
               onChange={(e) =>
@@ -1236,6 +1263,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               onSelectDate={(dateStr) => {
                 const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
                 if (foundIdx >= 0) setHoverIdx(foundIdx);
+              }}
+              onSelectDateRange={(startStr, endStr) => {
+                setCustomStart(startStr);
+                setCustomEnd(endStr);
+                setRangePreset('CUSTOM');
               }}
               height={530}
             />

@@ -578,16 +578,38 @@ function getEffectiveStravaClientConfig(req?: Request) {
   return { clientId, clientSecret, refreshToken, accessToken, expiresAt };
 }
 
+interface CachedStravaIdentity {
+  athleteId: string;
+  athleteName: string;
+  ftp?: number;
+  weightKg?: number;
+}
+const stravaIdentityByToken = new Map<string, CachedStravaIdentity>();
+
+function isGenericName(name?: string | null): boolean {
+  if (!name) return true;
+  const t = name.trim();
+  return (
+    !t ||
+    /^athlete$/i.test(t) ||
+    /^primary\s+athlete$/i.test(t) ||
+    /^strava\s+(user|athlete)$/i.test(t)
+  );
+}
+
 function getStravaTokenRotationPayload(req?: Request) {
   const { clientId, refreshToken, accessToken, expiresAt } = getEffectiveStravaClientConfig(req);
   if (!refreshToken && !accessToken) {
     return undefined;
   }
+  const cached = stravaIdentityByToken.get(refreshToken || accessToken);
   return {
     accessToken: accessToken || undefined,
     refreshToken: refreshToken || undefined,
     expiresAt: expiresAt || undefined,
     clientId: clientId || undefined,
+    athleteId: cached?.athleteId || undefined,
+    athleteName: cached?.athleteName || undefined,
   };
 }
 
@@ -629,24 +651,39 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
           access_token: string;
           refresh_token: string;
           expires_at: number;
-          athlete?: { firstname?: string; lastname?: string };
+          athlete?: { firstname?: string; lastname?: string; username?: string; id?: number };
         };
+        const prevCached = stravaIdentityByToken.get(activeRefreshToken);
         activeAccessToken = refreshed.access_token;
         activeRefreshToken = refreshed.refresh_token || activeRefreshToken;
         activeExpiresAt = refreshed.expires_at;
         runtimeStore.stravaAccessToken = activeAccessToken;
         runtimeStore.stravaRefreshToken = activeRefreshToken;
         runtimeStore.stravaExpiresAt = activeExpiresAt;
+        if (prevCached) {
+          stravaIdentityByToken.set(activeRefreshToken, prevCached);
+          stravaIdentityByToken.set(activeAccessToken, prevCached);
+        }
         if (req) {
           req.headers['x-strava-access-token'] = activeAccessToken;
           req.headers['x-strava-refresh-token'] = activeRefreshToken;
           req.headers['x-strava-expires-at'] = String(activeExpiresAt);
         }
         if (refreshed.athlete) {
-          const name = [refreshed.athlete.firstname, refreshed.athlete.lastname]
-            .filter(Boolean)
-            .join(' ');
-          if (name) runtimeStore.stravaAthleteName = name;
+          const name =
+            [refreshed.athlete.firstname, refreshed.athlete.lastname]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || String(refreshed.athlete.username || '').trim();
+          if (name) {
+            runtimeStore.stravaAthleteName = name;
+            const entry: CachedStravaIdentity = {
+              athleteId: String(refreshed.athlete.id || ''),
+              athleteName: name,
+            };
+            stravaIdentityByToken.set(activeRefreshToken, entry);
+            stravaIdentityByToken.set(activeAccessToken, entry);
+          }
         }
         saveSessionCache();
       }
@@ -655,6 +692,45 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
     }
   }
   return activeAccessToken;
+}
+
+async function resolveStravaAthleteIdentity(req?: Request): Promise<CachedStravaIdentity | null> {
+  const { refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
+  const cacheKey = refreshToken || accessToken;
+  if (!cacheKey) return null;
+  const cached = stravaIdentityByToken.get(cacheKey);
+  if (cached && !isGenericName(cached.athleteName)) {
+    return cached;
+  }
+  try {
+    const validToken = await ensureValidStravaAccessToken(req, false);
+    if (!validToken) return null;
+    const resp = await fetch('https://www.strava.com/api/v3/athlete', {
+      headers: { Authorization: `Bearer ${validToken}` },
+    });
+    if (!resp.ok) return null;
+    const rawAthlete = (await resp.json()) as Record<string, any>;
+    const athleteId = String(rawAthlete.id || '');
+    const fullName =
+      [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ').trim() ||
+      String(rawAthlete.username || '').trim();
+    if (!fullName) return null;
+    const ftp = Number(rawAthlete.ftp) > 80 ? Math.round(Number(rawAthlete.ftp)) : undefined;
+    const weightKg = Number(rawAthlete.weight) > 30 ? Number(rawAthlete.weight) : undefined;
+    const entry: CachedStravaIdentity = {
+      athleteId,
+      athleteName: fullName,
+      ftp,
+      weightKg,
+    };
+    stravaIdentityByToken.set(cacheKey, entry);
+    stravaIdentityByToken.set(validToken, entry);
+    runtimeStore.stravaAthleteName = fullName;
+    saveSessionCache();
+    return entry;
+  } catch {
+    return null;
+  }
 }
 
 function resolveCallbackUrl(req: Request): string {
@@ -725,7 +801,7 @@ export function parseWorkoutSyntaxToSteps(syntax: string, fallbackDurationSecs =
 // ----------------------------------------------------------------------------
 // 1. Configuration & Connection Status
 // ----------------------------------------------------------------------------
-apiRouter.get('/api/config/status', (req: Request, res: Response) => {
+apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
   const { apiKey: intervalsKey, athleteId } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
@@ -788,15 +864,36 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
   const isIntervalsConnected = Boolean(intervalsKey);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
 
+  const stravaIdentity = isStravaConnected ? await resolveStravaAthleteIdentity(req) : null;
+  const resolvedStravaName =
+    stravaIdentity?.athleteName ||
+    (!isGenericName(runtimeStore.stravaAthleteName) ? runtimeStore.stravaAthleteName : undefined);
+  const resolvedProfile =
+    isStravaConnected && resolvedStravaName
+      ? buildServerAthleteProfile(
+          {
+            id: stravaIdentity?.athleteId || '0',
+            name: resolvedStravaName,
+            ftp: stravaIdentity?.ftp || 280,
+            weightKg: stravaIdentity?.weightKg || 70,
+            source: 'STRAVA_OAUTH',
+          },
+          null
+        )
+      : undefined;
+
   res.json({
     intervalsConnected: isIntervalsConnected,
     intervalsAthleteId: isIntervalsConnected ? athleteId : '0',
-    intervalsAthleteName: undefined,
+    intervalsAthleteName:
+      isIntervalsConnected && !isGenericName(runtimeStore.intervalsAthleteName)
+        ? runtimeStore.intervalsAthleteName
+        : undefined,
     intervalsSource: isIntervalsConnected ? 'USER_INPUT' : 'NONE',
     stravaConfigured: Boolean(stravaClientId),
     stravaClientId: stravaClientId || undefined,
     stravaConnected: isStravaConnected,
-    stravaAthleteName: undefined,
+    stravaAthleteName: resolvedStravaName,
     stravaSource: isStravaConnected ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
     hasGeminiServerKey,
     autoSyncCronActive: true,
@@ -805,12 +902,12 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     garminActivitiesCount: 0,
     stravaActivitiesCount: 0,
     redactedStravaCount: 0,
-    athleteFtp: 280,
-    athleteIndoorFtp: 280,
-    athleteRunFtp: 340,
-    athleteLthr: 163,
-    athleteMaxHr: 182,
-    athleteProfile: undefined,
+    athleteFtp: resolvedProfile?.ftp || 280,
+    athleteIndoorFtp: resolvedProfile?.indoorFtp || 280,
+    athleteRunFtp: resolvedProfile?.runFtp || 340,
+    athleteLthr: resolvedProfile?.lthr || 163,
+    athleteMaxHr: resolvedProfile?.maxHr || 182,
+    athleteProfile: resolvedProfile,
     gearItems: [],
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,

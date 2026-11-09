@@ -340,6 +340,7 @@ export interface EChartsPMCDashboardProps {
   timeline: PMCDayPoint[];
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSelectDate?: (date: string) => void;
+  onSelectDateRange?: (startDate: string, endDate: string) => void;
   height?: number;
 }
 
@@ -347,6 +348,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
   timeline,
   onSelectActivity,
   onSelectDate,
+  onSelectDateRange,
   height = 540,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
@@ -355,8 +357,14 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
   const [showTssBars, setShowTssBars] = useState<boolean>(true);
   const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
   const [selectedDay, setSelectedDay] = useState<PMCDayPoint | null>(null);
+  const [dragSelection, setDragSelection] = useState<{
+    startX: number;
+    currentX: number;
+    startIdx: number;
+    endIdx: number;
+  } | null>(null);
   const [isDark, setIsDark] = useState<boolean>(() =>
-    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true
+    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
   );
 
   useEffect(() => {
@@ -797,26 +805,9 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           xAxisIndex: activeXAxisIndices,
           start: 0,
           end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true,
-        },
-        {
-          type: 'slider',
-          xAxisIndex: activeXAxisIndices,
-          bottom: 6,
-          height: 20,
-          borderColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.14)',
-          backgroundColor: isDark ? 'rgba(15, 23, 42, 0.65)' : 'rgba(243, 239, 234, 0.85)',
-          fillerColor: isDark ? 'rgba(56, 189, 248, 0.16)' : 'rgba(2, 132, 199, 0.14)',
-          handleStyle: {
-            color: '#38bdf8',
-            borderColor: '#0284c7',
-          },
-          textStyle: {
-            color: axisLabelColor,
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 9,
-          },
+          zoomOnMouseWheel: false,
+          moveOnMouseMove: false,
+          moveOnMouseWheel: false,
         },
       ],
       series: [
@@ -1056,9 +1047,91 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
       </div>
 
       <div
-        ref={chartContainerRef}
-        style={{ width: '100%', height: `${computedChartHeight}px`, transition: 'height 150ms ease' }}
-      />
+        className="relative select-none cursor-crosshair"
+        onPointerDown={(e) => {
+          if (e.button !== 0 || !chartContainerRef.current || enrichedTimeline.length < 2) return;
+          const rect = chartContainerRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const plotLeft = 58;
+          const plotRight = Math.max(plotLeft + 20, rect.width - 60);
+          if (x < plotLeft || x > plotRight) return;
+          const ratio = Math.max(0, Math.min(1, (x - plotLeft) / (plotRight - plotLeft)));
+          const idx = Math.round(ratio * (enrichedTimeline.length - 1));
+          setDragSelection({
+            startX: x,
+            currentX: x,
+            startIdx: idx,
+            endIdx: idx,
+          });
+        }}
+        onPointerMove={(e) => {
+          if (!dragSelection || !chartContainerRef.current || enrichedTimeline.length < 2) return;
+          const rect = chartContainerRef.current.getBoundingClientRect();
+          const plotLeft = 58;
+          const plotRight = Math.max(plotLeft + 20, rect.width - 60);
+          const x = Math.max(plotLeft, Math.min(plotRight, e.clientX - rect.left));
+          const ratio = Math.max(0, Math.min(1, (x - plotLeft) / (plotRight - plotLeft)));
+          const idx = Math.round(ratio * (enrichedTimeline.length - 1));
+          setDragSelection((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  currentX: x,
+                  endIdx: idx,
+                }
+              : null
+          );
+        }}
+        onPointerUp={() => {
+          if (!dragSelection) return;
+          const pixelDelta = Math.abs(dragSelection.currentX - dragSelection.startX);
+          const loIdx = Math.min(dragSelection.startIdx, dragSelection.endIdx);
+          const hiIdx = Math.max(dragSelection.startIdx, dragSelection.endIdx);
+          setDragSelection(null);
+          if (
+            pixelDelta >= 12 &&
+            hiIdx > loIdx &&
+            onSelectDateRange &&
+            enrichedTimeline[loIdx] &&
+            enrichedTimeline[hiIdx]
+          ) {
+            onSelectDateRange(enrichedTimeline[loIdx].date, enrichedTimeline[hiIdx].date);
+          }
+        }}
+        onPointerLeave={() => {
+          if (dragSelection) setDragSelection(null);
+        }}
+      >
+        <div
+          ref={chartContainerRef}
+          style={{
+            width: '100%',
+            height: `${computedChartHeight}px`,
+            transition: 'height 150ms ease',
+          }}
+        />
+        {dragSelection && Math.abs(dragSelection.currentX - dragSelection.startX) >= 8 && (
+          <div
+            className="pointer-events-none absolute top-[34px] bottom-[28px] bg-sky-500/15 border-x-2 border-sky-500 z-20 flex items-start justify-center pt-2"
+            style={{
+              left: `${Math.min(dragSelection.startX, dragSelection.currentX)}px`,
+              width: `${Math.abs(dragSelection.currentX - dragSelection.startX)}px`,
+            }}
+          >
+            <span className="px-2 py-0.5 rounded-md bg-slate-900/90 text-sky-300 text-[10px] font-mono font-bold whitespace-nowrap shadow-sm">
+              {
+                enrichedTimeline[Math.min(dragSelection.startIdx, dragSelection.endIdx)]
+                  ?.date
+              }{' '}
+              →{' '}
+              {
+                enrichedTimeline[Math.max(dragSelection.startIdx, dragSelection.endIdx)]
+                  ?.date
+              }
+            </span>
+          </div>
+        )}
+      </div>
 
       {selectedDay && (
         <div className="mt-3 pt-3 border-t border-stone-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
