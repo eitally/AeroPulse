@@ -617,17 +617,23 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    02. Intervals.icu API + Garmin Connect Wellness Bridge
+                    02. Additional Data Sources: Garmin Connect &amp; Intervals.icu Bridge
                   </h3>
-                  <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span
+                    className={`text-xs font-mono font-semibold ${
+                      status.intervalsConnected
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
                     ·{' '}
                     {status.intervalsConnected
                       ? `Connected (${status.intervalsAthleteName || status.intervalsAthleteId})`
-                      : 'Using Calibration Dataset'}
+                      : 'Optional — Not Connected'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Pulls all-time Garmin workouts (`2010–present`), CTL/ATL/TSB load, auto-detected intervals, planned workouts, and nightly Garmin Sleep Score, Sleep Duration, Overnight HRV, Resting HR, VO2max, and eFTP.
+                  Optionally connect Garmin Connect &amp; Intervals.icu alongside Strava to enrich your telemetry with nightly Garmin Sleep Score, Sleep Duration, Overnight HRV, Resting HR, VO2max, eFTP, and structured planned workouts.
                 </p>
               </div>
               <a

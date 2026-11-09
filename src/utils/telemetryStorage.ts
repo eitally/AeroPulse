@@ -14,11 +14,6 @@ import {
   hydrateUnifiedActivity,
   saveStoreMetadata,
 } from '../db/workoutStore';
-import {
-  INITIAL_ACTIVITIES,
-  INITIAL_PLANNED_EVENTS,
-  INITIAL_WELLNESS_DAYS,
-} from '../data/mockTelemetry';
 
 const IDB_NAME = 'aeropulse_telemetry_db';
 const IDB_VERSION = 1;
@@ -383,9 +378,10 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
         }>('snapshot_meta'),
       ]);
 
-    if (storedActivities.length > 0 || wellnessDays.length > 0) {
+    const realStoredActivities = storedActivities.filter((rec) => !/^act-\d+$/.test(rec.id));
+    if (realStoredActivities.length > 0) {
       const streamByActId = new Map(storedStreams.map((s) => [s.activityId, s]));
-      const hydratedActivities = storedActivities.map((rec) =>
+      const hydratedActivities = realStoredActivities.map((rec) =>
         reclassifyActivityEnvironment(hydrateUnifiedActivity(rec, streamByActId.get(rec.id)))
       );
       return {
@@ -404,25 +400,16 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
 
     // Check legacy raw IndexedDB snapshot and migrate into Dexie relational store
     const legacy = await loadLegacyTelemetrySnapshot();
-    if (legacy && (legacy.activities.length > 0 || legacy.wellnessDays.length > 0)) {
-      await savePersistedTelemetrySnapshot(legacy);
-      return legacy;
+    if (legacy) {
+      const realLegacyActivities = legacy.activities.filter((rec) => !/^act-\d+$/.test(rec.id));
+      if (realLegacyActivities.length > 0) {
+        const cleanedLegacy = { ...legacy, activities: realLegacyActivities };
+        await savePersistedTelemetrySnapshot(cleanedLegacy);
+        return cleanedLegacy;
+      }
     }
 
-    // Seed initial high-frequency telemetry into Dexie relational store for offline/sandbox boot
-    const seededAt = new Date().toISOString();
-    const seedSnapshot: PersistedTelemetrySnapshot = {
-      activities: INITIAL_ACTIVITIES.map(reclassifyActivityEnvironment),
-      wellnessDays: INITIAL_WELLNESS_DAYS,
-      plannedEvents: INITIAL_PLANNED_EVENTS,
-      gearItems: [],
-      redactedStravaCount: 0,
-      earliestActivityDate:
-        INITIAL_ACTIVITIES[INITIAL_ACTIVITIES.length - 1]?.startDateLocal?.slice(0, 10),
-      savedAt: seededAt,
-    };
-    await savePersistedTelemetrySnapshot(seedSnapshot);
-    return seedSnapshot;
+    return null;
   } catch {
     return null;
   }
@@ -656,12 +643,85 @@ export function mergeWellnessDaysNonDestructive(
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export function computeWellnessDaysFromActivities(
+  activities: UnifiedActivity[]
+): UnifiedWellnessDay[] {
+  if (!Array.isArray(activities) || activities.length === 0) return [];
+  const loadByDate = new Map<string, number>();
+  let minTime = Date.now() - 180 * 86400 * 1000;
+  for (const act of activities) {
+    if (!act || !act.startDateLocal) continue;
+    const d = act.startDateLocal.slice(0, 10);
+    const t = new Date(`${d}T00:00:00`).getTime();
+    if (Number.isFinite(t) && t < minTime) {
+      minTime = t;
+    }
+    loadByDate.set(d, (loadByDate.get(d) || 0) + Math.max(0, Number(act.trainingLoad || 0)));
+  }
+
+  const todayMs = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00').getTime();
+  // Cap lookback to 365 days so PMC chart is fast and accurate
+  const startMs = Math.max(minTime, todayMs - 365 * 86400 * 1000);
+  const days: UnifiedWellnessDay[] = [];
+  let ctl = 0;
+  let atl = 0;
+
+  for (let ms = startMs; ms <= todayMs; ms += 86400 * 1000) {
+    const dateStr = new Date(ms).toISOString().slice(0, 10);
+    const dailyLoad = Math.round(loadByDate.get(dateStr) || 0);
+    const prevCtl = ctl;
+    const prevAtl = atl;
+    ctl = ctl + (dailyLoad - ctl) / 42;
+    atl = atl + (dailyLoad - atl) / 7;
+    const tsb = prevCtl - prevAtl;
+    const ctl7DaysAgo = days.length >= 7 ? days[days.length - 7].ctl : 0;
+    const rampRate = Number((ctl - ctl7DaysAgo).toFixed(1));
+    const loadRatio = ctl > 5 ? Number((atl / ctl).toFixed(2)) : 1.0;
+
+    let garminTrainingStatus: UnifiedWellnessDay['garminTrainingStatus'] = 'Maintaining';
+    if (rampRate > 6 || tsb < -25) garminTrainingStatus = 'Overreaching';
+    else if (rampRate >= 1.5 && tsb >= -22) garminTrainingStatus = 'Productive';
+    else if (tsb > 10 && ctl > 35) garminTrainingStatus = 'Peaking';
+    else if (rampRate < -2) garminTrainingStatus = 'Recovery';
+
+    const readinessScore = Math.max(
+      25,
+      Math.min(96, Math.round(75 + Math.max(-25, Math.min(15, tsb)) * 0.7))
+    );
+
+    days.push({
+      date: dateStr,
+      ctl: Number(ctl.toFixed(1)),
+      atl: Number(atl.toFixed(1)),
+      tsb: Number(tsb.toFixed(1)),
+      loadRatio,
+      rampRate,
+      hrvRMSSD: 0,
+      hrvBaseline7d: 0,
+      hrvNormalBandLow: 0,
+      hrvNormalBandHigh: 0,
+      restingHR: 0,
+      sleepSecs: 0,
+      sleepScore: 0,
+      weightKg: 70,
+      readinessStatus:
+        readinessScore >= 80 ? 'Optimal' : readinessScore >= 60 ? 'Caution' : 'Strain',
+      garminTrainingStatus,
+      trainingStatusReason: 'Computed from Strava training load history.',
+      dailyLoad,
+    });
+  }
+
+  return days;
+}
+
 export interface RotatedStravaTokenPayload {
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;
   clientId?: string;
   clientSecret?: string;
+  athleteId?: string;
   athleteName?: string;
 }
 
@@ -682,6 +742,12 @@ export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayl
     }
     if (tokens.clientSecret) {
       localStorage.setItem('aeropulse_strava_client_secret', tokens.clientSecret.trim());
+    }
+    if (tokens.athleteId) {
+      localStorage.setItem('aeropulse_strava_athlete_id', String(tokens.athleteId).trim());
+    }
+    if (tokens.athleteName) {
+      localStorage.setItem('aeropulse_strava_athlete_name', tokens.athleteName.trim());
     }
   } catch {
     // ignore storage quota errors

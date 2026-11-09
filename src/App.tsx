@@ -44,12 +44,9 @@ import {
   UnifiedWellnessDay,
 } from './types';
 import {
-  INITIAL_ACTIVITIES,
   INITIAL_ANNUAL_MILEAGE_GOALS,
   INITIAL_CHAT_MESSAGES,
-  INITIAL_PLANNED_EVENTS,
   INITIAL_POWER_PACE_CURVES,
-  INITIAL_WELLNESS_DAYS,
 } from './data/mockTelemetry';
 import {
   DEFAULT_SELF_PRIVACY_SETTINGS,
@@ -76,6 +73,7 @@ import { computeAnnualMileageSummary, formatDistance } from './utils/formatters'
 import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
+  computeWellnessDaysFromActivities,
   loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
@@ -108,7 +106,7 @@ export default function App() {
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
   const [selectedSport, setSelectedSport] = useState<SportCategory | 'ALL'>('ALL');
 
-  // Telemetry state — hydrated from Browser IndexedDB on boot so deployments never wipe history
+  // Telemetry state — hydrated from Browser IndexedDB on boot only when Strava OAuth is active
   const [wellnessDays, setWellnessDays] = useState<UnifiedWellnessDay[]>([]);
   const [activities, setActivities] = useState<UnifiedActivity[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedWorkoutEvent[]>([]);
@@ -125,7 +123,15 @@ export default function App() {
 
   const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('aeropulse_auth_gate_passed') === '1';
+      const hasStravaToken = Boolean(
+        localStorage.getItem('aeropulse_strava_access_token') ||
+          localStorage.getItem('aeropulse_strava_refresh_token')
+      );
+      return (
+        hasStravaToken &&
+        localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
+        localStorage.getItem('aeropulse_logged_out') !== '1'
+      );
     } catch {
       return false;
     }
@@ -392,12 +398,21 @@ export default function App() {
     return headers;
   };
 
+  const hasStravaClientCredentials = (): boolean => {
+    try {
+      return Boolean(
+        localStorage.getItem('aeropulse_strava_access_token') ||
+          localStorage.getItem('aeropulse_strava_refresh_token')
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const hasLocalClientCredentials = (): boolean => {
     try {
       return Boolean(
-        localStorage.getItem('aeropulse_intervals_api_key') ||
-          localStorage.getItem('aeropulse_strava_access_token') ||
-          localStorage.getItem('aeropulse_strava_refresh_token')
+        localStorage.getItem('aeropulse_intervals_api_key') || hasStravaClientCredentials()
       );
     } catch {
       return false;
@@ -407,6 +422,12 @@ export default function App() {
   const fetchServerConfigStatus = useCallback(async () => {
     try {
       const hasLocalAuth = hasLocalClientCredentials();
+      let savedStravaName: string | undefined;
+      try {
+        savedStravaName = localStorage.getItem('aeropulse_strava_athlete_name') || undefined;
+      } catch {
+        // ignore
+      }
       const origin = encodeURIComponent(window.location.origin);
       const resp = await fetch(`/api/config/status?origin=${origin}`, {
         headers: getSavedIntervalsHeaders(),
@@ -444,11 +465,15 @@ export default function App() {
           isClientIntervalsConnected || isClientStravaConnected ? 'LIVE' : 'SANDBOX_CALIBRATION',
         intervalsConnected: isClientIntervalsConnected,
         intervalsAthleteId: isClientIntervalsConnected ? data.intervalsAthleteId || '0' : '0',
-        intervalsAthleteName: isClientIntervalsConnected ? data.intervalsAthleteName : undefined,
+        intervalsAthleteName: isClientIntervalsConnected
+          ? data.intervalsAthleteName || prev.intervalsAthleteName
+          : undefined,
         intervalsSource: isClientIntervalsConnected ? data.intervalsSource || 'USER_INPUT' : 'NONE',
         stravaConnected: isClientStravaConnected,
         stravaClientId: data.stravaClientId || prev.stravaClientId,
-        stravaAthleteName: isClientStravaConnected ? data.stravaAthleteName : undefined,
+        stravaAthleteName: isClientStravaConnected
+          ? data.stravaAthleteName || savedStravaName || prev.stravaAthleteName
+          : undefined,
         stravaSource: isClientStravaConnected ? data.stravaSource || 'OAUTH' : 'NONE',
         hasGeminiServerKey: Boolean(data.hasGeminiServerKey),
         currentOriginCallbackUrl:
@@ -573,7 +598,29 @@ export default function App() {
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
             if (stravaData.stravaTokens) {
-              saveRotatedStravaTokensToStorage(stravaData.stravaTokens);
+              saveRotatedStravaTokensToStorage({
+                ...stravaData.stravaTokens,
+                athleteId: stravaData.athleteId,
+                athleteName: stravaData.athleteName,
+              });
+            } else if (stravaData.athleteName || stravaData.athleteId) {
+              saveRotatedStravaTokensToStorage({
+                athleteId: stravaData.athleteId,
+                athleteName: stravaData.athleteName,
+              });
+            }
+            if (!statusData.intervalsConnected && stravaData.athleteProfile) {
+              const latestW =
+                nextWellnessDays.length > 0
+                  ? nextWellnessDays[nextWellnessDays.length - 1]
+                  : undefined;
+              const completeProf = buildCompleteAthleteProfile(stravaData.athleteProfile, latestW);
+              setAthleteProfile(completeProf);
+              athleteProfileRef.current = completeProf;
+              if (Array.isArray(stravaData.gearItems) && stravaData.gearItems.length > 0) {
+                nextGearItems = stravaData.gearItems;
+                setGearItems(nextGearItems);
+              }
             }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
               const toUnifiedFromStrava = (sa: any): UnifiedActivity =>
@@ -749,6 +796,12 @@ export default function App() {
           setActivities(combinedArchive);
           activitiesRef.current = combinedArchive;
 
+          if (!statusData.intervalsConnected && combinedArchive.length > 0) {
+            nextWellnessDays = computeWellnessDaysFromActivities(combinedArchive);
+            setWellnessDays(nextWellnessDays);
+            wellnessDaysRef.current = nextWellnessDays;
+          }
+
           const oldestLoaded =
             combinedArchive.length > 0
               ? combinedArchive[combinedArchive.length - 1].startDateLocal.slice(0, 10)
@@ -774,6 +827,7 @@ export default function App() {
             wellnessDays: nextWellnessDays,
             plannedEvents: nextPlannedEvents,
             gearItems: nextGearItems,
+            athleteProfile: athleteProfileRef.current,
             redactedStravaCount: nextRedactedCount,
             earliestActivityDate: oldestLoaded,
           });
@@ -789,61 +843,63 @@ export default function App() {
     [fetchServerConfigStatus]
   );
 
-  // Instant hydration from Browser IndexedDB on boot + background incremental delta sync
+  // Instant hydration from Browser IndexedDB on boot (strictly gated by Strava OAuth) + background incremental delta sync
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const cached = await loadPersistedTelemetrySnapshot();
-      if (mounted && cached && (cached.activities.length > 0 || cached.wellnessDays.length > 0)) {
-        setActivities(cached.activities);
-        activitiesRef.current = cached.activities;
-        if (Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0) {
-          setWellnessDays(cached.wellnessDays);
-          wellnessDaysRef.current = cached.wellnessDays;
-        }
-        if (Array.isArray(cached.plannedEvents) && cached.plannedEvents.length > 0) {
-          setPlannedEvents(cached.plannedEvents);
-          plannedEventsRef.current = cached.plannedEvents;
-        }
-        if (Array.isArray(cached.gearItems) && cached.gearItems.length > 0) {
-          setGearItems(cached.gearItems);
-          gearItemsRef.current = cached.gearItems;
-        }
-        if (cached.athleteProfile) {
-          const latestW =
-            Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0
-              ? cached.wellnessDays[cached.wellnessDays.length - 1]
-              : undefined;
-          const hydratedProf = buildCompleteAthleteProfile(cached.athleteProfile, latestW);
-          setAthleteProfile(hydratedProf);
-          athleteProfileRef.current = hydratedProf;
-        }
-        if (typeof cached.redactedStravaCount === 'number') {
-          setRedactedStravaCount(cached.redactedStravaCount);
-          redactedStravaCountRef.current = cached.redactedStravaCount;
-        }
-        setIdbSavedAt(cached.savedAt);
+      if (hasStravaClientCredentials()) {
+        const cached = await loadPersistedTelemetrySnapshot();
+        if (mounted && cached && (cached.activities.length > 0 || cached.wellnessDays.length > 0)) {
+          setActivities(cached.activities);
+          activitiesRef.current = cached.activities;
+          if (Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0) {
+            setWellnessDays(cached.wellnessDays);
+            wellnessDaysRef.current = cached.wellnessDays;
+          }
+          if (Array.isArray(cached.plannedEvents) && cached.plannedEvents.length > 0) {
+            setPlannedEvents(cached.plannedEvents);
+            plannedEventsRef.current = cached.plannedEvents;
+          }
+          if (Array.isArray(cached.gearItems) && cached.gearItems.length > 0) {
+            setGearItems(cached.gearItems);
+            gearItemsRef.current = cached.gearItems;
+          }
+          if (cached.athleteProfile) {
+            const latestW =
+              Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0
+                ? cached.wellnessDays[cached.wellnessDays.length - 1]
+                : undefined;
+            const hydratedProf = buildCompleteAthleteProfile(cached.athleteProfile, latestW);
+            setAthleteProfile(hydratedProf);
+            athleteProfileRef.current = hydratedProf;
+          }
+          if (typeof cached.redactedStravaCount === 'number') {
+            setRedactedStravaCount(cached.redactedStravaCount);
+            redactedStravaCountRef.current = cached.redactedStravaCount;
+          }
+          setIdbSavedAt(cached.savedAt);
 
-        const totalGarmin = cached.activities.filter(
-          (a) => a.sourceBadges.includes('Garmin') || a.sourceBadges.includes('Intervals.icu')
-        ).length;
-        const totalStrava = cached.activities.filter(
-          (a) => a.sourceBadges.includes('Strava') || Boolean(a.stravaId)
-        ).length;
-        const oldest =
-          cached.earliestActivityDate ||
-          (cached.activities.length > 0
-            ? cached.activities[cached.activities.length - 1].startDateLocal.slice(0, 10)
-            : undefined);
+          const totalGarmin = cached.activities.filter(
+            (a) => a.sourceBadges.includes('Garmin') || a.sourceBadges.includes('Intervals.icu')
+          ).length;
+          const totalStrava = cached.activities.filter(
+            (a) => a.sourceBadges.includes('Strava') || Boolean(a.stravaId)
+          ).length;
+          const oldest =
+            cached.earliestActivityDate ||
+            (cached.activities.length > 0
+              ? cached.activities[cached.activities.length - 1].startDateLocal.slice(0, 10)
+              : undefined);
 
-        setConnectionStatus((prev) => ({
-          ...prev,
-          totalActivitiesCount: cached.activities.length,
-          garminActivitiesCount: totalGarmin,
-          stravaActivitiesCount: totalStrava,
-          earliestActivityDate: oldest || prev.earliestActivityDate,
-          lastSyncedAt: cached.savedAt,
-        }));
+          setConnectionStatus((prev) => ({
+            ...prev,
+            totalActivitiesCount: cached.activities.length,
+            garminActivitiesCount: totalGarmin,
+            stravaActivitiesCount: totalStrava,
+            earliestActivityDate: oldest || prev.earliestActivityDate,
+            lastSyncedAt: cached.savedAt,
+          }));
+        }
       }
       idbHydratedRef.current = true;
 
@@ -859,8 +915,8 @@ export default function App() {
       if (
         mounted &&
         isGatePassed &&
-        hasLocalClientCredentials() &&
-        (statusData?.intervalsConnected || statusData?.stravaConnected)
+        hasStravaClientCredentials() &&
+        statusData?.stravaConnected
       ) {
         syncLiveTelemetry(false);
       }
@@ -905,6 +961,33 @@ export default function App() {
 
   // Listen for OAuth popup completion via window.postMessage and BroadcastChannel
   useEffect(() => {
+    const applyNewStravaOAuthTokens = async (tokens?: any) => {
+      if (tokens) {
+        try {
+          const prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
+          if (prevAthleteId && tokens.athleteId && String(tokens.athleteId) !== prevAthleteId) {
+            await clearPersistedTelemetrySnapshot();
+            setActivities([]);
+            activitiesRef.current = [];
+            setWellnessDays([]);
+            wellnessDaysRef.current = [];
+          }
+        } catch {
+          // ignore
+        }
+        saveRotatedStravaTokensToStorage(tokens);
+      }
+      setIsSessionLoggedOut(false);
+      setHasEnteredWorkspace(true);
+      try {
+        localStorage.removeItem('aeropulse_logged_out');
+        localStorage.setItem('aeropulse_auth_gate_passed', '1');
+      } catch {
+        // ignore
+      }
+      syncLiveTelemetry(true);
+    };
+
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
       if (
@@ -916,18 +999,7 @@ export default function App() {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        if (event.data?.tokens) {
-          saveRotatedStravaTokensToStorage(event.data.tokens);
-        }
-        setIsSessionLoggedOut(false);
-        setHasEnteredWorkspace(true);
-        try {
-          localStorage.removeItem('aeropulse_logged_out');
-          localStorage.setItem('aeropulse_auth_gate_passed', '1');
-        } catch {
-          // ignore
-        }
-        syncLiveTelemetry(true);
+        applyNewStravaOAuthTokens(event.data?.tokens);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -937,18 +1009,7 @@ export default function App() {
       bc = new BroadcastChannel('aeropulse_oauth');
       bc.onmessage = (ev) => {
         if (ev.data?.type === 'OAUTH_AUTH_SUCCESS') {
-          if (ev.data?.tokens) {
-            saveRotatedStravaTokensToStorage(ev.data.tokens);
-          }
-          setIsSessionLoggedOut(false);
-          setHasEnteredWorkspace(true);
-          try {
-            localStorage.removeItem('aeropulse_logged_out');
-            localStorage.setItem('aeropulse_auth_gate_passed', '1');
-          } catch {
-            // ignore
-          }
-          syncLiveTelemetry(true);
+          applyNewStravaOAuthTokens(ev.data?.tokens);
         }
       };
     } catch {
@@ -979,13 +1040,9 @@ export default function App() {
         'aeropulse_intervals_athlete_id',
         (data.athleteId || athleteId || '0').trim()
       );
-      localStorage.removeItem('aeropulse_logged_out');
-      localStorage.setItem('aeropulse_auth_gate_passed', '1');
     } catch {
       // ignore
     }
-    setIsSessionLoggedOut(false);
-    setHasEnteredWorkspace(true);
     await syncLiveTelemetry(true);
   };
 
@@ -1038,6 +1095,10 @@ export default function App() {
 
   const handleLaunchStravaOAuth = async (mode: 'cloud' | 'localhost' = 'cloud') => {
     setSyncError(null);
+    const oauthState =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
     // If we already have the clientId in state, construct the Strava OAuth URL synchronously
     // so window.open is called synchronously inside the click handler (zero popup blocker issues).
@@ -1053,18 +1114,21 @@ export default function App() {
         response_type: 'code',
         approval_prompt: 'force',
         scope: 'read,activity:read_all,profile:read_all',
+        state: oauthState,
       });
       const directUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
       popup = window.open(directUrl, 'strava_oauth_popup', 'width=620,height=740');
     } else {
       try {
         const origin = encodeURIComponent(window.location.origin);
-        const resp = await fetch(`/api/strava/auth/url?origin=${origin}&mode=${mode}`);
+        const resp = await fetch(
+          `/api/strava/auth/url?origin=${origin}&mode=${mode}&state=${encodeURIComponent(oauthState)}`
+        );
         const data = await resp.json();
         if (!resp.ok || !data.url) {
           setSyncError(
             data.error ||
-              'Strava Client ID not set. Enter your Strava Client ID & Secret in Data Sources.'
+              'Strava Client ID not set. Enter your Strava Client ID & Secret in the login screen developer settings.'
           );
           if (hasEnteredWorkspace) {
             setIsDataSourcesOpen(true);
@@ -1078,8 +1142,8 @@ export default function App() {
       }
     }
 
-    // Poll /api/config/status every 2s for up to 2 minutes so even if strava.com severs window.opener,
-    // the main window detects when /auth/strava/callback completes token exchange.
+    // Poll /api/strava/auth/poll?state=... every 2s for up to 2 minutes so even if strava.com severs window.opener,
+    // only the browser that initiated this exact OAuth state nonce receives its tokens.
     let checks = 0;
     const pollTimer = window.setInterval(async () => {
       checks += 1;
@@ -1087,23 +1151,52 @@ export default function App() {
         window.clearInterval(pollTimer);
         return;
       }
-      const st = await fetchServerConfigStatus();
-      if (st?.stravaConnected) {
-        window.clearInterval(pollTimer);
-        try {
-          if (popup && !popup.closed) popup.close();
-        } catch {
-          // ignore
+      try {
+        const pollResp = await fetch(
+          `/api/strava/auth/poll?state=${encodeURIComponent(oauthState)}`
+        );
+        const pollData = pollResp.ok ? await pollResp.json() : null;
+        if (pollData?.completed && pollData.tokens) {
+          window.clearInterval(pollTimer);
+          saveRotatedStravaTokensToStorage(pollData.tokens);
+          try {
+            if (popup && !popup.closed) popup.close();
+          } catch {
+            // ignore
+          }
+          setIsSessionLoggedOut(false);
+          setHasEnteredWorkspace(true);
+          try {
+            localStorage.removeItem('aeropulse_logged_out');
+            localStorage.setItem('aeropulse_auth_gate_passed', '1');
+          } catch {
+            // ignore
+          }
+          syncLiveTelemetry(true);
+          return;
         }
-        setIsSessionLoggedOut(false);
-        setHasEnteredWorkspace(true);
-        try {
-          localStorage.removeItem('aeropulse_logged_out');
-          localStorage.setItem('aeropulse_auth_gate_passed', '1');
-        } catch {
-          // ignore
+      } catch {
+        // ignore poll error
+      }
+      if (hasStravaClientCredentials()) {
+        const st = await fetchServerConfigStatus();
+        if (st?.stravaConnected) {
+          window.clearInterval(pollTimer);
+          try {
+            if (popup && !popup.closed) popup.close();
+          } catch {
+            // ignore
+          }
+          setIsSessionLoggedOut(false);
+          setHasEnteredWorkspace(true);
+          try {
+            localStorage.removeItem('aeropulse_logged_out');
+            localStorage.setItem('aeropulse_auth_gate_passed', '1');
+          } catch {
+            // ignore
+          }
+          syncLiveTelemetry(true);
         }
-        syncLiveTelemetry(true);
       }
     }, 2000);
   };
@@ -1126,6 +1219,8 @@ export default function App() {
       expiresAt: data.expiresAt,
       clientId: data.clientId,
       clientSecret: data.clientSecret,
+      athleteId: data.athleteId,
+      athleteName: data.athleteName,
     });
     try {
       localStorage.removeItem('aeropulse_logged_out');
@@ -2181,96 +2276,6 @@ export default function App() {
     return primaryAthleteDisplayName.slice(0, 2).toUpperCase() || 'AT';
   }, [primaryAthleteDisplayName]);
 
-  // Multi-athlete roster & session auth handlers
-  const handleEnterSandbox = useCallback(() => {
-    if (
-      activitiesRef.current.length === 0 &&
-      wellnessDaysRef.current.length === 0 &&
-      !connectionStatus.stravaConnected &&
-      !connectionStatus.intervalsConnected
-    ) {
-      setWellnessDays(INITIAL_WELLNESS_DAYS);
-      wellnessDaysRef.current = INITIAL_WELLNESS_DAYS;
-      setActivities(INITIAL_ACTIVITIES);
-      activitiesRef.current = INITIAL_ACTIVITIES;
-      setPlannedEvents(INITIAL_PLANNED_EVENTS);
-      plannedEventsRef.current = INITIAL_PLANNED_EVENTS;
-    }
-    setIsSessionLoggedOut(false);
-    setHasEnteredWorkspace(true);
-    try {
-      localStorage.removeItem('aeropulse_logged_out');
-      localStorage.setItem('aeropulse_auth_gate_passed', '1');
-    } catch {
-      // ignore
-    }
-  }, [connectionStatus.intervalsConnected, connectionStatus.stravaConnected]);
-
-  const handleCreateLocalAthleteProfile = useCallback(
-    async (profileInput: {
-      name: string;
-      ftp: number;
-      thresholdPaceSecsPerKm: number;
-      weightKg: number;
-      seedSampleTelemetry: boolean;
-    }) => {
-      setSyncError(null);
-      const updatedProf = buildCompleteAthleteProfile(
-        {
-          ...athleteProfileRef.current,
-          name: profileInput.name,
-          ftp: profileInput.ftp,
-          indoorFtp: Math.round(profileInput.ftp * 0.97),
-          eFtp: profileInput.ftp,
-          thresholdPaceSecsPerKm: profileInput.thresholdPaceSecsPerKm,
-          weightKg: profileInput.weightKg,
-          source: 'CUSTOM_OVERRIDE',
-        },
-        wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
-      );
-      setAthleteProfile(updatedProf);
-      athleteProfileRef.current = updatedProf;
-
-      try {
-        await fetch('/api/athlete/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ athleteProfile: updatedProf }),
-        });
-      } catch {
-        // non-fatal offline fallback
-      }
-
-      if (profileInput.seedSampleTelemetry) {
-        if (activitiesRef.current.length === 0 && wellnessDaysRef.current.length === 0) {
-          setWellnessDays(INITIAL_WELLNESS_DAYS);
-          wellnessDaysRef.current = INITIAL_WELLNESS_DAYS;
-          setActivities(INITIAL_ACTIVITIES);
-          activitiesRef.current = INITIAL_ACTIVITIES;
-          setPlannedEvents(INITIAL_PLANNED_EVENTS);
-          plannedEventsRef.current = INITIAL_PLANNED_EVENTS;
-        }
-      } else {
-        setWellnessDays([]);
-        wellnessDaysRef.current = [];
-        setActivities([]);
-        activitiesRef.current = [];
-        setPlannedEvents([]);
-        plannedEventsRef.current = [];
-      }
-
-      setIsSessionLoggedOut(false);
-      setHasEnteredWorkspace(true);
-      try {
-        localStorage.removeItem('aeropulse_logged_out');
-        localStorage.setItem('aeropulse_auth_gate_passed', '1');
-      } catch {
-        // ignore
-      }
-    },
-    []
-  );
-
   const handleLogoutSession = useCallback(() => {
     setIsAccountMenuOpen(false);
     setIsSessionLoggedOut(true);
@@ -2278,6 +2283,9 @@ export default function App() {
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_strava_access_token');
+      localStorage.removeItem('aeropulse_strava_refresh_token');
+      localStorage.removeItem('aeropulse_strava_expires_at');
     } catch {
       // ignore
     }
@@ -2300,6 +2308,8 @@ export default function App() {
       localStorage.removeItem('aeropulse_strava_access_token');
       localStorage.removeItem('aeropulse_strava_refresh_token');
       localStorage.removeItem('aeropulse_strava_expires_at');
+      localStorage.removeItem('aeropulse_strava_athlete_id');
+      localStorage.removeItem('aeropulse_strava_athlete_name');
     } catch {
       // ignore
     }
@@ -2658,25 +2668,18 @@ export default function App() {
     setIsCoachDrawerOpen(true);
   };
 
-  if (isSessionLoggedOut || !hasEnteredWorkspace) {
-    const hasSavedBrowserCreds =
-      connectionStatus.stravaConnected || connectionStatus.intervalsConnected;
+  if (isSessionLoggedOut || !hasEnteredWorkspace || !hasStravaClientCredentials()) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
           status={connectionStatus}
-          athleteName={hasSavedBrowserCreds ? primaryAthleteDisplayName : undefined}
           onLaunchStravaOAuth={async (mode = 'cloud') => {
             await handleLaunchStravaOAuth(mode);
           }}
           onExchangeStravaCode={async (codeOrUrl) => {
             await handleExchangeStravaCode(codeOrUrl);
-            handleEnterSandbox();
           }}
           onSaveStravaCredentials={handleSaveStravaCredentials}
-          onConnectIntervals={handleConnectIntervals}
-          onCreateAthleteProfile={handleCreateLocalAthleteProfile}
-          onEnterSandbox={handleEnterSandbox}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
@@ -2694,7 +2697,7 @@ export default function App() {
         <div className="sticky top-2 z-40 ap-container pt-1">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
-              {/* 1. Brand Wordmark + Subtle Live Sync Pill */}
+              {/* 1. Brand Wordmark + Background Strava History Sync Pill */}
               <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <a
                   href="#fitness"
@@ -2709,17 +2712,19 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => syncLiveTelemetry(false)}
+                  onClick={() => syncLiveTelemetry(true)}
                   disabled={isSyncing}
                   className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                  title="Click to sync live telemetry now"
+                  title="Sync all Strava history in the background"
                 >
                   <RefreshCw
                     weight="bold"
-                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-sky-400' : 'text-emerald-500'}`}
+                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#FC4C02]' : 'text-emerald-500'}`}
                   />
                   <span className="text-sky-600 dark:text-sky-300 font-semibold">
-                    CTL {latestWellness ? latestWellness.ctl.toFixed(0) : '—'}
+                    {isSyncing
+                      ? 'Syncing Strava...'
+                      : `CTL ${latestWellness ? latestWellness.ctl.toFixed(0) : '—'}`}
                   </span>
                 </button>
               </div>
@@ -2878,14 +2883,15 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            syncLiveTelemetry(false);
+                            syncLiveTelemetry(true);
                             setIsAccountMenuOpen(false);
                           }}
                           disabled={isSyncing}
-                          className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-300 font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors"
+                          className="px-2.5 py-1.5 rounded-xl bg-[#FC4C02]/15 hover:bg-[#FC4C02]/25 text-[#FC4C02] font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors"
+                          title="Initiate a full Strava history sync in the background"
                         >
                           <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                          <span>Sync</span>
+                          <span>{isSyncing ? 'Syncing...' : 'Sync Strava'}</span>
                         </button>
                       </div>
 
@@ -2938,10 +2944,28 @@ export default function App() {
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <Database className="w-4 h-4 text-emerald-500" />
-                            <span>Data Sources (Strava &amp; Intervals)</span>
+                            <span>Data Sources (Garmin, Intervals &amp; Strava)</span>
                           </span>
                           <span className="font-mono text-[10px] text-emerald-500">
                             {connectionStatus.stravaConnected ? 'Strava ●' : 'Setup'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            syncLiveTelemetry(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          disabled={isSyncing}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <RefreshCw className={`w-4 h-4 text-[#FC4C02] ${isSyncing ? 'animate-spin' : ''}`} />
+                            <span>Sync All Strava History (Background)</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-[#FC4C02]">
+                            {isSyncing ? 'Running...' : 'All-Time'}
                           </span>
                         </button>
 
@@ -3079,6 +3103,47 @@ export default function App() {
 
         {/* Main Content Viewport */}
         <main className="flex-1 ap-container py-4 sm:py-5 space-y-5 min-w-0">
+        {/* Background Strava History Sync & Additional Data Sources Bar */}
+        {(isSyncing || activities.length === 0) && (
+          <div className="rounded-2xl liquid-glass border-[#FC4C02]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-[#FC4C02]/15 border border-[#FC4C02]/40 flex items-center justify-center text-[#FC4C02] shrink-0">
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              </div>
+              <div className="text-xs min-w-0">
+                <div className="font-bold text-slate-900 dark:text-white">
+                  {isSyncing
+                    ? 'Syncing your complete Strava history in the background...'
+                    : 'Strava Authenticated — Ready to Sync Your Strava History'}
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                  {isSyncing
+                    ? `Paginating all-time Strava rides, runs, gear & segment efforts (${activities.length.toLocaleString()} workouts loaded so far). You can browse while this completes.`
+                    : 'Initiate a background sync of your complete Strava archive, or connect Garmin Connect & Intervals.icu in Data Sources.'}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => syncLiveTelemetry(true)}
+                disabled={isSyncing}
+                className="min-h-[34px] px-3 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] disabled:opacity-60 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Syncing in Background...' : 'Sync All Strava History'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDataSourcesOpen(true)}
+                className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <Database className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Data Sources (Garmin / Intervals.icu)</span>
+              </button>
+            </div>
+          </div>
+        )}
         {/* Active Friend / Coached Athlete Context Banner */}
         {activeConnectedAthlete && (
           <div className="rounded-2xl liquid-glass border-sky-500/40 p-4 flex flex-wrap items-center justify-between gap-4">

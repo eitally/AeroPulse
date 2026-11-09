@@ -188,7 +188,7 @@ function buildServerAthleteProfile(
   rawProfile?: Record<string, any> | null,
   latestWellness?: Record<string, any> | null
 ) {
-  const prev = runtimeStore.athleteProfile || {};
+  const prev: Record<string, any> = {};
   const bikeSetting = Array.isArray(rawProfile?.sportSettings)
     ? rawProfile!.sportSettings.find(
         (s: any) =>
@@ -208,7 +208,6 @@ function buildServerAthleteProfile(
     bikeSetting?.ftp ||
       rawProfile?.ftp ||
       prev.ftp ||
-      runtimeStore.athleteFtp ||
       latestWellness?.rideEftp ||
       300
   );
@@ -216,7 +215,6 @@ function buildServerAthleteProfile(
     bikeSetting?.indoor_ftp ||
       rawProfile?.indoorFtp ||
       prev.indoorFtp ||
-      runtimeStore.athleteIndoorFtp ||
       ftp
   );
   const eFtp = Number(
@@ -244,14 +242,12 @@ function buildServerAthleteProfile(
     bikeSetting?.lthr ||
       rawProfile?.lthr ||
       prev.lthr ||
-      runtimeStore.athleteLthr ||
       163
   );
   const maxHr = Number(
     bikeSetting?.max_hr ||
       rawProfile?.maxHr ||
       prev.maxHr ||
-      runtimeStore.athleteMaxHr ||
       182
   );
   const sweetSpotMinPct = Number(
@@ -287,7 +283,6 @@ function buildServerAthleteProfile(
     runSetting?.ftp ||
       rawProfile?.runFtp ||
       prev.runFtp ||
-      runtimeStore.athleteRunFtp ||
       latestWellness?.runEftp ||
       340
   );
@@ -426,13 +421,10 @@ function buildServerAthleteProfile(
   });
 
   return {
-    athleteId: String(
-      rawProfile?.id || runtimeStore.intervalsAthleteId || prev.athleteId || '0'
-    ),
+    athleteId: String(rawProfile?.id || prev.athleteId || '0'),
     name:
       rawProfile?.name ||
       [rawProfile?.firstname, rawProfile?.lastname].filter(Boolean).join(' ') ||
-      runtimeStore.intervalsAthleteName ||
       prev.name ||
       'Athlete',
     weightKg: Number(weightKg.toFixed(1)),
@@ -592,11 +584,10 @@ function getStravaTokenRotationPayload(req?: Request) {
     return undefined;
   }
   return {
-    accessToken: accessToken || runtimeStore.stravaAccessToken || undefined,
-    refreshToken: refreshToken || runtimeStore.stravaRefreshToken || undefined,
-    expiresAt: expiresAt || runtimeStore.stravaExpiresAt || undefined,
+    accessToken: accessToken || undefined,
+    refreshToken: refreshToken || undefined,
+    expiresAt: expiresAt || undefined,
     clientId: clientId || undefined,
-    athleteName: runtimeStore.stravaAthleteName || undefined,
   };
 }
 
@@ -796,38 +787,31 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
   const hasGeminiServerKey = Boolean(effectiveGeminiKey);
   const isIntervalsConnected = Boolean(intervalsKey);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
-  const isCallerAuthenticated = isIntervalsConnected || isStravaConnected;
 
   res.json({
     intervalsConnected: isIntervalsConnected,
     intervalsAthleteId: isIntervalsConnected ? athleteId : '0',
-    intervalsAthleteName: isIntervalsConnected
-      ? runtimeStore.intervalsAthleteName || undefined
-      : undefined,
+    intervalsAthleteName: undefined,
     intervalsSource: isIntervalsConnected ? 'USER_INPUT' : 'NONE',
     stravaConfigured: Boolean(stravaClientId),
     stravaClientId: stravaClientId || undefined,
     stravaConnected: isStravaConnected,
-    stravaAthleteName: isStravaConnected ? runtimeStore.stravaAthleteName || undefined : undefined,
+    stravaAthleteName: undefined,
     stravaSource: isStravaConnected ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
     hasGeminiServerKey,
-    lastSyncedAt: isCallerAuthenticated ? runtimeStore.lastSyncedAt : undefined,
-    nextHourlySyncAt: isCallerAuthenticated ? runtimeStore.nextHourlySyncAt : undefined,
     autoSyncCronActive: true,
-    totalActivitiesCount: isCallerAuthenticated ? runtimeStore.totalActivitiesCount : 0,
-    earliestActivityDate: isCallerAuthenticated ? runtimeStore.earliestActivityDate : '',
-    garminActivitiesCount: isCallerAuthenticated ? runtimeStore.garminActivitiesCount : 0,
-    stravaActivitiesCount: isCallerAuthenticated ? runtimeStore.stravaActivitiesCount : 0,
-    redactedStravaCount: isCallerAuthenticated ? runtimeStore.redactedStravaCount : 0,
-    athleteFtp: isCallerAuthenticated ? runtimeStore.athleteFtp : 280,
-    athleteIndoorFtp: isCallerAuthenticated ? runtimeStore.athleteIndoorFtp : 280,
-    athleteRunFtp: isCallerAuthenticated ? runtimeStore.athleteRunFtp : 340,
-    athleteLthr: isCallerAuthenticated ? runtimeStore.athleteLthr : 163,
-    athleteMaxHr: isCallerAuthenticated ? runtimeStore.athleteMaxHr : 182,
-    athleteProfile: isCallerAuthenticated
-      ? runtimeStore.athleteProfile || buildServerAthleteProfile(null, null)
-      : undefined,
-    gearItems: isCallerAuthenticated ? runtimeStore.gearItems : [],
+    totalActivitiesCount: 0,
+    earliestActivityDate: '',
+    garminActivitiesCount: 0,
+    stravaActivitiesCount: 0,
+    redactedStravaCount: 0,
+    athleteFtp: 280,
+    athleteIndoorFtp: 280,
+    athleteRunFtp: 340,
+    athleteLthr: 163,
+    athleteMaxHr: 182,
+    athleteProfile: undefined,
+    gearItems: [],
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
     mapTileProvider: effectiveMapProvider,
@@ -2681,17 +2665,29 @@ apiRouter.post('/api/strava/credentials', (req: Request, res: Response) => {
   res.json({ saved: true, clientId });
 });
 
+interface PendingStravaOAuthEntry {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  clientId?: string;
+  athleteId?: string;
+  athleteName?: string;
+  createdAt: number;
+}
+const pendingOAuthByState = new Map<string, PendingStravaOAuthEntry>();
+
 apiRouter.get('/api/strava/auth/url', (req: Request, res: Response) => {
   const { clientId } = getEffectiveStravaClientConfig(req);
   if (!clientId) {
     res.status(400).json({
       error:
-        'Strava Client ID is not configured yet. Enter your Strava Client ID & Secret in the Data Sources modal or set STRAVA_CLIENT_ID in your environment variables.',
+        'Strava Client ID is not configured yet. Enter your Strava Client ID & Secret in the login screen developer settings or set STRAVA_CLIENT_ID in your environment variables.',
     });
     return;
   }
 
   const mode = String(req.query.mode || 'cloud').toLowerCase();
+  const oauthState = String(req.query.state || '').trim();
   const redirectUri =
     mode === 'localhost' ? 'http://localhost/exchange_token' : resolveCallbackUrl(req);
   const params = new URLSearchParams({
@@ -2701,9 +2697,43 @@ apiRouter.get('/api/strava/auth/url', (req: Request, res: Response) => {
     approval_prompt: 'force',
     scope: 'read,activity:read_all,profile:read_all',
   });
+  if (oauthState) {
+    params.set('state', oauthState);
+  }
 
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-  res.json({ url: authUrl, redirectUri, clientId });
+  res.json({ url: authUrl, redirectUri, clientId, state: oauthState || undefined });
+});
+
+apiRouter.get('/api/strava/auth/poll', (req: Request, res: Response) => {
+  const state = String(req.query.state || '').trim();
+  if (!state || state.length < 8) {
+    res.json({ completed: false });
+    return;
+  }
+  const now = Date.now();
+  for (const [k, v] of pendingOAuthByState.entries()) {
+    if (now - v.createdAt > 180 * 1000) {
+      pendingOAuthByState.delete(k);
+    }
+  }
+  const found = pendingOAuthByState.get(state);
+  if (!found) {
+    res.json({ completed: false });
+    return;
+  }
+  pendingOAuthByState.delete(state);
+  res.json({
+    completed: true,
+    tokens: {
+      accessToken: found.accessToken,
+      refreshToken: found.refreshToken,
+      expiresAt: found.expiresAt,
+      clientId: found.clientId,
+      athleteId: found.athleteId,
+      athleteName: found.athleteName,
+    },
+  });
 });
 
 async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
@@ -2751,16 +2781,9 @@ async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
     access_token: string;
     refresh_token: string;
     expires_at: number;
-    athlete?: { firstname?: string; lastname?: string };
+    athlete?: { id?: number | string; firstname?: string; lastname?: string };
   };
 
-  runtimeStore.stravaAccessToken = tokenData.access_token;
-  runtimeStore.stravaRefreshToken = tokenData.refresh_token;
-  runtimeStore.stravaExpiresAt = tokenData.expires_at;
-  runtimeStore.stravaAthleteName =
-    [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ') ||
-    'Strava Athlete';
-  saveSessionCache();
   return tokenData;
 }
 
@@ -2768,14 +2791,19 @@ apiRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) 
   try {
     const codeOrUrl = String(req.body?.code || req.body?.url || '').trim();
     const tokenData = await exchangeStravaAuthCode(codeOrUrl, req);
+    const { clientId } = getEffectiveStravaClientConfig(req);
+    const athleteName =
+      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ') ||
+      'Strava Athlete';
+    const athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
     res.json({
       connected: true,
-      athleteName: runtimeStore.stravaAthleteName,
+      athleteId,
+      athleteName,
       expiresAt: tokenData.expires_at,
-      accessToken: runtimeStore.stravaAccessToken,
-      refreshToken: runtimeStore.stravaRefreshToken,
-      clientId: runtimeStore.stravaClientId,
-      clientSecret: runtimeStore.stravaClientSecret,
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      clientId: clientId || undefined,
     });
   } catch (error) {
     res.status(400).json({
@@ -2797,6 +2825,10 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
       return;
     }
 
+    let resolvedAccessToken = accessToken;
+    let resolvedRefreshToken = refreshToken;
+    let resolvedExpiresAt = Math.floor(Date.now() / 1000) + 21600;
+
     if (refreshToken && clientId && clientSecret) {
       const refreshResp = await fetch('https://www.strava.com/oauth/token', {
         method: 'POST',
@@ -2814,23 +2846,15 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
           refresh_token: string;
           expires_at: number;
         };
-        runtimeStore.stravaAccessToken = refreshed.access_token;
-        runtimeStore.stravaRefreshToken = refreshed.refresh_token || refreshToken;
-        runtimeStore.stravaExpiresAt = refreshed.expires_at;
-      } else if (accessToken) {
-        runtimeStore.stravaAccessToken = accessToken;
-        runtimeStore.stravaRefreshToken = refreshToken;
-        runtimeStore.stravaExpiresAt = Math.floor(Date.now() / 1000) + 21600;
-      } else {
+        resolvedAccessToken = refreshed.access_token;
+        resolvedRefreshToken = refreshed.refresh_token || refreshToken;
+        resolvedExpiresAt = refreshed.expires_at;
+      } else if (!accessToken) {
         const errText = await refreshResp.text();
         res.status(400).json({ error: `Strava token refresh failed: ${errText}` });
         return;
       }
-    } else if (accessToken) {
-      runtimeStore.stravaAccessToken = accessToken;
-      if (refreshToken) runtimeStore.stravaRefreshToken = refreshToken;
-      runtimeStore.stravaExpiresAt = Math.floor(Date.now() / 1000) + 21600;
-    } else {
+    } else if (!accessToken) {
       res.status(400).json({
         error:
           'Save your Strava Client ID & Secret first to use a Refresh Token, or also provide an Access Token.',
@@ -2841,40 +2865,44 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     // Verify token against Strava athlete profile AND activity:read permission
     const [athleteResp, actCheckResp] = await Promise.all([
       fetch('https://www.strava.com/api/v3/athlete', {
-        headers: { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` },
+        headers: { Authorization: `Bearer ${resolvedAccessToken}` },
       }),
       fetch('https://www.strava.com/api/v3/athlete/activities?per_page=1&page=1', {
-        headers: { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` },
+        headers: { Authorization: `Bearer ${resolvedAccessToken}` },
       }),
     ]);
 
     if (!actCheckResp.ok) {
       const errBody = await actCheckResp.text();
       if (errBody.includes('activity:read_permission')) {
-        runtimeStore.stravaAccessToken = '';
-        runtimeStore.stravaRefreshToken = '';
-        saveSessionCache();
         res.status(400).json({
           error:
-            "Strava's default API settings token only has profile 'read' scope (missing 'activity:read_all'). Use Method B ('1. Authorize with localhost Redirect' → click Authorize → paste the localhost URL) or Method A above to grant activity read permission.",
+            "Strava's default API settings token only has profile 'read' scope (missing 'activity:read_all'). Please sign in via Strava OAuth to grant activity read permission.",
         });
         return;
       }
     }
 
+    let athleteName = 'Strava Athlete';
+    let athleteId: string | undefined;
     if (athleteResp.ok) {
-      const athlete = (await athleteResp.json()) as { firstname?: string; lastname?: string };
-      runtimeStore.stravaAthleteName =
+      const athlete = (await athleteResp.json()) as {
+        id?: number | string;
+        firstname?: string;
+        lastname?: string;
+      };
+      athleteName =
         [athlete.firstname, athlete.lastname].filter(Boolean).join(' ') || 'Strava Athlete';
+      if (athlete.id) athleteId = String(athlete.id);
     }
-    saveSessionCache();
     res.json({
       connected: true,
-      athleteName: runtimeStore.stravaAthleteName || 'Strava Athlete',
-      accessToken: runtimeStore.stravaAccessToken,
-      refreshToken: runtimeStore.stravaRefreshToken,
-      clientId,
-      clientSecret,
+      athleteId,
+      athleteName,
+      accessToken: resolvedAccessToken,
+      refreshToken: resolvedRefreshToken,
+      expiresAt: resolvedExpiresAt,
+      clientId: clientId || undefined,
     });
   } catch (error) {
     res.status(500).json({
@@ -2897,8 +2925,26 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
       return;
     }
 
+    const oauthState = String(req.query.state || '').trim();
     const tokenData = await exchangeStravaAuthCode(code, req);
     const { clientId } = getEffectiveStravaClientConfig(req);
+    const athleteName =
+      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ') ||
+      'Strava Athlete';
+    const athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
+
+    if (oauthState && oauthState.length >= 8) {
+      pendingOAuthByState.set(oauthState, {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: tokenData.expires_at,
+        clientId: clientId || undefined,
+        athleteId,
+        athleteName,
+        createdAt: Date.now(),
+      });
+    }
+
     const oauthPayloadJson = JSON.stringify({
       type: 'OAUTH_AUTH_SUCCESS',
       provider: 'strava',
@@ -2907,7 +2953,8 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
         refreshToken: tokenData.refresh_token,
         expiresAt: tokenData.expires_at,
         clientId: clientId || undefined,
-        athleteName: runtimeStore.stravaAthleteName || undefined,
+        athleteId,
+        athleteName,
       },
     });
 
@@ -2934,6 +2981,8 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
                   if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
                   if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
                   if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
+                  if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
+                  if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
                   localStorage.removeItem('aeropulse_logged_out');
                   localStorage.setItem('aeropulse_auth_gate_passed', '1');
                 }
@@ -3069,15 +3118,51 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     saveJsonFile(scopedArchiveFile, activitiesList);
   }
 
-  const starredResp = firstPageResp.ok
-    ? await fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', {
-        headers,
-      })
-    : null;
+  const [starredResp, stravaProfileResp] = firstPageResp.ok
+    ? await Promise.all([
+        fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', { headers }),
+        fetch('https://www.strava.com/api/v3/athlete', { headers }),
+      ])
+    : [null, null];
   const starredSegments =
     starredResp && starredResp.ok
       ? ((await starredResp.json()) as Record<string, any>[])
       : [];
+
+  let stravaAthleteName = 'Strava Athlete';
+  let stravaAthleteId = '';
+  let stravaFtp = 280;
+  let stravaWeightKg = 70.0;
+  let stravaGearItems: any[] = [];
+  if (stravaProfileResp && stravaProfileResp.ok) {
+    const rawAthlete = (await stravaProfileResp.json()) as Record<string, any>;
+    stravaAthleteId = String(rawAthlete.id || '');
+    stravaAthleteName =
+      [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ') || 'Strava Athlete';
+    if (Number(rawAthlete.ftp) > 80) stravaFtp = Math.round(Number(rawAthlete.ftp));
+    if (Number(rawAthlete.weight) > 30) stravaWeightKg = Number(rawAthlete.weight);
+    const bikes = Array.isArray(rawAthlete.bikes)
+      ? rawAthlete.bikes.map((b: any) => ({
+          id: String(b.id),
+          name: String(b.name || 'Road Bike'),
+          type: 'BIKE' as const,
+          distanceMeters: Number(b.distance || 0),
+          maxRecommendedMeters: 8046720,
+          primary: Boolean(b.primary),
+        }))
+      : [];
+    const shoes = Array.isArray(rawAthlete.shoes)
+      ? rawAthlete.shoes.map((s: any) => ({
+          id: String(s.id),
+          name: String(s.name || 'Running Shoe'),
+          type: 'SHOE' as const,
+          distanceMeters: Number(s.distance || 0),
+          maxRecommendedMeters: 724205,
+          primary: Boolean(s.primary),
+        }))
+      : [];
+    stravaGearItems = [...bikes, ...shoes];
+  }
 
   // Fetch detailed activity payloads for the top 4 recent activities to extract segment_efforts
   const topIds = activitiesList.slice(0, 4).map((a) => a.id);
@@ -3160,7 +3245,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
   }
 
-  const ftp = runtimeStore.athleteFtp || 300;
+  const ftp = stravaFtp || 280;
   const normalizedStravaActivities = activitiesList.map((a) => {
     const detail = detailById.get(Number(a.id)) || a;
     const sportType = String(a.sport_type || a.type || '').trim();
@@ -3255,7 +3340,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
       trainingLoad = Math.round(((movingTimeSecs * normalizedPower * ifVal) / (ftp * 3600)) * 100);
     } else if (!trainingLoad && avgHr > 0 && movingTimeSecs > 0) {
       trainingLoad = Math.round(
-        (movingTimeSecs / 3600) * Math.pow(avgHr / (runtimeStore.athleteLthr || 163), 2) * 65
+        (movingTimeSecs / 3600) * Math.pow(avgHr / 163, 2) * 65
       );
     }
 
@@ -3346,13 +3431,25 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     };
   });
 
-  if (normalizedStravaActivities.length > 0) {
-    runtimeStore.stravaActivitiesCount = normalizedStravaActivities.length;
-  }
-  saveSessionCache();
+  const stravaAthleteProfile = buildServerAthleteProfile(
+    {
+      id: stravaAthleteId || '0',
+      name: stravaAthleteName,
+      ftp: stravaFtp,
+      weightKg: stravaWeightKg,
+      source: 'STRAVA_OAUTH',
+    },
+    null
+  );
 
   return {
-    athleteName: runtimeStore.stravaAthleteName,
+    athleteId: stravaAthleteId || undefined,
+    athleteName: stravaAthleteName,
+    athleteProfile: {
+      ...stravaAthleteProfile,
+      gearItems: stravaGearItems,
+    },
+    gearItems: stravaGearItems,
     activities: normalizedStravaActivities,
     stravaTokens: getStravaTokenRotationPayload(req),
     starredSegments: starredSegments.map((s) => ({
