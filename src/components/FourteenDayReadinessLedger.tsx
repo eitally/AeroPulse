@@ -233,15 +233,24 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
 
   const ctlMeanX = normTrackX(means.ctl, ctlBounds);
   const atlMeanX = normTrackX(means.atl, atlBounds);
+  const [isExpanded, setIsExpanded] = React.useState(false);
 
   return (
-    <section className="rounded-2xl liquid-glass p-5 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              14-Day Readiness &amp; Training Load Ledger
-            </h2>
+    <section className="rounded-2xl liquid-glass px-4 py-3.5 sm:px-5 space-y-3">
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 cursor-pointer"
+        onClick={() => setIsExpanded((prev) => !prev)}
+      >
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            14-Day Readiness Ledger
+          </h2>
+          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+            14d Mean: <strong className="text-sky-600 dark:text-sky-400">CTL {means.ctl.toFixed(1)}</strong> ·{' '}
+            <strong className="text-emerald-600 dark:text-emerald-400">HRV {means.hrvRMSSD.toFixed(0)}ms</strong> ·{' '}
+            <strong className="text-slate-700 dark:text-slate-200">{means.dailyLoad.toFixed(0)} TSS/d</strong>
+          </span>
+          <div onClick={(e) => e.stopPropagation()}>
             <ChartInfoTooltip
               title="14-Day Readiness & Vertical CTL/ATL Trend Ledger"
               subtitle="Acute-vs-Baseline Homeostasis & Vertical 14-Day Trajectory"
@@ -260,87 +269,53 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
               coachingAction="Watch the vertical CTL (cyan) and ATL (purple) trajectories alongside HRV: when ATL curves sharply right (rising fatigue) and triggers 2+ Red HRV cells, schedule an active recovery day."
             />
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Recovery &amp; Daily Load cells are colored vs. the 14-day mean (±25% Green) · CTL &amp; ATL plot a continuous 14-day vertical trend curve (bottom → top) with day-over-day deltas
-          </p>
         </div>
 
-        {/* Legends: 14-Day Mean Rule + CTL/ATL/TSB Colors */}
-        <div className="flex flex-col sm:items-end gap-1.5 text-[11px] font-medium">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-slate-400 font-mono uppercase text-[10px] mr-1">
-              vs 14d Mean:
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Within ±25% (Green)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
-              <span className="w-2 h-2 rounded-full bg-rose-500" />
-              <span>&gt;25% Below Mean (Red)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span>&gt;25% Above Mean (Gray)</span>
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-slate-400 font-mono uppercase text-[10px] mr-1">
-              Vertical PMC Trend:
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
-              <span className="w-2 h-2 rounded-full bg-[#0EA5E9]" />
-              <span>CTL 14d Curve (Cyan)</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-              <span className="w-2 h-2 rounded-full bg-[#A855F7]" />
-              <span>ATL 14d Curve (Purple)</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md liquid-capsule-track text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-              <span>TSB Zones:</span>
-              <span className="text-rose-500 font-bold">High Risk (&lt;-30)</span>·
-              <span className="text-emerald-500 font-bold">Optimal (-30..-10)</span>·
-              <span className="text-slate-400 font-bold">Grey (-10..+5)</span>·
-              <span className="text-sky-500 font-bold">Fresh (+5..+20)</span>·
-              <span className="text-amber-500 font-bold">Transition (&gt;+20)</span>
-            </span>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsExpanded((prev) => !prev);
+          }}
+          className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-500/40 transition-colors"
+        >
+          <span>{isExpanded ? 'Hide 14-Day Table' : 'Show 14-Day Table'}</span>
+          <span className="text-[10px] font-mono">{isExpanded ? '▴' : '▾'}</span>
+        </button>
       </div>
 
       {/* 14-Day Table */}
+      {isExpanded && (
       <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-slate-950/30">
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>
             <tr className="bg-slate-100/70 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider">
               <th className="py-2.5 px-3 font-semibold">Date</th>
               <th className="py-2.5 px-3 font-semibold">Readiness</th>
-              <th className="py-2.5 px-3 text-right font-semibold">HRV (rMSSD)</th>
-              <th className="py-2.5 px-3 text-right font-semibold">Resting HR</th>
-              <th className="py-2.5 px-3 text-right font-semibold">Sleep Score</th>
+              <th className="py-2.5 px-3 text-right font-semibold">HRV</th>
+              <th className="py-2.5 px-3 text-right font-semibold">RHR</th>
+              <th className="py-2.5 px-3 text-right font-semibold">Sleep</th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#0EA5E9]">
-                CTL Fitness (14d)
+                CTL (14d)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold text-[#A855F7]">
-                ATL Fatigue (14d)
+                ATL (14d)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
                 Form (TSB)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
-                Daily Load
+                Load
               </th>
             </tr>
 
             {/* Pinned 14-Day Mean Baseline Row */}
             <tr className="bg-blue-500/8 dark:bg-blue-500/12 border-b-2 border-blue-500/30 font-mono text-xs text-slate-900 dark:text-slate-100">
               <td className="py-2 px-3 font-sans font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
-                14-Day Mean
+                14d Mean
               </td>
               <td className="py-2 px-3 font-bold">
-                {means.readinessScore.toFixed(0)}/100{' '}
-                <span className="text-[10px] font-normal text-slate-500">mean</span>
+                {means.readinessScore.toFixed(0)}/100
               </td>
               <td className="py-2 px-3 text-right font-bold">
                 {means.hrvRMSSD > 0 ? `${means.hrvRMSSD.toFixed(1)} ms` : '—'}
@@ -352,33 +327,23 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                 {means.sleepScore > 0 ? `${means.sleepScore.toFixed(1)}/100` : '—'}
               </td>
               <td className="py-2 px-3 text-right font-bold text-[#0EA5E9] whitespace-nowrap">
-                <div className="inline-flex items-center justify-end gap-2">
-                  <span className="text-[10px] font-normal text-slate-500">dashed line =</span>
-                  <span>{means.ctl.toFixed(1)}</span>
-                </div>
+                {means.ctl.toFixed(1)}
               </td>
               <td className="py-2 px-3 text-right font-bold text-[#A855F7] whitespace-nowrap">
-                <div className="inline-flex items-center justify-end gap-2">
-                  <span className="text-[10px] font-normal text-slate-500">dashed line =</span>
-                  <span>{means.atl.toFixed(1)}</span>
-                </div>
+                {means.atl.toFixed(1)}
               </td>
               <td className="py-2 px-3 text-right font-bold">
                 {(() => {
                   const meanForm = getIntervalsFormZone(means.tsb);
                   return (
                     <span style={{ color: meanForm.hex }}>
-                      {means.tsb > 0 ? `+${means.tsb.toFixed(1)}` : means.tsb.toFixed(1)} (
-                      {meanForm.label})
+                      {means.tsb > 0 ? `+${means.tsb.toFixed(1)}` : means.tsb.toFixed(1)}
                     </span>
                   );
                 })()}
               </td>
               <td className="py-2 px-3 text-right font-bold text-emerald-700 dark:text-emerald-300">
-                {means.dailyLoad.toFixed(0)} TSS{' '}
-                <span className="text-[10px] font-normal text-slate-500">
-                  (±25%: {Math.round(means.dailyLoad * 0.75)}–{Math.round(means.dailyLoad * 1.25)})
-                </span>
+                {means.dailyLoad.toFixed(0)} TSS
               </td>
             </tr>
           </thead>
@@ -707,6 +672,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 };

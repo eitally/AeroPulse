@@ -1401,27 +1401,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </section>
 
       {/* Top Calendar Header & Controls */}
-      <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3.5">
+      <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <CalendarIcon className="w-3.5 h-3.5 text-blue-500" />
-              <span>
-                Training Schedule, Effort Zones &amp; Morning Readiness
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                {MONTH_NAMES[viewMonth]} {viewYear}
-              </h1>
-              <ChartInfoTooltip
-                title="Training Calendar & Activity Effort Zones"
-                subtitle="Weekly Load Architecture, Morning Readiness & Intra-Workout Zone Skyline"
-                whatItMeasures="Combines your weekly physiological summary on the left (Total Time, Training Load, Fitness CTL, Fatigue ATL, Form TSB, and Sport Breakdown) with daily morning autonomic metrics (Sleep, Resting HR, HRV) and individual activity cards displaying the effort zones (Z1–Z6+) through each workout."
-                benchmarks="Polarized / Base Weeks: 75–85% of weekly duration in Z1–Z2 (Teal-Green) and 15–20% in Z4–Z6 (Orange/Red/Purple). Threshold Weeks: >20% in Z3–Z4. Steady Z2 rides display a smooth green bar; interval, race, and track workouts display a multi-color effort skyline."
-                coachingAction="Scan down the left Week column to verify progressive overload (Ramp +2 to +5 CTL/wk), then inspect each day's Effort Zone strips to ensure easy recovery days stay strictly in Z1/Z2 green so hard interval days can hit deep Z4/Z5/Z6 peaks."
-              />
-            </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <CalendarIcon className="w-4 h-4 text-blue-500" />
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              {MONTH_NAMES[viewMonth]} {viewYear}
+            </h1>
+            <ChartInfoTooltip
+              title="Training Calendar & Activity Effort Zones"
+              subtitle="Weekly Load Architecture, Morning Readiness & Intra-Workout Zone Skyline"
+              whatItMeasures="Combines your weekly physiological summary on the left (Total Time, Training Load, Fitness CTL, Fatigue ATL, Form TSB, and Sport Breakdown) with daily morning autonomic metrics (Sleep, Resting HR, HRV) and individual activity cards displaying the effort zones (Z1–Z6+) through each workout."
+              benchmarks="Polarized / Base Weeks: 75–85% of weekly duration in Z1–Z2 (Teal-Green) and 15–20% in Z4–Z6 (Orange/Red/Purple). Threshold Weeks: >20% in Z3–Z4. Steady Z2 rides display a smooth green bar; interval, race, and track workouts display a multi-color effort skyline."
+              coachingAction="Scan down the left Week column to verify progressive overload (Ramp +2 to +5 CTL/wk), then inspect each day's Effort Zone strips to ensure easy recovery days stay strictly in Z1/Z2 green so hard interval days can hit deep Z4/Z5/Z6 peaks."
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1494,7 +1487,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Schedule Workout</span>
+              <span>Schedule</span>
             </button>
 
             <button
@@ -1507,30 +1500,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-sky-300 transition-colors whitespace-nowrap"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>AI Week Review</span>
+              <span>AI Review</span>
             </button>
           </div>
         </div>
 
-        {/* Effort Zone Key & New-User Visual Legend Bar */}
-        <div className="pt-2.5 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px]">
-              Activity Effort Zones:
+        {/* Compact Effort Zone Swatches & Card Density Toggle */}
+        <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px]">
+              Zones:
             </span>
             {INTERVALS_EFFORT_ZONES.map((z) => (
               <span
                 key={z.code}
-                className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium"
+                className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-mono text-[10px]"
+                title={`${z.code}: ${z.name}`}
               >
                 <span
-                  className="w-3 h-2.5 rounded-xs shrink-0 shadow-2xs"
+                  className="w-2.5 h-2.5 rounded-xs shrink-0"
                   style={{ backgroundColor: z.color }}
                 />
-                <span>
-                  <strong className="font-mono text-slate-900 dark:text-white">{z.code}</strong>{' '}
-                  {z.name}
-                </span>
+                <strong className="text-slate-900 dark:text-white">{z.code}</strong>
               </span>
             ))}
           </div>
@@ -1539,20 +1530,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDayEffortStripe((v) => !v)}
-              className={`px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition-all inline-flex items-center gap-1.5 ${
+              className={`px-2 py-0.5 rounded-lg border text-[10px] font-semibold transition-all inline-flex items-center gap-1.5 ${
                 showDayEffortStripe
                   ? 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-sky-300'
                   : 'border-slate-300/70 dark:border-slate-700/70 text-slate-500 dark:text-slate-400'
               }`}
-              title="Toggle the Intervals.icu color-coded daily planned workout Effort Stripe on each day cell"
+              title="Toggle daily planned workout Effort Stripes"
             >
-              <span className="inline-flex items-center gap-0.5">
-                <span className="w-1.5 h-2.5 rounded-xs bg-[#2A9D8F]" />
-                <span className="w-1.5 h-2.5 rounded-xs bg-[#EAB308]" />
-                <span className="w-1.5 h-2.5 rounded-xs bg-[#F97316]" />
-                <span className="w-1.5 h-2.5 rounded-xs bg-[#EF4444]" />
-              </span>
-              <span>Daily Planned Effort Stripes: {showDayEffortStripe ? 'On' : 'Off'}</span>
+              <span>Stripes: {showDayEffortStripe ? 'On' : 'Off'}</span>
             </button>
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[10px]">
               <button
@@ -1564,7 +1549,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                Detailed Cards
+                Detailed
               </button>
               <button
                 type="button"
@@ -1589,8 +1574,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             {/* Sticky 8-Column Day Header Row */}
             <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-900/90 text-[10px] font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400">
               <div className="px-3 py-2.5 border-r border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <span>WEEK SUMMARY</span>
-                <span className="font-mono text-[9px] text-slate-400">CTL / ATL / TSB</span>
+                <span>WEEK</span>
+                <span className="font-mono text-[9px] text-slate-400">CTL / TSB</span>
               </div>
               {WEEKDAYS.map((day) => (
                 <div
@@ -1618,23 +1603,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-rose-400';
 
-                const elevFormatted =
-                  distanceUnit === 'mi'
-                    ? `${Math.round(week.totalElevationMeters * 3.28084)}ft`
-                    : `${Math.round(week.totalElevationMeters)}m`;
-
                 return (
                   <div
                     key={week.weekIndex}
                     className="grid grid-cols-8 min-h-[210px] bg-white/60 dark:bg-slate-950/40"
                   >
-                    {/* COLUMN 1 (LEFT): INTERVALS.ICU WEEKLY SUMMARY COLUMN */}
-                    <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-3 text-[11px]">
-                      <div className="space-y-2.5">
+                    {/* COLUMN 1 (LEFT): STREAMLINED WEEKLY SUMMARY COLUMN */}
+                    <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-[11px]">
+                      <div className="space-y-2">
                         {/* Week Number Title */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-                            Week {week.isoWeekNum}
+                            W{week.isoWeekNum}
                           </span>
                           <button
                             type="button"
@@ -1650,10 +1630,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           </button>
                         </div>
 
-                        {/* 2-Column Intervals.icu Weekly Stat Grid */}
+                        {/* 4 Core Weekly Metrics: Time, Load, CTL, Form */}
                         <div className="grid grid-cols-2 gap-x-2.5 gap-y-1 text-[11px] leading-snug">
                           <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-slate-500 dark:text-slate-400">Total</span>
+                            <span className="text-slate-500 dark:text-slate-400">Time</span>
                             <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
                               {formatCompactDuration(week.totalDurationSecs)}
                             </span>
@@ -1665,46 +1645,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-slate-500 dark:text-slate-400">kcal</span>
-                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                              {week.totalKcal > 0 ? week.totalKcal : 0}
-                            </span>
-                          </div>
-                          <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-slate-500 dark:text-slate-400">Elev</span>
-                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                              {elevFormatted}
-                            </span>
-                          </div>
-
                           {eow && (
                             <>
                               <div className="flex items-baseline justify-between gap-1">
-                                <span className="text-slate-500 dark:text-slate-400">Fitness</span>
+                                <span className="text-slate-500 dark:text-slate-400">CTL</span>
                                 <span className="font-mono font-bold tabular-nums text-[#0284C7] dark:text-sky-400">
                                   {Math.round(eow.ctl)}
                                 </span>
                               </div>
-                              <div className="flex items-baseline justify-between gap-1">
-                                <span className="text-slate-500 dark:text-slate-400">Fatigue</span>
-                                <span className="font-mono font-bold tabular-nums text-[#7C3AED] dark:text-purple-400">
-                                  {Math.round(eow.atl)}
-                                </span>
-                              </div>
-
                               <div className="flex items-baseline justify-between gap-1">
                                 <span className="text-slate-500 dark:text-slate-400">Form</span>
                                 <span
                                   className={`font-mono font-bold tabular-nums ${tsbColorClass}`}
                                 >
                                   {tsbVal !== null && tsbVal > 0 ? `+${tsbVal}` : tsbVal}
-                                </span>
-                              </div>
-                              <div className="flex items-baseline justify-between gap-1">
-                                <span className="text-slate-500 dark:text-slate-400">Ramp</span>
-                                <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                                  {week.ramp7d > 0 ? `+${week.ramp7d}` : week.ramp7d}
                                 </span>
                               </div>
                             </>

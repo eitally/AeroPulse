@@ -884,11 +884,6 @@ ${dataLines.join('\n')}
           </div>
 
           <div className="px-4 sm:px-5 space-y-4">
-            {/* Causal Explanation Banner */}
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              {morphedWorkout.rationale}
-            </p>
-
           {/* Side-by-Side Comparison Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* LEFT PANEL: ORIGINAL / SCHEDULED WORKOUT SKYLINE */}

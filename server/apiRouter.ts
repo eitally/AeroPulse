@@ -496,20 +496,20 @@ async function generateGeminiContentWithFallback(
   ai: GoogleGenAI,
   params: { contents: string; config?: Record<string, any> }
 ) {
-  const candidateModels = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-3.8-flash',
-  ];
+  const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
   let lastError: unknown = null;
   for (const model of candidateModels) {
     try {
-      return await ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: params.config,
-      });
+      return await Promise.race([
+        ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: params.config,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Model ${model} timed out`)), 4500)
+        ),
+      ]);
     } catch (err) {
       lastError = err;
     }

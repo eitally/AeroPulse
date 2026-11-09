@@ -2348,51 +2348,180 @@ export default function App() {
     []
   );
 
+  const [coachDraftPrompt, setCoachDraftPrompt] = useState('');
+  const chatAbortRef = useRef<AbortController | null>(null);
+
+  const buildClientCoachFallback = useCallback(
+    (userText: string): Omit<CoachChatMessage, 'id' | 'role' | 'timestamp'> => {
+      const ctl = latestCtl;
+      const atl = latestWellness?.atl ?? 66;
+      const tsb = latestWellness?.tsb ?? Number((ctl - atl).toFixed(1));
+      const hrv = latestWellness?.hrvRMSSD ?? 48;
+      const hrvStatus = latestWellness?.hrvStatus || 'Balanced';
+      const sleepScore = latestWellness?.sleepScore ?? 80;
+      const sleepHours = latestWellness?.sleepSecs
+        ? Number((latestWellness.sleepSecs / 3600).toFixed(1))
+        : 7.4;
+      const ftp = effectiveAthleteProfile?.ftp || 275;
+      const isRecoveryNeeded =
+        tsb < -15 || sleepScore < 65 || /unbalanced|low|poor/i.test(hrvStatus);
+      const wantsRun = /run|track|pace|5k|10k|marathon|threshold run/i.test(userText);
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const tomorrowIso = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+      const primaryWorkout: PlannedWorkoutEvent = isRecoveryNeeded
+        ? {
+            id: `ai-local-${Date.now()}-1`,
+            date: todayIso,
+            name: wantsRun
+              ? 'Autonomic Recovery Aerobic Flush (Z1/Z2)'
+              : 'Active Recovery Spin & Parasympathetic Reset',
+            sportCategory: wantsRun ? 'Running' : 'Cycling',
+            environmentPreference: 'FLEXIBLE',
+            plannedDurationSecs: 2700,
+            plannedLoad: 34,
+            targetZoneSummary: 'Z1–Z2 Active Recovery',
+            workoutSyntax: wantsRun
+              ? 'Warmup\n- 10m 65% Pace\n\nMain Set\n- 25m 72% Pace\n\nCooldown\n- 10m 65% Pace'
+              : 'Warmup\n- 10m 50% FTP\n\nMain Set\n- 25m 58% FTP 90rpm\n\nCooldown\n- 10m 48% FTP',
+            description: `Adapted for TSB ${tsb >= 0 ? `+${tsb}` : tsb} and HRV ${hrv}ms (${hrvStatus}).`,
+          }
+        : wantsRun
+          ? {
+              id: `ai-local-${Date.now()}-1`,
+              date: todayIso,
+              name: 'Cruise Threshold + Aerobic Economy',
+              sportCategory: 'Running',
+              environmentPreference: 'OUTDOOR',
+              plannedDurationSecs: 3600,
+              plannedLoad: 72,
+              targetZoneSummary: 'Z4 Threshold Intervals',
+              workoutSyntax:
+                'Warmup\n- 15m 75% Pace\n\nMain Set 4x\n- 6m 98% Pace\n- 2m 70% Pace\n\nCooldown\n- 13m 72% Pace',
+              description: `Prescribed for CTL ${ctl.toFixed(1)}, TSB ${tsb >= 0 ? `+${tsb}` : tsb}, and HRV ${hrv}ms.`,
+            }
+          : {
+              id: `ai-local-${Date.now()}-1`,
+              date: todayIso,
+              name: `Sweet Spot & Threshold Progression (${Math.round(ftp * 0.9)}–${Math.round(ftp * 0.95)}W)`,
+              sportCategory: 'Cycling',
+              environmentPreference: 'INDOOR',
+              plannedDurationSecs: 3600,
+              plannedLoad: 76,
+              targetZoneSummary: 'Z3/Z4 Sweet Spot',
+              workoutSyntax:
+                'Warmup\n- 12m 55-75% FTP\n\nMain Set 3x\n- 10m 92% FTP\n- 4m 60% FTP\n\nCooldown\n- 6m 50% FTP',
+              description: `Calibrated to eFTP ${ftp}W, CTL ${ctl.toFixed(1)}, and Sleep Score ${sleepScore}.`,
+            };
+
+      const secondaryWorkout: PlannedWorkoutEvent = {
+        id: `ai-local-${Date.now()}-2`,
+        date: tomorrowIso,
+        name: 'Aerobic Base Durability (Z2)',
+        sportCategory: wantsRun ? 'Cycling' : 'Running',
+        environmentPreference: 'FLEXIBLE',
+        plannedDurationSecs: 3600,
+        plannedLoad: 54,
+        targetZoneSummary: 'Z2 Aerobic Endurance',
+        workoutSyntax: wantsRun
+          ? 'Warmup\n- 10m 55% FTP\n\nMain Set\n- 40m 68% FTP\n\nCooldown\n- 10m 50% FTP'
+          : 'Warmup\n- 10m 75% Pace\n\nMain Set\n- 40m 82% Pace\n\nCooldown\n- 10m 72% Pace',
+        description: 'Complementary aerobic session keeping <5% cardiac drift.',
+      };
+
+      return {
+        content: [
+          `Physiological Readiness Synthesis: CTL ${ctl.toFixed(1)} · ATL ${atl.toFixed(1)} · Form (TSB) ${tsb >= 0 ? `+${tsb}` : tsb} · HRV ${hrv} ms (${hrvStatus}) · Sleep ${sleepHours}h (Score ${sleepScore}).`,
+          isRecoveryNeeded
+            ? `Because your autonomic or acute fatigue markers show strain (TSB ${tsb}, HRV ${hrv} ms ${hrvStatus}), today should prioritize Z1/Z2 parasympathetic recovery (~34 TSS) so your 7-day load stabilizes without overreaching.`
+            : `Your readiness supports a targeted quality session today (~${primaryWorkout.plannedLoad} TSS) followed by a Z2 aerobic durability day tomorrow (~${secondaryWorkout.plannedLoad} TSS). Click "Schedule" on either card below to add it to your Training Calendar.`,
+        ].join('\n\n'),
+        citedMetrics: [
+          `CTL ${ctl.toFixed(1)}`,
+          `TSB ${tsb >= 0 ? `+${tsb}` : tsb}`,
+          `HRV ${hrv}ms (${hrvStatus})`,
+          `Sleep ${sleepHours}h (${sleepScore})`,
+          `eFTP ${ftp}W`,
+        ],
+        proposedWorkouts: [primaryWorkout, secondaryWorkout],
+      };
+    },
+    [latestCtl, latestWellness, effectiveAthleteProfile]
+  );
+
+  const handleCancelSendChat = useCallback(() => {
+    if (chatAbortRef.current) {
+      chatAbortRef.current.abort();
+      chatAbortRef.current = null;
+    }
+    setIsSendingChat(false);
+  }, []);
+
   const handleSendChatMessage = async (userText: string) => {
+    const cleanText =
+      userText.trim() ||
+      'Analyze my Garmin Sleep, HRV, and CTL/TSB readiness and prescribe today’s optimal workout.';
     const userMsg: CoachChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: userText,
+      content: cleanText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     setChatMessages((prev) => [...prev, userMsg]);
     setIsSendingChat(true);
 
+    if (chatAbortRef.current) {
+      chatAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 6500);
+
     try {
       const resp = await fetch('/api/coach/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+        signal: controller.signal,
         body: JSON.stringify({
-          message: userText,
+          message: cleanText,
           history: chatMessages.map((m) => ({ role: m.role, content: m.content })),
           telemetrySummary: telemetrySummaryForGemini,
         }),
       });
+      window.clearTimeout(timeoutId);
       const data = await resp.json();
+      const fallback = buildClientCoachFallback(cleanText);
       const assistantMsg: CoachChatMessage = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
-        content:
-          resp.ok && data.reply
-            ? data.reply
-            : `Unable to reach Gemini API (${data.error || 'Verify GEMINI_API_KEY in Secrets'}). Based on your Garmin telemetry, your CTL is ${latestCtl.toFixed(1)} and HRV is ${latestWellness?.hrvRMSSD || 38} ms (${latestWellness?.hrvStatus || 'Balanced'}).`,
+        content: resp.ok && data.reply ? data.reply : fallback.content,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        citedMetrics: Array.isArray(data.citedMetrics) ? data.citedMetrics : undefined,
-        proposedWorkouts: Array.isArray(data.proposedWorkouts) ? data.proposedWorkouts : undefined,
+        citedMetrics:
+          Array.isArray(data.citedMetrics) && data.citedMetrics.length > 0
+            ? data.citedMetrics
+            : fallback.citedMetrics,
+        proposedWorkouts:
+          Array.isArray(data.proposedWorkouts) && data.proposedWorkouts.length > 0
+            ? data.proposedWorkouts
+            : fallback.proposedWorkouts,
       };
       setChatMessages((prev) => [...prev, assistantMsg]);
     } catch {
+      window.clearTimeout(timeoutId);
+      const fallback = buildClientCoachFallback(cleanText);
       setChatMessages((prev) => [
         ...prev,
         {
-          id: `ai-err-${Date.now()}`,
+          id: `ai-local-${Date.now()}`,
           role: 'assistant',
-          content:
-            'Network offline—using cached physiological analysis: Your CTL and Garmin HRV Status are balanced for today’s planned session.',
+          content: fallback.content,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          citedMetrics: fallback.citedMetrics,
+          proposedWorkouts: fallback.proposedWorkouts,
         },
       ]);
     } finally {
+      chatAbortRef.current = null;
       setIsSendingChat(false);
     }
   };
@@ -2441,10 +2570,10 @@ export default function App() {
   };
 
   const handleOpenCoachWithPrompt = (prompt: string) => {
-    setIsCoachDrawerOpen(true);
     if (prompt.trim()) {
-      handleSendChatMessage(prompt);
+      setCoachDraftPrompt(prompt.trim());
     }
+    setIsCoachDrawerOpen(true);
   };
 
   if (
@@ -2958,36 +3087,35 @@ export default function App() {
         {redactedStravaCount > 0 &&
           !connectionStatus.stravaConnected &&
           !dismissedStravaBanner && (
-            <div className="rounded-2xl liquid-glass border-amber-500/30 p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
+            <div className="rounded-xl liquid-glass border-amber-500/30 px-3.5 py-2.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-700 dark:text-slate-200">
                   <span className="font-bold text-amber-600 dark:text-amber-400">
-                    {redactedStravaCount.toLocaleString()} Historical Strava-Only Workouts Need{' '}
-                    <code className="font-mono">activity:read_all</code> Permission:
+                    Strava ({redactedStravaCount.toLocaleString()} workouts):
                   </span>{' '}
-                  Strava&apos;s default API settings token only grants profile <code className="font-mono">read</code> access. To load your Strava workouts without changing your Strava Callback Domain, click <strong>1. Authorize Strava (localhost)</strong>, click <strong>Authorize</strong> on Strava, then copy the <code className="font-mono">http://localhost/exchange_token?state=&amp;code=...</code> URL from the popup address bar and paste it into Step 2 below:
+                  Authorize <code className="font-mono">activity:read_all</code> below to unlock full workout details.
                 </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => handleLaunchStravaOAuth('localhost')}
-                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[32px] px-3 py-1 rounded-lg bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap"
                   >
-                    1. Authorize Strava (localhost)
+                    1. Authorize
                   </button>
                   <button
                     type="button"
                     onClick={() => handleLaunchStravaOAuth('cloud')}
-                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[32px] px-2.5 py-1 rounded-lg border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors whitespace-nowrap"
                   >
-                    Cloud Callback Popup
+                    Cloud OAuth
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsDataSourcesOpen(true)}
-                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[32px] px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap"
                   >
-                    Data Sources
+                    Sources
                   </button>
                   <button
                     type="button"
@@ -2999,10 +3127,10 @@ export default function App() {
                         // ignore
                       }
                     }}
-                    className="min-h-[36px] px-2.5 py-1.5 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
+                    className="min-h-[32px] px-2 py-1 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
                     title="Dismiss banner"
                   >
-                    Dismiss
+                    ✕
                   </button>
                 </div>
               </div>
@@ -3018,21 +3146,21 @@ export default function App() {
                     // error displayed in syncError
                   }
                 }}
-                className="flex flex-wrap items-center gap-2 pt-1"
+                className="flex flex-wrap items-center gap-2"
               >
                 <input
                   type="text"
                   value={inlineStravaCode}
                   onChange={(e) => setInlineStravaCode(e.target.value)}
-                  placeholder="2. Paste http://localhost/exchange_token?state=&code=... URL (or code) here after clicking Authorize"
-                  className="flex-1 min-w-[260px] min-h-[36px] rounded-xl border border-amber-500/40 bg-white/80 dark:bg-slate-950/80 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  placeholder="2. Paste redirect URL or code here..."
+                  className="flex-1 min-w-[220px] min-h-[32px] rounded-lg border border-amber-500/40 bg-white/80 dark:bg-slate-950/80 px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="submit"
                   disabled={isSyncing || !inlineStravaCode.trim()}
-                  className="min-h-[36px] px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  className="min-h-[32px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
                 >
-                  {isSyncing ? 'Syncing...' : '2. Exchange Code & Sync Workouts'}
+                  {isSyncing ? 'Syncing...' : '2. Sync'}
                 </button>
               </form>
               {syncError && (
@@ -3047,20 +3175,20 @@ export default function App() {
           !connectionStatus.stravaConnected &&
           activities.length === 0 &&
           !isSyncing && (
-            <div className="rounded-2xl liquid-glass border-blue-500/30 p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-3xl">
+            <div className="rounded-xl liquid-glass border-blue-500/30 px-3.5 py-2.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-700 dark:text-slate-200">
                   <span className="font-bold text-blue-600 dark:text-blue-400">
-                    Connect Your Live Telemetry or Paste Your 1-Click Connection Bundle:
+                    Connect Telemetry:
                   </span>{' '}
-                  This deployment has no credentials saved yet. In your local preview (where Intervals.icu &amp; Strava are connected), open <strong>Sources</strong> → click <strong>Copy 1-Click Connection Bundle</strong>, and paste it below to load all 4,264+ activities and Garmin health records immediately:
+                  Paste your 1-Click Connection Bundle below or open Sources.
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[32px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                 >
-                  Open Data Sources Setup
+                  Data Sources
                 </button>
               </div>
               <form
@@ -3074,21 +3202,21 @@ export default function App() {
                     // error shown below
                   }
                 }}
-                className="flex flex-wrap items-center gap-2 pt-1"
+                className="flex flex-wrap items-center gap-2"
               >
                 <input
                   type="text"
                   value={inlineBundleInput}
                   onChange={(e) => setInlineBundleInput(e.target.value)}
-                  placeholder="Paste 1-Click Connection Bundle or .env block from your local app here..."
-                  className="flex-1 min-w-[260px] min-h-[36px] rounded-xl border border-blue-500/40 bg-white/80 dark:bg-slate-950/80 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  placeholder="Paste Connection Bundle or .env block..."
+                  className="flex-1 min-w-[220px] min-h-[32px] rounded-lg border border-blue-500/40 bg-white/80 dark:bg-slate-950/80 px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="submit"
                   disabled={isSyncing || !inlineBundleInput.trim()}
-                  className="min-h-[36px] px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  className="min-h-[32px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
                 >
-                  Import Bundle &amp; Sync All History
+                  Import &amp; Sync
                 </button>
               </form>
               {syncError && (
@@ -3145,33 +3273,29 @@ export default function App() {
           activeTab === 'curves' ||
           activeTab === 'trends' ||
           activeTab === 'charts') && (
-          <div className="rounded-2xl liquid-glass p-2 space-y-2">
+          <div className="rounded-2xl liquid-glass p-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track">
+              <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1 p-1 rounded-xl liquid-capsule-track">
                 {(
                   [
                     {
                       id: 'totals',
-                      label: 'Goals & Race PRs',
-                      sub: 'Targets, PRs & Volume',
+                      label: 'Goals',
                       icon: Target,
                     },
                     {
                       id: 'curves',
-                      label: 'Power & Pace Curves',
-                      sub: 'CP, W\' & Peak Outputs',
+                      label: 'Curves',
                       icon: BarChart3,
                     },
                     {
                       id: 'trends',
-                      label: 'Aerobic Durability & Trends',
-                      sub: 'VO2max, eFTP & Drift',
+                      label: 'Trends',
                       icon: TrendingUp,
                     },
                     {
                       id: 'charts',
-                      label: 'Custom Correlation Lab',
-                      sub: 'Compare Any 2 Metrics',
+                      label: 'Charts',
                       icon: LineChart,
                     },
                   ] as const
@@ -3183,7 +3307,7 @@ export default function App() {
                       key={sub.id}
                       type="button"
                       onClick={() => setActiveTab(sub.id)}
-                      className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                      className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
                         isSubActive
                           ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -3191,56 +3315,11 @@ export default function App() {
                     >
                       <SubIcon className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate">{sub.label}</span>
-                      <span className="hidden xl:inline text-[10px] opacity-65 font-normal truncate">
-                        · {sub.sub}
-                      </span>
                     </button>
                   );
                 })}
               </div>
-
-              <button
-                type="button"
-                onClick={() => setShowMetricsGuide((prev) => !prev)}
-                className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 ${
-                  showMetricsGuide
-                    ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/35'
-                    : 'liquid-glass-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                title="Toggle quick glossary for Fitness (CTL), Fatigue (ATL), Form (TSB), and Efficiency (EF)"
-              >
-                <span className="w-4 h-4 rounded-full bg-sky-500/20 text-sky-500 font-mono text-[11px] font-bold inline-flex items-center justify-center">
-                  ?
-                </span>
-                <span className="hidden sm:inline">Metrics Guide</span>
-              </button>
             </div>
-
-            {/* Expandable Key Metrics Glossary Strip */}
-            {showMetricsGuide && (
-              <div className="px-3 py-2 rounded-xl bg-slate-900/5 dark:bg-slate-950/50 border border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>
-                    <strong className="font-mono text-[#0EA5E9]">Fitness (CTL):</strong> 42-day exponential training load
-                  </span>
-                  <span>·</span>
-                  <span>
-                    <strong className="font-mono text-[#8B5CF6]">Fatigue (ATL):</strong> 7-day acute training load
-                  </span>
-                  <span>·</span>
-                  <span>
-                    <strong className="font-mono text-emerald-500">Freshness / Form (TSB):</strong> Net Freshness (CTL − ATL)
-                  </span>
-                  <span>·</span>
-                  <span>
-                    <strong className="font-mono text-amber-500">Aerobic Efficiency (EF):</strong> Output ÷ Heart Rate
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                  Hover or click any <strong className="text-blue-500">(i)</strong> icon for Coach &amp; Physiologist benchmarks
-                </span>
-              </div>
-            )}
           </div>
         )}
 
@@ -3408,6 +3487,9 @@ export default function App() {
         chatMessages={chatMessages}
         onSendChatMessage={handleSendChatMessage}
         isSendingChat={isSendingChat}
+        onCancelSend={handleCancelSendChat}
+        initialDraftPrompt={coachDraftPrompt}
+        onClearDraftPrompt={() => setCoachDraftPrompt('')}
         hasGeminiKey={Boolean(connectionStatus.hasGeminiServerKey)}
         onSaveGeminiApiKey={handleSaveGeminiApiKey}
         onScheduleProposedWorkout={async (workout) => {

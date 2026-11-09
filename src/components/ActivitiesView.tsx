@@ -792,27 +792,22 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       {/* Filter, Summary KPI Strip & 4-Mode Workspace Switcher Header Card */}
       <section className="relative z-20 rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                Workouts, Routes &amp; Segment Analytics
-              </h1>
-              <ChartInfoTooltip
-                title="Activity Log, Modality Separation & Aerobic Durability"
-                subtitle="Exercise Physiology & Performance Coaching Context"
-                whatItMeasures="Aggregates all outdoor GPS and indoor virtual/smart-trainer workouts with Normalized Power (NP), Efficiency Factor (EF = NP/HR), and Aerobic Decoupling (Pa:Hr cardiac drift)."
-                benchmarks="Indoor smart-trainer/virtual cycling typically yields 3–7% lower 20m power than outdoor riding due to fixed flywheel inertia and higher thermal strain; decoupling <3.5% indicates strong aerobic durability."
-                liveStatus={{
-                  label: `${modalityCounts.indoor.toLocaleString()} Virtual/Trainer · ${modalityCounts.outdoor.toLocaleString()} Outdoor · Avg EF ${summaryStats.avgEf}`,
-                  state: 'optimal',
-                  interpretation: `Both outdoor GPS and indoor virtual/smart-trainer sessions are indexed. Filter by Outdoor vs. Virtual/Trainer below to compare modality-specific output and cardiac drift.`,
-                }}
-                coachingAction="Compare Virtual/Trainer vs. Outdoor sessions separately when setting interval power targets, and check Pa:Hr decoupling on endurance rides >90m before progressing threshold volume."
-              />
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Switch between your searchable Activity Log, GPS Route Map, Segment Progression, and 2-Workout Comparison
-            </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Activities
+            </h1>
+            <ChartInfoTooltip
+              title="Activity Log, Modality Separation & Aerobic Durability"
+              subtitle="Exercise Physiology & Performance Coaching Context"
+              whatItMeasures="Aggregates all outdoor GPS and indoor virtual/smart-trainer workouts with Normalized Power (NP), Efficiency Factor (EF = NP/HR), and Aerobic Decoupling (Pa:Hr cardiac drift)."
+              benchmarks="Indoor smart-trainer/virtual cycling typically yields 3–7% lower 20m power than outdoor riding due to fixed flywheel inertia and higher thermal strain; decoupling <3.5% indicates strong aerobic durability."
+              liveStatus={{
+                label: `${modalityCounts.indoor.toLocaleString()} Virtual/Trainer · ${modalityCounts.outdoor.toLocaleString()} Outdoor · Avg EF ${summaryStats.avgEf}`,
+                state: 'optimal',
+                interpretation: `Both outdoor GPS and indoor virtual/smart-trainer sessions are indexed. Filter by Outdoor vs. Virtual/Trainer below to compare modality-specific output and cardiac drift.`,
+              }}
+              coachingAction="Compare Virtual/Trainer vs. Outdoor sessions separately when setting interval power targets, and check Pa:Hr decoupling on endurance rides >90m before progressing threshold volume."
+            />
           </div>
 
           {/* Unified Sport Filter, Modality Filter (Outdoor vs Virtual/Trainer), Year Selector & Search Input */}
@@ -837,9 +832,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             <div className="ap-toolbar-scroll p-1 rounded-xl liquid-capsule-track text-xs max-w-full">
               {(
                 [
-                  { id: 'COMBINED', label: 'All Modality', count: modalityCounts.all },
+                  { id: 'COMBINED', label: 'All', count: modalityCounts.all },
                   { id: 'OUTDOOR', label: 'Outdoor', count: modalityCounts.outdoor },
-                  { id: 'INDOOR', label: 'Virtual / Trainer', count: modalityCounts.indoor },
+                  { id: 'INDOOR', label: 'Virtual', count: modalityCounts.indoor },
                 ] as const
               ).map((mod) => (
                 <button
@@ -878,7 +873,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               <option value="ALL">All Years ({activities.length})</option>
               {availableYears.map((y) => (
                 <option key={y} value={y}>
-                  {y} Season
+                  {y}
                 </option>
               ))}
             </select>
@@ -889,7 +884,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search workouts, routes, gear..."
+                placeholder="Search workouts, routes..."
                 className="w-full min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -897,9 +892,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             {/* Consolidated + Import & Actions Dropdown Menu */}
             <div className="relative">
               <details ref={importMenuDetailsRef} className="group">
-                <summary className="list-none cursor-pointer min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
+                <summary className="list-none cursor-pointer min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
                   <Upload className="w-3.5 h-3.5 text-blue-500" />
-                  <span>{isWorkerProcessing ? 'Parsing File...' : '+ Import & Actions ▾'}</span>
+                  <span>{isWorkerProcessing ? 'Parsing...' : '+ Import ▾'}</span>
                 </summary>
                 <div className="absolute right-0 mt-2 w-64 rounded-2xl liquid-glass border border-slate-300/80 dark:border-white/15 shadow-2xl p-2 z-40 space-y-1 text-xs">
                   <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">
@@ -1003,31 +998,31 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
         {/* Filtered Rollup Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1 text-xs font-mono tabular-nums">
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-            <span className="text-slate-500 block font-sans">Matched Workouts</span>
+            <span className="text-slate-500 block font-sans">Workouts</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {filteredActivities.length.toLocaleString()}
             </span>
           </div>
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-            <span className="text-slate-500 block font-sans">Total Distance</span>
+            <span className="text-slate-500 block font-sans">Distance</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {formatDistance(summaryStats.totalDistanceMeters, distanceUnit, 1)}
             </span>
           </div>
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-            <span className="text-slate-500 block font-sans">Moving Duration</span>
+            <span className="text-slate-500 block font-sans">Duration</span>
             <span className="text-base font-bold text-slate-900 dark:text-slate-100">
               {formatDuration(summaryStats.totalDurationSecs)}
             </span>
           </div>
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-            <span className="text-slate-500 block font-sans">Cumulative Load</span>
+            <span className="text-slate-500 block font-sans">Load</span>
             <span className="text-base font-bold text-blue-600 dark:text-sky-400">
               {summaryStats.totalLoad.toLocaleString()} TSS
             </span>
           </div>
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 col-span-2 sm:col-span-1">
-            <span className="text-slate-500 block font-sans">Avg Efficiency (EF)</span>
+            <span className="text-slate-500 block font-sans">Avg EF</span>
             <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
               {summaryStats.avgEf}
             </span>
@@ -1046,7 +1041,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
-              <span>Activity Log</span>
+              <span>Log</span>
               <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
                 {filteredActivities.length.toLocaleString()}
               </span>
@@ -1062,7 +1057,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               }`}
             >
               <ThumbsUp className="w-3.5 h-3.5" />
-              <span>Route Map &amp; Kudos Feed</span>
+              <span>Map &amp; Kudos</span>
             </button>
 
             <button
@@ -1075,7 +1070,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               }`}
             >
               <Trophy className="w-3.5 h-3.5" />
-              <span>Segment Effort Over Time</span>
+              <span>Segments</span>
               <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
                 {repeatedSegmentsList.length}
               </span>
@@ -1091,7 +1086,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               }`}
             >
               <Columns2 className="w-3.5 h-3.5" />
-              <span>Split-View Comparator</span>
+              <span>Compare</span>
             </button>
           </div>
         </div>

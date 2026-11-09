@@ -1223,10 +1223,6 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </span>
             )}
           </div>
-          <div className="hidden lg:flex flex-col items-end justify-center text-[11px] text-slate-400 dark:text-slate-500 shrink-0 leading-tight pt-0.5">
-            <span>Drag horizontally across chart to zoom date range</span>
-            <span>Hover milestone badges on X-axis or CTL line for details</span>
-          </div>
         </div>
 
         {/* ==========================================================================
@@ -2730,21 +2726,21 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
           return (
             <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono uppercase tracking-wider text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                  X-Axis &amp; CTL Milestone Markers ({totalMilestones}):
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-mono uppercase tracking-wider text-[10px] font-bold text-slate-500 dark:text-slate-400 mr-1">
+                  Milestones ({totalMilestones}):
                 </span>
 
                 <button
                   type="button"
                   onClick={() => setActiveMilestoneFilter('ALL')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
                     activeMilestoneFilter === 'ALL'
                       ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-bold'
                       : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
-                  <span>All Milestones</span>
+                  <span>All</span>
                 </button>
 
                 <button
@@ -2754,16 +2750,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'EFTP_BREAKTHROUGH' ? 'ALL' : 'EFTP_BREAKTHROUGH'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
                     activeMilestoneFilter === 'EFTP_BREAKTHROUGH'
                       ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-orange-500/40'
                   }`}
-                  title="Plotted on both the X-Axis baseline (diamond) and the Cyan CTL curve (ringed node)"
+                  title="New eFTP Breakthroughs plotted on CTL & X-Axis"
                 >
-                  <span className="w-2.5 h-2.5 rotate-45 bg-[#F97316] inline-block shrink-0" />
-                  <span>New eFTP Breakthrough ({eftpCount})</span>
-                  <span className="text-[9px] opacity-75">· on CTL &amp; X-Axis</span>
+                  <span className="w-2 h-2 rotate-45 bg-[#F97316] inline-block shrink-0" />
+                  <span>eFTP ({eftpCount})</span>
                 </button>
 
                 <button
@@ -2773,16 +2768,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'RACE_OR_DISTANCE_PR' ? 'ALL' : 'RACE_OR_DISTANCE_PR'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
                     activeMilestoneFilter === 'RACE_OR_DISTANCE_PR'
                       ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-amber-500/40'
                   }`}
-                  title="Plotted on both the X-Axis baseline (gold badge) and the Cyan CTL curve (ringed node)"
+                  title="Official Race & Distance PRs plotted on CTL & X-Axis"
                 >
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] border border-white inline-block shrink-0" />
-                  <span>Official Race / Run Distance PR ({raceCount})</span>
-                  <span className="text-[9px] opacity-75">· on CTL &amp; X-Axis</span>
+                  <span className="w-2 h-2 rounded-full bg-[#F59E0B] border border-white inline-block shrink-0" />
+                  <span>Race PR ({raceCount})</span>
                 </button>
 
                 <button
@@ -2792,68 +2786,42 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'POWER_OR_BENCHMARK_PR' ? 'ALL' : 'POWER_OR_BENCHMARK_PR'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
                     activeMilestoneFilter === 'POWER_OR_BENCHMARK_PR'
                       ? 'bg-pink-500/20 text-pink-600 dark:text-pink-300 border-pink-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-pink-500/40'
                   }`}
-                  title="Plotted along the X-Axis baseline (triangle peak badge)"
+                  title="Power Curve & Benchmark Segment PRs"
                 >
-                  <span
-                    className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[9px] border-b-[#EC4899] inline-block shrink-0"
-                  />
-                  <span>Power Curve / Benchmark Segment PR ({powerCount})</span>
-                  <span className="text-[9px] opacity-75">· X-Axis only</span>
+                  <span className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[8px] border-b-[#EC4899] inline-block shrink-0" />
+                  <span>Power PR ({powerCount})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveMilestoneFilter((prev) => (prev === 'NONE' ? 'ALL' : 'NONE'))
+                  }
+                  className="px-2 py-0.5 rounded-md text-[10px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
+                >
+                  {activeMilestoneFilter === 'NONE' ? 'Show' : 'Hide'}
                 </button>
               </div>
 
               <button
                 type="button"
                 onClick={() =>
-                  setActiveMilestoneFilter((prev) => (prev === 'NONE' ? 'ALL' : 'NONE'))
+                  onOpenCoachWithPrompt(
+                    `My current Fitness (CTL) is ${latestDay.ctl}, Fatigue (ATL) is ${latestDay.atl}, Form (TSB) is ${latestDay.tsb} (${getIntervalsFormZone(latestDay.tsb).label}), Sleep Score is ${latestWithSleep.sleepScore}, and HRV is ${latestWithHrv.hrvRMSSD}ms. Analyze my fitness/fatigue trend and recommend adjustments for the coming week.`
+                  )
                 }
-                className="px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
+                className="min-h-[30px] px-3 py-1 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-semibold shadow-sm transition-all whitespace-nowrap shrink-0"
               >
-                {activeMilestoneFilter === 'NONE' ? 'Show Milestone Badges' : 'Hide Badges'}
+                Ask AI Coach About My PMC
               </button>
             </div>
           );
         })()}
-
-        {/* Intervals.icu Explanatory Footer Caption */}
-        <div className="px-4 sm:px-6 py-3.5 border-t border-slate-200/60 dark:border-white/10 bg-white/30 dark:bg-slate-900/30 text-xs text-slate-500 dark:text-slate-400 leading-relaxed flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-5xl">
-            <strong className="text-[#0284C7] dark:text-[#38BDF8]">
-              The blue line shows fitness.
-            </strong>{' '}
-            This is a 42 day exponentially weighted moving average of your training load.{' '}
-            <strong className="text-[#7C3AED] dark:text-[#A855F7]">
-              The purple line shows fatigue.
-            </strong>{' '}
-            This is a 7 day exponentially weighted moving average of your training load. Your form is your fitness minus fatigue: when your form is in the{' '}
-            <strong className="text-emerald-600 dark:text-emerald-400">
-              optimal training zone
-            </strong>{' '}
-            you are gaining fitness; when your form is{' '}
-            <strong className="text-[#0284C7] dark:text-[#38BDF8]">fresh</strong>{' '}
-            and you are fit then you are ready to race. Avoid staying in the{' '}
-            <strong className="text-rose-600 dark:text-rose-400">
-              high risk zone
-            </strong>{' '}
-            for long or you might become over-trained.
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              onOpenCoachWithPrompt(
-                `My current Fitness (CTL) is ${latestDay.ctl}, Fatigue (ATL) is ${latestDay.atl}, Form (TSB) is ${latestDay.tsb} (${getIntervalsFormZone(latestDay.tsb).label}), Sleep Score is ${latestWithSleep.sleepScore}, and HRV is ${latestWithHrv.hrvRMSSD}ms. Analyze my fitness/fatigue trend and recommend adjustments for the coming week.`
-              )
-            }
-            className="min-h-[34px] px-4 py-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-semibold shadow-sm transition-all whitespace-nowrap shrink-0"
-          >
-            Ask AI Coach About My PMC
-          </button>
-        </div>
       </section>
         )}
       </div>
@@ -2861,7 +2829,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       {/* ==========================================================================
           2. 14-DAY READINESS LEDGER & KEY BIOMETRICS
          ========================================================================== */}
-      <div id="fitness-sec-ledger" className="scroll-mt-28 space-y-6">
+      <div id="fitness-sec-ledger" className="scroll-mt-28 space-y-5">
         {collapsedSections.ledger ? (
           <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -2887,253 +2855,197 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <FourteenDayReadinessLedger wellnessDays={wellnessDays} />
 
       {/* ==========================================================================
-          3. TRAINING STATUS, SLEEP, HRV & THRESHOLD READINESS CARDS
+          3. TRAINING STATUS, SLEEP, HRV, THRESHOLD & AEROBIC STAMINA KPI CARDS
          ========================================================================== */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Fitness & Workload Ratio (CTL / ACWR) */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Fitness &amp; Status
+        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Fitness &amp; Status
+            </span>
+            <span
+              className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
+                latestDay.garminTrainingStatus
+              )}`}
+            >
+              {latestDay.garminTrainingStatus || 'Productive'}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between font-mono tabular-nums">
+            <div>
+              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                {latestDay.ctl.toFixed(1)}
               </span>
-              <span
-                className={`px-2 py-0.5 text-xs font-bold rounded-md border ${statusBadgeColor(
-                  latestDay.garminTrainingStatus
-                )}`}
-              >
-                {latestDay.garminTrainingStatus || 'Productive'}
-              </span>
+              <span className="text-[11px] font-sans text-slate-500 ml-1.5">CTL</span>
             </div>
-            <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
-              <div>
-                <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                  {latestDay.ctl.toFixed(1)}
-                </span>
-                <span className="text-[11px] font-sans text-slate-500 ml-1.5">
-                  Fitness <span className="font-mono opacity-75">(CTL)</span>
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  Load Ratio {(latestDay.loadRatio || 0.85).toFixed(2)}x
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
-                </span>
-              </div>
+            <div className="text-right">
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                ACWR {(latestDay.loadRatio || 0.85).toFixed(2)}x
+              </span>
+              <span className="block text-[11px] text-slate-500">
+                Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
+              </span>
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            {latestDay.trainingStatusReason ||
-              'Optimal workload ratio building long-term aerobic fitness.'}
-          </p>
         </div>
 
         {/* Card 2: Overnight Sleep Score & Duration */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Overnight Sleep
-              </span>
-              <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold">
-                {latestWithSleep.date}
-              </span>
-            </div>
-            <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
-              <div>
-                <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                  {latestWithSleep.sleepScore || 78}
-                </span>
-                <span className="text-xs text-slate-500 ml-1">/ 100</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                  {(latestWithSleep.sleepSecs / 3600).toFixed(1)} hrs
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  7d Debt {((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h
-                </span>
-              </div>
-            </div>
+        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Overnight Sleep
+            </span>
+            <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold">
+              {latestWithSleep.date}
+            </span>
           </div>
-          <div className="h-1.5 rounded-full bg-slate-200/70 dark:bg-slate-800/80 overflow-hidden">
-            <div
-              className="h-full bg-indigo-500 rounded-full"
-              style={{ width: `${Math.min(100, latestWithSleep.sleepScore || 78)}%` }}
-            />
+          <div className="flex items-baseline justify-between font-mono tabular-nums">
+            <div>
+              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                {latestWithSleep.sleepScore || 78}
+              </span>
+              <span className="text-xs text-slate-500 ml-1">/ 100</span>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                {(latestWithSleep.sleepSecs / 3600).toFixed(1)} hrs
+              </span>
+              <span className="block text-[11px] text-slate-500">
+                7d Debt {((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Card 3: Autonomic Recovery (Overnight HRV rMSSD) */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Autonomic Recovery <span className="font-mono text-[10px] opacity-75">(HRV)</span>
-              </span>
-              <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                {latestWithHrv.hrvStatus || 'Balanced'}
-              </span>
-            </div>
-            <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
-              <div>
-                <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                  {latestWithHrv.hrvRMSSD}
-                </span>
-                <span className="text-xs text-slate-500 ml-1">ms rMSSD</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                  7d Base: {latestWithHrv.hrvBaseline7d} ms
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Normal {latestWithHrv.hrvNormalBandLow || 44}–{latestWithHrv.hrvNormalBandHigh || 62} ms
-                </span>
-              </div>
-            </div>
+        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              HRV &amp; RHR
+            </span>
+            <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+              {latestWithHrv.hrvStatus || 'Balanced'}
+            </span>
           </div>
-          <div className="text-xs text-slate-500 font-mono">
-            Resting HR: <strong className="text-slate-900 dark:text-slate-100">{latestDay.restingHR} bpm</strong> · VO2max: <strong className="text-slate-900 dark:text-slate-100">{latestDay.vo2MaxCycling || 51}</strong>
+          <div className="flex items-baseline justify-between font-mono tabular-nums">
+            <div>
+              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                {latestWithHrv.hrvRMSSD}
+              </span>
+              <span className="text-xs text-slate-500 ml-1">ms</span>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                7d: {latestWithHrv.hrvBaseline7d} ms
+              </span>
+              <span className="block text-[11px] text-slate-500">
+                RHR {latestDay.restingHR} bpm · VO2 {latestDay.vo2MaxCycling || 51}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Card 4: Threshold Power & Anaerobic Reserve (eFTP / W') */}
-        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Threshold Power <span className="font-mono text-[10px] opacity-75">(eFTP)</span>
-              </span>
-              <span className="text-xs font-mono text-orange-500 font-bold">
-                CP · W&apos; Model
-              </span>
-            </div>
-            <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
-              <div>
-                <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                  {latestDay.rideEftp || 316}W
-                </span>
-                <span className="text-xs text-slate-500 ml-1">Bike</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                  Run {latestDay.runEftp || 340}W
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Reserve W&apos; {((latestDay.rideWPrime || 25120) / 1000).toFixed(1)} kJ · Peak {latestDay.ridePMax || 1204}W
-                </span>
-              </div>
-            </div>
+        <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Threshold <span className="font-mono text-[10px] opacity-75">(eFTP)</span>
+            </span>
+            <span className="text-xs font-mono text-orange-500 font-bold">
+              {((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg
+            </span>
           </div>
-          <div className="text-xs text-slate-500 font-mono">
-            Weight:{' '}
-            <strong className="text-slate-900 dark:text-slate-100">
-              {distanceUnit === 'mi'
-                ? `${Math.round((latestDay.weightKg || 70) * 2.20462262)} lbs`
-                : `${latestDay.weightKg || 70} kg`}
-            </strong>{' '}
-            ({((latestDay.rideEftp || 316) / (latestDay.weightKg || 70)).toFixed(2)} W/kg)
+          <div className="flex items-baseline justify-between font-mono tabular-nums">
+            <div>
+              <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                {latestDay.rideEftp || 316}W
+              </span>
+              <span className="text-xs text-slate-500 ml-1">Bike</span>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                Run {latestDay.runEftp || 340}W
+              </span>
+              <span className="block text-[11px] text-slate-500">
+                W&apos; {((latestDay.rideWPrime || 25120) / 1000).toFixed(1)} kJ · Pmax {latestDay.ridePMax || 1204}W
+              </span>
+            </div>
           </div>
         </div>
       </section>
 
       {/* ==========================================================================
-          4. AEROBIC STAMINA (CARDIAC DRIFT) & EFFICIENCY SUMMARY
+          4. COMPACT AEROBIC STAMINA (CARDIAC DRIFT) & EFFICIENCY BAR
          ========================================================================== */}
-      <section className="rounded-2xl liquid-glass p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1 max-w-2xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Aerobic Stamina &amp; Cardiovascular Economy
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${
-                  aerobicDurabilityStats.durabilityState === 'optimal'
-                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                    : aerobicDurabilityStats.durabilityState === 'caution'
-                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-                      : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                }`}
-              >
-                {aerobicDurabilityStats.durabilityLabel}
-              </span>
-              <ChartInfoTooltip
-                title="Aerobic Efficiency Factor (EF) & Cardiac Drift (Pa:Hr%)"
-                subtitle="Mitochondrial Economy & First-Half vs. Second-Half Stamina"
-                whatItMeasures="Aerobic Efficiency (EF = Normalized Power ÷ Average Heart Rate) quantifies how much output your cardiovascular system produces per heartbeat. Cardiac Drift (Pa:Hr%) measures how much your efficiency fades from the first half to the second half of endurance workouts."
-                benchmarks="Cardiac Drift < 3.5%: Strong aerobic stamina ready for threshold progression. 3.5% – 5.0%: Moderate drift. > 5.0%: Incomplete aerobic base or fueling/hydration depletion."
-                liveStatus={{
-                  label: `28d EF: ${aerobicDurabilityStats.avgEf28} (${
-                    aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''
-                  }${aerobicDurabilityStats.efPctDelta}% vs 90d) · Avg Drift: ${
-                    aerobicDurabilityStats.avgDecoupling
-                  }%`,
-                  state: aerobicDurabilityStats.durabilityState,
-                  interpretation:
-                    aerobicDurabilityStats.avgDecoupling <= 3.5
-                      ? 'Your cardiac drift on endurance workouts is well below the 5% physiological threshold, confirming strong stroke-volume stability.'
-                      : 'Your heart rate drifts upward relative to power in the second half of long rides/runs; prioritize Z2 duration and in-ride fueling.',
-                }}
-                coachingAction="When 28-day Efficiency rises and Cardiac Drift stays under 3.5%, increase Z4/Z5 interval density; if drift exceeds 5%, extend steady Z2 aerobic volume."
-              />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
-              <span>Aerobic Efficiency &amp; Cardiac Drift</span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-mono font-semibold text-emerald-600 dark:text-emerald-300">
-                EF · Pa:Hr
-              </span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              While Fitness (CTL) tracks mechanical workload, <strong>Aerobic Efficiency (Output ÷ Heart Rate)</strong> and{' '}
-              <strong>Cardiac Drift (First-Half vs. Second-Half Stamina)</strong> reveal whether your internal cardiovascular cost is improving.
-            </p>
+      <section className="rounded-2xl liquid-glass px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Aerobic Efficiency &amp; Drift
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${
+                aerobicDurabilityStats.durabilityState === 'optimal'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                  : aerobicDurabilityStats.durabilityState === 'caution'
+                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                    : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+              }`}
+            >
+              {aerobicDurabilityStats.durabilityLabel}
+            </span>
+            <ChartInfoTooltip
+              title="Aerobic Efficiency Factor (EF) & Cardiac Drift (Pa:Hr%)"
+              subtitle="Mitochondrial Economy & First-Half vs. Second-Half Stamina"
+              whatItMeasures="Aerobic Efficiency (EF = Normalized Power ÷ Average Heart Rate) quantifies how much output your cardiovascular system produces per heartbeat. Cardiac Drift (Pa:Hr%) measures how much your efficiency fades from the first half to the second half of endurance workouts."
+              benchmarks="Cardiac Drift < 3.5%: Strong aerobic stamina ready for threshold progression. 3.5% – 5.0%: Moderate drift. > 5.0%: Incomplete aerobic base or fueling/hydration depletion."
+              liveStatus={{
+                label: `28d EF: ${aerobicDurabilityStats.avgEf28} (${
+                  aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''
+                }${aerobicDurabilityStats.efPctDelta}% vs 90d) · Avg Drift: ${
+                  aerobicDurabilityStats.avgDecoupling
+                }%`,
+                state: aerobicDurabilityStats.durabilityState,
+                interpretation:
+                  aerobicDurabilityStats.avgDecoupling <= 3.5
+                    ? 'Your cardiac drift on endurance workouts is well below the 5% physiological threshold, confirming strong stroke-volume stability.'
+                    : 'Your heart rate drifts upward relative to power in the second half of long rides/runs; prioritize Z2 duration and in-ride fueling.',
+              }}
+              coachingAction="When 28-day Efficiency rises and Cardiac Drift stays under 3.5%, increase Z4/Z5 interval density; if drift exceeds 5%, extend steady Z2 aerobic volume."
+            />
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 font-mono tabular-nums">
-            <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
-              <span className="block text-[11px] font-sans text-slate-500">
-                Aerobic Efficiency <span className="font-mono opacity-75">(EF)</span>
+          <div className="flex flex-wrap items-center gap-3 font-mono tabular-nums text-xs">
+            <div className="px-3 py-1.5 rounded-xl liquid-glass-subtle flex items-center gap-2">
+              <span className="text-slate-500 font-sans">EF (28d):</span>
+              <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                {aerobicDurabilityStats.avgEf28}
               </span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-xl font-extrabold text-slate-900 dark:text-white">
-                  {aerobicDurabilityStats.avgEf28}
-                </span>
-                <span
-                  className={`text-xs font-bold ${
-                    aerobicDurabilityStats.efPctDelta >= 0
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-amber-600 dark:text-amber-400'
-                  }`}
-                >
-                  {aerobicDurabilityStats.efPctDelta >= 0
-                    ? `+${aerobicDurabilityStats.efPctDelta}%`
-                    : `${aerobicDurabilityStats.efPctDelta}%`}{' '}
-                  (90d: {aerobicDurabilityStats.avgEf90})
-                </span>
-              </div>
+              <span
+                className={`text-[11px] font-bold ${
+                  aerobicDurabilityStats.efPctDelta >= 0
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                ({aerobicDurabilityStats.efPctDelta >= 0 ? `+${aerobicDurabilityStats.efPctDelta}%` : `${aerobicDurabilityStats.efPctDelta}%`})
+              </span>
             </div>
 
-            <div className="rounded-xl liquid-glass-subtle px-4 py-2.5">
-              <span className="block text-[11px] font-sans text-slate-500">
-                Aerobic Stamina / Drift <span className="font-mono opacity-75">(Pa:Hr)</span>
+            <div className="px-3 py-1.5 rounded-xl liquid-glass-subtle flex items-center gap-2">
+              <span className="text-slate-500 font-sans">Drift (Pa:Hr):</span>
+              <span
+                className={`text-sm font-extrabold ${
+                  aerobicDurabilityStats.avgDecoupling <= 3.5
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : aerobicDurabilityStats.avgDecoupling <= 5.0
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {aerobicDurabilityStats.avgDecoupling}%
               </span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span
-                  className={`text-xl font-extrabold ${
-                    aerobicDurabilityStats.avgDecoupling <= 3.5
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : aerobicDurabilityStats.avgDecoupling <= 5.0
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-rose-600 dark:text-rose-400'
-                  }`}
-                >
-                  {aerobicDurabilityStats.avgDecoupling}%
-                </span>
-                <span className="text-xs text-slate-500">target &lt; 3.5%</span>
-              </div>
             </div>
 
             <button
@@ -3143,7 +3055,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   `My 28-day Aerobic Efficiency Factor (EF) is ${aerobicDurabilityStats.avgEf28} (${aerobicDurabilityStats.efPctDelta >= 0 ? '+' : ''}${aerobicDurabilityStats.efPctDelta}% vs 90-day EF of ${aerobicDurabilityStats.avgEf90}) and my average endurance cardiac drift (Pa:Hr decoupling) is ${aerobicDurabilityStats.avgDecoupling}%. Based on my current CTL (${latestDay.ctl}) and HRV (${latestWithHrv.hrvRMSSD}ms), should I focus on extending Z2 aerobic durability or progressing Z4 threshold intervals this week?`
                 )
               }
-              className="min-h-[38px] px-4 py-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-sans text-xs font-semibold shadow-sm transition-all"
+              className="min-h-[32px] px-3 py-1.5 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-sans text-xs font-semibold shadow-sm transition-all"
             >
               Ask Coach: Stamina Rx
             </button>

@@ -2532,28 +2532,25 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 ))}
               </div>
             </div>
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
-              Click any sport button in the top-right toolbar to isolate Cycling, Running, Swimming, or Strength polarization.
-            </div>
           </div>
         </div>
       </section>
 
       {/* Bike & Running Shoe Lifespan Tracker */}
-      <section className="rounded-2xl liquid-glass p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              Equipment &amp; Mileage Alerts
-            </span>
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <Wrench className="w-4 h-4 text-amber-500" />
-              <span>Bikes &amp; Running Shoes Lifespan Tracker</span>
+      <details className="rounded-2xl liquid-glass p-4 group">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-4 h-4 text-amber-500" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Gear Lifespan Tracker ({resolvedGearItems.length})
             </h2>
           </div>
-        </div>
+          <span className="text-xs font-medium text-slate-500 group-open:rotate-180 transition-transform">
+            ▾
+          </span>
+        </summary>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
           {resolvedGearItems.map((gear) => {
             const pctWear = Math.min(
               100,
@@ -2608,26 +2605,21 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             );
           })}
         </div>
-      </section>
+      </details>
 
       {/* Annual Mileage Targets */}
       <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              2026 Annual Mileage Targets (Running &amp; Cycling · Deduplicated YTD)
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Calculated strictly from your deduplicated 2026 workouts across all synced sources
-            </p>
-          </div>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            2026 Annual Mileage Targets
+          </h2>
 
           <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
             {(
               [
-                { id: 'COMBINED', label: 'Combined (All)' },
-                { id: 'OUTDOOR', label: 'Outdoor Only' },
-                { id: 'INDOOR', label: 'Indoor (Trainer/Treadmill)' },
+                { id: 'COMBINED', label: 'All' },
+                { id: 'OUTDOOR', label: 'Outdoor' },
+                { id: 'INDOOR', label: 'Indoor' },
               ] as const
             ).map((env) => (
               <button
@@ -2782,15 +2774,10 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
 
       {/* Target Race Calendar & Physiological Milestones */}
       <section className="rounded-2xl liquid-glass p-5 space-y-5">
-        <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-            <Award className="w-4 h-4 text-blue-500" />
-            <span>Target Races &amp; Physiological Performance Milestones</span>
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Add your upcoming target races or FTP/pace milestones to project required CTL ramp rates and display on your Calendar ribbon
-          </p>
-        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+          <Award className="w-4 h-4 text-blue-500" />
+          <span>Target Races &amp; Performance Milestones</span>
+        </h2>
 
         {targetGoals.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

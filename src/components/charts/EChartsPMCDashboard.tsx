@@ -640,41 +640,30 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
       axisPointer: {
         link: [{ xAxisIndex: 'all' }],
       },
-      grid: showRampSubplot
-        ? [
-            {
-              left: 52,
-              right: 54,
-              top: 20,
-              height: '41%',
-            },
-            {
-              left: 52,
-              right: 54,
-              top: '47%',
-              height: '19%',
-            },
-            {
-              left: 52,
-              right: 54,
-              top: '71%',
-              height: '17%',
-            },
-          ]
-        : [
-            {
-              left: 52,
-              right: 54,
-              top: 26,
-              height: '52%',
-            },
-            {
-              left: 52,
-              right: 54,
-              top: '64%',
-              height: '23%',
-            },
-          ],
+      grid: [
+        {
+          left: 58,
+          right: 60,
+          top: 34,
+          height: 260,
+        },
+        {
+          left: 58,
+          right: 60,
+          top: 326,
+          height: 115,
+        },
+        ...(showRampSubplot
+          ? [
+              {
+                left: 58,
+                right: 60,
+                top: 473,
+                height: 95,
+              },
+            ]
+          : []),
+      ],
       xAxis: [
         {
           type: 'category',
@@ -723,11 +712,13 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           type: 'value',
           gridIndex: 0,
           name: 'CTL / ATL',
+          nameGap: 10,
           nameTextStyle: {
             color: '#38bdf8',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
-            padding: [0, 0, 0, 8],
+            align: 'left',
+            padding: [0, 0, 0, -42],
           },
           splitLine: { lineStyle: { color: splitLineColor } },
           axisLabel: {
@@ -741,11 +732,14 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           gridIndex: 0,
           name: showEftpOverlay ? 'eFTP (W)' : 'TSS',
           position: 'right',
+          nameGap: 10,
           min: (val) => Math.max(0, Math.floor(val.min * 0.85)),
           nameTextStyle: {
             color: '#10b981',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
+            align: 'right',
+            padding: [0, -42, 0, 0],
           },
           splitLine: { show: false },
           axisLabel: {
@@ -758,10 +752,13 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           type: 'value',
           gridIndex: 1,
           name: 'Form (TSB)',
+          nameGap: 10,
           nameTextStyle: {
             color: '#f59e0b',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
+            align: 'left',
+            padding: [0, 0, 0, -42],
           },
           splitLine: { lineStyle: { color: splitLineColor } },
           axisLabel: {
@@ -776,10 +773,13 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
                 type: 'value' as const,
                 gridIndex: 2,
                 name: 'Ramp (/wk)',
+                nameGap: 10,
                 nameTextStyle: {
                   color: '#10b981',
                   fontFamily: 'JetBrains Mono, monospace',
                   fontSize: 10,
+                  align: 'left' as const,
+                  padding: [0, 0, 0, -42],
                 },
                 splitLine: { lineStyle: { color: splitLineColor } },
                 axisLabel: {
@@ -932,6 +932,8 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
       ],
     };
 
+    const targetHeight = showRampSubplot ? 625 : 498;
+    chart.resize({ height: targetHeight });
     chart.setOption(option, true);
 
     chart.off('click');
@@ -959,15 +961,14 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
     onSelectDate,
   ]);
 
+  const computedChartHeight = showRampSubplot ? 625 : 498;
+
   return (
     <div className="rounded-2xl liquid-glass p-3 sm:p-4 border border-stone-200/80 dark:border-slate-800/80">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-2.5 border-b border-stone-200/80 dark:border-slate-800/80">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono uppercase tracking-wider text-cyan-700 dark:text-cyan-300">
-            <TrendingUp className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            Interactive Fitness, Form &amp; Ramp Chart
-          </span>
-          <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-stone-200/80 dark:border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+          <TrendingUp className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+          <span className="text-slate-600 dark:text-slate-300">
             CTL <strong className="text-cyan-600 dark:text-cyan-400">{summaryMetrics.latestCtl.toFixed(1)}</strong> · ATL{' '}
             <strong className="text-purple-600 dark:text-purple-400">{summaryMetrics.latestAtl.toFixed(1)}</strong> · TSB{' '}
             <strong
@@ -999,19 +1000,17 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
             </strong>
           </span>
 
-          {/* Garmin Daily Load Bar Color Legend */}
           {showTssBars && (
-            <div className="flex items-center gap-1.5 pl-1 text-[10px] font-mono">
-              <span className="text-slate-500 dark:text-slate-400">Stacked Activity Load:</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200/80 dark:border-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+              <span className="inline-flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-[#38bdf8]" />
-                Low Aerobic
+                Low
               </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/30">
+              <span className="inline-flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-[#f97316]" />
-                High Aerobic
+                High
               </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-500/30">
+              <span className="inline-flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-[#d946ef]" />
                 Anaerobic
               </span>
@@ -1023,40 +1022,43 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowTssBars((v) => !v)}
-            className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition-colors border ${
+            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase transition-colors border ${
               showTssBars
                 ? 'bg-sky-500/15 border-sky-500/40 text-sky-700 dark:text-sky-300'
                 : 'liquid-glass-subtle border-stone-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
-            Load Focus Bars
+            Load Bars
           </button>
           <button
             type="button"
             onClick={() => setShowRampSubplot((v) => !v)}
-            className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition-colors border ${
+            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase transition-colors border ${
               showRampSubplot
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                 : 'liquid-glass-subtle border-stone-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
-            Ramp Sub-Chart
+            Ramp
           </button>
           <button
             type="button"
             onClick={() => setShowEftpOverlay((v) => !v)}
-            className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition-colors border ${
+            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase transition-colors border ${
               showEftpOverlay
                 ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300'
                 : 'liquid-glass-subtle border-stone-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
-            eFTP Step Line
+            eFTP
           </button>
         </div>
       </div>
 
-      <div ref={chartContainerRef} style={{ width: '100%', height: `${showRampSubplot ? Math.max(520, height) : height}px` }} />
+      <div
+        ref={chartContainerRef}
+        style={{ width: '100%', height: `${computedChartHeight}px`, transition: 'height 150ms ease' }}
+      />
 
       {selectedDay && (
         <div className="mt-3 pt-3 border-t border-stone-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
