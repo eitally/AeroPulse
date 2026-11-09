@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, CalendarPlus, Check, Send, Sparkles, X } from "./icons/PhosphorIcons";
+import { Bot, CalendarPlus, Check, KeyRound, Send, Sparkles, X } from "./icons/PhosphorIcons";
 import {
   CoachChatMessage,
   PlannedWorkoutEvent,
@@ -15,6 +15,8 @@ interface AICoachDrawerProps {
   onSendChatMessage: (message: string) => void;
   isSendingChat: boolean;
   onScheduleProposedWorkout: (workout: PlannedWorkoutEvent) => Promise<void>;
+  hasGeminiKey?: boolean;
+  onSaveGeminiApiKey?: (apiKey: string) => Promise<void>;
 }
 
 const QUICK_COACH_PROMPTS = [
@@ -33,10 +35,15 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
   onSendChatMessage,
   isSendingChat,
   onScheduleProposedWorkout,
+  hasGeminiKey = false,
+  onSaveGeminiApiKey,
 }) => {
   const [input, setInput] = useState('');
   const [scheduledIds, setScheduledIds] = useState<Set<string>>(new Set());
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
 
   if (!isOpen) return null;
 
@@ -45,6 +52,19 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
     if (!input.trim() || isSendingChat) return;
     onSendChatMessage(input.trim());
     setInput('');
+  };
+
+  const handleSaveKeySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onSaveGeminiApiKey) return;
+    setSavingKey(true);
+    try {
+      await onSaveGeminiApiKey(apiKeyDraft.trim());
+      setShowKeyForm(false);
+      setApiKeyDraft('');
+    } finally {
+      setSavingKey(false);
+    }
   };
 
   const handleScheduleOne = async (pw: PlannedWorkoutEvent) => {
@@ -68,27 +88,85 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
       >
         {/* Drawer Header */}
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#111827]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-500">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-500 shrink-0">
               <Bot className="w-4 h-4" />
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                 AeroPulse AI Training & Program Coach
               </h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 Context: {activeViewName} · Schedules directly to Training Calendar
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            aria-label="Close AI Coach drawer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onSaveGeminiApiKey && (
+              <button
+                type="button"
+                onClick={() => setShowKeyForm((prev) => !prev)}
+                className={`min-h-[30px] px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold flex items-center gap-1.5 border transition-colors ${
+                  hasGeminiKey
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                }`}
+                title="Configure Google AI Studio Gemini API Key"
+              >
+                <KeyRound className="w-3 h-3" />
+                <span>{hasGeminiKey ? 'Gemini Live' : 'Set API Key'}</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              aria-label="Close AI Coach drawer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Collapsible Gemini API Key Bar */}
+        {showKeyForm && onSaveGeminiApiKey && (
+          <form
+            onSubmit={handleSaveKeySubmit}
+            className="px-4 py-3 bg-slate-100/90 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 space-y-2"
+          >
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                Google AI Studio API Key (<code className="font-mono">GEMINI_API_KEY</code>)
+              </span>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 dark:text-sky-400 hover:underline font-mono text-[10px]"
+              >
+                Get free key at aistudio.google.com ↗
+              </a>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={apiKeyDraft}
+                onChange={(e) => setApiKeyDraft(e.target.value)}
+                placeholder="Paste AIzaSy... Gemini API key (or leave blank for built-in Physiology Engine)"
+                className="flex-1 min-h-[34px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={savingKey}
+                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+              >
+                {savingKey ? 'Saving...' : 'Save Key'}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              Saved locally in your browser & synced to your active server session. When no key is set, AeroPulse automatically uses its built-in deterministic Physiology Engine so workout generation and readiness coaching always work offline.
+            </p>
+          </form>
+        )}
 
         {/* Live Garmin Sleep, HRV & Training Status Context Strip */}
         {latestWellness && (

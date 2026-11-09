@@ -69,6 +69,7 @@ interface RuntimeSessionStore {
   athleteLthr: number;
   athleteMaxHr: number;
   athleteProfile?: Record<string, any>;
+  geminiApiKey?: string;
   mapTileApiKey: string;
   mapTileProvider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
   gearItems: {
@@ -109,6 +110,14 @@ const initialEnvMapKey = (
   ''
 ).trim();
 
+const initialEnvGeminiKey = [
+  cachedSession.geminiApiKey,
+  process.env.GEMINI_API_KEY,
+  process.env.GOOGLE_API_KEY,
+]
+  .map((k) => (k || '').trim())
+  .find((k) => k && k !== 'MY_GEMINI_API_KEY' && k !== 'YOUR_GEMINI_API_KEY') || '';
+
 const runtimeStore: RuntimeSessionStore = {
   intervalsApiKey: cachedSession.intervalsApiKey || process.env.INTERVALS_API_KEY || '',
   intervalsAthleteId: cachedSession.intervalsAthleteId || process.env.INTERVALS_ATHLETE_ID || '0',
@@ -133,6 +142,7 @@ const runtimeStore: RuntimeSessionStore = {
   athleteLthr: cachedSession.athleteLthr || 163,
   athleteMaxHr: cachedSession.athleteMaxHr || 180,
   athleteProfile: cachedSession.athleteProfile || undefined,
+  geminiApiKey: initialEnvGeminiKey,
   mapTileApiKey: cachedSession.mapTileApiKey || initialEnvMapKey,
   mapTileProvider:
     cachedSession.mapTileProvider ||
@@ -435,15 +445,62 @@ function saveSessionCache() {
   saveJsonFile(SESSION_CACHE_FILE, runtimeStore);
 }
 
-function getGeminiClient(): GoogleGenAI {
+function getEffectiveGeminiApiKey(req?: Request): string {
+  const headerKey = (req?.headers['x-gemini-api-key'] as string | undefined)?.trim();
+  const bodyKey =
+    typeof req?.body?.geminiApiKey === 'string' ? req.body.geminiApiKey.trim() : '';
+  const candidates = [
+    headerKey,
+    bodyKey,
+    runtimeStore.geminiApiKey,
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+  ];
+  for (const c of candidates) {
+    const clean = (c || '').trim();
+    if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
+      return clean;
+    }
+  }
+  return '';
+}
+
+function getGeminiClient(req?: Request): GoogleGenAI | null {
+  const apiKey = getEffectiveGeminiApiKey(req);
+  if (!apiKey) return null;
+  if (!runtimeStore.geminiApiKey) {
+    runtimeStore.geminiApiKey = apiKey;
+  }
   return new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
+    apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
       },
     },
   });
+}
+
+async function generateGeminiContentWithFallback(
+  ai: GoogleGenAI,
+  params: { contents: string; config?: Record<string, any> }
+) {
+  const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-2.0-flash'];
+  let lastError: unknown = null;
+  for (const model of candidateModels) {
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: params.config,
+      });
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Gemini API request failed across candidate models.');
 }
 
 function getEffectiveIntervalsConfig(req?: Request) {
@@ -701,11 +758,11 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
     process.env.INTERVALS_API_KEY && process.env.INTERVALS_API_KEY.trim()
   );
   const hasStravaEnv = Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
-  const hasGeminiServerKey = Boolean(
-    process.env.GEMINI_API_KEY &&
-      process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' &&
-      process.env.GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY'
-  );
+  const effectiveGeminiKey = getEffectiveGeminiApiKey(req);
+  if (effectiveGeminiKey && !runtimeStore.geminiApiKey) {
+    runtimeStore.geminiApiKey = effectiveGeminiKey;
+  }
+  const hasGeminiServerKey = Boolean(effectiveGeminiKey);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
 
   res.json({
@@ -870,6 +927,18 @@ apiRouter.post('/api/map/config', (req: Request, res: Response) => {
   });
 });
 
+// Save Google Gemini API Key at Runtime (for AI Coach & Daily Workout Generator)
+apiRouter.post('/api/gemini/config', (req: Request, res: Response) => {
+  const rawApiKey = String(req.body?.apiKey || req.body?.geminiApiKey || '').trim();
+  runtimeStore.geminiApiKey = rawApiKey;
+  saveSessionCache();
+
+  res.json({
+    ok: true,
+    hasGeminiServerKey: Boolean(runtimeStore.geminiApiKey),
+  });
+});
+
 // Export & Import Connection Bundle for 1-Click Transfer to Deployed App / Vercel
 apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
   const { apiKey: intervalsApiKey, athleteId: intervalsAthleteId } = getEffectiveIntervalsConfig(req);
@@ -886,6 +955,7 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     ''
   ).trim();
   const mapTileProvider = runtimeStore.mapTileProvider || 'OSM_KEYLESS';
+  const geminiApiKey = getEffectiveGeminiApiKey(req);
 
   const payload = {
     v: 1,
@@ -900,10 +970,12 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     stravaAthleteName: runtimeStore.stravaAthleteName,
     mapTileProvider,
     mapTileApiKey,
+    geminiApiKey: geminiApiKey || undefined,
   };
 
   const bundle = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
   const envLines = [
+    ...(geminiApiKey ? [`GEMINI_API_KEY="${geminiApiKey}"`] : []),
     `INTERVALS_API_KEY="${intervalsApiKey}"`,
     `INTERVALS_ATHLETE_ID="${intervalsAthleteId || '0'}"`,
     `STRAVA_CLIENT_ID="${stravaClientId}"`,
@@ -931,7 +1003,8 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
     if (
       rawInput.includes('INTERVALS_API_KEY=') ||
       rawInput.includes('STRAVA_') ||
-      rawInput.includes('MAPBOX_')
+      rawInput.includes('MAPBOX_') ||
+      rawInput.includes('GEMINI_API_KEY=')
     ) {
       // Parse .env key=value format
       const lines = rawInput.split(/\r?\n/);
@@ -945,6 +1018,7 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
           .slice(eqIdx + 1)
           .trim()
           .replace(/^["']|["']$/g, '');
+        if (key === 'GEMINI_API_KEY' || key === 'GOOGLE_API_KEY') parsed.geminiApiKey = val;
         if (key === 'INTERVALS_API_KEY') parsed.intervalsApiKey = val;
         if (key === 'INTERVALS_ATHLETE_ID') parsed.intervalsAthleteId = val;
         if (key === 'STRAVA_CLIENT_ID') parsed.stravaClientId = val;
@@ -967,6 +1041,7 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
       parsed = JSON.parse(jsonStr);
     }
 
+    if (parsed.geminiApiKey) runtimeStore.geminiApiKey = String(parsed.geminiApiKey).trim();
     if (parsed.intervalsApiKey) runtimeStore.intervalsApiKey = parsed.intervalsApiKey.trim();
     if (parsed.intervalsAthleteId)
       runtimeStore.intervalsAthleteId = parsed.intervalsAthleteId.trim();
@@ -993,6 +1068,7 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
     res.json({
       imported: true,
       credentials: {
+        geminiApiKey: runtimeStore.geminiApiKey,
         intervalsApiKey: runtimeStore.intervalsApiKey,
         intervalsAthleteId: runtimeStore.intervalsAthleteId,
         stravaClientId: runtimeStore.stravaClientId,
@@ -3755,16 +3831,273 @@ setInterval(() => {
 // ----------------------------------------------------------------------------
 // 6. Gemini AI Coach — Daily Options, Multi-Turn Chat & Direct Calendar Program Generator
 // ----------------------------------------------------------------------------
-apiRouter.post('/api/coach/options', async (req: Request, res: Response) => {
-  try {
-    const {
-      sportPreference = 'Cycling',
-      environmentPreference = 'INDOOR',
-      durationMinutes = 60,
-      telemetrySummary,
-    } = req.body || {};
+function buildDeterministicDailyWorkoutOptions(
+  sportPreference: string,
+  environmentPreference: string,
+  durationMinutes: number,
+  telemetrySummary: Record<string, any> = {}
+) {
+  const w = telemetrySummary?.latestWellness || {};
+  const t = telemetrySummary?.athleteThresholds || {};
+  const ctl = Number(w.ctl || 72.0).toFixed(1);
+  const tsb = Number(w.tsb ?? 0).toFixed(1);
+  const hrv = Math.round(Number(w.hrvRMSSD || 44));
+  const hrvStatus = String(w.hrvStatus || 'Balanced');
+  const sleepScore = Math.round(Number(w.sleepScore || 82));
+  const ftp = Math.round(Number(t.ftp || runtimeStore.athleteFtp || 300));
+  const isRun = /run/i.test(sportPreference);
+  const dur = Math.max(30, Math.round(Number(durationMinutes) || 60));
+  const mainMins = Math.max(15, dur - 25);
 
-    const ai = getGeminiClient();
+  return [
+    {
+      id: `opt-det-1-${Date.now()}`,
+      tier: 'OPTIMAL',
+      tierLabel: 'Option A · Optimal Progression',
+      title: isRun
+        ? `Threshold Cruise Intervals (4×${Math.max(4, Math.round(mainMins / 5))}m @ LT2 Pace)`
+        : `Sweet Spot & Threshold Progression (3×${Math.max(8, Math.round(mainMins / 3.5))}m @ 92% FTP)`,
+      sportCategory: isRun ? 'Running' : 'Cycling',
+      environment: environmentPreference,
+      durationMinutes: dur,
+      estimatedLoad: Math.round(dur * 1.15),
+      summary: `Advances chronic fitness (CTL ${ctl}) toward your target block while respecting current TSB (${tsb}).`,
+      physiologicalWhy: `Calibrated for CTL ${ctl}, morning HRV ${hrv} ms (${hrvStatus}), and Sleep Score ${sleepScore}. Sustains sub-threshold metabolic stimulus around ~${Math.round(ftp * 0.92)}W.`,
+      workoutSyntax: isRun
+        ? `- 15m 70% Pace\n- 4x ${Math.max(4, Math.round(mainMins / 5))}m 98% Pace\n- 10m 68% Pace`
+        : `- 15m 62% FTP\n- ${Math.max(20, mainMins)}m 91% FTP\n- 10m 55% FTP`,
+      structuredSteps: [
+        { label: 'Progressive Warmup', duration: '15m', targetZoneOrOutput: 'Z1–Z2 Aerobic Ramp' },
+        {
+          label: 'Main Threshold / Sweet Spot Block',
+          duration: `${mainMins}m`,
+          targetZoneOrOutput: isRun ? '96–99% Threshold Pace (Z4)' : `${Math.round(ftp * 0.9)}–${Math.round(ftp * 0.94)}W (90–94% FTP)`,
+        },
+        { label: 'Cooldown Flush', duration: '10m', targetZoneOrOutput: 'Z1 Easy Recovery' },
+      ],
+    },
+    {
+      id: `opt-det-2-${Date.now()}`,
+      tier: 'MODULATED',
+      tierLabel: 'Option B · Modulated Aerobic Durability',
+      title: isRun
+        ? `Zone 2 Aerobic Base Run + 4×20s Neuromuscular Strides`
+        : `Endurance Zone 2 Aerobic Efficiency (${Math.round(ftp * 0.68)}–${Math.round(ftp * 0.74)}W)`,
+      sportCategory: isRun ? 'Running' : 'Cycling',
+      environment: environmentPreference,
+      durationMinutes: dur,
+      estimatedLoad: Math.round(dur * 0.78),
+      summary: `Builds mitochondrial density and low-decoupling aerobic durability with controlled autonomic strain.`,
+      physiologicalWhy: `Ideal when HRV is ${hrv} ms (${hrvStatus}) and TSB is ${tsb}—accumulates high-quality aerobic volume without deepening sympathetic fatigue.`,
+      workoutSyntax: `- 10m 58% FTP\n- ${Math.max(20, dur - 20)}m 70% FTP\n- 10m 55% FTP`,
+      structuredSteps: [
+        { label: 'Easy Settling', duration: '10m', targetZoneOrOutput: '58–62% FTP (Z1/Z2)' },
+        {
+          label: 'Steady Aerobic Cruise',
+          duration: `${Math.max(20, dur - 20)}m`,
+          targetZoneOrOutput: `${Math.round(ftp * 0.68)}–${Math.round(ftp * 0.74)}W (68–74% FTP · Z2)`,
+        },
+        { label: 'Cooldown', duration: '10m', targetZoneOrOutput: '55% FTP (Z1)' },
+      ],
+    },
+    {
+      id: `opt-det-3-${Date.now()}`,
+      tier: 'RECOVERY',
+      tierLabel: 'Option C · Active Parasympathetic Recovery',
+      title: isRun
+        ? 'Zone 1 Recovery Shakeout & Mobility Flow'
+        : `Zone 1 Parasympathetic Recovery Spin (${Math.round(ftp * 0.52)}W · 95 rpm)`,
+      sportCategory: isRun ? 'Running' : 'Cycling',
+      environment: 'INDOOR',
+      durationMinutes: Math.min(45, dur),
+      estimatedLoad: 28,
+      summary: 'Promotes parasympathetic rebound and elevates HRV toward your 7-day baseline.',
+      physiologicalWhy: `With HRV at ${hrv} ms (${hrvStatus}), keeping intensity strictly in Zone 1 accelerates autonomic restoration ahead of your next key workout.`,
+      workoutSyntax: `- 10m 50% FTP\n- 25m 55% FTP\n- 10m 48% FTP`,
+      structuredSteps: [
+        { label: 'Easy Spin / Shakeout', duration: '35m', targetZoneOrOutput: '50–55% FTP · HR < 68% Max' },
+        { label: 'Mobility & Cooldown', duration: '10m', targetZoneOrOutput: 'Z1 Flush' },
+      ],
+    },
+  ];
+}
+
+function buildDeterministicCoachChatResponse(
+  message: string,
+  telemetrySummary: Record<string, any> = {},
+  todayStr: string
+) {
+  const w = telemetrySummary?.latestWellness || {};
+  const t = telemetrySummary?.athleteThresholds || {};
+  const ctl = Number(w.ctl || 72.0).toFixed(1);
+  const atl = Number(w.atl || 68.0).toFixed(1);
+  const tsb = Number(w.tsb ?? (Number(ctl) - Number(atl))).toFixed(1);
+  const hrv = Math.round(Number(w.hrvRMSSD || 40));
+  const hrvBaseline = Math.round(Number(w.hrvBaseline7d || 44));
+  const hrvStatus = String(w.hrvStatus || (hrv < hrvBaseline - 3 ? 'Unbalanced' : 'Balanced'));
+  const sleepHours = w.sleepSecs ? (Number(w.sleepSecs) / 3600).toFixed(1) : '7.4';
+  const sleepScore = Math.round(Number(w.sleepScore || 80));
+  const statusLabel = String(w.garminTrainingStatus || 'Maintaining');
+  const ftp = Math.round(Number(t.ftp || runtimeStore.athleteFtp || 300));
+  const lthr = Math.round(Number(t.lthr || runtimeStore.athleteLthr || 165));
+
+  const addDays = (base: string, offset: number) => {
+    const d = new Date(`${base}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const isSuppressed = hrvStatus === 'Unbalanced' || hrvStatus === 'Low' || Number(tsb) < -12;
+  const wantsRunOnly = /\brun(ning)?\b/i.test(message) && !/\bcycl(e|ing)|bike|ride|trainer\b/i.test(message);
+  const wantsMultiDay = /\b(week|5-day|schedule|plan|block|days)\b/i.test(message);
+
+  const rawProposals = wantsMultiDay
+    ? [
+        {
+          date: todayStr,
+          name: isSuppressed
+            ? 'Modulated Zone 2 Aerobic Base (HRV-Adjusted)'
+            : 'Sweet Spot 3×12m @ 90% FTP Progression',
+          sportCategory: wantsRunOnly ? 'Running' : 'Cycling',
+          environmentPreference: 'INDOOR',
+          plannedDurationSecs: 3600,
+          plannedLoad: isSuppressed ? 52 : 78,
+          workoutSyntax: isSuppressed
+            ? '- 10m 55% FTP\n- 40m 68% FTP\n- 10m 52% FTP'
+            : '- 12m 62% FTP\n- 36m 90% FTP\n- 12m 55% FTP',
+          description: isSuppressed
+            ? `Modulated Z2 session protecting autonomic recovery while HRV is ${hrv} ms (${hrvStatus}).`
+            : `Builds sub-threshold muscular endurance around ${Math.round(ftp * 0.9)}W.`,
+        },
+        {
+          date: addDays(todayStr, 1),
+          name: 'Aerobic Zone 2 Road Run + Neuromuscular Strides',
+          sportCategory: 'Running',
+          environmentPreference: 'OUTDOOR',
+          plannedDurationSecs: 3300,
+          plannedLoad: 58,
+          workoutSyntax: '- 10m 68% Pace\n- 35m 78% Pace\n- 10m 65% Pace',
+          description: 'Steady aerobic running economy session with <3% cardiac drift target.',
+        },
+        {
+          date: addDays(todayStr, 2),
+          name: 'Active Parasympathetic Recovery Spin & Mobility',
+          sportCategory: 'Cycling',
+          environmentPreference: 'INDOOR',
+          plannedDurationSecs: 2700,
+          plannedLoad: 28,
+          workoutSyntax: '- 10m 50% FTP\n- 25m 55% FTP\n- 10m 48% FTP',
+          description: 'Low-torque parasympathetic recovery flush to restore HRV into your balanced corridor.',
+        },
+        {
+          date: addDays(todayStr, 3),
+          name: wantsRunOnly
+            ? 'Lactate Threshold Cruise Intervals (4×6m @ LT2)'
+            : `Over-Under Lactate Clearance (3×10m @ ${Math.round(ftp * 0.95)}W)`,
+          sportCategory: wantsRunOnly ? 'Running' : 'Cycling',
+          environmentPreference: wantsRunOnly ? 'OUTDOOR' : 'INDOOR',
+          plannedDurationSecs: 4200,
+          plannedLoad: 86,
+          workoutSyntax: '- 15m 62% FTP\n- 30m 95% FTP\n- 25m 65% FTP',
+          description: 'Key mid-week threshold stimulus once autonomic readiness rebounds.',
+        },
+        {
+          date: addDays(todayStr, 4),
+          name: 'Long Endurance Aerobic Base Progression',
+          sportCategory: wantsRunOnly ? 'Running' : 'Cycling',
+          environmentPreference: 'OUTDOOR',
+          plannedDurationSecs: 5400,
+          plannedLoad: 98,
+          workoutSyntax: '- 15m 60% FTP\n- 65m 73% FTP\n- 10m 55% FTP',
+          description: 'Extended Zone 2 mitochondrial durability session.',
+        },
+      ]
+    : [
+        {
+          date: todayStr,
+          name: isSuppressed
+            ? `HRV-Modulated Zone 2 Endurance (${Math.round(ftp * 0.68)}W)`
+            : `Indoor Threshold & Sweet Spot (${Math.round(ftp * 0.91)}W)`,
+          sportCategory: wantsRunOnly ? 'Running' : 'Cycling',
+          environmentPreference: 'INDOOR',
+          plannedDurationSecs: 3600,
+          plannedLoad: isSuppressed ? 50 : 76,
+          workoutSyntax: isSuppressed
+            ? '- 10m 55% FTP\n- 40m 68% FTP\n- 10m 52% FTP'
+            : '- 12m 62% FTP\n- 36m 91% FTP\n- 12m 55% FTP',
+          description: isSuppressed
+            ? `Caps intensity in Zone 2 while HRV (${hrv} ms) is ${hrvStatus}.`
+            : `Targets 91% FTP (~${Math.round(ftp * 0.91)}W) with HR capped below ${lthr} bpm.`,
+        },
+        {
+          date: addDays(todayStr, 1),
+          name: 'Aerobic Base Run + 6×20s Strides',
+          sportCategory: 'Running',
+          environmentPreference: 'OUTDOOR',
+          plannedDurationSecs: 3300,
+          plannedLoad: 56,
+          workoutSyntax: '- 10m 68% Pace\n- 35m 78% Pace\n- 10m 65% Pace',
+          description: 'Complementary aerobic run advancing weekly volume with low autonomic strain.',
+        },
+      ];
+
+  const proposedWorkouts = rawProposals.map((pw, i) => ({
+    id: `ai-prop-${Date.now()}-${i}`,
+    date: pw.date,
+    name: pw.name,
+    sportCategory: pw.sportCategory as 'Cycling' | 'Running',
+    environmentPreference: pw.environmentPreference as 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE',
+    description: pw.description,
+    plannedLoad: pw.plannedLoad,
+    plannedDurationSecs: pw.plannedDurationSecs,
+    targetZoneSummary: `${pw.plannedLoad} TSS · AeroPulse Physiology Engine`,
+    workoutSyntax: pw.workoutSyntax,
+    structuredSteps: parseWorkoutSyntaxToSteps(pw.workoutSyntax, pw.plannedDurationSecs),
+    source: 'AI_COACH' as const,
+  }));
+
+  const readinessAnalysis = isSuppressed
+    ? `Your overnight **HRV is ${hrv} ms (${hrvStatus})** alongside a **CTL of ${ctl}** and **TSB of ${tsb}** (${statusLabel}). Because your autonomic nervous system shows mild suppression relative to your **${hrvBaseline} ms** baseline, today's optimal physiological move is to **modulate high-glycolytic VO2/Anaerobic stress** and focus on **Zone 2 Aerobic Base (${Math.round(ftp * 0.65)}–${Math.round(ftp * 0.73)}W, HR < ${Math.round(lthr * 0.85)} bpm)** for the next 24–36 hours before hitting your key threshold session.`
+    : `Your morning **HRV is ${hrv} ms (${hrvStatus})**, **Sleep Score is ${sleepScore}/100 (${sleepHours}h)**, and **Fitness (CTL) stands at ${ctl}** with **Form (TSB) at ${tsb}** (${statusLabel}). Your autonomic baseline is well-positioned to absorb a structured **Sweet Spot / Lactate Threshold progression (~${Math.round(ftp * 0.9)}–${Math.round(ftp * 0.95)}W, LTHR ${lthr} bpm)** today.`;
+
+  const reply = `${readinessAnalysis}\n\nI have generated **${proposedWorkouts.length} structured workouts** below tailored to your **${ftp}W FTP** and current readiness—click **Schedule** on any card to push it directly to your Training Calendar.\n\n*(Note: Running on AeroPulse's built-in Physiology Engine. To enable live generative Gemini LLM responses, click **API Key** in the top-right of this drawer and paste a free key from [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) or set \`GEMINI_API_KEY\` in your environment variables.)*`;
+
+  return {
+    reply,
+    citedMetrics: [
+      `CTL ${ctl} · TSB ${tsb}`,
+      `HRV ${hrv} ms (${hrvStatus})`,
+      `Sleep ${sleepHours}h (Score ${sleepScore})`,
+      `FTP ${ftp}W · LTHR ${lthr} bpm`,
+    ],
+    proposedWorkouts,
+    engine: 'LOCAL_PHYSIOLOGY_ENGINE',
+  };
+}
+
+apiRouter.post('/api/coach/options', async (req: Request, res: Response) => {
+  const {
+    sportPreference = 'Cycling',
+    environmentPreference = 'INDOOR',
+    durationMinutes = 60,
+    telemetrySummary,
+  } = req.body || {};
+
+  try {
+    const ai = getGeminiClient(req);
+    if (!ai) {
+      res.json({
+        options: buildDeterministicDailyWorkoutOptions(
+          sportPreference,
+          environmentPreference,
+          durationMinutes,
+          telemetrySummary
+        ),
+        engine: 'LOCAL_PHYSIOLOGY_ENGINE',
+      });
+      return;
+    }
+
     const prompt = `
 You are an elite endurance sports physiologist and multi-sport coach.
 Generate 3 distinct, actionable daily workout options for today based on the athlete's live Garmin health, sleep, HRV status, Training Status, and Intervals.icu/Strava telemetry:
@@ -3780,8 +4113,7 @@ Return an array of 3 workout options in JSON matching the schema:
 Include Intervals.icu workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") for each option.
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: prompt,
       config: {
         systemInstruction:
@@ -3822,26 +4154,36 @@ Include Intervals.icu workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10
 
     const jsonText = (response.text ?? '[]').trim();
     const parsed = JSON.parse(jsonText);
-    res.json({ options: parsed });
-  } catch (error) {
-    res.status(500).json({
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Failed to generate daily workout options with Gemini.',
+    res.json({ options: parsed, engine: 'GEMINI_LIVE' });
+  } catch {
+    res.json({
+      options: buildDeterministicDailyWorkoutOptions(
+        sportPreference,
+        environmentPreference,
+        durationMinutes,
+        telemetrySummary
+      ),
+      engine: 'LOCAL_PHYSIOLOGY_ENGINE',
     });
   }
 });
 
 apiRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
+  const { message, history = [], telemetrySummary } = req.body || {};
+  if (!message || typeof message !== 'string') {
+    res.status(400).json({ error: 'Message is required.' });
+    return;
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   try {
-    const { message, history = [], telemetrySummary } = req.body || {};
-    if (!message || typeof message !== 'string') {
-      res.status(400).json({ error: 'Message is required.' });
+    const ai = getGeminiClient(req);
+    if (!ai) {
+      res.json(buildDeterministicCoachChatResponse(message, telemetrySummary, todayStr));
       return;
     }
 
-    const ai = getGeminiClient();
     const conversationContext = Array.isArray(history)
       ? history
           .slice(-8)
@@ -3849,10 +4191,7 @@ apiRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
           .join('\n\n')
       : '';
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: `
 TODAY'S DATE: ${todayStr}
 
@@ -3954,14 +4293,10 @@ ${message}
       reply: parsed.reply || 'Here is my analysis based on your physiological profile.',
       citedMetrics: Array.isArray(parsed.citedMetrics) ? parsed.citedMetrics : [],
       proposedWorkouts,
+      engine: 'GEMINI_LIVE',
     });
-  } catch (error) {
-    res.status(500).json({
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Failed to generate coaching response from Gemini.',
-    });
+  } catch {
+    res.json(buildDeterministicCoachChatResponse(message, telemetrySummary, todayStr));
   }
 });
 
@@ -4017,20 +4352,10 @@ apiRouter.post('/races/parse', async (req: Request, res: Response) => {
       return;
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    const ai = getGeminiClient(req);
+    if (ai) {
       try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            },
-          },
-        });
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+        const response = await generateGeminiContentWithFallback(ai, {
           contents: `Extract all official track & field, cross country, or road race results from the following input (from Athletic.net, TFRRS, MileSplit, RunSignup, or meet result tables).
 Convert every race into structured JSON with exact FAT time in seconds (to 0.01s precision, e.g. "1:56.38" -> 116.38, "4:16.42" -> 256.42), eventLabel ("400m", "800m", "1500m", "1600m", "1 Mile", "3000m", "3200m", "5000m", "10000m", "XC 5K", "Road 5K", "Half Marathon"), eventDistanceMeters, date (YYYY-MM-DD), meetName, placeFinish, platform ("Athletic.net", "TFRRS", "MileSplit", "RunSignup", or "Official FAT"), trackType ("OUTDOOR_400M", "INDOOR_BANKED_200M", "INDOOR_FLAT_200M", "XC_COURSE", or "ROAD"), and lapSplitsSecs (array of lap split times in seconds if present).
 

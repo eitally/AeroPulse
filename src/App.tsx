@@ -377,6 +377,7 @@ export default function App() {
       const stravaExpiresAt = localStorage.getItem('aeropulse_strava_expires_at') || '';
       const mapTileApiKey = localStorage.getItem('aeropulse_map_tile_api_key') || '';
       const mapTileProvider = localStorage.getItem('aeropulse_map_tile_provider') || '';
+      const geminiApiKey = localStorage.getItem('aeropulse_gemini_api_key') || '';
       if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
       if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
       if (stravaRefreshToken) headers['x-strava-refresh-token'] = stravaRefreshToken;
@@ -384,6 +385,7 @@ export default function App() {
       if (stravaExpiresAt) headers['x-strava-expires-at'] = stravaExpiresAt;
       if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
       if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
+      if (geminiApiKey) headers['x-gemini-api-key'] = geminiApiKey;
     } catch {
       // ignore
     }
@@ -1134,6 +1136,40 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('aeropulse-map-config-updated'));
   };
 
+  const handleSaveGeminiApiKey = async (apiKey: string) => {
+    const cleanKey = apiKey.trim();
+    try {
+      if (cleanKey) {
+        localStorage.setItem('aeropulse_gemini_api_key', cleanKey);
+      } else {
+        localStorage.removeItem('aeropulse_gemini_api_key');
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      const resp = await fetch('/api/gemini/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+        body: JSON.stringify({ apiKey: cleanKey }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setConnectionStatus((prev) => ({
+          ...prev,
+          hasGeminiServerKey: Boolean(data.hasGeminiServerKey),
+        }));
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    setConnectionStatus((prev) => ({
+      ...prev,
+      hasGeminiServerKey: Boolean(cleanKey),
+    }));
+  };
+
   const handleExportConnectionBundle = async (): Promise<{
     bundle: string;
     envText: string;
@@ -1180,6 +1216,8 @@ export default function App() {
         localStorage.setItem('aeropulse_map_tile_api_key', creds.mapTileApiKey);
       if (creds.mapTileProvider)
         localStorage.setItem('aeropulse_map_tile_provider', creds.mapTileProvider);
+      if (creds.geminiApiKey)
+        localStorage.setItem('aeropulse_gemini_api_key', creds.geminiApiKey);
       window.dispatchEvent(new CustomEvent('aeropulse-map-config-updated'));
     } catch {
       // ignore
@@ -2323,7 +2361,7 @@ export default function App() {
     try {
       const resp = await fetch('/api/coach/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
         body: JSON.stringify({
           message: userText,
           history: chatMessages.map((m) => ({ role: m.role, content: m.content })),
@@ -3370,6 +3408,8 @@ export default function App() {
         chatMessages={chatMessages}
         onSendChatMessage={handleSendChatMessage}
         isSendingChat={isSendingChat}
+        hasGeminiKey={Boolean(connectionStatus.hasGeminiServerKey)}
+        onSaveGeminiApiKey={handleSaveGeminiApiKey}
         onScheduleProposedWorkout={async (workout) => {
           await handleCreatePlannedEvent({
             date: workout.date,
