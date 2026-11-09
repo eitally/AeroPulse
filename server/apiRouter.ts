@@ -1,15 +1,26 @@
 import express, { Request, Response } from 'express';
+import crypto from 'crypto';
 import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 
 export const apiRouter = express.Router();
 
 const SESSION_CACHE_FILE = '/tmp/aeropulse-runtime-session.json';
-const STRAVA_ARCHIVE_CACHE_FILE = '/tmp/aeropulse-strava-archive.json';
-const PLANNED_EVENTS_CACHE_FILE = '/tmp/aeropulse-planned-events.json';
 const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-segments-by-activity.json';
 const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-routes-by-activity.json';
 const STRAVA_KUDOS_CACHE_FILE = '/tmp/aeropulse-strava-kudos.json';
+
+function getScopedPlannedEventsFile(req?: Request, explicitApiKey?: string): string | null {
+  const rawIdentity = (
+    explicitApiKey ||
+    (req ? String(req.headers['x-intervals-api-key'] || '').trim() : '') ||
+    (req ? String(req.headers['x-strava-refresh-token'] || '').trim() : '') ||
+    (req ? String(req.headers['x-strava-access-token'] || '').trim() : '')
+  ).trim();
+  if (!rawIdentity) return null;
+  const hash = crypto.createHash('sha256').update(rawIdentity).digest('hex').slice(0, 16);
+  return `/tmp/aeropulse-planned-events-${hash}.json`;
+}
 
 function decodeGooglePolyline(encoded: string): [number, number][] {
   if (!encoded || typeof encoded !== 'string') return [];
@@ -520,21 +531,17 @@ async function generateGeminiContentWithFallback(
 }
 
 function getEffectiveIntervalsConfig(req?: Request) {
-  const headerKey = req?.headers['x-intervals-api-key'] as string | undefined;
-  const headerAthlete = req?.headers['x-intervals-athlete-id'] as string | undefined;
-  const apiKey = (
-    headerKey ||
-    runtimeStore.intervalsApiKey ||
-    process.env.INTERVALS_API_KEY ||
-    ''
-  ).trim();
+  if (req) {
+    const headerKey = (req.headers['x-intervals-api-key'] as string | undefined) || '';
+    const headerAthlete = (req.headers['x-intervals-athlete-id'] as string | undefined) || '0';
+    return {
+      apiKey: headerKey.trim(),
+      athleteId: headerAthlete.trim() || '0',
+    };
+  }
+  const apiKey = (runtimeStore.intervalsApiKey || process.env.INTERVALS_API_KEY || '').trim();
   const athleteId =
-    (
-      headerAthlete ||
-      runtimeStore.intervalsAthleteId ||
-      process.env.INTERVALS_ATHLETE_ID ||
-      '0'
-    ).trim() || '0';
+    (runtimeStore.intervalsAthleteId || process.env.INTERVALS_ATHLETE_ID || '0').trim() || '0';
   return { apiKey, athleteId };
 }
 
@@ -556,37 +563,39 @@ function getEffectiveStravaClientConfig(req?: Request) {
     process.env.STRAVA_CLIENT_SECRET ||
     ''
   ).trim();
+  if (req) {
+    return {
+      clientId,
+      clientSecret,
+      refreshToken: (headerRefreshToken || '').trim(),
+      accessToken: (headerAccessToken || '').trim(),
+      expiresAt: headerExpiresAt > 0 ? headerExpiresAt : 0,
+    };
+  }
   const refreshToken = (
-    headerRefreshToken ||
     runtimeStore.stravaRefreshToken ||
     process.env.STRAVA_REFRESH_TOKEN ||
     ''
   ).trim();
   const accessToken = (
-    headerAccessToken ||
     runtimeStore.stravaAccessToken ||
     process.env.STRAVA_ACCESS_TOKEN ||
     ''
   ).trim();
-  const expiresAt =
-    runtimeStore.stravaExpiresAt > 0
-      ? runtimeStore.stravaExpiresAt
-      : headerExpiresAt > 0
-        ? headerExpiresAt
-        : 0;
+  const expiresAt = runtimeStore.stravaExpiresAt > 0 ? runtimeStore.stravaExpiresAt : 0;
   return { clientId, clientSecret, refreshToken, accessToken, expiresAt };
 }
 
-function getStravaTokenRotationPayload() {
-  if (!runtimeStore.stravaRefreshToken && !runtimeStore.stravaAccessToken) {
+function getStravaTokenRotationPayload(req?: Request) {
+  const { clientId, refreshToken, accessToken, expiresAt } = getEffectiveStravaClientConfig(req);
+  if (!refreshToken && !accessToken) {
     return undefined;
   }
   return {
-    accessToken: runtimeStore.stravaAccessToken || undefined,
-    refreshToken: runtimeStore.stravaRefreshToken || undefined,
-    expiresAt: runtimeStore.stravaExpiresAt || undefined,
-    clientId: runtimeStore.stravaClientId || undefined,
-    clientSecret: runtimeStore.stravaClientSecret || undefined,
+    accessToken: accessToken || runtimeStore.stravaAccessToken || undefined,
+    refreshToken: refreshToken || runtimeStore.stravaRefreshToken || undefined,
+    expiresAt: expiresAt || runtimeStore.stravaExpiresAt || undefined,
+    clientId: clientId || undefined,
     athleteName: runtimeStore.stravaAthleteName || undefined,
   };
 }
@@ -594,23 +603,25 @@ function getStravaTokenRotationPayload() {
 async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false): Promise<string> {
   const { clientId, clientSecret, refreshToken, accessToken, expiresAt } =
     getEffectiveStravaClientConfig(req);
+  if (!accessToken && !refreshToken) {
+    return '';
+  }
   if (clientId && !runtimeStore.stravaClientId) runtimeStore.stravaClientId = clientId;
   if (clientSecret && !runtimeStore.stravaClientSecret)
     runtimeStore.stravaClientSecret = clientSecret;
-  if (refreshToken && !runtimeStore.stravaRefreshToken)
-    runtimeStore.stravaRefreshToken = refreshToken;
-  if (accessToken && !runtimeStore.stravaAccessToken) runtimeStore.stravaAccessToken = accessToken;
-  if (expiresAt > 0 && !runtimeStore.stravaExpiresAt) runtimeStore.stravaExpiresAt = expiresAt;
+
+  let activeAccessToken = accessToken;
+  let activeRefreshToken = refreshToken;
+  let activeExpiresAt = expiresAt;
 
   const nowSecs = Math.floor(Date.now() / 1000);
-  // Refresh if forced (e.g. after 401), missing access token, unknown expiry on Vercel cold start, or within 5 mins of expiry
   const needsRefresh =
     forceRefresh ||
-    !runtimeStore.stravaAccessToken ||
-    runtimeStore.stravaExpiresAt === 0 ||
-    nowSecs >= runtimeStore.stravaExpiresAt - 300;
+    !activeAccessToken ||
+    activeExpiresAt === 0 ||
+    nowSecs >= activeExpiresAt - 300;
 
-  if (needsRefresh && runtimeStore.stravaRefreshToken && clientId && clientSecret) {
+  if (needsRefresh && activeRefreshToken && clientId && clientSecret) {
     try {
       const refreshResp = await fetch('https://www.strava.com/oauth/token', {
         method: 'POST',
@@ -619,7 +630,7 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
           client_id: clientId,
           client_secret: clientSecret,
           grant_type: 'refresh_token',
-          refresh_token: runtimeStore.stravaRefreshToken,
+          refresh_token: activeRefreshToken,
         }),
       });
       if (refreshResp.ok) {
@@ -629,10 +640,17 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
           expires_at: number;
           athlete?: { firstname?: string; lastname?: string };
         };
-        runtimeStore.stravaAccessToken = refreshed.access_token;
-        runtimeStore.stravaRefreshToken =
-          refreshed.refresh_token || runtimeStore.stravaRefreshToken;
-        runtimeStore.stravaExpiresAt = refreshed.expires_at;
+        activeAccessToken = refreshed.access_token;
+        activeRefreshToken = refreshed.refresh_token || activeRefreshToken;
+        activeExpiresAt = refreshed.expires_at;
+        runtimeStore.stravaAccessToken = activeAccessToken;
+        runtimeStore.stravaRefreshToken = activeRefreshToken;
+        runtimeStore.stravaExpiresAt = activeExpiresAt;
+        if (req) {
+          req.headers['x-strava-access-token'] = activeAccessToken;
+          req.headers['x-strava-refresh-token'] = activeRefreshToken;
+          req.headers['x-strava-expires-at'] = String(activeExpiresAt);
+        }
         if (refreshed.athlete) {
           const name = [refreshed.athlete.firstname, refreshed.athlete.lastname]
             .filter(Boolean)
@@ -645,7 +663,7 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
       // fallback to existing accessToken if network error
     }
   }
-  return runtimeStore.stravaAccessToken;
+  return activeAccessToken;
 }
 
 function resolveCallbackUrl(req: Request): string {
@@ -770,46 +788,48 @@ apiRouter.get('/api/config/status', (req: Request, res: Response) => {
         ? 'THUNDERFOREST'
         : 'OSM_KEYLESS');
 
-  const hasIntervalsEnv = Boolean(
-    process.env.INTERVALS_API_KEY && process.env.INTERVALS_API_KEY.trim()
-  );
   const hasStravaEnv = Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
   const effectiveGeminiKey = getEffectiveGeminiApiKey(req);
   if (effectiveGeminiKey && !runtimeStore.geminiApiKey) {
     runtimeStore.geminiApiKey = effectiveGeminiKey;
   }
   const hasGeminiServerKey = Boolean(effectiveGeminiKey);
+  const isIntervalsConnected = Boolean(intervalsKey);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
+  const isCallerAuthenticated = isIntervalsConnected || isStravaConnected;
 
   res.json({
-    intervalsConnected: Boolean(intervalsKey),
-    intervalsAthleteId: athleteId,
-    intervalsAthleteName: runtimeStore.intervalsAthleteName || undefined,
-    intervalsSource: hasIntervalsEnv ? 'ENV' : intervalsKey ? 'USER_INPUT' : 'NONE',
+    intervalsConnected: isIntervalsConnected,
+    intervalsAthleteId: isIntervalsConnected ? athleteId : '0',
+    intervalsAthleteName: isIntervalsConnected
+      ? runtimeStore.intervalsAthleteName || undefined
+      : undefined,
+    intervalsSource: isIntervalsConnected ? 'USER_INPUT' : 'NONE',
     stravaConfigured: Boolean(stravaClientId),
     stravaClientId: stravaClientId || undefined,
     stravaConnected: isStravaConnected,
-    stravaAthleteName: runtimeStore.stravaAthleteName || undefined,
+    stravaAthleteName: isStravaConnected ? runtimeStore.stravaAthleteName || undefined : undefined,
     stravaSource: isStravaConnected ? 'OAUTH' : hasStravaEnv ? 'ENV' : 'NONE',
     hasGeminiServerKey,
-    lastSyncedAt: runtimeStore.lastSyncedAt,
-    nextHourlySyncAt: runtimeStore.nextHourlySyncAt,
+    lastSyncedAt: isCallerAuthenticated ? runtimeStore.lastSyncedAt : undefined,
+    nextHourlySyncAt: isCallerAuthenticated ? runtimeStore.nextHourlySyncAt : undefined,
     autoSyncCronActive: true,
-    totalActivitiesCount: runtimeStore.totalActivitiesCount,
-    earliestActivityDate: runtimeStore.earliestActivityDate,
-    garminActivitiesCount: runtimeStore.garminActivitiesCount,
-    stravaActivitiesCount: runtimeStore.stravaActivitiesCount,
-    redactedStravaCount: runtimeStore.redactedStravaCount,
-    athleteFtp: runtimeStore.athleteFtp,
-    athleteIndoorFtp: runtimeStore.athleteIndoorFtp,
-    athleteRunFtp: runtimeStore.athleteRunFtp,
-    athleteLthr: runtimeStore.athleteLthr,
-    athleteMaxHr: runtimeStore.athleteMaxHr,
-    athleteProfile:
-      runtimeStore.athleteProfile || buildServerAthleteProfile(null, null),
-    gearItems: runtimeStore.gearItems,
+    totalActivitiesCount: isCallerAuthenticated ? runtimeStore.totalActivitiesCount : 0,
+    earliestActivityDate: isCallerAuthenticated ? runtimeStore.earliestActivityDate : '',
+    garminActivitiesCount: isCallerAuthenticated ? runtimeStore.garminActivitiesCount : 0,
+    stravaActivitiesCount: isCallerAuthenticated ? runtimeStore.stravaActivitiesCount : 0,
+    redactedStravaCount: isCallerAuthenticated ? runtimeStore.redactedStravaCount : 0,
+    athleteFtp: isCallerAuthenticated ? runtimeStore.athleteFtp : 280,
+    athleteIndoorFtp: isCallerAuthenticated ? runtimeStore.athleteIndoorFtp : 280,
+    athleteRunFtp: isCallerAuthenticated ? runtimeStore.athleteRunFtp : 340,
+    athleteLthr: isCallerAuthenticated ? runtimeStore.athleteLthr : 163,
+    athleteMaxHr: isCallerAuthenticated ? runtimeStore.athleteMaxHr : 182,
+    athleteProfile: isCallerAuthenticated
+      ? runtimeStore.athleteProfile || buildServerAthleteProfile(null, null)
+      : undefined,
+    gearItems: isCallerAuthenticated ? runtimeStore.gearItems : [],
     callbackUrl: resolveCallbackUrl(req),
-    stravaTokens: getStravaTokenRotationPayload(),
+    stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
     mapTileApiKey: effectiveMapKey || undefined,
@@ -822,8 +842,6 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
     const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
     if (!apiKey) {
       const fallbackProfile = buildServerAthleteProfile(req.body?.overrides || null, null);
-      runtimeStore.athleteProfile = fallbackProfile;
-      saveSessionCache();
       res.json({ ok: true, athleteProfile: fallbackProfile, mode: 'SANDBOX' });
       return;
     }
@@ -902,13 +920,6 @@ apiRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
     { ...incoming, source: 'CUSTOM_OVERRIDE' },
     null
   );
-  runtimeStore.athleteFtp = updated.ftp;
-  runtimeStore.athleteIndoorFtp = updated.indoorFtp;
-  runtimeStore.athleteRunFtp = updated.runFtp;
-  runtimeStore.athleteLthr = updated.lthr;
-  runtimeStore.athleteMaxHr = updated.maxHr;
-  runtimeStore.athleteProfile = updated;
-  saveSessionCache();
 
   res.json({
     ok: true,
@@ -964,6 +975,10 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     refreshToken: stravaRefreshToken,
     accessToken: stravaAccessToken,
   } = getEffectiveStravaClientConfig(req);
+  if (!intervalsApiKey && !stravaRefreshToken && !stravaAccessToken) {
+    res.status(401).json({ error: 'Authentication required to export connection bundle.' });
+    return;
+  }
   const mapTileApiKey = (
     (req.headers['x-map-tile-api-key'] as string | undefined) ||
     runtimeStore.mapTileApiKey ||
@@ -1084,15 +1099,15 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
     res.json({
       imported: true,
       credentials: {
-        geminiApiKey: runtimeStore.geminiApiKey,
-        intervalsApiKey: runtimeStore.intervalsApiKey,
-        intervalsAthleteId: runtimeStore.intervalsAthleteId,
-        stravaClientId: runtimeStore.stravaClientId,
-        stravaClientSecret: runtimeStore.stravaClientSecret,
-        stravaRefreshToken: runtimeStore.stravaRefreshToken,
-        stravaAccessToken: runtimeStore.stravaAccessToken,
-        mapTileProvider: runtimeStore.mapTileProvider,
-        mapTileApiKey: runtimeStore.mapTileApiKey,
+        geminiApiKey: parsed.geminiApiKey,
+        intervalsApiKey: parsed.intervalsApiKey,
+        intervalsAthleteId: parsed.intervalsAthleteId || '0',
+        stravaClientId: parsed.stravaClientId,
+        stravaClientSecret: parsed.stravaClientSecret,
+        stravaRefreshToken: parsed.stravaRefreshToken,
+        stravaAccessToken: parsed.stravaAccessToken,
+        mapTileProvider: parsed.mapTileProvider,
+        mapTileApiKey: parsed.mapTileApiKey,
       },
     });
   } catch (err) {
@@ -1110,8 +1125,8 @@ apiRouter.post('/api/config/import-bundle', (req: Request, res: Response) => {
 // ----------------------------------------------------------------------------
 apiRouter.post('/api/intervals/connect', async (req: Request, res: Response) => {
   try {
-    const apiKey = (req.body?.apiKey || process.env.INTERVALS_API_KEY || '').trim();
-    const athleteId = (req.body?.athleteId || process.env.INTERVALS_ATHLETE_ID || '0').trim() || '0';
+    const apiKey = String(req.body?.apiKey || '').trim();
+    const athleteId = String(req.body?.athleteId || '0').trim() || '0';
 
     if (!apiKey) {
       res.status(400).json({ error: 'Please provide a valid Intervals.icu Personal API Key.' });
@@ -1471,7 +1486,13 @@ async function syncIntervalsAllHistory(
   });
 
   // Enrich & reconstruct Strava-originated Virtual Cycling / Trainer sessions from Strava cache or Intervals.icu daily wellness residual load
-  const cachedStravaArchive = loadJsonFile<Record<string, any>[]>(STRAVA_ARCHIVE_CACHE_FILE, []);
+  const icuStravaAthleteId = String(parsedRawProfile?.strava_id || '').replace(/[^0-9]/g, '');
+  const cachedStravaArchive = icuStravaAthleteId
+    ? loadJsonFile<Record<string, any>[]>(
+        `/tmp/aeropulse-strava-archive-${icuStravaAthleteId}.json`,
+        []
+      )
+    : [];
   const stravaArchiveById = new Map<string, Record<string, any>>();
   for (const sa of cachedStravaArchive) {
     if (sa && sa.id) stravaArchiveById.set(String(sa.id), sa);
@@ -1970,7 +1991,8 @@ async function syncIntervalsAllHistory(
   rankSegmentEffortsAcrossActivities(activities);
 
   // Merge user-created local planned workouts with Intervals.icu calendar events
-  const localPlanned = loadJsonFile<any[]>(PLANNED_EVENTS_CACHE_FILE, []);
+  const scopedPlannedFile = getScopedPlannedEventsFile(undefined, apiKey);
+  const localPlanned = scopedPlannedFile ? loadJsonFile<any[]>(scopedPlannedFile, []) : [];
   const icuPlanned = rawEvents
     .filter((ev) => ev && ev.start_date_local)
     .map((ev) => {
@@ -2336,6 +2358,14 @@ apiRouter.post('/api/segments/scan-more', async (req: Request, res: Response) =>
     saveJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, segmentsCache);
     saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
 
+    const ownedIds = new Set(rawActivities.map((a) => String(a?.id || '')).filter(Boolean));
+    const scopedSegments: Record<string, any[]> = {};
+    const scopedRoutes: Record<string, [number, number][]> = {};
+    for (const id of ownedIds) {
+      if (Array.isArray(segmentsCache[id])) scopedSegments[id] = segmentsCache[id];
+      if (Array.isArray(routesCache[id])) scopedRoutes[id] = routesCache[id];
+    }
+
     res.json({
       scannedCount,
       remainingUnscannedCount: Math.max(
@@ -2344,9 +2374,9 @@ apiRouter.post('/api/segments/scan-more', async (req: Request, res: Response) =>
           (a) => a && a.has_segments && !Array.isArray(segmentsCache[String(a.id)])
         ).length
       ),
-      totalCachedActivities: Object.keys(segmentsCache).length,
-      segmentsByActivity: segmentsCache,
-      routesByActivity: routesCache,
+      totalCachedActivities: Object.keys(scopedSegments).length,
+      segmentsByActivity: scopedSegments,
+      routesByActivity: scopedRoutes,
     });
   } catch (error) {
     res.status(500).json({
@@ -2525,8 +2555,13 @@ apiRouter.get('/api/intervals/activities/:id/streams', async (req: Request, res:
 // ----------------------------------------------------------------------------
 // 3. Training Calendar Planned Events API (Local + Sync to Intervals.icu / Garmin)
 // ----------------------------------------------------------------------------
-apiRouter.get('/api/calendar/events', (_req: Request, res: Response) => {
-  const localPlanned = loadJsonFile<any[]>(PLANNED_EVENTS_CACHE_FILE, []);
+apiRouter.get('/api/calendar/events', (req: Request, res: Response) => {
+  const scopedFile = getScopedPlannedEventsFile(req);
+  if (!scopedFile) {
+    res.json({ events: [] });
+    return;
+  }
+  const localPlanned = loadJsonFile<any[]>(scopedFile, []);
   res.json({ events: localPlanned });
 });
 
@@ -2563,9 +2598,13 @@ apiRouter.post('/api/calendar/events', async (req: Request, res: Response) => {
       source: body.source || 'USER',
     };
 
-    const existing = loadJsonFile<any[]>(PLANNED_EVENTS_CACHE_FILE, []);
-    const updated = [newEvent, ...existing];
-    saveJsonFile(PLANNED_EVENTS_CACHE_FILE, updated);
+    const scopedFile = getScopedPlannedEventsFile(req);
+    let updated = [newEvent];
+    if (scopedFile) {
+      const existing = loadJsonFile<any[]>(scopedFile, []);
+      updated = [newEvent, ...existing];
+      saveJsonFile(scopedFile, updated);
+    }
 
     // Also push to Intervals.icu Calendar if connected and requested
     const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
@@ -2614,10 +2653,15 @@ apiRouter.post('/api/calendar/events', async (req: Request, res: Response) => {
 });
 
 apiRouter.delete('/api/calendar/events/:id', (req: Request, res: Response) => {
+  const scopedFile = getScopedPlannedEventsFile(req);
+  if (!scopedFile) {
+    res.json({ deleted: true, events: [] });
+    return;
+  }
   const id = req.params.id;
-  const existing = loadJsonFile<any[]>(PLANNED_EVENTS_CACHE_FILE, []);
+  const existing = loadJsonFile<any[]>(scopedFile, []);
   const updated = existing.filter((e) => e.id !== id);
-  saveJsonFile(PLANNED_EVENTS_CACHE_FILE, updated);
+  saveJsonFile(scopedFile, updated);
   res.json({ deleted: true, events: updated });
 });
 
@@ -2853,7 +2897,19 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
       return;
     }
 
-    await exchangeStravaAuthCode(code, req);
+    const tokenData = await exchangeStravaAuthCode(code, req);
+    const { clientId } = getEffectiveStravaClientConfig(req);
+    const oauthPayloadJson = JSON.stringify({
+      type: 'OAUTH_AUTH_SUCCESS',
+      provider: 'strava',
+      tokens: {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: tokenData.expires_at,
+        clientId: clientId || undefined,
+        athleteName: runtimeStore.stravaAthleteName || undefined,
+      },
+    });
 
     res.send(`
       <!doctype html>
@@ -2863,25 +2919,38 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
           <div style="background: #111827; border: 1px solid #1E293B; border-radius: 12px; padding: 28px; max-width: 420px;">
             <h2 style="margin: 0 0 8px; color: #10B981; font-size: 18px;">Strava Connected Successfully</h2>
             <p style="margin: 0 0 18px; color: #94A3B8; font-size: 13px; line-height: 1.5;">
-              AeroPulse is now syncing your complete Strava history in the main application window. You can close this popup window.
+              THRESH is now syncing your complete Strava history in the main application window. You can close this popup window.
             </p>
             <button onclick="window.close()" style="background: #FC4C02; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 600; font-size: 13px; cursor: pointer;">
               Close Popup Window
             </button>
           </div>
           <script>
-            try {
-              if (window.opener) {
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', provider: 'strava' }, '*');
-              }
-            } catch (e) {}
-            try {
-              var bc = new BroadcastChannel('aeropulse_oauth');
-              bc.postMessage({ type: 'OAUTH_AUTH_SUCCESS', provider: 'strava' });
-            } catch (e) {}
-            setTimeout(function() {
-              try { window.close(); } catch (e) {}
-            }, 600);
+            (function() {
+              var payload = ${oauthPayloadJson};
+              try {
+                if (payload.tokens) {
+                  if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
+                  if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
+                  if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
+                  if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
+                  localStorage.removeItem('aeropulse_logged_out');
+                  localStorage.setItem('aeropulse_auth_gate_passed', '1');
+                }
+              } catch (e) {}
+              try {
+                if (window.opener) {
+                  window.opener.postMessage(payload, '*');
+                }
+              } catch (e) {}
+              try {
+                var bc = new BroadcastChannel('aeropulse_oauth');
+                bc.postMessage(payload);
+              } catch (e) {}
+              setTimeout(function() {
+                try { window.close(); } catch (e) {}
+              }, 600);
+            })();
           </script>
         </body>
       </html>
@@ -2904,28 +2973,25 @@ apiRouter.get(
 );
 
 async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly = false) {
-  await ensureValidStravaAccessToken(req, false);
+  let activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
-  if (!runtimeStore.stravaAccessToken) {
+  if (!activeAccessToken) {
     throw new Error('Strava is not connected via OAuth yet.');
   }
 
-  let headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
-  const cachedArchive = loadJsonFile<Record<string, any>[]>(STRAVA_ARCHIVE_CACHE_FILE, []);
-
+  let headers = { Authorization: `Bearer ${activeAccessToken}` };
   let rawActivitiesMap = new Map<string, Record<string, any>>();
-  for (const item of cachedArchive) {
-    if (item && item.id) rawActivitiesMap.set(String(item.id), item);
-  }
+  let scopedArchiveFile = '';
 
   // Probe page 1 first so if the token was stale after a Vercel cold start, we immediately refresh once and retry
   let firstPageResp = await fetch(
     'https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1',
     { headers }
   );
-  if (firstPageResp.status === 401 && runtimeStore.stravaRefreshToken) {
-    await ensureValidStravaAccessToken(req, true);
-    headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+  const { refreshToken: callerRefreshToken } = getEffectiveStravaClientConfig(req);
+  if (firstPageResp.status === 401 && callerRefreshToken) {
+    activeAccessToken = await ensureValidStravaAccessToken(req, true);
+    headers = { Authorization: `Bearer ${activeAccessToken}` };
     firstPageResp = await fetch(
       'https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1',
       { headers }
@@ -2950,10 +3016,19 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
   } else {
     const firstPageItems = (await firstPageResp.json()) as Record<string, any>[];
     if (Array.isArray(firstPageItems)) {
+      const stravaAthleteId = String(firstPageItems[0]?.athlete?.id || '').replace(/[^0-9]/g, '');
+      if (stravaAthleteId) {
+        scopedArchiveFile = `/tmp/aeropulse-strava-archive-${stravaAthleteId}.json`;
+        const cachedArchive = loadJsonFile<Record<string, any>[]>(scopedArchiveFile, []);
+        for (const item of cachedArchive) {
+          if (item && item.id) rawActivitiesMap.set(String(item.id), item);
+        }
+      }
+      const existingCachedCount = rawActivitiesMap.size;
       for (const item of firstPageItems) {
         if (item && item.id) rawActivitiesMap.set(String(item.id), item);
       }
-      const shouldPaginateAll = cachedArchive.length <= 200 || !deltaOnly || forceFull;
+      const shouldPaginateAll = existingCachedCount <= 200 || !deltaOnly || forceFull;
       if (shouldPaginateAll && firstPageItems.length === 200) {
         for (let batchStart = 2; batchStart <= 30; batchStart += 3) {
           const pages = [batchStart, batchStart + 1, batchStart + 2];
@@ -2990,8 +3065,8 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     (a, b) =>
       new Date(b.start_date_local || 0).getTime() - new Date(a.start_date_local || 0).getTime()
   );
-  if (activitiesList.length > 0) {
-    saveJsonFile(STRAVA_ARCHIVE_CACHE_FILE, activitiesList);
+  if (activitiesList.length > 0 && scopedArchiveFile) {
+    saveJsonFile(scopedArchiveFile, activitiesList);
   }
 
   const starredResp = firstPageResp.ok
@@ -3279,7 +3354,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
   return {
     athleteName: runtimeStore.stravaAthleteName,
     activities: normalizedStravaActivities,
-    stravaTokens: getStravaTokenRotationPayload(),
+    stravaTokens: getStravaTokenRotationPayload(req),
     starredSegments: starredSegments.map((s) => ({
       segmentId: String(s.id),
       name: String(s.name),
@@ -3308,15 +3383,15 @@ apiRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
 
 apiRouter.get('/api/strava/activities/:id/streams', async (req: Request, res: Response) => {
   try {
-    await ensureValidStravaAccessToken(req, false);
+    const activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
-    if (!runtimeStore.stravaAccessToken) {
+    if (!activeAccessToken) {
       res.status(401).json({ error: 'Strava is not connected.' });
       return;
     }
 
     const activityId = req.params.id;
-    const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+    const headers = { Authorization: `Bearer ${activeAccessToken}` };
     const [streamsResp, detailResp, kudosResp] = await Promise.all([
       fetch(
         `https://www.strava.com/api/v3/activities/${encodeURIComponent(activityId)}/streams?keys=time,distance,latlng,watts,heartrate,velocity_smooth,cadence,altitude&key_by_type=true`,
@@ -3460,43 +3535,10 @@ apiRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: Resp
       >
     >(STRAVA_KUDOS_CACHE_FILE, {});
 
-    const { clientId, clientSecret, refreshToken, accessToken } = getEffectiveStravaClientConfig(req);
-    if (accessToken && !runtimeStore.stravaAccessToken) runtimeStore.stravaAccessToken = accessToken;
-    if (refreshToken && !runtimeStore.stravaRefreshToken) runtimeStore.stravaRefreshToken = refreshToken;
+    const activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
-    const nowSecs = Math.floor(Date.now() / 1000);
-    if (
-      (!runtimeStore.stravaAccessToken ||
-        (runtimeStore.stravaExpiresAt > 0 && nowSecs >= runtimeStore.stravaExpiresAt - 60)) &&
-      runtimeStore.stravaRefreshToken &&
-      clientId &&
-      clientSecret
-    ) {
-      const refreshResp = await fetch('https://www.strava.com/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: 'refresh_token',
-          refresh_token: runtimeStore.stravaRefreshToken,
-        }),
-      });
-      if (refreshResp.ok) {
-        const refreshed = (await refreshResp.json()) as {
-          access_token: string;
-          refresh_token: string;
-          expires_at: number;
-        };
-        runtimeStore.stravaAccessToken = refreshed.access_token;
-        runtimeStore.stravaRefreshToken = refreshed.refresh_token || runtimeStore.stravaRefreshToken;
-        runtimeStore.stravaExpiresAt = refreshed.expires_at;
-        saveSessionCache();
-      }
-    }
-
-    if (runtimeStore.stravaAccessToken && /^\d+$/.test(stravaId)) {
-      const headers = { Authorization: `Bearer ${runtimeStore.stravaAccessToken}` };
+    if (activeAccessToken && /^\d+$/.test(stravaId)) {
+      const headers = { Authorization: `Bearer ${activeAccessToken}` };
       const [kResp, cResp] = await Promise.all([
         fetch(
           `https://www.strava.com/api/v3/activities/${encodeURIComponent(stravaId)}/kudos?per_page=100`,
@@ -3591,12 +3633,7 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
       comments: [],
     };
 
-    const resolvedName =
-      req.body?.authorName ||
-      athleteName ||
-      runtimeStore.stravaAthleteName ||
-      runtimeStore.intervalsAthleteName ||
-      'AeroPulse Athlete';
+    const resolvedName = req.body?.authorName || athleteName || 'THRESH Athlete';
     const [first, ...rest] = String(resolvedName).trim().split(' ');
     const last = rest.join(' ') || '';
 
@@ -3624,7 +3661,7 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
           existingKudoers.unshift({
             firstname: first,
             lastname: last,
-            city: 'AeroPulse Club',
+            city: 'THRESH Club',
           });
         }
       } else {
@@ -3655,14 +3692,17 @@ apiRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
 apiRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Response) => {
   try {
     const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    if (!apiKey) {
+      res.status(401).json({
+        error: 'Intervals.icu API Key is required to hydrate GPS routes.',
+        routesByActivity: {},
+      });
+      return;
+    }
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
       ROUTES_BY_ACTIVITY_CACHE_FILE,
       {}
     );
-    if (!apiKey) {
-      res.json({ routesByActivity: routesCache });
-      return;
-    }
     const authHeader = 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
     let activityIds: string[] = Array.isArray(req.body?.activityIds)
       ? req.body.activityIds.map(String).slice(0, 32)
@@ -3731,7 +3771,13 @@ apiRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Respo
       );
     }
     saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
-    res.json({ routesByActivity: routesCache });
+    const scopedRoutes: Record<string, [number, number][]> = {};
+    for (const id of activityIds) {
+      if (Array.isArray(routesCache[id])) {
+        scopedRoutes[id] = routesCache[id];
+      }
+    }
+    res.json({ routesByActivity: scopedRoutes });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to hydrate GPS routes',

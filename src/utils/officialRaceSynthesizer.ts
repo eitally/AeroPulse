@@ -524,7 +524,7 @@ export function synthesizeOfficialRaceActivity(
  * Sample Athletic.net / TFRRS / MileSplit season dataset for 1-click inspection
  * or when testing watchless track & XC race imports.
  */
-export const SAMPLE_OFFICIAL_TRACK_SEASON_TEXT = `Athletic.net / TFRRS Official Season Results — Elliot Tally
+export const SAMPLE_OFFICIAL_TRACK_SEASON_TEXT = `Athletic.net / TFRRS Official Season Results — Alex Mercer
 2026-10-24 | Bay Area Track Club Twilight | 800m | 1:56.38a | 2nd (Final) | Outdoor 400m | Splits: 56.92, 59.46 | Athletic.net
 2026-10-10 | Pacific Collegiate Invitational | 1500m | 3:56.84a | 3rd (Heat 1) | Outdoor 400m | Splits: 46.8, 63.4, 64.1, 62.54 | TFRRS
 2026-09-26 | Stanford Cobb Track Mile Night | 1600m | 4:16.42a | 1st (PR) | Outdoor 400m | Splits: 63.10, 64.85, 65.22, 63.25 | Athletic.net

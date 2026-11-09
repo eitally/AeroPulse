@@ -89,7 +89,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     athleteName ||
     status.stravaAthleteName ||
     status.intervalsAthleteName ||
-    'Elliot';
+    'Athlete';
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -147,7 +147,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       onEnterSandbox();
       return;
     }
-    const cleanName = newAthleteName.trim() || 'AeroPulse Athlete';
+    const cleanName = newAthleteName.trim() || 'THRESH Athlete';
     const ftp = Math.max(100, Math.min(600, Number(newAthleteFtp) || 280));
     const weightKg = Math.max(35, Math.min(160, Number(newAthleteWeightKg) || 68.5));
     const thresholdPaceSecsPerKm = parsePaceToSecsPerKm(newAthletePaceMinKm);
@@ -179,7 +179,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             onClick={onEnterSandbox}
             className="text-xs font-mono text-[#0B4F9E] dark:text-[#38BDF8] hover:text-slate-900 dark:hover:text-white bg-[#0B4F9E]/10 dark:bg-[#38BDF8]/10 hover:bg-[#0B4F9E]/20 border border-[#0B4F9E]/25 dark:border-[#38BDF8]/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-semibold"
           >
-            <span>{hasSavedSession ? `Resume as ${resolvedAthleteName}` : 'Enter Live Sandbox'}</span>
+            <span>{hasSavedSession ? `Resume as ${resolvedAthleteName}` : 'Try Demo Sandbox'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -225,7 +225,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 Follow Athletes &amp; Prescribe Workouts
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Connect via shareable invite codes (<span className="font-mono text-slate-800 dark:text-slate-300">AP-8492-TALLY</span>). Friends get read-only telemetry; Coaches can schedule structured workouts onto your calendar.
+                Connect via shareable invite codes (<span className="font-mono text-slate-800 dark:text-slate-300">TH-8492-DEMO</span>). Friends get read-only telemetry; Coaches can schedule structured workouts onto your calendar.
               </p>
             </div>
 
@@ -725,7 +725,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   className="w-full py-2.5 px-4 rounded-lg liquid-glass-subtle hover:bg-stone-200/60 dark:hover:bg-[#1C222C] border border-stone-300 dark:border-slate-800 hover:border-[#38BDF8]/50 text-slate-900 dark:text-slate-100 font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-sky-600 dark:text-[#38BDF8]" />
-                  <span>Enter Live Athlete &amp; Coach Sandbox (Instant Demo Bypass)</span>
+                  <span>Try Demo Sandbox (Sample Telemetry Only)</span>
                   <ArrowRight className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                 </button>
               )}
@@ -746,9 +746,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       </main>
 
       {/* Bottom Status Bar */}
-      <footer className="border-t border-stone-200/90 dark:border-slate-800/80 bg-[#FAF8F5] dark:bg-[#0D1015] px-6 py-3 flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+      <footer className="border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-[#0D1015] px-6 py-3 flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-slate-500 dark:text-slate-400">
         <div className="flex items-center gap-4">
-          <span>AEROPULSE TELEMETRY ENGINE v4.2</span>
+          <span>THRESH TELEMETRY ENGINE v4.2</span>
           <span>•</span>
           <span>STRAVA API COMPLIANT PRIVACY SHIELD</span>
         </div>
