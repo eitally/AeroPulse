@@ -1154,6 +1154,17 @@ async function resolveIntervalsAthleteIdentity(req?: Request) {
 }
 
 function resolveCallbackUrl(req: Request): string {
+  const explicitRedirect = (process.env.STRAVA_REDIRECT_URI || '').trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+    } catch {
+      // fall through
+    }
+  }
   const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
   if (safeOrigin) {
     return `${safeOrigin}/auth/strava/callback`;

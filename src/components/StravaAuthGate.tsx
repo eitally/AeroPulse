@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import {
   Activity,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   ShieldCheck,
   Database,
   ExternalLink,
@@ -15,6 +19,7 @@ import { AeroPulseLogo } from './AeroPulseLogo';
 interface StravaAuthGateProps {
   status: ConnectionStatus;
   onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
+  onExchangeStravaCode?: (codeOrUrl: string) => Promise<void>;
   onDisconnectCredentials?: () => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
@@ -23,26 +28,54 @@ interface StravaAuthGateProps {
 export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   status,
   onLaunchStravaOAuth,
+  onExchangeStravaCode,
   onDisconnectCredentials,
   isSyncing,
   errorMessage,
 }) => {
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [showRedirectHelp, setShowRedirectHelp] = useState(false);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+  const [manualCodeInput, setManualCodeInput] = useState('');
+  const [isExchanging, setIsExchanging] = useState(false);
+
+  const currentHostname =
+    typeof window !== 'undefined' ? window.location.hostname : 'your-app.vercel.app';
 
   const hasSavedDeviceData = Boolean(
     status.stravaConnected || status.intervalsConnected || status.garminConnected
   );
 
-  const handleStravaLaunchClick = async () => {
+  const handleStravaLaunchClick = async (mode: 'cloud' | 'localhost' = 'cloud') => {
     setIsRedirecting(true);
     try {
-      await onLaunchStravaOAuth('cloud');
+      await onLaunchStravaOAuth(mode);
     } finally {
       setIsRedirecting(false);
     }
   };
 
-  const busy = isSyncing || isRedirecting;
+  const handleCopyDomain = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(currentHostname).catch(() => {});
+      setCopiedDomain(true);
+      window.setTimeout(() => setCopiedDomain(false), 2000);
+    }
+  };
+
+  const handleManualExchangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onExchangeStravaCode || !manualCodeInput.trim()) return;
+    setIsExchanging(true);
+    try {
+      await onExchangeStravaCode(manualCodeInput.trim());
+      setManualCodeInput('');
+    } finally {
+      setIsExchanging(false);
+    }
+  };
+
+  const busy = isSyncing || isRedirecting || isExchanging;
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#0B0C0F] text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-[#EA580C]/30 selection:text-white">
@@ -163,7 +196,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             <div className="space-y-4">
               <button
                 type="button"
-                onClick={handleStravaLaunchClick}
+                onClick={() => handleStravaLaunchClick('cloud')}
                 disabled={busy}
                 className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] disabled:opacity-60 text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-[#FC4C02]/25 transition-all cursor-pointer"
               >
@@ -215,6 +248,101 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </span>
                   </li>
                 </ul>
+              </div>
+
+              {/* Collapsible redirect_uri helper & localhost whitelist bypass */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowRedirectHelp((prev) => !prev)}
+                  className="w-full flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors cursor-pointer py-1"
+                >
+                  <span>Seeing a Strava &quot;redirect_uri invalid&quot; error?</span>
+                  {showRedirectHelp ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {showRedirectHelp && (
+                  <div className="mt-2 rounded-xl liquid-glass-subtle border border-stone-200/90 dark:border-slate-800 p-3.5 space-y-3 text-xs">
+                    <div className="space-y-1.5">
+                      <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                        <strong>1. For 1-click Cloud &amp; Mobile PWA login:</strong> In{' '}
+                        <a
+                          href="https://www.strava.com/settings/api"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#FC4C02] underline font-medium"
+                        >
+                          strava.com/settings/api
+                        </a>
+                        , set <strong>Authorization Callback Domain</strong> to this exact bare hostname (no <code className="font-mono">https://</code> or path):
+                      </p>
+                      <div className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#14181F] border border-stone-200 dark:border-slate-800 px-2.5 py-1.5 font-mono text-[11px]">
+                        <span className="truncate text-slate-900 dark:text-slate-100 font-semibold">
+                          {currentHostname}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyDomain}
+                          className="shrink-0 inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-sky-400 hover:underline cursor-pointer"
+                        >
+                          {copiedDomain ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-500" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {onExchangeStravaCode && (
+                      <form
+                        onSubmit={handleManualExchangeSubmit}
+                        className="pt-2.5 border-t border-stone-200/80 dark:border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-700 dark:text-slate-300 font-semibold">
+                            2. Or sign in now via Strava&apos;s whitelisted <code className="font-mono">localhost</code> flow:
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleStravaLaunchClick('localhost')}
+                          disabled={busy}
+                          className="w-full min-h-[34px] rounded-lg border border-[#FC4C02]/40 bg-[#FC4C02]/10 hover:bg-[#FC4C02]/20 text-[#FC4C02] font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>1. Open Strava Auth Popup (localhost)</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={manualCodeInput}
+                            onChange={(e) => setManualCodeInput(e.target.value)}
+                            placeholder="2. Paste http://localhost/exchange_token?code=... URL"
+                            className="flex-1 min-h-[34px] rounded-lg bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 px-2.5 py-1.5 text-[11px] font-mono text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#FC4C02]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={busy || !manualCodeInput.trim()}
+                            className="min-h-[34px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-xs transition-colors cursor-pointer shrink-0"
+                          >
+                            Sign In
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

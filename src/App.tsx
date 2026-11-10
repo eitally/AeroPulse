@@ -3018,6 +3018,9 @@ export default function App() {
           onLaunchStravaOAuth={async (mode = 'cloud') => {
             await handleLaunchStravaOAuth(mode);
           }}
+          onExchangeStravaCode={async (codeOrUrl) => {
+            await handleExchangeStravaCode(codeOrUrl);
+          }}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
