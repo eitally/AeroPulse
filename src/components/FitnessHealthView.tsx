@@ -39,6 +39,8 @@ import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 import {
   computeDualSportPmcSeries,
   evaluateOrthopedicInterference,
+  evaluatePlannedVsCompletedCompliance,
+  generateWeeklyTrainingGitDiff,
 } from '../physiology';
 
 interface FitnessHealthViewProps {
@@ -203,6 +205,30 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     const todayPlanned = plannedEvents.filter((p) => (p.date || '').slice(0, 10) === todayIso);
     return evaluateOrthopedicInterference(activities, athleteProfile, todayPlanned, todayIso);
   }, [activities, athleteProfile, plannedEvents, todayIso]);
+
+  const complianceRecords = useMemo(
+    () => evaluatePlannedVsCompletedCompliance(plannedEvents, activities, todayIso),
+    [plannedEvents, activities, todayIso]
+  );
+
+  const todayCompliance = useMemo(
+    () => complianceRecords.find((c) => c.date === todayIso) || null,
+    [complianceRecords, todayIso]
+  );
+
+  const [isGitDiffOpen, setIsGitDiffOpen] = useState<boolean>(false);
+  const [gitDiffAppliedToast, setGitDiffAppliedToast] = useState<string | null>(null);
+
+  const weeklyGitDiffProposal = useMemo(() => {
+    if (!orthopedicSummary) return null;
+    const latestW = wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : null;
+    return generateWeeklyTrainingGitDiff({
+      plannedEvents,
+      latestWellness: latestW,
+      orthopedicSummary,
+      todayIso,
+    });
+  }, [plannedEvents, wellnessDays, orthopedicSummary, todayIso]);
 
   const latestDay = wellnessDays[wellnessDays.length - 1] || {
     date: todayIso,
@@ -796,6 +822,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold uppercase ap-status-prime">
                 Session Complete · {todayIso}
               </span>
+              {todayCompliance && todayCompliance.matchedActivityId && (
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold ap-status-info">
+                  {todayCompliance.summaryLabel}
+                </span>
+              )}
               <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 {todayCompletedActivities.map((a) => a.name).join(' + ')}
               </span>
@@ -990,6 +1021,163 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           {orthoSwappedToast && (
             <div className="rounded-xl ap-status-prime px-3 py-2 text-xs font-medium">
               {orthoSwappedToast}
+            </div>
+          )}
+
+          {/* 10x #3: 6:00 AM Autonomous Morph & Weekly Training Git-Diff */}
+          {weeklyGitDiffProposal && (
+            <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="ap-status-info px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                    Weekly Training Git-Diff
+                  </span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {weeklyGitDiffProposal.triggerReason}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] tabular-nums">
+                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
+                    ΔTSS{' '}
+                    <strong>
+                      {weeklyGitDiffProposal.netTssDelta >= 0
+                        ? `+${weeklyGitDiffProposal.netTssDelta}`
+                        : weeklyGitDiffProposal.netTssDelta}
+                    </strong>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
+                    ΔCTL{' '}
+                    <strong>
+                      {weeklyGitDiffProposal.netCtlDelta >= 0
+                        ? `+${weeklyGitDiffProposal.netCtlDelta}`
+                        : weeklyGitDiffProposal.netCtlDelta}
+                    </strong>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
+                    ΔTSB{' '}
+                    <strong>
+                      {weeklyGitDiffProposal.netTsbDelta >= 0
+                        ? `+${weeklyGitDiffProposal.netTsbDelta}`
+                        : weeklyGitDiffProposal.netTsbDelta}
+                    </strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsGitDiffOpen((prev) => !prev)}
+                    className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-sans font-semibold text-slate-800 dark:text-slate-100 transition-colors"
+                  >
+                    {isGitDiffOpen ? 'Hide 7-Day Diff ▲' : 'Inspect 7-Day Diff ▼'}
+                  </button>
+                </div>
+              </div>
+
+              {isGitDiffOpen && (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-2.5 text-xs">
+                  <div className="space-y-1.5 font-mono">
+                    {weeklyGitDiffProposal.dayChanges.map((dayChange) => {
+                      const isChanged = dayChange.changeType !== 'UNCHANGED';
+                      return (
+                        <div
+                          key={dayChange.date}
+                          className={`rounded-lg px-3 py-2 border ${
+                            isChanged
+                              ? 'border-blue-500/35 bg-blue-500/5 dark:bg-sky-500/10'
+                              : 'border-slate-200/70 dark:border-slate-800/80'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {dayChange.dayLabel}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                dayChange.changeType === 'MODIFIED'
+                                  ? 'ap-status-caution'
+                                  : dayChange.changeType === 'SWAPPED'
+                                    ? 'ap-status-info'
+                                    : 'ap-status-prime'
+                              }`}
+                            >
+                              {dayChange.changeType}
+                            </span>
+                          </div>
+                          {isChanged ? (
+                            <div className="mt-1 space-y-0.5 text-[11px]">
+                              <div className="text-rose-600 dark:text-rose-400 line-through">
+                                - {dayChange.originalTitle} ({dayChange.originalSport} ·{' '}
+                                {dayChange.originalDurationMins}m · {dayChange.originalTss} TSS)
+                              </div>
+                              <div className="text-emerald-700 dark:text-emerald-300 font-semibold">
+                                + {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
+                                {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
+                              </div>
+                              <div className="font-sans text-slate-600 dark:text-slate-400 pt-0.5">
+                                {dayChange.reason}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                              = {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
+                              {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {onSyncMorphedToCalendar && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <span className="text-[11px] text-slate-500">
+                        Commits modified/swapped sessions directly to your Training Plan calendar.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const changed = weeklyGitDiffProposal.dayChanges.filter(
+                            (d) => d.changeType !== 'UNCHANGED'
+                          );
+                          const targets =
+                            changed.length > 0 ? changed : [weeklyGitDiffProposal.dayChanges[0]];
+                          for (const item of targets) {
+                            await onSyncMorphedToCalendar({
+                              date: item.date,
+                              name: item.proposedTitle,
+                              sportCategory: item.proposedSport,
+                              environmentPreference: 'FLEXIBLE',
+                              plannedDurationSecs: item.proposedDurationMins * 60,
+                              plannedLoad: item.proposedTss,
+                              workoutSyntax:
+                                item.proposedWorkoutSyntax ||
+                                `Warmup\n- 10m 55%-68%\n\nMain Set\n- ${Math.max(
+                                  15,
+                                  item.proposedDurationMins - 20
+                                )}m 72%-82%\n\nCooldown\n- 10m 50%-60%`,
+                              description: item.reason,
+                              replaceExistingDate: true,
+                            });
+                          }
+                          setGitDiffAppliedToast(
+                            `Committed ${targets.length} weekly schedule adjustment${
+                              targets.length === 1 ? '' : 's'
+                            } to your Training Plan.`
+                          );
+                          window.setTimeout(() => setGitDiffAppliedToast(null), 4500);
+                        }}
+                        className="ap-btn-primary px-3.5 text-xs"
+                      >
+                        Commit Weekly Git-Diff to Plan
+                      </button>
+                    </div>
+                  )}
+
+                  {gitDiffAppliedToast && (
+                    <div className="rounded-lg ap-status-prime px-3 py-1.5 text-xs font-medium">
+                      {gitDiffAppliedToast}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>

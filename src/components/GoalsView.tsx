@@ -46,6 +46,8 @@ import {
 } from '../utils/officialRaceSynthesizer';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
+import { simulateCoursePacingAndFueling } from '../physiology/raceSimulator';
 
 export interface PlannedEventBatchItem {
   date: string;
@@ -373,6 +375,43 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       maxRecommendedMeters: item.maxRecommendedMeters || (item.type === 'BIKE' ? 8000000 : 643738),
     }));
   }, [gearItems]);
+
+  // 10x #4: Course Physics, Durability, Weather & Carb/Sodium Race Simulator State
+  const [simSport, setSimSport] = useState<'Cycling' | 'Running'>('Running');
+  const [simRaceName, setSimRaceName] = useState<string>('Half Marathon / Gran Fondo A-Race');
+  const [simDistKm, setSimDistKm] = useState<number>(21.1);
+  const [simElevM, setSimElevM] = useState<number>(185);
+  const [simTempC, setSimTempC] = useState<number>(18);
+  const [simAltM, setSimAltM] = useState<number>(250);
+
+  const raceSimulationReport = useMemo(() => {
+    const prof = athleteProfile || buildCompleteAthleteProfile({});
+    const durReport = computeFatigueSlicedDurability({
+      discipline: simSport,
+      activities,
+      streamMap: new Map(),
+      athleteProfile: prof,
+    });
+    return simulateCoursePacingAndFueling({
+      sport: simSport,
+      raceName: simRaceName,
+      distanceKm: simDistKm,
+      elevationGainMeters: simElevM,
+      ambientTempC: simTempC,
+      altitudeMeters: simAltM,
+      athleteProfile: prof,
+      durabilityReport: durReport,
+    });
+  }, [
+    simSport,
+    simRaceName,
+    simDistKm,
+    simElevM,
+    simTempC,
+    simAltM,
+    athleteProfile,
+    activities,
+  ]);
 
   // Live Running Race Time Predictor & Cycling FTP Trajectory Model
   const raceAndFtpPredictions = useMemo(() => {
@@ -3036,6 +3075,225 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             </button>
           </div>
         </form>
+      </section>
+
+      {/* 10x #4 — Integrated Course Physics, Durability, Weather & Carb/Sodium Race Simulator */}
+      <section className="rounded-2xl liquid-glass p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold">
+                10x #4 · Race Physics &amp; Fueling Simulator
+              </span>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Course Elevation, Heat/Altitude &amp; Carbohydrate/Sodium Pacer
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Derates segment power/pace caps by course climb grade, ambient heat, altitude hypoxia, and your personal `kJ/kg` / `kcal` durability curve.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
+            {(['Running', 'Cycling'] as const).map((sp) => (
+              <button
+                key={sp}
+                type="button"
+                onClick={() => {
+                  setSimSport(sp);
+                  if (sp === 'Cycling' && simDistKm < 30) {
+                    setSimDistKm(112);
+                    setSimElevM(1450);
+                  } else if (sp === 'Running' && simDistKm > 45) {
+                    setSimDistKm(21.1);
+                    setSimElevM(185);
+                  }
+                }}
+                className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                  simSport === sp
+                    ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                {sp === 'Running' ? 'Road / Trail Run' : 'Road / Gravel / TT Bike'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Course & Environmental Controls + Quick Presets */}
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-xs">
+          <div className="col-span-2">
+            <label className="block text-[11px] text-slate-500 mb-1">Event / Course Name</label>
+            <input
+              type="text"
+              value={simRaceName}
+              onChange={(e) => setSimRaceName(e.target.value)}
+              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">Distance (km)</label>
+            <input
+              type="number"
+              min={1.5}
+              max={400}
+              step={0.1}
+              value={simDistKm}
+              onChange={(e) => setSimDistKm(Math.max(1.5, Number(e.target.value) || 5))}
+              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">Elevation Gain (m)</label>
+            <input
+              type="number"
+              min={0}
+              max={8000}
+              step={25}
+              value={simElevM}
+              onChange={(e) => setSimElevM(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">Ambient Temp (°C)</label>
+            <input
+              type="number"
+              min={-5}
+              max={45}
+              step={1}
+              value={simTempC}
+              onChange={(e) => setSimTempC(Number(e.target.value) || 15)}
+              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">Mean Altitude (m)</label>
+            <input
+              type="number"
+              min={0}
+              max={4000}
+              step={100}
+              value={simAltM}
+              onChange={(e) => setSimAltM(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+            />
+          </div>
+        </div>
+
+        {/* Summary KPI Strip: Finish Time, Target Output, Derating Breakdown, and Hourly Fueling */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono tabular-nums">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              Predicted Finish Time
+            </div>
+            <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
+              {formatDuration(raceSimulationReport.predictedFinishTimeSecs)}
+            </div>
+            <div className="text-[11px] text-blue-600 dark:text-sky-400">
+              {raceSimulationReport.sport === 'Cycling'
+                ? `Avg ${raceSimulationReport.averageTargetWatts ?? 0}W · NP ${
+                    raceSimulationReport.normalizedTargetWatts ?? 0
+                  }W`
+                : `Avg ${formatPace(
+                    raceSimulationReport.averageTargetPaceSecsPerKm ?? 250,
+                    distanceUnit
+                  )}`}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              Environmental &amp; Durability Derating
+            </div>
+            <div className="mt-0.5 text-sm font-bold text-amber-600 dark:text-amber-400">
+              Heat -{raceSimulationReport.thermalDeratingPct}% · Alt -
+              {raceSimulationReport.altitudeDeratingPct}%
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Durability Fade Cap: -{raceSimulationReport.durabilityDeratingPct}%
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              Carbohydrate Oxidation Target
+            </div>
+            <div className="mt-0.5 text-base font-bold text-emerald-600 dark:text-emerald-400">
+              {raceSimulationReport.fuelingPlan.carbsGramsPerHour} g/hr ({' '}
+              {raceSimulationReport.fuelingPlan.totalCarbsGrams}g total)
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {raceSimulationReport.fuelingPlan.glucoseFructoseRatio} · ~
+              {raceSimulationReport.fuelingPlan.gelEquivalentsCount} gels
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              Sodium &amp; Sweat Replacement
+            </div>
+            <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
+              {raceSimulationReport.fuelingPlan.sodiumMgPerHour} mg/hr Na+
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {raceSimulationReport.fuelingPlan.fluidMlPerHour} mL/hr fluid ·{' '}
+              {raceSimulationReport.fuelingPlan.caffeineMgRecommendation}mg Caf
+            </div>
+          </div>
+        </div>
+
+        {/* 5-Segment Pacing & Fueling Execution Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                <th className="py-2 px-3">Course Segment</th>
+                <th className="py-2 px-3 text-right">Grade / Fatigue</th>
+                <th className="py-2 px-3 text-right">Target Cap</th>
+                <th className="py-2 px-3 text-right">Split Time</th>
+                <th className="py-2 px-3 text-right">Segment Fueling</th>
+                <th className="py-2 px-3">Tactical Coaching Cue</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
+              {raceSimulationReport.segments.map((seg) => (
+                <tr
+                  key={seg.segmentIndex}
+                  className="hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                >
+                  <td className="py-2.5 px-3 font-sans font-semibold text-slate-900 dark:text-slate-100">
+                    {seg.segmentLabel}{' '}
+                    <span className="font-mono text-[11px] text-slate-500">
+                      ({seg.startKm}–{seg.endKm} km)
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-600 dark:text-slate-300">
+                    {seg.avgGradePct}% · {seg.accumulatedFatigueLabel}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-bold text-blue-600 dark:text-sky-400">
+                    {raceSimulationReport.sport === 'Cycling'
+                      ? `${seg.targetWatts ?? 0}W (${seg.targetWkg ?? 0} W/kg)`
+                      : `${formatPace(seg.targetPaceSecsPerKm ?? 250, distanceUnit)} (GAP ${formatPace(
+                          seg.targetGapSecsPerKm ?? 245,
+                          distanceUnit
+                        )})`}
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-800 dark:text-slate-200">
+                    {formatDuration(seg.segmentDurationSecs)}
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-emerald-700 dark:text-emerald-300">
+                    {seg.carbsGramsTarget}g CHO · {seg.sodiumMgTarget}mg Na+ · {seg.fluidMlTarget}mL
+                  </td>
+                  <td className="py-2.5 px-3 font-sans text-slate-600 dark:text-slate-300">
+                    {seg.coachingCue}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

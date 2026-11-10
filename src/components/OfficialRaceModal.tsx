@@ -21,7 +21,8 @@ import {
   OfficialTrackSurface,
   UnifiedActivity,
 } from '../types';
-import { formatPace } from '../utils/formatters';
+import { formatDuration, formatPace } from '../utils/formatters';
+import { generateVerifiedRacePassport } from '../physiology/raceRubberBander';
 import {
   computeJackDanielsVdot,
   computeOfficialRaceTrainingLoad,
@@ -80,6 +81,8 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   const [quickSplitDistance, setQuickSplitDistance] = useState<200 | 400 | 1000>(400);
   const [quickSplitsInput, setQuickSplitsInput] = useState<string>('56.82, 59.02');
   const [quickIncludeWarmup, setQuickIncludeWarmup] = useState<boolean>(true);
+  const [rawGpsDistanceInput, setRawGpsDistanceInput] = useState<string>('814');
+  const [copiedPassport, setCopiedPassport] = useState<boolean>(false);
 
   const selectedQuickEventDef = useMemo(
     () =>
@@ -93,6 +96,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
     const def = OFFICIAL_RACE_EVENTS.find((e) => e.label === label);
     if (!def) return;
     setQuickSplitDistance(def.defaultSplitMeters);
+    setRawGpsDistanceInput(String(Math.round(def.distanceMeters * 1.016)));
 
     const presetTimes: Record<string, { time: string; splits: string; surface: OfficialTrackSurface }> = {
       '400m': { time: '50.84', splits: '24.60, 26.24', surface: 'OUTDOOR_400M' },
@@ -166,6 +170,32 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
     quickSplitDistance,
     quickIncludeWarmup,
   ]);
+
+  const verifiedPassport = useMemo(
+    () =>
+      generateVerifiedRacePassport({
+        athleteName: athleteProfile?.name || 'THRESH Athlete',
+        meetOrRaceName: quickMeetName,
+        eventLabel: selectedQuickEventDef.label,
+        platform: quickPlatform,
+        raceDate: quickDate,
+        certifiedDistanceMeters: selectedQuickEventDef.distanceMeters,
+        rawGpsDistanceMeters:
+          Number(rawGpsDistanceInput) || Math.round(selectedQuickEventDef.distanceMeters * 1.015),
+        officialChipOrFatSecs: quickRaceAnalytics.fatTimeSecs,
+        officialSplitsSecs: quickRaceAnalytics.splits,
+      }),
+    [
+      athleteProfile?.name,
+      quickMeetName,
+      selectedQuickEventDef,
+      quickPlatform,
+      quickDate,
+      rawGpsDistanceInput,
+      quickRaceAnalytics.fatTimeSecs,
+      quickRaceAnalytics.splits,
+    ]
+  );
 
   if (!isOpen) return null;
 
@@ -838,6 +868,88 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     />
                     <span>Include Race-Day Warmup &amp; Cooldown (+32 TSS / 3.5 mi)</span>
                   </label>
+                </div>
+              </div>
+
+              {/* 10x #6: GPS-to-Official Chip/FAT Rubber-Bander & Shareable THRESH Verified Race Passport */}
+              <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/80 p-4 space-y-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="ap-status-prime px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                        10x #6 · Verified Race Passport
+                      </span>
+                      <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                        ID: {verifiedPassport.verificationHash}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Rubber-bands raw GPS watch drift to certified USATF/World Athletics course markers &amp; official FAT mats.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-mono text-slate-500">
+                      Watch GPS Dist (m):
+                    </label>
+                    <input
+                      type="number"
+                      min={200}
+                      max={100000}
+                      value={rawGpsDistanceInput}
+                      onChange={(e) => setRawGpsDistanceInput(e.target.value)}
+                      className="w-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const summaryText = `THRESH VERIFIED RACE PASSPORT [${verifiedPassport.verificationHash}]\n${verifiedPassport.athleteName} · ${verifiedPassport.meetOrRaceName} (${verifiedPassport.raceDate})\nEvent: ${verifiedPassport.eventLabel} (${verifiedPassport.certifiedDistanceMeters}m certified vs ${verifiedPassport.rawGpsDistanceMeters}m GPS, ${verifiedPassport.gpsDriftPct >= 0 ? '+' : ''}${verifiedPassport.gpsDriftPct}% drift)\nOfficial FAT/Chip: ${verifiedPassport.displayOfficialTime} · VDOT ${verifiedPassport.vdotScore.toFixed(1)} · Certified Pace ${formatPace(Math.round(verifiedPassport.certifiedPaceSecsPerKm), distanceUnit)}`;
+                        navigator.clipboard.writeText(summaryText);
+                        setCopiedPassport(true);
+                        window.setTimeout(() => setCopiedPassport(false), 2500);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors whitespace-nowrap"
+                    >
+                      {copiedPassport ? '✓ Copied Passport' : 'Copy Shareable Passport'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono tabular-nums">
+                  <div className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5">
+                    <div className="text-[10px] text-slate-500">Certified vs. GPS Drift</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {verifiedPassport.certifiedDistanceMeters}m / {verifiedPassport.rawGpsDistanceMeters}m
+                    </div>
+                    <div className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {verifiedPassport.gpsDriftPct >= 0
+                        ? `+${verifiedPassport.gpsDriftPct}% GPS over-read`
+                        : `${verifiedPassport.gpsDriftPct}% GPS under-read`}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5">
+                    <div className="text-[10px] text-slate-500">Certified Official Pace</div>
+                    <div className="font-bold text-blue-600 dark:text-sky-400 mt-0.5">
+                      {formatPace(Math.round(verifiedPassport.certifiedPaceSecsPerKm), distanceUnit)}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      {verifiedPassport.displayOfficialTime} ({verifiedPassport.platform})
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5">
+                    <div className="text-[10px] text-slate-500">Verified VDOT</div>
+                    <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {verifiedPassport.vdotScore.toFixed(1)} VDOT
+                    </div>
+                    <div className="text-[11px] text-slate-500">Jack Daniels O2 Index</div>
+                  </div>
+                  <div className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5">
+                    <div className="text-[10px] text-slate-500">Equiv. Marathon Potential</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {formatDuration(verifiedPassport.equivalentMarathonSecs)}
+                    </div>
+                    <div className="text-[11px] text-slate-500">42.195 km Riegel projection</div>
+                  </div>
                 </div>
               </div>
 

@@ -338,6 +338,101 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           {/* TAB 1: TEAM & FRIENDS ROSTER LEADERBOARD */}
           {activeTab === 'LEADERBOARD' && (
             <div className="space-y-5">
+              {/* Exception-Based Coach & Club 6:00 AM Triage Inbox */}
+              <div className="rounded-xl border border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="ap-status-caution px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                        Coach Triage Inbox · 6:00 AM Exception Scan
+                      </span>
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                        Autonomic HRV &amp; Orthopedic Guardrail Exceptions
+                      </h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Surfaces only athletes with suppressed overnight rMSSD, deep negative TSB (&lt;-20), or elevated running impact ACWR so coaches can approve morphed workouts in 1 click.
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
+                    {connectedRoster.length} Connected Athlete{connectedRoster.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {connectedRoster.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-stone-300 dark:border-slate-800 px-4 py-3 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      No coached athletes connected yet. Share your invite code ({selfInviteCode}) or connect an athlete in the Follow tab to activate morning exception triage.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('CONNECT_INVITE')}
+                      className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs whitespace-nowrap"
+                    >
+                      + Connect Athlete
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {connectedRoster.map((ath) => {
+                      const latestW =
+                        ath.wellnessDays && ath.wellnessDays.length > 0
+                          ? ath.wellnessDays[ath.wellnessDays.length - 1]
+                          : null;
+                      const tsb = latestW?.tsb ?? 0;
+                      const hrv = latestW?.hrvRMSSD ?? 60;
+                      const isStrained = tsb < -20 || hrv < 48;
+                      return (
+                        <div
+                          key={`triage-${ath.id}`}
+                          className="rounded-lg border border-stone-200 dark:border-slate-800 p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  isStrained ? 'ap-status-strained' : 'ap-status-prime'
+                                }`}
+                              >
+                                {isStrained ? 'Action Needed' : 'Green Readiness'}
+                              </span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {ath.name}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                              HRV {Math.round(hrv)}ms · TSB {tsb >= 0 ? `+${Math.round(tsb)}` : Math.round(tsb)} ·{' '}
+                              {ath.primarySport}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onPushCoachWorkout(ath.id, {
+                                date: workoutDate,
+                                name: 'Coach Approved: Autonomous Z2 Recovery Morph',
+                                sportCategory: 'Cycling',
+                                plannedDurationSecs: 45 * 60,
+                                plannedLoad: 38,
+                                workoutSyntax: '- 10m 55% FTP\n- 25m 68% FTP 92rpm\n- 10m 50% FTP',
+                                description:
+                                  '1-click Coach Triage approval: swapped high-impact session to zero-impact Z2 recovery spin.',
+                              });
+                              setPushSuccessBanner(
+                                `Approved autonomous Z2 morph for ${ath.name} (${workoutDate}).`
+                              );
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] whitespace-nowrap"
+                          >
+                            1-Click Approve Z2 Morph
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="overflow-x-auto rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -409,8 +504,17 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         {selfProfile.ftp}W ({(selfProfile.ftp / Math.max(40, selfProfile.weightKg)).toFixed(2)} W/kg)
                       </td>
                       <td className="py-3.5 px-3">
-                        <div className="text-xs text-slate-900 dark:text-white font-medium">Sub-20 5K / 350W FTP</div>
-                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">Active Plan Architect</div>
+                        <div className="text-xs text-slate-900 dark:text-white font-medium">
+                          {selfProfile.ftp}W FTP ·{' '}
+                          {Math.floor((selfProfile.thresholdPaceSecsPerKm || 245) / 60)}:
+                          {String(
+                            Math.round((selfProfile.thresholdPaceSecsPerKm || 245) % 60)
+                          ).padStart(2, '0')}
+                          /km LT
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                          Active Plan Architect
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button

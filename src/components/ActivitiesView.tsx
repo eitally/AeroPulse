@@ -26,6 +26,7 @@ import {
   PlannedWorkoutEvent,
   SportCategory,
   UnifiedActivity,
+  WorkoutQuickLog,
 } from '../types';
 import {
   formatDistance,
@@ -207,6 +208,42 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [archiveImportProgress, setArchiveImportProgress] =
     useState<ArchiveImportProgress | null>(null);
   const [archiveImportBanner, setArchiveImportBanner] = useState<string | null>(null);
+  const [quickLogsById, setQuickLogsById] = useState<Record<string, WorkoutQuickLog>>(() => {
+    try {
+      const raw = localStorage.getItem('thresh_quick_logs_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [quickLogSavedMsg, setQuickLogSavedMsg] = useState<string | null>(null);
+
+  const saveQuickLogForActivity = (actId: string, patch: Partial<WorkoutQuickLog>) => {
+    setQuickLogsById((prev) => {
+      const existing = prev[actId] || {
+        rpe: 6,
+        feelRating: 'NORMAL' as const,
+        carbsGramsPerHour: 60,
+        sodiumMgPerHour: 500,
+        gearName: '',
+        loggedAt: new Date().toISOString(),
+      };
+      const updated: WorkoutQuickLog = {
+        ...existing,
+        ...patch,
+        loggedAt: new Date().toISOString(),
+      };
+      const next = { ...prev, [actId]: updated };
+      try {
+        localStorage.setItem('thresh_quick_logs_v1', JSON.stringify(next));
+      } catch {
+        // ignore quota errors
+      }
+      return next;
+    });
+    setQuickLogSavedMsg('Saved to Durability & Fueling ledger');
+    window.setTimeout(() => setQuickLogSavedMsg(null), 2600);
+  };
   const plannedByDate = useMemo(() => {
     const map = new Map<string, PlannedWorkoutEvent[]>();
     for (const ev of plannedEvents) {
@@ -3761,6 +3798,133 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   heightClass="h-[340px] sm:h-[400px]"
                 />
               )}
+
+              {/* 5-Second Post-Workout RPE, Fueling (g/hr Carbs & mg/hr Sodium) & Gear Quick-Log */}
+              {(() => {
+                const curLog = quickLogsById[selectedActivity.id] ||
+                  selectedActivity.quickLog || {
+                    rpe: 6,
+                    feelRating: 'NORMAL' as const,
+                    carbsGramsPerHour: selectedActivity.sportCategory === 'Cycling' ? 75 : 60,
+                    sodiumMgPerHour: 550,
+                    gearName: selectedActivity.gearName || '',
+                    loggedAt: '',
+                  };
+                return (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/60 p-3.5 space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="ap-status-prime px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                          5s Post-Workout Quick-Log
+                        </span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">
+                          RPE, Exogenous Fueling (`g/hr` · `mg/hr`) &amp; Gear Tag
+                        </span>
+                      </div>
+                      {quickLogSavedMsg ? (
+                        <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                          ✓ {quickLogSavedMsg}
+                        </span>
+                      ) : curLog.loggedAt ? (
+                        <span className="font-mono text-[11px] text-slate-400">
+                          Logged {new Date(curLog.loggedAt).toLocaleDateString()}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                      {/* 1-Tap RPE 1–10 Selector */}
+                      <div className="sm:col-span-5 flex flex-wrap items-center gap-1">
+                        <span className="text-[11px] font-mono text-slate-500 mr-1">RPE:</span>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() =>
+                              saveQuickLogForActivity(selectedActivity.id, { rpe: val })
+                            }
+                            className={`w-6 h-6 rounded-md font-mono text-[11px] font-bold transition-colors ${
+                              curLog.rpe === val
+                                ? val >= 8
+                                  ? 'bg-rose-600 text-white'
+                                  : val >= 5
+                                    ? 'bg-amber-500 text-white'
+                                    : 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Carbs g/hr */}
+                      <div className="sm:col-span-2 flex items-center gap-1.5">
+                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                          Carbs:
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={150}
+                          step={5}
+                          value={curLog.carbsGramsPerHour ?? 60}
+                          onChange={(e) =>
+                            saveQuickLogForActivity(selectedActivity.id, {
+                              carbsGramsPerHour: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-16 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                        />
+                        <span className="text-[10px] font-mono text-slate-400">g/hr</span>
+                      </div>
+
+                      {/* Sodium mg/hr */}
+                      <div className="sm:col-span-2 flex items-center gap-1.5">
+                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                          Na+:
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={2000}
+                          step={50}
+                          value={curLog.sodiumMgPerHour ?? 500}
+                          onChange={(e) =>
+                            saveQuickLogForActivity(selectedActivity.id, {
+                              sodiumMgPerHour: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-16 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                        />
+                        <span className="text-[10px] font-mono text-slate-400">mg/h</span>
+                      </div>
+
+                      {/* Gear / Shoe Tag */}
+                      <div className="sm:col-span-3 flex items-center gap-1.5">
+                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                          Gear:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={
+                            selectedActivity.sportCategory === 'Cycling'
+                              ? 'e.g. Road / Trainer Bike'
+                              : 'e.g. Daily Trainer / Carbon Shoe'
+                          }
+                          value={curLog.gearName ?? ''}
+                          onChange={(e) =>
+                            saveQuickLogForActivity(selectedActivity.id, {
+                              gearName: e.target.value,
+                            })
+                          }
+                          className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* High-Frequency 1Hz uPlot Telemetry Canvas + Web Worker Analytics Strip */}
               {(() => {

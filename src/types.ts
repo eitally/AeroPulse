@@ -256,6 +256,7 @@ export interface UnifiedActivity {
   intervals?: ActivityInterval[];
   streams?: ActivityStreamSet;
   officialRaceData?: OfficialRaceMetadata;
+  quickLog?: WorkoutQuickLog;
   sourceBadges: ActivitySourceBadge[];
 }
 
@@ -613,6 +614,179 @@ export interface PostWorkoutDebriefReport {
   bestHrr60Bpm: number | null;
   insights: PostWorkoutDebriefInsight[];
 }
+
+// ============================================================================
+// HORIZON 2 & 3: COMPLIANCE, WEEKLY GIT-DIFF, DURABILITY, RACE SIM & PASSPORTS
+// ============================================================================
+
+export interface WorkoutQuickLog {
+  rpe: number; // 1–10 Borg CR10
+  feelRating: 'STRONG' | 'NORMAL' | 'HEAVY' | 'DEPLETED';
+  carbsGramsPerHour?: number;
+  sodiumMgPerHour?: number;
+  hydrationMl?: number;
+  gearName?: string;
+  notes?: string;
+  loggedAt: string;
+}
+
+export interface PlannedWorkoutCompliance {
+  date: string;
+  plannedEventId: string;
+  plannedName: string;
+  plannedSport: SportCategory;
+  plannedDurationMins: number;
+  plannedTss: number;
+  matchedActivityId: string | null;
+  matchedActivityName: string | null;
+  actualDurationMins: number;
+  actualTss: number;
+  durationAdherencePct: number;
+  loadAdherencePct: number;
+  complianceScore: number; // 0–100
+  status:
+    | 'COMPLETED_ON_TARGET'
+    | 'MODIFIED_COMPLETED'
+    | 'PARTIAL'
+    | 'MISSED'
+    | 'UPCOMING';
+  summaryLabel: string;
+}
+
+export interface WeeklyGitDiffDayChange {
+  date: string;
+  dayLabel: string;
+  changeType: 'MODIFIED' | 'SWAPPED' | 'UNCHANGED';
+  originalEventId?: string;
+  originalTitle: string;
+  originalSport: SportCategory;
+  originalDurationMins: number;
+  originalTss: number;
+  proposedTitle: string;
+  proposedSport: SportCategory;
+  proposedDurationMins: number;
+  proposedTss: number;
+  proposedWorkoutSyntax?: string;
+  reason: string;
+}
+
+export interface WeeklyGitDiffProposal {
+  generatedAt: string;
+  triggerReason: string;
+  readinessVerdict: 'GREEN_PRIME' | 'AMBER_ADAPT' | 'RED_GUARDRAIL';
+  netTssDelta: number;
+  netCtlDelta: number;
+  netTsbDelta: number;
+  dayChanges: WeeklyGitDiffDayChange[];
+}
+
+export interface DurabilityBucketPoint {
+  bucketIndex: number;
+  fatigueThresholdValue: number; // e.g. 0, 10, 20, 30, 40 (kJ/kg) or 0, 500, 1000, 1500, 2000 (kcal)
+  fatigueLabel: string; // e.g. "0 kJ/kg (Fresh)" or "1,000 kcal"
+  best5mWatts: number | null;
+  best20mWatts: number | null;
+  best5mGapSecsPerKm: number | null;
+  best20mGapSecsPerKm: number | null;
+  retentionPct: number; // 100% at bucket 0 -> e.g. 94.2% at 30 kJ/kg
+  heartRateDriftPct: number;
+  sampleCount: number;
+}
+
+export interface DurabilityAnalysisReport {
+  discipline: 'Cycling' | 'Running';
+  unitLabel: 'kJ/kg' | 'kcal';
+  buckets: DurabilityBucketPoint[];
+  retentionAtDeepFatiguePct: number;
+  decaySlopePerUnitPct: number;
+  durabilityTier: 'PRO_TOUR_RESILIENT' | 'WELL_CONDITIONED' | 'MODERATE_FADE' | 'GLYCOGEN_FRAGILE';
+  primaryLimiter:
+    | 'HIGH_DURABILITY_RETENTION'
+    | 'GLYCOGEN_DEPLETION'
+    | 'THERMAL_CARDIAC_DRIFT'
+    | 'NEUROMUSCULAR_DECAY';
+  limiterExplanation: string;
+  fuelingPrescription: string;
+}
+
+export interface RaceSimulationSegment {
+  segmentIndex: number;
+  segmentLabel: string; // e.g. "Km 0–10 (Opening Settling)"
+  startKm: number;
+  endKm: number;
+  avgGradePct: number;
+  accumulatedFatigueLabel: string;
+  targetWatts: number | null;
+  targetWkg: number | null;
+  targetPaceSecsPerKm: number | null;
+  targetGapSecsPerKm: number | null;
+  segmentDurationSecs: number;
+  carbsGramsTarget: number;
+  sodiumMgTarget: number;
+  fluidMlTarget: number;
+  coachingCue: string;
+}
+
+export interface RaceFuelingPlan {
+  carbsGramsPerHour: number;
+  totalCarbsGrams: number;
+  glucoseFructoseRatio: '2:1 Dual-Source' | '1:0.8 High-Oxidation' | 'Single-Source';
+  sodiumMgPerHour: number;
+  totalSodiumMg: number;
+  fluidMlPerHour: number;
+  totalFluidMl: number;
+  gelEquivalentsCount: number;
+  caffeineMgRecommendation: number;
+}
+
+export interface RaceSimulationReport {
+  sport: 'Cycling' | 'Running';
+  raceName: string;
+  distanceKm: number;
+  elevationGainMeters: number;
+  ambientTempC: number;
+  altitudeMeters: number;
+  predictedFinishTimeSecs: number;
+  averageTargetWatts: number | null;
+  normalizedTargetWatts: number | null;
+  averageTargetPaceSecsPerKm: number | null;
+  thermalDeratingPct: number;
+  altitudeDeratingPct: number;
+  durabilityDeratingPct: number;
+  fuelingPlan: RaceFuelingPlan;
+  segments: RaceSimulationSegment[];
+}
+
+export interface RubberBandedSplit {
+  splitIndex: number;
+  splitLabel: string;
+  certifiedDistanceMeters: number;
+  rawGpsDistanceMeters: number;
+  rawGpsSplitSecs: number;
+  rubberBandedSplitSecs: number;
+  certifiedPaceSecsPerKm: number;
+  deltaSecs: number;
+}
+
+export interface VerifiedRacePassport {
+  passportId: string;
+  verificationHash: string;
+  athleteName: string;
+  meetOrRaceName: string;
+  eventLabel: string;
+  platform: OfficialRacePlatform;
+  raceDate: string;
+  certifiedDistanceMeters: number;
+  rawGpsDistanceMeters: number;
+  gpsDriftPct: number;
+  officialChipOrFatSecs: number;
+  displayOfficialTime: string;
+  certifiedPaceSecsPerKm: number;
+  vdotScore: number;
+  equivalentMarathonSecs: number;
+  splits: RubberBandedSplit[];
+}
+
 
 
 

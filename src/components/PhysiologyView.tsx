@@ -15,6 +15,7 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 import { loadAllActivityStreamsMapFromDexie } from '../db/workoutStore';
 import { buildEmpiricalMmpSummary } from '../physiology/mmpCurves';
+import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -73,6 +74,17 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   const empiricalSummary = useMemo(
     () => buildEmpiricalMmpSummary(envFilteredActivities, streamMap, athleteProfile),
     [envFilteredActivities, streamMap, athleteProfile]
+  );
+
+  const durabilityReport = useMemo(
+    () =>
+      computeFatigueSlicedDurability({
+        discipline: curveDiscipline,
+        activities: envFilteredActivities,
+        streamMap,
+        athleteProfile,
+      }),
+    [curveDiscipline, envFilteredActivities, streamMap, athleteProfile]
   );
 
   const empiricalByDuration = useMemo(() => {
@@ -832,6 +844,123 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
             </div>
           </div>
         )}
+      </section>
+
+      {/* 1B. 10x #2 — Fatigue-Sliced Physiological Durability Engine (kJ/kg & kcal Threshold Retention) */}
+      <section className="rounded-2xl liquid-glass p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold">
+                10x #2 · Fatigue-Sliced Durability
+              </span>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {curveDiscipline === 'Cycling'
+                  ? 'Mechanical Work Durability (0 → 40 kJ/kg Threshold Retention)'
+                  : 'Metabolic Energy Durability (0 → 2,000 kcal GAP Retention)'}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Measures how much of your fresh (`0 {durabilityReport.unitLabel}`) 5-minute and 20-minute output survives deep into endurance races.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums">
+            <span
+              className={`px-2.5 py-1 rounded-lg font-bold ${
+                durabilityReport.durabilityTier === 'PRO_TOUR_RESILIENT' ||
+                durabilityReport.durabilityTier === 'WELL_CONDITIONED'
+                  ? 'ap-status-prime'
+                  : durabilityReport.durabilityTier === 'MODERATE_FADE'
+                    ? 'ap-status-caution'
+                    : 'ap-status-strained'
+              }`}
+            >
+              {durabilityReport.durabilityTier.replace(/_/g, ' ')} ·{' '}
+              {durabilityReport.retentionAtDeepFatiguePct.toFixed(1)}% Retained
+            </span>
+            <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
+              Slope: -{durabilityReport.decaySlopePerUnitPct}% / bucket
+            </span>
+          </div>
+        </div>
+
+        {/* 5-Bucket Durability Retention Visual Bars & Table */}
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+          {durabilityReport.buckets.map((b) => {
+            const barColor =
+              b.retentionPct >= 95
+                ? 'bg-emerald-500'
+                : b.retentionPct >= 90
+                  ? 'bg-blue-500'
+                  : b.retentionPct >= 85
+                    ? 'bg-amber-500'
+                    : 'bg-rose-500';
+            return (
+              <div
+                key={b.bucketIndex}
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/60 p-3 space-y-2 font-mono tabular-nums"
+              >
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-bold text-slate-900 dark:text-slate-100">
+                    {b.fatigueLabel}
+                  </span>
+                  <span className="font-bold text-blue-600 dark:text-sky-400">
+                    {b.retentionPct.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                  <div
+                    className={`h-full ${barColor} transition-all`}
+                    style={{ width: `${Math.max(25, Math.min(100, b.retentionPct))}%` }}
+                  />
+                </div>
+                <div className="space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                  <div className="flex justify-between">
+                    <span>20m Hold:</span>
+                    <strong className="text-slate-900 dark:text-white">
+                      {curveDiscipline === 'Cycling'
+                        ? `${b.best20mWatts ?? 0}W`
+                        : formatPace(b.best20mGapSecsPerKm ?? 250, distanceUnit)}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>5m Peak:</span>
+                    <strong>
+                      {curveDiscipline === 'Cycling'
+                        ? `${b.best5mWatts ?? 0}W`
+                        : formatPace(b.best5mGapSecsPerKm ?? 230, distanceUnit)}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>HR Drift:</span>
+                    <span>+{b.heartRateDriftPct.toFixed(1)}%</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Limiter Attribution & Fueling Prescription */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="rounded-xl liquid-glass-subtle p-3.5 space-y-1">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Primary Late-Race Limiter · {durabilityReport.primaryLimiter.replace(/_/g, ' ')}
+            </div>
+            <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
+              {durabilityReport.limiterExplanation}
+            </p>
+          </div>
+          <div className="rounded-xl liquid-glass-subtle p-3.5 space-y-1">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-bold">
+              Exogenous Carbohydrate &amp; Durability Prescription
+            </div>
+            <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
+              {durabilityReport.fuelingPrescription}
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* 2. Coggan Power Profile & WMA Age-Graded Percentile Radars */}

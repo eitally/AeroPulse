@@ -3,3 +3,7 @@ export * from './mmpCurves';
 export * from './pmc';
 export * from './orthopedicEngine';
 export * from './workoutDebrief';
+export * from './complianceAndGitDiff';
+export * from './durabilityEngine';
+export * from './raceSimulator';
+export * from './raceRubberBander';
