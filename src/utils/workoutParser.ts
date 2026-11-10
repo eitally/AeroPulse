@@ -7,42 +7,42 @@ export const INTERVALS_EFFORT_ZONES = [
     zone: 1 as const,
     code: 'Z1' as const,
     name: 'Recovery',
-    color: '#52B788',
+    color: '#94A3B8',
     heightPct: 28,
   },
   {
     zone: 2 as const,
     code: 'Z2' as const,
     name: 'Endurance',
-    color: '#2A9D8F',
-    heightPct: 42,
+    color: '#0D9488',
+    heightPct: 44,
   },
   {
     zone: 3 as const,
     code: 'Z3' as const,
     name: 'Tempo / Sweet Spot',
-    color: '#EAB308',
-    heightPct: 58,
+    color: '#D97706',
+    heightPct: 62,
   },
   {
     zone: 4 as const,
     code: 'Z4' as const,
     name: 'Threshold',
-    color: '#F97316',
-    heightPct: 74,
+    color: '#EA580C',
+    heightPct: 78,
   },
   {
     zone: 5 as const,
     code: 'Z5' as const,
     name: 'VO2max',
-    color: '#EF4444',
-    heightPct: 88,
+    color: '#DC2626',
+    heightPct: 92,
   },
   {
     zone: 6 as const,
     code: 'Z6+' as const,
     name: 'Anaerobic / Sprint',
-    color: '#9333EA',
+    color: '#7C3AED',
     heightPct: 100,
   },
 ] as const;
@@ -51,12 +51,12 @@ export const ZONE_META: Record<
   EffortZoneCode,
   { name: string; color: string; heightPct: number }
 > = {
-  Z1: { name: 'Recovery', color: '#52B788', heightPct: 28 },
-  Z2: { name: 'Endurance', color: '#2A9D8F', heightPct: 44 },
-  Z3: { name: 'Tempo / Sweet Spot', color: '#EAB308', heightPct: 62 },
-  Z4: { name: 'Threshold', color: '#F97316', heightPct: 78 },
-  Z5: { name: 'VO2max', color: '#EF4444', heightPct: 92 },
-  'Z6+': { name: 'Anaerobic', color: '#9333EA', heightPct: 100 },
+  Z1: { name: 'Recovery', color: '#94A3B8', heightPct: 28 },
+  Z2: { name: 'Endurance', color: '#0D9488', heightPct: 44 },
+  Z3: { name: 'Tempo / Sweet Spot', color: '#D97706', heightPct: 62 },
+  Z4: { name: 'Threshold', color: '#EA580C', heightPct: 78 },
+  Z5: { name: 'VO2max', color: '#DC2626', heightPct: 92 },
+  'Z6+': { name: 'Anaerobic', color: '#7C3AED', heightPct: 100 },
 };
 
 export interface ParsedWorkoutStep {
@@ -205,6 +205,5 @@ export function parseWorkoutSteps(syntax: string): ParsedWorkoutStep[] {
 
 export function computeAmplitudeHeightPct(intensityPct: number, fallbackHeightPct: number): number {
   if (!Number.isFinite(intensityPct) || intensityPct <= 0) return fallbackHeightPct;
-  // Map 45% -> 22% height, 70% (Z2) -> 48% height, 100% (Threshold) -> 78% height, 120%+ (VO2/Anaerobic) -> 100% height
   return Math.max(20, Math.min(100, Math.round(((intensityPct - 35) / 85) * 100)));
 }

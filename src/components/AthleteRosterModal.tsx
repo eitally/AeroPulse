@@ -114,7 +114,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     '- 15m 65% Pace\n- 5x 4m 102% Pace / 90s 60% Pace\n- 10m 65% Pace'
   );
   const [workoutNotes, setWorkoutNotes] = useState(
-    'Focus on relaxed shoulders and even 400m splits. Pushed via AeroPulse Coach Desk.'
+    'Focus on relaxed shoulders and even 400m splits. Pushed via Thresh Coach Desk.'
   );
   const [pushSuccessBanner, setPushSuccessBanner] = useState<string | null>(null);
 
@@ -184,21 +184,21 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const formatRoleBadge = (role: AthleteConnectionRole, status?: ConnectedAthleteRecord['status']) => {
     if (status && status !== 'CONNECTED') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/40">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ap-status-caution">
           Pending Request
         </span>
       );
     }
     if (role === 'COACH_EDIT') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-[#F97316]/15 text-[#F97316] border border-[#F97316]/40">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ap-status-caution">
           <CalendarPlus className="w-3 h-3" />
           Coach (Edit Calendar)
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-[#38BDF8]/15 text-[#38BDF8] border border-[#38BDF8]/40">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ap-status-info">
         <Eye className="w-3 h-3" />
         Friend (View)
       </span>
@@ -207,6 +207,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Athletes, Friends & Coaching Hub"
       onClick={onClose}
       className="fixed inset-0 z-[60] bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
     >
@@ -238,11 +241,11 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             {/* Personal Invite Code Pill */}
             <div className="hidden sm:flex items-center gap-2 liquid-glass-subtle border border-stone-200/80 dark:border-white/10 rounded-lg px-3 py-1.5">
               <span className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">Your Invite Code:</span>
-              <span className="text-xs font-mono font-bold text-[#F97316]">{selfInviteCode}</span>
+              <span className="text-xs font-mono font-bold text-[#D9480F] dark:text-[#FB6514]">{selfInviteCode}</span>
               <button
                 onClick={handleCopyInvite}
                 className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                title="Copy your AeroPulse Invite Code"
+                title="Copy your THRESH Invite Code"
               >
                 {copiedCode ? (
                   <Check className="w-3.5 h-3.5 text-[#10B981]" />
@@ -729,12 +732,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       Follow Athlete by Invite Code or Strava Handle
                     </h3>
                     <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                      Enter a friend&apos;s AeroPulse Invite Code (e.g. <code className="text-[#F97316]">AP-4401-TRACK</code>) or name to add them to your athlete switcher.
+                      Enter a friend&apos;s THRESH Invite Code (e.g. <code className="text-[#D9480F] dark:text-[#FB6514]">TH-4401-TRACK</code>) or name to add them to your athlete switcher.
                     </p>
                   </div>
 
                   {followFeedback && (
-                    <div className="p-3 rounded-lg bg-[#10B981]/15 border border-[#10B981]/30 text-xs text-emerald-700 dark:text-[#10B981] font-mono">
+                    <div className="p-3 rounded-lg ap-status-prime text-xs font-mono">
                       {followFeedback}
                     </div>
                   )}
@@ -742,13 +745,13 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   <form onSubmit={handleFollowSubmit} className="space-y-3">
                     <div>
                       <label className="block text-[10px] font-mono uppercase text-slate-600 dark:text-slate-400 mb-1">
-                        Athlete Name, Strava ID, or Invite Code
+                        Athlete Name or Invite Code
                       </label>
                       <input
                         type="text"
                         value={inviteQuery}
                         onChange={(e) => setInviteQuery(e.target.value)}
-                        placeholder="e.g. Jordan Mercer or AP-5120-VELO"
+                        placeholder="e.g. Jordan Mercer or TH-5120-VELO"
                         className="w-full bg-white dark:bg-[#14161B] border border-stone-300 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:border-[#38BDF8]"
                         required
                       />

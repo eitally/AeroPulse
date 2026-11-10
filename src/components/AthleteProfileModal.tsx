@@ -153,6 +153,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Athlete Profile & Sport Zones"
       className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       onClick={onClose}
     >

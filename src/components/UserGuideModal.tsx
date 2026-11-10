@@ -116,7 +116,7 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
     benchmark: 'Optimal Build: -10 to -25 · Peak Race Freshness: +5 to +20',
     colorHex: '#10b981',
     explanation:
-      'The net balance between long-term Fitness (CTL) and short-term Fatigue (ATL). AeroPulse plots five distinct Form zones from Transition (> +25) down to High Risk (< -30).',
+      'The net balance between long-term Fitness (CTL) and short-term Fatigue (ATL). THRESH plots five distinct Form zones from Transition (> +25) down to High Risk (< -30).',
   },
   {
     code: 'Ramp Rate',
@@ -237,9 +237,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       id: 'ch1-quickstart',
       number: '01',
       shortTitle: 'Quick Start & Vision',
-      fullTitle: 'Ch 1 · Quick Start & Why AeroPulse',
+      fullTitle: 'Ch 1 · Quick Start & Why THRESH',
       subtitle:
-        'How AeroPulse unifies Intervals.icu physiological rigor, Runna/TrainerRoad daily readiness morphing, and Strava route/segment telemetry.',
+        'How THRESH unifies Intervals.icu physiological rigor, daily readiness morphing, and multi-source telemetry.',
       icon: Sparkles,
       accentClass: 'text-sky-500 bg-sky-500/12 border-sky-500/30',
     },
@@ -325,7 +325,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
         title: 'Banister Impulse-Response & Critical Power Physics',
         summary:
-          "AeroPulse computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
+          "THRESH computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
         bullets: [
           'Separate Outdoor vs. Indoor/Smart-Trainer FTP, LTHR, and 7-zone tables.',
           'Interactive ECharts PMC with brush zoom, custom date windows (7D to ALL), and milestone pins.',
@@ -342,7 +342,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
         title: 'Closed-Loop Daily Readiness Workout Morphing',
         summary:
-          'Static training plans break when life stress, poor sleep, or autonomic suppression hits. AeroPulse evaluates your morning HRV, RHR, and TSB to morph today’s workout in one click.',
+          'Static training plans break when life stress, poor sleep, or autonomic suppression hits. THRESH evaluates your morning HRV, RHR, and TSB to morph today’s workout in one click.',
         bullets: [
           'Green (Optimal): Preserves full VO2max / Threshold interval prescription.',
           'Amber (Modulated -15% Load): Downshifts Z5/Z4 repeats into controlled Sweet Spot / Tempo.',
@@ -672,7 +672,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="aeropulse-user-guide-title"
+      aria-labelledby="thresh-user-guide-title"
     >
       <div
         className="liquid-glass w-full max-w-6xl rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/90 shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88vh] text-slate-900 dark:text-slate-100"
@@ -682,12 +682,12 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-500 via-indigo-500 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-sky-500/20 shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#1D4ED8] flex items-center justify-center text-white shadow-md shrink-0">
                 <HelpCircle className="w-5 h-5" weight="duotone" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 font-semibold">
+                  <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-full ap-status-info font-semibold">
                     Interactive Manual & Physiology Reference
                   </span>
                   <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 hidden sm:inline">
@@ -695,10 +695,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   </span>
                 </div>
                 <h2
-                  id="aeropulse-user-guide-title"
+                  id="thresh-user-guide-title"
                   className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate mt-0.5"
                 >
-                  AeroPulse Editorial Endurance Lab — Interactive User Guide
+                  THRESH Precision Editorial Lab — Interactive User Guide
                 </h2>
               </div>
             </div>
@@ -1007,7 +1007,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         Chapter {activeChapterMeta.number} of 08
                       </span>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
-                        AeroPulse Telemetry & Coaching Manual
+                        THRESH Telemetry & Coaching Manual
                       </span>
                     </div>
                     <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">

@@ -1,10 +1,19 @@
 import crypto from 'crypto';
+import dns from 'dns';
 import fs from 'fs';
+import net from 'net';
 import type { NextFunction, Request, Response } from 'express';
 
-const SESSION_SECRET_FILE = '/tmp/aeropulse-session-secret.key';
-const SESSION_COOKIE_NAME = 'aeropulse_session';
+const SESSION_SECRET_FILE = '/tmp/thresh-session-secret.key';
+const SESSION_COOKIE_NAME = 'thresh_session';
+const LEGACY_SESSION_COOKIE_NAME = 'aeropulse_session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export interface VerifiedSessionClaims {
+  sid: string;
+  sub: string;
+  exp: number;
+}
 
 let cachedSecret: string | null = null;
 
@@ -13,10 +22,11 @@ function getSessionSecret(): string {
   const envSecret = (
     process.env.SESSION_SECRET ||
     process.env.STRAVA_CLIENT_SECRET ||
+    process.env.CRON_SECRET ||
     ''
   ).trim();
   if (envSecret && envSecret.length >= 16) {
-    cachedSecret = crypto.createHash('sha256').update(`aeropulse:${envSecret}`).digest('hex');
+    cachedSecret = crypto.createHash('sha256').update(`thresh:${envSecret}`).digest('hex');
     return cachedSecret;
   }
   try {
@@ -37,9 +47,15 @@ function getSessionSecret(): string {
   }
 }
 
-export function issueSessionToken(subject = 'authenticated'): string {
+export function issueSessionToken(subject = 'authenticated', existingSid?: string): string {
+  const sid =
+    existingSid && /^[a-f0-9]{24,64}$/i.test(existingSid)
+      ? existingSid
+      : crypto.randomBytes(16).toString('hex');
   const exp = Date.now() + SESSION_TTL_MS;
-  const payload = Buffer.from(JSON.stringify({ sub: subject, exp }), 'utf8').toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sid, sub: subject, exp }), 'utf8').toString(
+    'base64url'
+  );
   const sig = crypto
     .createHmac('sha256', getSessionSecret())
     .update(payload)
@@ -47,12 +63,12 @@ export function issueSessionToken(subject = 'authenticated'): string {
   return `${payload}.${sig}`;
 }
 
-export function verifySessionToken(token?: string | null): boolean {
-  if (!token || typeof token !== 'string') return false;
+export function decodeAndVerifyToken(token?: string | null): VerifiedSessionClaims | null {
+  if (!token || typeof token !== 'string') return null;
   const parts = token.trim().split('.');
-  if (parts.length !== 2) return false;
+  if (parts.length !== 2) return null;
   const [payload, sig] = parts;
-  if (!payload || !sig) return false;
+  if (!payload || !sig) return null;
 
   const expectedSig = crypto
     .createHmac('sha256', getSessionSecret())
@@ -62,19 +78,30 @@ export function verifySessionToken(token?: string | null): boolean {
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expectedSig);
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-    return false;
+    return null;
   }
 
   try {
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      sid?: string;
       sub?: string;
       exp?: number;
     };
-    if (!decoded.exp || Date.now() > decoded.exp) return false;
-    return true;
+    if (!decoded.exp || Date.now() > decoded.exp) return null;
+    const sub = String(decoded.sub || 'authenticated');
+    // Derive deterministic fallback sid only for legacy pre-sid tokens signed with our secret
+    const sid =
+      decoded.sid && /^[a-f0-9]{16,64}$/i.test(decoded.sid)
+        ? decoded.sid
+        : crypto.createHash('sha256').update(`${sub}:${sig}`).digest('hex').slice(0, 32);
+    return { sid, sub, exp: decoded.exp };
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function verifySessionToken(token?: string | null): boolean {
+  return decodeAndVerifyToken(token) !== null;
 }
 
 export function parseCookies(cookieHeader?: string): Record<string, string> {
@@ -96,8 +123,25 @@ export function parseCookies(cookieHeader?: string): Record<string, string> {
   return out;
 }
 
+export function getVerifiedSessionClaims(req?: Request): VerifiedSessionClaims | null {
+  if (!req) return null;
+  const cookies = parseCookies(req.headers.cookie);
+  const cookieToken = cookies[SESSION_COOKIE_NAME] || cookies[LEGACY_SESSION_COOKIE_NAME];
+  if (cookieToken) {
+    const verified = decodeAndVerifyToken(cookieToken);
+    if (verified) return verified;
+  }
+  const headerToken = String(req.headers['x-session-token'] || '').trim();
+  if (headerToken) {
+    const verified = decodeAndVerifyToken(headerToken);
+    if (verified) return verified;
+  }
+  return null;
+}
+
 export function setSessionCookie(req: Request, res: Response, subject = 'authenticated'): string {
-  const token = issueSessionToken(subject);
+  const existing = getVerifiedSessionClaims(req);
+  const token = issueSessionToken(subject, existing?.sid);
   const isSecure =
     req.secure ||
     String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';
@@ -115,24 +159,29 @@ export function setSessionCookie(req: Request, res: Response, subject = 'authent
 }
 
 export function clearSessionCookie(res: Response): void {
-  res.setHeader(
-    'Set-Cookie',
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
-  );
+  res.setHeader('Set-Cookie', [
+    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+  ]);
 }
 
 export function hasValidSessionToken(req?: Request): boolean {
-  if (!req) return false;
-  const headerToken = String(req.headers['x-session-token'] || '').trim();
-  if (headerToken && verifySessionToken(headerToken)) {
-    return true;
+  return getVerifiedSessionClaims(req) !== null;
+}
+
+export function hasValidCronAuthorization(req: Request): boolean {
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  if (!cronSecret) {
+    // Allow local manual dev trigger only when not running in production / Vercel
+    return process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
   }
-  const cookies = parseCookies(req.headers.cookie);
-  const cookieToken = cookies[SESSION_COOKIE_NAME];
-  if (cookieToken && verifySessionToken(cookieToken)) {
-    return true;
-  }
-  return false;
+  const authHeader = String(req.headers.authorization || '').trim();
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const candidate = bearer || String(req.headers['x-cron-secret'] || '').trim();
+  if (!candidate) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(cronSecret);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 /**
@@ -174,9 +223,61 @@ export function resolveSafeOrigin(rawOrigin?: string): string | null {
   }
 }
 
+function isPrivateIpv4Octets(octets: number[]): boolean {
+  if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
+    return true;
+  }
+  const [a, b] = octets;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true; // Cloud metadata / link-local
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 198 && (b === 18 || b === 19)) return true; // Benchmarking
+  if (a >= 224) return true; // Multicast & reserved
+  return false;
+}
+
+export function isPrivateOrReservedIp(rawIp: string): boolean {
+  const ip = rawIp.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  const version = net.isIP(ip);
+  if (version === 4) {
+    return isPrivateIpv4Octets(ip.split('.').map(Number));
+  }
+  if (version === 6) {
+    if (ip === '::' || ip === '::1' || ip === '0:0:0:0:0:0:0:1' || ip === '0:0:0:0:0:0:0:0') {
+      return true;
+    }
+    if (
+      ip.startsWith('fc') ||
+      ip.startsWith('fd') ||
+      ip.startsWith('fe8') ||
+      ip.startsWith('fe9') ||
+      ip.startsWith('fea') ||
+      ip.startsWith('feb') ||
+      ip.startsWith('ff')
+    ) {
+      return true;
+    }
+    // Check IPv4-mapped IPv6 in dotted form (::ffff:169.254.169.254) or hex form (::ffff:a9fe:a9fe)
+    const v4MappedDotted = ip.match(/^(?:::ffff:|0:0:0:0:0:ffff:)(\d+\.\d+\.\d+\.\d+)$/i);
+    if (v4MappedDotted) {
+      return isPrivateIpv4Octets(v4MappedDotted[1].split('.').map(Number));
+    }
+    const v4MappedHex = ip.match(/^(?:::ffff:|0:0:0:0:0:ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+    if (v4MappedHex) {
+      const hi = parseInt(v4MappedHex[1], 16);
+      const lo = parseInt(v4MappedHex[2], 16);
+      return isPrivateIpv4Octets([(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff]);
+    }
+    return false;
+  }
+  return true;
+}
+
 /**
  * Validates that a URL is an external public HTTP/HTTPS resource, blocking SSRF against
- * loopback, link-local cloud metadata (169.254.169.254), and RFC1918 private networks.
+ * loopback, link-local cloud metadata (169.254.169.254), IPv4-mapped IPv6, and RFC1918 networks.
  */
 export function isSafeExternalUrl(rawUrl: string): boolean {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
@@ -192,32 +293,14 @@ export function isSafeExternalUrl(rawUrl: string): boolean {
       hostname.endsWith('.localhost') ||
       hostname.endsWith('.local') ||
       hostname.endsWith('.internal') ||
-      hostname === '0.0.0.0' ||
-      hostname === '::1' ||
-      hostname === '0:0:0:0:0:0:0:1' ||
-      hostname.startsWith('fe80:') ||
-      hostname.startsWith('fc00:') ||
-      hostname.startsWith('fd00:')
+      /^\d+$/.test(hostname) || // Block decimal integer IP encoding (e.g. 2130706433)
+      /^0x[0-9a-f]+$/i.test(hostname) // Block hex IP encoding
     ) {
       return false;
     }
 
-    // Check IPv4 ranges
-    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4Match) {
-      const octets = ipv4Match.slice(1, 5).map(Number);
-      if (octets.some((o) => o < 0 || o > 255)) return false;
-      const [a, b] = octets;
-      // 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8
-      if (a === 0 || a === 10 || a === 127) return false;
-      // 169.254.0.0/16 (AWS/GCP/Azure metadata & link-local)
-      if (a === 169 && b === 254) return false;
-      // 172.16.0.0/12
-      if (a === 172 && b >= 16 && b <= 31) return false;
-      // 192.168.0.0/16
-      if (a === 192 && b === 168) return false;
-      // 100.64.0.0/10 (Carrier-grade NAT)
-      if (a === 100 && b >= 64 && b <= 127) return false;
+    if (net.isIP(hostname) !== 0 || hostname.includes(':')) {
+      return !isPrivateOrReservedIp(hostname);
     }
 
     return true;
@@ -227,7 +310,47 @@ export function isSafeExternalUrl(rawUrl: string): boolean {
 }
 
 /**
- * Express middleware that attaches standard security headers and prevents caching of auth/config endpoints.
+ * Performs post-DNS IP verification and manual redirect checking to prevent DNS-rebinding
+ * and open-redirect SSRF attacks.
+ */
+export async function assertSafeExternalFetch(
+  rawUrl: string,
+  init: RequestInit = {},
+  maxRedirects = 2
+): Promise<globalThis.Response | null> {
+  let currentUrl = rawUrl.trim();
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!isSafeExternalUrl(currentUrl)) return null;
+    const parsed = new URL(currentUrl);
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+    try {
+      const records = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+      if (!records.length || records.some((r) => isPrivateOrReservedIp(r.address))) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+
+    const resp = await fetch(currentUrl, {
+      ...init,
+      redirect: 'manual',
+    });
+
+    if ([301, 302, 303, 307, 308].includes(resp.status)) {
+      const location = resp.headers.get('location');
+      if (!location || hop === maxRedirects) return null;
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    return resp;
+  }
+  return null;
+}
+
+/**
+ * Express middleware that attaches standard security headers and prevents caching of API/auth endpoints.
  */
 export function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -235,13 +358,12 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  const path = req.path || req.url || '';
+  const reqPath = req.path || req.url || '';
   if (
-    path.includes('/config') ||
-    path.includes('/auth') ||
-    path.includes('/strava/token') ||
-    path.includes('/strava/exchange-code') ||
-    path.includes('/strava/credentials')
+    reqPath.startsWith('/api/') ||
+    reqPath.startsWith('/auth/') ||
+    reqPath.includes('/config') ||
+    reqPath.includes('/auth')
   ) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');

@@ -1,6 +1,6 @@
 {
-  "name": "AeroPulse — Multi-Sport Physiology, Load & AI Coaching PWA",
-  "description": "Unified fitness, physiology, Strava segment, and AI recovery coaching PWA bridging Intervals.icu, Garmin Connect wellness, and Strava OAuth2.",
+  "name": "THRESH — Run & Ride Readiness",
+  "description": "Autonomous dual-sport running & cycling performance OS uniting overnight readiness, threshold physiology, Banister load, and adaptive coaching.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

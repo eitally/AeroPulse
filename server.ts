@@ -79,7 +79,7 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`AeroPulse server running on http://0.0.0.0:${PORT}`);
+    console.log(`THRESH server running on http://0.0.0.0:${PORT}`);
   });
 }
 

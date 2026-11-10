@@ -17,7 +17,10 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { applyAthletePrivacyShield } from '../data/athleteRosterData';
+import {
+  applyAthletePrivacyShield,
+  isStravaSourcedActivity,
+} from '../data/athleteRosterData';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 
 interface AthletePerformanceRadarProps {
@@ -176,7 +179,8 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
   onOpenCoachWithPrompt,
 }) => {
   const athletes = useMemo<NormalizedAthleteRadarSource[]>(() => {
-    const selfFtp = selfProfile?.ftp || 316;
+    const cleanSelfActivities = selfActivities.filter((a) => !isStravaSourcedActivity(a));
+    const selfFtp = selfProfile?.ftp || 0;
     const selfWeight = selfProfile?.weightKg || 70;
     const list: NormalizedAthleteRadarSource[] = [
       {
@@ -187,12 +191,12 @@ export const AthletePerformanceRadar: React.FC<AthletePerformanceRadarProps> = (
         defaultAgeBracket: '35-39',
         ftp: selfFtp,
         weightKg: selfWeight,
-        wPerKg: Number((selfFtp / Math.max(40, selfWeight)).toFixed(2)),
-        pMax: selfProfile?.pMax || 1185,
-        wPrime: selfProfile?.wPrime || 24500,
-        thresholdPaceSecsPerKm: selfProfile?.thresholdPaceSecsPerKm || 242, // ~4:02/km
+        wPerKg: selfFtp > 0 ? Number((selfFtp / Math.max(40, selfWeight)).toFixed(2)) : 0,
+        pMax: selfProfile?.pMax || 0,
+        wPrime: selfProfile?.wPrime || 0,
+        thresholdPaceSecsPerKm: selfProfile?.thresholdPaceSecsPerKm || 0,
         wellnessDays: selfWellnessDays,
-        activities: selfActivities,
+        activities: cleanSelfActivities,
         plannedEvents: selfPlannedEvents,
         redactedWellness: false,
       },

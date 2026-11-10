@@ -32,13 +32,13 @@ export interface PersistedTelemetrySnapshot {
 }
 
 const ZONE_COLORS_7 = [
-  '#52B788', // Z1 Recovery
-  '#2A9D8F', // Z2 Endurance
-  '#EAB308', // Z3 Tempo
-  '#F97316', // Z4 Threshold
-  '#EF4444', // Z5 VO2max
-  '#9333EA', // Z6 Anaerobic
-  '#EC4899', // Z7 Neuromuscular
+  '#94A3B8', // Z1 Recovery
+  '#0D9488', // Z2 Aerobic Base
+  '#D97706', // Z3 Tempo
+  '#EA580C', // Z4 Threshold
+  '#DC2626', // Z5 VO2max
+  '#7C3AED', // Z6 Anaerobic
+  '#BE185D', // Z7 Neuromuscular
 ];
 
 const DEFAULT_POWER_ZONE_NAMES = [
@@ -582,10 +582,31 @@ function openTelemetryDb(): Promise<IDBDatabase> {
   });
 }
 
+function purgeLegacyTelemetryDb(): void {
+  try {
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      window.indexedDB.deleteDatabase(IDB_NAME);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 async function loadLegacyTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot | null> {
   try {
+    if (typeof window === 'undefined' || !window.indexedDB) return null;
+    if ('databases' in window.indexedDB && typeof window.indexedDB.databases === 'function') {
+      const dbs = await window.indexedDB.databases();
+      if (!dbs.some((d) => d.name === IDB_NAME)) {
+        return null;
+      }
+    }
     const idb = await openTelemetryDb();
-    return await new Promise<PersistedTelemetrySnapshot | null>((resolve, reject) => {
+    const result = await new Promise<PersistedTelemetrySnapshot | null>((resolve, reject) => {
+      if (!idb.objectStoreNames.contains(IDB_STORE)) {
+        resolve(null);
+        return;
+      }
       const tx = idb.transaction(IDB_STORE, 'readonly');
       const store = tx.objectStore(IDB_STORE);
       const getReq = store.get(SNAPSHOT_KEY);
@@ -602,6 +623,8 @@ async function loadLegacyTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot
       };
       getReq.onerror = () => reject(getReq.error);
     });
+    idb.close();
+    return result;
   } catch {
     return null;
   }
@@ -609,10 +632,11 @@ async function loadLegacyTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot
 
 export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemetrySnapshot | null> {
   try {
-    const [storedActivities, storedStreams, wellnessDays, plannedEvents, gearItems, snapshotMeta] =
+    // Deliberately omit `db.activityStreams.toArray()` on boot so 1Hz telemetry streams stay
+    // lazily decoupled in IndexedDB until an individual activity is inspected.
+    const [storedActivities, wellnessDays, plannedEvents, gearItems, snapshotMeta] =
       await Promise.all([
         db.activities.orderBy('start_date').reverse().toArray(),
-        db.activityStreams.toArray(),
         db.wellnessDays.orderBy('date').toArray(),
         db.plannedEvents.orderBy('date').toArray(),
         db.gearItems.toArray(),
@@ -626,9 +650,9 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
 
     const realStoredActivities = storedActivities.filter((rec) => !/^act-\d+$/.test(rec.id));
     if (realStoredActivities.length > 0) {
-      const streamByActId = new Map(storedStreams.map((s) => [s.activityId, s]));
+      purgeLegacyTelemetryDb();
       const hydratedActivities = realStoredActivities.map((rec) =>
-        reclassifyActivityEnvironment(hydrateUnifiedActivity(rec, streamByActId.get(rec.id)))
+        reclassifyActivityEnvironment(hydrateUnifiedActivity(rec))
       );
       return {
         activities: hydratedActivities,
@@ -644,15 +668,21 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
       };
     }
 
-    // Check legacy raw IndexedDB snapshot and migrate into Dexie relational store
+    // Migrate legacy raw IndexedDB snapshot once if present, then permanently delete `aeropulse_telemetry_db`
     const legacy = await loadLegacyTelemetrySnapshot();
     if (legacy) {
       const realLegacyActivities = legacy.activities.filter((rec) => !/^act-\d+$/.test(rec.id));
       if (realLegacyActivities.length > 0) {
         const cleanedLegacy = { ...legacy, activities: realLegacyActivities };
         await savePersistedTelemetrySnapshot(cleanedLegacy);
-        return cleanedLegacy;
+        purgeLegacyTelemetryDb();
+        // Return summary-only activities in memory after persisting streams to Dexie
+        return {
+          ...cleanedLegacy,
+          activities: realLegacyActivities.map(({ streams: _s, ...summary }) => summary),
+        };
       }
+      purgeLegacyTelemetryDb();
     }
 
     return null;
@@ -725,18 +755,7 @@ export async function clearPersistedTelemetrySnapshot(): Promise<void> {
   } catch {
     // ignore
   }
-  try {
-    const idb = await openTelemetryDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = idb.transaction(IDB_STORE, 'readwrite');
-      const store = tx.objectStore(IDB_STORE);
-      store.delete(SNAPSHOT_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // ignore
-  }
+  purgeLegacyTelemetryDb();
   try {
     if (typeof window !== 'undefined' && 'caches' in window) {
       await window.caches.delete('aeropulse-telemetry-api-swr');

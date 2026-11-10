@@ -142,8 +142,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
 }) => {
-  // Default to 1 year (365 days) so the macro season arc is immediately visible like Intervals.icu
-  const [rangePreset, setRangePreset] = useState<DateRangePreset>('1Y');
+  // Default to 42D (6-week microcycle) so daily load bars and acute fitness swings are immediately readable
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>('42D');
   const [customStart, setCustomStart] = useState<string>(() => {
     const d = new Date();
     d.setUTCFullYear(d.getUTCFullYear() - 1);
@@ -184,35 +184,38 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   const isBrushingRef = useRef<boolean>(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const hasWellnessTelemetry = wellnessDays.length > 0;
+
   const latestDay = wellnessDays[wellnessDays.length - 1] || {
-    date: new Date().toISOString().slice(0, 10),
-    ctl: 71.4,
-    atl: 51.2,
-    tsb: 20.2,
-    loadRatio: 0.72,
-    rampRate: -1.2,
-    hrvRMSSD: 54,
-    hrvBaseline7d: 52,
-    hrvNormalBandLow: 44,
-    hrvNormalBandHigh: 62,
+    date: todayIso,
+    ctl: 0,
+    atl: 0,
+    tsb: 0,
+    loadRatio: 0,
+    rampRate: 0,
+    hrvRMSSD: 0,
+    hrvBaseline7d: 0,
+    hrvNormalBandLow: 0,
+    hrvNormalBandHigh: 0,
     hrvStatus: 'Balanced' as const,
-    restingHR: 49,
-    sleepSecs: 26340,
-    sleepScore: 78,
-    sleepQuality: 2,
-    sleepDebt7dSecs: 3200,
-    weightKg: 70,
-    vo2MaxCycling: 51,
-    vo2MaxRunning: 51,
-    rideEftp: 316,
-    rideWPrime: 25120,
-    ridePMax: 1204,
-    runEftp: 340,
+    restingHR: athleteProfile?.restingHr || 0,
+    sleepSecs: 0,
+    sleepScore: 0,
+    sleepQuality: 0,
+    sleepDebt7dSecs: 0,
+    weightKg: athleteProfile?.weightKg || 70,
+    vo2MaxCycling: athleteProfile?.vo2MaxCycling || 0,
+    vo2MaxRunning: athleteProfile?.vo2MaxRunning || 0,
+    rideEftp: athleteProfile?.eFtp || 0,
+    rideWPrime: athleteProfile?.wPrime || 0,
+    ridePMax: athleteProfile?.pMax || 0,
+    runEftp: athleteProfile?.runEFtp || 0,
     garminTrainingStatus: 'Productive' as const,
     trainingStatusReason:
-      'Optimal acute-to-chronic workload ratio building aerobic fitness.',
+      'Connect Garmin Connect, Intervals.icu, or upload FIT/GPX files to calibrate your Banister load curve.',
     readinessStatus: 'Optimal' as const,
-    dailyLoad: 65,
+    dailyLoad: 0,
   };
 
   // Index activities by YYYY-MM-DD so we can plot Max HR spikes, Workout/PR dots, and click-through
@@ -741,7 +744,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     setBrushEndIdx(null);
   };
 
-  const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(false);
+  // Circadian 6:00 AM Hero: Morning Brief expanded by default; collapse automatically once today's workout is completed
+  const todayCompletedActivities = useMemo(
+    () => activitiesByDate.get(todayIso) || [],
+    [activitiesByDate, todayIso]
+  );
+
+  const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(
+    () => (activities || []).every((a) => (a.startDateLocal || '').slice(0, 10) !== new Date().toISOString().slice(0, 10))
+  );
 
   const [collapsedSections, setCollapsedSections] = useState<
     Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
@@ -749,7 +760,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     pmc: false,
     ledger: false,
     comparator: true,
-    radars: false,
+    radars: true,
   });
 
   const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
@@ -759,12 +770,54 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==========================================================================
-          0. EXPANDED DAILY WORKOUT PRESCRIPTION PANEL (Hidden in default view;
-             triggered from the inline "Daily Workout Prescription" button in the
-             Fitness chart header bar so the homepage stays ultra-clean)
+          0A. CIRCADIAN POST-WORKOUT COMPLETED STATE (9:30 AM+ Mode when today has logged activity)
          ========================================================================== */}
-      {isPrescriptionExpanded &&
-        athleteProfile &&
+      {todayCompletedActivities.length > 0 && (
+        <section className="rounded-2xl liquid-glass px-4 sm:px-5 py-4 border-l-4 border-l-[#0D9488] flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold uppercase ap-status-prime">
+                Session Complete · {todayIso}
+              </span>
+              <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {todayCompletedActivities.map((a) => a.name).join(' + ')}
+              </span>
+            </div>
+            <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
+              Logged{' '}
+              <strong>
+                {Math.round(
+                  todayCompletedActivities.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
+                )}{' '}
+                TSS
+              </strong>{' '}
+              ·{' '}
+              {Math.round(
+                todayCompletedActivities.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 60
+              )}
+              m duration
+              {typeof todayCompletedActivities[0]?.aerobicDecouplingPct === 'number' &&
+                ` · ${todayCompletedActivities[0].aerobicDecouplingPct.toFixed(1)}% Pa:Hr drift`}
+              {typeof todayCompletedActivities[0]?.efficiencyFactor === 'number' &&
+                ` · EF ${todayCompletedActivities[0].efficiencyFactor.toFixed(2)}`}
+            </p>
+          </div>
+          {onSelectActivity && (
+            <button
+              type="button"
+              onClick={() => onSelectActivity(todayCompletedActivities[0])}
+              className="ap-btn-secondary px-3.5 text-xs"
+            >
+              <span>Inspect Session Telemetry →</span>
+            </button>
+          )}
+        </section>
+      )}
+
+      {/* ==========================================================================
+          0B. 6:00 AM MORNING BRIEF & DAILY WORKOUT PRESCRIPTION HERO
+         ========================================================================== */}
+      {athleteProfile &&
         onSyncMorphedToCalendar &&
         onOpenAthleteProfileModal && (
           <ReadinessMorphingCard
@@ -775,7 +828,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             distanceUnit={distanceUnit}
             isExpanded={isPrescriptionExpanded}
             onToggleExpand={() => setIsPrescriptionExpanded((prev) => !prev)}
-            placementLabel="Daily Workout Prescription"
+            placementLabel={
+              todayCompletedActivities.length > 0
+                ? 'Morning Brief · Prescription Completed'
+                : 'Morning Brief · Daily Prescription'
+            }
             onSyncMorphedToCalendar={onSyncMorphedToCalendar}
             onOpenAthleteProfileModal={onOpenAthleteProfileModal}
             onOpenCoachWithPrompt={onOpenCoachWithPrompt}
@@ -2961,43 +3018,48 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           );
         })()}
 
-        {/* Card 2: Overnight Sleep Score Radial Ring + 4-Stage Ribbon */}
+        {/* Card 2: Overnight Sleep Score Radial Ring + Target Duration Bar (Zero Synthetic Stages) */}
         {(() => {
-          const score = Math.max(0, Math.min(100, latestWithSleep.sleepScore || 78));
+          const hasSleep = latestWithSleep.sleepSecs > 0 || latestWithSleep.sleepScore > 0;
+          const score = hasSleep ? Math.max(0, Math.min(100, latestWithSleep.sleepScore || 0)) : 0;
+          const sleepHrs = (latestWithSleep.sleepSecs || 0) / 3600;
+          const targetPct = Math.min(100, Math.round((sleepHrs / 8.0) * 100));
           const circumference = 2 * Math.PI * 15.5;
           const dashOffset = circumference - (score / 100) * circumference;
-          const ringColor = score >= 80 ? '#10b981' : score >= 68 ? '#0284c7' : '#f59e0b';
-          const deepPct = Math.min(30, Math.max(16, Math.round(score * 0.27)));
-          const remPct = Math.min(28, Math.max(16, Math.round(score * 0.25)));
-          const lightPct = Math.max(10, 95 - deepPct - remPct);
+          const ringColor = !hasSleep
+            ? '#94A3B8'
+            : score >= 80
+              ? '#0D9488'
+              : score >= 68
+                ? '#1D4ED8'
+                : '#D97706';
           return (
             <div className="rounded-2xl liquid-glass p-4 flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Garmin Sleep
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Overnight Sleep
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h debt
+                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                    {hasSleep ? `${((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h debt` : 'Unsynced'}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2 font-mono tabular-nums">
                   <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                    {(latestWithSleep.sleepSecs / 3600).toFixed(1)}
+                    {hasSleep && sleepHrs > 0 ? sleepHrs.toFixed(1) : '—'}
                   </span>
                   <span className="text-xs text-slate-500">hrs</span>
                 </div>
-                {/* 4-Stage Sleep Distribution Ribbon */}
                 <div className="space-y-1">
-                  <div className="h-2 w-full rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800">
-                    <div className="bg-[#0B4F9E]" style={{ width: `${deepPct}%` }} title={`Deep ${deepPct}%`} />
-                    <div className="bg-sky-400" style={{ width: `${remPct}%` }} title={`REM ${remPct}%`} />
-                    <div className="bg-emerald-500" style={{ width: `${lightPct}%` }} title={`Light ${lightPct}%`} />
-                    <div className="bg-amber-500 flex-1" title="Awake" />
+                  <div className="h-2 w-full rounded-full overflow-hidden flex bg-stone-200/80 dark:bg-slate-800">
+                    <div
+                      className="bg-[#1D4ED8] dark:bg-[#60A5FA] transition-all"
+                      style={{ width: `${targetPct}%` }}
+                    />
                   </div>
-                  <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                    <span>Deep {deepPct}%</span>
-                    <span>REM {remPct}%</span>
+                  <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                    <span>{hasSleep ? `${targetPct}% of 8.0h target` : 'Connect Garmin / Intervals'}</span>
+                    <span>{score > 0 ? `Score ${score}` : ''}</span>
                   </div>
                 </div>
               </div>
@@ -3011,7 +3073,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     r="15.5"
                     fill="none"
                     stroke="currentColor"
-                    className="text-slate-100 dark:text-slate-800"
+                    className="text-stone-200 dark:text-slate-800"
                     strokeWidth="3.4"
                   />
                   <circle
@@ -3028,7 +3090,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 </svg>
                 <div className="absolute text-center leading-none">
                   <span className="text-sm font-mono font-extrabold text-slate-900 dark:text-white">
-                    {score}
+                    {score > 0 ? score : '—'}
                   </span>
                 </div>
               </div>
@@ -3038,56 +3100,64 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
         {/* Card 3: Autonomic Recovery (HRV rMSSD + 60d Baseline Corridor Gauge) */}
         {(() => {
-          const hrv = latestWithHrv.hrvRMSSD || 54;
-          const low = latestWithHrv.hrvNormalBandLow || Math.round(hrv * 0.85);
-          const high = latestWithHrv.hrvNormalBandHigh || Math.round(hrv * 1.15);
+          const hrv = latestWithHrv.hrvRMSSD || 0;
+          const hasHrv = hrv > 0;
+          const low = latestWithHrv.hrvNormalBandLow || (hasHrv ? Math.round(hrv * 0.85) : 40);
+          const high = latestWithHrv.hrvNormalBandHigh || (hasHrv ? Math.round(hrv * 1.15) : 70);
           const scaleMin = Math.max(15, low - 12);
           const scaleMax = high + 12;
           const span = Math.max(1, scaleMax - scaleMin);
           const bandLeft = Math.max(5, Math.min(80, ((low - scaleMin) / span) * 100));
           const bandWidth = Math.max(12, Math.min(85 - bandLeft, ((high - low) / span) * 100));
-          const dotLeft = Math.max(4, Math.min(96, ((hrv - scaleMin) / span) * 100));
+          const dotLeft = hasHrv ? Math.max(4, Math.min(96, ((hrv - scaleMin) / span) * 100)) : 50;
           return (
             <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   HRV &amp; RHR
                 </span>
-                <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                  {latestWithHrv.hrvStatus || 'Balanced'}
+                <span
+                  className={`px-2 py-0.5 text-xs font-bold rounded-md ${
+                    hasHrv ? 'ap-status-prime' : 'ap-well text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {hasHrv ? latestWithHrv.hrvStatus || 'Balanced' : 'Uncalibrated'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between font-mono tabular-nums">
                 <div>
                   <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                    {hrv}
+                    {hasHrv ? hrv : '—'}
                   </span>
                   <span className="text-xs text-slate-500 ml-1">ms</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    7d: {latestWithHrv.hrvBaseline7d} ms
+                  <span className="text-xs font-bold text-[#0F766E] dark:text-[#2DD4BF]">
+                    7d: {latestWithHrv.hrvBaseline7d > 0 ? `${latestWithHrv.hrvBaseline7d} ms` : '—'}
                   </span>
                   <span className="block text-[11px] text-slate-500">
-                    RHR {latestDay.restingHR} bpm
+                    RHR {latestDay.restingHR > 0 ? `${latestDay.restingHR} bpm` : '—'}
                   </span>
                 </div>
               </div>
-              {/* 60-Day Baseline Corridor Gauge */}
               <div className="space-y-1 pt-0.5">
-                <div className="relative h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800/90">
-                  <div
-                    className="absolute top-0 bottom-0 rounded-full bg-emerald-500/30 border border-emerald-500/60"
-                    style={{ left: `${bandLeft}%`, width: `${bandWidth}%` }}
-                  />
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-950"
-                    style={{ left: `${dotLeft}%` }}
-                  />
+                <div className="relative h-2 w-full rounded-full bg-stone-200/80 dark:bg-slate-800/90">
+                  {hasHrv && (
+                    <>
+                      <div
+                        className="absolute top-0 bottom-0 rounded-full bg-[#0D9488]/30 border border-[#0D9488]/60"
+                        style={{ left: `${bandLeft}%`, width: `${bandWidth}%` }}
+                      />
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#0D9488] ring-2 ring-white dark:ring-slate-950"
+                        style={{ left: `${dotLeft}%` }}
+                      />
+                    </>
+                  )}
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span>Floor {low}ms</span>
-                  <span>Ceiling {high}ms</span>
+                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                  <span>{hasHrv ? `Floor ${low}ms` : 'Sync nocturnal HRV'}</span>
+                  <span>{hasHrv ? `Ceiling ${high}ms` : ''}</span>
                 </div>
               </div>
             </div>
@@ -3096,47 +3166,52 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
         {/* Card 4: Dual-Sport Threshold Power (Bike & Run eFTP + W' Gauge) */}
         {(() => {
-          const bikeEftp = latestDay.rideEftp || 316;
-          const runEftp = latestDay.runEftp || 340;
-          const wPrimeKj = Number(((latestDay.rideWPrime || 25120) / 1000).toFixed(1));
-          const wPrimePct = Math.max(15, Math.min(100, Math.round((wPrimeKj / 32) * 100)));
+          const bikeEftp = latestDay.rideEftp || athleteProfile?.eFtp || athleteProfile?.ftp || 0;
+          const runEftp = latestDay.runEftp || athleteProfile?.runEFtp || athleteProfile?.runFtp || 0;
+          const rawWPrime = latestDay.rideWPrime || athleteProfile?.wPrime || 0;
+          const wPrimeKj = rawWPrime > 0 ? Number((rawWPrime / 1000).toFixed(1)) : 0;
+          const wPrimePct = wPrimeKj > 0 ? Math.max(10, Math.min(100, Math.round((wPrimeKj / 32) * 100))) : 0;
+          const pMaxVal = latestDay.ridePMax || athleteProfile?.pMax || 0;
           return (
             <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   THRESH · eFTP
                 </span>
-                <span className="text-xs font-mono text-[#EA580C] font-bold">
-                  {(bikeEftp / (latestDay.weightKg || 70)).toFixed(2)} W/kg
+                <span className="text-xs font-mono text-[#D9480F] dark:text-[#FB6514] font-bold">
+                  {bikeEftp > 0
+                    ? `${(bikeEftp / (latestDay.weightKg || athleteProfile?.weightKg || 70)).toFixed(2)} W/kg`
+                    : '— W/kg'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between font-mono tabular-nums">
                 <div>
                   <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-                    {bikeEftp}W
+                    {bikeEftp > 0 ? `${bikeEftp}W` : '—'}
                   </span>
                   <span className="text-xs text-slate-500 ml-1">Bike</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-[#0B4F9E] dark:text-sky-400">
-                    Run {runEftp}W
+                  <span className="text-xs font-bold text-[#1D4ED8] dark:text-[#60A5FA]">
+                    Run {runEftp > 0 ? `${runEftp}W` : '—'}
                   </span>
                   <span className="block text-[11px] text-slate-500">
-                    W&apos; {wPrimeKj} kJ · Pmax {latestDay.ridePMax || 1204}W
+                    W&apos; {wPrimeKj > 0 ? `${wPrimeKj} kJ` : '—'} · Pmax {pMaxVal > 0 ? `${pMaxVal}W` : '—'}
                   </span>
                 </div>
               </div>
-              {/* Dual-Sport Threshold & Anaerobic Capacity Bar */}
               <div className="space-y-1 pt-0.5">
-                <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex gap-0.5">
+                <div className="h-2 w-full rounded-full bg-stone-200/80 dark:bg-slate-800 overflow-hidden flex gap-0.5">
                   <div
-                    className="h-full bg-gradient-to-r from-[#0B4F9E] to-[#EA580C] rounded-full"
+                    className="h-full bg-[#D9480F] dark:bg-[#FB6514] rounded-full transition-all"
                     style={{ width: `${wPrimePct}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
                   <span>Anaerobic Reserve (W&apos;)</span>
-                  <span className="text-[#EA580C] font-semibold">{wPrimeKj} kJ</span>
+                  <span className="text-[#D9480F] dark:text-[#FB6514] font-semibold">
+                    {wPrimeKj > 0 ? `${wPrimeKj} kJ` : hasWellnessTelemetry ? '—' : 'Calibrate FTP'}
+                  </span>
                 </div>
               </div>
             </div>

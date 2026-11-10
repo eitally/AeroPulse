@@ -115,10 +115,10 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   plannedEvents,
   athleteProfile,
   distanceUnit,
-  defaultExpanded = false,
+  defaultExpanded = true,
   isExpanded: controlledExpanded,
   onToggleExpand,
-  placementLabel = 'Daily Workout Prescription',
+  placementLabel = 'Morning Brief · Daily Prescription',
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
@@ -136,30 +136,31 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   const [sportMode, setSportMode] = useState<'Cycling' | 'Running'>('Cycling');
   const [envMode, setEnvMode] = useState<'INDOOR' | 'OUTDOOR'>('INDOOR');
   const [isSyncingCalendar, setIsSyncingCalendar] = useState<boolean>(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [syncedBanner, setSyncedBanner] = useState<string | null>(null);
 
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  // Latest morning wellness
+  // Latest morning wellness (honest zeros when uncalibrated — never invent fake readiness metrics)
   const latestWellness = useMemo(() => {
     if (wellnessDays.length === 0) {
       return {
         date: todayIso,
-        ctl: 71.4,
-        atl: 53.0,
-        tsb: 18.4,
-        loadRatio: 0.74,
-        rampRate: -1.8,
-        hrvRMSSD: 52,
-        hrvBaseline7d: 51,
-        hrvNormalBandLow: 44,
-        hrvNormalBandHigh: 62,
-        restingHR: athleteProfile.restingHr || 49,
-        sleepSecs: 26340,
-        sleepScore: 75,
+        ctl: 0,
+        atl: 0,
+        tsb: 0,
+        loadRatio: 0,
+        rampRate: 0,
+        hrvRMSSD: 0,
+        hrvBaseline7d: 0,
+        hrvNormalBandLow: 0,
+        hrvNormalBandHigh: 0,
+        restingHR: athleteProfile.restingHr || 0,
+        sleepSecs: 0,
+        sleepScore: 0,
         weightKg: athleteProfile.weightKg || 70.0,
         readinessStatus: 'Optimal' as const,
-        dailyLoad: 55,
+        dailyLoad: 0,
       };
     }
     return wellnessDays[wellnessDays.length - 1];
@@ -193,53 +194,72 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     );
   }, [activities]);
 
-  const lastDecouplingPct = useMemo(() => {
-    if (!lastEnduranceWorkout) return 2.8;
+  const lastDecouplingPct = useMemo<number | null>(() => {
     if (
+      lastEnduranceWorkout &&
       typeof lastEnduranceWorkout.aerobicDecouplingPct === 'number' &&
       lastEnduranceWorkout.aerobicDecouplingPct !== 0
     ) {
       return Number(lastEnduranceWorkout.aerobicDecouplingPct.toFixed(1));
     }
-    return 2.9;
+    return null;
   }, [lastEnduranceWorkout]);
 
   // Evaluate 5 Explainable Physiological Triggers
   const triggers = useMemo(() => {
-    const hrvDelta = recentHrvDay.hrvRMSSD - (recentHrvDay.hrvBaseline7d || 50);
-    const hrvLowFloor = recentHrvDay.hrvNormalBandLow || 44;
-    const hrvState: 'optimal' | 'caution' | 'strained' =
-      recentHrvDay.hrvRMSSD < hrvLowFloor || hrvDelta <= -7
+    const hasHrv = recentHrvDay.hrvRMSSD > 0;
+    const hrvBaseline = recentHrvDay.hrvBaseline7d || recentHrvDay.hrvRMSSD;
+    const hrvDelta = hasHrv ? recentHrvDay.hrvRMSSD - hrvBaseline : 0;
+    const hrvLowFloor = recentHrvDay.hrvNormalBandLow || Math.round(hrvBaseline * 0.86);
+    const hrvState: 'optimal' | 'caution' | 'strained' = !hasHrv
+      ? 'optimal'
+      : recentHrvDay.hrvRMSSD < hrvLowFloor || hrvDelta <= -7
         ? 'strained'
         : hrvDelta <= -3
           ? 'caution'
           : 'optimal';
 
-    const sleepScore = recentSleepDay.sleepScore || 75;
-    const sleepHrs = (recentSleepDay.sleepSecs || 25200) / 3600;
-    const sleepState: 'optimal' | 'caution' | 'strained' =
-      sleepScore < 62 || sleepHrs < 5.8
+    const hasSleep = recentSleepDay.sleepScore > 0 || recentSleepDay.sleepSecs > 0;
+    const sleepScore = recentSleepDay.sleepScore || 0;
+    const sleepHrs = (recentSleepDay.sleepSecs || 0) / 3600;
+    const sleepState: 'optimal' | 'caution' | 'strained' = !hasSleep
+      ? 'optimal'
+      : (sleepScore > 0 && sleepScore < 62) || (sleepHrs > 0 && sleepHrs < 5.8)
         ? 'strained'
-        : sleepScore < 74 || sleepHrs < 6.6
+        : (sleepScore > 0 && sleepScore < 74) || (sleepHrs > 0 && sleepHrs < 6.6)
           ? 'caution'
           : 'optimal';
 
-    const rhrDelta = (recentHrvDay.restingHR || 49) - (athleteProfile.restingHr || 49);
-    const rhrState: 'optimal' | 'caution' | 'strained' =
-      rhrDelta >= 5 ? 'strained' : rhrDelta >= 3 ? 'caution' : 'optimal';
+    const hasRhr = recentHrvDay.restingHR > 0;
+    const baseRhr = athleteProfile.restingHr || recentHrvDay.restingHR;
+    const rhrDelta = hasRhr ? recentHrvDay.restingHR - baseRhr : 0;
+    const rhrState: 'optimal' | 'caution' | 'strained' = !hasRhr
+      ? 'optimal'
+      : rhrDelta >= 5
+        ? 'strained'
+        : rhrDelta >= 3
+          ? 'caution'
+          : 'optimal';
 
+    const hasLoadHistory = wellnessDays.length > 0 || activities.length > 0;
     const tsb = latestWellness.tsb;
-    const tsbState: 'optimal' | 'caution' | 'strained' =
-      tsb < -28 ? 'strained' : tsb < -18 ? 'caution' : 'optimal';
+    const tsbState: 'optimal' | 'caution' | 'strained' = !hasLoadHistory
+      ? 'optimal'
+      : tsb < -28
+        ? 'strained'
+        : tsb < -18
+          ? 'caution'
+          : 'optimal';
 
     const decoupleState: 'optimal' | 'caution' | 'strained' =
-      lastDecouplingPct > 6.5
-        ? 'strained'
-        : lastDecouplingPct > 4.8
-          ? 'caution'
-          : 'optimal';
+      lastDecouplingPct === null
+        ? 'optimal'
+        : lastDecouplingPct > 6.5
+          ? 'strained'
+          : lastDecouplingPct > 4.8
+            ? 'caution'
+            : 'optimal';
 
-    // Determine auto-detected morph tier
     const strainedCount = [hrvState, sleepState, rhrState, tsbState, decoupleState].filter(
       (s) => s === 'strained'
     ).length;
@@ -253,10 +273,12 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     } else if (strainedCount === 1 || cautionCount >= 2) {
       autoMode = 'CAUTION_PIVOT';
     } else if (
+      hasHrv &&
+      hasSleep &&
       hrvDelta >= 2 &&
       sleepScore >= 78 &&
       tsb >= -12 &&
-      lastDecouplingPct <= 4.0
+      (lastDecouplingPct === null || lastDecouplingPct <= 4.0)
     ) {
       autoMode = 'SUPERCOMPENSATION';
     }
@@ -267,41 +289,52 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         {
           id: 'hrv',
           label: 'Overnight HRV (rMSSD)',
-          value: `${recentHrvDay.hrvRMSSD} ms`,
-          detail: `${hrvDelta >= 0 ? `+${hrvDelta}` : hrvDelta} ms vs ${recentHrvDay.hrvBaseline7d} ms 7d avg`,
+          value: hasHrv ? `${recentHrvDay.hrvRMSSD} ms` : '— ms',
+          detail: hasHrv
+            ? `${hrvDelta >= 0 ? `+${hrvDelta}` : hrvDelta} ms vs ${hrvBaseline} ms 7d avg`
+            : 'Awaiting Garmin / Intervals sync',
           state: hrvState,
         },
         {
           id: 'sleep',
           label: 'Sleep Score',
-          value: `Score ${sleepScore}`,
-          detail: `${sleepHrs.toFixed(1)}h duration`,
+          value: hasSleep ? (sleepScore > 0 ? `Score ${sleepScore}` : `${sleepHrs.toFixed(1)}h`) : '—',
+          detail: hasSleep ? `${sleepHrs.toFixed(1)}h duration` : 'No overnight sleep synced',
           state: sleepState,
         },
         {
           id: 'rhr',
           label: 'Resting HR vs Profile',
-          value: `${recentHrvDay.restingHR} bpm`,
-          detail: `${rhrDelta >= 0 ? `+${rhrDelta}` : rhrDelta} bpm vs ${athleteProfile.restingHr} bpm base`,
+          value: hasRhr ? `${recentHrvDay.restingHR} bpm` : '— bpm',
+          detail: hasRhr
+            ? `${rhrDelta >= 0 ? `+${rhrDelta}` : rhrDelta} bpm vs ${baseRhr} bpm base`
+            : 'Using profile baseline',
           state: rhrState,
         },
         {
           id: 'tsb',
           label: 'Form (TSB) & Load Ratio',
-          value: `TSB ${tsb > 0 ? `+${tsb.toFixed(0)}` : tsb.toFixed(0)}`,
-          detail: `CTL ${latestWellness.ctl.toFixed(0)} · ATL ${latestWellness.atl.toFixed(0)}`,
+          value: hasLoadHistory ? `TSB ${tsb > 0 ? `+${tsb.toFixed(0)}` : tsb.toFixed(0)}` : 'TSB —',
+          detail: hasLoadHistory
+            ? `CTL ${latestWellness.ctl.toFixed(0)} · ATL ${latestWellness.atl.toFixed(0)}`
+            : 'Sync workouts to build PMC',
           state: tsbState,
         },
         {
           id: 'decouple',
           label: 'Last Workout Decoupling',
-          value: `${lastDecouplingPct}% Pa:Hr`,
-          detail: lastDecouplingPct <= 5 ? '<5% Coupled' : '>5% Drift Warning',
+          value: lastDecouplingPct !== null ? `${lastDecouplingPct}% Pa:Hr` : '— Pa:Hr',
+          detail:
+            lastDecouplingPct !== null
+              ? lastDecouplingPct <= 5
+                ? '<5% Coupled'
+                : '>5% Drift Warning'
+              : 'No 20m+ stream analyzed yet',
           state: decoupleState,
         },
       ],
     };
-  }, [recentHrvDay, recentSleepDay, latestWellness, lastDecouplingPct, athleteProfile]);
+  }, [recentHrvDay, recentSleepDay, latestWellness, lastDecouplingPct, athleteProfile, wellnessDays.length, activities.length]);
 
   const effectiveMode: Exclude<MorphReadinessMode, 'AUTO'> =
     selectedMode === 'AUTO' ? triggers.autoMode : selectedMode;
@@ -531,7 +564,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
 
     const zwoContent = `<?xml version="1.0" encoding="UTF-8"?>
 <workout_file>
-  <author>AeroPulse Readiness Engine</author>
+  <author>Thresh Readiness Engine</author>
   <name>${morphedWorkout.title.replace(/[<>&"]/g, '')}</name>
   <description>${morphedWorkout.rationale.replace(/[<>&"]/g, '')} (FTP ${activeFtp}W)</description>
   <sportType>${sportMode === 'Cycling' ? 'bike' : 'run'}</sportType>
@@ -564,7 +597,7 @@ ${xmlSteps}
 VERSION = 2
 UNITS = ENGLISH
 DESCRIPTION = ${morphedWorkout.title} (Calibrated to ${activeFtp}W FTP)
-FILE NAME = ${todayIso}-aeropulse.erg
+FILE NAME = ${todayIso}-thresh.erg
 FTP = ${activeFtp}
 MINUTES WATTS
 [END COURSE HEADER]
@@ -684,16 +717,29 @@ ${dataLines.join('\n')}
           <button
             type="button"
             onClick={handleToggleExpand}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B4F9E] hover:bg-[#093e7d] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors cursor-pointer"
+            className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors cursor-pointer"
           >
-            <Sparkles className="w-3 h-3" />
+            <Sparkles className="w-3.5 h-3.5" />
             <span>{placementLabel}</span>
             {isExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5 ml-0.5 opacity-80" />
+              <ChevronUp className="w-3.5 h-3.5 ml-0.5 opacity-85" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-80" />
+              <ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-85" />
             )}
           </button>
+
+          {!isExpanded && (
+            <button
+              type="button"
+              onClick={handleToggleExpand}
+              className="text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-[#1D4ED8] dark:hover:text-[#60A5FA] transition-colors"
+            >
+              {morphedWorkout.title}{' '}
+              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                · {morphedWorkout.totalMins}m · {morphedWorkout.tss} TSS
+              </span>
+            </button>
+          )}
 
           <div onClick={(e) => e.stopPropagation()}>
             <ChartInfoTooltip
@@ -1034,75 +1080,115 @@ ${dataLines.join('\n')}
             </div>
           </div>
 
-          {/* Bottom Action & Export Bar */}
-          <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+          {/* Bottom Action & Export Bar (1 Primary 44px CTA + Secondary Export Menu) */}
+          <div className="pt-3 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={handleSyncToIntervalsCalendar}
                 disabled={isSyncingCalendar}
-                className="min-h-[36px] inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 px-4 py-1.5 text-xs font-semibold text-white shadow-xs transition-all"
+                className="ap-btn-primary disabled:opacity-60 px-5 text-xs sm:text-sm"
               >
-                <CalendarCheck className="w-3.5 h-3.5" />
+                <CalendarCheck className="w-4 h-4" />
                 <span>
                   {isSyncingCalendar
-                    ? 'Saving to Calendar...'
-                    : 'Save Workout to Calendar'}
+                    ? 'Saving & Syncing...'
+                    : 'Save & Sync to Calendar'}
                 </span>
               </button>
 
-              <button
-                type="button"
-                onClick={handlePushDirectGarmin}
-                disabled={isSyncingCalendar}
-                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl bg-[#007CC3] hover:bg-[#0066a1] disabled:opacity-60 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors"
-                title="Push structured workout directly to your Garmin Connect Calendar for wireless sync to your Garmin watch or Edge head unit"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Push to Garmin Connect</span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsExportMenuOpen((prev) => !prev)}
+                  aria-expanded={isExportMenuOpen}
+                  aria-haspopup="menu"
+                  className="ap-btn-secondary px-3.5 text-xs sm:text-sm"
+                >
+                  <Download className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                  <span>Export &amp; Device Push</span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-75" />
+                </button>
 
-              <button
-                type="button"
-                onClick={handleDownloadFit}
-                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="Download native Garmin .FIT binary workout file for Garmin watches & Edge head units"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Export Garmin .FIT</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadZwo}
-                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="Download structured .ZWO workout file"
-              >
-                <Download className="w-3.5 h-3.5 text-orange-500" />
-                <span>Export .ZWO</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadErg}
-                className="min-h-[36px] inline-flex items-center gap-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="Download .ERG workout file calibrated to your synced FTP"
-              >
-                <Download className="w-3.5 h-3.5 text-sky-500" />
-                <span>Export .ERG ({activeFtp}W)</span>
-              </button>
+                {isExportMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 bottom-full mb-2 w-64 rounded-xl liquid-glass p-1.5 shadow-xl z-40 space-y-0.5"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        handlePushDirectGarmin();
+                      }}
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Zap className="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                        Push Direct to Garmin Connect
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        handleDownloadFit();
+                      }}
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Download className="w-3.5 h-3.5 text-[#0D9488]" />
+                        Download Garmin .FIT Binary
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500">.FIT</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        handleDownloadZwo();
+                      }}
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Download className="w-3.5 h-3.5 text-[#EA580C]" />
+                        Download Structured Workout
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500">.ZWO</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        handleDownloadErg();
+                      }}
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Download className="w-3.5 h-3.5 text-[#7C3AED]" />
+                        Download Smart Trainer ERG
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500">{activeFtp}W</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
               type="button"
               onClick={() =>
                 onOpenCoachWithPrompt(
-                  `Explain today's readiness-morphed workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my HRV (${recentHrvDay.hrvRMSSD} ms vs ${recentHrvDay.hrvBaseline7d} ms 7d avg), Sleep Score (${recentSleepDay.sleepScore}), Form (TSB ${latestWellness.tsb.toFixed(1)}), and synced FTP (${activeFtp}W) / LTHR (${athleteProfile.lthr} bpm).`
+                  `Explain today's readiness-morphed workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my HRV (${recentHrvDay.hrvRMSSD || 'uncalibrated'} ms), Sleep Score (${recentSleepDay.sleepScore || 'uncalibrated'}), Form (TSB ${latestWellness.tsb.toFixed(1)}), and synced FTP (${activeFtp}W) / LTHR (${athleteProfile.lthr} bpm).`
                 )
               }
-              className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-sky-400 hover:underline"
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold text-[#1D4ED8] dark:text-[#60A5FA] hover:underline"
             >
-              <span>Discuss Prescription with AI Coach</span>
+              <span>Ask Thresh Coach</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
             </div>

@@ -42,31 +42,86 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   // Dynamically calibrate Power & Pace Duration Curves from athlete's real eFTP, W', Pmax & synced activities
-  const calibratedCurves = useMemo(() => {
+  const { calibratedCurves, hasPowerCalibration, hasPaceCalibration } = useMemo(() => {
     const latestWithMetrics = [...wellnessDays]
       .reverse()
-      .find((w) => (w.rideEftp && w.rideEftp > 150) || (w.runEftp && w.runEftp > 150));
+      .find((w) => (w.rideEftp && w.rideEftp > 120) || (w.runEftp && w.runEftp > 120));
 
-    const rideEftp = latestWithMetrics?.rideEftp || 310;
-    const rideWPrime = latestWithMetrics?.rideWPrime || 25120;
-    const ridePMax = latestWithMetrics?.ridePMax || 1204;
-    const runEftp = latestWithMetrics?.runEftp || 456;
-
-    // Also inspect real cycling & running workouts for peak normalized power & pace
     const outdoorBikes = activities.filter(
-      (a) => a.sportCategory === 'Cycling' && a.environment === 'OUTDOOR' && (a.normalizedPower || 0) > 0
+      (a) =>
+        a.sportCategory === 'Cycling' &&
+        a.environment === 'OUTDOOR' &&
+        (a.normalizedPower || a.avgPower || 0) > 0
     );
     const indoorBikes = activities.filter(
-      (a) => a.sportCategory === 'Cycling' && a.environment === 'INDOOR' && (a.normalizedPower || 0) > 0
+      (a) =>
+        a.sportCategory === 'Cycling' &&
+        a.environment === 'INDOOR' &&
+        (a.normalizedPower || a.avgPower || 0) > 0
     );
-    const maxOutNp = outdoorBikes.length > 0 ? Math.max(...outdoorBikes.map((a) => a.normalizedPower || 0)) : rideEftp;
-    const maxInNp = indoorBikes.length > 0 ? Math.max(...indoorBikes.map((a) => a.normalizedPower || 0)) : Math.round(rideEftp * 0.97);
 
-    const outRatio = Math.max(0.85, Math.min(1.15, maxOutNp / Math.max(200, rideEftp)));
-    const inRatio = Math.max(0.85, Math.min(1.15, maxInNp / Math.max(200, rideEftp)));
+    const maxOutNp =
+      outdoorBikes.length > 0
+        ? Math.max(...outdoorBikes.map((a) => a.normalizedPower || a.avgPower || 0))
+        : 0;
+    const maxInNp =
+      indoorBikes.length > 0
+        ? Math.max(...indoorBikes.map((a) => a.normalizedPower || a.avgPower || 0))
+        : 0;
 
-    const thresholdSpeedMps = 3.25 + ((runEftp - 300) / 180) * 0.92;
-    const baseThresholdPaceSecsKm = Math.round(1000 / thresholdSpeedMps);
+    const rideEftp =
+      latestWithMetrics?.rideEftp ||
+      athleteProfile?.ftp ||
+      athleteProfile?.indoorFtp ||
+      Math.max(maxOutNp, maxInNp) ||
+      0;
+    const hasPower = rideEftp > 0;
+    const rideWPrime = latestWithMetrics?.rideWPrime || (hasPower ? Math.round(rideEftp * 75) : 0);
+    const ridePMax = latestWithMetrics?.ridePMax || (hasPower ? Math.round(rideEftp * 3.6) : 0);
+
+    const outRatio =
+      hasPower && maxOutNp > 0
+        ? Math.max(0.85, Math.min(1.15, maxOutNp / Math.max(150, rideEftp)))
+        : hasPower
+          ? 1
+          : 0;
+    const inRatio =
+      hasPower && maxInNp > 0
+        ? Math.max(0.85, Math.min(1.15, maxInNp / Math.max(150, rideEftp)))
+        : hasPower && athleteProfile?.indoorFtp
+          ? athleteProfile.indoorFtp / rideEftp
+          : outRatio;
+
+    const outdoorRuns = activities.filter(
+      (a) =>
+        a.sportCategory === 'Running' &&
+        a.environment === 'OUTDOOR' &&
+        (a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 0) > 0
+    );
+    const indoorRuns = activities.filter(
+      (a) =>
+        a.sportCategory === 'Running' &&
+        a.environment === 'INDOOR' &&
+        (a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 0) > 0
+    );
+    const bestOutRunPace =
+      outdoorRuns.length > 0
+        ? Math.min(...outdoorRuns.map((a) => a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 999))
+        : 0;
+    const bestInRunPace =
+      indoorRuns.length > 0
+        ? Math.min(...indoorRuns.map((a) => a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 999))
+        : 0;
+
+    const runEftp = latestWithMetrics?.runEftp || athleteProfile?.runFtp || 0;
+    const baseThresholdPaceSecsKm =
+      athleteProfile?.thresholdPaceSecsPerKm ||
+      (bestOutRunPace > 0 && bestOutRunPace < 900
+        ? bestOutRunPace
+        : runEftp > 0
+          ? Math.round(1000 / (3.25 + ((runEftp - 300) / 180) * 0.92))
+          : 0);
+    const hasPace = baseThresholdPaceSecsKm > 0;
 
     const durations = [
       { durationSecs: 5, durationLabel: '5 sec', runFactor: 0.68 },
@@ -77,44 +132,49 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
       { durationSecs: 7200, durationLabel: '2 hr', runFactor: 1.07 },
     ];
 
-    return durations.map((d, idx) => {
+    const pts = durations.map((d, idx) => {
+      if (curves[idx]) return curves[idx];
+
       // 3-parameter Critical Power model: P(t) = CP + W' / (t + W' / (Pmax - CP))
-      const modelWatts = Math.round(
-        rideEftp + rideWPrime / (d.durationSecs + rideWPrime / Math.max(100, ridePMax - rideEftp))
-      );
-      const cyclingOutdoorWatts = Math.round(modelWatts * outRatio);
-      const cyclingIndoorWatts = Math.round(modelWatts * inRatio);
-      const cyclingSeasonBestWatts = Math.round(Math.max(cyclingOutdoorWatts, cyclingIndoorWatts) * 1.03);
+      const modelWatts = hasPower
+        ? Math.round(
+            rideEftp + rideWPrime / (d.durationSecs + rideWPrime / Math.max(100, ridePMax - rideEftp))
+          )
+        : 0;
+      const cyclingOutdoorWatts = hasPower ? Math.round(modelWatts * outRatio) : 0;
+      const cyclingIndoorWatts = hasPower ? Math.round(modelWatts * inRatio) : 0;
+      const cyclingSeasonBestWatts = Math.max(cyclingOutdoorWatts, cyclingIndoorWatts);
 
-      const runningOutdoorPaceSecsKm = Math.round(baseThresholdPaceSecsKm * d.runFactor);
-      const runningIndoorPaceSecsKm = Math.round(runningOutdoorPaceSecsKm * 1.025);
-      const runningSeasonBestPaceSecsKm = Math.round(runningOutdoorPaceSecsKm * 0.98);
+      const runningOutdoorPaceSecsKm = hasPace
+        ? Math.round(baseThresholdPaceSecsKm * d.runFactor)
+        : 0;
+      const runningIndoorPaceSecsKm =
+        bestInRunPace > 0 && bestInRunPace < 900
+          ? Math.round(bestInRunPace * d.runFactor)
+          : runningOutdoorPaceSecsKm;
+      const runningSeasonBestPaceSecsKm =
+        runningOutdoorPaceSecsKm > 0 && runningIndoorPaceSecsKm > 0
+          ? Math.min(runningOutdoorPaceSecsKm, runningIndoorPaceSecsKm)
+          : runningOutdoorPaceSecsKm || runningIndoorPaceSecsKm;
 
-      return (
-        curves[idx]
-          ? {
-              durationSecs: d.durationSecs,
-              durationLabel: d.durationLabel,
-              cyclingOutdoorWatts,
-              cyclingIndoorWatts,
-              cyclingSeasonBestWatts,
-              runningOutdoorPaceSecsKm,
-              runningIndoorPaceSecsKm,
-              runningSeasonBestPaceSecsKm,
-            }
-          : {
-              durationSecs: d.durationSecs,
-              durationLabel: d.durationLabel,
-              cyclingOutdoorWatts,
-              cyclingIndoorWatts,
-              cyclingSeasonBestWatts,
-              runningOutdoorPaceSecsKm,
-              runningIndoorPaceSecsKm,
-              runningSeasonBestPaceSecsKm,
-            }
-      );
+      return {
+        durationSecs: d.durationSecs,
+        durationLabel: d.durationLabel,
+        cyclingOutdoorWatts,
+        cyclingIndoorWatts,
+        cyclingSeasonBestWatts,
+        runningOutdoorPaceSecsKm,
+        runningIndoorPaceSecsKm,
+        runningSeasonBestPaceSecsKm,
+      };
     });
-  }, [wellnessDays, activities, curves]);
+
+    return {
+      calibratedCurves: pts,
+      hasPowerCalibration: hasPower,
+      hasPaceCalibration: hasPace,
+    };
+  }, [wellnessDays, activities, curves, athleteProfile]);
 
   const repeatedSegments = useMemo(
     () => buildRepeatedSegmentsFromActivities(activities),
@@ -147,10 +207,17 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                 liveStatus={{
                   label:
                     curveDiscipline === 'Cycling'
-                      ? `20m Outdoor: ${calibratedCurves[3]?.cyclingOutdoorWatts || 318}W (${((calibratedCurves[3]?.cyclingOutdoorWatts || 318) / Math.max(40, athleteWeightKg)).toFixed(2)} W/kg) · Trainer: ${calibratedCurves[3]?.cyclingIndoorWatts || 308}W`
-                      : `20m Outdoor: ${formatPace(calibratedCurves[3]?.runningOutdoorPaceSecsKm || 235, distanceUnit)} · Treadmill: ${formatPace(calibratedCurves[3]?.runningIndoorPaceSecsKm || 241, distanceUnit)}`,
-                  state: 'optimal',
-                  interpretation: `Showing ${curveDiscipline} duration curve calibrated to your synced Outdoor and Indoor workouts.`,
+                      ? hasPowerCalibration
+                        ? `20m Outdoor: ${calibratedCurves[3]?.cyclingOutdoorWatts || 0}W (${((calibratedCurves[3]?.cyclingOutdoorWatts || 0) / Math.max(40, athleteWeightKg)).toFixed(2)} W/kg) · Trainer: ${calibratedCurves[3]?.cyclingIndoorWatts || 0}W`
+                        : 'Awaiting Power Calibration'
+                      : hasPaceCalibration
+                        ? `20m Outdoor: ${formatPace(calibratedCurves[3]?.runningOutdoorPaceSecsKm || 0, distanceUnit)} · Treadmill: ${formatPace(calibratedCurves[3]?.runningIndoorPaceSecsKm || 0, distanceUnit)}`
+                        : 'Awaiting Pace Calibration',
+                  state:
+                    (curveDiscipline === 'Cycling' ? hasPowerCalibration : hasPaceCalibration)
+                      ? 'optimal'
+                      : 'neutral',
+                  interpretation: `Showing ${curveDiscipline} CP/CS duration model calibrated to your profile and synced workouts.`,
                 }}
                 coachingAction="Use your Indoor Trainer 20m–60m curve for ERG-mode workout prescription, and your Outdoor curve for road/trail pacing."
               />
@@ -178,6 +245,14 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         </div>
 
         {/* Interactive Power / Pace Duration Curve SVG Chart with Explicit X & Y Axis Labels */}
+        {(curveDiscipline === 'Cycling' && !hasPowerCalibration) ||
+        (curveDiscipline === 'Running' && !hasPaceCalibration) ? (
+          <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-800 p-8 text-center text-xs text-slate-500 dark:text-slate-400">
+            {curveDiscipline === 'Cycling'
+              ? 'No cycling FTP or power telemetry calibrated yet. Set your FTP in Athlete Profile or upload a power-meter .FIT file to unlock your Critical Power curve.'
+              : 'No running threshold pace or GPS run telemetry calibrated yet. Set your Threshold Pace in Athlete Profile or upload a run to unlock your Critical Speed curve.'}
+          </div>
+        ) : (
         <div
           className="rounded-xl liquid-glass-subtle p-4 space-y-2 select-none"
           onMouseLeave={() => setHoverIdx(null)}
@@ -441,6 +516,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
             })()}
           </svg>
         </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs sm:text-sm">

@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React from 'react';
 
 interface AeroPulseLogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -8,10 +8,10 @@ interface AeroPulseLogoProps {
 }
 
 /**
- * THRESH — "01: The Inflection Ring" Brand Mark & Wordmark
- * Models the physiological S-curve shared by runners (Lactate Threshold Pace)
- * and cyclists (FTP deflection) crossing the aerobic ring into Signal Orange.
- * Automatically adapts to a Pure White badge in Light Mode and Obsidian in Dark Mode.
+ * THRESH — "The Deflection Arc" Brand Mark & Solid Wordmark
+ * Bold 270° open aerobic arc in Deep Ink (#111318 / #F4F5F7) paired with a
+ * single-color Thresh Vermilion (#D9480F / #FB6514) S-curve tangent sweeping
+ * cleanly through the open 2-o'clock threshold breach.
  */
 export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   size = 'md',
@@ -19,7 +19,6 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   badgeText,
   badgeTone = 'cyan',
 }) => {
-  const gradId = useId();
   const boxClass =
     size === 'sm'
       ? 'w-8 h-8 rounded-xl'
@@ -32,23 +31,24 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 
   const titleClass =
     size === 'sm'
-      ? 'text-sm sm:text-base font-black tracking-tight'
+      ? 'text-sm sm:text-base font-extrabold tracking-[-0.03em]'
       : size === 'lg'
-        ? 'text-xl sm:text-2xl font-black tracking-tight'
-        : 'text-base sm:text-lg font-black tracking-tight';
+        ? 'text-xl sm:text-2xl font-extrabold tracking-[-0.03em]'
+        : 'text-base sm:text-lg font-extrabold tracking-[-0.03em]';
 
+  // WCAG 2.1 AA+ high-contrast semantic badge tokens (>= 4.5:1 on white)
   const badgeToneClasses =
     badgeTone === 'orange'
-      ? 'bg-[#EA580C]/10 text-[#EA580C] border-[#EA580C]/30'
+      ? 'bg-[#FFF4ED] dark:bg-[#FB6514]/15 text-[#B93800] dark:text-[#FB923C] border-[#FDBA74] dark:border-[#FB6514]/35'
       : badgeTone === 'emerald'
-        ? 'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30'
-        : 'bg-[#0B4F9E]/10 dark:bg-[#38BDF8]/15 text-[#0B4F9E] dark:text-[#38BDF8] border-[#0B4F9E]/25 dark:border-[#38BDF8]/35';
+        ? 'bg-[#ECFDF5] dark:bg-emerald-500/15 text-[#065F46] dark:text-emerald-300 border-[#A7F3D0] dark:border-emerald-500/35'
+        : 'bg-[#EFF6FF] dark:bg-blue-500/15 text-[#1D4ED8] dark:text-[#60A5FA] border-[#BFDBFE] dark:border-blue-400/35';
 
   return (
     <div className="inline-flex items-center gap-2.5 select-none">
-      {/* Adaptive Vector Inflection Ring Badge (Pure White in Light Mode, Obsidian in Dark Mode) */}
+      {/* Deflection Arc App Mark */}
       <div
-        className={`${boxClass} relative flex items-center justify-center bg-white dark:bg-[#0B0F17] border border-slate-200 dark:border-sky-500/30 shadow-2xs overflow-hidden shrink-0 transition-colors`}
+        className={`${boxClass} relative flex items-center justify-center bg-white dark:bg-[#121419] border border-black/10 dark:border-white/12 shadow-2xs overflow-hidden shrink-0 transition-colors`}
       >
         <svg
           viewBox="0 0 32 32"
@@ -57,63 +57,40 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
           className={`${svgClass} relative z-10`}
           aria-hidden="true"
         >
-          <defs>
-            <linearGradient
-              id={gradId}
-              x1="4"
-              y1="24"
-              x2="28"
-              y2="8"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop offset="0%" stopColor="#0B4F9E" />
-              <stop offset="48%" stopColor="#0284C7" />
-              <stop offset="68%" stopColor="#EA580C" />
-              <stop offset="100%" stopColor="#F97316" />
-            </linearGradient>
-          </defs>
-          {/* Outer Aerobic Base Ring */}
-          <circle
-            cx="16"
-            cy="16"
-            r="10.2"
-            className="stroke-[#0B4F9E] dark:stroke-[#38BDF8]"
-            strokeWidth="3.2"
-          />
-          {/* White / Obsidian Knockout Halo for Crisp Crossover */}
+          {/* 270° Open Aerobic Arc (open breach at 12:00–2:30) */}
           <path
-            d="M3.5 23.5C11 23.5 13.5 19.5 16 16C18.5 12.5 21 8.5 28.5 8.5"
-            className="stroke-white dark:stroke-[#0B0F17]"
-            strokeWidth="5.4"
+            d="M 16 5.2 A 10.8 10.8 0 1 0 25.35 10.6"
+            className="stroke-[#111318] dark:stroke-[#F4F5F7]"
+            strokeWidth="3.1"
             strokeLinecap="round"
           />
-          {/* Lactate / Power Threshold S-Curve Inflection */}
+          {/* Thresh Vermilion Physiological S-Curve Sweeping Through Open Breach */}
           <path
-            d="M3.5 23.5C11 23.5 13.5 19.5 16 16C18.5 12.5 21 8.5 28.5 8.5"
-            stroke={`url(#${gradId})`}
-            strokeWidth="3.5"
+            d="M 8.6 22.8 C 13.8 22.8 14.8 18.2 16.4 15.2 C 18.0 12.2 20.4 7.0 26.6 6.4"
+            className="stroke-[#D9480F] dark:stroke-[#FB6514]"
+            strokeWidth="3.1"
             strokeLinecap="round"
           />
         </svg>
       </div>
 
-      {/* THRESH Brand Wordmark & Optional Tagline */}
+      {/* Solid THRESH Wordmark & Optional Descriptor */}
       <div className="leading-none">
         <div className="flex items-center gap-1.5">
-          <span className={`${titleClass} font-display text-slate-900 dark:text-white`}>
-            THR<span className="text-[#EA580C]">ESH</span>
+          <span className={`${titleClass} font-display text-[#111318] dark:text-[#F4F5F7]`}>
+            THRESH
           </span>
           {badgeText && (
             <span
-              className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider border ${badgeToneClasses}`}
+              className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold uppercase tracking-wider border ${badgeToneClasses}`}
             >
               {badgeText}
             </span>
           )}
         </div>
         {showTagline && (
-          <span className="block text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5 tracking-wider uppercase">
-            RUN &amp; RIDE THRESHOLD INTELLIGENCE
+          <span className="block text-[11px] font-mono text-[#525866] dark:text-slate-400 mt-0.5 tracking-wider uppercase">
+            RUN &amp; RIDE READINESS
           </span>
         )}
       </div>
@@ -121,8 +98,10 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   );
 };
 
+export const ThreshLogo = AeroPulseLogo;
+
 /**
- * Subtle non-interactive THRESH Inflection Ring watermark for hero cards
+ * Subtle non-interactive THRESH Deflection Arc watermark for hero cards
  */
 export const ThreshBrandWatermark: React.FC<{ className?: string }> = ({
   className = 'w-36 h-36',
@@ -134,12 +113,17 @@ export const ThreshBrandWatermark: React.FC<{ className?: string }> = ({
     className={`pointer-events-none select-none opacity-[0.04] dark:opacity-[0.06] ${className}`}
     aria-hidden="true"
   >
-    <circle cx="32" cy="32" r="21" stroke="currentColor" strokeWidth="5.5" />
     <path
-      d="M6 47C22 47 27 39 32 32C37 25 42 17 58 17"
-      stroke="#EA580C"
+      d="M 32 10.4 A 21.6 21.6 0 1 0 50.7 21.2"
+      stroke="currentColor"
       strokeWidth="6"
-      strokeLinecap="round"
+      strokeLinecap="butt"
+    />
+    <path
+      d="M 17.2 45.6 C 27.6 45.6 29.6 36.4 32.8 30.4 C 36.0 24.4 40.8 14.0 53.2 12.8"
+      stroke="#D9480F"
+      strokeWidth="6"
+      strokeLinecap="butt"
     />
   </svg>
 );

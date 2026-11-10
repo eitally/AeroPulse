@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -52,23 +52,59 @@ import {
   DEFAULT_SELF_PRIVACY_SETTINGS,
   applyAthletePrivacyShield,
   buildInitialConnectedAthletes,
+  createConnectedAthleteRecord,
 } from './data/athleteRosterData';
-import { CalendarView } from './components/CalendarView';
-import { FitnessHealthView } from './components/FitnessHealthView';
-import { PhysiologicalTrendsView } from './components/PhysiologicalTrendsView';
-import { CustomChartsView } from './components/CustomChartsView';
-import { ActivitiesView } from './components/ActivitiesView';
-import { PhysiologyView } from './components/PhysiologyView';
-import { GoalsView } from './components/GoalsView';
-import { AICoachDrawer } from './components/AICoachDrawer';
-import { DataSourcesModal } from './components/DataSourcesModal';
-import { AthleteProfileModal } from './components/AthleteProfileModal';
-import { OfficialRaceModal } from './components/OfficialRaceModal';
-import { StravaAuthGate } from './components/StravaAuthGate';
-import { AthleteRosterModal } from './components/AthleteRosterModal';
+import { StravaAuthGate, type FirstRunCalibrationPayload } from './components/StravaAuthGate';
 import { AeroPulseLogo } from './components/AeroPulseLogo';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
-import { UserGuideModal } from './components/UserGuideModal';
+
+const CalendarView = lazy(() =>
+  import('./components/CalendarView').then((m) => ({ default: m.CalendarView }))
+);
+const FitnessHealthView = lazy(() =>
+  import('./components/FitnessHealthView').then((m) => ({ default: m.FitnessHealthView }))
+);
+const PhysiologicalTrendsView = lazy(() =>
+  import('./components/PhysiologicalTrendsView').then((m) => ({
+    default: m.PhysiologicalTrendsView,
+  }))
+);
+const CustomChartsView = lazy(() =>
+  import('./components/CustomChartsView').then((m) => ({ default: m.CustomChartsView }))
+);
+const ActivitiesView = lazy(() =>
+  import('./components/ActivitiesView').then((m) => ({ default: m.ActivitiesView }))
+);
+const PhysiologyView = lazy(() =>
+  import('./components/PhysiologyView').then((m) => ({ default: m.PhysiologyView }))
+);
+const GoalsView = lazy(() =>
+  import('./components/GoalsView').then((m) => ({ default: m.GoalsView }))
+);
+const AICoachDrawer = lazy(() =>
+  import('./components/AICoachDrawer').then((m) => ({ default: m.AICoachDrawer }))
+);
+const DataSourcesModal = lazy(() =>
+  import('./components/DataSourcesModal').then((m) => ({ default: m.DataSourcesModal }))
+);
+const AthleteProfileModal = lazy(() =>
+  import('./components/AthleteProfileModal').then((m) => ({ default: m.AthleteProfileModal }))
+);
+const OfficialRaceModal = lazy(() =>
+  import('./components/OfficialRaceModal').then((m) => ({ default: m.OfficialRaceModal }))
+);
+const AthleteRosterModal = lazy(() =>
+  import('./components/AthleteRosterModal').then((m) => ({ default: m.AthleteRosterModal }))
+);
+const UserGuideModal = lazy(() =>
+  import('./components/UserGuideModal').then((m) => ({ default: m.UserGuideModal }))
+);
+
+const ViewLoadingSkeleton: React.FC = () => (
+  <div className="rounded-2xl liquid-glass p-8 text-center text-xs font-mono text-slate-500 dark:text-slate-400 animate-pulse">
+    Loading THRESH workspace...
+  </div>
+);
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
   buildCompleteAthleteProfile,
@@ -103,11 +139,18 @@ const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-w
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('fitness');
   const [isDark, setIsDark] = useState<boolean>(false);
-  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi');
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() => {
+    try {
+      const saved = localStorage.getItem('thresh_distance_unit');
+      return saved === 'km' || saved === 'mi' ? saved : 'mi';
+    } catch {
+      return 'mi';
+    }
+  });
   const [envFilter, setEnvFilter] = useState<EnvironmentFilter>('COMBINED');
   const [selectedSport, setSelectedSport] = useState<SportCategory | 'ALL'>('ALL');
 
-  // Telemetry state — hydrated from Browser IndexedDB on boot only when Strava OAuth is active
+  // Telemetry state — hydrated from Browser IndexedDB on boot when workspace session is active
   const [wellnessDays, setWellnessDays] = useState<UnifiedWellnessDay[]>([]);
   const [activities, setActivities] = useState<UnifiedActivity[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedWorkoutEvent[]>([]);
@@ -125,15 +168,19 @@ export default function App() {
   const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
     try {
       const isGatePassed =
-        localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
+        (localStorage.getItem('aeropulse_auth_gate_passed') === '1' ||
+          localStorage.getItem('aeropulse_calibrated_v1') === '1') &&
         localStorage.getItem('aeropulse_logged_out') !== '1';
-      const hasAuthCreds = Boolean(
-        localStorage.getItem('aeropulse_session_token') ||
+      const hasAuthOrCalibrated = Boolean(
+        localStorage.getItem('aeropulse_calibrated_v1') === '1' ||
+          localStorage.getItem('aeropulse_auth_gate_passed') === '1' ||
+          localStorage.getItem('aeropulse_session_token') ||
           localStorage.getItem('aeropulse_strava_access_token') ||
           localStorage.getItem('aeropulse_strava_refresh_token') ||
+          localStorage.getItem('aeropulse_intervals_api_key') ||
           localStorage.getItem('aeropulse_garmin_personal_api_key')
       );
-      return isGatePassed && hasAuthCreds;
+      return isGatePassed && hasAuthOrCalibrated;
     } catch {
       return false;
     }
@@ -302,10 +349,17 @@ export default function App() {
         : `${DEV_APP_URL}/api/strava/callback`,
   });
 
-  // Automatically persist telemetry state changes (streams, routes, segments, kudos) to IndexedDB
+  // Automatically persist telemetry state changes (workouts, planned events, calibrated profile) to IndexedDB
   useEffect(() => {
     if (!idbHydratedRef.current) return;
-    if (activities.length === 0 && wellnessDays.length === 0) return;
+    if (
+      !hasEnteredWorkspace &&
+      activities.length === 0 &&
+      wellnessDays.length === 0 &&
+      plannedEvents.length === 0
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       const earliestActivityDate =
         activities.length > 0
@@ -369,15 +423,26 @@ export default function App() {
     }
   }, [connectedAthletes]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('thresh_distance_unit', distanceUnit);
+    } catch {
+      // ignore
+    }
+  }, [distanceUnit]);
+
+  useEffect(() => {
+    if (!hasEnteredWorkspace || isSessionLoggedOut) return;
+    fetch('/api/auth/session', { method: 'POST', credentials: 'include' }).catch(() => null);
+  }, [hasEnteredWorkspace, isSessionLoggedOut]);
+
   const getSavedIntervalsHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {};
     try {
       const isGatePassed =
-        localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
+        (localStorage.getItem('aeropulse_auth_gate_passed') === '1' ||
+          localStorage.getItem('aeropulse_calibrated_v1') === '1') &&
         localStorage.getItem('aeropulse_logged_out') !== '1';
-      if (isGatePassed) {
-        headers['x-auth-session'] = 'active';
-      }
       const sessionToken = localStorage.getItem('aeropulse_session_token') || '';
       if (sessionToken && isGatePassed) {
         headers['x-session-token'] = sessionToken;
@@ -434,8 +499,10 @@ export default function App() {
 
   const hasLocalClientCredentials = (): boolean => {
     try {
+      const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
       return Boolean(
-        localStorage.getItem('aeropulse_intervals_api_key') ||
+        (notLoggedOut && localStorage.getItem('aeropulse_calibrated_v1') === '1') ||
+          localStorage.getItem('aeropulse_intervals_api_key') ||
           localStorage.getItem('aeropulse_garmin_personal_api_key') ||
           hasStravaClientCredentials()
       );
@@ -1095,15 +1162,17 @@ export default function App() {
     [fetchServerConfigStatus]
   );
 
-  // Instant hydration from Browser IndexedDB on boot (strictly gated by Strava OAuth) + background incremental delta sync
+  // Instant hydration from Browser IndexedDB on boot + background incremental delta sync
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (hasStravaClientCredentials()) {
+      if (hasLocalClientCredentials()) {
         const cached = await loadPersistedTelemetrySnapshot();
-        if (mounted && cached && (cached.activities.length > 0 || cached.wellnessDays.length > 0)) {
-          setActivities(cached.activities);
-          activitiesRef.current = cached.activities;
+        if (mounted && cached) {
+          if (Array.isArray(cached.activities) && cached.activities.length > 0) {
+            setActivities(cached.activities);
+            activitiesRef.current = cached.activities;
+          }
           if (Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0) {
             setWellnessDays(cached.wellnessDays);
             wellnessDaysRef.current = cached.wellnessDays;
@@ -2609,6 +2678,19 @@ export default function App() {
     return primaryAthleteDisplayName.slice(0, 2).toUpperCase() || 'AT';
   }, [primaryAthleteDisplayName]);
 
+  const selfInviteCode = useMemo(() => {
+    const cleanTag = primaryAthleteDisplayName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6) || 'THRESH';
+    let hash = 0;
+    for (let i = 0; i < cleanTag.length; i++) {
+      hash = (hash * 31 + cleanTag.charCodeAt(i)) % 9000;
+    }
+    const codeDigits = String(1000 + Math.abs(hash));
+    return `TH-${codeDigits}-${cleanTag}`;
+  }, [primaryAthleteDisplayName]);
+
   const handleLogoutSession = useCallback(() => {
     setIsAccountMenuOpen(false);
     setIsSessionLoggedOut(true);
@@ -2617,6 +2699,7 @@ export default function App() {
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_calibrated_v1');
       localStorage.removeItem('aeropulse_session_token');
       localStorage.removeItem('aeropulse_strava_access_token');
       localStorage.removeItem('aeropulse_strava_refresh_token');
@@ -2639,6 +2722,7 @@ export default function App() {
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
+      localStorage.removeItem('aeropulse_calibrated_v1');
       localStorage.removeItem('aeropulse_session_token');
       localStorage.removeItem('aeropulse_intervals_api_key');
       localStorage.removeItem('aeropulse_intervals_athlete_id');
@@ -2713,28 +2797,7 @@ export default function App() {
     (query: string, role: 'COACH_EDIT' | 'FRIEND_VIEW', specialty: 'Running' | 'Cycling') => {
       const clean = query.trim();
       if (!clean) return;
-      const initials = clean
-        .split(/\s+/)
-        .map((w) => w[0]?.toUpperCase() || 'A')
-        .join('')
-        .slice(0, 2);
-      const baseDefaults = buildInitialConnectedAthletes()[0];
-      const newRecord: ConnectedAthleteRecord = {
-        ...baseDefaults,
-        id: `athlete-custom-${Date.now()}`,
-        name: clean.startsWith('AP-') ? `Athlete (${clean})` : clean,
-        avatarInitials: initials || 'AT',
-        location: 'Connected via Invite Code',
-        stravaAthleteId: String(Math.floor(4000000 + Math.random() * 5000000)),
-        inviteCode: clean.startsWith('AP-')
-          ? clean.toUpperCase()
-          : `AP-${Math.floor(1000 + Math.random() * 8999)}-${(initials || 'ATH').toUpperCase()}`,
-        role,
-        status: 'CONNECTED',
-        primarySport: specialty,
-        primaryGoalSummary:
-          specialty === 'Cycling' ? '340W Target FTP' : 'Sub-19:45 5K & Track PRs',
-      };
+      const newRecord = createConnectedAthleteRecord(clean, role, specialty);
       setConnectedAthletes((prev) => [newRecord, ...prev]);
     },
     []
@@ -3010,7 +3073,71 @@ export default function App() {
     setIsCoachDrawerOpen(true);
   };
 
-  if (isSessionLoggedOut || !hasEnteredWorkspace || !hasStravaClientCredentials()) {
+  const handleCompleteCalibrationEntry = async (payload: FirstRunCalibrationPayload) => {
+    const cleanName = payload.athleteName.trim() || 'Athlete';
+    const weightKg =
+      payload.distanceUnit === 'mi'
+        ? Math.round((payload.weightDisplay / 2.20462262) * 10) / 10
+        : Math.round(payload.weightDisplay * 10) / 10;
+
+    let thresholdPaceSecsPerKm = athleteProfileRef.current.thresholdPaceSecsPerKm || 260;
+    const paceMatch = payload.thresholdPaceInput.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (paceMatch) {
+      const totalSecs = Number(paceMatch[1]) * 60 + Number(paceMatch[2]);
+      if (totalSecs >= 120 && totalSecs <= 900) {
+        thresholdPaceSecsPerKm =
+          payload.distanceUnit === 'mi'
+            ? Math.round(totalSecs / 1.609344)
+            : Math.round(totalSecs);
+      }
+    }
+
+    const calibratedProfile = buildCompleteAthleteProfile(
+      {
+        ...athleteProfileRef.current,
+        name: cleanName,
+        weightKg: weightKg > 30 ? weightKg : 70,
+        ftp: payload.cyclingFtpWatts > 50 ? Math.round(payload.cyclingFtpWatts) : 250,
+        indoorFtp: payload.cyclingFtpWatts > 50 ? Math.round(payload.cyclingFtpWatts) : 250,
+        thresholdPaceSecsPerKm,
+      },
+      wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
+      activitiesRef.current
+    );
+
+    setDistanceUnit(payload.distanceUnit);
+    try {
+      localStorage.setItem('thresh_distance_unit', payload.distanceUnit);
+      localStorage.removeItem('aeropulse_logged_out');
+      localStorage.setItem('aeropulse_auth_gate_passed', '1');
+      localStorage.setItem('aeropulse_calibrated_v1', '1');
+    } catch {
+      // ignore storage quota errors
+    }
+
+    await handleSaveProfileOverride(calibratedProfile);
+    void savePersistedTelemetrySnapshot({
+      activities: activitiesRef.current,
+      wellnessDays: wellnessDaysRef.current,
+      plannedEvents: plannedEventsRef.current,
+      gearItems: gearItemsRef.current,
+      athleteProfile: calibratedProfile,
+      redactedStravaCount: redactedStravaCountRef.current,
+    });
+
+    setIsSessionLoggedOut(false);
+    setHasEnteredWorkspace(true);
+
+    if (payload.entryTarget === 'DATA_SOURCES') {
+      setIsDataSourcesOpen(true);
+    } else if (payload.entryTarget === 'UPLOAD_FIT') {
+      setActiveTab('activities');
+    } else {
+      setActiveTab('fitness');
+    }
+  };
+
+  if (isSessionLoggedOut || !hasEnteredWorkspace || !hasLocalClientCredentials()) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
@@ -3021,6 +3148,7 @@ export default function App() {
           onExchangeStravaCode={async (codeOrUrl) => {
             await handleExchangeStravaCode(codeOrUrl);
           }}
+          onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
@@ -3038,7 +3166,7 @@ export default function App() {
         <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
-              {/* 1. Brand Wordmark + Background Strava History Sync Pill */}
+              {/* 1. Brand Wordmark + Telemetry Sync Pill + Active Filter Reset Pill */}
               <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <a
                   href="#fitness"
@@ -3056,21 +3184,48 @@ export default function App() {
                   onClick={() => syncLiveTelemetry(true)}
                   disabled={isSyncing}
                   className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                  title="Sync all Strava history in the background"
+                  title="Sync connected telemetry sources in the background"
                 >
                   <RefreshCw
                     weight="bold"
-                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#FC4C02]' : 'text-emerald-500'}`}
+                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#D9480F]' : 'text-[#0D9488]'}`}
                   />
-                  <span className="text-sky-600 dark:text-sky-300 font-semibold">
+                  <span className="text-[#1D4ED8] dark:text-sky-300 font-semibold">
                     {isSyncing
-                      ? 'Syncing Strava...'
+                      ? 'Syncing...'
                       : `CTL ${latestWellness ? latestWellness.ctl.toFixed(0) : '—'}`}
                   </span>
                 </button>
+
+                {(envFilter !== 'COMBINED' || selectedSport !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEnvFilter('COMBINED');
+                      setSelectedSport('ALL');
+                    }}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-[11px] font-mono font-semibold transition-colors whitespace-nowrap"
+                    title="Active viewport filter — click to reset to All Sports & Environments"
+                  >
+                    <span>
+                      Filter:{' '}
+                      {[
+                        envFilter === 'INDOOR'
+                          ? 'Indoor'
+                          : envFilter === 'OUTDOOR'
+                            ? 'Outdoor'
+                            : null,
+                        selectedSport !== 'ALL' ? selectedSport : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    <span aria-hidden="true">×</span>
+                  </button>
+                )}
               </div>
 
-              {/* 2. Center: 4 Primary Workspaces in a Recessed macOS Capsule Switcher */}
+              {/* 2. Center: 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
               <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
                 {(
                   [
@@ -3082,7 +3237,7 @@ export default function App() {
                     },
                     {
                       id: 'calendar',
-                      label: 'Calendar & Plan',
+                      label: 'Plan',
                       icon: Calendar,
                       match: ['calendar'],
                     },
@@ -3094,7 +3249,7 @@ export default function App() {
                     },
                     {
                       id: 'totals',
-                      label: 'Lab & Goals',
+                      label: 'Progress',
                       icon: Target,
                       match: ['totals', 'curves', 'trends', 'charts'],
                     },
@@ -3110,14 +3265,14 @@ export default function App() {
                         e.preventDefault();
                         setActiveTab(item.id === 'totals' ? lastLabTabRef.current : item.id);
                       }}
-                      className={`min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
+                      className={`min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
                         isActive
                           ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
                       }`}
                     >
                       <NavIcon
-                        className={`w-3.5 h-3.5 ${isActive ? 'text-blue-600 dark:text-sky-400' : ''}`}
+                        className={`w-3.5 h-3.5 ${isActive ? 'text-[#1D4ED8] dark:text-sky-400' : ''}`}
                         weight={isActive ? 'fill' : 'duotone'}
                       />
                       <span>{item.label}</span>
@@ -3174,7 +3329,7 @@ export default function App() {
                   <span className="hidden lg:inline">Guide</span>
                 </button>
 
-                {/* 5. Unified Account, Preferences & Logout Menu (Elliot ▾) */}
+                {/* 5. Unified Account, Preferences & Logout Menu */}
                 <div className="relative" ref={accountMenuRef}>
                   <button
                     type="button"
@@ -3445,7 +3600,7 @@ export default function App() {
         {/* Main Content Viewport */}
         <main className="flex-1 ap-container py-4 sm:py-5 space-y-5 min-w-0">
         {/* Background Strava History Sync & Additional Data Sources Bar */}
-        {(isSyncing || activities.length === 0) && (
+        {(isSyncing || (connectionStatus.stravaConnected && activities.length === 0)) && (
           <div className="rounded-2xl liquid-glass border-[#FC4C02]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-[#FC4C02]/15 border border-[#FC4C02]/40 flex items-center justify-center text-[#FC4C02] shrink-0">
@@ -3714,215 +3869,218 @@ export default function App() {
             </div>
           )}
 
-        {activeTab === 'calendar' && (
-          <CalendarView
-            activities={effectiveActivities}
-            wellnessDays={effectiveWellnessDays}
-            plannedEvents={effectivePlannedEvents}
-            targetGoals={effectiveTargetGoals}
-            envFilter={envFilter}
-            selectedSport={selectedSport}
-            onSelectSport={setSelectedSport}
-            distanceUnit={distanceUnit}
-            athleteFtp={athleteFtp}
-            athleteProfile={effectiveAthleteProfile}
-            onSelectActivity={(act) => {
-              handleSelectActivity(act);
-              setActiveTab('activities');
-            }}
-            onCreatePlannedEvent={async (evt) => {
-              if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {
-                handlePushCoachWorkout(activeConnectedAthlete.id, {
-                  date: evt.date,
-                  name: evt.name,
-                  sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
-                  plannedDurationSecs: evt.plannedDurationSecs,
-                  plannedLoad: evt.plannedLoad,
-                  workoutSyntax: evt.workoutSyntax || '',
-                  description: evt.description,
-                });
-              } else {
-                await handleCreatePlannedEvent(evt);
-              }
-            }}
-            onDeletePlannedEvent={handleDeletePlannedEvent}
-            onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
-            onOpenTodayWorkout={() => setActiveTab('fitness')}
-            onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
-            onOpenGoalsArchitect={() => setActiveTab('totals')}
-            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
-            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          />
-        )}
+        <Suspense fallback={<ViewLoadingSkeleton />}>
+          {activeTab === 'calendar' && (
+            <CalendarView
+              activities={effectiveActivities}
+              wellnessDays={effectiveWellnessDays}
+              plannedEvents={effectivePlannedEvents}
+              targetGoals={effectiveTargetGoals}
+              envFilter={envFilter}
+              selectedSport={selectedSport}
+              onSelectSport={setSelectedSport}
+              distanceUnit={distanceUnit}
+              athleteFtp={athleteFtp}
+              athleteProfile={effectiveAthleteProfile}
+              onSelectActivity={(act) => {
+                handleSelectActivity(act);
+                setActiveTab('activities');
+              }}
+              onCreatePlannedEvent={async (evt) => {
+                if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {
+                  handlePushCoachWorkout(activeConnectedAthlete.id, {
+                    date: evt.date,
+                    name: evt.name,
+                    sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+                    plannedDurationSecs: evt.plannedDurationSecs,
+                    plannedLoad: evt.plannedLoad,
+                    workoutSyntax: evt.workoutSyntax || '',
+                    description: evt.description,
+                  });
+                } else {
+                  await handleCreatePlannedEvent(evt);
+                }
+              }}
+              onDeletePlannedEvent={handleDeletePlannedEvent}
+              onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+              onOpenTodayWorkout={() => setActiveTab('fitness')}
+              onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
+              onOpenGoalsArchitect={() => setActiveTab('totals')}
+              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+              onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            />
+          )}
 
-        {/* Contextual Recessed Liquid Glass Sub-Switcher for Lab & Goals Workspace */}
-        {(activeTab === 'totals' ||
-          activeTab === 'curves' ||
-          activeTab === 'trends' ||
-          activeTab === 'charts') && (
-          <div className="rounded-2xl liquid-glass p-1.5">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1 p-1 rounded-xl liquid-capsule-track">
-                {(
-                  [
-                    {
-                      id: 'totals',
-                      label: 'Goals',
-                      icon: Target,
-                    },
-                    {
-                      id: 'curves',
-                      label: 'Curves',
-                      icon: BarChart3,
-                    },
-                    {
-                      id: 'trends',
-                      label: 'Trends',
-                      icon: TrendingUp,
-                    },
-                    {
-                      id: 'charts',
-                      label: 'Charts',
-                      icon: LineChart,
-                    },
-                  ] as const
-                ).map((sub) => {
-                  const SubIcon = sub.icon;
-                  const isSubActive = activeTab === sub.id;
-                  return (
-                    <button
-                      key={sub.id}
-                      type="button"
-                      onClick={() => setActiveTab(sub.id)}
-                      className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
-                        isSubActive
-                          ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
-                      }`}
-                    >
-                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{sub.label}</span>
-                    </button>
-                  );
-                })}
+          {/* Contextual Sub-Switcher for Progress Workspace */}
+          {(activeTab === 'totals' ||
+            activeTab === 'curves' ||
+            activeTab === 'trends' ||
+            activeTab === 'charts') && (
+            <div className="rounded-2xl liquid-glass p-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1 p-1 rounded-xl liquid-capsule-track">
+                  {(
+                    [
+                      {
+                        id: 'totals',
+                        label: 'Goals & Totals',
+                        icon: Target,
+                      },
+                      {
+                        id: 'curves',
+                        label: 'Power & Pace Curves',
+                        icon: BarChart3,
+                      },
+                      {
+                        id: 'trends',
+                        label: 'Physiology Trends',
+                        icon: TrendingUp,
+                      },
+                      {
+                        id: 'charts',
+                        label: 'Custom Lab',
+                        icon: LineChart,
+                      },
+                    ] as const
+                  ).map((sub) => {
+                    const SubIcon = sub.icon;
+                    const isSubActive = activeTab === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        onClick={() => setActiveTab(sub.id)}
+                        className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                          isSubActive
+                            ? 'liquid-capsule-active text-[#1D4ED8] dark:text-sky-300 font-semibold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                        }`}
+                      >
+                        <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{sub.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'fitness' && (
-          <FitnessHealthView
-            wellnessDays={effectiveWellnessDays}
-            plannedEvents={effectivePlannedEvents}
-            activities={effectiveActivities}
-            athleteProfile={effectiveAthleteProfile}
-            distanceUnit={distanceUnit}
-            selfName={primaryAthleteDisplayName}
-            selfProfile={athleteProfile}
-            selfWellnessDays={wellnessDays}
-            connectedAthletes={connectedAthletes}
-            onOpenRosterModal={() => setIsRosterModalOpen(true)}
-            onSelectActivity={(act) => {
-              handleSelectActivity(act);
-              setActiveTab('activities');
-            }}
-            onSyncMorphedToCalendar={handleCreatePlannedEvent}
-            onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
-            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          />
-        )}
+          {activeTab === 'fitness' && (
+            <FitnessHealthView
+              wellnessDays={effectiveWellnessDays}
+              plannedEvents={effectivePlannedEvents}
+              activities={effectiveActivities}
+              athleteProfile={effectiveAthleteProfile}
+              distanceUnit={distanceUnit}
+              selfName={primaryAthleteDisplayName}
+              selfProfile={athleteProfile}
+              selfWellnessDays={wellnessDays}
+              connectedAthletes={connectedAthletes}
+              onOpenRosterModal={() => setIsRosterModalOpen(true)}
+              onSelectActivity={(act) => {
+                handleSelectActivity(act);
+                setActiveTab('activities');
+              }}
+              onSyncMorphedToCalendar={handleCreatePlannedEvent}
+              onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
+              onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            />
+          )}
 
-        {activeTab === 'trends' && (
-          <PhysiologicalTrendsView
-            wellnessDays={effectiveWellnessDays}
-            activities={effectiveActivities}
-            athleteWeightKg={latestWeightKg}
-            distanceUnit={distanceUnit}
-            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          />
-        )}
+          {activeTab === 'trends' && (
+            <PhysiologicalTrendsView
+              wellnessDays={effectiveWellnessDays}
+              activities={effectiveActivities}
+              athleteWeightKg={latestWeightKg}
+              distanceUnit={distanceUnit}
+              onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            />
+          )}
 
-        {activeTab === 'charts' && (
-          <CustomChartsView
-            activities={effectiveActivities}
-            wellnessDays={effectiveWellnessDays}
-            distanceUnit={distanceUnit}
-            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          />
-        )}
+          {activeTab === 'charts' && (
+            <CustomChartsView
+              activities={effectiveActivities}
+              wellnessDays={effectiveWellnessDays}
+              distanceUnit={distanceUnit}
+              onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            />
+          )}
 
-        {activeTab === 'activities' && (
-          <ActivitiesView
-            activities={effectiveActivities}
-            selectedSport={selectedSport}
-            onSelectSport={setSelectedSport}
-            envFilter={envFilter}
-            onSelectEnvFilter={setEnvFilter}
-            distanceUnit={distanceUnit}
-            selectedActivity={selectedActivity}
-            onSelectActivity={handleSelectActivity}
-            onLoadActivityStreams={loadStreamsForActivity}
-            onScanMoreSegments={handleScanMoreSegments}
-            isScanningSegments={isScanningSegments}
-            onHydrateMoreRoutes={handleHydrateMoreRoutes}
-            isHydratingRoutes={isHydratingRoutes}
-            onToggleKudos={handleToggleActivityKudos}
-            onAddComment={handleAddActivityComment}
-            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
-            onImportParsedActivity={(newAct) => {
-              setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
-            }}
-            athleteWeightKg={latestWeightKg}
-          />
-        )}
+          {activeTab === 'activities' && (
+            <ActivitiesView
+              activities={effectiveActivities}
+              plannedEvents={effectivePlannedEvents}
+              selectedSport={selectedSport}
+              onSelectSport={setSelectedSport}
+              envFilter={envFilter}
+              onSelectEnvFilter={setEnvFilter}
+              distanceUnit={distanceUnit}
+              selectedActivity={selectedActivity}
+              onSelectActivity={handleSelectActivity}
+              onLoadActivityStreams={loadStreamsForActivity}
+              onScanMoreSegments={handleScanMoreSegments}
+              isScanningSegments={isScanningSegments}
+              onHydrateMoreRoutes={handleHydrateMoreRoutes}
+              isHydratingRoutes={isHydratingRoutes}
+              onToggleKudos={handleToggleActivityKudos}
+              onAddComment={handleAddActivityComment}
+              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+              onImportParsedActivity={(newAct) => {
+                setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+              }}
+              athleteWeightKg={latestWeightKg}
+            />
+          )}
 
-        {activeTab === 'curves' && (
-          <PhysiologyView
-            curves={INITIAL_POWER_PACE_CURVES}
-            benchmarkSegments={benchmarkSegments}
-            activities={effectiveActivities}
-            wellnessDays={effectiveWellnessDays}
-            envFilter={envFilter}
-            distanceUnit={distanceUnit}
-            athleteWeightKg={latestWeightKg}
-            athleteProfile={athleteProfile}
-            onScanMoreSegments={handleScanMoreSegments}
-            isScanningSegments={isScanningSegments}
-            onSelectActivity={(act) => {
-              handleSelectActivity(act);
-              setActiveTab('activities');
-            }}
-            onOpenActivitiesSegments={() => setActiveTab('activities')}
-          />
-        )}
+          {activeTab === 'curves' && (
+            <PhysiologyView
+              curves={INITIAL_POWER_PACE_CURVES}
+              benchmarkSegments={benchmarkSegments}
+              activities={effectiveActivities}
+              wellnessDays={effectiveWellnessDays}
+              envFilter={envFilter}
+              distanceUnit={distanceUnit}
+              athleteWeightKg={latestWeightKg}
+              athleteProfile={athleteProfile}
+              onScanMoreSegments={handleScanMoreSegments}
+              isScanningSegments={isScanningSegments}
+              onSelectActivity={(act) => {
+                handleSelectActivity(act);
+                setActiveTab('activities');
+              }}
+              onOpenActivitiesSegments={() => setActiveTab('activities')}
+            />
+          )}
 
-        {activeTab === 'totals' && (
-          <GoalsView
-            annualMileageGoals={annualMileageGoals}
-            onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
-            targetGoals={effectiveTargetGoals}
-            onAddTargetGoal={handleAddTargetGoal}
-            onDeleteTargetGoal={handleDeleteTargetGoal}
-            activities={effectiveActivities}
-            wellnessDays={effectiveWellnessDays}
-            plannedEvents={effectivePlannedEvents}
-            gearItems={gearItems}
-            envFilter={envFilter}
-            onSelectEnvFilter={setEnvFilter}
-            distanceUnit={distanceUnit}
-            currentCtl={latestCtl}
-            athleteProfile={effectiveAthleteProfile}
-            onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
-            onSaveProfileOverride={handleSaveProfileOverride}
-            onSelectActivity={(act) => {
-              handleSelectActivity(act);
-              setActiveTab('activities');
-            }}
-            onSwitchToCalendar={() => setActiveTab('calendar')}
-            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
-            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          />
-        )}
+          {activeTab === 'totals' && (
+            <GoalsView
+              annualMileageGoals={annualMileageGoals}
+              onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
+              targetGoals={effectiveTargetGoals}
+              onAddTargetGoal={handleAddTargetGoal}
+              onDeleteTargetGoal={handleDeleteTargetGoal}
+              activities={effectiveActivities}
+              wellnessDays={effectiveWellnessDays}
+              plannedEvents={effectivePlannedEvents}
+              gearItems={gearItems}
+              envFilter={envFilter}
+              onSelectEnvFilter={setEnvFilter}
+              distanceUnit={distanceUnit}
+              currentCtl={latestCtl}
+              athleteProfile={effectiveAthleteProfile}
+              onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+              onSaveProfileOverride={handleSaveProfileOverride}
+              onSelectActivity={(act) => {
+                handleSelectActivity(act);
+                setActiveTab('activities');
+              }}
+              onSwitchToCalendar={() => setActiveTab('calendar')}
+              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+              onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Subtle THRESH Branded Footer */}
@@ -3959,7 +4117,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces */}
+      {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
       <nav className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock">
         {(
           [
@@ -3969,11 +4127,11 @@ export default function App() {
               icon: HeartPulse,
               match: ['fitness'],
             },
-            { id: 'calendar', label: 'Calendar', icon: Calendar, match: ['calendar'] },
+            { id: 'calendar', label: 'Plan', icon: Calendar, match: ['calendar'] },
             { id: 'activities', label: 'Activities', icon: Activity, match: ['activities'] },
             {
               id: 'totals',
-              label: 'Lab',
+              label: 'Progress',
               icon: Target,
               match: ['totals', 'curves', 'trends', 'charts'],
             },
@@ -3987,8 +4145,8 @@ export default function App() {
               onClick={() => setActiveTab(tab.id === 'totals' ? lastLabTabRef.current : tab.id)}
               className={`min-h-[44px] flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
-                  ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
-                  : 'text-slate-500 dark:text-slate-400'
+                  ? 'liquid-capsule-active text-[#1D4ED8] dark:text-sky-300 font-semibold'
+                  : 'text-slate-600 dark:text-slate-400'
               }`}
             >
               <Icon className="w-4 h-4" weight={isActive ? 'fill' : 'duotone'} />
@@ -4000,124 +4158,143 @@ export default function App() {
         })}
       </nav>
 
-      {/* Omnipresent Slide-Over AI Coach Drawer */}
-      <AICoachDrawer
-        isOpen={isCoachDrawerOpen}
-        onClose={() => setIsCoachDrawerOpen(false)}
-        activeViewName={activeTab}
-        latestWellness={latestWellness}
-        chatMessages={chatMessages}
-        onSendChatMessage={handleSendChatMessage}
-        isSendingChat={isSendingChat}
-        onCancelSend={handleCancelSendChat}
-        initialDraftPrompt={coachDraftPrompt}
-        onClearDraftPrompt={() => setCoachDraftPrompt('')}
-        hasGeminiKey={Boolean(connectionStatus.hasGeminiServerKey)}
-        onSaveGeminiApiKey={handleSaveGeminiApiKey}
-        onScheduleProposedWorkout={async (workout) => {
-          await handleCreatePlannedEvent({
-            date: workout.date,
-            name: workout.name,
-            sportCategory: workout.sportCategory,
-            environmentPreference: workout.environmentPreference || 'FLEXIBLE',
-            plannedDurationSecs: workout.plannedDurationSecs || 3600,
-            plannedLoad: workout.plannedLoad || 65,
-            workoutSyntax: workout.workoutSyntax || '',
-            description: workout.description || '',
-          });
-        }}
-      />
+      {/* Lazy-Loaded Drawers & Modals (chunks fetched on-demand only when opened) */}
+      {isCoachDrawerOpen && (
+        <Suspense fallback={null}>
+          <AICoachDrawer
+            isOpen={isCoachDrawerOpen}
+            onClose={() => setIsCoachDrawerOpen(false)}
+            activeViewName={activeTab}
+            latestWellness={latestWellness}
+            chatMessages={chatMessages}
+            onSendChatMessage={handleSendChatMessage}
+            isSendingChat={isSendingChat}
+            onCancelSend={handleCancelSendChat}
+            initialDraftPrompt={coachDraftPrompt}
+            onClearDraftPrompt={() => setCoachDraftPrompt('')}
+            hasGeminiKey={Boolean(connectionStatus.hasGeminiServerKey)}
+            onSaveGeminiApiKey={handleSaveGeminiApiKey}
+            onScheduleProposedWorkout={async (workout) => {
+              await handleCreatePlannedEvent({
+                date: workout.date,
+                name: workout.name,
+                sportCategory: workout.sportCategory,
+                environmentPreference: workout.environmentPreference || 'FLEXIBLE',
+                plannedDurationSecs: workout.plannedDurationSecs || 3600,
+                plannedLoad: workout.plannedLoad || 65,
+                workoutSyntax: workout.workoutSyntax || '',
+                description: workout.description || '',
+              });
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Authoritative Athlete Profile & Sport Zones Modal */}
-      <AthleteProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        athleteProfile={effectiveAthleteProfile}
-        latestWellness={latestWellness}
-        distanceUnit={distanceUnit}
-        intervalsConnected={connectionStatus.intervalsConnected}
-        isSyncingProfile={isSyncingProfile}
-        onSyncProfileFromRemote={handleSyncProfileFromRemote}
-        onSaveProfileOverride={handleSaveProfileOverride}
-      />
+      {isProfileModalOpen && (
+        <Suspense fallback={null}>
+          <AthleteProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            athleteProfile={effectiveAthleteProfile}
+            latestWellness={latestWellness}
+            distanceUnit={distanceUnit}
+            intervalsConnected={connectionStatus.intervalsConnected}
+            isSyncingProfile={isSyncingProfile}
+            onSyncProfileFromRemote={handleSyncProfileFromRemote}
+            onSaveProfileOverride={handleSaveProfileOverride}
+          />
+        </Suspense>
+      )}
 
-      {/* Data Sources & Fork Setup Modal */}
-      <DataSourcesModal
-        isOpen={isDataSourcesOpen}
-        onClose={() => setIsDataSourcesOpen(false)}
-        status={connectionStatus}
-        onConnectIntervals={handleConnectIntervals}
-        onDisconnectIntervals={handleDisconnectIntervals}
-        onSaveStravaCredentials={handleSaveStravaCredentials}
-        onLaunchStravaOAuth={handleLaunchStravaOAuth}
-        onExchangeStravaCode={handleExchangeStravaCode}
-        onSaveStravaDirectToken={handleSaveStravaDirectToken}
-        onSaveMapTileConfig={handleSaveMapTileConfig}
-        onExportBundle={handleExportConnectionBundle}
-        onImportBundle={handleImportConnectionBundle}
-        onSyncNow={syncLiveTelemetry}
-        isSyncing={isSyncing}
-        errorMessage={syncError}
-        idbSavedAt={idbSavedAt}
-        persistedWorkoutCount={activities.length}
-        onRebuildPersistedArchive={handleClearPersistedArchive}
-      />
+      {isDataSourcesOpen && (
+        <Suspense fallback={null}>
+          <DataSourcesModal
+            isOpen={isDataSourcesOpen}
+            onClose={() => setIsDataSourcesOpen(false)}
+            status={connectionStatus}
+            onConnectIntervals={handleConnectIntervals}
+            onDisconnectIntervals={handleDisconnectIntervals}
+            onSaveStravaCredentials={handleSaveStravaCredentials}
+            onLaunchStravaOAuth={handleLaunchStravaOAuth}
+            onExchangeStravaCode={handleExchangeStravaCode}
+            onSaveStravaDirectToken={handleSaveStravaDirectToken}
+            onSaveMapTileConfig={handleSaveMapTileConfig}
+            onExportBundle={handleExportConnectionBundle}
+            onImportBundle={handleImportConnectionBundle}
+            onSyncNow={syncLiveTelemetry}
+            isSyncing={isSyncing}
+            errorMessage={syncError}
+            idbSavedAt={idbSavedAt}
+            persistedWorkoutCount={activities.length}
+            onRebuildPersistedArchive={handleClearPersistedArchive}
+          />
+        </Suspense>
+      )}
 
-      {/* Official Race Results Importer (Athletic.net, TFRRS, MileSplit) & Watchless FAT Track Logger */}
-      <OfficialRaceModal
-        isOpen={isOfficialRaceModalOpen}
-        onClose={() => setIsOfficialRaceModalOpen(false)}
-        athleteProfile={effectiveAthleteProfile}
-        distanceUnit={distanceUnit}
-        existingOfficialRaces={effectiveActivities.filter((a) => Boolean(a.officialRaceData))}
-        onImportOfficialRaces={handleImportOfficialRaces}
-        onSaveProfileOverride={handleSaveProfileOverride}
-      />
+      {isOfficialRaceModalOpen && (
+        <Suspense fallback={null}>
+          <OfficialRaceModal
+            isOpen={isOfficialRaceModalOpen}
+            onClose={() => setIsOfficialRaceModalOpen(false)}
+            athleteProfile={effectiveAthleteProfile}
+            distanceUnit={distanceUnit}
+            existingOfficialRaces={effectiveActivities.filter((a) => Boolean(a.officialRaceData))}
+            onImportOfficialRaces={handleImportOfficialRaces}
+            onSaveProfileOverride={handleSaveProfileOverride}
+          />
+        </Suspense>
+      )}
 
-      {/* Multi-Athlete Friends, Team Leaderboard, Privacy Shield & Coach Hub Modal */}
-      <AthleteRosterModal
-        isOpen={isRosterModalOpen}
-        onClose={() => setIsRosterModalOpen(false)}
-        selfName={primaryAthleteDisplayName}
-        selfInviteCode="AP-8492-TALLY"
-        selfCtl={selfLatestWellness?.ctl || 72.4}
-        selfAtl={selfLatestWellness?.atl || 68.0}
-        selfTsb={selfLatestWellness?.tsb || 4.4}
-        selfHrv={selfLatestWellness?.hrvRMSSD || 58}
-        selfProfile={athleteProfile}
-        selfPrivacySettings={selfPrivacySettings}
-        onUpdateSelfPrivacy={setSelfPrivacySettings}
-        roster={connectedAthletes}
-        activeAthleteId={activeViewedAthleteId}
-        onSelectAthleteViewport={(id) => {
-          setActiveViewedAthleteId(id);
-          setSelectedActivity(null);
-        }}
-        onApproveRequest={handleApproveAthleteRequest}
-        onRemoveOrDeclineAthlete={handleRemoveOrDeclineAthlete}
-        onToggleAthleteRole={handleToggleAthleteRole}
-        onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
-        onPushCoachWorkout={handlePushCoachWorkout}
-        distanceUnit={distanceUnit}
-      />
+      {isRosterModalOpen && (
+        <Suspense fallback={null}>
+          <AthleteRosterModal
+            isOpen={isRosterModalOpen}
+            onClose={() => setIsRosterModalOpen(false)}
+            selfName={primaryAthleteDisplayName}
+            selfInviteCode={selfInviteCode}
+            selfCtl={selfLatestWellness?.ctl ?? 0}
+            selfAtl={selfLatestWellness?.atl ?? 0}
+            selfTsb={selfLatestWellness?.tsb ?? 0}
+            selfHrv={selfLatestWellness?.hrvRMSSD ?? 0}
+            selfProfile={athleteProfile}
+            selfPrivacySettings={selfPrivacySettings}
+            onUpdateSelfPrivacy={setSelfPrivacySettings}
+            roster={connectedAthletes}
+            activeAthleteId={activeViewedAthleteId}
+            onSelectAthleteViewport={(id) => {
+              setActiveViewedAthleteId(id);
+              setSelectedActivity(null);
+            }}
+            onApproveRequest={handleApproveAthleteRequest}
+            onRemoveOrDeclineAthlete={handleRemoveOrDeclineAthlete}
+            onToggleAthleteRole={handleToggleAthleteRole}
+            onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
+            onPushCoachWorkout={handlePushCoachWorkout}
+            distanceUnit={distanceUnit}
+          />
+        </Suspense>
+      )}
 
-      {/* Interactive Online User Guide, Feature Tour & Physiology Glossary Modal */}
-      <UserGuideModal
-        isOpen={showMetricsGuide}
-        onClose={() => setShowMetricsGuide(false)}
-        onNavigateTab={(tab) => setActiveTab(tab)}
-        onOpenDataSources={() => setIsDataSourcesOpen(true)}
-        onOpenRosterModal={() => setIsRosterModalOpen(true)}
-        onOpenProfileModal={() => setIsProfileModalOpen(true)}
-        onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
-        onOpenAICoach={(prompt) => {
-          if (prompt) {
-            handleOpenCoachWithPrompt(prompt);
-          } else {
-            setIsCoachDrawerOpen(true);
-          }
-        }}
-      />
+      {showMetricsGuide && (
+        <Suspense fallback={null}>
+          <UserGuideModal
+            isOpen={showMetricsGuide}
+            onClose={() => setShowMetricsGuide(false)}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenDataSources={() => setIsDataSourcesOpen(true)}
+            onOpenRosterModal={() => setIsRosterModalOpen(true)}
+            onOpenProfileModal={() => setIsProfileModalOpen(true)}
+            onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+            onOpenAICoach={(prompt) => {
+              if (prompt) {
+                handleOpenCoachWithPrompt(prompt);
+              } else {
+                setIsCoachDrawerOpen(true);
+              }
+            }}
+          />
+        </Suspense>
+      )}
       </div>
     </IconContext.Provider>
   );

@@ -1,7 +1,44 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
-import * as echarts from 'echarts';
+import * as echarts from 'echarts/core';
+import { BarChart, LineChart } from 'echarts/charts';
+import {
+  AxisPointerComponent,
+  DataZoomComponent,
+  GridComponent,
+  MarkLineComponent,
+  TooltipComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import type { ComposeOption } from 'echarts/core';
+import type { BarSeriesOption, LineSeriesOption } from 'echarts/charts';
+import type {
+  DataZoomComponentOption,
+  GridComponentOption,
+  MarkLineComponentOption,
+  TooltipComponentOption,
+} from 'echarts/components';
 import { UnifiedActivity, UnifiedWellnessDay } from '../../types';
 import { TrendingUp, Zap } from "../icons/PhosphorIcons";
+
+echarts.use([
+  BarChart,
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  AxisPointerComponent,
+  DataZoomComponent,
+  MarkLineComponent,
+  CanvasRenderer,
+]);
+
+type PMCEChartsOption = ComposeOption<
+  | BarSeriesOption
+  | LineSeriesOption
+  | GridComponentOption
+  | TooltipComponentOption
+  | DataZoomComponentOption
+  | MarkLineComponentOption
+>;
 
 export type GarminLoadFocus = 'LOW_AEROBIC' | 'HIGH_AEROBIC' | 'ANAEROBIC';
 
@@ -19,25 +56,25 @@ export const GARMIN_LOAD_FOCUS_META: Record<GarminLoadFocus, GarminLoadFocusMeta
     type: 'LOW_AEROBIC',
     label: 'Low Aerobic',
     shortLabel: 'Low Aer',
-    barColor: 'rgba(56, 189, 248, 0.92)',
-    solidColor: '#38bdf8',
-    badgeBg: 'rgba(56, 189, 248, 0.16)',
+    barColor: 'rgba(13, 148, 136, 0.90)',
+    solidColor: '#0D9488',
+    badgeBg: 'rgba(13, 148, 136, 0.14)',
   },
   HIGH_AEROBIC: {
     type: 'HIGH_AEROBIC',
     label: 'High Aerobic',
     shortLabel: 'High Aer',
-    barColor: 'rgba(249, 115, 22, 0.94)',
-    solidColor: '#f97316',
-    badgeBg: 'rgba(249, 115, 22, 0.18)',
+    barColor: 'rgba(234, 88, 12, 0.92)',
+    solidColor: '#EA580C',
+    badgeBg: 'rgba(234, 88, 12, 0.15)',
   },
   ANAEROBIC: {
     type: 'ANAEROBIC',
     label: 'Anaerobic',
     shortLabel: 'Anaerobic',
-    barColor: 'rgba(217, 70, 239, 0.92)',
-    solidColor: '#d946ef',
-    badgeBg: 'rgba(217, 70, 239, 0.18)',
+    barColor: 'rgba(124, 58, 237, 0.90)',
+    solidColor: '#7C3AED',
+    badgeBg: 'rgba(124, 58, 237, 0.15)',
   },
 };
 
@@ -260,22 +297,9 @@ export function buildDayLoadSegments(
     return [];
   }
 
-  // Fallback for synthetic/unhydrated wellness days with no activity objects attached
-  let fallbackFocus = GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
-  if (dateStr) {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
-    const dow = dt.getUTCDay();
-    const dayHash = ((d || 1) * 7 + (m || 1) * 13) % 10;
-    if (dow === 2 && dailyLoad >= 80) {
-      fallbackFocus =
-        dayHash < 4 ? GARMIN_LOAD_FOCUS_META.ANAEROBIC : GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
-    } else if (dow === 4 && dailyLoad >= 78) {
-      fallbackFocus = GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
-    } else if (dow === 6 && dailyLoad >= 145 && dayHash < 3) {
-      fallbackFocus = GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC;
-    }
-  }
+  // Fallback for wellness days with daily load recorded but no individual activity objects attached
+  const fallbackFocus =
+    dailyLoad >= 110 ? GARMIN_LOAD_FOCUS_META.HIGH_AEROBIC : GARMIN_LOAD_FOCUS_META.LOW_AEROBIC;
 
   return [
     {
@@ -352,7 +376,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
   height = 540,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
-  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+  const chartInstanceRef = useRef<echarts.EChartsType | null>(null);
   const [showEftpOverlay, setShowEftpOverlay] = useState<boolean>(true);
   const [showTssBars, setShowTssBars] = useState<boolean>(true);
   const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
@@ -538,8 +562,11 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
       : [];
 
     const activeXAxisIndices = showRampSubplot ? [0, 1, 2] : [0, 1];
+    const ctlColor = isDark ? '#60A5FA' : '#1D4ED8';
+    const atlColor = isDark ? '#FB6514' : '#D9480F';
+    const eftpColor = isDark ? '#2DD4BF' : '#0D9488';
 
-    const option: echarts.EChartsOption = {
+    const option: PMCEChartsOption = {
       backgroundColor: 'transparent',
       animation: true,
       animationDuration: 350,
@@ -549,13 +576,13 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           type: 'cross',
           link: [{ xAxisIndex: 'all' }],
           lineStyle: {
-            color: 'rgba(56, 189, 248, 0.55)',
+            color: isDark ? 'rgba(96, 165, 250, 0.55)' : 'rgba(29, 78, 216, 0.45)',
             width: 1,
             type: 'dashed',
           },
         },
         backgroundColor: tooltipBg,
-        borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(15, 23, 42, 0.15)',
+        borderColor: isDark ? 'rgba(96, 165, 250, 0.35)' : 'rgba(17, 19, 24, 0.14)',
         borderWidth: 1,
         padding: [10, 14],
         textStyle: {
@@ -626,18 +653,18 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
                 <span style="font-size:10px;color:${rampColor};font-weight:700;">Ramp ${pt.rampRate >= 0 ? '+' : ''}${pt.rampRate.toFixed(1)} CTL/wk</span>
               </div>
               <div style="display:grid;grid-template-columns:1fr auto;gap:3px 12px;font-size:11px;">
-                <span style="color:#38bdf8;">● Fitness (CTL 42d)</span>
-                <strong style="color:#38bdf8;text-align:right;">${pt.ctl.toFixed(1)}</strong>
-                <span style="color:#c084fc;">● Fatigue (ATL 7d)</span>
-                <strong style="color:#c084fc;text-align:right;">${pt.atl.toFixed(1)}</strong>
-                <span style="color:#f59e0b;">● Form (TSB)</span>
-                <strong style="text-align:right;color:${pt.tsb >= 0 ? '#38bdf8' : pt.tsb >= -30 ? '#10b981' : '#f43f5e'};">${pt.tsb > 0 ? '+' : ''}${pt.tsb.toFixed(1)}</strong>
+                <span style="color:${ctlColor};">● Fitness (CTL 42d)</span>
+                <strong style="color:${ctlColor};text-align:right;">${pt.ctl.toFixed(1)}</strong>
+                <span style="color:${atlColor};">● Fatigue (ATL 7d)</span>
+                <strong style="color:${atlColor};text-align:right;">${pt.atl.toFixed(1)}</strong>
+                <span style="color:#d97706;">● Form (TSB)</span>
+                <strong style="text-align:right;color:${pt.tsb >= 0 ? ctlColor : pt.tsb >= -30 ? eftpColor : '#dc2626'};">${pt.tsb > 0 ? '+' : ''}${pt.tsb.toFixed(1)}</strong>
                 <span style="color:${rampColor};">● 7d Ramp Rate</span>
                 <strong style="text-align:right;color:${rampColor};">${pt.rampRate >= 0 ? '+' : ''}${pt.rampRate.toFixed(1)} /wk</strong>
                 <span style="color:${tooltipMuted};">● Daily Load</span>
                 <strong style="text-align:right;">${loadFocusHtml}</strong>
-                <span style="color:#10b981;">● Modeled eFTP</span>
-                <strong style="color:#10b981;text-align:right;">${Math.round(pt.eftp)} W</strong>
+                <span style="color:${eftpColor};">● Modeled eFTP</span>
+                <strong style="color:${eftpColor};text-align:right;">${Math.round(pt.eftp)} W</strong>
               </div>
               <div style="margin-top:5px;font-size:10px;">Form Zone: ${zoneLabel}</div>
               ${actsHtml}
@@ -722,7 +749,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           name: 'CTL / ATL',
           nameGap: 10,
           nameTextStyle: {
-            color: '#38bdf8',
+            color: ctlColor,
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
             align: 'left',
@@ -741,9 +768,9 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           name: showEftpOverlay ? 'eFTP (W)' : 'TSS',
           position: 'right',
           nameGap: 10,
-          min: (val) => Math.max(0, Math.floor(val.min * 0.85)),
+          min: (val: { min: number }) => Math.max(0, Math.floor(val.min * 0.85)),
           nameTextStyle: {
-            color: '#10b981',
+            color: eftpColor,
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
             align: 'right',
@@ -751,7 +778,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           },
           splitLine: { show: false },
           axisLabel: {
-            color: '#10b981',
+            color: eftpColor,
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
           },
@@ -822,12 +849,12 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           symbol: 'none',
           lineStyle: {
             width: 2.5,
-            color: '#38bdf8',
+            color: ctlColor,
           },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(56, 189, 248, 0.35)' },
-              { offset: 1, color: 'rgba(56, 189, 248, 0.02)' },
+              { offset: 0, color: isDark ? 'rgba(96, 165, 250, 0.28)' : 'rgba(29, 78, 216, 0.18)' },
+              { offset: 1, color: isDark ? 'rgba(96, 165, 250, 0.01)' : 'rgba(29, 78, 216, 0.01)' },
             ]),
           },
         },
@@ -841,7 +868,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           symbol: 'none',
           lineStyle: {
             width: 2,
-            color: '#c084fc',
+            color: atlColor,
           },
         },
         ...(showEftpOverlay
@@ -856,7 +883,7 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
                 symbol: 'none',
                 lineStyle: {
                   width: 1.8,
-                  color: '#10b981',
+                  color: eftpColor,
                   type: 'dashed' as const,
                 },
               },
@@ -958,17 +985,17 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
     <div className="rounded-2xl liquid-glass p-3 sm:p-4 border border-stone-200/80 dark:border-slate-800/80">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-stone-200/80 dark:border-slate-800/80">
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
-          <TrendingUp className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
-          <span className="text-slate-600 dark:text-slate-300">
-            CTL <strong className="text-cyan-600 dark:text-cyan-400">{summaryMetrics.latestCtl.toFixed(1)}</strong> · ATL{' '}
-            <strong className="text-purple-600 dark:text-purple-400">{summaryMetrics.latestAtl.toFixed(1)}</strong> · TSB{' '}
+          <TrendingUp className="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#60A5FA] shrink-0" />
+          <span className="text-slate-700 dark:text-slate-300">
+            CTL <strong className="text-[#1D4ED8] dark:text-[#60A5FA]">{summaryMetrics.latestCtl.toFixed(1)}</strong> · ATL{' '}
+            <strong className="text-[#D9480F] dark:text-[#FB6514]">{summaryMetrics.latestAtl.toFixed(1)}</strong> · TSB{' '}
             <strong
               className={
                 summaryMetrics.latestTsb >= 0
-                  ? 'text-cyan-600 dark:text-cyan-300'
+                  ? 'text-[#1D4ED8] dark:text-[#60A5FA]'
                   : summaryMetrics.latestTsb >= -30
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
+                    ? 'text-[#0F766E] dark:text-[#2DD4BF]'
+                    : 'text-[#B91C1C] dark:text-rose-400'
               }
             >
               {summaryMetrics.latestTsb > 0 ? '+' : ''}
@@ -978,12 +1005,12 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
             <strong
               className={
                 summaryMetrics.latestRamp > 7
-                  ? 'text-rose-600 dark:text-rose-400'
+                  ? 'text-[#B91C1C] dark:text-rose-400'
                   : summaryMetrics.latestRamp > 5
-                    ? 'text-amber-600 dark:text-amber-400'
+                    ? 'text-[#B45309] dark:text-amber-400'
                     : summaryMetrics.latestRamp >= 0
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-sky-600 dark:text-sky-400'
+                      ? 'text-[#0F766E] dark:text-[#2DD4BF]'
+                      : 'text-[#1D4ED8] dark:text-[#60A5FA]'
               }
             >
               {summaryMetrics.latestRamp >= 0 ? '+' : ''}
@@ -992,17 +1019,17 @@ export const EChartsPMCDashboard: React.FC<EChartsPMCDashboardProps> = ({
           </span>
 
           {showTssBars && (
-            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200/80 dark:border-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200/80 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
               <span className="inline-flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#38bdf8]" />
+                <span className="w-2 h-2 rounded-full bg-[#0D9488]" />
                 Low
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#f97316]" />
+                <span className="w-2 h-2 rounded-full bg-[#EA580C]" />
                 High
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#d946ef]" />
+                <span className="w-2 h-2 rounded-full bg-[#7C3AED]" />
                 Anaerobic
               </span>
             </div>

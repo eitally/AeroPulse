@@ -1,8 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
-import {VitePWA} from 'vite-plugin-pwa';
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
@@ -11,14 +11,21 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: [
+          'icon.svg',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+        ],
         manifest: {
           id: '/',
-          name: 'THRESH — Endurance Physiology, Load & AI Coaching',
+          name: 'THRESH — Run & Ride Readiness',
           short_name: 'THRESH',
-          description: 'THRESH — Unified running & cycling threshold physiology, Banister PMC load, Strava segments, Garmin Connect workouts, and AI readiness coaching.',
-          theme_color: '#FFFFFF',
-          background_color: '#FFFFFF',
+          description:
+            'Autonomous dual-sport threshold physiology, overnight HRV & sleep calibration, Banister load, and adaptive coaching.',
+          theme_color: '#F7F6F2',
+          background_color: '#F7F6F2',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',
@@ -45,7 +52,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
@@ -54,7 +61,12 @@ export default defineConfig(() => {
           navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
           runtimeCaching: [
             {
-              // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks so deployments take effect immediately
+              // Never cache authenticated API or OAuth endpoints in Service Worker storage
+              urlPattern: ({ url }) => /^\/(api|auth)\//i.test(url.pathname),
+              handler: 'NetworkOnly',
+            },
+            {
+              // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks
               urlPattern: ({ request }) =>
                 request.destination === 'script' ||
                 request.destination === 'style' ||
@@ -62,7 +74,7 @@ export default defineConfig(() => {
                 request.destination === 'document',
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'aeropulse-ui-assets-network-first-v2',
+                cacheName: 'thresh-ui-assets-network-first-v2',
                 networkTimeoutSeconds: 4,
                 expiration: {
                   maxEntries: 120,
@@ -74,29 +86,11 @@ export default defineConfig(() => {
               },
             },
             {
-              // Stale-While-Revalidate for read-only API telemetry endpoints (explicitly excluding auth, config, and token endpoints)
-              urlPattern: ({ url, request }) =>
-                request.method === 'GET' &&
-                /^\/api\/(telemetry|intervals|strava|athlete|activities|calendar)\//i.test(url.pathname) &&
-                !/^\/api\/(config|auth|strava\/(auth|callback|token|exchange-code|credentials))/i.test(url.pathname),
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'aeropulse-telemetry-api-swr',
-                expiration: {
-                  maxEntries: 80,
-                  maxAgeSeconds: 60 * 60 * 24 * 14,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              // Cache-First for structural app dependencies, icons, and immutable static media
+              // Cache-First for static icons and font files
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2|ttf)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'aeropulse-structural-static-cache-first',
+                cacheName: 'thresh-static-cache-first-v2',
                 expiration: {
                   maxEntries: 100,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
@@ -135,11 +129,12 @@ export default defineConfig(() => {
               },
             },
             {
-              // Stale-While-Revalidate for GPS route map tiles (OpenStreetMap / CartoDB)
-              urlPattern: /^https:\/\/(?:[abc]\.tile\.openstreetmap\.org|[abcd]\.basemaps\.cartocdn\.com)\/.*/i,
+              // Stale-While-Revalidate for public GPS route map tiles
+              urlPattern:
+                /^https:\/\/(?:[abc]\.tile\.openstreetmap\.org|[abcd]\.basemaps\.cartocdn\.com)\/.*/i,
               handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'aeropulse-map-tiles-swr',
+                cacheName: 'thresh-map-tiles-swr',
                 expiration: {
                   maxEntries: 250,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
@@ -163,7 +158,35 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 3000,
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+              return 'vendor-echarts';
+            }
+            if (id.includes('node_modules/leaflet')) {
+              return 'vendor-leaflet';
+            }
+            if (id.includes('node_modules/uplot')) {
+              return 'vendor-uplot';
+            }
+            if (id.includes('node_modules/motion') || id.includes('node_modules/framer-motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('node_modules/dexie')) {
+              return 'vendor-dexie';
+            }
+            if (
+              id.includes('node_modules/react/') ||
+              id.includes('node_modules/react-dom/') ||
+              id.includes('node_modules/scheduler/')
+            ) {
+              return 'vendor-react';
+            }
+          },
+        },
+      },
     },
     server: {
       host: '0.0.0.0',

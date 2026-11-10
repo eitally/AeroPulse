@@ -815,12 +815,13 @@ function parseGpxOrTcxText(
 
 /**
  * Lightweight binary .FIT Record Parser for Garmin/Wahoo/Zwift .fit files.
- * Extracts standard Record (Global Message 20) fields or synthesizes high-resolution 1Hz streams.
+ * Supports both normal headers and Garmin 5-bit compressed timestamp headers (Record Global Message 20).
+ * Never fabricates synthetic streams if the binary file lacks recorded samples.
  */
 function parseFitBinaryBuffer(
   buffer: ArrayBuffer,
   fileName: string,
-  thresholds: WorkerAthleteThresholds
+  _thresholds: WorkerAthleteThresholds
 ): {
   name: string;
   startDateLocal: string;
@@ -828,8 +829,8 @@ function parseFitBinaryBuffer(
   streams: ActivityStreamSet;
 } {
   const view = new DataView(buffer);
-  const cleanTitle = fileName.replace(/\.fit$/i, '').replace(/[_-]+/g, ' ');
-  const sportCategory: SportCategory = /run|track|trail/i.test(cleanTitle) ? 'Running' : 'Cycling';
+  const cleanTitle = fileName.replace(/\.fit$/i, '').replace(/[_-]+/g, ' ').trim();
+  let sportCategory: SportCategory = /run|track|trail/i.test(cleanTitle) ? 'Running' : 'Cycling';
 
   const time: number[] = [];
   const distance: number[] = [];
@@ -840,333 +841,284 @@ function parseFitBinaryBuffer(
   const altitude: number[] = [];
   const velocitySmooth: number[] = [];
 
-  try {
-    if (buffer.byteLength >= 14) {
-      const headerSize = view.getUint8(0);
-      const dataSize = view.getUint32(4, true);
-      const endOffset = Math.min(buffer.byteLength, headerSize + dataSize);
+  if (buffer.byteLength < 14) {
+    throw new Error('Invalid FIT file: header shorter than 14 bytes.');
+  }
 
-      interface FieldDef {
-        fieldNum: number;
-        size: number;
-        baseType: number;
+  const headerSize = view.getUint8(0);
+  const dataSize = view.getUint32(4, true);
+  const endOffset = Math.min(buffer.byteLength, headerSize + dataSize);
+
+  interface FieldDef {
+    fieldNum: number;
+    size: number;
+    baseType: number;
+  }
+  interface LocalMsgDef {
+    globalMsgNum: number;
+    littleEndian: boolean;
+    fields: FieldDef[];
+    recordSize: number;
+  }
+
+  const localDefs = new Map<number, LocalMsgDef>();
+  let offset = headerSize;
+  let firstTimestamp: number | null = null;
+  let lastTimestamp = 0;
+  const FIT_EPOCH_OFFSET_SECS = 631065600; // 1989-12-31T00:00:00Z
+  const SEMICIRCLE_TO_DEG = 180 / Math.pow(2, 31);
+
+  while (offset < endOffset) {
+    const recordHeader = view.getUint8(offset++);
+    const isCompressedTimestamp = (recordHeader & 0x80) !== 0;
+
+    if (!isCompressedTimestamp && (recordHeader & 0x40) !== 0) {
+      // Definition Message
+      const hasDevData = (recordHeader & 0x20) !== 0;
+      const localNum = recordHeader & 0x0f;
+      if (offset + 5 > endOffset) break;
+      offset++; // reserved
+      const arch = view.getUint8(offset++);
+      const littleEndian = arch === 0;
+      const globalMsgNum = view.getUint16(offset, littleEndian);
+      offset += 2;
+      const numFields = view.getUint8(offset++);
+
+      const fields: FieldDef[] = [];
+      let recordSize = 0;
+      for (let f = 0; f < numFields; f++) {
+        if (offset + 3 > endOffset) break;
+        const fieldNum = view.getUint8(offset++);
+        const size = view.getUint8(offset++);
+        const baseType = view.getUint8(offset++);
+        fields.push({ fieldNum, size, baseType });
+        recordSize += size;
       }
-      interface LocalMsgDef {
-        globalMsgNum: number;
-        littleEndian: boolean;
-        fields: FieldDef[];
-        recordSize: number;
-      }
 
-      const localDefs = new Map<number, LocalMsgDef>();
-      let offset = headerSize;
-      let firstTimestamp: number | null = null;
-      const FIT_EPOCH_OFFSET_SECS = 631065600; // 1989-12-31T00:00:00Z
-      const SEMICIRCLE_TO_DEG = 180 / Math.pow(2, 31);
-
-      while (offset < endOffset) {
-        const recordHeader = view.getUint8(offset++);
-        const isCompressedTimestamp = (recordHeader & 0x80) !== 0;
-
-        if (isCompressedTimestamp) {
-          const localNum = (recordHeader >> 5) & 0x03;
-          const def = localDefs.get(localNum);
-          if (!def || offset + def.recordSize > endOffset) break;
-          offset += def.recordSize;
-          continue;
-        }
-
-        const isDefinition = (recordHeader & 0x40) !== 0;
-        const hasDevData = (recordHeader & 0x20) !== 0;
-        const localNum = recordHeader & 0x0f;
-
-        if (isDefinition) {
-          if (offset + 5 > endOffset) break;
-          offset++; // reserved
-          const arch = view.getUint8(offset++);
-          const littleEndian = arch === 0;
-          const globalMsgNum = view.getUint16(offset, littleEndian);
-          offset += 2;
-          const numFields = view.getUint8(offset++);
-
-          const fields: FieldDef[] = [];
-          let recordSize = 0;
-          for (let f = 0; f < numFields; f++) {
-            if (offset + 3 > endOffset) break;
-            const fieldNum = view.getUint8(offset++);
-            const size = view.getUint8(offset++);
-            const baseType = view.getUint8(offset++);
-            fields.push({ fieldNum, size, baseType });
-            recordSize += size;
-          }
-
-          if (hasDevData && offset < endOffset) {
-            const numDevFields = view.getUint8(offset++);
-            for (let df = 0; df < numDevFields; df++) {
-              if (offset + 3 > endOffset) break;
-              offset++;
-              const devSize = view.getUint8(offset++);
-              offset++;
-              recordSize += devSize;
-            }
-          }
-
-          localDefs.set(localNum, { globalMsgNum, littleEndian, fields, recordSize });
-        } else {
-          const def = localDefs.get(localNum);
-          if (!def || offset + def.recordSize > endOffset) break;
-
-          if (def.globalMsgNum === 20) {
-            // Global Message 20 = Record (1Hz data point)
-            let fieldCursor = offset;
-            let ts: number | undefined;
-            let latDeg: number | undefined;
-            let lonDeg: number | undefined;
-            let distM: number | undefined;
-            let speedMps: number | undefined;
-            let altM: number | undefined;
-            let pwrW: number | undefined;
-            let hrBpm: number | undefined;
-            let cadRpm: number | undefined;
-
-            for (const f of def.fields) {
-              if (f.fieldNum === 253 && f.size === 4) {
-                const rawTs = view.getUint32(fieldCursor, def.littleEndian);
-                if (rawTs !== 0xffffffff) ts = rawTs;
-              } else if (f.fieldNum === 0 && f.size === 4) {
-                const rawLat = view.getInt32(fieldCursor, def.littleEndian);
-                if (rawLat !== 0x7fffffff) latDeg = rawLat * SEMICIRCLE_TO_DEG;
-              } else if (f.fieldNum === 1 && f.size === 4) {
-                const rawLon = view.getInt32(fieldCursor, def.littleEndian);
-                if (rawLon !== 0x7fffffff) lonDeg = rawLon * SEMICIRCLE_TO_DEG;
-              } else if (f.fieldNum === 5 && f.size === 4) {
-                const rawDist = view.getUint32(fieldCursor, def.littleEndian);
-                if (rawDist !== 0xffffffff) distM = rawDist / 100;
-              } else if (f.fieldNum === 6 && f.size === 2) {
-                const rawSpd = view.getUint16(fieldCursor, def.littleEndian);
-                if (rawSpd !== 0xffff) speedMps = rawSpd / 1000;
-              } else if (f.fieldNum === 2 && f.size === 2) {
-                const rawAlt = view.getUint16(fieldCursor, def.littleEndian);
-                if (rawAlt !== 0xffff) altM = rawAlt / 5 - 500;
-              } else if (f.fieldNum === 7 && f.size === 2) {
-                const rawPwr = view.getUint16(fieldCursor, def.littleEndian);
-                if (rawPwr !== 0xffff) pwrW = rawPwr;
-              } else if (f.fieldNum === 3 && f.size === 1) {
-                const rawHr = view.getUint8(fieldCursor);
-                if (rawHr !== 0xff) hrBpm = rawHr;
-              } else if (f.fieldNum === 4 && f.size === 1) {
-                const rawCad = view.getUint8(fieldCursor);
-                if (rawCad !== 0xff) cadRpm = rawCad;
-              }
-              fieldCursor += f.size;
-            }
-
-            if (ts !== undefined) {
-              if (firstTimestamp === null) firstTimestamp = ts;
-              time.push(Math.max(0, ts - firstTimestamp));
-            } else {
-              time.push(time.length);
-            }
-            if (distM !== undefined) distance.push(Number(distM.toFixed(1)));
-            if (latDeg !== undefined && lonDeg !== undefined) {
-              latlng.push([Number(latDeg.toFixed(6)), Number(lonDeg.toFixed(6))]);
-            }
-            if (pwrW !== undefined) watts.push(pwrW);
-            if (hrBpm !== undefined) heartrate.push(hrBpm);
-            if (cadRpm !== undefined) cadence.push(cadRpm);
-            if (altM !== undefined) altitude.push(Number(altM.toFixed(1)));
-            if (speedMps !== undefined) velocitySmooth.push(Number(speedMps.toFixed(2)));
-          }
-
-          offset += def.recordSize;
+      if (hasDevData && offset < endOffset) {
+        const numDevFields = view.getUint8(offset++);
+        for (let df = 0; df < numDevFields; df++) {
+          if (offset + 3 > endOffset) break;
+          offset++;
+          const devSize = view.getUint8(offset++);
+          offset++;
+          recordSize += devSize;
         }
       }
 
-      if (time.length >= 10) {
-        const startIso =
-          firstTimestamp !== null
-            ? new Date((firstTimestamp + FIT_EPOCH_OFFSET_SECS) * 1000).toISOString().slice(0, 19)
-            : new Date().toISOString().slice(0, 19);
-        return {
-          name: cleanTitle || 'Garmin FIT Telemetry Workout',
-          startDateLocal: startIso,
-          sportCategory,
-          streams: {
-            time,
-            distance: distance.length > 0 ? distance : undefined,
-            latlng: latlng.length > 2 ? latlng : undefined,
-            watts: watts.length > 0 ? watts : undefined,
-            heartrate: heartrate.length > 0 ? heartrate : undefined,
-            cadence: cadence.length > 0 ? cadence : undefined,
-            altitude: altitude.length > 0 ? altitude : undefined,
-            velocitySmooth: velocitySmooth.length > 0 ? velocitySmooth : undefined,
-          },
-        };
+      localDefs.set(localNum, { globalMsgNum, littleEndian, fields, recordSize });
+      continue;
+    }
+
+    // Data Message (Normal or Compressed Timestamp Header)
+    let localNum = recordHeader & 0x0f;
+    let compressedTs: number | undefined;
+
+    if (isCompressedTimestamp) {
+      localNum = (recordHeader >> 5) & 0x03;
+      const timeOffset = recordHeader & 0x1f;
+      if (lastTimestamp > 0) {
+        const prevLow5 = lastTimestamp & 0x1f;
+        lastTimestamp =
+          timeOffset >= prevLow5
+            ? (lastTimestamp & ~0x1f) + timeOffset
+            : (lastTimestamp & ~0x1f) + timeOffset + 0x20;
+        compressedTs = lastTimestamp;
       }
     }
-  } catch {
-    // Fallback to deterministic 1Hz synthesis below if FIT buffer uses custom developer compression
+
+    const def = localDefs.get(localNum);
+    if (!def || offset + def.recordSize > endOffset) break;
+
+    if (def.globalMsgNum === 18) {
+      // Session Message (extract sport type when present: 1 = Running, 2 = Cycling, 5 = Swimming)
+      let fieldCursor = offset;
+      for (const f of def.fields) {
+        if (f.fieldNum === 253 && f.size === 4) {
+          const rawTs = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawTs !== 0xffffffff) lastTimestamp = rawTs;
+        } else if (f.fieldNum === 5 && f.size === 1) {
+          const fitSport = view.getUint8(fieldCursor);
+          if (fitSport === 1) sportCategory = 'Running';
+          else if (fitSport === 2) sportCategory = 'Cycling';
+          else if (fitSport === 5) sportCategory = 'Swimming';
+        }
+        fieldCursor += f.size;
+      }
+    } else if (def.globalMsgNum === 20) {
+      // Global Message 20 = Record (1Hz data point)
+      let fieldCursor = offset;
+      let ts: number | undefined = compressedTs;
+      let latDeg: number | undefined;
+      let lonDeg: number | undefined;
+      let distM: number | undefined;
+      let speedMps: number | undefined;
+      let enhancedSpeedMps: number | undefined;
+      let altM: number | undefined;
+      let enhancedAltM: number | undefined;
+      let pwrW: number | undefined;
+      let hrBpm: number | undefined;
+      let cadRpm: number | undefined;
+
+      for (const f of def.fields) {
+        if (f.fieldNum === 253 && f.size === 4) {
+          const rawTs = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawTs !== 0xffffffff) {
+            ts = rawTs;
+            lastTimestamp = rawTs;
+          }
+        } else if (f.fieldNum === 0 && f.size === 4) {
+          const rawLat = view.getInt32(fieldCursor, def.littleEndian);
+          if (rawLat !== 0x7fffffff) latDeg = rawLat * SEMICIRCLE_TO_DEG;
+        } else if (f.fieldNum === 1 && f.size === 4) {
+          const rawLon = view.getInt32(fieldCursor, def.littleEndian);
+          if (rawLon !== 0x7fffffff) lonDeg = rawLon * SEMICIRCLE_TO_DEG;
+        } else if (f.fieldNum === 5 && f.size === 4) {
+          const rawDist = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawDist !== 0xffffffff) distM = rawDist / 100;
+        } else if (f.fieldNum === 6 && f.size === 2) {
+          const rawSpd = view.getUint16(fieldCursor, def.littleEndian);
+          if (rawSpd !== 0xffff) speedMps = rawSpd / 1000;
+        } else if (f.fieldNum === 73 && f.size === 4) {
+          const rawEnhSpd = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawEnhSpd !== 0xffffffff) enhancedSpeedMps = rawEnhSpd / 1000;
+        } else if (f.fieldNum === 2 && f.size === 2) {
+          const rawAlt = view.getUint16(fieldCursor, def.littleEndian);
+          if (rawAlt !== 0xffff) altM = rawAlt / 5 - 500;
+        } else if (f.fieldNum === 78 && f.size === 4) {
+          const rawEnhAlt = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawEnhAlt !== 0xffffffff) enhancedAltM = rawEnhAlt / 5 - 500;
+        } else if (f.fieldNum === 7 && f.size === 2) {
+          const rawPwr = view.getUint16(fieldCursor, def.littleEndian);
+          if (rawPwr !== 0xffff) pwrW = rawPwr;
+        } else if (f.fieldNum === 3 && f.size === 1) {
+          const rawHr = view.getUint8(fieldCursor);
+          if (rawHr !== 0xff) hrBpm = rawHr;
+        } else if (f.fieldNum === 4 && f.size === 1) {
+          const rawCad = view.getUint8(fieldCursor);
+          if (rawCad !== 0xff) cadRpm = rawCad;
+        }
+        fieldCursor += f.size;
+      }
+
+      if (ts !== undefined) {
+        if (firstTimestamp === null) firstTimestamp = ts;
+        time.push(Math.max(0, ts - firstTimestamp));
+      } else {
+        time.push(time.length);
+      }
+      if (distM !== undefined) distance.push(Number(distM.toFixed(1)));
+      if (latDeg !== undefined && lonDeg !== undefined) {
+        latlng.push([Number(latDeg.toFixed(6)), Number(lonDeg.toFixed(6))]);
+      }
+      if (pwrW !== undefined) watts.push(pwrW);
+      if (hrBpm !== undefined) heartrate.push(hrBpm);
+      if (cadRpm !== undefined) cadence.push(cadRpm);
+      const resolvedAlt = enhancedAltM !== undefined ? enhancedAltM : altM;
+      if (resolvedAlt !== undefined) altitude.push(Number(resolvedAlt.toFixed(1)));
+      const resolvedSpd = enhancedSpeedMps !== undefined ? enhancedSpeedMps : speedMps;
+      if (resolvedSpd !== undefined) velocitySmooth.push(Number(resolvedSpd.toFixed(2)));
+    } else {
+      // Keep rolling timestamp fresh from Event/Lap/FileId messages if they carry field 253
+      let fieldCursor = offset;
+      for (const f of def.fields) {
+        if (f.fieldNum === 253 && f.size === 4) {
+          const rawTs = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawTs !== 0xffffffff) lastTimestamp = rawTs;
+        }
+        fieldCursor += f.size;
+      }
+    }
+
+    offset += def.recordSize;
   }
 
-  // Deterministic 1Hz stream synthesis for arbitrary/synthetic FIT test files
-  const durationSecs = 3600;
-  const baseFtp = thresholds.ftp || 295;
-  const baseLthr = thresholds.lthr || 165;
-  for (let s = 0; s < durationSecs; s++) {
-    time.push(s);
-    const frac = s / durationSecs;
-    const isWork =
-      (frac >= 0.2 && frac <= 0.35) ||
-      (frac >= 0.45 && frac <= 0.6) ||
-      (frac >= 0.7 && frac <= 0.85);
-    const w = Math.round(
-      (isWork ? baseFtp * 1.02 : baseFtp * 0.68) + Math.sin(s * 0.25) * 14 + Math.cos(s * 0.07) * 9
+  if (time.length === 0) {
+    throw new Error(
+      'FIT file contains no recorded time-series samples (Global Message 20). Please upload a complete workout FIT file.'
     );
-    watts.push(Math.max(60, w));
-    heartrate.push(
-      Math.round((isWork ? baseLthr * 0.98 : baseLthr * 0.81) + frac * 5 + Math.sin(s * 0.08) * 3)
-    );
-    cadence.push(Math.round((isWork ? 93 : 86) + Math.sin(s * 0.15) * 3));
-    altitude.push(Number((110 + Math.sin(frac * Math.PI * 3) * 85 + frac * 60).toFixed(1)));
-    const spd = isWork ? 10.2 : 8.4;
-    velocitySmooth.push(spd);
-    distance.push(Number((s * 9.1).toFixed(1)));
   }
+
+  const startIso =
+    firstTimestamp !== null
+      ? new Date((firstTimestamp + FIT_EPOCH_OFFSET_SECS) * 1000).toISOString().slice(0, 19)
+      : new Date().toISOString().slice(0, 19);
 
   return {
     name: cleanTitle || 'Imported FIT Workout',
-    startDateLocal: new Date().toISOString().slice(0, 19),
+    startDateLocal: startIso,
     sportCategory,
     streams: {
       time,
-      distance,
-      watts,
-      heartrate,
-      cadence,
-      altitude,
-      velocitySmooth,
+      distance: distance.length > 0 ? distance : undefined,
+      latlng: latlng.length > 2 ? latlng : undefined,
+      watts: watts.length > 0 ? watts : undefined,
+      heartrate: heartrate.length > 0 ? heartrate : undefined,
+      cadence: cadence.length > 0 ? cadence : undefined,
+      altitude: altitude.length > 0 ? altitude : undefined,
+      velocitySmooth: velocitySmooth.length > 0 ? velocitySmooth : undefined,
     },
   };
 }
 
 /**
- * Upsamples coarse streams (or summary-only workouts) to true 1Hz (1 sample per second) resolution
- * in the background Web Worker so uPlot can render genuine 1Hz telemetry.
+ * Linearly interpolates genuine recorded coarse streams (e.g. Smart Recording every 2–5s) to 1Hz
+ * in the background Web Worker without fabricating synthetic sine-wave channels or summary streams.
  */
 function upsampleActivityTo1Hz(
   activity: UnifiedActivity,
-  thresholds: WorkerAthleteThresholds
+  _thresholds: WorkerAthleteThresholds
 ): ActivityStreamSet {
   const existing = activity.streams;
-  const totalSecs = Math.min(
-    18000,
-    Math.max(
-      60,
-      Math.round(
-        activity.movingTimeSecs ||
-          (existing?.time && existing.time.length > 0
-            ? existing.time[existing.time.length - 1]
-            : 3600)
-      )
-    )
-  );
+  if (!existing || !Array.isArray(existing.time) || existing.time.length < 2) {
+    return existing || { time: [] };
+  }
 
-  // If already near 1Hz (e.g. >= 0.5 samples/sec and > 300 samples), return as-is
-  if (existing && existing.time && existing.time.length >= Math.min(600, totalSecs * 0.6)) {
+  const srcTime = existing.time;
+  const maxSrcT = Math.max(1, Math.round(srcTime[srcTime.length - 1] - (srcTime[0] || 0)));
+  const totalSecs = Math.min(18000, maxSrcT + 1);
+
+  // If already at or near 1Hz (>= 0.8 samples/sec), return original recorded stream untouched
+  if (srcTime.length >= totalSecs * 0.8) {
     return existing;
   }
 
-  const time: number[] = new Array(totalSecs);
-  const watts: number[] = [];
-  const heartrate: number[] = [];
-  const cadence: number[] = [];
-  const velocitySmooth: number[] = [];
-  const altitude: number[] = [];
-  const distance: number[] = new Array(totalSecs);
+  const tBase = srcTime[0] || 0;
+  const normalizedSrcTime = srcTime.map((t) => Math.max(0, t - tBase));
 
-  const hasWatts =
-    Boolean(existing?.watts?.length) ||
-    Boolean(activity.avgPower || activity.normalizedPower) ||
-    activity.sportCategory === 'Cycling';
-  const baseWatts =
-    activity.avgPower || activity.normalizedPower || Math.round((thresholds.ftp || 285) * 0.76);
-  const baseHr = activity.avgHr || Math.round((thresholds.lthr || 164) * 0.86);
-  const maxHr = activity.maxHr || Math.max(baseHr + 16, thresholds.maxHr || 186);
-  const baseCad = activity.avgCadence || (activity.sportCategory === 'Running' ? 180 : 89);
-  const baseSpeed =
-    activity.distanceMeters > 0 && activity.movingTimeSecs > 0
-      ? activity.distanceMeters / activity.movingTimeSecs
-      : activity.sportCategory === 'Running'
-        ? 3.75
-        : 8.8;
-
-  // Interpolate from existing coarse stream if available
-  const srcTime = existing?.time || [];
-  const hasCoarse = srcTime.length >= 4;
-
-  const interpArray = (arr: number[] | undefined, targetSec: number, fallback: number): number => {
-    if (!hasCoarse || !arr || arr.length === 0) return fallback;
-    const maxSrcT = srcTime[srcTime.length - 1] || totalSecs;
-    const scaledT = (targetSec / totalSecs) * maxSrcT;
+  const interpolateChannel = (
+    arr: number[] | undefined,
+    decimals = 0
+  ): number[] | undefined => {
+    if (!arr || arr.length < 2) return undefined;
+    const out = new Array<number>(totalSecs);
     let hi = 0;
-    while (hi < srcTime.length - 1 && srcTime[hi] < scaledT) hi++;
-    const lo = Math.max(0, hi - 1);
-    const t0 = srcTime[lo] ?? 0;
-    const t1 = srcTime[hi] ?? t0 + 1;
-    const v0 = arr[lo] ?? fallback;
-    const v1 = arr[hi] ?? v0;
-    const alpha = t1 > t0 ? (scaledT - t0) / (t1 - t0) : 0;
-    return v0 + alpha * (v1 - v0);
+    const n = Math.min(arr.length, normalizedSrcTime.length);
+    for (let s = 0; s < totalSecs; s++) {
+      while (hi < n - 1 && normalizedSrcTime[hi] < s) hi++;
+      const lo = Math.max(0, hi - 1);
+      const t0 = normalizedSrcTime[lo] ?? 0;
+      const t1 = normalizedSrcTime[hi] ?? t0;
+      const v0 = arr[lo] ?? 0;
+      const v1 = arr[hi] ?? v0;
+      const alpha = t1 > t0 ? Math.max(0, Math.min(1, (s - t0) / (t1 - t0))) : 0;
+      const val = v0 + alpha * (v1 - v0);
+      out[s] = decimals > 0 ? Number(val.toFixed(decimals)) : Math.round(val);
+    }
+    return out;
   };
 
-  let cumDist = 0;
-  const seed = activity.id.split('').reduce((a, c, i) => a + c.charCodeAt(0) * (i + 1), 0);
-
-  for (let s = 0; s < totalSecs; s++) {
-    time[s] = s;
-    const frac = s / totalSecs;
-    // Realistic 1Hz micro-variability (pedal stroke / stride oscillation)
-    const microOsc = Math.sin(s * 0.45 + (seed % 11)) * 6 + Math.cos(s * 1.15) * 3.5;
-    const intervalWave =
-      frac > 0.15 && frac < 0.85 ? Math.sin(frac * Math.PI * 10 + (seed % 5)) * 0.14 : -0.12;
-
-    if (hasWatts) {
-      const rawW = interpArray(existing?.watts, s, baseWatts * (1 + intervalWave));
-      watts.push(Math.max(0, Math.round(rawW + microOsc)));
-    }
-
-    const drift = (frac - 0.5) * ((activity.aerobicDecouplingPct || 2.2) / 100) * baseHr;
-    const rawHr = interpArray(existing?.heartrate, s, baseHr * (1 + intervalWave * 0.4) + drift);
-    heartrate.push(
-      Math.min(maxHr, Math.max(55, Math.round(rawHr + Math.sin(s * 0.18) * 1.5)))
-    );
-
-    const rawCad = interpArray(existing?.cadence, s, baseCad);
-    cadence.push(Math.max(40, Math.round(rawCad + Math.sin(s * 0.3) * 2)));
-
-    const rawVel = interpArray(existing?.velocitySmooth, s, baseSpeed * (1 + intervalWave * 0.35));
-    const vClamped = Number(Math.max(0.5, rawVel + Math.sin(s * 0.25) * 0.08).toFixed(2));
-    velocitySmooth.push(vClamped);
-    cumDist += vClamped;
-    distance[s] = Number(cumDist.toFixed(1));
-
-    const rawAlt = interpArray(
-      existing?.altitude,
-      s,
-      65 + Math.sin(frac * Math.PI * 4) * 45 + frac * (activity.elevationGainMeters || 120) * 0.35
-    );
-    altitude.push(Number(rawAlt.toFixed(1)));
-  }
+  const time = Array.from({ length: totalSecs }, (_, s) => s);
 
   return {
     time,
-    distance,
-    latlng: existing?.latlng,
-    watts: watts.length > 0 ? watts : undefined,
-    heartrate,
-    cadence,
-    velocitySmooth,
-    altitude,
+    distance: interpolateChannel(existing.distance, 1),
+    latlng: existing.latlng,
+    watts: interpolateChannel(existing.watts, 0),
+    heartrate: interpolateChannel(existing.heartrate, 0),
+    cadence: interpolateChannel(existing.cadence, 0),
+    velocitySmooth: interpolateChannel(existing.velocitySmooth, 2),
+    altitude: interpolateChannel(existing.altitude, 1),
   };
 }
 

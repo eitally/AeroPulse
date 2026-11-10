@@ -59,6 +59,9 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
             className="ap-modal-backdrop z-[90]"
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Install THRESH as a Standalone App"
               onClick={(e) => e.stopPropagation()}
               className="ap-modal-sheet max-w-md liquid-glass border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-2xl"
             >

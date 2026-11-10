@@ -1,18 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <defs>
-    <linearGradient id="thresh-inflect" x1="8" y1="48" x2="56" y2="16" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0B4F9E" />
-      <stop offset="48%" stop-color="#0284C7" />
-      <stop offset="68%" stop-color="#EA580C" />
-      <stop offset="100%" stop-color="#F97316" />
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2" />
-  <circle cx="32" cy="32" r="20" stroke="#0B4F9E" stroke-width="6" />
+  <rect width="64" height="64" rx="16" fill="#F7F6F2" />
   <path
-    d="M8 46C22 46 27 38.5 32 32C37 25.5 42 18 56 18"
-    stroke="url(#thresh-inflect)"
-    stroke-width="6.8"
+    d="M 32 11 A 21 21 0 1 0 50.2 21.5"
+    stroke="#111318"
+    stroke-width="6.2"
+    stroke-linecap="round"
+  />
+  <path
+    d="M 17.5 45 C 27.5 45 29.5 36.2 32.8 30.2 C 36.1 24.2 40.8 14.2 53 13"
+    stroke="#D9480F"
+    stroke-width="6.2"
     stroke-linecap="round"
   />
 </svg>

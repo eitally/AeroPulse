@@ -1,4 +1,5 @@
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { AsyncLocalStorage } from 'async_hooks';
 import crypto from 'crypto';
 import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -14,10 +15,13 @@ import {
   saveGarminSession,
 } from './garminConnectService.ts';
 import {
+  assertSafeExternalFetch,
   clearSessionCookie,
+  decodeAndVerifyToken as decodeSessionTokenSafely,
   escapeHtml,
+  getVerifiedSessionClaims,
+  hasValidCronAuthorization,
   hasValidSessionToken,
-  isSafeExternalUrl,
   resolveSafeOrigin,
   safeJsonForScript,
   securityHeadersMiddleware,
@@ -25,13 +29,16 @@ import {
 } from './securityUtils.ts';
 
 export const apiRouter = express.Router();
+const requestContext = new AsyncLocalStorage<Request>();
 apiRouter.use(securityHeadersMiddleware);
+apiRouter.use((req: Request, _res: Response, next: NextFunction) => {
+  requestContext.run(req, () => next());
+});
 
-const SESSION_CACHE_FILE = '/tmp/aeropulse-runtime-session.json';
-const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-segments-by-activity.json';
-const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/aeropulse-routes-by-activity.json';
-const STRAVA_KUDOS_CACHE_FILE = '/tmp/aeropulse-strava-kudos.json';
-const GARMIN_SESSION_DIR = '/tmp/aeropulse-garmin';
+const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-segments-by-activity.json';
+const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-routes-by-activity.json';
+const STRAVA_KUDOS_CACHE_FILE = '/tmp/thresh-strava-kudos.json';
+const GARMIN_SESSION_DIR = '/tmp/thresh-garmin';
 
 function hasExplicitCredentialHeader(req?: Request): boolean {
   if (!req) return false;
@@ -46,47 +53,50 @@ function hasExplicitCredentialHeader(req?: Request): boolean {
 }
 
 function isAuthenticatedRequest(req?: Request): boolean {
-  if (!req) return true;
-  if (hasValidSessionToken(req) || hasExplicitCredentialHeader(req)) {
-    return true;
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return false;
+  return hasValidSessionToken(activeReq) || hasExplicitCredentialHeader(activeReq);
+}
+
+function resolveSessionScopeKey(req?: Request): string | null {
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return null;
+  const verified = getVerifiedSessionClaims(activeReq);
+  if (verified?.sid) {
+    return verified.sid.slice(0, 24);
   }
-  // Allow same-origin browser sessions that already passed the client auth gate
-  const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
-  if (
-    req.headers['x-auth-session'] === 'active' &&
-    (secFetchSite === 'same-origin' || secFetchSite === 'same-site')
-  ) {
-    return true;
-  }
-  return false;
+  const rawCredential = (
+    String(activeReq.headers['x-garmin-personal-api-key'] || '').trim() ||
+    String(activeReq.headers['x-strava-refresh-token'] || '').trim() ||
+    String(activeReq.headers['x-strava-access-token'] || '').trim() ||
+    String(activeReq.headers['x-intervals-api-key'] || '').trim()
+  ).trim();
+  if (!rawCredential) return null;
+  return crypto.createHash('sha256').update(rawCredential).digest('hex').slice(0, 24);
 }
 
 function getGarminScopeKey(req?: Request): string {
-  const rawIdentity = (
-    (req ? String(req.headers['x-garmin-personal-api-key'] || '').trim() : '') ||
-    (req ? String(req.headers['x-strava-refresh-token'] || '').trim() : '') ||
-    (req ? String(req.headers['x-strava-access-token'] || '').trim() : '') ||
-    (req ? String(req.headers['x-intervals-api-key'] || '').trim() : '') ||
-    'default'
-  ).trim();
-  return crypto.createHash('sha256').update(rawIdentity).digest('hex').slice(0, 16);
+  return resolveSessionScopeKey(req) || 'unauthenticated';
 }
 
 function getActiveGarminSession(req?: Request): GarminSessionStore | null {
-  if (req && !isAuthenticatedRequest(req)) {
+  const activeReq = req ?? requestContext.getStore();
+  if (activeReq && !isAuthenticatedRequest(activeReq)) {
     return null;
   }
-  const scopeKey = getGarminScopeKey(req);
-  const stored =
-    loadGarminSession(GARMIN_SESSION_DIR, scopeKey) ||
-    loadGarminSession(GARMIN_SESSION_DIR, 'default');
-  const headerPersonalKey = req
-    ? String(req.headers['x-garmin-personal-api-key'] || '').trim()
+  const scopeKey = resolveSessionScopeKey(activeReq);
+  const stored = scopeKey ? loadGarminSession(GARMIN_SESSION_DIR, scopeKey) : null;
+  const headerPersonalKey = activeReq
+    ? String(activeReq.headers['x-garmin-personal-api-key'] || '').trim()
     : '';
-  const headerBearer = req ? String(req.headers['x-garmin-bearer-token'] || '').trim() : '';
-  const headerOauth1 = req ? String(req.headers['x-garmin-oauth1-token'] || '').trim() : '';
-  const headerOauth1Secret = req
-    ? String(req.headers['x-garmin-oauth1-secret'] || '').trim()
+  const headerBearer = activeReq
+    ? String(activeReq.headers['x-garmin-bearer-token'] || '').trim()
+    : '';
+  const headerOauth1 = activeReq
+    ? String(activeReq.headers['x-garmin-oauth1-token'] || '').trim()
+    : '';
+  const headerOauth1Secret = activeReq
+    ? String(activeReq.headers['x-garmin-oauth1-secret'] || '').trim()
     : '';
 
   if (
@@ -106,30 +116,36 @@ function getActiveGarminSession(req?: Request): GarminSessionStore | null {
       oauth1TokenSecret: headerOauth1Secret || undefined,
     };
   }
-  const fallbackPersonalKey = getEnvGarminPersonalApiKey();
-  if (fallbackPersonalKey) {
-    const envGarminName = (process.env.GARMIN_ATHLETE_NAME || '').trim();
-    return {
-      personalApiKey: fallbackPersonalKey,
-      ...(envGarminName ? { fullName: envGarminName } : {}),
-    };
+  // Only allow single-user local developer .env Garmin key when not in multi-tenant production
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const fallbackPersonalKey = getEnvGarminPersonalApiKey();
+    if (fallbackPersonalKey) {
+      const envGarminName = (process.env.GARMIN_ATHLETE_NAME || '').trim();
+      return {
+        personalApiKey: fallbackPersonalKey,
+        ...(envGarminName ? { fullName: envGarminName } : {}),
+      };
+    }
   }
   return null;
 }
 
 function getScopedPlannedEventsFile(req?: Request, explicitApiKey?: string): string | null {
-  const rawIdentity = (
-    explicitApiKey ||
-    (req ? String(req.headers['x-intervals-api-key'] || '').trim() : '') ||
-    (req ? String(req.headers['x-strava-refresh-token'] || '').trim() : '') ||
-    (req ? String(req.headers['x-strava-access-token'] || '').trim() : '') ||
-    (req ? String(req.headers['x-garmin-personal-api-key'] || '').trim() : '') ||
-    (req && isAuthenticatedRequest(req) ? 'default-auth-session' : '')
-  ).trim();
-  if (!rawIdentity) return null;
-  const hash = crypto.createHash('sha256').update(rawIdentity).digest('hex').slice(0, 16);
-  return `/tmp/aeropulse-planned-events-${hash}.json`;
+  const scopeKey = explicitApiKey
+    ? crypto.createHash('sha256').update(explicitApiKey.trim()).digest('hex').slice(0, 24)
+    : resolveSessionScopeKey(req);
+  if (!scopeKey) return null;
+  return `/tmp/thresh-planned-events-${scopeKey}.json`;
 }
+
+// Bootstrap or refresh an isolated HttpOnly athlete session cookie (without requiring Strava login)
+apiRouter.post('/api/auth/session', (req: Request, res: Response) => {
+  const rawSubject = String(req.body?.athleteName || 'thresh-athlete')
+    .trim()
+    .slice(0, 64);
+  const sessionToken = setSessionCookie(req, res, rawSubject || 'thresh-athlete');
+  res.json({ ok: true, sessionToken });
+});
 
 function decodeGooglePolyline(encoded: string): [number, number][] {
   if (!encoded || typeof encoded !== 'string') return [];
@@ -215,13 +231,11 @@ function loadJsonFile<T>(filePath: string, fallback: T): T {
 
 function saveJsonFile(filePath: string, data: unknown) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
   } catch {
     // ignore write error
   }
 }
-
-const cachedSession = loadJsonFile<Partial<RuntimeSessionStore>>(SESSION_CACHE_FILE, {});
 
 const initialEnvMapKey = (
   process.env.MAPBOX_ACCESS_TOKEN ||
@@ -231,7 +245,6 @@ const initialEnvMapKey = (
 ).trim();
 
 const initialEnvGeminiKey = [
-  cachedSession.geminiApiKey,
   process.env.GEMINI_API_KEY,
   process.env.GOOGLE_API_KEY,
   process.env.VITE_GEMINI_API_KEY,
@@ -247,50 +260,95 @@ const initialEnvGeminiKey = [
   )
   .find((k) => k && k !== 'MY_GEMINI_API_KEY' && k !== 'YOUR_GEMINI_API_KEY') || '';
 
-const runtimeStore: RuntimeSessionStore = {
-  intervalsApiKey: cachedSession.intervalsApiKey || process.env.INTERVALS_API_KEY || '',
-  intervalsAthleteId: cachedSession.intervalsAthleteId || process.env.INTERVALS_ATHLETE_ID || '0',
-  intervalsAthleteName: cachedSession.intervalsAthleteName || '',
-  stravaClientId: cachedSession.stravaClientId || process.env.STRAVA_CLIENT_ID || '',
-  stravaClientSecret: cachedSession.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || '',
-  stravaAccessToken: cachedSession.stravaAccessToken || process.env.STRAVA_ACCESS_TOKEN || '',
-  stravaRefreshToken: cachedSession.stravaRefreshToken || process.env.STRAVA_REFRESH_TOKEN || '',
-  stravaExpiresAt: cachedSession.stravaExpiresAt || 0,
-  stravaAthleteName: cachedSession.stravaAthleteName || '',
-  lastSyncedAt: cachedSession.lastSyncedAt || new Date().toISOString(),
-  nextHourlySyncAt:
-    cachedSession.nextHourlySyncAt || new Date(Date.now() + 3600 * 1000).toISOString(),
-  totalActivitiesCount: cachedSession.totalActivitiesCount || 0,
-  earliestActivityDate: cachedSession.earliestActivityDate || '',
-  garminActivitiesCount: cachedSession.garminActivitiesCount || 0,
-  stravaActivitiesCount: cachedSession.stravaActivitiesCount || 0,
-  redactedStravaCount: cachedSession.redactedStravaCount || 0,
-  athleteFtp: cachedSession.athleteFtp || 300,
-  athleteIndoorFtp: cachedSession.athleteIndoorFtp || 300,
-  athleteRunFtp: cachedSession.athleteRunFtp || 420,
-  athleteLthr: cachedSession.athleteLthr || 163,
-  athleteMaxHr: cachedSession.athleteMaxHr || 180,
-  athleteProfile: cachedSession.athleteProfile || undefined,
-  geminiApiKey: initialEnvGeminiKey,
-  mapTileApiKey: cachedSession.mapTileApiKey || initialEnvMapKey,
-  mapTileProvider:
-    cachedSession.mapTileProvider ||
-    (initialEnvMapKey.startsWith('pk.')
-      ? 'MAPBOX'
-      : initialEnvMapKey
-        ? 'THUNDERFOREST'
-        : 'OSM_KEYLESS'),
-  gearItems: cachedSession.gearItems || [],
-};
+function createDefaultRuntimeSessionStore(seed: Partial<RuntimeSessionStore> = {}): RuntimeSessionStore {
+  return {
+    intervalsApiKey: seed.intervalsApiKey || '',
+    intervalsAthleteId: seed.intervalsAthleteId || '0',
+    intervalsAthleteName: seed.intervalsAthleteName || '',
+    stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || '',
+    stravaClientSecret: seed.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || '',
+    stravaAccessToken: seed.stravaAccessToken || '',
+    stravaRefreshToken: seed.stravaRefreshToken || '',
+    stravaExpiresAt: seed.stravaExpiresAt || 0,
+    stravaAthleteName: seed.stravaAthleteName || '',
+    lastSyncedAt: seed.lastSyncedAt || new Date().toISOString(),
+    nextHourlySyncAt:
+      seed.nextHourlySyncAt || new Date(Date.now() + 3600 * 1000).toISOString(),
+    totalActivitiesCount: seed.totalActivitiesCount || 0,
+    earliestActivityDate: seed.earliestActivityDate || '',
+    garminActivitiesCount: seed.garminActivitiesCount || 0,
+    stravaActivitiesCount: seed.stravaActivitiesCount || 0,
+    redactedStravaCount: seed.redactedStravaCount || 0,
+    athleteFtp: seed.athleteFtp || 250,
+    athleteIndoorFtp: seed.athleteIndoorFtp || 250,
+    athleteRunFtp: seed.athleteRunFtp || 300,
+    athleteLthr: seed.athleteLthr || 165,
+    athleteMaxHr: seed.athleteMaxHr || 185,
+    athleteProfile: seed.athleteProfile || undefined,
+    geminiApiKey: seed.geminiApiKey || initialEnvGeminiKey,
+    mapTileApiKey: seed.mapTileApiKey || initialEnvMapKey,
+    mapTileProvider:
+      seed.mapTileProvider ||
+      (initialEnvMapKey.startsWith('pk.')
+        ? 'MAPBOX'
+        : initialEnvMapKey
+          ? 'THUNDERFOREST'
+          : 'OSM_KEYLESS'),
+    gearItems: seed.gearItems || [],
+  };
+}
+
+const scopedStoresInMemory = new Map<string, RuntimeSessionStore>();
+const ephemeralStoresByReq = new WeakMap<Request, RuntimeSessionStore>();
+
+function getScopedSessionFilePath(scopeKey: string): string {
+  return `/tmp/thresh-session-${scopeKey}.json`;
+}
+
+function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
+  const activeReq = req ?? requestContext.getStore();
+  const scopeKey = resolveSessionScopeKey(activeReq);
+  if (scopeKey) {
+    const existing = scopedStoresInMemory.get(scopeKey);
+    if (existing) return existing;
+    const loaded = loadJsonFile<Partial<RuntimeSessionStore>>(
+      getScopedSessionFilePath(scopeKey),
+      {}
+    );
+    const hydrated = createDefaultRuntimeSessionStore(loaded);
+    scopedStoresInMemory.set(scopeKey, hydrated);
+    return hydrated;
+  }
+  if (activeReq) {
+    let eph = ephemeralStoresByReq.get(activeReq);
+    if (!eph) {
+      eph = createDefaultRuntimeSessionStore();
+      ephemeralStoresByReq.set(activeReq, eph);
+    }
+    return eph;
+  }
+  return createDefaultRuntimeSessionStore();
+}
+
+// Request-scoped proxy: isolates all reads/writes per authenticated session ID with zero cross-tenant bleed
+const runtimeStore: RuntimeSessionStore = new Proxy({} as RuntimeSessionStore, {
+  get(_target, prop: keyof RuntimeSessionStore) {
+    return getScopedRuntimeStore()[prop];
+  },
+  set(_target, prop: keyof RuntimeSessionStore, value: any) {
+    (getScopedRuntimeStore() as Record<string, any>)[prop] = value;
+    return true;
+  },
+});
 
 const SERVER_ZONE_COLORS = [
-  '#52B788',
-  '#2A9D8F',
-  '#EAB308',
-  '#F97316',
-  '#EF4444',
-  '#9333EA',
-  '#EC4899',
+  '#94A3B8', // Z1 Cool Mist
+  '#0D9488', // Z2 Aerobic Teal
+  '#D97706', // Z3 Ochre Tempo
+  '#EA580C', // Z4 Thresh Vermilion
+  '#DC2626', // Z5 VO2 Crimson
+  '#7C3AED', // Z6 Anaerobic Violet
+  '#A21CAF', // Z7 Neuromuscular
 ];
 
 function deriveObservedPhysiologyFromActivities(
@@ -779,8 +837,10 @@ function buildServerAthleteProfile(
   };
 }
 
-function saveSessionCache() {
-  saveJsonFile(SESSION_CACHE_FILE, runtimeStore);
+function saveSessionCache(req?: Request) {
+  const scopeKey = resolveSessionScopeKey(req);
+  if (!scopeKey) return;
+  saveJsonFile(getScopedSessionFilePath(scopeKey), getScopedRuntimeStore(req));
 }
 
 function getEffectiveGeminiApiKey(req?: Request): string {
@@ -849,33 +909,37 @@ async function generateGeminiContentWithFallback(
 }
 
 function getEffectiveIntervalsConfig(req?: Request) {
-  if (req && !isAuthenticatedRequest(req)) {
+  const activeReq = req ?? requestContext.getStore();
+  if (activeReq && !isAuthenticatedRequest(activeReq)) {
     return { apiKey: '', athleteId: '0' };
   }
-  const headerKey = (req?.headers['x-intervals-api-key'] as string | undefined) || '';
-  const headerAthlete = (req?.headers['x-intervals-athlete-id'] as string | undefined) || '';
+  const allowEnvFallback = process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
+  const headerKey = (activeReq?.headers['x-intervals-api-key'] as string | undefined) || '';
+  const headerAthlete = (activeReq?.headers['x-intervals-athlete-id'] as string | undefined) || '';
   const apiKey = (
     headerKey ||
     runtimeStore.intervalsApiKey ||
-    process.env.INTERVALS_API_KEY ||
+    (allowEnvFallback ? process.env.INTERVALS_API_KEY : '') ||
     ''
   ).trim();
   const athleteId =
     (
       headerAthlete ||
       runtimeStore.intervalsAthleteId ||
-      process.env.INTERVALS_ATHLETE_ID ||
+      (allowEnvFallback ? process.env.INTERVALS_ATHLETE_ID : '') ||
       '0'
     ).trim() || '0';
   return { apiKey, athleteId };
 }
 
 function getEffectiveStravaClientConfig(req?: Request) {
-  const headerClientId = req?.headers['x-strava-client-id'] as string | undefined;
-  const headerClientSecret = req?.headers['x-strava-client-secret'] as string | undefined;
-  const headerRefreshToken = req?.headers['x-strava-refresh-token'] as string | undefined;
-  const headerAccessToken = req?.headers['x-strava-access-token'] as string | undefined;
-  const headerExpiresAt = Number(req?.headers['x-strava-expires-at'] || 0);
+  const activeReq = req ?? requestContext.getStore();
+  const allowEnvTokenFallback = process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
+  const headerClientId = activeReq?.headers['x-strava-client-id'] as string | undefined;
+  const headerClientSecret = activeReq?.headers['x-strava-client-secret'] as string | undefined;
+  const headerRefreshToken = activeReq?.headers['x-strava-refresh-token'] as string | undefined;
+  const headerAccessToken = activeReq?.headers['x-strava-access-token'] as string | undefined;
+  const headerExpiresAt = Number(activeReq?.headers['x-strava-expires-at'] || 0);
   const clientId = (
     headerClientId ||
     runtimeStore.stravaClientId ||
@@ -888,7 +952,7 @@ function getEffectiveStravaClientConfig(req?: Request) {
     process.env.STRAVA_CLIENT_SECRET ||
     ''
   ).trim();
-  if (req && !isAuthenticatedRequest(req)) {
+  if (activeReq && !isAuthenticatedRequest(activeReq)) {
     return {
       clientId,
       clientSecret,
@@ -900,13 +964,13 @@ function getEffectiveStravaClientConfig(req?: Request) {
   const refreshToken = (
     headerRefreshToken ||
     runtimeStore.stravaRefreshToken ||
-    process.env.STRAVA_REFRESH_TOKEN ||
+    (allowEnvTokenFallback ? process.env.STRAVA_REFRESH_TOKEN : '') ||
     ''
   ).trim();
   const accessToken = (
     headerAccessToken ||
     runtimeStore.stravaAccessToken ||
-    process.env.STRAVA_ACCESS_TOKEN ||
+    (allowEnvTokenFallback ? process.env.STRAVA_ACCESS_TOKEN : '') ||
     ''
   ).trim();
   const expiresAt =
@@ -980,18 +1044,8 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
     activeExpiresAt === 0 ||
     nowSecs >= activeExpiresAt - 300;
 
-  if (needsRefresh && clientId && clientSecret) {
-    const candidateRefreshTokens = Array.from(
-      new Set(
-        [
-          activeRefreshToken,
-          runtimeStore.stravaRefreshToken,
-          process.env.STRAVA_REFRESH_TOKEN,
-        ]
-          .map((t) => (t || '').trim())
-          .filter(Boolean)
-      )
-    );
+  if (needsRefresh && clientId && clientSecret && activeRefreshToken) {
+    const candidateRefreshTokens = [activeRefreshToken.trim()].filter(Boolean);
 
     let refreshedSuccessfully = false;
     for (const candidateToken of candidateRefreshTokens) {
@@ -1379,16 +1433,20 @@ apiRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
       oauth1TokenSecret: body.oauth1TokenSecret,
     });
 
-    const scopeKey = getGarminScopeKey(req);
+    const sessionToken = setSessionCookie(
+      req,
+      res,
+      session.fullName || session.displayName || 'garmin-athlete'
+    );
+    const createdClaims = decodeSessionTokenSafely(sessionToken);
+    const scopeKey = createdClaims?.sid?.slice(0, 24) || getGarminScopeKey(req);
     saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
-    saveGarminSession(GARMIN_SESSION_DIR, 'default', session);
 
     // Fetch direct Garmin profile, recent sleep/HRV biometrics, and activities
     const garminData = await fetchDirectGarminProfileAndWellness(session, 28).catch(
       () => null
     );
     saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
-    saveGarminSession(GARMIN_SESSION_DIR, 'default', session);
 
     const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
     const sId = String(stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
@@ -1425,8 +1483,6 @@ apiRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
       latestW,
       [...normalizedGarminActs, ...sActs]
     );
-
-    const sessionToken = setSessionCookie(req, res, syncedProfile.name || 'garmin-athlete');
 
     res.json({
       ok: true,
@@ -1466,8 +1522,9 @@ apiRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
 
     const garminData = await fetchDirectGarminProfileAndWellness(session, 28);
     const scopeKey = getGarminScopeKey(req);
-    saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
-    saveGarminSession(GARMIN_SESSION_DIR, 'default', session);
+    if (scopeKey !== 'unauthenticated') {
+      saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+    }
 
     const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
     const sId = String(stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
@@ -1628,8 +1685,9 @@ apiRouter.delete('/api/config/garmin', (req: Request, res: Response) => {
     return;
   }
   const scopeKey = getGarminScopeKey(req);
-  clearGarminSession(GARMIN_SESSION_DIR, scopeKey);
-  clearGarminSession(GARMIN_SESSION_DIR, 'default');
+  if (scopeKey !== 'unauthenticated') {
+    clearGarminSession(GARMIN_SESSION_DIR, scopeKey);
+  }
   res.json({ ok: true, garminConnected: false });
 });
 
@@ -1902,6 +1960,10 @@ apiRouter.post('/api/gemini/config', (req: Request, res: Response) => {
 
 // Export & Import Connection Bundle for 1-Click Transfer to Deployed App / Vercel
 apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    res.status(401).json({ error: 'Valid authenticated session required to export credentials.' });
+    return;
+  }
   const { apiKey: intervalsApiKey, athleteId: intervalsAthleteId } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
@@ -2473,122 +2535,27 @@ async function syncIntervalsAllHistory(
       if (garminStravaIds.has(sid)) continue;
 
       const cachedSa = stravaArchiveById.get(sid);
-      if (cachedSa) {
+      if (cachedSa && (cachedSa.moving_time || cachedSa.elapsed_time)) {
         enrichedRawActivities.push({
           ...a,
           id: `strava-${sid}`,
           strava_id: sid,
-          type: cachedSa.sport_type || cachedSa.type || 'VirtualRide',
-          name: cachedSa.name || 'Virtual Cycling (Zwift)',
-          moving_time: cachedSa.moving_time || cachedSa.elapsed_time || 2700,
-          elapsed_time: cachedSa.elapsed_time || cachedSa.moving_time || 2700,
-          distance: cachedSa.distance || 24000,
-          total_elevation_gain: cachedSa.total_elevation_gain ?? 180,
-          trainer: cachedSa.trainer ?? true,
+          type: cachedSa.sport_type || cachedSa.type || 'Ride',
+          name: cachedSa.name || 'Recorded Session',
+          moving_time: cachedSa.moving_time || cachedSa.elapsed_time,
+          elapsed_time: cachedSa.elapsed_time || cachedSa.moving_time,
+          distance: cachedSa.distance ?? 0,
+          total_elevation_gain: cachedSa.total_elevation_gain ?? 0,
+          trainer: Boolean(cachedSa.trainer),
           average_watts: cachedSa.average_watts,
           icu_weighted_avg_watts: cachedSa.weighted_average_watts || cachedSa.average_watts,
           average_heartrate: cachedSa.average_heartrate,
           max_heartrate: cachedSa.max_heartrate,
           average_cadence: cachedSa.average_cadence,
-          device_name: cachedSa.device_name || 'Zwift Virtual Cycling',
+          device_name: cachedSa.device_name || undefined,
         });
-        continue;
       }
-
-      // Reconstruct Virtual Cycling (Zwift / Smart Trainer) telemetry from Intervals.icu daily wellness residual load & eFTP
-      const d = String(a.start_date_local).slice(0, 10);
-      const dayStubs = (stubsByDate.get(d) || [])
-        .filter((s) => !garminStravaIds.has(String(s.strava_id || s.id)))
-        .sort((x, y) => String(x.start_date_local).localeCompare(String(y.start_date_local)));
-      const stubIdx = dayStubs.findIndex((s) => String(s.id) === String(a.id));
-
-      const wDay = wellnessByDateMap.get(d);
-      const totalDayLoad = wDay ? wDay.dailyLoad : 0;
-      const garminLoad = knownGarminLoadByDate.get(d) || 0;
-      const residualDayLoad = Math.max(0, totalDayLoad - garminLoad);
-      const rideEftp = wDay?.rideEftp || runtimeStore.athleteFtp || 310;
-
-      // Check if this stub is a short Zwift warmup immediately preceding a main event within 25 mins
-      let isWarmupStub = false;
-      let warmupGapSecs = 720;
-      if (stubIdx >= 0 && stubIdx < dayStubs.length - 1) {
-        const currMs = new Date(String(a.start_date_local)).getTime();
-        const nextMs = new Date(String(dayStubs[stubIdx + 1].start_date_local)).getTime();
-        const diffSecs = Math.round((nextMs - currMs) / 1000);
-        if (diffSecs >= 180 && diffSecs <= 1800) {
-          isWarmupStub = true;
-          warmupGapSecs = Math.max(300, diffSecs - 45);
-        }
-      }
-
-      let sessionLoad = 42;
-      if (residualDayLoad > 0) {
-        if (dayStubs.length === 1) {
-          sessionLoad = residualDayLoad;
-        } else if (isWarmupStub) {
-          sessionLoad = Math.max(5, Math.min(14, Math.round(residualDayLoad * 0.18)));
-        } else {
-          const warmupCount = dayStubs.length - 1;
-          const mainShare = Math.max(
-            12,
-            residualDayLoad - Math.round(residualDayLoad * 0.18) * Math.min(1, warmupCount)
-          );
-          const nonWarmupCount = Math.max(1, dayStubs.length - Math.min(1, warmupCount));
-          sessionLoad = Math.max(12, Math.round(mainShare / nonWarmupCount));
-        }
-      } else {
-        sessionLoad = isWarmupStub ? 9 : 46;
-      }
-
-      const ifEst = isWarmupStub
-        ? 0.64
-        : sessionLoad >= 80
-          ? 0.88
-          : sessionLoad >= 50
-            ? 0.81
-            : 0.75;
-      const movingTimeSecs = isWarmupStub
-        ? warmupGapSecs
-        : Math.max(
-            1200,
-            Math.min(7200, Math.round((sessionLoad / (ifEst * ifEst * 100)) * 3600))
-          );
-      const npWatts = Math.round(rideEftp * ifEst);
-      const avgWatts = Math.round(npWatts * (isWarmupStub ? 0.96 : 0.93));
-      const speedMps = isWarmupStub ? 8.6 : 9.7; // ~31–35 km/h virtual cycling speed
-      const distMeters = Math.round(movingTimeSecs * speedMps);
-      const elevMeters = isWarmupStub ? 45 : Math.round((distMeters / 1000) * 8.5);
-      const avgHrEst = Math.round(118 + ifEst * 42);
-      const maxHrEst = Math.round(avgHrEst + (isWarmupStub ? 10 : 18));
-
-      const sessionLabel = isWarmupStub
-        ? 'Zwift — Virtual Cycling Warmup'
-        : sessionLoad >= 75
-          ? 'Zwift — Virtual Cycling Race / Threshold'
-          : 'Zwift — Virtual Cycling Session';
-
-      enrichedRawActivities.push({
-        ...a,
-        id: `strava-${sid}`,
-        strava_id: sid,
-        type: 'VirtualRide',
-        sub_type: 'VIRTUAL_RIDE',
-        name: sessionLabel,
-        trainer: true,
-        moving_time: movingTimeSecs,
-        elapsed_time: movingTimeSecs,
-        distance: distMeters,
-        total_elevation_gain: elevMeters,
-        average_watts: avgWatts,
-        icu_average_watts: avgWatts,
-        icu_weighted_avg_watts: npWatts,
-        icu_intensity: Math.round(ifEst * 100),
-        icu_training_load: sessionLoad,
-        average_heartrate: avgHrEst,
-        max_heartrate: maxHrEst,
-        average_cadence: isWarmupStub ? 86 : 90,
-        device_name: 'Zwift Virtual Cycling',
-      });
+      // Never synthesize fake Zwift workouts or fabricated watts/HR for redacted Intervals.icu stubs
       continue;
     }
     enrichedRawActivities.push(a);
@@ -4251,9 +4218,20 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
         if (item && item.id) rawActivitiesMap.set(String(item.id), item);
       }
       const shouldPaginateAll = existingCachedCount <= 200 || !deltaOnly || forceFull;
-      if (shouldPaginateAll && firstPageItems.length === 200) {
-        for (let batchStart = 2; batchStart <= 30; batchStart += 3) {
-          const pages = [batchStart, batchStart + 1, batchStart + 2];
+      // Guard Strava global 100 req / 15m quota: cap cold-start pagination and inspect X-RateLimit-Usage
+      const isStravaRateLimited = (resp: globalThis.Response): boolean => {
+        const usage = resp.headers.get('x-ratelimit-usage') || '';
+        const shortWindow = Number(usage.split(',')[0] || 0);
+        return shortWindow >= 80;
+      };
+      const maxPageToFetch = forceFull ? 10 : 3;
+      if (
+        shouldPaginateAll &&
+        firstPageItems.length === 200 &&
+        !isStravaRateLimited(firstPageResp)
+      ) {
+        for (let page = 2; page <= maxPageToFetch; page += 2) {
+          const pages = page + 1 <= maxPageToFetch ? [page, page + 1] : [page];
           const batchResps = await Promise.all(
             pages.map((p) =>
               fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}`, {
@@ -4263,7 +4241,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
           );
           let reachedEnd = false;
           for (const r of batchResps) {
-            if (!r.ok) {
+            if (!r.ok || isStravaRateLimited(r)) {
               reachedEnd = true;
               break;
             }
@@ -4357,8 +4335,8 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
     stravaGearItems = [...bikes, ...shoes];
   }
 
-  // Fetch detailed activity payloads for the top 4 recent activities to extract segment_efforts
-  const topIds = activitiesList.slice(0, 4).map((a) => a.id);
+  // Fetch detailed activity payloads for at most top 2 recent activities to conserve Strava quota
+  const topIds = activitiesList.slice(0, 2).map((a) => a.id);
   const detailedPayloads = await Promise.all(
     topIds.map(async (id) => {
       const dResp = await fetch(
@@ -4388,7 +4366,7 @@ async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly 
 
   const recentKudoCandidates = activitiesList
     .filter((a) => a && a.id && Number(a.kudos_count || 0) > 0 && !kudosCache[String(a.id)]?.kudoers)
-    .slice(0, 8);
+    .slice(0, 2);
 
   if (recentKudoCandidates.length > 0) {
     await Promise.all(
@@ -5115,7 +5093,11 @@ async function executeHourlyBackgroundPoll() {
   return results;
 }
 
-apiRouter.all('/api/cron/hourly-sync', async (_req: Request, res: Response) => {
+apiRouter.all('/api/cron/hourly-sync', async (req: Request, res: Response) => {
+  if (!hasValidCronAuthorization(req)) {
+    res.status(401).json({ ok: false, error: 'Unauthorized cron invocation.' });
+    return;
+  }
   try {
     const summary = await executeHourlyBackgroundPoll();
     res.json({ ok: true, ...summary });
@@ -5174,17 +5156,36 @@ apiRouter.post('/api/webhooks/strava', async (req: Request, res: Response) => {
   }
 });
 
-// Start in-process hourly background polling timer (every 60 minutes on persistent Node runtimes)
-const HOURLY_INTERVAL_MS = 60 * 60 * 1000;
-setInterval(() => {
-  executeHourlyBackgroundPoll().catch(() => {
-    // ignore background errors
-  });
-}, HOURLY_INTERVAL_MS);
+// ----------------------------------------------------------------------------
+// 6. Gemini AI Coach — Clean-Room Data Firewall, Daily Options & Multi-Turn Chat
+// ----------------------------------------------------------------------------
 
-// ----------------------------------------------------------------------------
-// 6. Gemini AI Coach — Daily Options, Multi-Turn Chat & Direct Calendar Program Generator
-// ----------------------------------------------------------------------------
+/**
+ * Strava API Legal Clean-Room Firewall (Strava API Agreement Sec 5.3):
+ * Strips any Strava-originated activity, segment, or social metadata before passing
+ * athlete telemetry into any LLM / generative AI context window.
+ */
+function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<string, any> {
+  if (!rawSummary || typeof rawSummary !== 'object') return {};
+  const clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
+  const isStravaRecord = (item: any): boolean => {
+    if (!item || typeof item !== 'object') return false;
+    const src = String(
+      item.externalSource || item.ingestionSource || item.source || ''
+    ).toUpperCase();
+    return src.includes('STRAVA') || Boolean(item.stravaId && !item.garminActivityId && src !== 'GARMIN' && src !== 'FIT_UPLOAD');
+  };
+
+  for (const key of ['recentActivities', 'activities', 'workouts', 'segments', 'starredSegments']) {
+    if (Array.isArray(clone[key])) {
+      clone[key] = clone[key].filter((item: any) => !isStravaRecord(item));
+    }
+  }
+  delete clone.stravaSegments;
+  delete clone.stravaKudos;
+  clone.cleanRoomPolicy = 'FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY';
+  return clone;
+}
 function buildDeterministicDailyWorkoutOptions(
   sportPreference: string,
   environmentPreference: string,
@@ -5404,7 +5405,7 @@ function buildDeterministicCoachChatResponse(
     description: pw.description,
     plannedLoad: pw.plannedLoad,
     plannedDurationSecs: pw.plannedDurationSecs,
-    targetZoneSummary: `${pw.plannedLoad} TSS · AeroPulse Physiology Engine`,
+    targetZoneSummary: `${pw.plannedLoad} TSS · Thresh Physiology Engine`,
     workoutSyntax: pw.workoutSyntax,
     structuredSteps: parseWorkoutSyntaxToSteps(pw.workoutSyntax, pw.plannedDurationSecs),
     source: 'AI_COACH' as const,
@@ -5452,19 +5453,20 @@ apiRouter.post('/api/coach/options', async (req: Request, res: Response) => {
       return;
     }
 
+    const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary);
     const prompt = `
-You are an elite endurance sports physiologist and multi-sport coach.
-Generate 3 distinct, actionable daily workout options for today based on the athlete's live Garmin health, sleep, HRV status, Training Status, and Intervals.icu/Strava telemetry:
+You are Thresh AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
+Generate 3 distinct, actionable daily workout options for today based on the athlete's live first-party Garmin health, sleep, HRV status, Training Status, and calibrated threshold telemetry:
 - Preferred Sport for Today: ${sportPreference}
 - Preferred Environment: ${environmentPreference} (e.g., OUTDOOR road/trail vs INDOOR Smart Trainer/Treadmill)
 - Available Duration: ${durationMinutes} minutes
-- Athlete Telemetry Context: ${JSON.stringify(telemetrySummary || {})}
+- Clean-Room Athlete Telemetry Context: ${JSON.stringify(cleanTelemetry)}
 
 Return an array of 3 workout options in JSON matching the schema:
 1. Tier "OPTIMAL" (Option A · Optimal Progression — pushes toward race/FTP/pace goals when readiness permits)
 2. Tier "MODULATED" (Option B · Modulated Aerobic Durability — steady Zone 2 / controlled tempo advancing mileage with low autonomic cost)
 3. Tier "RECOVERY" (Option C · Active Parasympathetic Recovery — low-strain Zone 1 spin/jog + mobility)
-Include Intervals.icu workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") for each option.
+Include workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") for each option.
 `;
 
     const response = await generateGeminiContentWithFallback(ai, {
@@ -5545,12 +5547,13 @@ apiRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
           .join('\n\n')
       : '';
 
+    const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary);
     const response = await generateGeminiContentWithFallback(ai, {
       contents: `
 TODAY'S DATE: ${todayStr}
 
-ATHLETE COMPLETE GARMIN HEALTH, SLEEP, TRAINING STATUS & ALL-TIME TELEMETRY SNAPSHOT:
-${JSON.stringify(telemetrySummary || {}, null, 2)}
+ATHLETE CLEAN-ROOM HEALTH, SLEEP, READINESS & CALIBRATED TELEMETRY SNAPSHOT:
+${JSON.stringify(cleanTelemetry, null, 2)}
 
 RECENT CONVERSATION:
 ${conversationContext}
@@ -5559,9 +5562,9 @@ ATHLETE QUESTION OR PROGRAM REQUEST:
 ${message}
 `,
       config: {
-        systemInstruction: `You are AeroPulse AI Coach, an elite exercise physiologist and cycling/running training program designer integrated directly into an Intervals.icu-style analytics platform.
-1. Ground every answer in the athlete's real metrics: Garmin Sleep Score & Duration, 7d Sleep Debt, Garmin HRV Status (Balanced/Unbalanced/Low) & rMSSD (ms) vs normal corridor, 8-state Garmin Training Status, Resting HR, CTL/ATL/TSB, Load Ratio (ACWR), Cycling eFTP (~310W) / FTP (300W), Running eFTP (~456W) / Threshold Pace, and historical workouts.
-2. Whenever the user asks about today's workout, tomorrow's session, or a multi-day / weekly cycling or running training plan, ALWAYS populate "proposedWorkouts" with 1 to 7 concrete, ready-to-schedule workouts (with exact YYYY-MM-DD dates starting from ${todayStr}, sportCategory "Cycling" or "Running", environmentPreference "OUTDOOR" or "INDOOR", plannedDurationSecs, plannedLoad, and Intervals.icu workoutSyntax lines starting with "- ").`,
+        systemInstruction: `You are Thresh AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside Thresh (THRESH — Run & Ride Readiness).
+1. Ground every answer in the athlete's actual clean-room metrics provided in the snapshot: Sleep Score & Duration, 7d Sleep Debt, HRV Status & rMSSD (ms) vs baseline corridor, Training Status, Resting HR, CTL/ATL/TSB, Load Ratio (ACWR), calibrated Cycling FTP/eFTP, Running Threshold Pace, and first-party workouts. Never invent metrics that are missing or null—state clearly when calibration is needed.
+2. Whenever the user asks about today's workout, tomorrow's session, or a multi-day / weekly cycling or running training plan, ALWAYS populate "proposedWorkouts" with 1 to 7 concrete, ready-to-schedule workouts (with exact YYYY-MM-DD dates starting from ${todayStr}, sportCategory "Cycling" or "Running", environmentPreference "OUTDOOR" or "INDOOR", plannedDurationSecs, plannedLoad, and step workoutSyntax lines starting with "- ").`,
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -5662,39 +5665,40 @@ apiRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res: R
     let fetchNote = '';
 
     if (url && typeof url === 'string' && /^https?:\/\//i.test(url.trim())) {
-      if (!isSafeExternalUrl(url.trim())) {
-        fetchNote = 'Blocked unsafe or private network URL; parsed provided text only.';
-      } else {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6500);
-          const remoteResp = await fetch(url.trim(), {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6500);
+        const remoteResp = await assertSafeExternalFetch(
+          url.trim(),
+          {
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
               Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
             },
-            redirect: 'follow',
             signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-          if (remoteResp.ok && isSafeExternalUrl(remoteResp.url || url.trim())) {
-            const html = await remoteResp.text();
-            fetchedTextSnippet = html
-              .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-              .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-              .replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, '\n')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/[ \t]+/g, ' ')
-              .replace(/\n{2,}/g, '\n')
-              .slice(0, 18000);
-          } else {
-            fetchNote = `Remote site returned HTTP ${remoteResp.status} (anti-bot protection); parsed provided text.`;
-          }
-        } catch {
-          fetchNote =
-            'Remote platform throttled direct crawler access; parsed pasted results text.';
+          },
+          2
+        );
+        clearTimeout(timeoutId);
+        if (!remoteResp) {
+          fetchNote = 'Blocked unsafe, private-DNS, or cross-network redirect URL; parsed provided text only.';
+        } else if (remoteResp.ok) {
+          const html = await remoteResp.text();
+          fetchedTextSnippet = html
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{2,}/g, '\n')
+            .slice(0, 18000);
+        } else {
+          fetchNote = `Remote site returned HTTP ${remoteResp.status}; parsed provided text.`;
         }
+      } catch {
+        fetchNote =
+          'Remote platform throttled direct crawler access; parsed pasted results text.';
       }
     }
 
@@ -5786,6 +5790,7 @@ apiRouter.post('/api/auth/logout', (req: Request, res: Response) => {
     clearSessionCookie(res);
     const clearCredentials = Boolean(req.body?.clearCredentials) && isAuthenticatedRequest(req);
     if (clearCredentials) {
+      const scopeKey = resolveSessionScopeKey(req);
       runtimeStore.stravaAccessToken = '';
       runtimeStore.stravaRefreshToken = '';
       runtimeStore.stravaExpiresAt = 0;
@@ -5793,7 +5798,15 @@ apiRouter.post('/api/auth/logout', (req: Request, res: Response) => {
       runtimeStore.intervalsApiKey = '';
       runtimeStore.intervalsAthleteId = '0';
       runtimeStore.intervalsAthleteName = '';
-      saveJsonFile(SESSION_CACHE_FILE, runtimeStore);
+      if (scopeKey) {
+        scopedStoresInMemory.delete(scopeKey);
+        try {
+          const sessionPath = getScopedSessionFilePath(scopeKey);
+          if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+        } catch {
+          // ignore unlink error
+        }
+      }
     }
     res.json({
       ok: true,

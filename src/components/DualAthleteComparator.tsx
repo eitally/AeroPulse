@@ -22,7 +22,10 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { applyAthletePrivacyShield } from '../data/athleteRosterData';
+import {
+  applyAthletePrivacyShield,
+  isStravaSourcedActivity,
+} from '../data/athleteRosterData';
 import { getIntervalsFormZone } from './FourteenDayReadinessLedger';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 
@@ -208,9 +211,10 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
   onOpenCoachWithPrompt,
 }) => {
   const availableAthletes = useMemo<NormalizedCompareAthlete[]>(() => {
-    const selfFtp = selfProfile?.ftp || 316;
+    const cleanSelfActivities = selfActivities.filter((a) => !isStravaSourcedActivity(a));
+    const selfFtp = selfProfile?.ftp || 0;
     const selfWeight = selfProfile?.weightKg || 70;
-    const selfRhr = selfProfile?.restingHr || 48;
+    const selfRhr = selfProfile?.restingHr || 0;
     const list: NormalizedCompareAthlete[] = [
       {
         id: 'SELF',
@@ -218,13 +222,13 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
         initials: 'YOU',
         roleLabel: 'Primary Account',
         sport: 'Running & Cycling',
-        goalSummary: 'Sub-20 5K / 350W FTP',
+        goalSummary: 'Clean-Room Telemetry Only (Non-Strava)',
         ftp: selfFtp,
         weightKg: selfWeight,
-        wPerKg: Number((selfFtp / Math.max(40, selfWeight)).toFixed(2)),
+        wPerKg: selfFtp > 0 ? Number((selfFtp / Math.max(40, selfWeight)).toFixed(2)) : 0,
         restingHrBaseline: selfRhr,
         wellnessDays: selfWellnessDays,
-        activities: selfActivities,
+        activities: cleanSelfActivities,
         redactedWellness: false,
         redactedPmc: false,
       },
@@ -367,36 +371,30 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
         ? 0
         : actA && actA.load > 0
           ? actA.load
-          : itemA?.dailyLoad ?? 60;
+          : itemA?.dailyLoad ?? 0;
       const bLoad = athleteB.redactedPmc
         ? 0
         : actB && actB.load > 0
           ? actB.load
-          : itemB?.dailyLoad ?? 55;
-
-      // Synthesize realistic session duration from FTP-normalized intensity when only dailyLoad is present
-      const synthRateA = Math.max(
-        46,
-        Math.min(104, aIntensityBias + Math.sin(i * 0.9) * 14 + (i % 4 === 0 ? 11 : 0))
-      );
-      const synthRateB = Math.max(
-        46,
-        Math.min(104, bIntensityBias + Math.cos(i * 0.85) * 15 + (i % 3 === 0 ? 9 : 0))
-      );
+          : itemB?.dailyLoad ?? 0;
 
       const aHours =
         aLoad <= 0
           ? 0
           : actA && actA.hours > 0
             ? Number(actA.hours.toFixed(2))
-            : Number((aLoad / synthRateA).toFixed(2));
+            : aIntensityBias > 0
+              ? Number((aLoad / Math.max(45, aIntensityBias)).toFixed(2))
+              : 0;
 
       const bHours =
         bLoad <= 0
           ? 0
           : actB && actB.hours > 0
             ? Number(actB.hours.toFixed(2))
-            : Number((bLoad / synthRateB).toFixed(2));
+            : bIntensityBias > 0
+              ? Number((bLoad / Math.max(45, bIntensityBias)).toFixed(2))
+              : 0;
 
       const aLoadPerHour =
         aLoad > 0 && aHours > 0
@@ -407,7 +405,6 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
           ? Math.min(125, Math.max(35, Math.round(bLoad / bHours)))
           : 0;
 
-      // Since TSS/hr = IF^2 * 100 (normalized to each athlete's FTP), IF = sqrt(TSS/hr / 100)
       const aEffectivePctFtp =
         aLoadPerHour > 0 ? Math.round(Math.sqrt(aLoadPerHour / 100) * 100) : 0;
       const bEffectivePctFtp =
@@ -415,34 +412,26 @@ export const DualAthleteComparator: React.FC<DualAthleteComparatorProps> = ({
 
       rawRows.push({
         date: dateKey,
-        aCtl: athleteA.redactedPmc ? 0 : itemA?.ctl ?? 68,
-        bCtl: athleteB.redactedPmc ? 0 : itemB?.ctl ?? 64,
-        aAtl: athleteA.redactedPmc ? 0 : itemA?.atl ?? 64,
-        bAtl: athleteB.redactedPmc ? 0 : itemB?.atl ?? 60,
-        aTsb: athleteA.redactedPmc ? 0 : itemA?.tsb ?? 4,
-        bTsb: athleteB.redactedPmc ? 0 : itemB?.tsb ?? 4,
-        aHrv: athleteA.redactedWellness ? 0 : itemA?.hrvRMSSD ?? 56,
-        bHrv: athleteB.redactedWellness ? 0 : itemB?.hrvRMSSD ?? 54,
+        aCtl: athleteA.redactedPmc ? 0 : itemA?.ctl ?? 0,
+        bCtl: athleteB.redactedPmc ? 0 : itemB?.ctl ?? 0,
+        aAtl: athleteA.redactedPmc ? 0 : itemA?.atl ?? 0,
+        bAtl: athleteB.redactedPmc ? 0 : itemB?.atl ?? 0,
+        aTsb: athleteA.redactedPmc ? 0 : itemA?.tsb ?? 0,
+        bTsb: athleteB.redactedPmc ? 0 : itemB?.tsb ?? 0,
+        aHrv: athleteA.redactedWellness ? 0 : itemA?.hrvRMSSD ?? 0,
+        bHrv: athleteB.redactedWellness ? 0 : itemB?.hrvRMSSD ?? 0,
         aRhr:
           athleteA.redactedWellness
             ? 0
             : itemA?.restingHR && itemA.restingHR > 25
               ? itemA.restingHR
-              : Math.round(
-                  athleteA.restingHrBaseline -
-                    ((itemA?.ctl ?? 68) - 65) * 0.22 +
-                    Math.sin(i * 0.5) * 1.2
-                ),
+              : 0,
         bRhr:
           athleteB.redactedWellness
             ? 0
             : itemB?.restingHR && itemB.restingHR > 25
               ? itemB.restingHR
-              : Math.round(
-                  athleteB.restingHrBaseline -
-                    ((itemB?.ctl ?? 64) - 62) * 0.18 +
-                    Math.cos(i * 0.45) * 1.2
-                ),
+              : 0,
         aLoad,
         bLoad,
         aHours,

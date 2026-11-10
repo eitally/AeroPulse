@@ -132,7 +132,7 @@ function formatHeaderDate(dateStr: string): string {
 }
 
 export interface DayPlannedEffortStripe {
-  source: 'SCHEDULED' | 'MICROCYCLE_TARGET';
+  source: 'SCHEDULED';
   workoutName: string;
   description: string;
   sportCategory: SportCategory;
@@ -159,241 +159,82 @@ export interface DayPlannedEffortStripe {
 }
 
 /**
- * Builds the Intervals.icu color-coded Planned Effort Stripe for a calendar day.
- * - Uses explicitly scheduled `PlannedWorkoutEvent`s on that day when present.
- * - Otherwise synthesizes a periodized daily training prescription based on the day of week
- *   and the athlete's physiological readiness/TSB so every day visualizes its planned intensity zones.
+ * Builds the color-coded Planned Effort Stripe strictly from explicitly scheduled
+ * `PlannedWorkoutEvent`s on that day. Returns `null` when no workout is scheduled.
  */
 function buildDayPlannedEffortStripe(
-  dateStr: string,
+  _dateStr: string,
   dayPlanned: PlannedWorkoutEvent[],
-  wellness: UnifiedWellnessDay | undefined,
-  dayActivities: UnifiedActivity[]
-): DayPlannedEffortStripe {
-  // 1. Explicitly scheduled workout(s) on this day
-  if (dayPlanned.length > 0) {
-    const primary = dayPlanned[0];
-    const stepsRaw: ParsedStep[] = [];
+  _wellness: UnifiedWellnessDay | undefined,
+  _dayActivities: UnifiedActivity[]
+): DayPlannedEffortStripe | null {
+  if (dayPlanned.length === 0) return null;
 
-    for (const ev of dayPlanned) {
-      const parsed = parseWorkoutSteps(ev.workoutSyntax || '');
-      if (parsed.length > 0) {
-        stepsRaw.push(...parsed);
-      } else if (ev.structuredSteps && ev.structuredSteps.length > 0) {
-        for (const st of ev.structuredSteps) {
-          const mins = st.durationSecs
-            ? Math.max(1, Math.round(st.durationSecs / 60))
-            : 15;
-          const pct = st.targetPctFtp || 70;
-          const zMeta = getIntervalsZoneFromIntensityPct(pct);
-          stepsRaw.push({
-            label: st.label,
-            durationMins: mins,
-            intensityPct: pct,
-            zone: zMeta.zone,
-            zoneCode: zMeta.code,
-            zoneColor: zMeta.color,
-          });
-        }
-      } else {
-        const totalM = Math.max(20, Math.round((ev.plannedDurationSecs || 3600) / 60));
-        const nameAndTarget = `${ev.name} ${ev.targetZoneSummary || ''}`;
-        let mainPct = 70;
-        if (/vo2|z5|interval|hiit/i.test(nameAndTarget)) mainPct = 112;
-        else if (/threshold|ftp|z4/i.test(nameAndTarget)) mainPct = 98;
-        else if (/sweet\s*spot|tempo|z3/i.test(nameAndTarget)) mainPct = 88;
-        else if (/recovery|easy|flush|z1/i.test(nameAndTarget)) mainPct = 52;
-        const zMain = getIntervalsZoneFromIntensityPct(mainPct);
-        const zWarm = INTERVALS_EFFORT_ZONES[0];
-        const warmM = Math.round(totalM * 0.2);
-        const coolM = Math.round(totalM * 0.15);
-        const workM = Math.max(10, totalM - warmM - coolM);
-        stepsRaw.push(
-          {
-            label: 'Warmup',
-            durationMins: warmM,
-            intensityPct: 54,
-            zone: 1,
-            zoneCode: zWarm.code,
-            zoneColor: zWarm.color,
-          },
-          {
-            label: ev.name,
-            durationMins: workM,
-            intensityPct: mainPct,
-            zone: zMain.zone,
-            zoneCode: zMain.code,
-            zoneColor: zMain.color,
-          },
-          {
-            label: 'Cooldown',
-            durationMins: coolM,
-            intensityPct: 52,
-            zone: 1,
-            zoneCode: zWarm.code,
-            zoneColor: zWarm.color,
-          }
-        );
+  const primary = dayPlanned[0];
+  const stepsRaw: ParsedStep[] = [];
+
+  for (const ev of dayPlanned) {
+    const parsed = parseWorkoutSteps(ev.workoutSyntax || '');
+    if (parsed.length > 0) {
+      stepsRaw.push(...parsed);
+    } else if (ev.structuredSteps && ev.structuredSteps.length > 0) {
+      for (const st of ev.structuredSteps) {
+        const mins = st.durationSecs
+          ? Math.max(1, Math.round(st.durationSecs / 60))
+          : 15;
+        const pct = st.targetPctFtp || 70;
+        const zMeta = getIntervalsZoneFromIntensityPct(pct);
+        stepsRaw.push({
+          label: st.label,
+          durationMins: mins,
+          intensityPct: pct,
+          zone: zMeta.zone,
+          zoneCode: zMeta.code,
+          zoneColor: zMeta.color,
+        });
       }
-    }
-
-    const totalMins = Math.max(
-      1,
-      stepsRaw.reduce((acc, s) => acc + s.durationMins, 0)
-    );
-    const zoneMins = [0, 0, 0, 0, 0, 0];
-    for (const s of stepsRaw) {
-      zoneMins[s.zone - 1] += s.durationMins;
-    }
-    const zoneSharesPct = zoneMins.map((m) =>
-      Math.round((m / totalMins) * 100)
-    ) as [number, number, number, number, number, number];
-
-    let domIdx = 1;
-    for (let z = 5; z >= 0; z--) {
-      if (zoneSharesPct[z] >= 15) {
-        domIdx = z;
-        break;
-      }
-    }
-    const domMeta = INTERVALS_EFFORT_ZONES[domIdx];
-    const unitLabel = primary.sportCategory === 'Running' ? 'Threshold Pace' : 'FTP';
-
-    return {
-      source: 'SCHEDULED',
-      workoutName:
-        dayPlanned.length > 1
-          ? `${primary.name} (+${dayPlanned.length - 1})`
-          : primary.name,
-      description:
-        primary.description ||
-        `Scheduled ${primary.sportCategory.toLowerCase()} session targeting ${domMeta.code} (${domMeta.name}) with ${totalMins}m total duration.`,
-      sportCategory: primary.sportCategory,
-      totalDurationMins: totalMins,
-      plannedLoad: dayPlanned.reduce((acc, e) => acc + (e.plannedLoad || 0), 0),
-      workoutSyntax:
-        primary.workoutSyntax ||
-        stepsRaw.map((s) => `- ${s.durationMins}m ${s.intensityPct}% ${unitLabel} ${s.label}`).join('\n'),
-      dominantZone: {
-        zone: domMeta.zone,
-        code: domMeta.code,
-        name: domMeta.name,
-        color: domMeta.color,
-      },
-      steps: stepsRaw.map((s) => {
-        const zInfo = getIntervalsZoneFromIntensityPct(s.intensityPct);
-        return {
-          label: s.label,
-          durationMins: s.durationMins,
-          intensityPct: s.intensityPct,
-          widthPct: (s.durationMins / totalMins) * 100,
-          heightPct: computeAmplitudeHeightPct(s.intensityPct, zInfo.heightPct),
-          zone: s.zone,
-          zoneCode: s.zoneCode,
-          color: s.zoneColor,
-        };
-      }),
-      zoneSharesPct,
-    };
-  }
-
-  // 2. Periodized Daily Microcycle Target (calibrated to weekday + morning TSB/readiness + sport)
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
-  const dow = dt.getUTCDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
-  const tsb = wellness?.tsb ?? 0;
-  const primarySport: SportCategory =
-    dayActivities[0]?.sportCategory || (dow === 3 || dow === 0 ? 'Running' : 'Cycling');
-  const isRun = primarySport === 'Running';
-
-  let workoutName = isRun ? '50m Z2 Aerobic Base Run' : '60m Z2 Aerobic Base Ride';
-  let description = isRun
-    ? 'Steady aerobic endurance run in Zone 2 to build mitochondrial density and running economy.'
-    : 'Steady aerobic base ride in Zone 2 (68% FTP) to build capillary density and fat oxidation.';
-  let plannedLoad = 52;
-  let syntax = `- 10m 54% FTP Warmup\n- 40m 68% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
-
-  if (dow === 1) {
-    workoutName = isRun ? '35m Z1 Easy Recovery Jog' : '45m Z1 Active Recovery Spin';
-    description = isRun
-      ? 'Low-impact parasympathetic recovery jog strictly capped in Zone 1 to flush legs after weekend volume.'
-      : 'Easy high-cadence Zone 1 active recovery spin (<55% FTP) to accelerate autonomic recovery.';
-    plannedLoad = 28;
-    syntax = isRun
-      ? `- 8m 50% Pace Easy Walk/Jog\n- 20m 54% Pace Z1 Recovery Jog\n- 7m 48% Pace Cooldown`
-      : `- 10m 50% FTP Easy Spin\n- 25m 54% FTP Z1 Recovery Flush\n- 10m 48% FTP Cooldown`;
-  } else if (dow === 2) {
-    if (tsb < -18) {
-      workoutName = isRun
-        ? '3x8m Z3 Tempo Cruise Intervals'
-        : '3x10m Tempo / Sweet Spot Control';
-      description = isRun
-        ? 'Controlled marathon/half-marathon tempo intervals in Zone 3 with 3m easy jog recoveries (adapted for current fatigue).'
-        : 'Sub-threshold Sweet Spot blocks (86–88% FTP) with 4m Z1 recoveries to build muscular endurance without excessive strain.';
-      plannedLoad = 68;
-      syntax = isRun
-        ? `- 10m 62% Pace Warmup\n- 8m 86% Pace Z3 Tempo\n- 3m 54% Pace Z1 Jog\n- 8m 88% Pace Z3 Tempo\n- 3m 54% Pace Z1 Jog\n- 8m 88% Pace Z3 Tempo\n- 10m 52% Pace Cooldown`
-        : `- 12m 62% FTP Warmup\n- 10m 86% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 4m 54% FTP Z1 Recovery\n- 10m 88% FTP Sweet Spot\n- 10m 52% FTP Cooldown`;
     } else {
-      workoutName = isRun
-        ? '5x4m Z5 VO2max Track Intervals'
-        : '5x4m VO2max Aerobic Ceiling';
-      description = isRun
-        ? 'High-velocity 5K/3K pace VO2max intervals in Zone 5 with equal 4m recovery jogs to elevate maximal oxygen uptake.'
-        : 'High-output Zone 5 VO2max intervals (112–114% FTP) with 4m Z1 spinning recoveries to raise aerobic ceiling.';
-      plannedLoad = 82;
-      syntax = `- 15m 65% FTP Warmup\n- 4m 112% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 112% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 114% FTP Z5 VO2max\n- 4m 52% FTP Z1 Recovery\n- 4m 114% FTP Z5 VO2max\n- 10m 52% FTP Cooldown`;
+      const totalM = Math.max(20, Math.round((ev.plannedDurationSecs || 3600) / 60));
+      const nameAndTarget = `${ev.name} ${ev.targetZoneSummary || ''}`;
+      let mainPct = 70;
+      if (/vo2|z5|interval|hiit/i.test(nameAndTarget)) mainPct = 112;
+      else if (/threshold|ftp|z4/i.test(nameAndTarget)) mainPct = 98;
+      else if (/sweet\s*spot|tempo|z3/i.test(nameAndTarget)) mainPct = 88;
+      else if (/recovery|easy|flush|z1/i.test(nameAndTarget)) mainPct = 52;
+      const zMain = getIntervalsZoneFromIntensityPct(mainPct);
+      const zWarm = INTERVALS_EFFORT_ZONES[0];
+      const warmM = Math.round(totalM * 0.2);
+      const coolM = Math.round(totalM * 0.15);
+      const workM = Math.max(10, totalM - warmM - coolM);
+      stepsRaw.push(
+        {
+          label: 'Warmup',
+          durationMins: warmM,
+          intensityPct: 54,
+          zone: 1,
+          zoneCode: zWarm.code,
+          zoneColor: zWarm.color,
+        },
+        {
+          label: ev.name,
+          durationMins: workM,
+          intensityPct: mainPct,
+          zone: zMain.zone,
+          zoneCode: zMain.code,
+          zoneColor: zMain.color,
+        },
+        {
+          label: 'Cooldown',
+          durationMins: coolM,
+          intensityPct: 52,
+          zone: 1,
+          zoneCode: zWarm.code,
+          zoneColor: zWarm.color,
+        }
+      );
     }
-  } else if (dow === 3) {
-    workoutName = isRun ? '50m Z2 Aerobic Foundation Run' : '60m Z2 Aerobic Foundation Ride';
-    description = isRun
-      ? 'Mid-week conversational Zone 2 aerobic run to reinforce running economy between quality sessions.'
-      : 'Mid-week steady Zone 2 endurance ride (70% FTP) to consolidate aerobic volume.';
-    plannedLoad = 54;
-    syntax = isRun
-      ? `- 10m 54% Pace Warmup\n- 32m 70% Pace Z2 Aerobic Run\n- 8m 52% Pace Cooldown`
-      : `- 10m 54% FTP Warmup\n- 40m 70% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
-  } else if (dow === 4) {
-    workoutName = isRun
-      ? '4x6m Z4 Lactate Threshold Run'
-      : '4x8m Threshold / Sweet Spot';
-    description = isRun
-      ? 'Cruise threshold intervals at 10K/Half-Marathon lactate turnpoint (Zone 4) with 3m float recoveries.'
-      : 'Sustained Zone 4 lactate threshold intervals (95–98% FTP) with 4m Z1 recovery valleys to raise functional threshold power.';
-    plannedLoad = 76;
-    syntax = isRun
-      ? `- 12m 64% Pace Warmup\n- 6m 96% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 97% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 98% Pace Z4 Threshold\n- 3m 54% Pace Z1 Jog\n- 6m 98% Pace Z4 Threshold\n- 8m 52% Pace Cooldown`
-      : `- 12m 64% FTP Warmup\n- 8m 95% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 96% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 4m 54% FTP Z1 Recovery\n- 8m 98% FTP Z4 Threshold\n- 8m 52% FTP Cooldown`;
-  } else if (dow === 5) {
-    workoutName = isRun
-      ? '40m Z1/Z2 Shakeout + Strides'
-      : '45m Z1/Z2 Neuromuscular Openers';
-    description = isRun
-      ? 'Easy pre-weekend aerobic shakeout run with brief neuromuscular activation strides.'
-      : 'Easy Zone 1/2 spin with a short Zone 4/5 neuromuscular opener ahead of weekend endurance volume.';
-    plannedLoad = 36;
-    syntax = `- 15m 54% FTP Z1 Warmup\n- 20m 66% FTP Z2 Easy Base\n- 2m 105% FTP Z4 Opener\n- 8m 50% FTP Z1 Cooldown`;
-  } else if (dow === 6) {
-    workoutName = isRun
-      ? '75m Z2 Endurance + Z3 Progression Run'
-      : '2h Z2 Endurance + Z3 Progression';
-    description = isRun
-      ? 'Weekend progressive endurance run starting in Zone 2 and finishing with 20m in Zone 3 marathon tempo.'
-      : 'Long weekend endurance ride in Zone 2 with a 25-minute Zone 3 tempo progression in the final hour.';
-    plannedLoad = 108;
-    syntax = `- 15m 55% FTP Warmup\n- 65m 70% FTP Z2 Endurance\n- 25m 84% FTP Z3 Tempo Finish\n- 15m 52% FTP Cooldown`;
-  } else {
-    workoutName = isRun ? '75m Steady Z2 Long Aerobic Run' : '90m Steady Z2 Aerobic Volume';
-    description = isRun
-      ? 'Sunday long aerobic endurance run strictly in Zone 2 to build durability and glycogen sparing.'
-      : 'Sunday steady Zone 2 aerobic endurance ride (69% FTP) for volume accumulation.';
-    plannedLoad = 74;
-    syntax = isRun
-      ? `- 10m 54% Pace Warmup\n- 55m 69% Pace Z2 Long Run\n- 10m 52% Pace Cooldown`
-      : `- 10m 54% FTP Warmup\n- 70m 69% FTP Z2 Endurance\n- 10m 52% FTP Cooldown`;
   }
 
-  const stepsRaw = parseWorkoutSteps(syntax);
   const totalMins = Math.max(
     1,
     stepsRaw.reduce((acc, s) => acc + s.durationMins, 0)
@@ -414,15 +255,23 @@ function buildDayPlannedEffortStripe(
     }
   }
   const domMeta = INTERVALS_EFFORT_ZONES[domIdx];
+  const unitLabel = primary.sportCategory === 'Running' ? 'Threshold Pace' : 'FTP';
 
   return {
-    source: 'MICROCYCLE_TARGET',
-    workoutName,
-    description,
-    sportCategory: primarySport,
+    source: 'SCHEDULED',
+    workoutName:
+      dayPlanned.length > 1
+        ? `${primary.name} (+${dayPlanned.length - 1})`
+        : primary.name,
+    description:
+      primary.description ||
+      `Scheduled ${primary.sportCategory.toLowerCase()} session targeting ${domMeta.code} (${domMeta.name}) with ${totalMins}m total duration.`,
+    sportCategory: primary.sportCategory,
     totalDurationMins: totalMins,
-    plannedLoad,
-    workoutSyntax: syntax,
+    plannedLoad: dayPlanned.reduce((acc, e) => acc + (e.plannedLoad || 0), 0),
+    workoutSyntax:
+      primary.workoutSyntax ||
+      stepsRaw.map((s) => `- ${s.durationMins}m ${s.intensityPct}% ${unitLabel} ${s.label}`).join('\n'),
     dominantZone: {
       zone: domMeta.zone,
       code: domMeta.code,
@@ -1280,6 +1129,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         ? formatPaceWithUnit(aRace.targetValue, distanceUnit)
         : `${aRace.targetValue} ${aRace.unit}`;
       return {
+        hasGoal: true,
         title: aRace.title,
         sport: aRace.sportCategory,
         targetDate: aRace.targetDate,
@@ -1291,17 +1141,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         pct,
       };
     }
-    const curFtp = athleteProfile?.ftp || athleteFtp || 295;
+    const curFtp = athleteProfile?.ftp || athleteFtp || 0;
+    const nextFtp = curFtp > 0 ? Math.round(curFtp * 1.05) : 0;
     return {
-      title: '350W Cycling FTP & Sub-20:00 5K Hybrid Peak',
-      sport: 'Cycling' as SportCategory,
-      targetDate: '2027-02-01',
-      weeksOut: 12,
-      daysOut: 84,
-      phase: 'Specific Build (Wk 4 Deload Active)',
-      currentStr: `${curFtp}W FTP`,
-      targetStr: '350W FTP',
-      pct: Math.min(98, Math.round((curFtp / 350) * 100)),
+      hasGoal: false,
+      title: 'No Primary Race or Block Goal Set',
+      sport: (selectedSport === 'Running' ? 'Running' : 'Cycling') as SportCategory,
+      targetDate: '',
+      weeksOut: 0,
+      daysOut: 0,
+      phase: 'Unscheduled Block',
+      currentStr: curFtp > 0 ? `${curFtp}W FTP` : 'Uncalibrated',
+      targetStr: nextFtp > 0 ? `${nextFtp}W (+5%)` : 'Set Target in Progress',
+      pct: 0,
     };
   }, [targetGoals, athleteProfile, athleteFtp, distanceUnit]);
 
@@ -1310,7 +1162,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Primary Objective & Block Phase Ribbon */}
       <section className="rounded-2xl liquid-glass px-4 py-3 border border-blue-500/25 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-mono font-bold uppercase tracking-wider">
+          <span className="px-2.5 py-1 rounded-lg bg-[#1D4ED8] text-white text-[10px] font-mono font-bold uppercase tracking-wider">
             Primary Goal Glance
           </span>
           <div>
@@ -1318,25 +1170,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
                 {primaryObjective.title}
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono font-bold">
+              <span className="px-2 py-0.5 rounded-md ap-status-prime text-[10px] font-mono font-bold">
                 {primaryObjective.phase}
               </span>
-              <span className="text-[11px] font-mono text-slate-500">
-                · {primaryObjective.weeksOut} wks ({primaryObjective.daysOut}d) to target
-              </span>
+              {primaryObjective.hasGoal && (
+                <span className="text-[11px] font-mono text-slate-500">
+                  · {primaryObjective.weeksOut} wks ({primaryObjective.daysOut}d) to target
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="w-36 sm:w-48 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                <div
-                  style={{ width: `${primaryObjective.pct}%` }}
-                  className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full"
-                />
+            {primaryObjective.hasGoal ? (
+              <div className="flex items-center gap-2 mt-1">
+                <div className="w-36 sm:w-48 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                  <div
+                    style={{ width: `${primaryObjective.pct}%` }}
+                    className="h-full bg-[#1D4ED8] rounded-full"
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                  {primaryObjective.currentStr} → <strong>{primaryObjective.targetStr}</strong> (
+                  {primaryObjective.pct}%)
+                </span>
               </div>
-              <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300">
-                {primaryObjective.currentStr} → <strong>{primaryObjective.targetStr}</strong> (
-                {primaryObjective.pct}%)
-              </span>
-            </div>
+            ) : (
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                Baseline: <strong className="font-mono">{primaryObjective.currentStr}</strong> · Add an A-race or FTP target in Progress to unlock periodized phase countdowns.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1678,11 +1538,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           <button
                             type="button"
                             onClick={() =>
-                              handleOpenBuilderForDate(day.dateStr, {
-                                name: dayStripe.workoutName,
-                                sportCategory: dayStripe.sportCategory,
-                                workoutSyntax: dayStripe.workoutSyntax,
-                              })
+                              handleOpenBuilderForDate(
+                                day.dateStr,
+                                dayStripe
+                                  ? {
+                                      name: dayStripe.workoutName,
+                                      sportCategory: dayStripe.sportCategory,
+                                      workoutSyntax: dayStripe.workoutSyntax,
+                                    }
+                                  : undefined
+                              )
                             }
                             className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] font-semibold"
                           >
@@ -1691,8 +1556,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           </button>
                         </div>
 
-                        {/* Planned Effort Stripe */}
-                        {showDayEffortStripe && (
+                        {/* Planned Effort Stripe (strictly scheduled workouts only) */}
+                        {showDayEffortStripe && dayStripe && (
                           <button
                             type="button"
                             onClick={() =>
@@ -2015,13 +1880,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         w,
                         cell.dayActivities
                       );
-                      const plannedZoneBreakdownTooltip = INTERVALS_EFFORT_ZONES.map((z, idx) =>
-                        plannedStripe.zoneSharesPct[idx] > 0
-                          ? `${z.code} (${z.name}): ${plannedStripe.zoneSharesPct[idx]}%`
-                          : null
-                      )
-                        .filter(Boolean)
-                        .join(' · ');
+                      const plannedZoneBreakdownTooltip = plannedStripe
+                        ? INTERVALS_EFFORT_ZONES.map((z, idx) =>
+                            plannedStripe.zoneSharesPct[idx] > 0
+                              ? `${z.code} (${z.name}): ${plannedStripe.zoneSharesPct[idx]}%`
+                              : null
+                          )
+                            .filter(Boolean)
+                            .join(' · ')
+                        : '';
 
                       return (
                         <div
@@ -2038,16 +1905,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             {/* Day Header + Compact Morning Wellness Strip + Planned Workout Effort Stripe */}
                             <div className="space-y-1 text-center border-b border-slate-200/60 dark:border-slate-800/60 pb-1.5">
                               <div className="flex items-center justify-between gap-1">
-                                <span
-                                  className="text-[9px] font-mono font-bold px-1 py-0.2 rounded-xs leading-tight"
-                                  style={{
-                                    backgroundColor: `${plannedStripe.dominantZone.color}22`,
-                                    color: plannedStripe.dominantZone.color,
-                                  }}
-                                  title={`Planned Target Zone: ${plannedStripe.dominantZone.code} ${plannedStripe.dominantZone.name}`}
-                                >
-                                  {plannedStripe.dominantZone.code}
-                                </span>
+                                {plannedStripe ? (
+                                  <span
+                                    className="text-[9px] font-mono font-bold px-1 py-0.2 rounded-xs leading-tight"
+                                    style={{
+                                      backgroundColor: `${plannedStripe.dominantZone.color}22`,
+                                      color: plannedStripe.dominantZone.color,
+                                    }}
+                                    title={`Planned Target Zone: ${plannedStripe.dominantZone.code} ${plannedStripe.dominantZone.name}`}
+                                  >
+                                    {plannedStripe.dominantZone.code}
+                                  </span>
+                                ) : (
+                                  <span className="w-4" aria-hidden="true" />
+                                )}
                                 <span
                                   className={`text-[11px] font-mono ${
                                     isToday
@@ -2060,11 +1931,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    handleOpenBuilderForDate(cell.dateStr, {
-                                      name: plannedStripe.workoutName,
-                                      sportCategory: plannedStripe.sportCategory,
-                                      workoutSyntax: plannedStripe.workoutSyntax,
-                                    })
+                                    handleOpenBuilderForDate(
+                                      cell.dateStr,
+                                      plannedStripe
+                                        ? {
+                                            name: plannedStripe.workoutName,
+                                            sportCategory: plannedStripe.sportCategory,
+                                            workoutSyntax: plannedStripe.workoutSyntax,
+                                          }
+                                        : undefined
+                                    )
                                   }
                                   className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500 transition-opacity"
                                   title={`Schedule or edit planned workout on ${cell.dateStr}`}
@@ -2073,8 +1949,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 </button>
                               </div>
 
-                              {/* SMALL DIMENSIONAL DAILY PLANNED WORKOUT EFFORT SKYLINE (With Y-Axis Amplitude & Hover Tooltip) */}
-                              {showDayEffortStripe && (
+                              {/* SMALL DIMENSIONAL DAILY PLANNED WORKOUT EFFORT SKYLINE (Strictly scheduled workouts only) */}
+                              {showDayEffortStripe && plannedStripe && (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -2110,11 +1986,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     )
                                   }
                                   className="w-full text-left group/stripe rounded-xs overflow-hidden border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/60 transition-colors focus:outline-hidden"
-                                  title={`${plannedStripe.sportCategory} (${
-                                    plannedStripe.source === 'SCHEDULED'
-                                      ? 'Scheduled Workout'
-                                      : 'Daily Prescription'
-                                  }): ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\n${plannedStripe.description}\nZones: ${plannedZoneBreakdownTooltip}`}
+                                  title={`${plannedStripe.sportCategory} (Scheduled Workout): ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\n${plannedStripe.description}\nZones: ${plannedZoneBreakdownTooltip}`}
                                 >
                                   {/* Dimensional Mini Effort Skyline with Y-Axis Amplitude */}
                                   <div className="relative h-[18px] w-full flex items-stretch bg-slate-100/90 dark:bg-slate-900/90">
@@ -2320,32 +2192,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                                           <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-tight">
                                             <span>Load {act.trainingLoad}</span>
-                                            {(() => {
+                                            {plannedStripe && (() => {
                                               const targetMins = Math.max(
-                                                20,
-                                                plannedStripe.totalDurationMins || 45
+                                                1,
+                                                plannedStripe.totalDurationMins
                                               );
                                               const actualMins = Math.max(
                                                 1,
                                                 Math.round(act.movingTimeSecs / 60)
                                               );
-                                              const durRatio =
-                                                Math.min(actualMins, targetMins) /
-                                                Math.max(actualMins, targetMins);
-                                              const compliancePct = Math.min(
-                                                99,
-                                                Math.max(72, Math.round(74 + durRatio * 24))
+                                              const compliancePct = Math.round(
+                                                (actualMins / targetMins) * 100
                                               );
+                                              const inRange =
+                                                compliancePct >= 85 && compliancePct <= 115;
                                               return (
                                                 <span
                                                   className={`px-1 py-0.2 rounded-xs text-[9px] font-mono ${
-                                                    compliancePct >= 88
-                                                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                                    inRange
+                                                      ? 'ap-status-prime'
+                                                      : 'ap-status-caution'
                                                   }`}
-                                                  title={`Planned vs. Actual Execution Compliance: ${compliancePct}% compliance against ${plannedStripe.workoutName} (${plannedStripe.sportCategory})`}
+                                                  title={`Scheduled vs. Actual Duration Adherence: ${compliancePct}% of scheduled ${plannedStripe.workoutName} (${targetMins}m)`}
                                                 >
-                                                  {compliancePct}% Compliance
+                                                  {compliancePct}% vs Plan
                                                 </span>
                                               );
                                             })()}
@@ -2387,7 +2257,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                             />
                                           ))}
                                           {/* Continuous Z2 baseline rule along the bottom */}
-                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/85" />
+                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0D9488]/85" />
                                         </div>
                                       </div>
                                     </div>
@@ -2412,7 +2282,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 );
                               })}
 
-                              {/* Planned Workout Cards with Intervals.icu Effort Stripe & Skyline */}
+                              {/* Planned Workout Cards with Effort Stripe & Skyline */}
                               {cell.dayPlanned.map((ev) => {
                                 const evStripe = buildDayPlannedEffortStripe(
                                   cell.dateStr,
@@ -2420,6 +2290,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   w,
                                   cell.dayActivities
                                 );
+                                if (!evStripe) return null;
                                 return (
                                   <div
                                     key={ev.id}
@@ -2482,7 +2353,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                               title={`${s.label} (${s.durationMins}m · ${s.zoneCode})`}
                                             />
                                           ))}
-                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/80" />
+                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0D9488]/80" />
                                         </div>
                                       )}
 
@@ -2509,9 +2380,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </section>
 
-      {/* Intervals.icu Text-Syntax Structured Workout Builder Modal */}
+      {/* Structured Workout Builder Modal */}
       {isBuilderOpen && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Schedule Planned Session for ${builderDate}`}
           className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
           onClick={() => setIsBuilderOpen(false)}
         >

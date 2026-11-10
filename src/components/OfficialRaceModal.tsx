@@ -57,19 +57,15 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'IMPORT_PARSE' | 'QUICK_FAT_LOGGER'>('IMPORT_PARSE');
 
-  // Tab 1: Athletic.net / TFRRS / MileSplit URL & Paste Importer State
+  // Tab 1: Athletic.net / TFRRS / MileSplit URL & Paste Importer State (empty by default — zero pre-checked sample races)
   const [profileOrMeetUrl, setProfileOrMeetUrl] = useState<string>('');
-  const [rawPasteText, setRawPasteText] = useState<string>(SAMPLE_OFFICIAL_TRACK_SEASON_TEXT);
+  const [rawPasteText, setRawPasteText] = useState<string>('');
   const [isParsingRemote, setIsParsingRemote] = useState<boolean>(false);
   const [parseStatusNote, setParseStatusNote] = useState<string | null>(
-    'Loaded sample Athletic.net & TFRRS track/XC season results. Paste your own profile URL or result table rows anytime.'
+    'Paste an Athletic.net, TFRRS, or MileSplit profile URL or result rows below to extract official FAT marks.'
   );
-  const [parsedCandidates, setParsedCandidates] = useState<ParsedOfficialRaceCandidate[]>(() =>
-    parseOfficialResultsTextDeterministically(SAMPLE_OFFICIAL_TRACK_SEASON_TEXT)
-  );
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>(() =>
-    parseOfficialResultsTextDeterministically(SAMPLE_OFFICIAL_TRACK_SEASON_TEXT).map((c) => c.id)
-  );
+  const [parsedCandidates, setParsedCandidates] = useState<ParsedOfficialRaceCandidate[]>([]);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [importSuccessBanner, setImportSuccessBanner] = useState<string | null>(null);
 
   // Tab 2: Quick Watchless FAT Track Race Logger State
@@ -328,6 +324,9 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Log Official Race Results"
       onClick={onClose}
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-6"
     >
@@ -426,9 +425,9 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         SAMPLE_OFFICIAL_TRACK_SEASON_TEXT
                       );
                       setParsedCandidates(matches);
-                      setSelectedCandidateIds(matches.map((m) => m.id));
+                      setSelectedCandidateIds([]);
                       setParseStatusNote(
-                        'Loaded sample middle-distance season (800m, 1500m, 1600m, 3200m, XC 5K).'
+                        'Loaded format example (none selected by default — check only races you personally ran).'
                       );
                     }}
                     className="min-h-[32px] px-3 py-1 rounded-lg border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-xs font-semibold transition-colors whitespace-nowrap"
@@ -496,7 +495,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     className="min-h-[36px] px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Trophy className="w-3.5 h-3.5" />
-                    <span>Import {selectedCandidateIds.length} Official Race{selectedCandidateIds.length === 1 ? '' : 's'} to AeroPulse</span>
+                    <span>Import {selectedCandidateIds.length} Official Race{selectedCandidateIds.length === 1 ? '' : 's'} to THRESH</span>
                   </button>
                 </div>
 

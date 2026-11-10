@@ -22,6 +22,7 @@ import {
 import {
   DistanceUnit,
   EnvironmentFilter,
+  PlannedWorkoutEvent,
   SportCategory,
   UnifiedActivity,
 } from '../types';
@@ -48,6 +49,7 @@ import { useLiveActivityStream, useLiveWorkoutStoreStats } from '../db/workoutSt
 
 interface ActivitiesViewProps {
   activities: UnifiedActivity[];
+  plannedEvents?: PlannedWorkoutEvent[];
   selectedSport: SportCategory | 'ALL';
   onSelectSport: (sport: SportCategory | 'ALL') => void;
   envFilter: EnvironmentFilter;
@@ -130,53 +132,8 @@ function extractActivitySeries(
     return { points, isRealStream: true };
   }
 
-  // Fallback curve derived from real activity summary metrics (NP/Avg Power, Avg/Max HR, Decoupling, Duration)
-  // when an older or non-streamed activity does not return second-by-second FIT streams
-  const totalSecs = Math.max(300, activity.movingTimeSecs || 3600);
-  const sampleCount = 80;
-  const basePower =
-    activity.avgPower ||
-    activity.normalizedPower ||
-    (activity.avgPaceSecsPerKm && activity.avgPaceSecsPerKm > 0
-      ? Math.round((1000 / activity.avgPaceSecsPerKm) * 78)
-      : 0);
-  const baseHr = activity.avgHr || 0;
-  const maxHr = activity.maxHr || (baseHr > 0 ? baseHr + 18 : 0);
-  const driftFactor = (activity.aerobicDecouplingPct || 2) / 100;
-  const seed = activity.id
-    .split('')
-    .reduce((acc, ch, idx) => acc + ch.charCodeAt(0) * (idx + 1), 0);
-
-  const points: NormalizedSeriesPoint[] = Array.from({ length: sampleCount }, (_, i) => {
-    const frac = i / (sampleCount - 1);
-    const timeSecs = Math.round(frac * totalSecs);
-    // Warmup & cooldown taper + interval wave
-    const warmupFactor = frac < 0.08 ? 0.72 + (frac / 0.08) * 0.28 : frac > 0.92 ? 0.78 : 1.0;
-    const wave1 = Math.sin(frac * Math.PI * 8 + (seed % 7)) * 0.09;
-    const wave2 = Math.cos(frac * Math.PI * 18 + (seed % 13)) * 0.05;
-    const powerVal =
-      basePower > 0
-        ? Math.max(40, Math.round(basePower * warmupFactor * (1 + wave1 + wave2)))
-        : undefined;
-
-    const hrWarmup = frac < 0.1 ? 0.78 + (frac / 0.1) * 0.22 : 1.0;
-    const hrDrift = 1 + (frac - 0.5) * driftFactor;
-    const hrWave = Math.sin(frac * Math.PI * 8 + (seed % 7) - 0.35) * 0.045;
-    const hrRaw = baseHr > 0 ? Math.round(baseHr * hrWarmup * hrDrift * (1 + hrWave)) : undefined;
-    const hrVal =
-      hrRaw !== undefined && maxHr > 0 ? Math.min(maxHr, Math.max(85, hrRaw)) : hrRaw;
-
-    return {
-      timeSecs,
-      pct: Number((frac * 100).toFixed(1)),
-      power: powerVal,
-      hr: hrVal,
-      paceSecsPerKm: activity.avgPaceSecsPerKm,
-      cadence: activity.avgCadence,
-    };
-  });
-
-  return { points, isRealStream: false };
+  // Honest empty series when an activity has no recorded 1Hz / coarse stream arrays
+  return { points: [], isRealStream: false };
 }
 
 // Interpolate a series at a given X position (either elapsed seconds or 0-100% progress)
@@ -207,6 +164,7 @@ function sampleSeriesAt(
 
 export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   activities,
+  plannedEvents = [],
   selectedSport,
   onSelectSport,
   envFilter,
@@ -230,8 +188,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const [visibleLimit, setVisibleLimit] = useState<number>(60);
   const [streamHoverIndex, setStreamHoverIndex] = useState<number | null>(null);
   const [streamZoomRange, setStreamZoomRange] = useState<[number, number] | null>(null);
-  const [streamBrushStartIdx, setStreamBrushStartIdx] = useState<number | null>(null);
-  const [streamBrushEndIdx, setStreamBrushEndIdx] = useState<number | null>(null);
+  const plannedByDate = useMemo(() => {
+    const map = new Map<string, PlannedWorkoutEvent[]>();
+    for (const ev of plannedEvents) {
+      if (!ev?.date) continue;
+      const list = map.get(ev.date);
+      if (list) list.push(ev);
+      else map.set(ev.date, [ev]);
+    }
+    return map;
+  }, [plannedEvents]);
   const [hrZoneHoverIdx, setHrZoneHoverIdx] = useState<number | null>(null);
   const [showAutoZoneInsight, setShowAutoZoneInsight] = useState<boolean>(true);
   const [zoneArchetypeOverride, setZoneArchetypeOverride] = useState<
@@ -342,7 +308,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       );
       const parsed = await parseWorkoutFileInWorker(
         gpxStr,
-        'AeroPulse-1Hz-Threshold-Telemetry.gpx'
+        'Thresh-1Hz-Threshold-Telemetry.gpx'
       );
       if (onImportParsedActivity) {
         onImportParsedActivity(parsed.activity);
@@ -650,18 +616,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     }
   }, [selectedActivity?.id, selectedActivity?.segmentEfforts, segmentHistoryBySegmentId]);
 
-  // Reset stream zoom range, brush state, and archetype override when switching selectedActivity
+  // Reset stream zoom range and archetype override when switching selectedActivity
   useEffect(() => {
     setStreamZoomRange(null);
-    setStreamBrushStartIdx(null);
-    setStreamBrushEndIdx(null);
     setStreamHoverIndex(null);
     setZoneArchetypeOverride('AUTO');
   }, [selectedActivity?.id]);
 
   // Helper to zoom stream chart to a specific elapsed time window [startSecs, endSecs]
   const zoomStreamToTimeWindow = (startSecs: number, endSecs: number) => {
-    const timeArr = selectedActivity?.streams?.time;
+    const timeArr = (liveDexieStream?.streams || selectedActivity?.streams)?.time;
     if (!timeArr || timeArr.length < 2) return;
     let sIdx = 0;
     let eIdx = timeArr.length - 1;
@@ -674,13 +638,11 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       sIdx = Math.max(0, eIdx - 4);
     }
     setStreamZoomRange([sIdx, eIdx]);
-    setStreamBrushStartIdx(null);
-    setStreamBrushEndIdx(null);
   };
 
   // Helper to locate Peak N-second window in the stream and zoom directly to it
   const zoomStreamToPeakDuration = (windowSecs: number) => {
-    const streams = selectedActivity?.streams;
+    const streams = liveDexieStream?.streams || selectedActivity?.streams;
     if (!streams || !streams.time || streams.time.length < 4) return;
     const timeArr = streams.time;
     const valArr =
@@ -723,8 +685,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     const paddedStart = Math.max(0, bestStart - pad);
     const paddedEnd = Math.min(timeArr.length - 1, bestEnd + pad);
     setStreamZoomRange([paddedStart, paddedEnd]);
-    setStreamBrushStartIdx(null);
-    setStreamBrushEndIdx(null);
   };
 
   // Compute aligned 100-step overlaid comparison data for Workout A and Workout B
@@ -2713,18 +2673,24 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             const latestAttempt = activeCluster.attempts[0];
 
             return (
-              <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3.5 border border-[#FC4C02]/25">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#FC4C02]">
+              <details className="group rounded-2xl liquid-glass border border-stone-200/80 dark:border-slate-800">
+                <summary className="list-none cursor-pointer px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 select-none">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#D9480F] dark:text-[#FB6514]">
                       <Trophy className="w-3.5 h-3.5" />
-                      <span>Matched Runs &amp; Rides · Route Progression</span>
-                    </div>
-                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-                      Repeated Route &amp; Course Efficiency Progression ({clusters.length} Matched Loops)
-                    </h2>
+                      <span>Matched Runs &amp; Rides</span>
+                    </span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Repeated Course Efficiency ({clusters.length} Matched Loops)
+                    </span>
                   </div>
-
+                  <span className="text-xs font-mono font-semibold text-[#1D4ED8] dark:text-[#60A5FA]">
+                    <span className="group-open:hidden">Expand Matched Loops ▾</span>
+                    <span className="hidden group-open:inline">Hide Matched Loops ▴</span>
+                  </span>
+                </summary>
+                <div className="px-4 sm:px-5 pb-4 pt-2 border-t border-stone-200/70 dark:border-slate-800 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-end gap-3">
                   {bestEfAttempt &&
                     latestAttempt &&
                     bestEfAttempt.id !== latestAttempt.id && (
@@ -2735,7 +2701,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           setCompareIdB(bestEfAttempt.id);
                           setActiveWorkspace('COMPARE');
                         }}
-                        className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#FC4C02] hover:bg-[#e04300] text-white text-xs font-semibold transition-colors"
+                        className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold transition-colors"
                       >
                         <Columns2 className="w-3.5 h-3.5" />
                         <span>Compare Latest vs. Best Attempt in Split-View</span>
@@ -2813,7 +2779,8 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     );
                   })}
                 </div>
-              </section>
+                </div>
+              </details>
             );
           })()}
 
@@ -2986,28 +2953,44 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         )}
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        <div className="font-bold text-blue-600 dark:text-blue-400">
+                        <div className="font-bold text-[#1D4ED8] dark:text-[#60A5FA]">
                           {act.trainingLoad} TSS
                         </div>
                         {(() => {
-                          const driftPenalty = Math.max(
+                          const dayPlans = plannedByDate.get(act.startDateLocal.slice(0, 10)) || [];
+                          const matchedPlan =
+                            dayPlans.find((p) => p.sportCategory === act.sportCategory) ||
+                            dayPlans[0];
+                          if (!matchedPlan || !matchedPlan.plannedLoad || matchedPlan.plannedLoad <= 0) {
+                            return (
+                              <span
+                                className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-stone-100 dark:bg-slate-800/80"
+                                title="No scheduled calendar workout on this date"
+                              >
+                                Unscheduled
+                              </span>
+                            );
+                          }
+                          const adherence = Math.max(
                             0,
-                            Math.round(((act.aerobicDecouplingPct || 2.2) - 3.0) * 3)
-                          );
-                          const complianceScore = Math.min(
-                            99,
-                            Math.max(74, 96 - driftPenalty)
+                            Math.min(
+                              100,
+                              Math.round(
+                                (1 -
+                                  Math.abs(act.trainingLoad - matchedPlan.plannedLoad) /
+                                    Math.max(25, matchedPlan.plannedLoad)) *
+                                  100
+                              )
+                            )
                           );
                           return (
                             <span
                               className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                                complianceScore >= 90
-                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                adherence >= 85 ? 'ap-status-prime' : 'ap-status-caution'
                               }`}
-                              title="Planned vs. Actual Execution Compliance Score (Duration, Target Zone & Decoupling Adherence)"
+                              title={`Scheduled: "${matchedPlan.name}" (${matchedPlan.plannedLoad} TSS)`}
                             >
-                              {complianceScore}% Plan Match
+                              {adherence}% vs Plan
                             </span>
                           );
                         })()}
@@ -3072,6 +3055,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       {selectedActivity && (
         <div className="ap-modal-backdrop" onClick={() => onSelectActivity(null)}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedActivity.name}
             className="ap-modal-sheet max-w-5xl liquid-glass shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -3537,7 +3523,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     >
                       <ThumbsUp className="w-3.5 h-3.5" />
                       <span>
-                        {selectedActivity.hasKudoed ? 'Kudoed on AeroPulse / Strava' : 'Give Kudos'}{' '}
+                        {selectedActivity.hasKudoed ? 'Kudoed on Thresh / Strava' : 'Give Kudos'}{' '}
                         (
                         {Math.max(
                           selectedActivity.kudosCount || 0,
@@ -3671,728 +3657,56 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               )}
 
               {/* High-Frequency 1Hz uPlot Telemetry Canvas + Web Worker Analytics Strip */}
-              {(liveDexieStream?.streams || selectedActivity.streams) && (
-                <UPlotStreamChart
-                  streams={(liveDexieStream?.streams || selectedActivity.streams)!}
-                  sportCategory={selectedActivity.sportCategory}
-                  distanceUnit={distanceUnit}
-                  athleteWeightKg={athleteWeightKg}
-                  intervals={workerAnalytics?.intervals || selectedActivity.intervals}
-                  peakWindows={workerAnalytics?.peakWindows}
-                  workerMetrics={workerAnalytics}
-                  isWorkerProcessing={isWorkerProcessing}
-                  onTriggerWorker1HzUpsample={() => {
-                    setIsWorkerProcessing(true);
-                    upsampleAndAnalyzeActivityInWorker(selectedActivity)
-                      .then(({ analytics }) => setWorkerAnalytics(analytics))
-                      .finally(() => setIsWorkerProcessing(false));
-                  }}
-                  syncKey="aeropulse-activity-inspector"
-                  onHoverIndex={setStreamHoverIndex}
-                  zoomRange={streamZoomRange}
-                  onZoomRangeChange={setStreamZoomRange}
-                  height={280}
-                />
-              )}
-
-              {/* Interactive Zoomable Time-Series Stream Scrubber with Drag-to-Zoom Brush, Interval Presets & Mini-Map */}
-              {selectedActivity.streams && selectedActivity.streams.time.length > 0 && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  {(() => {
-                    const fullTimeArr = selectedActivity.streams!.time;
-                    const totalLen = fullTimeArr.length;
-                    const fullHrArr = selectedActivity.streams!.heartrate || [];
-                    const fullWattsArr = selectedActivity.streams!.watts;
-                    const fullVelArr = selectedActivity.streams!.velocitySmooth;
-                    const fullCadArr = selectedActivity.streams!.cadence;
-                    const fullPrimaryArr =
-                      fullWattsArr || (fullVelArr || []).map((v) => v * 80);
-
-                    const zStart = streamZoomRange
-                      ? Math.max(0, Math.min(totalLen - 2, streamZoomRange[0]))
-                      : 0;
-                    const zEnd = streamZoomRange
-                      ? Math.max(zStart + 1, Math.min(totalLen - 1, streamZoomRange[1]))
-                      : totalLen - 1;
-                    const isZoomed = zStart > 0 || zEnd < totalLen - 1;
-                    const visibleCount = Math.max(2, zEnd - zStart + 1);
-
-                    // Active selection or zoomed window metrics
-                    const hasActiveBrush =
-                      streamBrushStartIdx !== null &&
-                      streamBrushEndIdx !== null &&
-                      Math.abs(streamBrushEndIdx - streamBrushStartIdx) >= 2;
-                    const metricStartIdx = hasActiveBrush
-                      ? Math.min(streamBrushStartIdx!, streamBrushEndIdx!)
-                      : zStart;
-                    const metricEndIdx = hasActiveBrush
-                      ? Math.max(streamBrushStartIdx!, streamBrushEndIdx!)
-                      : zEnd;
-
-                    const winStartSecs = fullTimeArr[metricStartIdx] || 0;
-                    const winEndSecs = fullTimeArr[metricEndIdx] || selectedActivity.movingTimeSecs;
-                    const winDurationSecs = Math.max(1, winEndSecs - winStartSecs);
-
-                    const sliceWatts = fullWattsArr
-                      ? fullWattsArr
-                          .slice(metricStartIdx, metricEndIdx + 1)
-                          .filter((v) => v != null && v >= 0)
-                      : [];
-                    const winAvgWatts =
-                      sliceWatts.length > 0
-                        ? Math.round(sliceWatts.reduce((a, b) => a + b, 0) / sliceWatts.length)
-                        : undefined;
-                    const winMaxWatts =
-                      sliceWatts.length > 0 ? Math.round(Math.max(...sliceWatts)) : undefined;
-
-                    const sliceVel = fullVelArr
-                      ? fullVelArr
-                          .slice(metricStartIdx, metricEndIdx + 1)
-                          .filter((v) => v != null && v > 0.3)
-                      : [];
-                    const winAvgPaceSecsKm =
-                      sliceVel.length > 0
-                        ? Math.round(
-                            1000 / (sliceVel.reduce((a, b) => a + b, 0) / sliceVel.length)
-                          )
-                        : undefined;
-
-                    const sliceHr = fullHrArr
-                      .slice(metricStartIdx, metricEndIdx + 1)
-                      .filter((v) => v != null && v > 40);
-                    const winAvgHr =
-                      sliceHr.length > 0
-                        ? Math.round(sliceHr.reduce((a, b) => a + b, 0) / sliceHr.length)
-                        : undefined;
-                    const winMaxHr =
-                      sliceHr.length > 0 ? Math.round(Math.max(...sliceHr)) : undefined;
-
-                    const sliceCad = fullCadArr
-                      ? fullCadArr
-                          .slice(metricStartIdx, metricEndIdx + 1)
-                          .filter((v) => v != null && v > 20)
-                      : [];
-                    const winAvgCad =
-                      sliceCad.length > 0
-                        ? Math.round(sliceCad.reduce((a, b) => a + b, 0) / sliceCad.length)
-                        : undefined;
-
-                    const handleZoomInBtn = () => {
-                      const span = zEnd - zStart;
-                      if (span <= 6) return;
-                      const center =
-                        streamHoverIndex !== null &&
-                        streamHoverIndex >= zStart &&
-                        streamHoverIndex <= zEnd
-                          ? streamHoverIndex
-                          : Math.round((zStart + zEnd) / 2);
-                      const newHalf = Math.max(3, Math.floor(span * 0.3));
-                      let ns = Math.max(0, center - newHalf);
-                      let ne = Math.min(totalLen - 1, center + newHalf);
-                      if (ne - ns < 6) {
-                        ne = Math.min(totalLen - 1, ns + 6);
-                      }
-                      setStreamZoomRange([ns, ne]);
-                    };
-
-                    const handleZoomOutBtn = () => {
-                      if (!isZoomed) return;
-                      const span = zEnd - zStart;
-                      const center = Math.round((zStart + zEnd) / 2);
-                      const newHalf = Math.ceil(span * 0.85);
-                      const ns = Math.max(0, center - newHalf);
-                      const ne = Math.min(totalLen - 1, center + newHalf);
-                      if (ns === 0 && ne === totalLen - 1) {
-                        setStreamZoomRange(null);
-                      } else {
-                        setStreamZoomRange([ns, ne]);
-                      }
-                    };
-
-                    const handlePanBtn = (dir: -1 | 1) => {
-                      if (!isZoomed) return;
-                      const span = zEnd - zStart;
-                      const shift = Math.max(2, Math.round(span * 0.35)) * dir;
-                      let ns = zStart + shift;
-                      let ne = zEnd + shift;
-                      if (ns < 0) {
-                        ns = 0;
-                        ne = Math.min(totalLen - 1, span);
-                      }
-                      if (ne > totalLen - 1) {
-                        ne = totalLen - 1;
-                        ns = Math.max(0, ne - span);
-                      }
-                      setStreamZoomRange([ns, ne]);
-                    };
-
-                    const commitBrushZoom = () => {
-                      if (
-                        streamBrushStartIdx !== null &&
-                        streamBrushEndIdx !== null &&
-                        Math.abs(streamBrushEndIdx - streamBrushStartIdx) >= 2
-                      ) {
-                        const ns = Math.max(
-                          0,
-                          Math.min(streamBrushStartIdx, streamBrushEndIdx)
-                        );
-                        const ne = Math.min(
-                          totalLen - 1,
-                          Math.max(streamBrushStartIdx, streamBrushEndIdx)
-                        );
-                        setStreamZoomRange([ns, ne]);
-                      }
-                      setStreamBrushStartIdx(null);
-                      setStreamBrushEndIdx(null);
-                    };
-
-                    const workIntervals = (selectedActivity.intervals || []).filter(
-                      (iv) => iv.type === 'WORK' && iv.durationSecs >= 15
-                    );
-
-                    return (
-                      <>
-                        {/* Top Toolbar: Title, Zoom Controls & Live Hover Readout */}
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              Second-by-Second Telemetry Stream (Power/Pace · Blue &amp; Heart Rate · Red)
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              Click and drag across any section of the chart to zoom in, or use the quick-zoom presets &amp; toolbar below
-                            </p>
-                          </div>
-
-                          {/* Zoom & Pan Control Buttons */}
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={handleZoomInBtn}
-                              title="Zoom In (2x)"
-                              className="min-h-[30px] inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                            >
-                              <ZoomIn className="w-3.5 h-3.5 text-blue-500" />
-                              <span>Zoom In</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleZoomOutBtn}
-                              disabled={!isZoomed}
-                              title="Zoom Out"
-                              className="min-h-[30px] inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                            >
-                              <ZoomOut className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Zoom Out</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePanBtn(-1)}
-                              disabled={!isZoomed || zStart === 0}
-                              title="Pan Earlier in Workout"
-                              className="min-h-[30px] px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                            >
-                              <ChevronLeft className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePanBtn(1)}
-                              disabled={!isZoomed || zEnd >= totalLen - 1}
-                              title="Pan Later in Workout"
-                              className="min-h-[30px] px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                            >
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                            {isZoomed && (
-                              <button
-                                type="button"
-                                onClick={() => setStreamZoomRange(null)}
-                                className="min-h-[30px] inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-colors"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                <span>Reset (100%)</span>
-                              </button>
-                            )}
-                          </div>
+              {(() => {
+                const activeStream = liveDexieStream?.streams || selectedActivity.streams;
+                const hasStreamPoints = Boolean(activeStream && Array.isArray(activeStream.time) && activeStream.time.length > 1);
+                if (!hasStreamPoints) {
+                  return (
+                    <div className="rounded-xl ap-well p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="space-y-0.5">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">
+                          Summary telemetry only — 1Hz stream not recorded
                         </div>
-
-                        {/* Quick-Zoom Section Presets (Full Workout, Peak 1m/5m/20m, 1st/2nd Half, Work Intervals) */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-[11px] font-semibold text-slate-500 mr-1">
-                            Quick Zoom:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setStreamZoomRange(null)}
-                            className={`min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border transition-colors ${
-                              !isZoomed
-                                ? 'bg-blue-600 border-blue-600 text-white'
-                                : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            Full Workout
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => zoomStreamToPeakDuration(60)}
-                            className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Peak 1m
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => zoomStreamToPeakDuration(300)}
-                            className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Peak 5m
-                          </button>
-                          {selectedActivity.movingTimeSecs >= 1500 && (
-                            <button
-                              type="button"
-                              onClick={() => zoomStreamToPeakDuration(1200)}
-                              className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                            >
-                              Peak 20m
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setStreamZoomRange([0, Math.max(2, Math.floor(totalLen / 2))])
-                            }
-                            className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            1st Half
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setStreamZoomRange([
-                                Math.floor(totalLen / 2),
-                                totalLen - 1,
-                              ])
-                            }
-                            className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            2nd Half
-                          </button>
-                          {workIntervals.slice(0, 6).map((iv, idx) => (
-                            <button
-                              key={iv.id}
-                              type="button"
-                              onClick={() =>
-                                zoomStreamToTimeWindow(
-                                  Math.max(0, iv.startTimeSecs - 15),
-                                  iv.startTimeSecs + iv.durationSecs + 15
-                                )
-                              }
-                              className="min-h-[26px] px-2.5 py-0.5 rounded-md text-xs font-mono font-medium border border-blue-500/30 bg-blue-500/5 text-blue-600 dark:text-blue-400 hover:bg-blue-500/15 transition-colors"
-                            >
-                              Int #{idx + 1} ({formatStopwatch(iv.durationSecs)}
-                              {iv.avgWatts ? ` · ${iv.avgWatts}W` : ''})
-                            </button>
-                          ))}
+                        <div className="text-slate-600 dark:text-slate-400">
+                          Upload the original Garmin .FIT / .GPX file or fetch provider streams if available.
                         </div>
-
-                        {/* Live Zoomed / Brushed Section Summary + Instantaneous Hover Readout */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-3 py-2 text-xs font-mono tabular-nums">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className="font-sans font-bold text-slate-800 dark:text-slate-200">
-                              {hasActiveBrush
-                                ? 'Selecting Window:'
-                                : isZoomed
-                                  ? 'Zoomed Section:'
-                                  : 'Full Workout Window:'}
-                            </span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold">
-                              {formatStopwatch(winStartSecs)} – {formatStopwatch(winEndSecs)} (
-                              {formatStopwatch(winDurationSecs)})
-                            </span>
-                            {winAvgWatts !== undefined && (
-                              <span className="text-blue-600 dark:text-blue-400 font-bold">
-                                Avg {winAvgWatts}W ({(winAvgWatts / athleteWeightKg).toFixed(2)}{' '}
-                                W/kg) · Peak {winMaxWatts}W
-                              </span>
-                            )}
-                            {winAvgPaceSecsKm !== undefined && !winAvgWatts && (
-                              <span className="text-blue-600 dark:text-blue-400 font-bold">
-                                Avg Pace: {formatPace(winAvgPaceSecsKm, distanceUnit)}
-                              </span>
-                            )}
-                            {winAvgHr !== undefined && (
-                              <span className="text-red-500 font-bold">
-                                Avg HR {winAvgHr} bpm · Max {winMaxHr} bpm
-                              </span>
-                            )}
-                            {winAvgCad !== undefined && (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                                Avg Cadence {winAvgCad}
-                              </span>
-                            )}
-                          </div>
-
-                          {streamHoverIndex !== null && fullTimeArr[streamHoverIndex] !== undefined && (
-                            <div className="flex flex-wrap items-center gap-2.5 border-l border-slate-300 dark:border-slate-700 pl-3">
-                              <span className="text-slate-500 font-semibold">
-                                Cursor @ {formatStopwatch(fullTimeArr[streamHoverIndex] || 0)}:
-                              </span>
-                              {fullWattsArr && fullWattsArr[streamHoverIndex] !== undefined && (
-                                <span className="text-blue-500 font-bold">
-                                  {fullWattsArr[streamHoverIndex]}W
-                                </span>
-                              )}
-                              {fullVelArr &&
-                                !fullWattsArr &&
-                                fullVelArr[streamHoverIndex] !== undefined && (
-                                  <span className="text-blue-500 font-bold">
-                                    {formatPace(
-                                      1000 / Math.max(1, fullVelArr[streamHoverIndex]),
-                                      distanceUnit
-                                    )}
-                                  </span>
-                                )}
-                              {fullHrArr && fullHrArr[streamHoverIndex] !== undefined && (
-                                <span className="text-red-500 font-bold">
-                                  {fullHrArr[streamHoverIndex]} bpm
-                                </span>
-                              )}
-                              {fullCadArr && fullCadArr[streamHoverIndex] !== undefined && (
-                                <span className="text-emerald-500 font-semibold">
-                                  {fullCadArr[streamHoverIndex]} rpm/spm
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Main Zoomable Power & Heart Rate SVG Chart */}
-                        <svg
-                          viewBox="0 0 840 198"
-                          className="w-full h-52 select-none"
-                          onMouseLeave={() => {
-                            setStreamHoverIndex(null);
-                            if (streamBrushStartIdx !== null) {
-                              commitBrushZoom();
-                            }
-                          }}
-                          onMouseUp={commitBrushZoom}
+                      </div>
+                      {onLoadActivityStreams && (
+                        <button
+                          type="button"
+                          onClick={() => onLoadActivityStreams(selectedActivity)}
+                          className="ap-btn-secondary px-3 text-xs"
                         >
-                          {(() => {
-                            const chartLeft = 58;
-                            const chartRight = 774;
-                            const chartW = chartRight - chartLeft;
-                            const chartTop = 14;
-                            const chartBottom = 150;
-                            const chartH = chartBottom - chartTop;
-
-                            const visiblePrimary = fullPrimaryArr.slice(zStart, zEnd + 1);
-                            const maxPrimary = Math.max(300, ...visiblePrimary, 100);
-
-                            const visibleHrs = fullHrArr
-                              .slice(zStart, zEnd + 1)
-                              .filter((h) => h > 40);
-                            const minHrScale =
-                              visibleHrs.length > 0
-                                ? Math.max(60, Math.min(...visibleHrs) - 10)
-                                : 90;
-                            const maxHrScale =
-                              visibleHrs.length > 0
-                                ? Math.max(minHrScale + 30, Math.max(...visibleHrs) + 8)
-                                : 195;
-                            const hrSpan = Math.max(25, maxHrScale - minHrScale);
-
-                            const xForGlobalIdx = (gIdx: number) =>
-                              chartLeft + ((gIdx - zStart) / Math.max(1, visibleCount - 1)) * chartW;
-
-                            const hrPoints: string[] = [];
-                            for (let gIdx = zStart; gIdx <= zEnd; gIdx++) {
-                              const hr = fullHrArr[gIdx];
-                              if (hr != null && hr > 40) {
-                                const x = xForGlobalIdx(gIdx);
-                                const y = chartBottom - ((hr - minHrScale) / hrSpan) * chartH;
-                                hrPoints.push(
-                                  `${x},${Math.max(chartTop, Math.min(chartBottom, y))}`
-                                );
-                              }
-                            }
-
-                            const primaryPoints: string[] = [];
-                            for (let gIdx = zStart; gIdx <= zEnd; gIdx++) {
-                              const val = fullPrimaryArr[gIdx];
-                              if (val != null && !Number.isNaN(val)) {
-                                const x = xForGlobalIdx(gIdx);
-                                const y = chartBottom - (val / maxPrimary) * chartH;
-                                primaryPoints.push(
-                                  `${x},${Math.max(chartTop, Math.min(chartBottom, y))}`
-                                );
-                              }
-                            }
-
-                            const startElapsedSecs = fullTimeArr[zStart] || 0;
-                            const endElapsedSecs =
-                              fullTimeArr[zEnd] || selectedActivity.movingTimeSecs;
-
-                            const brushMinIdx =
-                              streamBrushStartIdx !== null && streamBrushEndIdx !== null
-                                ? Math.max(
-                                    zStart,
-                                    Math.min(streamBrushStartIdx, streamBrushEndIdx)
-                                  )
-                                : null;
-                            const brushMaxIdx =
-                              streamBrushStartIdx !== null && streamBrushEndIdx !== null
-                                ? Math.min(
-                                    zEnd,
-                                    Math.max(streamBrushStartIdx, streamBrushEndIdx)
-                                  )
-                                : null;
-
-                            return (
-                              <>
-                                {/* Left Y-Axis Title */}
-                                <text
-                                  x={14}
-                                  y={82}
-                                  transform="rotate(-90 14 82)"
-                                  textAnchor="middle"
-                                  className="fill-blue-500 text-[11px] font-sans font-bold"
-                                >
-                                  {fullWattsArr ? 'Power (Watts)' : 'Velocity / Output'}
-                                </text>
-
-                                {/* Right Y-Axis Title */}
-                                <text
-                                  x={826}
-                                  y={82}
-                                  transform="rotate(90 826 82)"
-                                  textAnchor="middle"
-                                  className="fill-red-500 text-[11px] font-sans font-bold"
-                                >
-                                  Heart Rate (bpm)
-                                </text>
-
-                                {[0, 0.33, 0.66, 1].map((f, idx) => {
-                                  const y = chartBottom - f * chartH;
-                                  const pVal = Math.round(f * maxPrimary);
-                                  const hrVal = Math.round(minHrScale + f * hrSpan);
-                                  return (
-                                    <g key={idx}>
-                                      <line
-                                        x1={chartLeft}
-                                        y1={y}
-                                        x2={chartRight}
-                                        y2={y}
-                                        stroke="currentColor"
-                                        className="text-slate-200 dark:text-slate-800"
-                                        strokeDasharray="3 3"
-                                      />
-                                      <text
-                                        x={52}
-                                        y={y + 4}
-                                        textAnchor="end"
-                                        className="fill-blue-500 text-[11px] font-mono"
-                                      >
-                                        {pVal}W
-                                      </text>
-                                      <text
-                                        x={780}
-                                        y={y + 4}
-                                        className="fill-red-500 text-[11px] font-mono"
-                                      >
-                                        {hrVal}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-
-                                {/* Active Drag-to-Zoom Brush Highlight Box */}
-                                {brushMinIdx !== null &&
-                                  brushMaxIdx !== null &&
-                                  brushMaxIdx > brushMinIdx && (
-                                    <g>
-                                      <rect
-                                        x={xForGlobalIdx(brushMinIdx)}
-                                        y={chartTop}
-                                        width={Math.max(
-                                          2,
-                                          xForGlobalIdx(brushMaxIdx) - xForGlobalIdx(brushMinIdx)
-                                        )}
-                                        height={chartH}
-                                        fill="#3B82F6"
-                                        fillOpacity="0.18"
-                                        stroke="#2563EB"
-                                        strokeWidth="1.5"
-                                        strokeDasharray="4 2"
-                                      />
-                                    </g>
-                                  )}
-
-                                <polyline
-                                  fill="none"
-                                  stroke="#3B82F6"
-                                  strokeWidth="2"
-                                  points={primaryPoints.join(' ')}
-                                />
-                                <polyline
-                                  fill="none"
-                                  stroke="#EF4444"
-                                  strokeWidth="1.8"
-                                  points={hrPoints.join(' ')}
-                                />
-
-                                {/* X-Axis Elapsed Time Ticks & Label */}
-                                {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                                  const x = chartLeft + f * chartW;
-                                  const tSecs = Math.round(
-                                    startElapsedSecs + f * (endElapsedSecs - startElapsedSecs)
-                                  );
-                                  return (
-                                    <text
-                                      key={idx}
-                                      x={x}
-                                      y={168}
-                                      textAnchor="middle"
-                                      className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
-                                    >
-                                      {formatStopwatch(tSecs)}
-                                    </text>
-                                  );
-                                })}
-                                <text
-                                  x={416}
-                                  y={189}
-                                  textAnchor="middle"
-                                  className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
-                                >
-                                  Elapsed Workout Time (mm:ss · Drag Horizontally on Chart to Zoom In)
-                                </text>
-
-                                {/* Interactive Hit Columns for Hover Crosshair + Drag-to-Zoom Brush */}
-                                {Array.from({ length: visibleCount }, (_, localIdx) => {
-                                  const gIdx = zStart + localIdx;
-                                  const x = xForGlobalIdx(gIdx);
-                                  const colW = chartW / Math.max(1, visibleCount);
-                                  return (
-                                    <g key={gIdx}>
-                                      {streamHoverIndex === gIdx && (
-                                        <line
-                                          x1={x}
-                                          y1={chartTop}
-                                          x2={x}
-                                          y2={chartBottom}
-                                          stroke="#3B82F6"
-                                          strokeWidth="1.5"
-                                          strokeDasharray="3 2"
-                                        />
-                                      )}
-                                      <rect
-                                        x={x - colW / 2}
-                                        y={0}
-                                        width={Math.max(2, colW)}
-                                        height={175}
-                                        fill="transparent"
-                                        className="cursor-crosshair"
-                                        onMouseDown={() => {
-                                          setStreamBrushStartIdx(gIdx);
-                                          setStreamBrushEndIdx(gIdx);
-                                        }}
-                                        onMouseEnter={() => {
-                                          setStreamHoverIndex(gIdx);
-                                          if (streamBrushStartIdx !== null) {
-                                            setStreamBrushEndIdx(gIdx);
-                                          }
-                                        }}
-                                        onMouseMove={() => {
-                                          setStreamHoverIndex(gIdx);
-                                          if (streamBrushStartIdx !== null) {
-                                            setStreamBrushEndIdx(gIdx);
-                                          }
-                                        }}
-                                      />
-                                    </g>
-                                  );
-                                })}
-                              </>
-                            );
-                          })()}
-                        </svg>
-
-                        {/* Full-Workout Overview Mini-Map Navigator Bar */}
-                        <div className="space-y-1 pt-1">
-                          <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                            <span>
-                              Full Workout Overview Navigator (Click anywhere on mini-map to jump zoomed window)
-                            </span>
-                            <span>
-                              Viewing {Math.round((zStart / Math.max(1, totalLen - 1)) * 100)}% –{' '}
-                              {Math.round((zEnd / Math.max(1, totalLen - 1)) * 100)}% of workout
-                            </span>
-                          </div>
-                          <svg
-                            viewBox="0 0 840 38"
-                            className="w-full h-9 rounded-lg bg-slate-100/80 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 cursor-pointer select-none"
-                            onClick={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              const clickFrac = Math.max(
-                                0,
-                                Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
-                              );
-                              const targetCenterIdx = Math.round(clickFrac * (totalLen - 1));
-                              const currentSpan = isZoomed
-                                ? zEnd - zStart
-                                : Math.max(8, Math.round(totalLen * 0.25));
-                              const half = Math.floor(currentSpan / 2);
-                              let ns = Math.max(0, targetCenterIdx - half);
-                              let ne = Math.min(totalLen - 1, ns + currentSpan);
-                              if (ne >= totalLen - 1) {
-                                ne = totalLen - 1;
-                                ns = Math.max(0, ne - currentSpan);
-                              }
-                              setStreamZoomRange([ns, ne]);
-                            }}
-                          >
-                            {(() => {
-                              const maxAllP = Math.max(300, ...fullPrimaryArr, 100);
-                              const miniPts = fullPrimaryArr
-                                .map((v, idx) => {
-                                  const x = (idx / Math.max(1, totalLen - 1)) * 840;
-                                  const y = 34 - ((v || 0) / maxAllP) * 28;
-                                  return `${x},${Math.max(4, Math.min(34, y))}`;
-                                })
-                                .join(' ');
-
-                              const winLeftX = (zStart / Math.max(1, totalLen - 1)) * 840;
-                              const winRightX = (zEnd / Math.max(1, totalLen - 1)) * 840;
-
-                              return (
-                                <>
-                                  <polyline
-                                    fill="none"
-                                    stroke="#3B82F6"
-                                    strokeWidth="1.25"
-                                    strokeOpacity="0.65"
-                                    points={miniPts}
-                                  />
-                                  <rect
-                                    x={winLeftX}
-                                    y={1}
-                                    width={Math.max(8, winRightX - winLeftX)}
-                                    height={36}
-                                    rx={4}
-                                    fill="#3B82F6"
-                                    fillOpacity="0.22"
-                                    stroke="#2563EB"
-                                    strokeWidth="1.5"
-                                  />
-                                </>
-                              );
-                            })()}
-                          </svg>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
+                          Fetch Provider Stream
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <UPlotStreamChart
+                    streams={activeStream!}
+                    sportCategory={selectedActivity.sportCategory}
+                    distanceUnit={distanceUnit}
+                    athleteWeightKg={athleteWeightKg}
+                    intervals={workerAnalytics?.intervals || liveDexieStream?.intervals || selectedActivity.intervals}
+                    peakWindows={workerAnalytics?.peakWindows}
+                    workerMetrics={workerAnalytics}
+                    isWorkerProcessing={isWorkerProcessing}
+                    onTriggerWorker1HzUpsample={() => {
+                      setIsWorkerProcessing(true);
+                      upsampleAndAnalyzeActivityInWorker({ ...selectedActivity, streams: activeStream })
+                        .then(({ analytics }) => setWorkerAnalytics(analytics))
+                        .finally(() => setIsWorkerProcessing(false));
+                    }}
+                    syncKey="thresh-activity-inspector"
+                    onHoverIndex={setStreamHoverIndex}
+                    zoomRange={streamZoomRange}
+                    onZoomRangeChange={setStreamZoomRange}
+                    height={280}
+                  />
+                );
+              })()}
 
               {/* Heart Rate Zone Distribution Summary Chart (Interactive SVG Histogram + Stacked Polarization + Zone Breakdown) */}
               {(() => {
@@ -4413,14 +3727,15 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 let zoneSourceLabel = 'Synced FIT Heart Rate Zones';
                 const rawSum = sixZones.reduce((a, b) => a + b, 0);
 
-                // Fallback 1: Compute exact time in each HR zone from second-by-second heartrate stream if rawHrZones is empty
+                // Compute exact time in each HR zone from second-by-second heartrate stream when summary zoneSecs are absent
+                const resolvedStream = liveDexieStream?.streams || selectedActivity.streams;
                 if (
                   rawSum <= 0 &&
-                  selectedActivity.streams?.heartrate &&
-                  selectedActivity.streams.heartrate.length > 1
+                  resolvedStream?.heartrate &&
+                  resolvedStream.heartrate.length > 1
                 ) {
-                  const hrArr = selectedActivity.streams.heartrate;
-                  const tArr = selectedActivity.streams.time;
+                  const hrArr = resolvedStream.heartrate;
+                  const tArr = resolvedStream.time;
                   const computed = [0, 0, 0, 0, 0, 0];
                   for (let i = 0; i < hrArr.length; i++) {
                     const hr = hrArr[i];
@@ -4443,27 +3758,6 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     sixZones = computed;
                     zoneSourceLabel = 'Computed from Second-by-Second HR Stream';
                   }
-                }
-
-                // Fallback 2: Estimate from Avg HR, Max HR & Moving Time if activity has HR but no zone array yet
-                if (
-                  sixZones.reduce((a, b) => a + b, 0) <= 0 &&
-                  selectedActivity.avgHr > 0 &&
-                  selectedActivity.movingTimeSecs > 0
-                ) {
-                  const avg = selectedActivity.avgHr;
-                  const max = Math.max(avg + 8, selectedActivity.maxHr || avg + 15);
-                  const mids = [120, 139, 151, 160, 167, 175];
-                  const weights = mids.map((m) => {
-                    if (m > max + 4) return 0.01;
-                    const diff = Math.abs(m - avg);
-                    return Math.exp(-(diff * diff) / (2 * 11 * 11));
-                  });
-                  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
-                  sixZones = weights.map((w) =>
-                    Math.round((w / wSum) * selectedActivity.movingTimeSecs)
-                  );
-                  zoneSourceLabel = 'Estimated from Workout Avg / Max HR';
                 }
 
                 const totalZoneSecs = Math.max(

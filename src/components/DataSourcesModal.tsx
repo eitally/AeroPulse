@@ -158,6 +158,9 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Data Sources & Telemetry Archive"
       onClick={onClose}
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
     >
@@ -399,7 +402,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Paginates through your entire Strava history (<code className="font-mono">per_page=200</code> across all pages) to recover all 1,372 Strava-only rides/runs, PR medals, and segment efforts.
+                  Paginates through your Strava history (<code className="font-mono">per_page=200</code>) to sync personal rides, runs, PR medals, and segment efforts inside THRESH&apos;s Clean-Room route log.
                 </p>
               </div>
               <a
@@ -423,7 +426,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   type="text"
                   value={stravaClientId}
                   onChange={(e) => setStravaClientId(e.target.value)}
-                  placeholder="e.g. 121717"
+                  placeholder="Your Strava Client ID"
                   className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
               </div>

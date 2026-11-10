@@ -103,6 +103,9 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="THRESH AI Coach"
       onClick={onClose}
       className="fixed inset-0 z-[65] flex justify-end bg-black/50 backdrop-blur-xs"
     >

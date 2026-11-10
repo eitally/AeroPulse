@@ -82,40 +82,7 @@ interface GoalsViewProps {
   onOpenCoachWithPrompt?: (prompt: string) => void;
 }
 
-const DEFAULT_GEAR_ITEMS: AthleteGearItem[] = [
-  {
-    id: 'b2220926',
-    name: 'Cervelo S3 (Road / Aero)',
-    type: 'BIKE',
-    distanceMeters: 4820000,
-    maxRecommendedMeters: 8000000,
-    primary: true,
-  },
-  {
-    id: 'g7979955',
-    name: 'Inov-8 Terraultra G270',
-    type: 'SHOE',
-    distanceMeters: 542000,
-    maxRecommendedMeters: 724205,
-    primary: true,
-  },
-  {
-    id: 'g4269407',
-    name: 'Merrell FluidFlex 2',
-    type: 'SHOE',
-    distanceMeters: 418000,
-    maxRecommendedMeters: 643738,
-    primary: false,
-  },
-  {
-    id: 'g995271',
-    name: 'Merrell FluidFlex',
-    type: 'SHOE',
-    distanceMeters: 685000,
-    maxRecommendedMeters: 643738,
-    primary: false,
-  },
-];
+const DEFAULT_GEAR_ITEMS: AthleteGearItem[] = [];
 
 const ALL_SPORTS_LIST: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength'];
 
@@ -136,20 +103,20 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   {
     id: 'FTP_350W',
     badge: 'Cycling Threshold',
-    title: '350W Cycling FTP Builder',
+    title: 'Cycling FTP Builder (+8% Peak)',
     subtitle: 'Progressive Sweet Spot, Over-Unders & VO2max Ceiling Expansion',
     sportCategory: 'Cycling',
-    targetLabel: '350W FTP (~4.0+ W/kg)',
+    targetLabel: '+8% FTP & W/kg Peak',
     defaultWeeks: 12,
     targetProgressionLevels: [7.8, 8.5, 8.8, 7.6, 6.2, 5.5],
   },
   {
     id: 'SUB20_5K',
     badge: '5K Speed & VO2max',
-    title: 'Sub-20:00 5K Speed & VO2max',
+    title: '5K Speed & VO2max Peak',
     subtitle: 'Track 400m/800m Repeats, Lactate Threshold & Aerobic Economy',
     sportCategory: 'Running',
-    targetLabel: '19:59 5K (3:59/km · 6:25/mi)',
+    targetLabel: '5K Race Pace & VO2max',
     defaultWeeks: 8,
     targetProgressionLevels: [7.2, 7.5, 8.4, 8.9, 7.4, 6.5],
   },
@@ -159,7 +126,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
     title: 'Half Marathon in 12 Weeks',
     subtitle: 'Progressive Long Runs, Cruise Threshold & Deload Recovery Weeks',
     sportCategory: 'Running',
-    targetLabel: '1:32:00 HM (4:21/km · 7:01/mi)',
+    targetLabel: '21.1 km Sustained Threshold',
     defaultWeeks: 12,
     targetProgressionLevels: [8.8, 8.4, 8.0, 6.8, 5.2, 4.8],
   },
@@ -169,24 +136,27 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
     title: '100-Mile Gran Fondo Peak',
     subtitle: 'High-Durability Z2 Volume, Late-Ride Tempo & <3% Cardiac Drift',
     sportCategory: 'Cycling',
-    targetLabel: '100 mi · 240 TSS (<3% Drift)',
+    targetLabel: '100 mi · <3% Cardiac Drift',
     defaultWeeks: 12,
     targetProgressionLevels: [9.2, 8.4, 7.6, 6.4, 5.4, 5.0],
   },
 ];
 
 const ZONE_COLORS = [
-  '#52B788', // Z1 Recovery
-  '#2A9D8F', // Z2 Endurance
-  '#EAB308', // Z3 Tempo / Sweet Spot
-  '#F97316', // Z4 Threshold
-  '#EF4444', // Z5 VO2max
-  '#9333EA', // Z6+ Anaerobic
+  '#94A3B8', // Z1 Recovery
+  '#0D9488', // Z2 Endurance
+  '#D97706', // Z3 Tempo / Sweet Spot
+  '#EA580C', // Z4 Threshold
+  '#DC2626', // Z5 VO2max
+  '#7C3AED', // Z6+ Anaerobic
 ];
 
 function addDaysIso(baseDateIso: string, addDays: number): string {
+  const now = new Date();
   const [y, m, d] = baseDateIso.split('-').map(Number);
-  const dt = new Date(Date.UTC(y || 2026, (m || 11) - 1, d || 6));
+  const dt = new Date(
+    Date.UTC(y || now.getUTCFullYear(), (m || now.getUTCMonth() + 1) - 1, d || now.getUTCDate())
+  );
   dt.setUTCDate(dt.getUTCDate() + addDays);
   return dt.toISOString().slice(0, 10);
 }
@@ -249,15 +219,19 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
 
   const isAllSportsSelected = selectedPolarizationSports.length === ALL_SPORTS_LIST.length;
 
+  const currentYear = new Date().getFullYear();
+  const currentYearPrefix = `${currentYear}-`;
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   const runGoal = annualMileageGoals.find((g) => g.sportCategory === 'Running') || {
     sportCategory: 'Running' as const,
-    year: 2026,
-    targetDistanceMeters: 2414016,
+    year: currentYear,
+    targetDistanceMeters: 0,
   };
   const bikeGoal = annualMileageGoals.find((g) => g.sportCategory === 'Cycling') || {
     sportCategory: 'Cycling' as const,
-    year: 2026,
-    targetDistanceMeters: 8046720,
+    year: currentYear,
+    targetDistanceMeters: 0,
   };
 
   const [runInput, setRunInput] = useState<string>(() =>
@@ -284,10 +258,10 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
 
   const ytd2026Counts = useMemo(() => {
     const runActs = activities.filter(
-      (a) => a.sportCategory === 'Running' && String(a.startDateLocal || '').startsWith('2026-')
+      (a) => a.sportCategory === 'Running' && String(a.startDateLocal || '').startsWith(currentYearPrefix)
     );
     const bikeActs = activities.filter(
-      (a) => a.sportCategory === 'Cycling' && String(a.startDateLocal || '').startsWith('2026-')
+      (a) => a.sportCategory === 'Cycling' && String(a.startDateLocal || '').startsWith(currentYearPrefix)
     );
     return {
       runTotal: runActs.length,
@@ -297,12 +271,12 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       bikeOutdoor: bikeActs.filter((a) => a.environment === 'OUTDOOR').length,
       bikeIndoor: bikeActs.filter((a) => a.environment === 'INDOOR').length,
     };
-  }, [activities]);
+  }, [activities, currentYearPrefix]);
 
   // Totals & Seiler 80/20 Polarization Calculation
   const totalsAndPolarization = useMemo(() => {
     const latestDate =
-      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : '2026-11-05';
+      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
     const latestMs = new Date(`${latestDate}T23:59:59Z`).getTime();
 
     const filtered = activities.filter((act) => {
@@ -390,54 +364,43 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     };
   }, [activities, envFilter, totalsPeriod, isAllSportsSelected, selectedPolarizationSports]);
 
-  // Compute real activity mileage per gear item
+  // Compute real activity mileage per synced gear item (never invent fake bikes/shoes)
   const resolvedGearItems = useMemo(() => {
     const baseGear = gearItems && gearItems.length > 0 ? gearItems : DEFAULT_GEAR_ITEMS;
-    const runTotalMeters = activities
-      .filter((a) => a.sportCategory === 'Running')
-      .reduce((acc, a) => acc + (a.distanceMeters || 0), 0);
-    const bikeTotalMeters = activities
-      .filter((a) => a.sportCategory === 'Cycling' && a.environment === 'OUTDOOR')
-      .reduce((acc, a) => acc + (a.distanceMeters || 0), 0);
+    return baseGear.map((item) => ({
+      ...item,
+      distanceMeters: Math.max(0, item.distanceMeters || 0),
+      maxRecommendedMeters: item.maxRecommendedMeters || (item.type === 'BIKE' ? 8000000 : 643738),
+    }));
+  }, [gearItems]);
 
-    return baseGear.map((item, idx) => {
-      if (item.distanceMeters > 0) return item;
-      const defaultRef = DEFAULT_GEAR_ITEMS.find((d) => d.id === item.id || d.name.includes(item.name));
-      if (defaultRef) return { ...item, ...defaultRef, name: item.name };
-      const estimatedMeters =
-        item.type === 'BIKE'
-          ? Math.max(1850000, bikeTotalMeters)
-          : Math.round((runTotalMeters / Math.max(1, idx + 1)) * 0.45);
-      return {
-        ...item,
-        distanceMeters: estimatedMeters,
-        maxRecommendedMeters: item.type === 'BIKE' ? 8000000 : 643738,
-      };
-    });
-  }, [gearItems, activities]);
-
-  // Live Running Race Time Predictor & 350W Cycling FTP Trajectory Model
+  // Live Running Race Time Predictor & Cycling FTP Trajectory Model
   const raceAndFtpPredictions = useMemo(() => {
-    const latestWithRunEftp = [...wellnessDays].reverse().find((w) => w.runEftp && w.runEftp > 200);
-    const runEftp = athleteProfile?.runFtp || latestWithRunEftp?.runEftp || 315;
+    const latestWithRunEftp = [...wellnessDays].reverse().find((w) => w.runEftp && w.runEftp > 150);
+    const runEftp = athleteProfile?.runFtp || latestWithRunEftp?.runEftp || 0;
     const vo2maxRun =
       athleteProfile?.vo2MaxRunning ||
       latestWithRunEftp?.vo2MaxRunning ||
       latestWithRunEftp?.vo2MaxCycling ||
-      53;
+      0;
     const vo2maxBike =
-      athleteProfile?.vo2MaxCycling || latestWithRunEftp?.vo2MaxCycling || 55;
+      athleteProfile?.vo2MaxCycling || latestWithRunEftp?.vo2MaxCycling || 0;
 
-    const currentFtp = athleteProfile?.ftp || latestWithRunEftp?.rideEftp || 295;
-    const weightKg = athleteProfile?.weightKg || latestWithRunEftp?.weightKg || 75.0;
+    const currentFtp = athleteProfile?.ftp || latestWithRunEftp?.rideEftp || 0;
+    const weightKg = Math.max(40, athleteProfile?.weightKg || latestWithRunEftp?.weightKg || 70.0);
 
-    // Derive threshold pace (sec/km) from athleteProfile or Run eFTP / VO2max
+    // Derive threshold pace (sec/km) from athleteProfile or Run eFTP
     const syncedThresholdPace = athleteProfile?.thresholdPaceSecsPerKm;
-    const thresholdSpeedMps = 3.35 + ((Math.min(420, Math.max(240, runEftp)) - 260) / 160) * 0.85;
+    const thresholdSpeedMps =
+      runEftp > 0
+        ? 3.35 + ((Math.min(420, Math.max(240, runEftp)) - 260) / 160) * 0.85
+        : 0;
     const thresholdPaceSecsPerKm =
-      syncedThresholdPace && syncedThresholdPace >= 180 && syncedThresholdPace <= 390
+      syncedThresholdPace && syncedThresholdPace >= 160 && syncedThresholdPace <= 540
         ? syncedThresholdPace
-        : Math.round(1000 / thresholdSpeedMps);
+        : thresholdSpeedMps > 0
+          ? Math.round(1000 / thresholdSpeedMps)
+          : 0;
 
     const distances = [
       {
@@ -477,11 +440,15 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       },
     ];
 
-    // Cycling FTP trajectory toward 350W based on current CTL & ramp rate
-    const targetFtp = 350;
-    const ftp30d = Math.min(365, Math.round(currentFtp * 1.032));
-    const ftp60d = Math.min(370, Math.round(currentFtp * 1.068));
-    const ftp90d = Math.min(375, Math.round(currentFtp * 1.105));
+    const explicitFtpGoal = targetGoals.find(
+      (g) => g.sportCategory === 'Cycling' && g.unit.toUpperCase() === 'W' && g.targetValue > 0
+    );
+    const targetFtp =
+      explicitFtpGoal?.targetValue ||
+      (currentFtp > 0 ? Math.max(currentFtp + 15, Math.round(currentFtp * 1.08)) : 0);
+    const ftp30d = currentFtp > 0 ? Math.round(currentFtp * 1.025) : 0;
+    const ftp60d = currentFtp > 0 ? Math.round(currentFtp * 1.052) : 0;
+    const ftp90d = currentFtp > 0 ? Math.round(currentFtp * 1.08) : 0;
     const gapTo350 = Math.max(0, targetFtp - currentFtp);
 
     return {
@@ -497,9 +464,11 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       ftp90d,
       gapTo350,
       events: distances.map((d) => {
-        const paceSecsPerKm = Math.round(thresholdPaceSecsPerKm * d.factor);
-        const totalSecs = Math.round((d.meters / 1000) * paceSecsPerKm);
-        const deltaVsGoalSecs = totalSecs - d.goalSecs;
+        const paceSecsPerKm =
+          thresholdPaceSecsPerKm > 0 ? Math.round(thresholdPaceSecsPerKm * d.factor) : 0;
+        const totalSecs =
+          paceSecsPerKm > 0 ? Math.round((d.meters / 1000) * paceSecsPerKm) : 0;
+        const deltaVsGoalSecs = totalSecs > 0 ? totalSecs - d.goalSecs : 0;
         return {
           label: d.label,
           meters: d.meters,
@@ -511,7 +480,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         };
       }),
     };
-  }, [wellnessDays, athleteProfile]);
+  }, [wellnessDays, athleteProfile, targetGoals]);
 
   // Runna-style Pace & Power Insights Feedback Loop (analyzes recent workouts vs targets)
   const paceAndPowerInsights = useMemo(() => {
@@ -523,204 +492,264 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         /interval|threshold|tempo|vo2|race|track|sweet/i.test(a.name)
     );
 
-    const avgDecoupling =
-      qualitySessions.length > 0
-        ? qualitySessions.reduce((acc, a) => acc + (a.aerobicDecouplingPct || 2.4), 0) /
-          qualitySessions.length
-        : 2.3;
-    const avgIf =
-      qualitySessions.length > 0
-        ? qualitySessions.reduce((acc, a) => acc + (a.intensityFactor || 0.84), 0) /
-          qualitySessions.length
-        : 0.85;
+    if (qualitySessions.length === 0) {
+      return {
+        status: 'AWAITING_DATA' as const,
+        badgeLabel: 'Awaiting Interval Data',
+        headline: 'Log structured workouts with power or heart rate to unlock automated threshold pace and FTP insights.',
+        currentFtp: raceAndFtpPredictions.currentFtp,
+        suggestedFtp: raceAndFtpPredictions.currentFtp,
+        currentThreshPace: raceAndFtpPredictions.thresholdPaceSecsPerKm,
+        suggestedPaceSecsPerKm: raceAndFtpPredictions.thresholdPaceSecsPerKm,
+        qualityCount: 0,
+        avgDecoupling: 0,
+      };
+    }
 
-    const isAhead = avgDecoupling <= 3.6 && avgIf >= 0.82;
+    const avgDecoupling =
+      qualitySessions.reduce((acc, a) => acc + (a.aerobicDecouplingPct ?? 0), 0) /
+      qualitySessions.length;
+    const avgIf =
+      qualitySessions.reduce((acc, a) => acc + (a.intensityFactor ?? 0.8), 0) /
+      qualitySessions.length;
+
+    const isAhead = avgDecoupling > 0 && avgDecoupling <= 3.6 && avgIf >= 0.82;
     const isStrained = avgDecoupling > 5.2;
 
     const currentFtp = raceAndFtpPredictions.currentFtp;
     const currentThreshPace = raceAndFtpPredictions.thresholdPaceSecsPerKm;
 
-    const suggestedFtp = isAhead
-      ? currentFtp + 6
-      : isStrained
-        ? Math.max(180, currentFtp - 5)
-        : currentFtp + 3;
-    const suggestedPaceSecsPerKm = isAhead
-      ? Math.max(175, currentThreshPace - 4)
-      : isStrained
-        ? currentThreshPace + 4
-        : Math.max(175, currentThreshPace - 2);
+    const suggestedFtp =
+      currentFtp > 0
+        ? isAhead
+          ? currentFtp + 6
+          : isStrained
+            ? Math.max(150, currentFtp - 5)
+            : currentFtp + 3
+        : 0;
+    const suggestedPaceSecsPerKm =
+      currentThreshPace > 0
+        ? isAhead
+          ? Math.max(165, currentThreshPace - 4)
+          : isStrained
+            ? currentThreshPace + 4
+            : Math.max(165, currentThreshPace - 2)
+        : 0;
 
     return {
       status: isAhead ? 'AHEAD_OF_PACK' : isStrained ? 'STRETCH_WARNING' : 'ON_POINT',
       badgeLabel: isAhead
-        ? 'Ahead of the Pack (+2.4%)'
+        ? 'Ahead of the Pack (+2%)'
         : isStrained
           ? 'Stretch Warning (High Drift)'
           : 'Pace & Power on Point',
       headline: isAhead
-        ? `You outperformed recent quality intervals with ${avgDecoupling.toFixed(1)}% cardiac drift (<3.5% ceiling).`
+        ? `Recent quality intervals held ${avgDecoupling.toFixed(1)}% cardiac drift (<3.5% ceiling).`
         : isStrained
           ? `Recent quality workouts showed ${avgDecoupling.toFixed(1)}% cardiac decoupling. Slightly easing targets will protect adaptation.`
-          : `Interval execution and aerobic decoupling (${avgDecoupling.toFixed(1)}%) are locked inside the optimal adaptation corridor.`,
+          : `Interval execution and aerobic decoupling (${avgDecoupling.toFixed(1)}%) are inside the optimal adaptation corridor.`,
       currentFtp,
       suggestedFtp,
       currentThreshPace,
       suggestedPaceSecsPerKm,
-      qualityCount: Math.max(3, qualitySessions.length),
+      qualityCount: qualitySessions.length,
       avgDecoupling: Number(avgDecoupling.toFixed(1)),
     };
   }, [activities, raceAndFtpPredictions]);
 
-  // TrainerRoad-style Energy-System Progression Levels (1.0 - 10.0) & Garmin 4-Week Load Focus
+  // Energy-System Progression Levels (0.0 - 10.0) & 4-Week Load Focus
   const progressionAndLoadFocus = useMemo(() => {
     const latestDate =
-      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : '2026-11-05';
+      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
     const latestMs = new Date(`${latestDate}T23:59:59Z`).getTime();
     const recent28 = activities.filter((act) => {
       const d = act.startDateLocal.slice(0, 10);
       const ms = new Date(`${d}T12:00:00Z`).getTime();
       return latestMs - ms <= 28 * 86400 * 1000;
     });
+    const prior28 = activities.filter((act) => {
+      const d = act.startDateLocal.slice(0, 10);
+      const ms = new Date(`${d}T12:00:00Z`).getTime();
+      const ageDays = (latestMs - ms) / (86400 * 1000);
+      return ageDays > 28 && ageDays <= 56;
+    });
 
-    const zoneSecs28 = [0, 0, 0, 0, 0, 0, 0];
-    let lowAerobicLoad = 0;
-    let highAerobicLoad = 0;
-    let anaerobicLoad = 0;
-
-    for (const act of recent28) {
-      const pArr = act.zoneSecs?.power || [];
-      const hArr = act.zoneSecs?.hr || [];
-      const zArr = pArr.some((v) => v > 0) ? pArr : hArr;
-      const zTot = zArr.reduce((a, b) => a + (b || 0), 0);
-      const load = act.trainingLoad || 35;
-
-      if (zTot > 60) {
-        for (let i = 0; i < 7; i++) {
-          zoneSecs28[i] += zArr[i] || 0;
-        }
-        const lowShare = ((zArr[0] || 0) + (zArr[1] || 0)) / zTot;
-        const highShare = ((zArr[2] || 0) + (zArr[3] || 0)) / zTot;
-        const anaShare = Math.max(0, 1 - lowShare - highShare);
-        lowAerobicLoad += load * lowShare;
-        highAerobicLoad += load * highShare;
-        anaerobicLoad += load * anaShare;
-      } else {
-        const ifVal = act.intensityFactor || 0.72;
-        if (ifVal < 0.76) {
-          zoneSecs28[1] += act.movingTimeSecs;
-          lowAerobicLoad += load * 0.85;
-          highAerobicLoad += load * 0.15;
-        } else if (ifVal < 0.92) {
-          zoneSecs28[2] += act.movingTimeSecs * 0.6;
-          zoneSecs28[3] += act.movingTimeSecs * 0.4;
-          lowAerobicLoad += load * 0.35;
-          highAerobicLoad += load * 0.55;
-          anaerobicLoad += load * 0.1;
-        } else {
-          zoneSecs28[3] += act.movingTimeSecs * 0.45;
-          zoneSecs28[4] += act.movingTimeSecs * 0.35;
-          zoneSecs28[5] += act.movingTimeSecs * 0.2;
-          lowAerobicLoad += load * 0.2;
-          highAerobicLoad += load * 0.45;
-          anaerobicLoad += load * 0.35;
+    const accumulateZones = (acts: UnifiedActivity[]) => {
+      const zSecs = [0, 0, 0, 0, 0, 0, 0];
+      let lowLoad = 0;
+      let highLoad = 0;
+      let anaLoad = 0;
+      for (const act of acts) {
+        const pArr = act.zoneSecs?.power || [];
+        const hArr = act.zoneSecs?.hr || [];
+        const zArr = pArr.some((v) => v > 0) ? pArr : hArr;
+        const zTot = zArr.reduce((a, b) => a + (b || 0), 0);
+        const load = act.trainingLoad || 0;
+        if (zTot > 60) {
+          for (let i = 0; i < 7; i++) {
+            zSecs[i] += zArr[i] || 0;
+          }
+          const lowShare = ((zArr[0] || 0) + (zArr[1] || 0)) / zTot;
+          const highShare = ((zArr[2] || 0) + (zArr[3] || 0)) / zTot;
+          const anaShare = Math.max(0, 1 - lowShare - highShare);
+          lowLoad += load * lowShare;
+          highLoad += load * highShare;
+          anaLoad += load * anaShare;
+        } else if (load > 0) {
+          const ifVal = act.intensityFactor || 0.72;
+          if (ifVal < 0.76) {
+            zSecs[1] += act.movingTimeSecs;
+            lowLoad += load * 0.85;
+            highLoad += load * 0.15;
+          } else if (ifVal < 0.92) {
+            zSecs[2] += act.movingTimeSecs * 0.6;
+            zSecs[3] += act.movingTimeSecs * 0.4;
+            lowLoad += load * 0.35;
+            highLoad += load * 0.55;
+            anaLoad += load * 0.1;
+          } else {
+            zSecs[3] += act.movingTimeSecs * 0.45;
+            zSecs[4] += act.movingTimeSecs * 0.35;
+            zSecs[5] += act.movingTimeSecs * 0.2;
+            lowLoad += load * 0.2;
+            highLoad += load * 0.45;
+            anaLoad += load * 0.35;
+          }
         }
       }
-    }
+      return { zSecs, lowLoad, highLoad, anaLoad };
+    };
 
-    const ctlFactor = Math.min(2.2, Math.max(0.8, currentCtl / 65));
-    const clampLvl = (v: number) => Number(Math.min(9.9, Math.max(2.4, v)).toFixed(1));
+    const cur = accumulateZones(recent28);
+    const prev = accumulateZones(prior28);
 
-    const enduranceLvl = clampLvl(4.8 + (zoneSecs28[1] / 3600) * 0.28 * ctlFactor);
-    const tempoSweetSpotLvl = clampLvl(4.4 + (zoneSecs28[2] / 1800) * 0.38 * ctlFactor);
-    const thresholdLvl = clampLvl(4.2 + (zoneSecs28[3] / 1200) * 0.42 * ctlFactor);
-    const vo2maxLvl = clampLvl(3.9 + (zoneSecs28[4] / 600) * 0.45 * ctlFactor);
-    const anaerobicLvl = clampLvl(3.6 + (zoneSecs28[5] / 300) * 0.45 * ctlFactor);
-    const sprintLvl = clampLvl(4.1 + (zoneSecs28[6] / 120) * 0.4 * ctlFactor);
+    const hasRecent = recent28.length > 0;
+    const ctlFactor = currentCtl > 0 ? Math.min(2.2, Math.max(0.6, currentCtl / 65)) : 1;
+    const computeLvls = (zSecs: number[], hasActs: boolean) => {
+      if (!hasActs) return [0, 0, 0, 0, 0, 0];
+      const clampLvl = (v: number) => Number(Math.min(9.9, Math.max(1.0, v)).toFixed(1));
+      return [
+        clampLvl(1.5 + (zSecs[1] / 3600) * 0.45 * ctlFactor),
+        clampLvl(1.2 + (zSecs[2] / 1800) * 0.5 * ctlFactor),
+        clampLvl(1.2 + (zSecs[3] / 1200) * 0.55 * ctlFactor),
+        clampLvl(1.0 + (zSecs[4] / 600) * 0.55 * ctlFactor),
+        clampLvl(1.0 + (zSecs[5] / 300) * 0.55 * ctlFactor),
+        clampLvl(1.0 + (zSecs[6] / 120) * 0.5 * ctlFactor),
+      ];
+    };
+
+    const curLvls = computeLvls(cur.zSecs, hasRecent);
+    const prevLvls = computeLvls(prev.zSecs, prior28.length > 0);
+    const fmtDelta = (idx: number) => {
+      if (!hasRecent) return '0.0';
+      const diff = Number((curLvls[idx] - prevLvls[idx]).toFixed(1));
+      return diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
+    };
 
     const levels = [
       {
         code: 'Z2',
         name: 'Endurance & Durability',
-        level: enduranceLvl,
+        level: curLvls[0],
         target: selectedArchetype.targetProgressionLevels[0],
-        delta28d: '+0.5',
-        color: '#2A9D8F',
+        delta28d: fmtDelta(0),
+        color: '#0D9488',
       },
       {
         code: 'Z3',
         name: 'Tempo / Sweet Spot',
-        level: tempoSweetSpotLvl,
+        level: curLvls[1],
         target: selectedArchetype.targetProgressionLevels[1],
-        delta28d: '+0.7',
-        color: '#EAB308',
+        delta28d: fmtDelta(1),
+        color: '#D97706',
       },
       {
         code: 'Z4',
         name: 'Lactate Threshold (FTP)',
-        level: thresholdLvl,
+        level: curLvls[2],
         target: selectedArchetype.targetProgressionLevels[2],
-        delta28d: '+0.6',
-        color: '#F97316',
+        delta28d: fmtDelta(2),
+        color: '#EA580C',
       },
       {
         code: 'Z5',
         name: 'VO2max Aerobic Ceiling',
-        level: vo2maxLvl,
+        level: curLvls[3],
         target: selectedArchetype.targetProgressionLevels[3],
-        delta28d: '+0.4',
-        color: '#EF4444',
+        delta28d: fmtDelta(3),
+        color: '#DC2626',
       },
       {
         code: 'Z6',
         name: "Anaerobic Capacity (W')",
-        level: anaerobicLvl,
+        level: curLvls[4],
         target: selectedArchetype.targetProgressionLevels[4],
-        delta28d: '+0.3',
-        color: '#9333EA',
+        delta28d: fmtDelta(4),
+        color: '#7C3AED',
       },
       {
         code: 'Z7',
         name: 'Neuromuscular Sprint',
-        level: sprintLvl,
+        level: curLvls[5],
         target: selectedArchetype.targetProgressionLevels[5],
-        delta28d: '+0.2',
-        color: '#6366F1',
+        delta28d: fmtDelta(5),
+        color: '#4F46E5',
       },
     ];
 
-    const total28Load = Math.max(250, lowAerobicLoad + highAerobicLoad + anaerobicLoad);
-    const lowPct = Math.round((lowAerobicLoad / total28Load) * 100);
-    const highPct = Math.round((highAerobicLoad / total28Load) * 100);
-    const anaPct = Math.max(4, 100 - lowPct - highPct);
+    const rawTotal28Load = cur.lowLoad + cur.highLoad + cur.anaLoad;
+    const lowPct = rawTotal28Load > 0 ? Math.round((cur.lowLoad / rawTotal28Load) * 100) : 0;
+    const highPct = rawTotal28Load > 0 ? Math.round((cur.highLoad / rawTotal28Load) * 100) : 0;
+    const anaPct = rawTotal28Load > 0 ? Math.max(0, 100 - lowPct - highPct) : 0;
 
     const loadFocusBuckets = [
       {
         label: 'Low Aerobic Load (Z1–Z2)',
-        loadPts: Math.round(Math.max(420, lowAerobicLoad)),
+        loadPts: Math.round(cur.lowLoad),
         pct: lowPct,
         optimalMinPct: 52,
         optimalMaxPct: 72,
-        color: '#2A9D8F',
-        status: lowPct < 48 ? 'Shortage' : lowPct <= 76 ? 'Optimal Target' : 'High Volume',
+        color: '#0D9488',
+        status:
+          rawTotal28Load === 0
+            ? 'Awaiting Sync'
+            : lowPct < 48
+              ? 'Shortage'
+              : lowPct <= 76
+                ? 'Optimal Target'
+                : 'High Volume',
       },
       {
         label: 'High Aerobic Load (Z3–Z4)',
-        loadPts: Math.round(Math.max(190, highAerobicLoad)),
+        loadPts: Math.round(cur.highLoad),
         pct: highPct,
         optimalMinPct: 20,
         optimalMaxPct: 34,
-        color: '#F97316',
-        status: highPct < 18 ? 'Shortage' : highPct <= 36 ? 'Optimal Target' : 'Above Tunnel',
+        color: '#EA580C',
+        status:
+          rawTotal28Load === 0
+            ? 'Awaiting Sync'
+            : highPct < 18
+              ? 'Shortage'
+              : highPct <= 36
+                ? 'Optimal Target'
+                : 'Above Tunnel',
       },
       {
         label: 'Anaerobic Load (Z5–Z6+)',
-        loadPts: Math.round(Math.max(65, anaerobicLoad)),
+        loadPts: Math.round(cur.anaLoad),
         pct: anaPct,
         optimalMinPct: 8,
         optimalMaxPct: 18,
-        color: '#9333EA',
-        status: anaPct < 8 ? 'Shortage' : anaPct <= 20 ? 'Optimal Target' : 'High Strain',
+        color: '#7C3AED',
+        status:
+          rawTotal28Load === 0
+            ? 'Awaiting Sync'
+            : anaPct < 8
+              ? 'Shortage'
+              : anaPct <= 20
+                ? 'Optimal Target'
+                : 'High Strain',
       },
     ];
 
@@ -728,15 +757,18 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       levels,
       loadFocusBuckets,
     };
-  }, [activities, currentCtl, selectedArchetype]);
+  }, [activities, currentCtl, selectedArchetype, todayIso]);
 
   // Multi-Week Goal-to-Calendar Adaptive Plan Generator (with Every-4th-Week Deloads)
   const generatedPlanWeeks = useMemo(() => {
     const startAnchorIso =
-      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : '2026-11-06';
+      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
     // Align start to the upcoming Monday (or current week's Monday)
+    const now = new Date();
     const [y, m, d] = startAnchorIso.split('-').map(Number);
-    const dt = new Date(Date.UTC(y || 2026, (m || 11) - 1, d || 6));
+    const dt = new Date(
+      Date.UTC(y || now.getUTCFullYear(), (m || now.getUTCMonth() + 1) - 1, d || now.getUTCDate())
+    );
     const dow = dt.getUTCDay() || 7; // 1=Mon..7=Sun
     const mondayIso = addDaysIso(startAnchorIso, 1 - dow);
 
@@ -946,18 +978,18 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     selectedArchetype,
   ]);
 
-  // Seasonal Peak Power & Best Running Efforts Trophy Matrix (All-Time vs 2026 Season vs Last 90d)
+  // Seasonal Peak Power & Best Running Efforts Trophy Matrix (strictly empirical workouts)
   const seasonalPrMatrix = useMemo(() => {
     const latestDate =
-      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : '2026-11-05';
+      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
     const latestMs = new Date(`${latestDate}T23:59:59Z`).getTime();
-    const weightKg = Math.max(50, athleteProfile?.weightKg || 75);
+    const weightKg = Math.max(40, athleteProfile?.weightKg || 70);
 
-    const filterActs = (sport: SportCategory, scope: 'ALL' | '2026' | '90D') =>
+    const filterActs = (sport: SportCategory, scope: 'ALL' | 'YTD' | '90D') =>
       activities.filter((a) => {
         if (a.sportCategory !== sport) return false;
         const d = a.startDateLocal.slice(0, 10);
-        if (scope === '2026') return d.startsWith('2026-');
+        if (scope === 'YTD') return d.startsWith(currentYearPrefix);
         if (scope === '90D') {
           const ms = new Date(`${d}T12:00:00Z`).getTime();
           return latestMs - ms <= 90 * 86400 * 1000;
@@ -975,25 +1007,22 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       for (const a of acts) {
         if ((a.movingTimeSecs || 0) < minDurationSecs) continue;
         const baseP = a.normalizedPower || a.avgPower || 0;
+        if (baseP <= 0) continue;
         const est = Math.round(baseP * mult);
         if (est > bestW) {
           bestW = est;
           bestAct = a;
         }
       }
-      if (bestW === 0) {
-        const fallbackFtp = athleteProfile?.ftp || 295;
-        bestW = Math.round(fallbackFtp * (mult * 0.92));
-      }
       return {
         watts: bestW,
-        wkg: (bestW / weightKg).toFixed(2),
+        wkg: bestW > 0 ? (bestW / weightKg).toFixed(2) : '—',
         act: bestAct,
       };
     };
 
     const bikeAll = filterActs('Cycling', 'ALL');
-    const bike2026 = filterActs('Cycling', '2026');
+    const bikeYtd = filterActs('Cycling', 'YTD');
     const bike90d = filterActs('Cycling', '90D');
 
     const cyclingRows = [
@@ -1005,7 +1034,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     ].map((row) => ({
       label: row.label,
       allTime: bestBikeForScope(bikeAll, row.mult, row.minSecs),
-      season2026: bestBikeForScope(bike2026, row.mult, row.minSecs),
+      season2026: bestBikeForScope(bikeYtd, row.mult, row.minSecs),
       last90d: bestBikeForScope(bike90d, row.mult, row.minSecs),
     }));
 
@@ -1019,13 +1048,13 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       for (const a of acts) {
         if ((a.distanceMeters || 0) < distMeters * 0.75) continue;
         const p = a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 0;
-        if (p > 140 && p < bestPace) {
+        if (p > 120 && p < bestPace) {
           bestPace = p;
           bestAct = a;
         }
       }
-      if (!Number.isFinite(bestPace)) {
-        bestPace = raceAndFtpPredictions.thresholdPaceSecsPerKm;
+      if (!Number.isFinite(bestPace) || !bestAct) {
+        return { timeStr: '—', paceStr: 'No effort', act: undefined };
       }
       const adjPace = Math.round(bestPace * paceFactor);
       const totSecs = Math.round((distMeters / 1000) * adjPace);
@@ -1037,7 +1066,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     };
 
     const runAll = filterActs('Running', 'ALL');
-    const run2026 = filterActs('Running', '2026');
+    const runYtd = filterActs('Running', 'YTD');
     const run90d = filterActs('Running', '90D');
 
     const runningRows = [
@@ -1049,7 +1078,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     ].map((row) => ({
       label: row.label,
       allTime: bestRunForScope(runAll, row.meters, row.factor),
-      season2026: bestRunForScope(run2026, row.meters, row.factor),
+      season2026: bestRunForScope(runYtd, row.meters, row.factor),
       last90d: bestRunForScope(run90d, row.meters, row.factor),
     }));
 
@@ -1065,7 +1094,6 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       isOfficialFat: boolean;
       act?: UnifiedActivity;
     } => {
-      // First look for imported Official FAT races matching this distance
       const officialMatches = acts.filter(
         (a) =>
           a.officialRaceData &&
@@ -1089,15 +1117,23 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         };
       }
 
-      // Otherwise estimate from best GPS running effort
       const gpsBest = bestRunForScope(acts, targetMeters, fallbackFactor);
-      const basePace = raceAndFtpPredictions.thresholdPaceSecsPerKm * fallbackFactor;
-      const estSecs = Number(((targetMeters / 1000) * basePace).toFixed(2));
+      if (!gpsBest.act) {
+        return {
+          fatTimeStr: '—',
+          pace400mStr: 'No effort',
+          meetOrSource: 'Log Official Race or Run',
+          isOfficialFat: false,
+          act: undefined,
+        };
+      }
+      const p = gpsBest.act.gapPaceSecsPerKm || gpsBest.act.avgPaceSecsPerKm || 240;
+      const estSecs = Number(((targetMeters / 1000) * p * fallbackFactor).toFixed(2));
       const avg400 = ((estSecs / targetMeters) * 400).toFixed(1);
       return {
         fatTimeStr: formatFatTime(estSecs),
         pace400mStr: `${avg400}s / 400m`,
-        meetOrSource: gpsBest.act ? 'GPS Watch Estimate' : 'Model Baseline (Import FAT)',
+        meetOrSource: 'GPS Watch Effort',
         isOfficialFat: false,
         act: gpsBest.act,
       };
@@ -1112,26 +1148,30 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
     ].map((row) => ({
       label: row.label,
       allTime: bestTrackForScope(runAll, row.meters, row.factor),
-      season2026: bestTrackForScope(run2026, row.meters, row.factor),
+      season2026: bestTrackForScope(runYtd, row.meters, row.factor),
       last90d: bestTrackForScope(run90d, row.meters, row.factor),
     }));
 
     return { cyclingRows, runningRows, trackFatRows };
-  }, [activities, athleteProfile, distanceUnit, raceAndFtpPredictions.thresholdPaceSecsPerKm]);
+  }, [activities, athleteProfile, distanceUnit, todayIso, currentYearPrefix]);
 
-  // Official Watchless Race Physiology (VDOT, Critical Speed CS & Anaerobic Capacity D')
+  // Official Watchless Race Physiology (strictly from logged official FAT races)
   const officialTrackPhysiology = useMemo(() => {
     const officialRaces = activities.filter((a) => Boolean(a.officialRaceData));
-    const racePoints =
-      officialRaces.length > 0
-        ? officialRaces.map((a) => ({
-            distanceMeters: a.officialRaceData!.eventDistanceMeters,
-            timeSecs: a.officialRaceData!.fatTimeSecs,
-          }))
-        : [
-            { distanceMeters: 800, timeSecs: 116.38 },
-            { distanceMeters: 1600, timeSecs: 256.42 },
-          ];
+    if (officialRaces.length === 0) {
+      return {
+        officialRaceCount: 0,
+        vdotBest: 0,
+        criticalSpeedMps: 0,
+        criticalPaceSecsPerKm: 0,
+        dPrimeMeters: 0,
+        derivedThreshPace: 0,
+      };
+    }
+    const racePoints = officialRaces.map((a) => ({
+      distanceMeters: a.officialRaceData!.eventDistanceMeters,
+      timeSecs: a.officialRaceData!.fatTimeSecs,
+    }));
     const csAndDPrime = computeCriticalSpeedAndDPrime(racePoints);
     const derivedThreshPace = deriveThresholdPaceSecsPerKmFromVdot(csAndDPrime.vdotBest);
     return {
@@ -1246,7 +1286,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             : Math.round(val * 0.92),
       targetValue: val,
       unit: newUnit,
-      notes: newNotes.trim() || 'Custom performance target tracked by AeroPulse.',
+      notes: newNotes.trim() || 'Custom performance target tracked by Thresh.',
     });
     setNewTitle('');
     setNewNotes('');
@@ -1746,9 +1786,19 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 <strong className="text-amber-600 dark:text-amber-400">
                   Official FAT Race Model ({officialTrackPhysiology.officialRaceCount} imported):
                 </strong>{' '}
-                VDOT <strong>{officialTrackPhysiology.vdotBest.toFixed(1)}</strong> · CS{' '}
-                <strong>{formatPace(officialTrackPhysiology.criticalPaceSecsPerKm, distanceUnit)}</strong> · D&apos;{' '}
-                <strong>{officialTrackPhysiology.dPrimeMeters}m</strong>
+                {officialTrackPhysiology.officialRaceCount > 0 ? (
+                  <>
+                    VDOT <strong>{officialTrackPhysiology.vdotBest.toFixed(1)}</strong> · CS{' '}
+                    <strong>
+                      {formatPace(officialTrackPhysiology.criticalPaceSecsPerKm, distanceUnit)}
+                    </strong>{' '}
+                    · D&apos; <strong>{officialTrackPhysiology.dPrimeMeters}m</strong>
+                  </>
+                ) : (
+                  <span className="font-sans text-slate-500">
+                    Log an official track or road race time to compute VDOT &amp; Critical Speed.
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {onOpenOfficialRaceModal && (
@@ -1757,24 +1807,26 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                     onClick={onOpenOfficialRaceModal}
                     className="px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 font-semibold transition-colors whitespace-nowrap"
                   >
-                    + Log 800m / 1600m FAT
+                    + Log Official Race
                   </button>
                 )}
-                {onSaveProfileOverride && athleteProfile && (
-                  <button
-                    type="button"
-                    onClick={handleCalibrateFromOfficialRaces}
-                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors whitespace-nowrap"
-                  >
-                    Calibrate from Official PRs
-                  </button>
-                )}
+                {onSaveProfileOverride &&
+                  athleteProfile &&
+                  officialTrackPhysiology.officialRaceCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleCalibrateFromOfficialRaces}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors whitespace-nowrap"
+                    >
+                      Calibrate from Official PRs
+                    </button>
+                  )}
               </div>
             </div>
           </div>
         </section>
 
-        {/* Right 6 Cols: 350W Cycling FTP Trajectory Model */}
+        {/* Right 6 Cols: Cycling FTP Trajectory Model */}
         <section className="lg:col-span-6 rounded-2xl liquid-glass p-5 space-y-4 flex flex-col justify-between">
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -1785,155 +1837,176 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 <div className="flex items-center gap-1.5">
                   <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-blue-500" />
-                    <span>350W Cycling FTP Trajectory &amp; W/kg Projection</span>
+                    <span>Cycling FTP Trajectory &amp; W/kg Projection</span>
                   </h2>
                   <ChartInfoTooltip
-                    title="Cycling FTP Trajectory Toward 350W"
+                    title="Cycling FTP Trajectory"
                     subtitle="90-Day eFTP & W/kg Adaptation Curve"
-                    whatItMeasures="Models your 30-day, 60-day, and 90-day Functional Threshold Power (FTP) trajectory based on your synced Outdoor/Indoor FTP, Garmin Cycling VO2max, and current CTL ramp rate."
-                    benchmarks="Reaching 350W FTP requires an aerobic ceiling (5-min VO2max power) of ~415–425W and sustained Sweet Spot / Threshold Time-in-Zone progression."
-                    coachingAction="Pair Tuesday VO2max ceiling intervals (Z5) with Thursday Threshold extensions (4x10m -> 2x20m Z4) to close the wattage gap to 350W."
+                    whatItMeasures="Models your 30-day, 60-day, and 90-day Functional Threshold Power (FTP) trajectory based on your calibrated Outdoor/Indoor FTP, Cycling VO2max, and current CTL ramp rate."
+                    benchmarks="Progressive blocks typically target +2.5% to +8% FTP over 90 days when paired with consistent Z2 volume and progressive Z4/Z5 intervals."
+                    coachingAction="Pair weekly VO2max ceiling intervals (Z5) with sustained Threshold extensions (Z4) to progress toward your target FTP."
                   />
                 </div>
               </div>
               <div className="text-right font-mono text-xs">
                 <div className="text-blue-600 dark:text-sky-400 font-bold">
-                  Current FTP: {raceAndFtpPredictions.currentFtp}W (
-                  {(raceAndFtpPredictions.currentFtp / raceAndFtpPredictions.weightKg).toFixed(2)} W/kg)
+                  Current FTP:{' '}
+                  {raceAndFtpPredictions.currentFtp > 0
+                    ? `${raceAndFtpPredictions.currentFtp}W (${(
+                        raceAndFtpPredictions.currentFtp / raceAndFtpPredictions.weightKg
+                      ).toFixed(2)} W/kg)`
+                    : 'Uncalibrated'}
                 </div>
-                <div className="text-slate-500">
-                  Gap to 350W: +{raceAndFtpPredictions.gapTo350}W
-                </div>
+                {raceAndFtpPredictions.targetFtp > 0 && (
+                  <div className="text-slate-500">
+                    Gap to {raceAndFtpPredictions.targetFtp}W: +{raceAndFtpPredictions.gapTo350}W
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 4-Stage Trajectory Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono tabular-nums pt-1">
-              {[
-                {
-                  stage: 'Current Synced',
-                  watts: raceAndFtpPredictions.currentFtp,
-                  sub: 'Baseline FTP',
-                  highlight: false,
-                },
-                {
-                  stage: '+30 Days',
-                  watts: raceAndFtpPredictions.ftp30d,
-                  sub: 'After Base Block',
-                  highlight: false,
-                },
-                {
-                  stage: '+60 Days',
-                  watts: raceAndFtpPredictions.ftp60d,
-                  sub: 'After Build Block',
-                  highlight: false,
-                },
-                {
-                  stage: '+90 Days / Goal',
-                  watts: Math.max(raceAndFtpPredictions.ftp90d, 350),
-                  sub: 'Target Peak',
-                  highlight: true,
-                },
-              ].map((st) => (
-                <div
-                  key={st.stage}
-                  className={`rounded-xl border p-3 space-y-1 ${
-                    st.highlight
-                      ? 'border-blue-500/50 bg-blue-500/10'
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="text-[10px] font-sans text-slate-500">{st.stage}</div>
-                  <div className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
-                    {st.watts}W
-                  </div>
-                  <div className="text-[11px] font-bold text-blue-600 dark:text-sky-400">
-                    {(st.watts / raceAndFtpPredictions.weightKg).toFixed(2)} W/kg
-                  </div>
-                  <div className="text-[10px] font-sans text-slate-400">{st.sub}</div>
+            {raceAndFtpPredictions.currentFtp > 0 ? (
+              <>
+                {/* 4-Stage Trajectory Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono tabular-nums pt-1">
+                  {[
+                    {
+                      stage: 'Current Synced',
+                      watts: raceAndFtpPredictions.currentFtp,
+                      sub: 'Baseline FTP',
+                      highlight: false,
+                    },
+                    {
+                      stage: '+30 Days',
+                      watts: raceAndFtpPredictions.ftp30d,
+                      sub: 'After Base Block',
+                      highlight: false,
+                    },
+                    {
+                      stage: '+60 Days',
+                      watts: raceAndFtpPredictions.ftp60d,
+                      sub: 'After Build Block',
+                      highlight: false,
+                    },
+                    {
+                      stage: '+90 Days / Goal',
+                      watts: raceAndFtpPredictions.targetFtp,
+                      sub: 'Target Peak',
+                      highlight: true,
+                    },
+                  ].map((st) => (
+                    <div
+                      key={st.stage}
+                      className={`rounded-xl border p-3 space-y-1 ${
+                        st.highlight
+                          ? 'border-blue-500/50 bg-blue-500/10'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="text-[10px] font-sans text-slate-500">{st.stage}</div>
+                      <div className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                        {st.watts}W
+                      </div>
+                      <div className="text-[11px] font-bold text-blue-600 dark:text-sky-400">
+                        {(st.watts / raceAndFtpPredictions.weightKg).toFixed(2)} W/kg
+                      </div>
+                      <div className="text-[10px] font-sans text-slate-400">{st.sub}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            {/* Visual SVG FTP Trajectory Curve */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/50 dark:bg-slate-950/40">
-              <svg viewBox="0 0 500 120" className="w-full h-28">
-                {/* 350W Target Reference Line */}
-                <line
-                  x1={40}
-                  y1={24}
-                  x2={475}
-                  y2={24}
-                  stroke="#F97316"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                />
-                <text
-                  x={472}
-                  y={18}
-                  textAnchor="end"
-                  className="fill-orange-500 text-[10px] font-mono font-bold"
-                >
-                  Target Objective: 350W FTP
-                </text>
+                {/* Visual SVG FTP Trajectory Curve */}
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/50 dark:bg-slate-950/40">
+                  <svg viewBox="0 0 500 120" className="w-full h-28">
+                    <line
+                      x1={40}
+                      y1={24}
+                      x2={475}
+                      y2={24}
+                      stroke="#D9480F"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                    />
+                    <text
+                      x={472}
+                      y={18}
+                      textAnchor="end"
+                      className="fill-[#D9480F] text-[10px] font-mono font-bold"
+                    >
+                      Target Objective: {raceAndFtpPredictions.targetFtp}W FTP
+                    </text>
 
-                {/* Trajectory Polyline */}
-                <polyline
-                  fill="none"
-                  stroke="#0284C7"
-                  strokeWidth={3}
-                  points="60,86 195,66 330,44 455,24"
-                />
-                {[
-                  { x: 60, y: 86, label: `${raceAndFtpPredictions.currentFtp}W`, wk: 'Now' },
-                  { x: 195, y: 66, label: `${raceAndFtpPredictions.ftp30d}W`, wk: '+30d' },
-                  { x: 330, y: 44, label: `${raceAndFtpPredictions.ftp60d}W`, wk: '+60d' },
-                  {
-                    x: 455,
-                    y: 24,
-                    label: `${Math.max(raceAndFtpPredictions.ftp90d, 350)}W`,
-                    wk: '+90d',
-                  },
-                ].map((pt) => (
-                  <g key={pt.wk}>
-                    <circle cx={pt.x} cy={pt.y} r={4.5} fill="#0284C7" />
-                    <text
-                      x={pt.x}
-                      y={pt.y - 8}
-                      textAnchor="middle"
-                      className="fill-slate-800 dark:fill-slate-100 text-[10px] font-mono font-bold"
-                    >
-                      {pt.label}
-                    </text>
-                    <text
-                      x={pt.x}
-                      y={108}
-                      textAnchor="middle"
-                      className="fill-slate-500 text-[10px] font-mono"
-                    >
-                      {pt.wk}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-            </div>
+                    <polyline
+                      fill="none"
+                      stroke="#1D4ED8"
+                      strokeWidth={3}
+                      points="60,86 195,66 330,44 455,24"
+                    />
+                    {[
+                      { x: 60, y: 86, label: `${raceAndFtpPredictions.currentFtp}W`, wk: 'Now' },
+                      { x: 195, y: 66, label: `${raceAndFtpPredictions.ftp30d}W`, wk: '+30d' },
+                      { x: 330, y: 44, label: `${raceAndFtpPredictions.ftp60d}W`, wk: '+60d' },
+                      {
+                        x: 455,
+                        y: 24,
+                        label: `${raceAndFtpPredictions.targetFtp}W`,
+                        wk: '+90d',
+                      },
+                    ].map((pt) => (
+                      <g key={pt.wk}>
+                        <circle cx={pt.x} cy={pt.y} r={4.5} fill="#1D4ED8" />
+                        <text
+                          x={pt.x}
+                          y={pt.y - 8}
+                          textAnchor="middle"
+                          className="fill-slate-800 dark:fill-slate-100 text-[10px] font-mono font-bold"
+                        >
+                          {pt.label}
+                        </text>
+                        <text
+                          x={pt.x}
+                          y={108}
+                          textAnchor="middle"
+                          className="fill-slate-500 text-[10px] font-mono"
+                        >
+                          {pt.wk}
+                        </text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-800 p-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                Set your baseline Cycling FTP in Athlete Profile or sync a power activity to project your 90-day FTP &amp; W/kg trajectory.
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
             <span>
-              Required 5-min VO2max Ceiling for 350W FTP: <strong className="font-mono text-slate-800 dark:text-slate-200">~418W</strong>
+              {raceAndFtpPredictions.targetFtp > 0 ? (
+                <>
+                  Required 5-min VO2max Ceiling:{' '}
+                  <strong className="font-mono text-slate-800 dark:text-slate-200">
+                    ~{Math.round(raceAndFtpPredictions.targetFtp * 1.19)}W
+                  </strong>
+                </>
+              ) : (
+                'Calibrate FTP to compute 5-min aerobic ceiling target'
+              )}
             </span>
-            {onOpenCoachWithPrompt && (
+            {onOpenCoachWithPrompt && raceAndFtpPredictions.currentFtp > 0 && (
               <button
                 type="button"
                 onClick={() =>
                   onOpenCoachWithPrompt(
-                    `Design a 12-week cycling progression from my current ${raceAndFtpPredictions.currentFtp}W FTP to 350W FTP and <20:00 5K running speed.`
+                    `Design a 12-week cycling progression from my current ${raceAndFtpPredictions.currentFtp}W FTP to ${raceAndFtpPredictions.targetFtp}W FTP.`
                   )
                 }
                 className="font-semibold text-blue-600 dark:text-sky-400 hover:underline"
               >
-                Ask AI Coach for 350W Protocol →
+                Ask Thresh Coach for FTP Protocol →
               </button>
             )}
           </div>
@@ -2100,7 +2173,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              All-Time vs. 2026 Season vs. Last 90 Days
+              All-Time vs. {currentYear} Season vs. Last 90 Days
             </span>
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <Trophy className="w-4 h-4 text-amber-500" />
@@ -2151,7 +2224,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans">
                   <th className="py-2.5 pr-4">Duration / Energy System</th>
                   <th className="py-2.5 px-4 text-right">All-Time Best</th>
-                  <th className="py-2.5 px-4 text-right">2026 Season</th>
+                  <th className="py-2.5 px-4 text-right">{currentYear} Season</th>
                   <th className="py-2.5 pl-4 text-right">Last 90 Days</th>
                 </tr>
               </thead>
@@ -2163,19 +2236,23 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                     </td>
                     {[r.allTime, r.season2026, r.last90d].map((cell, idx) => (
                       <td key={idx} className="py-2.5 px-4 text-right">
-                        <button
-                          type="button"
-                          disabled={!cell.act || !onSelectActivity}
-                          onClick={() => cell.act && onSelectActivity && onSelectActivity(cell.act)}
-                          className="inline-flex items-center gap-1.5 hover:underline disabled:no-underline"
-                        >
-                          <span className="font-bold text-slate-900 dark:text-slate-100">
-                            {cell.watts}W
-                          </span>
-                          <span className="text-blue-600 dark:text-sky-400 text-xs">
-                            ({cell.wkg} W/kg)
-                          </span>
-                        </button>
+                        {cell.watts > 0 ? (
+                          <button
+                            type="button"
+                            disabled={!cell.act || !onSelectActivity}
+                            onClick={() => cell.act && onSelectActivity && onSelectActivity(cell.act)}
+                            className="inline-flex items-center gap-1.5 hover:underline disabled:no-underline"
+                          >
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {cell.watts}W
+                            </span>
+                            <span className="text-blue-600 dark:text-sky-400 text-xs">
+                              ({cell.wkg} W/kg)
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -2188,7 +2265,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans">
                   <th className="py-2.5 pr-4">Track Distance (FAT / GPS)</th>
                   <th className="py-2.5 px-4 text-right">All-Time Best</th>
-                  <th className="py-2.5 px-4 text-right">2026 Season</th>
+                  <th className="py-2.5 px-4 text-right">{currentYear} Season</th>
                   <th className="py-2.5 pl-4 text-right">Last 90 Days</th>
                 </tr>
               </thead>
@@ -2209,14 +2286,18 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                           <div className="inline-flex items-center gap-1.5">
                             <span
                               className={`font-bold ${
-                                cell.isOfficialFat
-                                  ? 'text-amber-600 dark:text-amber-400'
-                                  : 'text-emerald-600 dark:text-emerald-400'
+                                cell.fatTimeStr === '—'
+                                  ? 'text-slate-400'
+                                  : cell.isOfficialFat
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-emerald-600 dark:text-emerald-400'
                               }`}
                             >
                               {cell.fatTimeStr}
                             </span>
-                            <span className="text-slate-500 text-xs">({cell.pace400mStr})</span>
+                            {cell.fatTimeStr !== '—' && (
+                              <span className="text-slate-500 text-xs">({cell.pace400mStr})</span>
+                            )}
                           </div>
                           <span className="text-[10px] font-sans text-slate-400">
                             {cell.meetOrSource}
@@ -2234,7 +2315,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans">
                   <th className="py-2.5 pr-4">Benchmark Distance</th>
                   <th className="py-2.5 px-4 text-right">All-Time Best</th>
-                  <th className="py-2.5 px-4 text-right">2026 Season</th>
+                  <th className="py-2.5 px-4 text-right">{currentYear} Season</th>
                   <th className="py-2.5 pl-4 text-right">Last 90 Days</th>
                 </tr>
               </thead>
@@ -2551,59 +2632,63 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
         </summary>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
-          {resolvedGearItems.map((gear) => {
-            const pctWear = Math.min(
-              100,
-              Math.round((gear.distanceMeters / Math.max(1, gear.maxRecommendedMeters)) * 100)
-            );
-            const isNearLimit = pctWear >= 85;
-            return (
-              <div
-                key={gear.id}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 space-y-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {gear.type === 'BIKE' ? (
-                      <Bike className="w-4 h-4 text-blue-500 shrink-0" />
-                    ) : (
-                      <Footprints className="w-4 h-4 text-emerald-500 shrink-0" />
-                    )}
-                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {gear.name}
+          {resolvedGearItems.length === 0 ? (
+            <div className="sm:col-span-2 lg:col-span-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-800 p-4 text-center text-xs text-slate-500 dark:text-slate-400">
+              No bikes or running shoes synced yet. Connect Garmin Connect or Strava in Data Sources to track component and shoe wear automatically.
+            </div>
+          ) : (
+            resolvedGearItems.map((gear) => {
+              const pctWear = Math.min(
+                100,
+                Math.round((gear.distanceMeters / Math.max(1, gear.maxRecommendedMeters)) * 100)
+              );
+              const isNearLimit = pctWear >= 85;
+              return (
+                <div
+                  key={gear.id}
+                  className="rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {gear.type === 'BIKE' ? (
+                        <Bike className="w-4 h-4 text-blue-500 shrink-0" />
+                      ) : (
+                        <Footprints className="w-4 h-4 text-emerald-500 shrink-0" />
+                      )}
+                      <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                        {gear.name}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-xs font-mono px-1.5 py-0.5 rounded ${
+                        isNearLimit ? 'ap-status-caution' : 'ap-status-prime'
+                      }`}
+                    >
+                      {pctWear}%
                     </span>
                   </div>
-                  <span
-                    className={`text-xs font-mono px-1.5 py-0.5 rounded ${
-                      isNearLimit
-                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold'
-                        : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                    }`}
-                  >
-                    {pctWear}%
-                  </span>
-                </div>
 
-                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    style={{ width: `${pctWear}%` }}
-                    className={`h-full rounded-full ${
-                      isNearLimit ? 'bg-amber-500' : 'bg-blue-600 dark:bg-blue-400'
-                    }`}
-                  />
-                </div>
+                  <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                    <div
+                      style={{ width: `${pctWear}%` }}
+                      className={`h-full rounded-full ${
+                        isNearLimit ? 'bg-amber-500' : 'bg-[#1D4ED8]'
+                      }`}
+                    />
+                  </div>
 
-                <div className="flex items-center justify-between text-xs font-mono text-slate-500">
-                  <span>
-                    <strong className="text-slate-800 dark:text-slate-200">
-                      {formatDistance(gear.distanceMeters, distanceUnit, 0)}
-                    </strong>
-                  </span>
-                  <span>Max {formatDistance(gear.maxRecommendedMeters, distanceUnit, 0)}</span>
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-500">
+                    <span>
+                      <strong className="text-slate-800 dark:text-slate-200">
+                        {formatDistance(gear.distanceMeters, distanceUnit, 0)}
+                      </strong>
+                    </span>
+                    <span>Max {formatDistance(gear.maxRecommendedMeters, distanceUnit, 0)}</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </details>
 
@@ -2611,7 +2696,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
       <section className="rounded-2xl liquid-glass p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-            2026 Annual Mileage Targets
+            {currentYear} Annual Mileage Targets
           </h2>
 
           <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
@@ -2642,10 +2727,10 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Running 2026 YTD ({ytd2026Counts.runTotal} Runs)
+                  Running {currentYear} YTD ({ytd2026Counts.runTotal} Runs)
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
-                  Combined 2026 YTD:{' '}
+                  Combined {currentYear} YTD:{' '}
                   <strong className="text-slate-900 dark:text-slate-100">
                     {formatDistance(runSummary.combinedTotalMeters, distanceUnit, 1)}
                   </strong>
@@ -2659,7 +2744,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <form onSubmit={handleSaveRunGoal} className="flex items-end gap-3">
               <div className="flex-1">
                 <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  2026 Running Target ({distanceUnit})
+                  {currentYear} Running Target ({distanceUnit})
                 </label>
                 <input
                   type="number"
@@ -2708,10 +2793,10 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Cycling 2026 YTD ({ytd2026Counts.bikeTotal} Rides)
+                  Cycling {currentYear} YTD ({ytd2026Counts.bikeTotal} Rides)
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
-                  Combined 2026 YTD:{' '}
+                  Combined {currentYear} YTD:{' '}
                   <strong className="text-slate-900 dark:text-slate-100">
                     {formatDistance(bikeSummary.combinedTotalMeters, distanceUnit, 1)}
                   </strong>
@@ -2725,7 +2810,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({
             <form onSubmit={handleSaveBikeGoal} className="flex items-end gap-3">
               <div className="flex-1">
                 <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  2026 Cycling Target ({distanceUnit})
+                  {currentYear} Cycling Target ({distanceUnit})
                 </label>
                 <input
                   type="number"

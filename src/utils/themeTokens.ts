@@ -1,7 +1,7 @@
 /**
- * AeroPulse "Editorial Endurance Lab" Design System Tokens for JS/Canvas/SVG Charts
- * Provides synchronized Light Mode (Warm Stone / Archival Paper) and Dark Mode (Deep Obsidian)
- * color palettes for Apache ECharts, uPlot HTML5 Canvas, and custom SVG charts.
+ * THRESH "Precision Editorial" v2.0 Design System Tokens for JS/Canvas/SVG Charts
+ * Synchronizes Warm Alabaster (#F7F6F2) Light Mode and Matte Carbon (#121419) Dark Mode
+ * with the locked 6-zone physiological effort spectrum and WCAG-accessible chart accents.
  */
 
 export interface AeroPulseThemePalette {
@@ -34,41 +34,46 @@ export interface AeroPulseThemePalette {
   zones: [string, string, string, string, string, string];
 }
 
+export type ThreshThemePalette = AeroPulseThemePalette;
+
 export function getAeroPulseThemePalette(isDark: boolean): AeroPulseThemePalette {
   return {
     isDark,
-    canvasBg: isDark ? '#0B0C0F' : '#F6F4EF',
-    cardBg: isDark ? '#15171E' : '#FFFEFB',
-    insetBg: isDark ? '#101218' : '#F7F4EE',
-    borderSubtle: isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(214, 211, 204, 0.88)',
-    textPrimary: isDark ? '#F8FAFC' : '#0F172A',
+    canvasBg: isDark ? '#0A0B0D' : '#F7F6F2',
+    cardBg: isDark ? '#121419' : '#FFFFFF',
+    insetBg: isDark ? '#181B22' : '#F1F0EC',
+    borderSubtle: isDark ? 'rgba(255, 255, 255, 0.085)' : 'rgba(17, 19, 24, 0.08)',
+    textPrimary: isDark ? '#F4F5F7' : '#111318',
     textSecondary: isDark ? '#CBD5E1' : '#334155',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
+    textMuted: isDark ? '#94A3B8' : '#525866',
     axisLine: isDark ? '#334155' : '#CBD5E1',
-    splitLine: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.07)',
-    tooltipBg: isDark ? 'rgba(15, 17, 23, 0.95)' : 'rgba(255, 254, 251, 0.96)',
-    tooltipBorder: isDark ? '#334155' : '#D6D3CC',
-    tooltipText: isDark ? '#F8FAFC' : '#0F172A',
-    brandCobalt: '#2563EB',
-    brandSignalOrange: '#EA580C',
-    ctlCyan: '#38BDF8',
-    atlRose: '#F43F5E',
-    tsbOptimalEmerald: '#10B981',
-    tsbFreshSky: '#38BDF8',
-    tsbGreyAmber: '#F59E0B',
-    tsbOverreachRed: '#EF4444',
+    splitLine: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(17, 19, 24, 0.06)',
+    tooltipBg: isDark ? 'rgba(18, 20, 25, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+    tooltipBorder: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(17, 19, 24, 0.12)',
+    tooltipText: isDark ? '#F4F5F7' : '#111318',
+    brandCobalt: isDark ? '#60A5FA' : '#1D4ED8',
+    brandSignalOrange: isDark ? '#FB6514' : '#D9480F',
+    ctlCyan: isDark ? '#2DD4BF' : '#0D9488',
+    atlRose: isDark ? '#FB7185' : '#E11D48',
+    tsbOptimalEmerald: isDark ? '#34D399' : '#059669',
+    tsbFreshSky: isDark ? '#38BDF8' : '#0284C7',
+    tsbGreyAmber: isDark ? '#FBBF24' : '#D97706',
+    tsbOverreachRed: isDark ? '#F87171' : '#DC2626',
     loadFocus: {
-      lowAerobic: '#38BDF8',
-      highAerobic: '#F97316',
-      anaerobic: '#D946EF',
+      lowAerobic: '#0D9488',
+      highAerobic: '#EA580C',
+      anaerobic: '#7C3AED',
     },
+    // Canonical 6-Zone Physiological Effort Spectrum
     zones: [
-      '#10B981', // Z1 Recovery
-      '#38BDF8', // Z2 Aerobic Endurance
-      '#EAB308', // Z3 Tempo / Sweet Spot
-      '#F97316', // Z4 Lactate Threshold
-      '#EF4444', // Z5 VO2max
-      '#D946EF', // Z6 Anaerobic Capacity
+      '#94A3B8', // Z1 Cool Mist (Recovery)
+      '#0D9488', // Z2 Aerobic Teal (Endurance)
+      '#D97706', // Z3 Ochre (Tempo / Sweet Spot)
+      '#EA580C', // Z4 Thresh Vermilion (Lactate Threshold)
+      '#DC2626', // Z5 Crimson (VO2max)
+      '#7C3AED', // Z6 Deep Violet (Anaerobic)
     ],
   };
 }
+
+export const getThreshThemePalette = getAeroPulseThemePalette;

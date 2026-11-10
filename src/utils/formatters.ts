@@ -160,10 +160,13 @@ export function computeAnnualMileageSummary(
 
   const proRatedTargetTodayMeters = (targetMeters * dayOfYear) / totalDaysInYear;
   const deltaVsScheduleMeters = displayedTotalMeters - proRatedTargetTodayMeters;
-  const pctOfAnnualTarget = Math.min(
-    100,
-    Number(((displayedTotalMeters / Math.max(1, targetMeters)) * 100).toFixed(1))
-  );
+  const pctOfAnnualTarget =
+    targetMeters > 0
+      ? Math.min(
+          100,
+          Number(((displayedTotalMeters / targetMeters) * 100).toFixed(1))
+        )
+      : 0;
 
   const outdoorSharePct =
     combinedTotalMeters > 0 ? Math.round((outdoorMeters / combinedTotalMeters) * 100) : 0;

@@ -3,81 +3,11 @@
   <head>
     <script>
       (function () {
-        // Block broken main-world Chrome extension listeners (e.g. Imagus / HoverZoom
-        // chrome-extension://acfcbfkjgnbfglpnlfipdohfdgpgpogh/assets/content_mainworld.js)
-        // from attaching mouseover (m_over), mousemove (mover), or keydown (key_action) listeners
-        // that throw "Cannot read properties of undefined (reading 'hz' / 'keys')" inside iframes.
-        function isExtensionCallerOrListener(listener) {
-          try {
-            var fnName = (listener && listener.name) || '';
-            if (
-              fnName === 'm_over' ||
-              fnName === 'mover' ||
-              fnName === 'key_action' ||
-              fnName === 'onkeydown'
-            ) {
-              return true;
-            }
-            var stack = String(new Error().stack || '');
-            if (
-              stack.indexOf('chrome-extension://') !== -1 ||
-              stack.indexOf('moz-extension://') !== -1 ||
-              stack.indexOf('content_mainworld') !== -1
-            ) {
-              return true;
-            }
-          } catch (_) {
-            // ignore
-          }
-          return false;
-        }
-
-        function patchAddEventListener(proto) {
-          if (!proto || !proto.addEventListener) return;
-          var origAdd = proto.addEventListener;
-          proto.addEventListener = function (type, listener, options) {
-            if (isExtensionCallerOrListener(listener)) {
-              // Completely skip registering the broken extension listener so it never executes
-              return undefined;
-            }
-            return origAdd.call(this, type, listener, options);
-          };
-        }
-
-        patchAddEventListener(
-          typeof EventTarget !== 'undefined' ? EventTarget.prototype : undefined
-        );
-        if (typeof Window !== 'undefined' && Window.prototype !== EventTarget.prototype) {
-          patchAddEventListener(Window.prototype);
-        }
-        if (typeof Document !== 'undefined' && Document.prototype !== EventTarget.prototype) {
-          patchAddEventListener(Document.prototype);
-        }
-
-        // Guard window.onkeydown / document.onkeydown setters against extension assignment
-        [window, document].forEach(function (target) {
-          if (!target) return;
-          ['onkeydown', 'onkeyup', 'onmouseover', 'onmousemove'].forEach(function (prop) {
-            try {
-              Object.defineProperty(target, prop, {
-                configurable: true,
-                enumerable: true,
-                get: function () {
-                  return null;
-                },
-                set: function () {
-                  // Ignore direct property handlers from mainworld extensions
-                },
-              });
-            } catch (_) {
-              // ignore
-            }
-          });
-        });
-
-        // Purge legacy Stale-While-Revalidate UI cache ('aeropulse-ui-assets-swr') and auto-activate new Service Worker builds
+        // Purge legacy Service Worker caches so no stale or unauthenticated API responses persist
         if (typeof window !== 'undefined' && 'caches' in window) {
-          window.caches.delete('aeropulse-ui-assets-swr').catch(function () {});
+          ['aeropulse-ui-assets-swr', 'aeropulse-telemetry-api-swr'].forEach(function (name) {
+            window.caches.delete(name).catch(function () {});
+          });
         }
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
           var refreshingSw = false;
@@ -96,19 +26,20 @@
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>THRESH — Endurance Physiology, Load &amp; AI Coaching</title>
+    <title>THRESH — Run &amp; Ride Readiness</title>
     <meta
       name="description"
-      content="THRESH — Unified running & cycling threshold physiology, Banister PMC load, Strava segments, and AI readiness coaching."
+      content="THRESH — Run &amp; Ride Readiness. Autonomous dual-sport threshold physiology, overnight HRV &amp; sleep calibration, Banister load, and adaptive coaching."
     />
-    <meta property="og:title" content="THRESH — Endurance Physiology, Load & AI Coaching" />
+    <meta property="og:title" content="THRESH — Run &amp; Ride Readiness" />
     <meta
-      name="og:description"
-      content="THRESH — Unified running & cycling threshold physiology, Banister PMC load, Strava segments, and AI readiness coaching."
+      property="og:description"
+      content="Autonomous dual-sport threshold physiology, overnight HRV &amp; sleep calibration, Banister load, and adaptive coaching."
     />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="theme-color" content="#F7F6F2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0A0B0D" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -118,11 +49,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
   </head>
-  <body class="bg-white dark:bg-[#0B0C0F] text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
+  <body class="bg-[#F7F6F2] dark:bg-[#0A0B0D] text-[#111318] dark:text-[#F4F5F7] antialiased selection:bg-[#1D4ED8] selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
