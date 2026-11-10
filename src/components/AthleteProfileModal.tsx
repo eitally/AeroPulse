@@ -12,7 +12,7 @@ import {
   X,
   Zap,
 } from "./icons/PhosphorIcons";
-import { AthleteProfile, DistanceUnit, UnifiedWellnessDay } from '../types';
+import { AthleteProfile, DistanceUnit, ThresholdHistoryEntry, UnifiedWellnessDay } from '../types';
 import {
   buildCompleteAthleteProfile,
   buildHrZonesFromCeilings,
@@ -62,6 +62,12 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const [thresholdPaceSecsPerKm, setThresholdPaceSecsPerKm] = useState<number>(
     athleteProfile.thresholdPaceSecsPerKm
   );
+  const [effectiveDate, setEffectiveDate] = useState<string>(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [thresholdHistory, setThresholdHistory] = useState<ThresholdHistoryEntry[]>(
+    athleteProfile.thresholdHistory || []
+  );
 
   useEffect(() => {
     setWeightKg(athleteProfile.weightKg);
@@ -78,6 +84,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     setRunLthr(athleteProfile.runLthr);
     setRunMaxHr(athleteProfile.runMaxHr);
     setThresholdPaceSecsPerKm(athleteProfile.thresholdPaceSecsPerKm);
+    setThresholdHistory(athleteProfile.thresholdHistory || []);
   }, [athleteProfile]);
 
   if (!isOpen) return null;
@@ -121,6 +128,23 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
   const handleSaveManual = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEffDate = (effectiveDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const nextEntry: ThresholdHistoryEntry = {
+      id: `th-${cleanEffDate}`,
+      effectiveDate: cleanEffDate,
+      ftp,
+      indoorFtp,
+      lthr,
+      runLthr,
+      thresholdPaceSecsPerKm,
+      weightKg,
+    };
+    const mergedHistory = [
+      ...thresholdHistory.filter((h) => h.effectiveDate.slice(0, 10) !== cleanEffDate),
+      nextEntry,
+    ].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+    setThresholdHistory(mergedHistory);
+
     const updated = buildCompleteAthleteProfile(
       {
         ...athleteProfile,
@@ -141,14 +165,31 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         powerZones: previewPowerZones,
         hrZones: previewBikeHrZones,
         runHrZones: previewRunHrZones,
+        thresholdHistory: mergedHistory,
         source: 'CUSTOM_OVERRIDE',
         lastSyncedAt: new Date().toISOString(),
       },
       latestWellness
     );
     await onSaveProfileOverride(updated);
-    setSavedToast('Profile thresholds & 7-zone tables updated across all analytics & workouts.');
+    setSavedToast(
+      `Saved thresholds effective ${cleanEffDate} — historical TSS prior to ${cleanEffDate} remains protected.`
+    );
     window.setTimeout(() => setSavedToast(null), 4000);
+  };
+
+  const handleDeleteHistoryEntry = async (entryId: string) => {
+    const next = thresholdHistory.filter((h) => h.id !== entryId);
+    setThresholdHistory(next);
+    const updated = buildCompleteAthleteProfile(
+      {
+        ...athleteProfile,
+        thresholdHistory: next,
+        source: 'CUSTOM_OVERRIDE',
+      },
+      latestWellness
+    );
+    await onSaveProfileOverride(updated);
   };
 
   return (
@@ -637,6 +678,63 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               </table>
             </div>
           </div>
+        </div>
+
+        {/* Time-Versioned Threshold History Ledger (Historical TSS Protection) */}
+        <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Effective-Dated Threshold Ledger
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Version FTP, LTHR, and LT Pace by date so raising your FTP today never retroactively distorts historical TSS or CTL.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+              <span>Effective Date for Next Save:</span>
+              <input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                className="min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-white"
+              />
+            </label>
+          </div>
+
+          {thresholdHistory.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-3.5 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+              No dated threshold snapshots recorded yet. Saving thresholds above will stamp your first effective-date baseline ({effectiveDate}).
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {[...thresholdHistory]
+                .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))
+                .map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="font-mono tabular-nums space-y-0.5">
+                      <div className="font-bold text-[#1D4ED8] dark:text-sky-300">
+                        From {entry.effectiveDate}
+                      </div>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                        {entry.ftp}W FTP · {entry.lthr} bpm · {formatPace(entry.thresholdPaceSecsPerKm)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteHistoryEntry(entry.id)}
+                      className="min-h-[32px] px-2 py-1 rounded-lg text-[11px] font-mono text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                      title="Remove threshold history entry"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -177,6 +177,9 @@ export default defineConfig(() => {
             if (id.includes('node_modules/dexie')) {
               return 'vendor-dexie';
             }
+            if (id.includes('node_modules/fflate')) {
+              return 'vendor-zip';
+            }
             if (
               id.includes('node_modules/react/') ||
               id.includes('node_modules/react-dom/') ||

@@ -818,7 +818,7 @@ function parseGpxOrTcxText(
  * Supports both normal headers and Garmin 5-bit compressed timestamp headers (Record Global Message 20).
  * Never fabricates synthetic streams if the binary file lacks recorded samples.
  */
-function parseFitBinaryBuffer(
+export function parseFitBinaryBuffer(
   buffer: ArrayBuffer,
   fileName: string,
   _thresholds: WorkerAthleteThresholds
@@ -1122,10 +1122,12 @@ function upsampleActivityTo1Hz(
   };
 }
 
-// Worker Message Handler
-const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
+// Worker Message Handler (guarded so pure functions can also be imported in Vitest / Node)
+const ctx: DedicatedWorkerGlobalScope | undefined =
+  typeof self !== 'undefined' ? (self as unknown as DedicatedWorkerGlobalScope) : undefined;
 
-ctx.onmessage = (event: MessageEvent<ActivityWorkerRequest>) => {
+if (ctx) {
+  ctx.onmessage = (event: MessageEvent<ActivityWorkerRequest>) => {
   const msg = event.data;
   if (!msg || !msg.id) return;
 
@@ -1216,14 +1218,14 @@ ctx.onmessage = (event: MessageEvent<ActivityWorkerRequest>) => {
         movingTimeSecs: analytics.movingTimeSecs,
         distanceMeters: analytics.distanceMeters,
         elevationGainMeters: analytics.elevationGainMeters,
-        avgPower: analytics.avgPower,
-        normalizedPower: analytics.normalizedPower,
-        intensityFactor: analytics.intensityFactor,
-        variabilityIndex: analytics.variabilityIndex,
+        avgPower: analytics.avgPower ?? undefined,
+        normalizedPower: analytics.normalizedPower ?? undefined,
+        intensityFactor: analytics.intensityFactor ?? undefined,
+        variabilityIndex: analytics.variabilityIndex ?? undefined,
         trainingLoad: analytics.tss,
         avgHr: analytics.avgHr,
         maxHr: analytics.maxHr,
-        avgCadence: analytics.avgCadence,
+        avgCadence: analytics.avgCadence ?? undefined,
         avgPaceSecsPerKm: analytics.avgPaceSecsPerKm,
         gapPaceSecsPerKm: analytics.gapPaceSecsPerKm,
         aerobicDecouplingPct: analytics.aerobicDecouplingPct,
@@ -1261,4 +1263,5 @@ ctx.onmessage = (event: MessageEvent<ActivityWorkerRequest>) => {
     };
     ctx.postMessage(errorResp);
   }
-};
+  };
+}

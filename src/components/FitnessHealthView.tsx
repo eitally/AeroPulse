@@ -36,6 +36,10 @@ import {
   PMCDayPoint,
 } from './charts/EChartsPMCDashboard';
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
+import {
+  computeDualSportPmcSeries,
+  evaluateOrthopedicInterference,
+} from '../physiology';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -186,6 +190,19 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const hasWellnessTelemetry = wellnessDays.length > 0;
+  const [orthoSwappedToast, setOrthoSwappedToast] = useState<string | null>(null);
+
+  const dualSportLatest = useMemo(() => {
+    if (!athleteProfile || activities.length === 0) return null;
+    const series = computeDualSportPmcSeries(activities, athleteProfile, 14);
+    return series.length > 0 ? series[series.length - 1] : null;
+  }, [activities, athleteProfile]);
+
+  const orthopedicSummary = useMemo(() => {
+    if (!athleteProfile) return null;
+    const todayPlanned = plannedEvents.filter((p) => (p.date || '').slice(0, 10) === todayIso);
+    return evaluateOrthopedicInterference(activities, athleteProfile, todayPlanned, todayIso);
+  }, [activities, athleteProfile, plannedEvents, todayIso]);
 
   const latestDay = wellnessDays[wellnessDays.length - 1] || {
     date: todayIso,
@@ -838,6 +855,145 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             onOpenCoachWithPrompt={onOpenCoachWithPrompt}
           />
         )}
+
+      {/* ==========================================================================
+          0C. SEPARATED DUAL-SPORT CTL & 3-CHANNEL ORTHOPEDIC INTERFERENCE ENGINE
+         ========================================================================== */}
+      {orthopedicSummary && (
+        <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold ${
+                  orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                    ? 'ap-status-strained'
+                    : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                      ? 'ap-status-caution'
+                      : 'ap-status-prime'
+                }`}
+              >
+                {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                  ? 'Impact Guardrail Active'
+                  : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                    ? 'Elevated Run Impact'
+                    : 'Orthopedic Balance'}
+              </span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {orthopedicSummary.guardrailHeadline}
+              </h3>
+            </div>
+
+            {dualSportLatest && (
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono tabular-nums">
+                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
+                  Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-[#1D4ED8] dark:text-sky-300 font-semibold">
+                  Bike CTL {dualSportLatest.cyclingCtl.toFixed(1)}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-[#0D9488] dark:text-teal-300 font-semibold">
+                  Run CTL {dualSportLatest.runningCtl.toFixed(1)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                1. Central Cardiorespiratory (7d)
+              </div>
+              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                <span className="text-base font-bold text-slate-900 dark:text-white">
+                  {orthopedicSummary.centralAutonomicLoad7d} TSS
+                </span>
+                <span className="text-xs text-[#1D4ED8] dark:text-sky-300">
+                  {orthopedicSummary.centralAcwr.toFixed(2)}x ACWR
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                2. Eccentric Run Impact (7d)
+              </div>
+              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                <span className="text-base font-bold text-slate-900 dark:text-white">
+                  {orthopedicSummary.eccentricImpactLoad7d} pts
+                </span>
+                <span
+                  className={`text-xs font-semibold ${
+                    orthopedicSummary.impactAcwr >= 1.32
+                      ? 'text-[#D9480F]'
+                      : orthopedicSummary.impactAcwr >= 1.18
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-[#0D9488] dark:text-teal-300'
+                  }`}
+                >
+                  {orthopedicSummary.impactAcwr.toFixed(2)}x ACWR
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                3. Concentric Bike Torque (7d)
+              </div>
+              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                <span className="text-base font-bold text-slate-900 dark:text-white">
+                  {orthopedicSummary.concentricTorqueLoad7d} pts
+                </span>
+                <span className="text-xs text-slate-600 dark:text-slate-300">
+                  {orthopedicSummary.torqueAcwr.toFixed(2)}x ACWR
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <p className="text-xs text-slate-600 dark:text-slate-300 flex-1 min-w-[240px]">
+              {orthopedicSummary.guardrailRecommendation}
+            </p>
+
+            {onSyncMorphedToCalendar &&
+              (orthopedicSummary.canMorphTodayRunToBike ||
+                plannedEvents.some(
+                  (p) => (p.date || '').slice(0, 10) === todayIso && p.sportCategory === 'Running'
+                )) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await onSyncMorphedToCalendar({
+                      date: todayIso,
+                      name: `Orthopedic Swap: ${orthopedicSummary.suggestedBikeDurationMins}m High-Cadence Z2 Ride`,
+                      sportCategory: 'Cycling',
+                      environmentPreference: 'FLEXIBLE',
+                      plannedDurationSecs: orthopedicSummary.suggestedBikeDurationMins * 60,
+                      plannedLoad: orthopedicSummary.suggestedBikeTss,
+                      workoutSyntax: orthopedicSummary.suggestedBikeWorkoutSyntax,
+                      description:
+                        'Cross-modal aerobic-equivalent ride generated by THRESH Orthopedic Interference Engine (zero tibial/Achilles impact).',
+                      replaceExistingDate: true,
+                    });
+                    setOrthoSwappedToast(
+                      `Swapped today to ${orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Z2 Ride (${orthopedicSummary.suggestedBikeTss} TSS).`
+                    );
+                    window.setTimeout(() => setOrthoSwappedToast(null), 4500);
+                  }}
+                  className="ap-btn-primary px-3.5 text-xs whitespace-nowrap"
+                >
+                  Morph Run → {orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Ride
+                </button>
+              )}
+          </div>
+
+          {orthoSwappedToast && (
+            <div className="rounded-xl ap-status-prime px-3 py-2 text-xs font-medium">
+              {orthoSwappedToast}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ==========================================================================
           1. FITNESS (CTL), FATIGUE (ATL) & FORM (TSB) MULTI-PANE CHART

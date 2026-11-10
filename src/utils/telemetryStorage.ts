@@ -468,6 +468,9 @@ export function buildCompleteAthleteProfile(
     powerZones,
     hrZones,
     runHrZones,
+    thresholdHistory: Array.isArray(partial?.thresholdHistory)
+      ? partial.thresholdHistory
+      : undefined,
     lastSyncedAt: partial?.lastSyncedAt || new Date().toISOString(),
     source: partial?.source || 'INTERVALS_GARMIN',
   };

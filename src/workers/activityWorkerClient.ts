@@ -166,6 +166,13 @@ export async function parseWorkoutFileInWorker(
   });
 
   await bulkUpsertActivitiesToDexie([res.activity]);
+  if (res.activity.streams) {
+    await saveActivityStreamToDexie(
+      res.activity.id,
+      res.activity.streams,
+      res.analytics.intervals
+    );
+  }
   return res;
 }
 

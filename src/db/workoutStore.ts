@@ -337,3 +337,24 @@ export async function getStoreMetadata<T>(key: string): Promise<T | undefined> {
     return undefined;
   }
 }
+
+/**
+ * Lazily loads all stored 1Hz telemetry streams into a Map keyed by `activityId`.
+ * Called only on-demand inside `PhysiologyView` for empirical MMP & GAP curve scanning.
+ */
+export async function loadAllActivityStreamsMapFromDexie(): Promise<
+  Map<string, ActivityStreamSet>
+> {
+  const map = new Map<string, ActivityStreamSet>();
+  try {
+    const rows = await db.activityStreams.toArray();
+    for (const row of rows) {
+      if (row.activityId && row.streams) {
+        map.set(row.activityId, row.streams);
+      }
+    }
+  } catch {
+    // ignore IndexedDB errors in private/sandbox contexts
+  }
+  return map;
+}

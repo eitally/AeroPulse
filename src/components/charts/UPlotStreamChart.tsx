@@ -16,6 +16,10 @@ import type {
   SportCategory,
 } from '../../types';
 import { formatPace, formatStopwatch } from '../../utils/formatters';
+import {
+  computeGradeAdjustedPaceStream,
+  computeNormalizedPower,
+} from '../../physiology/powerPaceMetrics';
 import type { PeakWindowStat } from '../../workers/activityProcessor.worker';
 
 // Shared uPlot cursor sync registry for synchronized vertical crosshairs across multiple charts
@@ -40,6 +44,7 @@ export interface UPlotStreamChartProps {
   syncKey?: string;
   height?: number;
   zoomRange?: [number, number] | null;
+  zoomWindowSecs?: { startSec: number; endSec: number; nonce: number } | null;
   onZoomRangeChange?: (range: [number, number] | null) => void;
   onHoverIndex?: (idx: number | null) => void;
   onTriggerWorker1HzUpsample?: () => void;
@@ -65,6 +70,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
   syncKey = 'aeropulse-1hz-telemetry',
   height = 260,
   zoomRange = null,
+  zoomWindowSecs = null,
   onZoomRangeChange,
   onHoverIndex,
   onTriggerWorker1HzUpsample,
@@ -88,6 +94,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
   const [showCadence, setShowCadence] = useState<boolean>(true);
   const [showAltitude, setShowAltitude] = useState<boolean>(true);
   const [smoothWindow, setSmoothWindow] = useState<1 | 3 | 10 | 30>(1);
+  const [selectedIdxBounds, setSelectedIdxBounds] = useState<[number, number] | null>(null);
 
   // Prepare aligned uPlot columnar data: [time, primaryOutput, heartrate, cadence, altitude]
   const preparedData = useMemo(() => {
@@ -367,6 +374,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             const fullMin = xArr[0];
             const fullMax = xArr[xArr.length - 1];
             if (minTime <= fullMin + 0.5 && maxTime >= fullMax - 0.5) {
+              setSelectedIdxBounds(null);
               if (onZoomRangeChangeRef.current) onZoomRangeChangeRef.current(null);
               return;
             }
@@ -377,6 +385,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
               if (xArr[i] <= minTime) sIdx = i;
               if (xArr[i] <= maxTime) eIdx = i;
             }
+            setSelectedIdxBounds([sIdx, eIdx]);
             if (onZoomRangeChangeRef.current) {
               onZoomRangeChangeRef.current([sIdx, eIdx]);
             }
@@ -441,14 +450,118 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
     }
   }, [zoomRange, preparedData.data]);
 
+  // Synchronize external zoomWindowSecs (e.g. from 30s Post-Workout Debrief insight click)
+  useEffect(() => {
+    const u = plotInstanceRef.current;
+    const xArr = preparedData.data[0];
+    if (!u || !xArr || xArr.length < 2 || !zoomWindowSecs) return;
+
+    const fullMin = xArr[0];
+    const fullMax = xArr[xArr.length - 1];
+    const targetMin = Math.max(fullMin, Math.min(fullMax - 1, zoomWindowSecs.startSec));
+    const targetMax = Math.max(targetMin + 1, Math.min(fullMax, zoomWindowSecs.endSec));
+    u.setScale('x', { min: targetMin, max: targetMax });
+  }, [zoomWindowSecs, preparedData.data]);
+
+  const activeBounds = zoomRange ?? selectedIdxBounds;
   const totalSamples = streams.time?.length || 0;
-  const zStart = zoomRange ? Math.max(0, Math.min(totalSamples - 2, zoomRange[0])) : 0;
-  const zEnd = zoomRange
-    ? Math.max(zStart + 1, Math.min(totalSamples - 1, zoomRange[1]))
+  const zStart = activeBounds ? Math.max(0, Math.min(totalSamples - 2, activeBounds[0])) : 0;
+  const zEnd = activeBounds
+    ? Math.max(zStart + 1, Math.min(totalSamples - 1, activeBounds[1]))
     : Math.max(0, totalSamples - 1);
-  const isZoomed = zStart > 0 || zEnd < totalSamples - 1;
+  const isZoomed = totalSamples >= 2 && (zStart > 0 || zEnd < totalSamples - 1);
+
+  // Live interval window metrics whenever user drags to zoom or clicks a Debrief insight
+  const selectedWindowStats = useMemo(() => {
+    if (!isZoomed || totalSamples < 2) return null;
+    const tArr = streams.time || [];
+    const startSec = Math.round(tArr[zStart] ?? zStart);
+    const endSec = Math.round(tArr[zEnd] ?? zEnd);
+    const durationSecs = Math.max(1, endSec - startSec);
+
+    let avgWatts: number | null = null;
+    let npWatts: number | null = null;
+    if (streams.watts && streams.watts.length > zStart) {
+      const sliceW = streams.watts.slice(zStart, zEnd + 1);
+      const validW = sliceW.filter((v): v is number => Number.isFinite(v) && v >= 0);
+      if (validW.length > 0) {
+        avgWatts = Math.round(validW.reduce((s, v) => s + v, 0) / validW.length);
+        const np = computeNormalizedPower(sliceW);
+        npWatts = np != null && np > 0 ? Math.round(np) : avgWatts;
+      }
+    }
+
+    let avgPaceSecsKm: number | null = null;
+    let gapPaceSecsKm: number | null = null;
+    if (streams.velocitySmooth && streams.velocitySmooth.length > zStart) {
+      const sliceVel = streams.velocitySmooth.slice(zStart, zEnd + 1);
+      const validVel = sliceVel.filter((v): v is number => Number.isFinite(v) && v > 0.5);
+      if (validVel.length > 0) {
+        const meanMps = validVel.reduce((s, v) => s + v, 0) / validVel.length;
+        avgPaceSecsKm = Math.round(1000 / meanMps);
+        const sliceAlt = streams.altitude?.slice(zStart, zEnd + 1);
+        const sliceDist = streams.distance?.slice(zStart, zEnd + 1);
+        const gapRes = computeGradeAdjustedPaceStream(sliceVel, sliceAlt, sliceDist);
+        if (gapRes.avgGapSecsPerKm && gapRes.avgGapSecsPerKm > 0) {
+          gapPaceSecsKm = Math.round(gapRes.avgGapSecsPerKm);
+        }
+      }
+    }
+
+    let avgHr: number | null = null;
+    let maxHr: number | null = null;
+    if (streams.heartrate && streams.heartrate.length > zStart) {
+      const validHr = streams.heartrate
+        .slice(zStart, zEnd + 1)
+        .filter((h): h is number => Number.isFinite(h) && h > 35);
+      if (validHr.length > 0) {
+        avgHr = Math.round(validHr.reduce((s, v) => s + v, 0) / validHr.length);
+        maxHr = Math.round(Math.max(...validHr));
+      }
+    }
+
+    let avgCad: number | null = null;
+    if (streams.cadence && streams.cadence.length > zStart) {
+      const validCad = streams.cadence
+        .slice(zStart, zEnd + 1)
+        .filter((c): c is number => Number.isFinite(c) && c > 15);
+      if (validCad.length > 0) {
+        avgCad = Math.round(validCad.reduce((s, v) => s + v, 0) / validCad.length);
+      }
+    }
+
+    let elevGainM = 0;
+    let elevLossM = 0;
+    if (streams.altitude && streams.altitude.length > zStart + 1) {
+      for (let i = zStart + 1; i <= Math.min(zEnd, streams.altitude.length - 1); i++) {
+        const prev = streams.altitude[i - 1];
+        const curr = streams.altitude[i];
+        if (prev != null && curr != null && Number.isFinite(prev) && Number.isFinite(curr)) {
+          const diff = curr - prev;
+          if (diff > 0.15) elevGainM += diff;
+          else if (diff < -0.15) elevLossM += Math.abs(diff);
+        }
+      }
+    }
+
+    return {
+      startSec,
+      endSec,
+      durationSecs,
+      avgWatts,
+      npWatts,
+      avgPaceSecsKm,
+      gapPaceSecsKm,
+      avgHr,
+      maxHr,
+      avgCad,
+      elevGainM: Math.round(elevGainM),
+      elevLossM: Math.round(elevLossM),
+    };
+  }, [isZoomed, totalSamples, streams, zStart, zEnd]);
 
   const handleResetZoom = () => {
+    setSelectedIdxBounds(null);
     const u = plotInstanceRef.current;
     const xArr = preparedData.data[0];
     if (u && xArr && xArr.length >= 2) {
@@ -671,6 +784,68 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
                 Work #{idx + 1} ({formatStopwatch(iv.durationSecs)})
               </button>
             ))}
+        </div>
+      )}
+
+      {/* Live Selected Interval Window Inspector Bar (Drag-to-Zoom or Debrief Insight Zoom) */}
+      {selectedWindowStats && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-500/10 dark:bg-sky-500/12 border border-blue-500/30 px-3 py-2 text-xs font-mono tabular-nums">
+          <div className="flex flex-wrap items-center gap-3 text-slate-800 dark:text-slate-100">
+            <span className="font-bold text-blue-700 dark:text-sky-300">
+              Selected Window: {formatStopwatch(selectedWindowStats.startSec)} →{' '}
+              {formatStopwatch(selectedWindowStats.endSec)} (
+              {formatStopwatch(selectedWindowStats.durationSecs)})
+            </span>
+            {selectedWindowStats.avgWatts != null && (
+              <span>
+                Avg: <strong>{selectedWindowStats.avgWatts}W</strong> (
+                {(selectedWindowStats.avgWatts / Math.max(40, athleteWeightKg)).toFixed(2)} W/kg)
+              </span>
+            )}
+            {selectedWindowStats.npWatts != null && (
+              <span>
+                NP: <strong className="text-blue-600 dark:text-sky-400">{selectedWindowStats.npWatts}W</strong>
+              </span>
+            )}
+            {selectedWindowStats.avgPaceSecsKm != null && (
+              <span>
+                Pace: <strong>{formatPace(selectedWindowStats.avgPaceSecsKm, distanceUnit)}</strong>
+              </span>
+            )}
+            {selectedWindowStats.gapPaceSecsKm != null && (
+              <span>
+                GAP:{' '}
+                <strong className="text-blue-600 dark:text-sky-400">
+                  {formatPace(selectedWindowStats.gapPaceSecsKm, distanceUnit)}
+                </strong>
+              </span>
+            )}
+            {selectedWindowStats.avgHr != null && (
+              <span>
+                HR: <strong className="text-rose-500">{selectedWindowStats.avgHr}</strong>
+                {selectedWindowStats.maxHr ? ` / ${selectedWindowStats.maxHr} bpm` : ' bpm'}
+              </span>
+            )}
+            {selectedWindowStats.avgCad != null && (
+              <span>
+                Cad: <strong>{selectedWindowStats.avgCad}</strong>
+              </span>
+            )}
+            {(selectedWindowStats.elevGainM > 0 || selectedWindowStats.elevLossM > 0) && (
+              <span>
+                Elev Δ: <strong>+{selectedWindowStats.elevGainM}m</strong> / -
+                {selectedWindowStats.elevLossM}m
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleResetZoom}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-sans font-semibold transition-colors shrink-0"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset Full Stream ×</span>
+          </button>
         </div>
       )}
 

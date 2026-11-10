@@ -1,6 +1,11 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import {
+  deleteTenantVault,
+  loadTenantVaultSync,
+  saveTenantVaultSync,
+} from './tokenVault.ts';
 
 export interface GarminSessionStore {
   personalApiKey?: string; // Official Garmin Connect Personal API Key (GCDC_...)
@@ -269,11 +274,19 @@ export function getGarminSessionFilePath(dataDir: string, scopeKey: string): str
 }
 
 export function loadGarminSession(dataDir: string, scopeKey: string): GarminSessionStore | null {
+  const vaultTenantKey = `garmin_${scopeKey}`;
+  const fromVault = loadTenantVaultSync<GarminSessionStore | null>(vaultTenantKey, null);
+  if (fromVault) return fromVault;
+
+  // One-time migration from legacy plaintext file if present, then shred plaintext file
   const filePath = getGarminSessionFilePath(dataDir, scopeKey);
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(raw) as GarminSessionStore;
+      const parsed = JSON.parse(raw) as GarminSessionStore;
+      saveTenantVaultSync(vaultTenantKey, parsed);
+      fs.unlinkSync(filePath);
+      return parsed;
     }
   } catch {
     // ignore corrupt file
@@ -282,22 +295,15 @@ export function loadGarminSession(dataDir: string, scopeKey: string): GarminSess
 }
 
 export function saveGarminSession(
-  dataDir: string,
+  _dataDir: string,
   scopeKey: string,
   session: GarminSessionStore
 ): void {
-  const filePath = getGarminSessionFilePath(dataDir, scopeKey);
-  try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
-  } catch {
-    // ignore write errors
-  }
+  saveTenantVaultSync(`garmin_${scopeKey}`, session);
 }
 
 export function clearGarminSession(dataDir: string, scopeKey: string): void {
+  void deleteTenantVault(`garmin_${scopeKey}`);
   const filePath = getGarminSessionFilePath(dataDir, scopeKey);
   try {
     if (fs.existsSync(filePath)) {

@@ -4029,7 +4029,11 @@ export default function App() {
               onImportParsedActivity={(newAct) => {
                 setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
               }}
+              onImportParsedActivities={(newActs) => {
+                setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+              }}
               athleteWeightKg={latestWeightKg}
+              athleteProfile={effectiveAthleteProfile}
             />
           )}
 
@@ -4042,7 +4046,7 @@ export default function App() {
               envFilter={envFilter}
               distanceUnit={distanceUnit}
               athleteWeightKg={latestWeightKg}
-              athleteProfile={athleteProfile}
+              athleteProfile={effectiveAthleteProfile}
               onScanMoreSegments={handleScanMoreSegments}
               isScanningSegments={isScanningSegments}
               onSelectActivity={(act) => {
@@ -4227,6 +4231,10 @@ export default function App() {
             idbSavedAt={idbSavedAt}
             persistedWorkoutCount={activities.length}
             onRebuildPersistedArchive={handleClearPersistedArchive}
+            existingActivities={effectiveActivities}
+            onImportBatchActivities={(newActs) => {
+              setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+            }}
           />
         </Suspense>
       )}

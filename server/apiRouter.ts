@@ -27,12 +27,34 @@ import {
   securityHeadersMiddleware,
   setSessionCookie,
 } from './securityUtils.ts';
+import {
+  deleteTenantVault,
+  getVaultStorageBackend,
+  loadTenantVaultAsync,
+  loadTenantVaultSync,
+  saveTenantVaultSync,
+} from './tokenVault.ts';
+import { sanitizeTelemetryForCleanRoom } from './cleanRoomFirewall.ts';
+import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
 
 export const apiRouter = express.Router();
 const requestContext = new AsyncLocalStorage<Request>();
 apiRouter.use(securityHeadersMiddleware);
+apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use((req: Request, _res: Response, next: NextFunction) => {
-  requestContext.run(req, () => next());
+  requestContext.run(req, () => {
+    const scopeKey = resolveSessionScopeKey(req);
+    if (scopeKey && process.env.DATABASE_URL?.trim()) {
+      Promise.all([
+        loadTenantVaultAsync(`session_${scopeKey}`, {}),
+        loadTenantVaultAsync(`garmin_${scopeKey}`, null),
+      ])
+        .then(() => next())
+        .catch(() => next());
+      return;
+    }
+    next();
+  });
 });
 
 const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-segments-by-activity.json';
@@ -311,10 +333,20 @@ function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
   if (scopeKey) {
     const existing = scopedStoresInMemory.get(scopeKey);
     if (existing) return existing;
-    const loaded = loadJsonFile<Partial<RuntimeSessionStore>>(
-      getScopedSessionFilePath(scopeKey),
-      {}
-    );
+
+    let loaded = loadTenantVaultSync<Partial<RuntimeSessionStore>>(`session_${scopeKey}`, {});
+    // Migrate & shred legacy plaintext file if one existed
+    const legacyPath = getScopedSessionFilePath(scopeKey);
+    if (Object.keys(loaded).length === 0 && fs.existsSync(legacyPath)) {
+      loaded = loadJsonFile<Partial<RuntimeSessionStore>>(legacyPath, {});
+      saveTenantVaultSync(`session_${scopeKey}`, loaded);
+      try {
+        fs.unlinkSync(legacyPath);
+      } catch {
+        // ignore
+      }
+    }
+
     const hydrated = createDefaultRuntimeSessionStore(loaded);
     scopedStoresInMemory.set(scopeKey, hydrated);
     return hydrated;
@@ -840,7 +872,7 @@ function buildServerAthleteProfile(
 function saveSessionCache(req?: Request) {
   const scopeKey = resolveSessionScopeKey(req);
   if (!scopeKey) return;
-  saveJsonFile(getScopedSessionFilePath(scopeKey), getScopedRuntimeStore(req));
+  saveTenantVaultSync(`session_${scopeKey}`, getScopedRuntimeStore(req));
 }
 
 function getEffectiveGeminiApiKey(req?: Request): string {
@@ -1388,6 +1420,7 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
   }
 
   res.json({
+    vaultStorageBackend: getVaultStorageBackend(),
     garminConnected: isGarminConnected,
     garminAthleteName: resolvedGarminName,
     intervalsConnected: isIntervalsConnected,
@@ -5157,35 +5190,8 @@ apiRouter.post('/api/webhooks/strava', async (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------------------------------
-// 6. Gemini AI Coach — Clean-Room Data Firewall, Daily Options & Multi-Turn Chat
+// 6. Gemini AI Coach — Clean-Room Data Firewall (imported from ./cleanRoomFirewall.ts), Daily Options & Multi-Turn Chat
 // ----------------------------------------------------------------------------
-
-/**
- * Strava API Legal Clean-Room Firewall (Strava API Agreement Sec 5.3):
- * Strips any Strava-originated activity, segment, or social metadata before passing
- * athlete telemetry into any LLM / generative AI context window.
- */
-function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<string, any> {
-  if (!rawSummary || typeof rawSummary !== 'object') return {};
-  const clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
-  const isStravaRecord = (item: any): boolean => {
-    if (!item || typeof item !== 'object') return false;
-    const src = String(
-      item.externalSource || item.ingestionSource || item.source || ''
-    ).toUpperCase();
-    return src.includes('STRAVA') || Boolean(item.stravaId && !item.garminActivityId && src !== 'GARMIN' && src !== 'FIT_UPLOAD');
-  };
-
-  for (const key of ['recentActivities', 'activities', 'workouts', 'segments', 'starredSegments']) {
-    if (Array.isArray(clone[key])) {
-      clone[key] = clone[key].filter((item: any) => !isStravaRecord(item));
-    }
-  }
-  delete clone.stravaSegments;
-  delete clone.stravaKudos;
-  clone.cleanRoomPolicy = 'FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY';
-  return clone;
-}
 function buildDeterministicDailyWorkoutOptions(
   sportPreference: string,
   environmentPreference: string,
@@ -5800,6 +5806,7 @@ apiRouter.post('/api/auth/logout', (req: Request, res: Response) => {
       runtimeStore.intervalsAthleteName = '';
       if (scopeKey) {
         scopedStoresInMemory.delete(scopeKey);
+        void deleteTenantVault(`session_${scopeKey}`);
         try {
           const sessionPath = getScopedSessionFilePath(scopeKey);
           if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);

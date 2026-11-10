@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityStreamSet,
   AthleteProfile,
   BenchmarkSegmentHistory,
   DistanceUnit,
@@ -8,10 +9,12 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { formatPace } from '../utils/formatters';
+import { formatPace, formatStopwatch } from '../utils/formatters';
 import { buildRepeatedSegmentsFromActivities } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
+import { loadAllActivityStreamsMapFromDexie } from '../db/workoutStore';
+import { buildEmpiricalMmpSummary } from '../physiology/mmpCurves';
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -36,10 +39,49 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
   distanceUnit,
   athleteWeightKg,
   athleteProfile,
+  onSelectActivity,
   onOpenActivitiesSegments,
 }) => {
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [streamMap, setStreamMap] = useState<ReadonlyMap<string, ActivityStreamSet>>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    let active = true;
+    loadAllActivityStreamsMapFromDexie()
+      .then((loaded) => {
+        if (active) setStreamMap(loaded);
+      })
+      .catch(() => {
+        // Non-blocking fallback when IndexedDB is unavailable
+      });
+    return () => {
+      active = false;
+    };
+  }, [activities.length]);
+
+  const envFilteredActivities = useMemo(
+    () =>
+      envFilter === 'COMBINED'
+        ? activities
+        : activities.filter((a) => a.environment === envFilter),
+    [activities, envFilter]
+  );
+
+  const empiricalSummary = useMemo(
+    () => buildEmpiricalMmpSummary(envFilteredActivities, streamMap, athleteProfile),
+    [envFilteredActivities, streamMap, athleteProfile]
+  );
+
+  const empiricalByDuration = useMemo(() => {
+    const map = new Map<number, (typeof empiricalSummary.points)[number]>();
+    for (const pt of empiricalSummary.points) {
+      map.set(pt.durationSecs, pt);
+    }
+    return map;
+  }, [empiricalSummary.points]);
 
   // Dynamically calibrate Power & Pace Duration Curves from athlete's real eFTP, W', Pmax & synced activities
   const { calibratedCurves, hasPowerCalibration, hasPaceCalibration } = useMemo(() => {
@@ -70,14 +112,21 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         : 0;
 
     const rideEftp =
+      empiricalSummary.criticalPowerWatts ||
       latestWithMetrics?.rideEftp ||
       athleteProfile?.ftp ||
       athleteProfile?.indoorFtp ||
       Math.max(maxOutNp, maxInNp) ||
       0;
     const hasPower = rideEftp > 0;
-    const rideWPrime = latestWithMetrics?.rideWPrime || (hasPower ? Math.round(rideEftp * 75) : 0);
-    const ridePMax = latestWithMetrics?.ridePMax || (hasPower ? Math.round(rideEftp * 3.6) : 0);
+    const rideWPrime =
+      empiricalSummary.wPrimeJoules ||
+      latestWithMetrics?.rideWPrime ||
+      (hasPower ? Math.round(rideEftp * 75) : 0);
+    const ridePMax =
+      empiricalSummary.pMaxWatts ||
+      latestWithMetrics?.ridePMax ||
+      (hasPower ? Math.round(rideEftp * 3.6) : 0);
 
     const outRatio =
       hasPower && maxOutNp > 0
@@ -115,6 +164,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
 
     const runEftp = latestWithMetrics?.runEftp || athleteProfile?.runFtp || 0;
     const baseThresholdPaceSecsKm =
+      empiricalSummary.criticalPaceSecsPerKm ||
       athleteProfile?.thresholdPaceSecsPerKm ||
       (bestOutRunPace > 0 && bestOutRunPace < 900
         ? bestOutRunPace
@@ -134,6 +184,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
 
     const pts = durations.map((d, idx) => {
       if (curves[idx]) return curves[idx];
+      const empiricalPt = empiricalByDuration.get(d.durationSecs);
 
       // 3-parameter Critical Power model: P(t) = CP + W' / (t + W' / (Pmax - CP))
       const modelWatts = hasPower
@@ -143,7 +194,11 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         : 0;
       const cyclingOutdoorWatts = hasPower ? Math.round(modelWatts * outRatio) : 0;
       const cyclingIndoorWatts = hasPower ? Math.round(modelWatts * inRatio) : 0;
-      const cyclingSeasonBestWatts = Math.max(cyclingOutdoorWatts, cyclingIndoorWatts);
+      const cyclingSeasonBestWatts = Math.max(
+        cyclingOutdoorWatts,
+        cyclingIndoorWatts,
+        empiricalPt?.bestWatts || 0
+      );
 
       const runningOutdoorPaceSecsKm = hasPace
         ? Math.round(baseThresholdPaceSecsKm * d.runFactor)
@@ -152,10 +207,16 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         bestInRunPace > 0 && bestInRunPace < 900
           ? Math.round(bestInRunPace * d.runFactor)
           : runningOutdoorPaceSecsKm;
-      const runningSeasonBestPaceSecsKm =
+      const modeledBestPace =
         runningOutdoorPaceSecsKm > 0 && runningIndoorPaceSecsKm > 0
           ? Math.min(runningOutdoorPaceSecsKm, runningIndoorPaceSecsKm)
           : runningOutdoorPaceSecsKm || runningIndoorPaceSecsKm;
+      const runningSeasonBestPaceSecsKm =
+        empiricalPt?.bestGapSecsPerKm && empiricalPt.bestGapSecsPerKm > 0
+          ? modeledBestPace > 0
+            ? Math.min(modeledBestPace, Math.round(empiricalPt.bestGapSecsPerKm))
+            : Math.round(empiricalPt.bestGapSecsPerKm)
+          : modeledBestPace;
 
       return {
         durationSecs: d.durationSecs,
@@ -174,7 +235,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
       hasPowerCalibration: hasPower,
       hasPaceCalibration: hasPace,
     };
-  }, [wellnessDays, activities, curves, athleteProfile]);
+  }, [wellnessDays, activities, curves, athleteProfile, empiricalSummary, empiricalByDuration]);
 
   const repeatedSegments = useMemo(
     () => buildRepeatedSegmentsFromActivities(activities),
@@ -241,6 +302,74 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                 {disc === 'Cycling' ? 'Cycling Power (W & W/kg)' : `Running Pace (/${distanceUnit})`}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Fitted Critical Power / Critical Speed Bioenergetic KPI Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              1Hz Streams Scanned
+            </div>
+            <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {curveDiscipline === 'Cycling'
+                ? `${empiricalSummary.scannedPowerStreamsCount} power files`
+                : `${empiricalSummary.scannedPaceStreamsCount} GAP run files`}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              {curveDiscipline === 'Cycling' ? 'Critical Power (CP)' : 'Critical Speed (CS)'}
+            </div>
+            <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-blue-600 dark:text-sky-400">
+              {curveDiscipline === 'Cycling'
+                ? empiricalSummary.criticalPowerWatts
+                  ? `${empiricalSummary.criticalPowerWatts} W (${(
+                      empiricalSummary.criticalPowerWatts / Math.max(40, athleteWeightKg)
+                    ).toFixed(2)} W/kg)`
+                  : '—'
+                : empiricalSummary.criticalPaceSecsPerKm
+                  ? `${formatPace(Math.round(empiricalSummary.criticalPaceSecsPerKm), distanceUnit)}${
+                      empiricalSummary.criticalSpeedMps
+                        ? ` (${empiricalSummary.criticalSpeedMps.toFixed(2)} m/s)`
+                        : ''
+                    }`
+                  : '—'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              {curveDiscipline === 'Cycling' ? "Anaerobic Work (W')" : "Anaerobic Reserve (D')"}
+            </div>
+            <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-amber-600 dark:text-amber-400">
+              {curveDiscipline === 'Cycling'
+                ? empiricalSummary.wPrimeJoules
+                  ? `${(empiricalSummary.wPrimeJoules / 1000).toFixed(1)} kJ`
+                  : '—'
+                : empiricalSummary.dPrimeMeters
+                  ? `${empiricalSummary.dPrimeMeters} m`
+                  : '—'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              {curveDiscipline === 'Cycling' ? 'Neuromuscular Pmax' : '15s Sprint GAP Peak'}
+            </div>
+            <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {curveDiscipline === 'Cycling'
+                ? empiricalSummary.pMaxWatts
+                  ? `${empiricalSummary.pMaxWatts} W`
+                  : '—'
+                : empiricalByDuration.get(15)?.bestGapSecsPerKm
+                  ? formatPace(
+                      Math.round(empiricalByDuration.get(15)!.bestGapSecsPerKm!),
+                      distanceUnit
+                    )
+                  : '—'}
+            </div>
           </div>
         </div>
 
@@ -590,6 +719,119 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Empirical 1Hz Peak Efforts & PR Provenance Ledger */}
+        {empiricalSummary.points.some((p) =>
+          curveDiscipline === 'Cycling' ? p.bestWatts != null : p.bestGapSecsPerKm != null
+        ) && (
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-950/50 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Empirical 1Hz Peak Efforts &amp; Workout PR Provenance
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Exact sliding-window bests scanned from local 1Hz telemetry streams and synced workouts. Click any source workout to inspect its stream.
+                </p>
+              </div>
+              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold">
+                1s – 2h Prefix-Sum MMP
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                    <th className="py-2 px-3">Window</th>
+                    <th className="py-2 px-3 text-right">Empirical 1Hz Best</th>
+                    <th className="py-2 px-3 text-right">Modeled CP/CS Target</th>
+                    <th className="py-2 px-3 text-right">Timestamp</th>
+                    <th className="py-2 px-3">PR Provenance Workout</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
+                  {empiricalSummary.points
+                    .filter((pt) => [1, 5, 15, 60, 300, 1200, 3600, 7200].includes(pt.durationSecs))
+                    .map((pt) => {
+                      const isCycling = curveDiscipline === 'Cycling';
+                      const hasEmp = isCycling ? pt.bestWatts != null : pt.bestGapSecsPerKm != null;
+                      if (!hasEmp && (isCycling ? !pt.modeledWatts : !pt.modeledGapSecsPerKm)) {
+                        return null;
+                      }
+                      const srcId = isCycling ? pt.sourceActivityId : pt.paceSourceActivityId;
+                      const srcName = isCycling ? pt.sourceActivityName : pt.paceSourceActivityName;
+                      const srcDate = isCycling ? pt.sourceActivityDate : pt.paceSourceActivityDate;
+                      const startOffset = isCycling
+                        ? pt.startSecondOffset
+                        : pt.paceStartSecondOffset;
+                      const matchedAct = srcId ? activities.find((a) => a.id === srcId) : undefined;
+
+                      return (
+                        <tr
+                          key={`emp-${pt.durationSecs}`}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                        >
+                          <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-slate-100">
+                            {pt.label}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-semibold text-blue-600 dark:text-sky-400">
+                            {isCycling
+                              ? pt.bestWatts != null
+                                ? `${pt.bestWatts} W (${(
+                                    pt.bestWatts / Math.max(40, athleteWeightKg)
+                                  ).toFixed(2)} W/kg)`
+                                : '—'
+                              : pt.bestGapSecsPerKm != null
+                                ? `${formatPace(Math.round(pt.bestGapSecsPerKm), distanceUnit)} GAP`
+                                : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-600 dark:text-slate-300">
+                            {isCycling
+                              ? pt.modeledWatts != null
+                                ? `${pt.modeledWatts} W`
+                                : '—'
+                              : pt.modeledGapSecsPerKm != null
+                                ? formatPace(Math.round(pt.modeledGapSecsPerKm), distanceUnit)
+                                : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-500">
+                            {startOffset != null && startOffset > 0
+                              ? `@ ${formatStopwatch(startOffset)}`
+                              : hasEmp
+                                ? 'Full effort'
+                                : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 font-sans">
+                            {matchedAct && onSelectActivity ? (
+                              <button
+                                type="button"
+                                onClick={() => onSelectActivity(matchedAct)}
+                                className="inline-flex items-center gap-1.5 text-left text-blue-600 dark:text-sky-400 hover:underline font-medium"
+                              >
+                                <span className="truncate max-w-[220px]">{srcName}</span>
+                                {srcDate && (
+                                  <span className="text-[11px] font-mono text-slate-400">
+                                    ({srcDate}) →
+                                  </span>
+                                )}
+                              </button>
+                            ) : srcName ? (
+                              <span className="text-slate-700 dark:text-slate-300">
+                                {srcName} {srcDate ? `(${srcDate})` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Modeled baseline</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 2. Coggan Power Profile & WMA Age-Graded Percentile Radars */}

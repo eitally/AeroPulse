@@ -20,6 +20,7 @@ import {
   ZoomOut,
 } from "./icons/PhosphorIcons";
 import {
+  AthleteProfile,
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
@@ -46,6 +47,12 @@ import {
   ComputedStreamAnalytics,
 } from '../workers/activityWorkerClient';
 import { useLiveActivityStream, useLiveWorkoutStoreStats } from '../db/workoutStore';
+import {
+  importWorkoutFilesOrArchive,
+  type ArchiveImportProgress,
+} from '../utils/archiveImporter';
+import { generatePostWorkoutDebrief } from '../physiology/workoutDebrief';
+import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 
 interface ActivitiesViewProps {
   activities: UnifiedActivity[];
@@ -66,7 +73,9 @@ interface ActivitiesViewProps {
   onAddComment?: (activity: UnifiedActivity, commentText: string) => Promise<void>;
   onOpenOfficialRaceModal?: () => void;
   onImportParsedActivity?: (activity: UnifiedActivity) => void;
+  onImportParsedActivities?: (activities: UnifiedActivity[]) => void;
   athleteWeightKg?: number;
+  athleteProfile?: AthleteProfile;
 }
 
 interface NormalizedSeriesPoint {
@@ -181,13 +190,23 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   onAddComment,
   onOpenOfficialRaceModal,
   onImportParsedActivity,
+  onImportParsedActivities,
   athleteWeightKg = 72.5,
+  athleteProfile,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('ALL');
   const [visibleLimit, setVisibleLimit] = useState<number>(60);
   const [streamHoverIndex, setStreamHoverIndex] = useState<number | null>(null);
   const [streamZoomRange, setStreamZoomRange] = useState<[number, number] | null>(null);
+  const [debriefZoomWindow, setDebriefZoomWindow] = useState<{
+    startSec: number;
+    endSec: number;
+    nonce: number;
+  } | null>(null);
+  const [archiveImportProgress, setArchiveImportProgress] =
+    useState<ArchiveImportProgress | null>(null);
+  const [archiveImportBanner, setArchiveImportBanner] = useState<string | null>(null);
   const plannedByDate = useMemo(() => {
     const map = new Map<string, PlannedWorkoutEvent[]>();
     for (const ev of plannedEvents) {
@@ -258,6 +277,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
   // Automatically compute or upsample 1Hz stream analytics in Web Worker when selectedActivity changes
   useEffect(() => {
+    setDebriefZoomWindow(null);
     if (!selectedActivity) {
       setWorkerAnalytics(null);
       return;
@@ -280,19 +300,58 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   }, [selectedActivity?.id]);
 
   const handleWorkoutFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (fileList.length === 0) return;
+
+    const isBulkOrArchive =
+      fileList.length > 1 || fileList.some((f) => /\.(zip|gz)$/i.test(f.name));
+
     setIsWorkerProcessing(true);
+    setArchiveImportBanner(null);
+
     try {
-      const parsed = await parseWorkoutFileInWorker(file);
-      if (onImportParsedActivity) {
-        onImportParsedActivity(parsed.activity);
+      if (!isBulkOrArchive) {
+        const parsed = await parseWorkoutFileInWorker(fileList[0]);
+        if (onImportParsedActivities) {
+          onImportParsedActivities([parsed.activity]);
+        } else if (onImportParsedActivity) {
+          onImportParsedActivity(parsed.activity);
+        }
+        onSelectActivity(parsed.activity);
+        setWorkerAnalytics(parsed.analytics);
+      } else {
+        const result = await importWorkoutFilesOrArchive({
+          files: fileList,
+          existingActivities: activities,
+          onProgress: (prog) => setArchiveImportProgress({ ...prog }),
+        });
+        if (result.importedActivities.length > 0) {
+          if (onImportParsedActivities) {
+            onImportParsedActivities(result.importedActivities);
+          } else if (onImportParsedActivity) {
+            for (const act of result.importedActivities) {
+              onImportParsedActivity(act);
+            }
+          }
+          onSelectActivity(result.importedActivities[0]);
+        }
+        setArchiveImportBanner(
+          `Imported ${result.importedActivities.length} workout${
+            result.importedActivities.length === 1 ? '' : 's'
+          } from ${result.totalDiscovered} archive file${
+            result.totalDiscovered === 1 ? '' : 's'
+          }${
+            result.skippedFiles.length > 0
+              ? ` (${result.skippedFiles.length} duplicate/unsupported skipped)`
+              : ''
+          }.`
+        );
       }
-      onSelectActivity(parsed.activity);
-      setWorkerAnalytics(parsed.analytics);
     } catch (err) {
-      console.error('Worker file parse error:', err);
+      console.error('Worker file/archive parse error:', err);
+      setArchiveImportBanner('Archive import encountered an unexpected format error.');
     } finally {
+      setArchiveImportProgress(null);
       setIsWorkerProcessing(false);
       e.target.value = '';
     }
@@ -864,12 +923,17 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   <label className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 font-medium cursor-pointer transition-colors">
                     <Upload className="w-4 h-4 text-cyan-500 shrink-0" />
                     <div className="flex-1">
-                      <div className="font-semibold">Import .FIT / .GPX / .TCX File</div>
-                      <div className="text-[10px] text-slate-500">Parse 1Hz workout telemetry</div>
+                      <div className="font-semibold">
+                        Import .FIT / .GPX / .TCX or Bulk .ZIP Archive
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        Multi-file, Garmin/Strava .ZIP, and .FIT.GZ supported
+                      </div>
                     </div>
                     <input
                       type="file"
-                      accept=".fit,.gpx,.tcx,.json"
+                      multiple
+                      accept=".fit,.fit.gz,.gpx,.gpx.gz,.tcx,.tcx.gz,.zip,.json"
                       onChange={(e) => {
                         importMenuDetailsRef.current?.removeAttribute('open');
                         handleWorkoutFileUpload(e);
@@ -954,6 +1018,48 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Live Bulk .ZIP / .FIT.GZ Archive Import Progress & Result Banner */}
+        {archiveImportProgress && (
+          <div className="rounded-xl border border-blue-500/35 bg-blue-500/10 px-4 py-3 space-y-2 text-xs font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-blue-700 dark:text-sky-300 font-semibold">
+              <span>
+                Extracting &amp; parsing archive ({archiveImportProgress.processed} /{' '}
+                {archiveImportProgress.total}): {archiveImportProgress.currentFileName}
+              </span>
+              <span>
+                {archiveImportProgress.importedCount} imported ·{' '}
+                {archiveImportProgress.skippedCount} skipped
+              </span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-blue-500/20 overflow-hidden">
+              <div
+                className="h-full bg-blue-600 transition-all duration-150"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.round(
+                      (archiveImportProgress.processed / Math.max(1, archiveImportProgress.total)) *
+                        100
+                    )
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {!archiveImportProgress && archiveImportBanner && (
+          <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+            <span>{archiveImportBanner}</span>
+            <button
+              type="button"
+              onClick={() => setArchiveImportBanner(null)}
+              className="text-emerald-700 dark:text-emerald-300 hover:underline font-mono text-[11px]"
+            >
+              Dismiss ×
+            </button>
+          </div>
+        )}
 
         {/* Filtered Rollup Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1 text-xs font-mono tabular-nums">
@@ -3683,28 +3789,138 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     </div>
                   );
                 }
+                const effectiveProfile =
+                  athleteProfile || buildCompleteAthleteProfile({ weightKg: athleteWeightKg });
+                const debriefReport = generatePostWorkoutDebrief(
+                  selectedActivity,
+                  activeStream,
+                  effectiveProfile
+                );
+
                 return (
-                  <UPlotStreamChart
-                    streams={activeStream!}
-                    sportCategory={selectedActivity.sportCategory}
-                    distanceUnit={distanceUnit}
-                    athleteWeightKg={athleteWeightKg}
-                    intervals={workerAnalytics?.intervals || liveDexieStream?.intervals || selectedActivity.intervals}
-                    peakWindows={workerAnalytics?.peakWindows}
-                    workerMetrics={workerAnalytics}
-                    isWorkerProcessing={isWorkerProcessing}
-                    onTriggerWorker1HzUpsample={() => {
-                      setIsWorkerProcessing(true);
-                      upsampleAndAnalyzeActivityInWorker({ ...selectedActivity, streams: activeStream })
-                        .then(({ analytics }) => setWorkerAnalytics(analytics))
-                        .finally(() => setIsWorkerProcessing(false));
-                    }}
-                    syncKey="thresh-activity-inspector"
-                    onHoverIndex={setStreamHoverIndex}
-                    zoomRange={streamZoomRange}
-                    onZoomRangeChange={setStreamZoomRange}
-                    height={280}
-                  />
+                  <div className="space-y-4">
+                    {debriefReport && debriefReport.insights.length > 0 && (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/75 p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="ap-status-info px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider">
+                                30-Second Signal Debrief
+                              </span>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                {debriefReport.headline}
+                              </h3>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              Deterministic 1Hz physiology scan — click any insight below to zoom the stream canvas to its exact telemetry window.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums">
+                            <span
+                              className={`px-2.5 py-1 rounded-lg font-bold ${
+                                debriefReport.executionScore >= 82
+                                  ? 'ap-status-prime'
+                                  : debriefReport.executionScore >= 65
+                                    ? 'ap-status-caution'
+                                    : 'ap-status-strained'
+                              }`}
+                            >
+                              Execution {debriefReport.executionScore}/100
+                            </span>
+                            {debriefReport.wPrimeMinPct != null && (
+                              <span className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200">
+                                Min W&apos;: <strong>{debriefReport.wPrimeMinPct}%</strong>
+                              </span>
+                            )}
+                            {debriefReport.aerobicDecouplingPct != null && (
+                              <span className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200">
+                                Drift: <strong>{debriefReport.aerobicDecouplingPct}%</strong>
+                              </span>
+                            )}
+                            {debriefReport.bestHrr60Bpm != null && (
+                              <span className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200">
+                                Best HRR60: <strong>-{debriefReport.bestHrr60Bpm} bpm</strong>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                          {debriefReport.insights.map((ins) => {
+                            const pillClass =
+                              ins.severity === 'PRIME'
+                                ? 'ap-status-prime'
+                                : ins.severity === 'CAUTION'
+                                  ? 'ap-status-caution'
+                                  : ins.severity === 'STRAINED'
+                                    ? 'ap-status-strained'
+                                    : 'ap-status-info';
+                            return (
+                              <button
+                                key={ins.id}
+                                type="button"
+                                onClick={() =>
+                                  setDebriefZoomWindow({
+                                    startSec: ins.windowStartSec,
+                                    endSec: ins.windowEndSec,
+                                    nonce: Date.now(),
+                                  })
+                                }
+                                className="text-left rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500/60 dark:hover:border-sky-400/60 bg-slate-50/70 dark:bg-slate-900/60 p-3 space-y-1.5 transition-all group"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span
+                                    className={`${pillClass} px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider`}
+                                  >
+                                    {ins.badge}
+                                  </span>
+                                  <span className="text-[11px] font-mono text-blue-600 dark:text-sky-400 font-semibold group-hover:underline">
+                                    {ins.timestampLabel} ↗
+                                  </span>
+                                </div>
+                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                  {ins.title}
+                                </div>
+                                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                  {ins.detail}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <UPlotStreamChart
+                      streams={activeStream!}
+                      sportCategory={selectedActivity.sportCategory}
+                      distanceUnit={distanceUnit}
+                      athleteWeightKg={athleteWeightKg}
+                      intervals={
+                        workerAnalytics?.intervals ||
+                        liveDexieStream?.intervals ||
+                        selectedActivity.intervals
+                      }
+                      peakWindows={workerAnalytics?.peakWindows}
+                      workerMetrics={workerAnalytics}
+                      isWorkerProcessing={isWorkerProcessing}
+                      onTriggerWorker1HzUpsample={() => {
+                        setIsWorkerProcessing(true);
+                        upsampleAndAnalyzeActivityInWorker({
+                          ...selectedActivity,
+                          streams: activeStream,
+                        })
+                          .then(({ analytics }) => setWorkerAnalytics(analytics))
+                          .finally(() => setIsWorkerProcessing(false));
+                      }}
+                      syncKey="thresh-activity-inspector"
+                      onHoverIndex={setStreamHoverIndex}
+                      zoomRange={streamZoomRange}
+                      zoomWindowSecs={debriefZoomWindow}
+                      onZoomRangeChange={setStreamZoomRange}
+                      height={280}
+                    />
+                  </div>
                 );
               })()}
 

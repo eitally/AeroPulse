@@ -416,6 +416,18 @@ export interface AthleteHrZone {
   color: string;
 }
 
+export interface ThresholdHistoryEntry {
+  id: string;
+  effectiveDate: string; // YYYY-MM-DD
+  ftp: number; // Outdoor Cycling FTP (W)
+  indoorFtp?: number; // Indoor Cycling FTP (W)
+  lthr: number; // Cycling LTHR (bpm)
+  runLthr?: number; // Running LTHR (bpm)
+  thresholdPaceSecsPerKm: number; // Running LT Pace (s/km)
+  weightKg?: number;
+  note?: string;
+}
+
 export interface AthleteProfile {
   athleteId: string;
   name: string;
@@ -443,6 +455,8 @@ export interface AthleteProfile {
   powerZones: AthletePowerZone[];
   hrZones: AthleteHrZone[];
   runHrZones: AthleteHrZone[];
+  // Effective-Dated Threshold Ledger (protects historical TSS when thresholds change)
+  thresholdHistory?: ThresholdHistoryEntry[];
   // Sync Metadata
   lastSyncedAt: string;
   source: 'INTERVALS_GARMIN' | 'CUSTOM_OVERRIDE' | 'DEFAULT';
@@ -450,6 +464,7 @@ export interface AthleteProfile {
 
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
+  vaultStorageBackend?: 'POSTGRES' | 'ENCRYPTED_FILE';
   garminConnected?: boolean;
   garminAthleteName?: string;
   intervalsConnected: boolean;
@@ -514,5 +529,90 @@ export interface ConnectedAthleteRecord {
   plannedEvents: PlannedWorkoutEvent[];
   targetGoals: TargetGoal[];
 }
+
+export interface DualSportPmcPoint {
+  date: string;
+  systemicLoad: number;
+  systemicCtl: number;
+  systemicAtl: number;
+  systemicTsb: number;
+  cyclingLoad: number;
+  cyclingCtl: number;
+  cyclingAtl: number;
+  cyclingTsb: number;
+  runningLoad: number;
+  runningCtl: number;
+  runningAtl: number;
+  runningTsb: number;
+}
+
+export interface EmpiricalMmpPoint {
+  durationSecs: number;
+  label: string;
+  bestWatts: number | null;
+  modeledWatts: number | null;
+  bestGapSecsPerKm: number | null;
+  modeledGapSecsPerKm: number | null;
+  sourceActivityId?: string;
+  sourceActivityName?: string;
+  sourceActivityDate?: string;
+  startSecondOffset?: number;
+  paceSourceActivityId?: string;
+  paceSourceActivityName?: string;
+  paceSourceActivityDate?: string;
+  paceStartSecondOffset?: number;
+}
+
+export interface EmpiricalMmpModelSummary {
+  points: EmpiricalMmpPoint[];
+  scannedPowerStreamsCount: number;
+  scannedPaceStreamsCount: number;
+  criticalPowerWatts: number | null;
+  wPrimeJoules: number | null;
+  pMaxWatts: number | null;
+  criticalSpeedMps: number | null;
+  dPrimeMeters: number | null;
+  criticalPaceSecsPerKm: number | null;
+}
+
+export interface OrthopedicLoadSummary {
+  centralAutonomicLoad7d: number;
+  eccentricImpactLoad7d: number;
+  concentricTorqueLoad7d: number;
+  impactAcwr: number;
+  torqueAcwr: number;
+  centralAcwr: number;
+  riskTier: 'OPTIMAL' | 'ELEVATED_IMPACT' | 'HIGH_IMPACT_GUARDRAIL';
+  guardrailHeadline: string;
+  guardrailRecommendation: string;
+  canMorphTodayRunToBike: boolean;
+  suggestedBikeDurationMins: number;
+  suggestedBikeTss: number;
+  suggestedBikeWorkoutSyntax: string;
+}
+
+export interface PostWorkoutDebriefInsight {
+  id: string;
+  badge: string;
+  severity: 'PRIME' | 'CAUTION' | 'STRAINED' | 'INFO';
+  title: string;
+  detail: string;
+  windowStartSec: number;
+  windowEndSec: number;
+  timestampLabel: string;
+}
+
+export interface PostWorkoutDebriefReport {
+  activityId: string;
+  headline: string;
+  executionScore: number;
+  normalizedPowerWatts: number | null;
+  gradeAdjustedPaceSecsPerKm: number | null;
+  aerobicDecouplingPct: number | null;
+  wPrimeMinPct: number | null;
+  bestHrr60Bpm: number | null;
+  insights: PostWorkoutDebriefInsight[];
+}
+
 
 

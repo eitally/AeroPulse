@@ -9,10 +9,15 @@ import {
   Link2,
   Map as MapIcon,
   RefreshCw,
+  Upload,
   X,
 } from "./icons/PhosphorIcons";
-import { ConnectionStatus, MapTileProvider } from '../types';
+import { ConnectionStatus, MapTileProvider, UnifiedActivity } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import {
+  importWorkoutFilesOrArchive,
+  type ArchiveImportProgress,
+} from '../utils/archiveImporter';
 
 interface DataSourcesModalProps {
   isOpen: boolean;
@@ -33,6 +38,8 @@ interface DataSourcesModalProps {
   idbSavedAt?: string | null;
   persistedWorkoutCount?: number;
   onRebuildPersistedArchive?: () => Promise<void>;
+  existingActivities?: UnifiedActivity[];
+  onImportBatchActivities?: (activities: UnifiedActivity[]) => void;
 }
 
 export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
@@ -54,7 +61,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   idbSavedAt,
   persistedWorkoutCount = 0,
   onRebuildPersistedArchive,
+  existingActivities = [],
+  onImportBatchActivities,
 }) => {
+  const [archiveProgress, setArchiveProgress] = useState<ArchiveImportProgress | null>(null);
+  const [isImportingArchive, setIsImportingArchive] = useState(false);
   const [athleteId, setAthleteId] = useState(status.intervalsAthleteId || '0');
   const [intervalsKey, setIntervalsKey] = useState('');
   const [stravaClientId, setStravaClientId] = useState(status.stravaClientId || '');
@@ -284,6 +295,93 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Direct Local .FIT / .GPX / .TCX / .ZIP Bulk Archive Importer */}
+          {onImportBatchActivities && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Bulk Local Workout &amp; .ZIP Archive Importer (Garmin / Strava / Wahoo)
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    Drop or select single <code className="font-mono">.fit</code>,{' '}
+                    <code className="font-mono">.gpx</code>, <code className="font-mono">.tcx</code>,{' '}
+                    <code className="font-mono">.fit.gz</code> files or an entire Garmin DI-Connect / Strava bulk export{' '}
+                    <code className="font-mono">.zip</code> archive. Parsed 100% locally in a background Web Worker.
+                  </p>
+                </div>
+                <label className="min-h-[40px] inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 px-3.5 py-2 text-xs font-semibold text-white cursor-pointer transition-colors whitespace-nowrap">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isImportingArchive ? 'Importing Archive...' : 'Select Files or .ZIP Archive'}</span>
+                  <input
+                    type="file"
+                    multiple
+                    disabled={isImportingArchive}
+                    accept=".fit,.fit.gz,.gpx,.gpx.gz,.tcx,.tcx.gz,.zip,.json"
+                    onChange={async (e) => {
+                      const files = e.target.files ? Array.from(e.target.files) : [];
+                      if (files.length === 0) return;
+                      setIsImportingArchive(true);
+                      setLocalStatusMsg(null);
+                      try {
+                        const res = await importWorkoutFilesOrArchive({
+                          files,
+                          existingActivities,
+                          onProgress: (p) => setArchiveProgress({ ...p }),
+                        });
+                        if (res.importedActivities.length > 0) {
+                          onImportBatchActivities(res.importedActivities);
+                        }
+                        setLocalStatusMsg(
+                          `Imported ${res.importedActivities.length} workout${
+                            res.importedActivities.length === 1 ? '' : 's'
+                          } from ${res.totalDiscovered} archive item${
+                            res.totalDiscovered === 1 ? '' : 's'
+                          }${
+                            res.skippedFiles.length > 0
+                              ? ` (${res.skippedFiles.length} duplicate/unsupported skipped)`
+                              : ''
+                          }.`
+                        );
+                      } catch {
+                        setLocalStatusMsg('Failed to unpack or parse one or more archive files.');
+                      } finally {
+                        setArchiveProgress(null);
+                        setIsImportingArchive(false);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              {archiveProgress && (
+                <div className="space-y-1.5 text-xs font-mono">
+                  <div className="flex justify-between text-blue-600 dark:text-sky-300">
+                    <span>
+                      Parsing ({archiveProgress.processed} / {archiveProgress.total}):{' '}
+                      {archiveProgress.currentFileName}
+                    </span>
+                    <span>{archiveProgress.importedCount} imported</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-blue-500/20 overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-150"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (archiveProgress.processed / Math.max(1, archiveProgress.total)) * 100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Section 00: 1-Click Transfer to Deployed App / Vercel (.env & Connection Bundle) */}
           <div className="rounded-xl border border-blue-500/40 bg-blue-500/5 p-5 space-y-3">
