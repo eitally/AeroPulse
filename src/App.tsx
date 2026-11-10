@@ -444,6 +444,19 @@ export default function App() {
     }
   };
 
+  const safeParseResponseJson = async (resp: Response): Promise<any> => {
+    const text = await resp.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+      return {
+        error: `Server returned an unexpected response (HTTP ${resp.status})${snippet ? `: ${snippet}` : ''}`,
+      };
+    }
+  };
+
   const fetchServerConfigStatus = useCallback(async () => {
     try {
       const hasLocalAuth = hasLocalClientCredentials();
@@ -458,7 +471,8 @@ export default function App() {
         headers: getSavedIntervalsHeaders(),
       });
       if (!resp.ok) return null;
-      const data = await resp.json();
+      const data = await safeParseResponseJson(resp);
+      if (data?.error && !data?.callbackUrl) return null;
       if (hasLocalAuth && data.sessionToken) {
         try {
           localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
@@ -1145,6 +1159,78 @@ export default function App() {
       }
       idbHydratedRef.current = true;
 
+      // Surface any OAuth redirect error from ?auth_error=... or exchange ?code=... if an older SW intercepted /auth/strava/callback
+      let exchangedUrlCode = false;
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlAuthErr = params.get('auth_error');
+        const urlCode = params.get('code');
+        if (urlAuthErr) {
+          setSyncError(urlAuthErr);
+          params.delete('auth_error');
+          const cleanQuery = params.toString();
+          const nextUrl = `/${cleanQuery ? `?${cleanQuery}` : ''}${window.location.hash}`;
+          window.history.replaceState({}, '', nextUrl);
+        } else if (urlCode) {
+          window.history.replaceState({}, '', '/#fitness');
+          const exResp = await fetch('/api/strava/exchange-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+            body: JSON.stringify({ code: urlCode }),
+          });
+          const exData = await safeParseResponseJson(exResp);
+          if (exResp.ok && (exData.accessToken || exData.refreshToken)) {
+            if (exData.sessionToken) {
+              localStorage.setItem('aeropulse_session_token', String(exData.sessionToken));
+            }
+            saveRotatedStravaTokensToStorage({
+              refreshToken: exData.refreshToken,
+              accessToken: exData.accessToken,
+              expiresAt: exData.expiresAt,
+              clientId: exData.clientId,
+              athleteId: exData.athleteId,
+              athleteName: exData.athleteName,
+            });
+            localStorage.removeItem('aeropulse_logged_out');
+            localStorage.setItem('aeropulse_auth_gate_passed', '1');
+            setIsSessionLoggedOut(false);
+            setHasEnteredWorkspace(true);
+            exchangedUrlCode = true;
+          } else if (exData?.error) {
+            setSyncError(exData.error);
+          }
+        }
+      } catch {
+        // ignore URL parse issues
+      }
+
+      let justConnectedViaOAuth = false;
+      try {
+        justConnectedViaOAuth = localStorage.getItem('aeropulse_oauth_just_connected') === '1';
+        if (justConnectedViaOAuth) {
+          localStorage.removeItem('aeropulse_oauth_just_connected');
+          const savedName = localStorage.getItem('aeropulse_strava_athlete_name')?.trim();
+          const savedWeight = Number(localStorage.getItem('aeropulse_strava_athlete_weight_kg') || 0);
+          const savedFtp = Number(localStorage.getItem('aeropulse_strava_athlete_ftp') || 0);
+          if (savedName && !isGenericAthleteName(savedName)) {
+            const nextProf = buildCompleteAthleteProfile(
+              {
+                ...athleteProfileRef.current,
+                name: savedName,
+                ...(savedWeight > 30 ? { weightKg: savedWeight } : {}),
+                ...(savedFtp > 80 ? { ftp: savedFtp } : {}),
+              },
+              wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
+              activitiesRef.current
+            );
+            setAthleteProfile(nextProf);
+            athleteProfileRef.current = nextProf;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+
       const statusData = await fetchServerConfigStatus();
       let isGatePassed = false;
       try {
@@ -1158,11 +1244,13 @@ export default function App() {
         mounted &&
         isGatePassed &&
         hasLocalClientCredentials() &&
-        (statusData?.stravaConnected ||
+        (justConnectedViaOAuth ||
+          exchangedUrlCode ||
+          statusData?.stravaConnected ||
           statusData?.garminConnected ||
           statusData?.intervalsConnected)
       ) {
-        syncLiveTelemetry(false);
+        syncLiveTelemetry(justConnectedViaOAuth || exchangedUrlCode);
       }
     })();
     return () => {
@@ -1227,6 +1315,20 @@ export default function App() {
           // ignore
         }
         saveRotatedStravaTokensToStorage(tokens);
+        if (tokens.athleteName && !isGenericAthleteName(tokens.athleteName)) {
+          const cleanName = String(tokens.athleteName).trim();
+          setAthleteProfile((prev) => ({
+            ...prev,
+            name: cleanName,
+            weightKg: Number(tokens.athleteWeightKg) > 30 ? Number(tokens.athleteWeightKg) : prev.weightKg,
+            ftp: Number(tokens.athleteFtp) > 50 ? Number(tokens.athleteFtp) : prev.ftp,
+          }));
+          setConnectionStatus((prev) => ({
+            ...prev,
+            stravaConnected: true,
+            stravaAthleteName: cleanName,
+          }));
+        }
       }
       setIsSessionLoggedOut(false);
       setHasEnteredWorkspace(true);
@@ -1325,10 +1427,10 @@ export default function App() {
     setSyncError(null);
     const resp = await fetch('/api/strava/credentials', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ clientId, clientSecret }),
     });
-    const data = await resp.json();
+    const data = await safeParseResponseJson(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to save Strava credentials');
       return;
@@ -1350,105 +1452,34 @@ export default function App() {
         ? crypto.randomUUID()
         : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
-    // If we already have the clientId in state, construct the Strava OAuth URL synchronously
-    // so window.open is called synchronously inside the click handler (zero popup blocker issues).
-    let popup: Window | null = null;
-    if (connectionStatus.stravaClientId) {
-      const redirectUri =
-        mode === 'localhost'
-          ? 'http://localhost/exchange_token'
-          : `${window.location.origin}/auth/strava/callback`;
-      const params = new URLSearchParams({
-        client_id: connectionStatus.stravaClientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        approval_prompt: 'force',
-        scope: 'read,activity:read_all,profile:read_all',
-        state: oauthState,
-      });
-      const directUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-      popup = window.open(directUrl, 'strava_oauth_popup', 'width=620,height=740');
-    } else {
-      try {
-        const origin = encodeURIComponent(window.location.origin);
-        const resp = await fetch(
-          `/api/strava/auth/url?origin=${origin}&mode=${mode}&state=${encodeURIComponent(oauthState)}`
+    try {
+      const origin = encodeURIComponent(window.location.origin);
+      const prompt = hasEnteredWorkspace && !isSessionLoggedOut ? 'force' : 'auto';
+      const resp = await fetch(
+        `/api/strava/auth/url?origin=${origin}&mode=${mode}&prompt=${prompt}&state=${encodeURIComponent(oauthState)}`,
+        { headers: getSavedIntervalsHeaders() }
+      );
+      const data = await safeParseResponseJson(resp);
+      if (!resp.ok || !data?.url) {
+        setSyncError(
+          data?.error ||
+            'Strava OAuth is not configured on this server yet (STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET missing).'
         );
-        const data = await resp.json();
-        if (!resp.ok || !data.url) {
-          setSyncError(
-            data.error ||
-              'Strava Client ID not set. Enter your Strava Client ID & Secret in the login screen developer settings.'
-          );
-          if (hasEnteredWorkspace) {
-            setIsDataSourcesOpen(true);
-          }
-          return;
-        }
-        popup = window.open(data.url, 'strava_oauth_popup', 'width=620,height=740');
-      } catch (err) {
-        setSyncError(err instanceof Error ? err.message : 'Failed to open Strava OAuth popup');
         return;
       }
-    }
 
-    // Poll /api/strava/auth/poll?state=... every 2s for up to 2 minutes so even if strava.com severs window.opener,
-    // only the browser that initiated this exact OAuth state nonce receives its tokens.
-    let checks = 0;
-    const pollTimer = window.setInterval(async () => {
-      checks += 1;
-      if (checks > 60) {
-        window.clearInterval(pollTimer);
+      // Standard Intervals.icu-style top-level OAuth 2.0 redirect for cloud mode:
+      // Works reliably across Vercel serverless instances, desktop browsers, mobile Safari, and installed PWAs.
+      if (mode === 'cloud') {
+        window.location.assign(data.url);
         return;
       }
-      try {
-        const pollResp = await fetch(
-          `/api/strava/auth/poll?state=${encodeURIComponent(oauthState)}`
-        );
-        const pollData = pollResp.ok ? await pollResp.json() : null;
-        if (pollData?.completed && pollData.tokens) {
-          window.clearInterval(pollTimer);
-          saveRotatedStravaTokensToStorage(pollData.tokens);
-          try {
-            if (popup && !popup.closed) popup.close();
-          } catch {
-            // ignore
-          }
-          setIsSessionLoggedOut(false);
-          setHasEnteredWorkspace(true);
-          try {
-            localStorage.removeItem('aeropulse_logged_out');
-            localStorage.setItem('aeropulse_auth_gate_passed', '1');
-          } catch {
-            // ignore
-          }
-          syncLiveTelemetry(true);
-          return;
-        }
-      } catch {
-        // ignore poll error
-      }
-      if (hasStravaClientCredentials()) {
-        const st = await fetchServerConfigStatus();
-        if (st?.stravaConnected) {
-          window.clearInterval(pollTimer);
-          try {
-            if (popup && !popup.closed) popup.close();
-          } catch {
-            // ignore
-          }
-          setIsSessionLoggedOut(false);
-          setHasEnteredWorkspace(true);
-          try {
-            localStorage.removeItem('aeropulse_logged_out');
-            localStorage.setItem('aeropulse_auth_gate_passed', '1');
-          } catch {
-            // ignore
-          }
-          syncLiveTelemetry(true);
-        }
-      }
-    }, 2000);
+
+      // Localhost manual code-exchange popup (available inside Data Sources after login)
+      window.open(data.url, 'strava_oauth_popup', 'width=620,height=740');
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to start Strava OAuth sign-in.');
+    }
   };
 
   const handleExchangeStravaCode = async (codeOrUrl: string) => {
@@ -1458,10 +1489,17 @@ export default function App() {
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ code: codeOrUrl }),
     });
-    const data = await resp.json();
+    const data = await safeParseResponseJson(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to exchange Strava authorization code.');
       throw new Error(data.error || 'Failed to exchange Strava authorization code.');
+    }
+    if (data.sessionToken) {
+      try {
+        localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+      } catch {
+        // ignore
+      }
     }
     saveRotatedStravaTokensToStorage({
       refreshToken: data.refreshToken,
@@ -1471,6 +1509,9 @@ export default function App() {
       athleteId: data.athleteId,
       athleteName: data.athleteName,
     });
+    if (data.athleteName && !isGenericAthleteName(data.athleteName)) {
+      setAthleteProfile((prev) => ({ ...prev, name: String(data.athleteName).trim() }));
+    }
     try {
       localStorage.removeItem('aeropulse_logged_out');
       localStorage.setItem('aeropulse_auth_gate_passed', '1');
@@ -1489,17 +1530,29 @@ export default function App() {
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ refreshToken, accessToken }),
     });
-    const data = await resp.json();
+    const data = await safeParseResponseJson(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to connect Strava token.');
       throw new Error(data.error || 'Failed to connect Strava token.');
+    }
+    if (data.sessionToken) {
+      try {
+        localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+      } catch {
+        // ignore
+      }
     }
     saveRotatedStravaTokensToStorage({
       refreshToken: data.refreshToken,
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,
       clientId: data.clientId,
+      athleteId: data.athleteId,
+      athleteName: data.athleteName,
     });
+    if (data.athleteName && !isGenericAthleteName(data.athleteName)) {
+      setAthleteProfile((prev) => ({ ...prev, name: String(data.athleteName).trim() }));
+    }
     try {
       localStorage.removeItem('aeropulse_logged_out');
       localStorage.setItem('aeropulse_auth_gate_passed', '1');
@@ -2518,11 +2571,22 @@ export default function App() {
       typeof window !== 'undefined'
         ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
         : undefined;
+    const storedGarminName =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('aeropulse_garmin_athlete_name')?.trim()
+        : undefined;
+    const storedIntervalsName =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('aeropulse_intervals_athlete_name')?.trim()
+        : undefined;
     const candidates = [
       athleteProfile.name,
       connectionStatus.stravaAthleteName,
       storedStravaName,
+      connectionStatus.garminAthleteName,
+      storedGarminName,
       connectionStatus.intervalsAthleteName,
+      storedIntervalsName,
     ];
     for (const candidate of candidates) {
       if (candidate && !isGenericAthleteName(candidate)) {
@@ -2533,6 +2597,7 @@ export default function App() {
   }, [
     athleteProfile.name,
     connectionStatus.stravaAthleteName,
+    connectionStatus.garminAthleteName,
     connectionStatus.intervalsAthleteName,
   ]);
 
@@ -2953,10 +3018,6 @@ export default function App() {
           onLaunchStravaOAuth={async (mode = 'cloud') => {
             await handleLaunchStravaOAuth(mode);
           }}
-          onExchangeStravaCode={async (codeOrUrl) => {
-            await handleExchangeStravaCode(codeOrUrl);
-          }}
-          onSaveStravaCredentials={handleSaveStravaCredentials}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
@@ -3753,7 +3814,7 @@ export default function App() {
             activities={effectiveActivities}
             athleteProfile={effectiveAthleteProfile}
             distanceUnit={distanceUnit}
-            selfName={athleteProfile.name || 'Primary Athlete'}
+            selfName={primaryAthleteDisplayName}
             selfProfile={athleteProfile}
             selfWellnessDays={wellnessDays}
             connectedAthletes={connectedAthletes}
@@ -4014,7 +4075,7 @@ export default function App() {
       <AthleteRosterModal
         isOpen={isRosterModalOpen}
         onClose={() => setIsRosterModalOpen(false)}
-        selfName={athleteProfile.name || 'Primary Athlete'}
+        selfName={primaryAthleteDisplayName}
         selfInviteCode="AP-8492-TALLY"
         selfCtl={selfLatestWellness?.ctl || 72.4}
         selfAtl={selfLatestWellness?.atl || 68.0}

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 const SESSION_SECRET_FILE = '/tmp/aeropulse-session-secret.key';
 const SESSION_COOKIE_NAME = 'aeropulse_session';

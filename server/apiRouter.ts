@@ -1,9 +1,9 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
-  GarminSessionStore,
+  type GarminSessionStore,
   authenticateGarminConnect,
   clearGarminSession,
   fetchDirectGarminProfileAndWellness,
@@ -12,7 +12,7 @@ import {
   normalizeGarminPersonalApiActivities,
   pushWorkoutToGarminConnect,
   saveGarminSession,
-} from './garminConnectService';
+} from './garminConnectService.ts';
 import {
   clearSessionCookie,
   escapeHtml,
@@ -22,7 +22,7 @@ import {
   safeJsonForScript,
   securityHeadersMiddleware,
   setSessionCookie,
-} from './securityUtils';
+} from './securityUtils.ts';
 
 export const apiRouter = express.Router();
 apiRouter.use(securityHeadersMiddleware);
@@ -946,7 +946,9 @@ function getStravaTokenRotationPayload(req?: Request) {
   if (!refreshToken && !accessToken) {
     return undefined;
   }
-  const cached = stravaIdentityByToken.get(refreshToken || accessToken);
+  const cached =
+    (refreshToken ? stravaIdentityByToken.get(refreshToken) : undefined) ||
+    (accessToken ? stravaIdentityByToken.get(accessToken) : undefined);
   return {
     accessToken: accessToken || undefined,
     refreshToken: refreshToken || undefined,
@@ -3675,16 +3677,17 @@ interface PendingStravaOAuthEntry {
 const pendingOAuthByState = new Map<string, PendingStravaOAuthEntry>();
 
 apiRouter.get('/api/strava/auth/url', (req: Request, res: Response) => {
-  const { clientId } = getEffectiveStravaClientConfig(req);
-  if (!clientId) {
+  const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+  if (!clientId || !clientSecret) {
     res.status(400).json({
       error:
-        'Strava Client ID is not configured yet. Enter your Strava Client ID & Secret in the login screen developer settings or set STRAVA_CLIENT_ID in your environment variables.',
+        'Strava OAuth is not configured on this server yet. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in your Vercel Environment Variables (or local .env).',
     });
     return;
   }
 
   const mode = String(req.query.mode || 'cloud').toLowerCase();
+  const prompt = String(req.query.prompt || 'auto').toLowerCase() === 'force' ? 'force' : 'auto';
   const oauthState = String(req.query.state || '').trim();
   const redirectUri =
     mode === 'localhost' ? 'http://localhost/exchange_token' : resolveCallbackUrl(req);
@@ -3692,7 +3695,7 @@ apiRouter.get('/api/strava/auth/url', (req: Request, res: Response) => {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    approval_prompt: 'force',
+    approval_prompt: prompt,
     scope: 'read,activity:read_all,profile:read_all',
   });
   if (oauthState) {
@@ -3701,6 +3704,28 @@ apiRouter.get('/api/strava/auth/url', (req: Request, res: Response) => {
 
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
   res.json({ url: authUrl, redirectUri, clientId, state: oauthState || undefined });
+});
+
+apiRouter.get('/api/strava/auth/login', (req: Request, res: Response) => {
+  const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+  if (!clientId || !clientSecret) {
+    const msg = encodeURIComponent(
+      'Strava OAuth is not configured on this server yet (missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET).'
+    );
+    res.redirect(302, `/?auth_error=${msg}`);
+    return;
+  }
+  const oauthState = crypto.randomBytes(16).toString('hex');
+  const redirectUri = resolveCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    approval_prompt: 'auto',
+    scope: 'read,activity:read_all,profile:read_all',
+    state: oauthState,
+  });
+  res.redirect(302, `https://www.strava.com/oauth/authorize?${params.toString()}`);
 });
 
 apiRouter.get('/api/strava/auth/poll', (req: Request, res: Response) => {
@@ -3781,7 +3806,14 @@ async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
     access_token: string;
     refresh_token: string;
     expires_at: number;
-    athlete?: { id?: number | string; firstname?: string; lastname?: string };
+    athlete?: {
+      id?: number | string;
+      username?: string;
+      firstname?: string;
+      lastname?: string;
+      weight?: number;
+      ftp?: number;
+    };
   };
 
   return tokenData;
@@ -3793,7 +3825,8 @@ apiRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) 
     const tokenData = await exchangeStravaAuthCode(codeOrUrl, req);
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     const athleteName =
-      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ') ||
+      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ').trim() ||
+      tokenData.athlete?.username?.trim() ||
       'Strava Athlete';
     const athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
 
@@ -3900,11 +3933,14 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     if (athleteResp.ok) {
       const athlete = (await athleteResp.json()) as {
         id?: number | string;
+        username?: string;
         firstname?: string;
         lastname?: string;
       };
       athleteName =
-        [athlete.firstname, athlete.lastname].filter(Boolean).join(' ') || 'Strava Athlete';
+        [athlete.firstname, athlete.lastname].filter(Boolean).join(' ').trim() ||
+        athlete.username?.trim() ||
+        'Strava Athlete';
       if (athlete.id) athleteId = String(athlete.id);
     }
 
@@ -3939,10 +3975,11 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
   try {
     const oauthErr = req.query.error as string | undefined;
     if (oauthErr) {
+      const escapedErr = escapeHtml(oauthErr);
       res
         .status(400)
         .type('html')
-        .send(`Strava authorization declined or failed: ${escapeHtml(oauthErr)}`);
+        .send(`<!doctype html><html><head><title>Strava Authorization Cancelled</title></head><body style="font-family:system-ui,sans-serif;padding:32px;text-align:center;"><p>Strava authorization declined or failed: ${escapedErr}</p><p><a href="/?auth_error=${encodeURIComponent(`Strava authorization failed: ${oauthErr}`)}">Return to THRESH Sign In</a></p></body></html>`);
       return;
     }
 
@@ -3955,10 +3992,72 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
     const oauthState = String(req.query.state || '').trim();
     const tokenData = await exchangeStravaAuthCode(code, req);
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
-    const athleteName =
-      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ') ||
-      'Strava Athlete';
-    const athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
+
+    let athleteName =
+      [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ').trim() ||
+      tokenData.athlete?.username?.trim() ||
+      '';
+    let athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
+    let athleteWeightKg =
+      typeof tokenData.athlete?.weight === 'number' && tokenData.athlete.weight > 30
+        ? Number(tokenData.athlete.weight.toFixed(1))
+        : undefined;
+    let athleteFtp =
+      typeof tokenData.athlete?.ftp === 'number' && tokenData.athlete.ftp > 80
+        ? Math.round(tokenData.athlete.ftp)
+        : undefined;
+
+    // Fetch /api/v3/athlete if full profile fields (name, weight, or FTP) weren't included in token response
+    if (!athleteName || isGenericName(athleteName) || !athleteWeightKg || !athleteFtp) {
+      try {
+        const profResp = await fetch('https://www.strava.com/api/v3/athlete', {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        if (profResp.ok) {
+          const prof = (await profResp.json()) as {
+            id?: number | string;
+            username?: string;
+            firstname?: string;
+            lastname?: string;
+            weight?: number;
+            ftp?: number;
+          };
+          const fetchedName =
+            [prof.firstname, prof.lastname].filter(Boolean).join(' ').trim() ||
+            prof.username?.trim() ||
+            '';
+          if (fetchedName && !isGenericName(fetchedName)) {
+            athleteName = fetchedName;
+          }
+          if (!athleteId && prof.id) athleteId = String(prof.id);
+          if (!athleteWeightKg && typeof prof.weight === 'number' && prof.weight > 30) {
+            athleteWeightKg = Number(prof.weight.toFixed(1));
+          }
+          if (!athleteFtp && typeof prof.ftp === 'number' && prof.ftp > 80) {
+            athleteFtp = Math.round(prof.ftp);
+          }
+        }
+      } catch {
+        // non-fatal profile enrichment
+      }
+    }
+
+    if (!athleteName) {
+      athleteName = 'Strava Athlete';
+    }
+
+    if (athleteId && !isGenericName(athleteName)) {
+      const identityEntry = {
+        athleteId,
+        athleteName,
+        ftp: athleteFtp,
+        weightKg: athleteWeightKg,
+      };
+      stravaIdentityByToken.set(tokenData.access_token, identityEntry);
+      if (tokenData.refresh_token) {
+        stravaIdentityByToken.set(tokenData.refresh_token, identityEntry);
+      }
+    }
 
     runtimeStore.stravaAccessToken = tokenData.access_token;
     runtimeStore.stravaRefreshToken = tokenData.refresh_token;
@@ -3992,23 +4091,25 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
         expiresAt: tokenData.expires_at,
         clientId: clientId || undefined,
         athleteId,
-        athleteName,
+        athleteName: !isGenericName(athleteName) ? athleteName : undefined,
+        weightKg: athleteWeightKg,
+        ftp: athleteFtp,
       },
     });
 
     res.type('html').send(`
       <!doctype html>
       <html>
-        <head><title>Strava Connected</title></head>
-        <body style="font-family: system-ui, sans-serif; background: #0B0F17; color: #F8FAFC; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 24px;">
-          <div style="background: #111827; border: 1px solid #1E293B; border-radius: 12px; padding: 28px; max-width: 420px;">
-            <h2 style="margin: 0 0 8px; color: #10B981; font-size: 18px;">Strava Connected Successfully</h2>
-            <p style="margin: 0 0 18px; color: #94A3B8; font-size: 13px; line-height: 1.5;">
-              THRESH is now syncing your complete Strava history in the main application window. You can close this popup window.
+        <head><title>Signing in to THRESH…</title></head>
+        <body style="font-family: system-ui, sans-serif; background: #FFFFFF; color: #0F172A; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 24px;">
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 28px; max-width: 420px; box-shadow: 0 10px 25px -5px rgba(15,23,42,0.08);">
+            <h2 style="margin: 0 0 8px; color: #059669; font-size: 18px;">Strava Connected${!isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}</h2>
+            <p style="margin: 0 0 18px; color: #475569; font-size: 13px; line-height: 1.5;">
+              Opening your THRESH dashboard and syncing your Strava history in the background…
             </p>
-            <button onclick="window.close()" style="background: #FC4C02; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 600; font-size: 13px; cursor: pointer;">
-              Close Popup Window
-            </button>
+            <a href="/#fitness" style="display: inline-block; background: #FC4C02; color: #fff; text-decoration: none; border-radius: 10px; padding: 10px 20px; font-weight: 600; font-size: 13px;">
+              Continue to THRESH
+            </a>
           </div>
           <script>
             (function() {
@@ -4018,18 +4119,27 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
                   localStorage.setItem('aeropulse_session_token', payload.sessionToken);
                 }
                 if (payload.tokens) {
+                  var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
+                  if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
+                    localStorage.removeItem('aeropulse_strava_athlete_name');
+                  }
                   if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
                   if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
                   if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
                   if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
                   if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
                   if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
+                  if (payload.tokens.weightKg) localStorage.setItem('aeropulse_strava_athlete_weight_kg', String(payload.tokens.weightKg));
+                  if (payload.tokens.ftp) localStorage.setItem('aeropulse_strava_athlete_ftp', String(payload.tokens.ftp));
                   localStorage.removeItem('aeropulse_logged_out');
                   localStorage.setItem('aeropulse_auth_gate_passed', '1');
+                  localStorage.setItem('aeropulse_oauth_just_connected', '1');
                 }
               } catch (e) {}
+              var hasOpener = false;
               try {
-                if (window.opener) {
+                if (window.opener && window.opener !== window) {
+                  hasOpener = true;
                   window.opener.postMessage(payload, window.location.origin);
                 }
               } catch (e) {}
@@ -4037,21 +4147,21 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
                 var bc = new BroadcastChannel('aeropulse_oauth');
                 bc.postMessage(payload);
               } catch (e) {}
-              setTimeout(function() {
-                try { window.close(); } catch (e) {}
-              }, 600);
+              if (hasOpener) {
+                setTimeout(function() {
+                  try { window.close(); } catch (e) {}
+                }, 400);
+              } else {
+                window.location.replace('/#fitness');
+              }
             })();
           </script>
         </body>
       </html>
     `);
   } catch (error) {
-    res
-      .status(500)
-      .type('html')
-      .send(
-        `Strava callback error: ${escapeHtml(error instanceof Error ? error.message : 'Unknown error')}`
-      );
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    res.redirect(302, `/?auth_error=${encodeURIComponent(`Strava sign-in failed: ${errMsg}`)}`);
   }
 };
 
@@ -4064,6 +4174,14 @@ apiRouter.get(
   ],
   stravaCallbackHandler
 );
+
+apiRouter.get(['/api/index', '/api'], (req: Request, res: Response, next) => {
+  if (req.query.code || (req.query.error && req.query.state !== undefined)) {
+    void stravaCallbackHandler(req, res);
+    return;
+  }
+  next();
+});
 
 async function syncStravaAllHistory(req?: Request, forceFull = false, deltaOnly = false) {
   let activeAccessToken = await ensureValidStravaAccessToken(req, false);
