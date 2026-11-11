@@ -1,23 +1,28 @@
 import React from 'react';
+import type { TeamBrandConfig } from '../types';
+import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine';
 
 interface AeroPulseLogoProps {
   size?: 'sm' | 'md' | 'lg';
   showTagline?: boolean;
   badgeText?: string;
   badgeTone?: 'cyan' | 'orange' | 'emerald';
+  teamBrand?: TeamBrandConfig | null;
 }
 
 /**
- * THRESH — "The Deflection Arc" Brand Mark & Solid Wordmark
+ * THRESH — "The Deflection Arc" Brand Mark & Co-Branded Team Lockup
  * Bold 270° open aerobic arc in Deep Ink (#111318 / #F4F5F7) paired with a
  * single-color Thresh Vermilion (#D9480F / #FB6514) S-curve tangent sweeping
  * cleanly through the open 2-o'clock threshold breach.
+ * When `teamBrand` is active, renders `[Team Crest / Monogram] <SHORT NAME> × THRESH`.
  */
 export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   size = 'md',
   showTagline = false,
   badgeText,
   badgeTone = 'cyan',
+  teamBrand = null,
 }) => {
   const boxClass =
     size === 'sm'
@@ -44,42 +49,111 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
         ? 'bg-[#ECFDF5] dark:bg-emerald-500/15 text-[#065F46] dark:text-emerald-300 border-[#A7F3D0] dark:border-emerald-500/35'
         : 'bg-[#EFF6FF] dark:bg-blue-500/15 text-[#1D4ED8] dark:text-[#60A5FA] border-[#BFDBFE] dark:border-blue-400/35';
 
+  const teamPalette = teamBrand
+    ? computeAccessibleTeamPalette(teamBrand.primaryHex, teamBrand.secondaryHex)
+    : null;
+
+  const teamMonogram = teamBrand
+    ? (teamBrand.shortName || teamBrand.name || 'TM')
+        .split(/[\s-]+/)
+        .filter(Boolean)
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : '';
+
   return (
     <div className="inline-flex items-center gap-2.5 select-none">
-      {/* Deflection Arc App Mark */}
-      <div
-        className={`${boxClass} relative flex items-center justify-center bg-white dark:bg-[#121419] border border-black/10 dark:border-white/12 shadow-2xs overflow-hidden shrink-0 transition-colors`}
-      >
-        <svg
-          viewBox="0 0 32 32"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className={`${svgClass} relative z-10`}
-          aria-hidden="true"
+      {/* Co-Branded Crest / Monogram Shield (when active team selected) + Deflection Arc Mark */}
+      {teamBrand && teamPalette ? (
+        <div className="inline-flex items-center -space-x-1.5 shrink-0">
+          {teamBrand.logoDataUrl ? (
+            <img
+              src={teamBrand.logoDataUrl}
+              alt={`${teamBrand.shortName || teamBrand.name} crest`}
+              className={`${boxClass} object-contain bg-white dark:bg-[#121419] p-0.5 border border-black/15 dark:border-white/15 shadow-xs z-20`}
+            />
+          ) : (
+            <div
+              className={`${boxClass} flex items-center justify-center font-display font-extrabold text-[11px] tracking-tight border border-white/25 shadow-xs z-20`}
+              style={{
+                background: `linear-gradient(135deg, ${teamPalette.primaryOnLight} 0%, ${teamPalette.secondaryOnLight} 100%)`,
+                color: teamPalette.textOnPrimaryLight,
+              }}
+              title={teamBrand.name}
+            >
+              {teamMonogram}
+            </div>
+          )}
+          <div
+            className={`${boxClass} relative hidden xs:flex items-center justify-center bg-white dark:bg-[#121419] border border-black/10 dark:border-white/12 shadow-2xs overflow-hidden z-10`}
+          >
+            <svg
+              viewBox="0 0 32 32"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className={`${svgClass} relative z-10`}
+              aria-hidden="true"
+            >
+              <path
+                d="M 16 5.2 A 10.8 10.8 0 1 0 25.35 10.6"
+                className="stroke-[#111318] dark:stroke-[#F4F5F7]"
+                strokeWidth="3.1"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 8.6 22.8 C 13.8 22.8 14.8 18.2 16.4 15.2 C 18.0 12.2 20.4 7.0 26.6 6.4"
+                stroke={teamPalette.primaryOnLight}
+                strokeWidth="3.1"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+        </div>
+      ) : (
+        <div
+          className={`${boxClass} relative flex items-center justify-center bg-white dark:bg-[#121419] border border-black/10 dark:border-white/12 shadow-2xs overflow-hidden shrink-0 transition-colors`}
         >
-          {/* 270° Open Aerobic Arc (open breach at 12:00–2:30) */}
-          <path
-            d="M 16 5.2 A 10.8 10.8 0 1 0 25.35 10.6"
-            className="stroke-[#111318] dark:stroke-[#F4F5F7]"
-            strokeWidth="3.1"
-            strokeLinecap="round"
-          />
-          {/* Thresh Vermilion Physiological S-Curve Sweeping Through Open Breach */}
-          <path
-            d="M 8.6 22.8 C 13.8 22.8 14.8 18.2 16.4 15.2 C 18.0 12.2 20.4 7.0 26.6 6.4"
-            className="stroke-[#D9480F] dark:stroke-[#FB6514]"
-            strokeWidth="3.1"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className={`${svgClass} relative z-10`}
+            aria-hidden="true"
+          >
+            {/* 270° Open Aerobic Arc (open breach at 12:00–2:30) */}
+            <path
+              d="M 16 5.2 A 10.8 10.8 0 1 0 25.35 10.6"
+              className="stroke-[#111318] dark:stroke-[#F4F5F7]"
+              strokeWidth="3.1"
+              strokeLinecap="round"
+            />
+            {/* Thresh Vermilion Physiological S-Curve Sweeping Through Open Breach */}
+            <path
+              d="M 8.6 22.8 C 13.8 22.8 14.8 18.2 16.4 15.2 C 18.0 12.2 20.4 7.0 26.6 6.4"
+              className="stroke-[#D9480F] dark:stroke-[#FB6514]"
+              strokeWidth="3.1"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+      )}
 
-      {/* Solid THRESH Wordmark & Optional Descriptor */}
-      <div className="leading-none">
+      {/* Solid THRESH Wordmark or Co-Branded `<SHORT NAME> × THRESH` */}
+      <div className="leading-none min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className={`${titleClass} font-display text-[#111318] dark:text-[#F4F5F7]`}>
-            THRESH
-          </span>
+          {teamBrand ? (
+            <span className={`${titleClass} font-display text-[#111318] dark:text-[#F4F5F7] truncate max-w-[185px] sm:max-w-[260px]`}>
+              <span>{teamBrand.shortName || teamBrand.name}</span>
+              <span className="mx-1 text-slate-400 dark:text-slate-500 font-normal text-xs">×</span>
+              <span className="text-xs sm:text-sm tracking-[-0.02em] opacity-85">THRESH</span>
+            </span>
+          ) : (
+            <span className={`${titleClass} font-display text-[#111318] dark:text-[#F4F5F7]`}>
+              THRESH
+            </span>
+          )}
           {badgeText && (
             <span
               className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold uppercase tracking-wider border ${badgeToneClasses}`}
@@ -89,8 +163,10 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
           )}
         </div>
         {showTagline && (
-          <span className="block text-[11px] font-mono text-[#525866] dark:text-slate-400 mt-0.5 tracking-wider uppercase">
-            RUN &amp; RIDE READINESS
+          <span className="block text-[11px] font-mono text-[#525866] dark:text-slate-400 mt-0.5 tracking-wider uppercase truncate">
+            {teamBrand?.mascotOrMotto
+              ? teamBrand.mascotOrMotto
+              : 'RUN & RIDE READINESS'}
           </span>
         )}
       </div>

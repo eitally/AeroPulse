@@ -938,6 +938,124 @@ export interface StudentAthleteGuardrailResult {
   flags: string[];
 }
 
+// ============================================================================
+// MULTI-TEAM BRANDING, BULK ROSTER INVITES (RESEND) & SAFEGUARDING
+// ============================================================================
+
+export type TeamOrgType =
+  | 'HIGH_SCHOOL'
+  | 'COLLEGIATE'
+  | 'RUNNING_CLUB'
+  | 'CYCLING_CLUB'
+  | 'COACH_SQUAD';
+
+export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE';
+
+export type TeamInviteStatus = 'INVITED' | 'OPENED' | 'ACTIVE' | 'REVOKED';
+
+export interface TeamBrandConfig {
+  teamId: string;
+  slug: string; // e.g. 'palo-alto-xc' -> /join/palo-alto-xc
+  joinCode: string; // e.g. 'PAXC-26'
+  name: string; // e.g. 'Palo Alto High Varsity XC'
+  shortName: string; // e.g. 'PALY XC'
+  mascotOrMotto?: string;
+  orgType: TeamOrgType;
+  primarySport: 'Running' | 'Cycling' | 'Hybrid';
+  logoDataUrl?: string; // Optional SVG/PNG/WebP crest data URL
+  primaryHex: string; // e.g. '#1E5631'
+  secondaryHex: string; // e.g. '#D97706'
+  defaultSafeSportShield: boolean; // Auto-defaults to true for HIGH_SCHOOL
+  enableParentGuardianCc: boolean; // Auto-defaults to true for HIGH_SCHOOL
+  coachDisplayName: string;
+  createdAt: string;
+}
+
+export interface TeamAthleteLiveSnapshot {
+  updatedAt: string;
+  hasConnectedWatch: boolean;
+  verdictLabel: string;
+  readinessScore: number;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  acuteLoad7d: number;
+  lowAerobicPct: number;
+  highAerobicPct: number;
+  neuromuscularPct: number;
+  caraHours7d: number;
+  ftpWatts?: number;
+  thresholdPaceSecsPerKm?: number;
+  safeSportHideWeight: boolean;
+  wellnessDays?: UnifiedWellnessDay[];
+  activities?: UnifiedActivity[];
+}
+
+export interface TeamMembershipRecord {
+  membershipId: string;
+  teamId: string;
+  userSid?: string;
+  role: TeamMemberRole;
+  squadGroup: string;
+  invitedName: string;
+  invitedEmail?: string;
+  invitedPhone?: string;
+  parentGuardianEmail?: string;
+  graduationYear?: number;
+  isMinorU18: boolean;
+  seedMarkOrFtp?: string;
+  status: TeamInviteStatus;
+  emailDeliveryStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
+  magicJoinUrl?: string; // Populated for coaches so they can copy or share via free sms:/mailto:
+  invitedAt: string;
+  openedAt?: string;
+  joinedAt?: string;
+  liveSnapshot?: TeamAthleteLiveSnapshot;
+}
+
+export interface TeamBroadcastWorkout {
+  broadcastId: string;
+  teamId: string;
+  targetSquadGroup: string; // 'ALL' or specific squad like 'Varsity'
+  date: string;
+  name: string;
+  sportCategory: SportCategory;
+  plannedDurationSecs: number;
+  plannedLoad: number;
+  workoutSyntax: string;
+  description: string;
+  pushedByCoachName: string;
+  createdAt: string;
+}
+
+export interface TeamSummaryWithRole {
+  brand: TeamBrandConfig;
+  myRole: TeamMemberRole;
+  mySquadGroup: string;
+  myMembershipId: string;
+  totalInvited: number;
+  openedCount: number;
+  activeCount: number;
+  watchConnectedCount: number;
+  memberships: TeamMembershipRecord[];
+  broadcastWorkouts: TeamBroadcastWorkout[];
+}
+
+export interface TeamInvitePreviewPayload {
+  found: boolean;
+  brand?: TeamBrandConfig;
+  membership?: {
+    membershipId: string;
+    invitedName: string;
+    invitedEmail?: string;
+    squadGroup: string;
+    role: TeamMemberRole;
+    isMinorU18: boolean;
+    seedMarkOrFtp?: string;
+  };
+}
+
+
 
 
 

@@ -139,9 +139,14 @@ export function getVerifiedSessionClaims(req?: Request): VerifiedSessionClaims |
   return null;
 }
 
-export function setSessionCookie(req: Request, res: Response, subject = 'authenticated'): string {
+export function setSessionCookie(
+  req: Request,
+  res: Response,
+  subject = 'authenticated',
+  explicitSid?: string
+): string {
   const existing = getVerifiedSessionClaims(req);
-  const token = issueSessionToken(subject, existing?.sid);
+  const token = issueSessionToken(subject, explicitSid || existing?.sid);
   const isSecure =
     req.secure ||
     String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';

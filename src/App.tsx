@@ -40,6 +40,7 @@ import {
   PlannedWorkoutEvent,
   SportCategory,
   TargetGoal,
+  TeamSummaryWithRole,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from './types';
@@ -57,6 +58,7 @@ import {
 import { StravaAuthGate, type FirstRunCalibrationPayload } from './components/StravaAuthGate';
 import { AeroPulseLogo } from './components/AeroPulseLogo';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
+import { applyTeamBrandToDocument } from './utils/teamBrandDom';
 
 const CalendarView = lazy(() =>
   import('./components/CalendarView').then((m) => ({ default: m.CalendarView }))
@@ -162,6 +164,35 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
+  const [rosterInitialTab, setRosterInitialTab] = useState<
+    'TEAMS_BRANDING' | 'LEADERBOARD' | 'SCHOLASTIC_COACH' | 'CONNECT_INVITE' | 'PRIVACY_SHIELD'
+  >('TEAMS_BRANDING');
+  const [myTeams, setMyTeams] = useState<TeamSummaryWithRole[]>(() => {
+    try {
+      const cached = localStorage.getItem('thresh_my_teams_v1');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('thresh_active_team_id_v1') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [resendConfigured, setResendConfigured] = useState<boolean>(false);
+  const [pendingUrlJoinOffer, setPendingUrlJoinOffer] = useState<{
+    codeOrSlug: string;
+    token?: string;
+    teamName: string;
+    shortName: string;
+  } | null>(null);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState<boolean>(false);
   const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2221,13 +2252,221 @@ export default function App() {
     }
   };
 
+  // Multi-Team Brand Resolution & Cloud Teammate Projection
+  const activeTeam = useMemo(
+    () =>
+      (activeTeamId && myTeams.find((t) => t.brand.teamId === activeTeamId)) || null,
+    [myTeams, activeTeamId]
+  );
+
+  const handleSelectActiveTeam = useCallback((nextId: string | null) => {
+    setActiveTeamId(nextId);
+    try {
+      if (nextId) localStorage.setItem('thresh_active_team_id_v1', nextId);
+      else localStorage.removeItem('thresh_active_team_id_v1');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleTeamsUpdated = useCallback(
+    (nextTeams: TeamSummaryWithRole[], nextActiveId?: string) => {
+      setMyTeams(nextTeams);
+      try {
+        localStorage.setItem('thresh_my_teams_v1', JSON.stringify(nextTeams));
+      } catch {
+        // ignore
+      }
+      if (nextActiveId !== undefined) {
+        handleSelectActiveTeam(nextActiveId);
+      } else if (!activeTeamId && nextTeams.length > 0) {
+        handleSelectActiveTeam(nextTeams[0].brand.teamId);
+      }
+    },
+    [activeTeamId, handleSelectActiveTeam]
+  );
+
+  useEffect(() => {
+    if (!hasEnteredWorkspace || isSessionLoggedOut) return;
+    applyTeamBrandToDocument(activeTeam?.brand || null);
+  }, [activeTeam, hasEnteredWorkspace, isSessionLoggedOut]);
+
+  // Hydrate Multi-Team memberships from server & detect `/join/<slug>` for already-logged-in athletes
+  useEffect(() => {
+    if (!hasEnteredWorkspace || isSessionLoggedOut) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const origin = encodeURIComponent(window.location.origin);
+        const resp = await fetch(`/api/teams/mine?origin=${origin}`, {
+          credentials: 'include',
+          headers: getSavedIntervalsHeaders(),
+        });
+        if (!resp.ok || cancelled) return;
+        const data = await resp.json();
+        if (typeof data.resendConfigured === 'boolean') {
+          setResendConfigured(data.resendConfigured);
+        }
+        if (Array.isArray(data.teams)) {
+          setMyTeams(data.teams);
+          try {
+            localStorage.setItem('thresh_my_teams_v1', JSON.stringify(data.teams));
+          } catch {
+            // ignore
+          }
+          if (!activeTeamId && data.teams.length > 0) {
+            handleSelectActiveTeam(data.teams[0].brand.teamId);
+          }
+        }
+      } catch {
+        // offline fallback uses cached thresh_my_teams_v1
+      }
+    })();
+
+    // Check if an already-signed-in user opened a second team's Magic Join URL
+    const pathMatch = window.location.pathname.match(/^\/join\/([^/?#]+)/i);
+    const qs = new URLSearchParams(window.location.search);
+    const codeOrSlug = pathMatch
+      ? decodeURIComponent(pathMatch[1])
+      : (qs.get('join') || '').trim();
+    const token = qs.get('t') || qs.get('token') || undefined;
+    if (codeOrSlug) {
+      const previewQs = new URLSearchParams({ codeOrSlug });
+      if (token) previewQs.set('t', token);
+      fetch(`/api/teams/join-preview?${previewQs.toString()}`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((prev) => {
+          if (!cancelled && prev?.found && prev?.brand) {
+            setPendingUrlJoinOffer({
+              codeOrSlug,
+              token,
+              teamName: prev.brand.name,
+              shortName: prev.brand.shortName || prev.brand.name,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasEnteredWorkspace, isSessionLoggedOut]);
+
+  const cloudTeamRosterAthletes = useMemo<ConnectedAthleteRecord[]>(() => {
+    if (!activeTeam) return [];
+    const isCoach =
+      activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH';
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    return activeTeam.memberships
+      .filter(
+        (m) => m.status === 'ACTIVE' && m.membershipId !== activeTeam.myMembershipId
+      )
+      .map((m) => {
+        const snap = m.liveSnapshot;
+        const hideWeight = Boolean(
+          activeTeam.brand.defaultSafeSportShield ||
+            m.isMinorU18 ||
+            snap?.safeSportHideWeight
+        );
+        const initials = m.invitedName
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((p) => p[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase() || 'TM';
+        const fallbackWellness: UnifiedWellnessDay[] =
+          snap?.wellnessDays && snap.wellnessDays.length > 0
+            ? snap.wellnessDays
+            : [
+                {
+                  date: todayIso,
+                  ctl: snap?.ctl ?? 45,
+                  atl: snap?.atl ?? 42,
+                  tsb: snap?.tsb ?? 3,
+                  rampRate: 2.5,
+                  dailyLoad: Math.round((snap?.acuteLoad7d ?? 280) / 7),
+                  restingHR: 52,
+                  hrvRMSSD: 64,
+                  hrvBaseline7d: 62,
+                  hrvStatus: 'Balanced',
+                  sleepSecs: 28800,
+                  sleepScore: 84,
+                  weightKg: hideWeight ? 0 : 68,
+                  readinessStatus: 'Optimal',
+                },
+              ];
+        const prof = buildCompleteAthleteProfile({
+          name: m.invitedName,
+          ftp: snap?.ftpWatts || 250,
+          thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
+          safeSportHideWeight: hideWeight,
+        });
+
+        const squadBroadcasts: PlannedWorkoutEvent[] = (
+          activeTeam.broadcastWorkouts || []
+        )
+          .filter(
+            (bw) =>
+              bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === m.squadGroup
+          )
+          .map((bw) => ({
+            id: bw.broadcastId,
+            date: bw.date,
+            name: bw.name,
+            sportCategory: bw.sportCategory,
+            environmentPreference: 'FLEXIBLE',
+            description: bw.description,
+            plannedLoad: bw.plannedLoad,
+            plannedDurationSecs: bw.plannedDurationSecs,
+            targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+            workoutSyntax: bw.workoutSyntax,
+            source: 'USER',
+          }));
+
+        return {
+          id: `team-mem-${m.membershipId}`,
+          stravaAthleteId: m.squadGroup.toUpperCase().slice(0, 8),
+          inviteCode: activeTeam.brand.joinCode,
+          name: m.invitedName,
+          avatarInitials: initials,
+          location: `${activeTeam.brand.shortName} · ${m.squadGroup}`,
+          primarySport:
+            activeTeam.brand.primarySport === 'Cycling' ? 'Cycling' : 'Running',
+          role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
+          status: 'CONNECTED',
+          connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),
+          primaryGoalSummary: snap?.verdictLabel || `${m.squadGroup} Roster`,
+          privacySettings: {
+            sharePmcAndZones: 'ALL_CONNECTIONS',
+            shareWellnessAndHrv: isCoach ? 'ALL_CONNECTIONS' : 'COACHES_ONLY',
+            shareGpsRoutes: 'COACHES_ONLY',
+            stravaComplianceShield: true,
+            allowCoachCalendarEdits: true,
+          },
+          athleteProfile: prof,
+          wellnessDays: fallbackWellness,
+          activities: snap?.activities || [],
+          plannedEvents: squadBroadcasts,
+          targetGoals: [],
+        };
+      });
+  }, [activeTeam]);
+
+  const combinedRoster = useMemo(
+    () => [...cloudTeamRosterAthletes, ...connectedAthletes],
+    [cloudTeamRosterAthletes, connectedAthletes]
+  );
+
   // Multi-Athlete Context Resolution & Privacy Shield Enforcement
   const activeConnectedAthlete = useMemo(
     () =>
       activeViewedAthleteId === 'SELF'
         ? null
-        : connectedAthletes.find((a) => a.id === activeViewedAthleteId) || null,
-    [activeViewedAthleteId, connectedAthletes]
+        : combinedRoster.find((a) => a.id === activeViewedAthleteId) || null,
+    [activeViewedAthleteId, combinedRoster]
   );
 
   // Calendar Planned Workout Creation & Deletion (syncs to Intervals.icu + local state + COACH_EDIT roster)
@@ -2674,15 +2913,41 @@ export default function App() {
     [shieldedConnectedTelemetry, activities]
   );
 
-  const effectivePlannedEvents = useMemo(
-    () => (activeConnectedAthlete ? activeConnectedAthlete.plannedEvents : plannedEvents),
-    [activeConnectedAthlete, plannedEvents]
-  );
+  const effectivePlannedEvents = useMemo(() => {
+    if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
+    if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
+    const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
+      .filter(
+        (bw) =>
+          bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === activeTeam.mySquadGroup
+      )
+      .map((bw) => ({
+        id: bw.broadcastId,
+        date: bw.date,
+        name: bw.name,
+        sportCategory: bw.sportCategory,
+        environmentPreference: 'FLEXIBLE',
+        description: bw.description,
+        plannedLoad: bw.plannedLoad,
+        plannedDurationSecs: bw.plannedDurationSecs,
+        targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+        workoutSyntax: bw.workoutSyntax,
+        source: 'USER',
+      }));
+    const existingIds = new Set(plannedEvents.map((e) => e.id));
+    return [
+      ...plannedEvents,
+      ...teamEvents.filter((te) => !existingIds.has(te.id)),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  }, [activeConnectedAthlete, plannedEvents, activeTeam]);
 
-  const effectiveAthleteProfile = useMemo(
-    () => (activeConnectedAthlete ? activeConnectedAthlete.athleteProfile : athleteProfile),
-    [activeConnectedAthlete, athleteProfile]
-  );
+  const effectiveAthleteProfile = useMemo(() => {
+    if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
+    if (activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight) {
+      return { ...athleteProfile, safeSportHideWeight: true };
+    }
+    return athleteProfile;
+  }, [activeConnectedAthlete, athleteProfile, activeTeam]);
 
   const effectiveTargetGoals = useMemo(
     () => (activeConnectedAthlete ? activeConnectedAthlete.targetGoals : targetGoals),
@@ -2691,6 +2956,97 @@ export default function App() {
 
   const selfLatestWellness = wellnessDays[wellnessDays.length - 1] || undefined;
   const latestWellness = effectiveWellnessDays[effectiveWellnessDays.length - 1] || undefined;
+
+  // Debounced Clean-Room readiness & 7d productivity sync across joined teams
+  useEffect(() => {
+    if (!hasEnteredWorkspace || isSessionLoggedOut || myTeams.length === 0) return;
+    if (activities.length === 0 && wellnessDays.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      const sevenDaysAgoMs = Date.now() - 7 * 86_400_000;
+      const recent7dActs = activities.filter(
+        (a) => new Date(a.startDateLocal).getTime() >= sevenDaysAgoMs
+      );
+      const acuteLoad7d = Math.round(
+        recent7dActs.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
+      );
+      const ctlVal = selfLatestWellness?.ctl ?? 45;
+      const atlVal = selfLatestWellness?.atl ?? Math.round(acuteLoad7d / 7);
+      const tsbVal = selfLatestWellness?.tsb ?? Number((ctlVal - atlVal).toFixed(1));
+      const verdictLabel =
+        selfLatestWellness?.garminTrainingStatus ||
+        (tsbVal < -20
+          ? 'Strained · Recover'
+          : acuteLoad7d >= ctlVal * 5.2
+            ? 'Productive · Building'
+            : 'Maintaining');
+      const readinessScore =
+        selfLatestWellness?.readinessStatus === 'Strain'
+          ? 52
+          : selfLatestWellness?.readinessStatus === 'Caution'
+            ? 70
+            : 86;
+      const hasWatch = Boolean(
+        connectionStatus.garminConnected ||
+          connectionStatus.intervalsConnected ||
+          activities.length > 0
+      );
+      fetch('/api/teams/sync-snapshot', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSavedIntervalsHeaders(),
+        },
+        body: JSON.stringify({
+          origin: window.location.origin,
+          athleteName: athleteProfile.name,
+          snapshot: {
+            hasConnectedWatch: hasWatch,
+            verdictLabel,
+            readinessScore,
+            ctl: ctlVal,
+            atl: atlVal,
+            tsb: tsbVal,
+            acuteLoad7d,
+            lowAerobicPct: 76,
+            highAerobicPct: 18,
+            neuromuscularPct: 6,
+            caraHours7d: Number(
+              (
+                recent7dActs.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 3600
+              ).toFixed(1)
+            ),
+            ftpWatts: athleteProfile.ftp,
+            thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
+            safeSportHideWeight: Boolean(athleteProfile.safeSportHideWeight),
+            wellnessDays: wellnessDays.slice(-14),
+            activities: activities.slice(0, 14),
+          },
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.teams && Array.isArray(data.teams)) {
+            setMyTeams(data.teams);
+          }
+        })
+        .catch(() => {});
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    hasEnteredWorkspace,
+    isSessionLoggedOut,
+    myTeams.length,
+    activities.length,
+    wellnessDays.length,
+    athleteProfile.ftp,
+    athleteProfile.thresholdPaceSecsPerKm,
+    athleteProfile.safeSportHideWeight,
+    connectionStatus.garminConnected,
+    connectionStatus.intervalsConnected,
+  ]);
   const latestCtl = latestWellness?.ctl || 72.4;
   const latestWeightKg = effectiveAthleteProfile.weightKg || latestWellness?.weightKg || 70.0;
   const athleteFtp =
@@ -3180,6 +3536,9 @@ export default function App() {
         ftp: payload.cyclingFtpWatts > 50 ? Math.round(payload.cyclingFtpWatts) : 250,
         indoorFtp: payload.cyclingFtpWatts > 50 ? Math.round(payload.cyclingFtpWatts) : 250,
         thresholdPaceSecsPerKm,
+        safeSportHideWeight: Boolean(
+          payload.safeSportHideWeight || athleteProfileRef.current.safeSportHideWeight
+        ),
       },
       wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
       activitiesRef.current
@@ -3191,8 +3550,18 @@ export default function App() {
       localStorage.removeItem('aeropulse_logged_out');
       localStorage.setItem('aeropulse_auth_gate_passed', '1');
       localStorage.setItem('aeropulse_calibrated_v1', '1');
+      if (payload.sessionToken) {
+        localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+      }
     } catch {
       // ignore storage quota errors
+    }
+
+    if (payload.claimedTeams && payload.claimedTeams.length > 0) {
+      handleTeamsUpdated(
+        payload.claimedTeams,
+        payload.activeTeamId || payload.claimedTeams[0].brand.teamId
+      );
     }
 
     await handleSaveProfileOverride(calibratedProfile);
@@ -3212,6 +3581,10 @@ export default function App() {
       setIsDataSourcesOpen(true);
     } else if (payload.entryTarget === 'UPLOAD_FIT') {
       setActiveTab('activities');
+    } else if (payload.entryTarget === 'CREATE_TEAM') {
+      setActiveTab('fitness');
+      setRosterInitialTab('TEAMS_BRANDING');
+      setIsRosterModalOpen(true);
     } else {
       setActiveTab('fitness');
     }
@@ -3246,7 +3619,7 @@ export default function App() {
         <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
-              {/* 1. Brand Wordmark + Telemetry Sync Pill + Active Filter Reset Pill */}
+              {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
               <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <a
                   href="#fitness"
@@ -3256,8 +3629,67 @@ export default function App() {
                   }}
                   className="flex items-center whitespace-nowrap shrink-0"
                 >
-                  <AeroPulseLogo size="sm" />
+                  <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
                 </a>
+
+                {myTeams.length > 0 ? (
+                  <div className="hidden sm:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: activeTeam?.brand.primaryHex || '#1D4ED8',
+                      }}
+                    />
+                    <select
+                      value={activeTeamId || ''}
+                      onChange={(e) =>
+                        handleSelectActiveTeam(e.target.value ? e.target.value : null)
+                      }
+                      aria-label="Switch Active Team Workspace"
+                      className="bg-transparent text-[11px] font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[115px] truncate"
+                    >
+                      {myTeams.map((t) => (
+                        <option
+                          key={t.brand.teamId}
+                          value={t.brand.teamId}
+                          className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                        >
+                          {t.brand.shortName || t.brand.name}
+                        </option>
+                      ))}
+                      <option
+                        value=""
+                        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                      >
+                        Personal Mode
+                      </option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRosterInitialTab('TEAMS_BRANDING');
+                        setIsRosterModalOpen(true);
+                      }}
+                      className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-blue-600 cursor-pointer"
+                      title="Manage Team Branding, Bulk CSV Invites & Roster"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRosterInitialTab('TEAMS_BRANDING');
+                      setIsRosterModalOpen(true);
+                    }}
+                    className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                    title="Create or Join a High School, Collegiate, or Club Team"
+                  >
+                    <Users className="w-3 h-3 text-[#0D9488]" />
+                    <span>+ Team Hub</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -3378,11 +3810,11 @@ export default function App() {
                     <option value="SELF" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                       {primaryAthleteDisplayName} (You)
                     </option>
-                    {connectedAthletes
+                    {combinedRoster
                       .filter((a) => a.status === 'CONNECTED')
                       .map((a) => (
                         <option key={a.id} value={a.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                          {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Friend'})
+                          {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Teammate'})
                         </option>
                       ))}
                   </select>
@@ -3496,6 +3928,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            setRosterInitialTab('TEAMS_BRANDING');
                             setIsRosterModalOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
@@ -3503,10 +3936,12 @@ export default function App() {
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <Users className="w-4 h-4 text-sky-500" />
-                            <span>Friends &amp; Coaching Roster</span>
+                            <span>Teams, Bulk Invites &amp; Roster</span>
                           </span>
                           <span className="font-mono text-[11px] text-slate-400">
-                            {connectedAthletes.length} athletes
+                            {myTeams.length > 0
+                              ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
+                              : `${combinedRoster.length} athletes`}
                           </span>
                         </button>
 
@@ -3679,6 +4114,66 @@ export default function App() {
 
         {/* Main Content Viewport */}
         <main className="flex-1 ap-container py-4 sm:py-5 space-y-5 min-w-0">
+        {/* Multi-Team Magic Join Offer Banner (when an already-signed-in athlete opens a 2nd team link) */}
+        {pendingUrlJoinOffer && (
+          <div className="rounded-2xl liquid-glass border-blue-500/40 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs">
+              <span className="font-mono uppercase text-[10px] font-bold text-[#1D4ED8] dark:text-sky-400 block">
+                MULTI-TEAM INVITATION DETECTED
+              </span>
+              <span className="font-bold text-slate-900 dark:text-white text-sm">
+                Join {pendingUrlJoinOffer.teamName} and add it to your Team Switcher?
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const resp = await fetch('/api/teams/join-claim', {
+                      method: 'POST',
+                      credentials: 'include',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...getSavedIntervalsHeaders(),
+                      },
+                      body: JSON.stringify({
+                        origin: window.location.origin,
+                        codeOrSlug: pendingUrlJoinOffer.codeOrSlug,
+                        inviteToken: pendingUrlJoinOffer.token,
+                        athleteName: primaryAthleteDisplayName,
+                      }),
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.teams) {
+                      handleTeamsUpdated(data.teams, data.team?.brand?.teamId);
+                    }
+                  } finally {
+                    setPendingUrlJoinOffer(null);
+                    if (window.location.pathname.startsWith('/join/')) {
+                      window.history.replaceState({}, '', '/');
+                    }
+                  }
+                }}
+                className="ap-btn-primary text-xs cursor-pointer"
+              >
+                Accept &amp; Join {pendingUrlJoinOffer.shortName}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingUrlJoinOffer(null);
+                  if (window.location.pathname.startsWith('/join/')) {
+                    window.history.replaceState({}, '', '/');
+                  }
+                }}
+                className="ap-btn-secondary text-xs cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
         {/* Background Strava History Sync & Additional Data Sources Bar */}
         {(isSyncing || (connectionStatus.stravaConnected && activities.length === 0)) && (
           <div className="rounded-2xl liquid-glass border-[#FC4C02]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -4344,10 +4839,10 @@ export default function App() {
             selfAtl={selfLatestWellness?.atl ?? 0}
             selfTsb={selfLatestWellness?.tsb ?? 0}
             selfHrv={selfLatestWellness?.hrvRMSSD ?? 0}
-            selfProfile={athleteProfile}
+            selfProfile={effectiveAthleteProfile}
             selfPrivacySettings={selfPrivacySettings}
             onUpdateSelfPrivacy={setSelfPrivacySettings}
-            roster={connectedAthletes}
+            roster={combinedRoster}
             activeAthleteId={activeViewedAthleteId}
             onSelectAthleteViewport={(id) => {
               setActiveViewedAthleteId(id);
@@ -4359,6 +4854,12 @@ export default function App() {
             onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
             onPushCoachWorkout={handlePushCoachWorkout}
             distanceUnit={distanceUnit}
+            myTeams={myTeams}
+            activeTeamId={activeTeamId}
+            resendConfigured={resendConfigured}
+            initialTab={rosterInitialTab}
+            onSelectActiveTeam={handleSelectActiveTeam}
+            onTeamsUpdated={handleTeamsUpdated}
           />
         </Suspense>
       )}

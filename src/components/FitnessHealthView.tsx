@@ -45,8 +45,8 @@ import {
   evaluatePlannedVsCompletedCompliance,
   evaluateStudentAthleteGuardrail,
   generateWeeklyTrainingGitDiff,
-  getLocalDateIso,
 } from '../physiology';
+import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];

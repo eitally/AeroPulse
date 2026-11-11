@@ -37,12 +37,14 @@ import {
 import { sanitizeTelemetryForCleanRoom } from './cleanRoomFirewall.ts';
 import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
+import { teamRouter } from './routers/teamRouter.ts';
 
 export const apiRouter = express.Router();
 const requestContext = new AsyncLocalStorage<Request>();
 apiRouter.use(securityHeadersMiddleware);
 apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(webhooksAndExportRouter);
+apiRouter.use(teamRouter);
 apiRouter.use((req: Request, _res: Response, next: NextFunction) => {
   requestContext.run(req, () => {
     const scopeKey = resolveSessionScopeKey(req);

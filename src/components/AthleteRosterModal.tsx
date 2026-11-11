@@ -26,6 +26,7 @@ import {
   ConnectedAthleteRecord,
   DistanceUnit,
   PrivacyVisibilityTier,
+  TeamSummaryWithRole,
   VdotPodIntensity,
 } from '../types';
 import { applyAthletePrivacyShield } from '../data/athleteRosterData';
@@ -37,6 +38,14 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { AeroPulseLogo } from './AeroPulseLogo';
+import { TeamManagementPanel } from './TeamManagementPanel';
+
+export type RosterTab =
+  | 'TEAMS_BRANDING'
+  | 'LEADERBOARD'
+  | 'SCHOLASTIC_COACH'
+  | 'CONNECT_INVITE'
+  | 'PRIVACY_SHIELD';
 
 interface AthleteRosterModalProps {
   isOpen: boolean;
@@ -74,9 +83,13 @@ interface AthleteRosterModalProps {
     }
   ) => void;
   distanceUnit: DistanceUnit;
+  myTeams?: TeamSummaryWithRole[];
+  activeTeamId?: string | null;
+  resendConfigured?: boolean;
+  initialTab?: RosterTab;
+  onSelectActiveTeam?: (teamId: string | null) => void;
+  onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
 }
-
-type RosterTab = 'LEADERBOARD' | 'SCHOLASTIC_COACH' | 'CONNECT_INVITE' | 'PRIVACY_SHIELD';
 
 const AVATAR_PALETTE = ['#F97316', '#38BDF8', '#10B981', '#A855F7', '#F43F5E'];
 
@@ -100,9 +113,26 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   onToggleAthleteRole,
   onAddFollowByInviteOrName,
   onPushCoachWorkout,
+  myTeams = [],
+  activeTeamId = null,
+  resendConfigured = false,
+  initialTab = 'TEAMS_BRANDING',
+  onSelectActiveTeam,
+  onTeamsUpdated,
 }) => {
-  const [activeTab, setActiveTab] = useState<RosterTab>('LEADERBOARD');
+  const [activeTab, setActiveTab] = useState<RosterTab>(initialTab);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  const activeTeamObj = useMemo(
+    () => myTeams.find((t) => t.brand.teamId === activeTeamId) || null,
+    [myTeams, activeTeamId]
+  );
 
   // Follow / Invite form state
   const [inviteQuery, setInviteQuery] = useState('');
@@ -296,19 +326,19 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-stone-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-4 liquid-glass-subtle">
           <div className="flex items-center gap-3">
-            <AeroPulseLogo size="sm" />
+            <AeroPulseLogo size="sm" teamBrand={activeTeamObj?.brand || null} />
             <div className="h-6 w-px bg-stone-300 dark:bg-slate-800 hidden sm:block" />
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                  Athletes, Friends &amp; Coaching Hub
+                  Teams, Bulk Invites &amp; Coaching Hub
                 </h2>
                 <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-sky-500/10 text-sky-700 dark:text-[#38BDF8] border border-sky-500/30">
-                  ROSTER &amp; PRIVACY SHIELD
+                  MULTI-TEAM &amp; SAFE-SPORT
                 </span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400">
-                Switch athlete calendars, compare live CTL/ATL/TSB fitness load, manage friend follow requests, or push coach workouts.
+                Create school/club branding, send bulk Resend email invites, switch multi-team rosters, or run VDOT pacing pods.
               </p>
             </div>
           </div>
@@ -344,17 +374,29 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
         {/* Navigation Tabs */}
         <div className="px-6 border-b border-stone-200/80 dark:border-slate-800/80 bg-[#F3EFEA]/80 dark:bg-[#0F131A] flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('TEAMS_BRANDING')}
+              className={`px-3.5 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'TEAMS_BRANDING'
+                  ? 'border-[#1D4ED8] text-slate-900 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#60A5FA]" />
+              <span>Teams, Bulk Invite &amp; Branding ({myTeams.length})</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('LEADERBOARD')}
-              className={`px-4 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-3.5 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 activeTab === 'LEADERBOARD'
                   ? 'border-[#F97316] text-slate-900 dark:text-white font-semibold'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Activity className="w-3.5 h-3.5 text-[#F97316]" />
-              <span>Team &amp; Friends Roster ({connectedRoster.length + 1})</span>
+              <span>Roster Triage ({connectedRoster.length + 1})</span>
             </button>
 
             <button
@@ -421,6 +463,20 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 Dismiss
               </button>
             </div>
+          )}
+
+          {/* TAB 0: MULTI-TEAM BRANDING STUDIO, BULK RESEND INVITER & ONBOARDING FUNNEL */}
+          {activeTab === 'TEAMS_BRANDING' && (
+            <TeamManagementPanel
+              selfName={selfName}
+              myTeams={myTeams}
+              activeTeamId={activeTeamId}
+              resendConfigured={resendConfigured}
+              onSelectActiveTeam={(nextId) => onSelectActiveTeam?.(nextId)}
+              onTeamsUpdated={(nextTeams, nextActiveId) =>
+                onTeamsUpdated?.(nextTeams, nextActiveId)
+              }
+            />
           )}
 
           {/* TAB 1: TEAM & FRIENDS ROSTER LEADERBOARD */}
@@ -741,7 +797,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           </td>
 
                           <td className="py-3.5 px-3 font-mono text-slate-700 dark:text-slate-300">
-                            {rawAthlete.athleteProfile.ftp}W ({wPerKg} W/kg)
+                            {rawAthlete.athleteProfile.safeSportHideWeight ||
+                            activeTeamObj?.brand.defaultSafeSportShield
+                              ? `${rawAthlete.athleteProfile.ftp}W (Safe-Sport)`
+                              : `${rawAthlete.athleteProfile.ftp}W (${wPerKg} W/kg)`}
                           </td>
 
                           <td className="py-3.5 px-3">
