@@ -3637,7 +3637,8 @@ export default function App() {
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{
-                        backgroundColor: activeTeam?.brand.primaryHex || '#1D4ED8',
+                        backgroundColor:
+                          activeTeam?.brand.primaryHex || 'var(--ap-thresh-vermilion)',
                       }}
                     />
                     <select
@@ -3652,14 +3653,14 @@ export default function App() {
                         <option
                           key={t.brand.teamId}
                           value={t.brand.teamId}
-                          className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                          className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
                         >
                           {t.brand.shortName || t.brand.name}
                         </option>
                       ))}
                       <option
                         value=""
-                        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                        className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
                       >
                         Personal Mode
                       </option>
@@ -3670,7 +3671,7 @@ export default function App() {
                         setRosterInitialTab('TEAMS_BRANDING');
                         setIsRosterModalOpen(true);
                       }}
-                      className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-blue-600 cursor-pointer"
+                      className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-[#171E1B] text-slate-700 dark:text-slate-200 hover:opacity-85 cursor-pointer"
                       title="Manage Team Branding, Bulk CSV Invites & Roster"
                     >
                       Manage
@@ -3686,7 +3687,7 @@ export default function App() {
                     className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     title="Create or Join a High School, Collegiate, or Club Team"
                   >
-                    <Users className="w-3 h-3 text-[#0D9488]" />
+                    <Users className="w-3 h-3 ap-text-brand" />
                     <span>+ Team Hub</span>
                   </button>
                 )}
@@ -3700,9 +3701,9 @@ export default function App() {
                 >
                   <RefreshCw
                     weight="bold"
-                    className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#D9480F]' : 'text-[#0D9488]'}`}
+                    className={`w-3 h-3 ap-text-brand ${isSyncing ? 'animate-spin' : ''}`}
                   />
-                  <span className="text-[#1D4ED8] dark:text-sky-300 font-semibold">
+                  <span className="ap-text-brand font-semibold">
                     {isSyncing
                       ? 'Syncing...'
                       : `CTL ${latestWellness ? latestWellness.ctl.toFixed(0) : '—'}`}
@@ -3783,8 +3784,14 @@ export default function App() {
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
                       }`}
                     >
+                      {isActive && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full ap-dot-brand shrink-0"
+                          aria-hidden="true"
+                        />
+                      )}
                       <NavIcon
-                        className={`w-3.5 h-3.5 ${isActive ? 'text-[#1D4ED8] dark:text-sky-400' : ''}`}
+                        className={`w-3.5 h-3.5 ${isActive ? 'ap-text-brand' : ''}`}
                         weight={isActive ? 'fill' : 'duotone'}
                       />
                       <span>{item.label}</span>
@@ -3796,8 +3803,8 @@ export default function App() {
               {/* Right: 3. Athlete Switcher Pill + 4. AI Coach CTA + 5. Account & Settings Menu */}
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 {/* 3. Athlete Context Switcher */}
-                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-1.5 sm:px-2 py-1 border border-sky-500/20 min-w-0">
-                  <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" weight="duotone" />
+                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-1.5 sm:px-2 py-1 border border-lime-600/20 dark:border-[#C8FF00]/20 min-w-0">
+                  <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                   <select
                     value={activeViewedAthleteId}
                     onChange={(e) => {
@@ -3807,13 +3814,13 @@ export default function App() {
                     aria-label="Switch Active Athlete Profile"
                     className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[88px] sm:max-w-[155px] truncate"
                   >
-                    <option value="SELF" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                    <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                       {primaryAthleteDisplayName} (You)
                     </option>
                     {combinedRoster
                       .filter((a) => a.status === 'CONNECTED')
                       .map((a) => (
-                        <option key={a.id} value={a.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                           {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Teammate'})
                         </option>
                       ))}
@@ -3824,7 +3831,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsCoachDrawerOpen(true)}
-                  className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 text-xs font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 rounded-xl shadow-xs transition-all whitespace-nowrap"
+                  className="ap-btn-primary !min-h-[34px] !py-1 !px-2.5 sm:!px-3.5 !rounded-xl text-xs whitespace-nowrap cursor-pointer"
                 >
                   <Bot className="w-3.5 h-3.5" weight="fill" />
                   <span className="hidden sm:inline">AI Coach</span>
@@ -4116,9 +4123,9 @@ export default function App() {
         <main className="flex-1 ap-container py-4 sm:py-5 space-y-5 min-w-0">
         {/* Multi-Team Magic Join Offer Banner (when an already-signed-in athlete opens a 2nd team link) */}
         {pendingUrlJoinOffer && (
-          <div className="rounded-2xl liquid-glass border-blue-500/40 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-[#C8FF00]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs">
-              <span className="font-mono uppercase text-[10px] font-bold text-[#1D4ED8] dark:text-sky-400 block">
+              <span className="font-mono uppercase text-[10px] font-bold ap-text-brand block">
                 MULTI-TEAM INVITATION DETECTED
               </span>
               <span className="font-bold text-slate-900 dark:text-white text-sm">
@@ -4527,7 +4534,7 @@ export default function App() {
                         onClick={() => setActiveTab(sub.id)}
                         className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
                           isSubActive
-                            ? 'liquid-capsule-active text-[#1D4ED8] dark:text-sky-300 font-semibold'
+                            ? 'liquid-capsule-active ap-text-brand font-semibold'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
                         }`}
                       >
@@ -4724,7 +4731,7 @@ export default function App() {
               onClick={() => setActiveTab(tab.id === 'totals' ? lastLabTabRef.current : tab.id)}
               className={`min-h-[44px] flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
-                  ? 'liquid-capsule-active text-[#1D4ED8] dark:text-sky-300 font-semibold'
+                  ? 'liquid-capsule-active ap-text-brand font-semibold'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
             >

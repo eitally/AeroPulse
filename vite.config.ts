@@ -24,8 +24,8 @@ export default defineConfig(() => {
           short_name: 'THRESH',
           description:
             'Autonomous dual-sport threshold physiology, overnight HRV & sleep calibration, Banister load, and adaptive coaching.',
-          theme_color: '#F7F6F2',
-          background_color: '#F7F6F2',
+          theme_color: '#080A09',
+          background_color: '#080A09',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',

@@ -3,12 +3,12 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   THRESH Design System — "Precision Editorial" v2.0 (Tailwind v4 @theme)
+   THRESH Design System — "Track Volt & Obsidian" v3.0 (Tailwind v4 @theme)
    Strict 80 / 15 / 5 Color Budget & 2-Font Architecture:
-   - Light Mode: Warm Alabaster (#F7F6F2) Canvas & Crisp Paper (#FFFFFF) Cards
-   - Dark Mode: Deep Carbon (#0A0B0D) Canvas & Matte Carbon (#121419) Panels
-   - Interactive Chrome: Action Cobalt (#1D4ED8 Light / #60A5FA Dark)
-   - Brand Accent: Thresh Vermilion (#D9480F Light / #FB6514 Dark — WCAG AA)
+   - Light Mode: Stadium Chalk (#F4F5F0) Canvas & Crisp Paper (#FFFFFF) Cards
+   - Dark Mode: Deep Obsidian (#080A09) Canvas & Carbon-Pine (#121715) Panels
+   - Unified Signature Brand Accent: Track Volt (#C8FF00 Dark / #558B00 & #3F6212 Light)
+   - Physiological Effort Zones (Z1–Z6) & Readiness Signals Strictly Locked
    ========================================================================== */
 
 @theme {
@@ -17,10 +17,12 @@
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace;
 
-  /* Precision Editorial Brand & Chrome Palette */
-  --color-ap-cobalt: #1d4ed8;
+  /* Track Volt & Obsidian Brand Palette */
+  --color-ap-volt: #c8ff00;
+  --color-ap-volt-ink: #3f6212;
+  --color-ap-cobalt: #3f6212;
   --color-ap-sky: #0284c7;
-  --color-ap-signal: #d9480f;
+  --color-ap-signal: #558b00;
   --color-ap-amber: #d97706;
   --color-ap-emerald: #059669;
   --color-ap-rose: #e11d48;
@@ -50,23 +52,27 @@
 
 @layer base {
   :root {
-    --ap-canvas-bg: #f7f6f2;
+    --ap-canvas-bg: #f4f5f0;
     --ap-card-bg: #ffffff;
-    --ap-card-border: rgba(17, 19, 24, 0.08);
-    --ap-inset-bg: #f1f0ec;
-    --ap-inset-border: rgba(17, 19, 24, 0.06);
-    --ap-action-cobalt: #1d4ed8;
-    --ap-thresh-vermilion: #d9480f;
+    --ap-card-border: rgba(16, 20, 17, 0.09);
+    --ap-inset-bg: #eceee6;
+    --ap-inset-border: rgba(16, 20, 17, 0.065);
+    --ap-brand-volt: #558b00;
+    --ap-brand-primary: #3f6212;
+    --ap-action-cobalt: #3f6212;
+    --ap-thresh-vermilion: #558b00;
   }
 
   .dark {
-    --ap-canvas-bg: #0a0b0d;
-    --ap-card-bg: #121419;
-    --ap-card-border: rgba(255, 255, 255, 0.085);
-    --ap-inset-bg: #181b22;
-    --ap-inset-border: rgba(255, 255, 255, 0.07);
-    --ap-action-cobalt: #60a5fa;
-    --ap-thresh-vermilion: #fb6514;
+    --ap-canvas-bg: #080a09;
+    --ap-card-bg: #121715;
+    --ap-card-border: rgba(200, 255, 0, 0.12);
+    --ap-inset-bg: #171e1b;
+    --ap-inset-border: rgba(200, 255, 0, 0.08);
+    --ap-brand-volt: #c8ff00;
+    --ap-brand-primary: #c8ff00;
+    --ap-action-cobalt: #c8ff00;
+    --ap-thresh-vermilion: #c8ff00;
   }
 
   body {
@@ -75,12 +81,12 @@
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
     background-color: var(--ap-canvas-bg);
-    color: #111318;
+    color: #101411;
   }
 
   .dark body {
     background-color: var(--ap-canvas-bg);
-    color: #f4f5f7;
+    color: #f4f7f4;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -95,26 +101,35 @@
 }
 
 /* ==========================================================================
-   THRESH Precision Editorial Surface & Component System
+   THRESH Track Volt & Obsidian Surface & Component System
    ========================================================================== */
 
 /* Signature THRESH Top Brand Hairline */
 .ap-brand-hairline {
-  background: linear-gradient(90deg, #111318 0%, #1d4ed8 55%, #d9480f 100%);
+  background: linear-gradient(90deg, #101411 0%, #65a30d 55%, #c8ff00 100%);
 }
 
 .dark .ap-brand-hairline {
-  background: linear-gradient(90deg, #f4f5f7 0%, #60a5fa 55%, #fb6514 100%);
+  background: linear-gradient(90deg, #c8ff00 0%, #22c55e 60%, #f4f7f4 100%);
 }
 
-/* Primary Card Surface — Elevates cleanly on Alabaster / Matte Carbon without GPU blur lag */
+/* Unified Brand Ink & Indicator Utilities (Auto-Adapts to Team Brand When Active) */
+.ap-text-brand {
+  color: var(--ap-brand-primary);
+}
+
+.ap-dot-brand {
+  background-color: var(--ap-thresh-vermilion);
+}
+
+/* Primary Card Surface — Elevates cleanly on Stadium Chalk / Carbon-Pine without GPU blur lag */
 .liquid-glass,
 .ap-card {
   background: var(--ap-card-bg);
   border: 1px solid var(--ap-card-border);
   box-shadow:
-    0 2px 10px -3px rgba(17, 19, 24, 0.04),
-    0 1px 2px 0 rgba(17, 19, 24, 0.03);
+    0 2px 10px -3px rgba(16, 20, 17, 0.045),
+    0 1px 2px 0 rgba(16, 20, 17, 0.03);
 }
 
 .dark .liquid-glass,
@@ -122,8 +137,8 @@
   background: var(--ap-card-bg);
   border: 1px solid var(--ap-card-border);
   box-shadow:
-    0 10px 28px -10px rgba(0, 0, 0, 0.55),
-    0 2px 6px -1px rgba(0, 0, 0, 0.35);
+    0 10px 28px -10px rgba(0, 0, 0, 0.6),
+    0 2px 6px -1px rgba(0, 0, 0, 0.4);
 }
 
 /* Floating Navigation Header Surface */
@@ -132,21 +147,21 @@
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
-  border: 1px solid rgba(17, 19, 24, 0.08);
+  border: 1px solid rgba(16, 20, 17, 0.09);
   box-shadow:
-    0 6px 20px -8px rgba(17, 19, 24, 0.06),
-    0 1px 2px 0 rgba(17, 19, 24, 0.03);
+    0 6px 20px -8px rgba(16, 20, 17, 0.06),
+    0 1px 2px 0 rgba(16, 20, 17, 0.03);
 }
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
-  background: rgba(18, 20, 25, 0.92);
+  background: rgba(14, 18, 16, 0.92);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(200, 255, 0, 0.13);
   box-shadow:
-    0 12px 28px -10px rgba(0, 0, 0, 0.6),
-    0 2px 6px -1px rgba(0, 0, 0, 0.4);
+    0 12px 28px -10px rgba(0, 0, 0, 0.65),
+    0 2px 6px -1px rgba(0, 0, 0, 0.45);
 }
 
 /* Nested Inset Wells — Tonal Luminance Step Without Nested Boxitis */
@@ -165,29 +180,29 @@
 /* Segmented Switcher Track */
 .liquid-capsule-track,
 .ap-pill-track {
-  background: #eceae4;
-  border: 1px solid rgba(17, 19, 24, 0.06);
+  background: #e8eae1;
+  border: 1px solid rgba(16, 20, 17, 0.065);
 }
 
 .dark .liquid-capsule-track,
 .dark .ap-pill-track {
-  background: #0d0f14;
-  border: 1px solid rgba(255, 255, 255, 0.075);
+  background: #070908;
+  border: 1px solid rgba(200, 255, 0, 0.09);
 }
 
 /* Raised Active Switcher Pill */
 .liquid-capsule-active,
 .ap-pill-active {
   background: #ffffff;
-  border: 1px solid rgba(17, 19, 24, 0.12);
-  box-shadow: 0 1px 3px 0 rgba(17, 19, 24, 0.07);
+  border: 1px solid rgba(85, 139, 0, 0.28);
+  box-shadow: 0 1px 3px 0 rgba(16, 20, 17, 0.08);
 }
 
 .dark .liquid-capsule-active,
 .dark .ap-pill-active {
-  background: #1e222b;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.45);
+  background: #1b231e;
+  border: 1px solid rgba(200, 255, 0, 0.28);
+  box-shadow: 0 1px 5px 0 rgba(0, 0, 0, 0.5);
 }
 
 /* WCAG 2.1 AA/AAA Semantic Status Pills (>= 6.8:1 Light Mode Contrast) */
@@ -225,14 +240,14 @@
 }
 
 .ap-status-info {
-  background-color: #eff6ff;
-  color: #1e40af;
-  border: 1px solid #bfdbfe;
+  background-color: #f7fee7;
+  color: #365314;
+  border: 1px solid #bef264;
 }
 .dark .ap-status-info {
-  background-color: rgba(96, 165, 250, 0.15);
-  color: #93c5fd;
-  border-color: rgba(96, 165, 250, 0.35);
+  background-color: rgba(200, 255, 0, 0.12);
+  color: #d9f99d;
+  border-color: rgba(200, 255, 0, 0.3);
 }
 
 /* Standardized Typography & 44px Ergonomic Button Tokens */
@@ -243,11 +258,11 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #525866; /* 7.1:1 contrast on white */
+  color: #3f6212; /* 7.1:1 AAA Track Volt olive contrast on white */
 }
 
 .dark .ap-eyebrow {
-  color: #94a3b8;
+  color: #a3e635; /* Crisp Track Volt lime on carbon-pine */
 }
 
 .ap-kpi-value {
@@ -266,15 +281,27 @@
   padding: 0.5rem 1rem;
   border-radius: 0.75rem;
   font-size: 0.8125rem; /* 13px */
-  font-weight: 600;
-  color: #ffffff;
-  background-color: #1d4ed8;
-  box-shadow: 0 1px 2px rgba(17, 19, 24, 0.14);
-  transition: background-color 150ms ease, transform 120ms ease;
+  font-weight: 700;
+  color: #c8ff00;
+  background-color: #101411;
+  border: 1px solid rgba(200, 255, 0, 0.25);
+  box-shadow: 0 2px 6px rgba(16, 20, 17, 0.16);
+  transition: background-color 150ms ease, transform 120ms ease, box-shadow 150ms ease;
 }
 
 .ap-btn-primary:hover {
-  background-color: #1e40af;
+  background-color: #1b231e;
+}
+
+.dark .ap-btn-primary {
+  color: #080a09;
+  background-color: #c8ff00;
+  border-color: transparent;
+  box-shadow: 0 2px 14px rgba(200, 255, 0, 0.18);
+}
+
+.dark .ap-btn-primary:hover {
+  background-color: #b8ef00;
 }
 
 .ap-btn-secondary {
@@ -287,23 +314,23 @@
   border-radius: 0.75rem;
   font-size: 0.8125rem; /* 13px */
   font-weight: 600;
-  color: #111318;
+  color: #101411;
   background: var(--ap-inset-bg);
-  border: 1px solid rgba(17, 19, 24, 0.1);
+  border: 1px solid rgba(16, 20, 17, 0.11);
   transition: background-color 150ms ease;
 }
 
 .dark .ap-btn-secondary {
-  color: #f4f5f7;
-  border-color: rgba(255, 255, 255, 0.12);
+  color: #f4f7f4;
+  border-color: rgba(200, 255, 0, 0.13);
 }
 
 .ap-btn-secondary:hover {
-  background: #e5e3dc;
+  background: #dfe2d6;
 }
 
 .dark .ap-btn-secondary:hover {
-  background: #222630;
+  background: #202925;
 }
 
 /* Custom subtle scrollbars */

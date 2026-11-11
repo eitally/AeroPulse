@@ -347,7 +347,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             {/* Personal Invite Code Pill */}
             <div className="hidden sm:flex items-center gap-2 liquid-glass-subtle border border-stone-200/80 dark:border-white/10 rounded-lg px-3 py-1.5">
               <span className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">Your Invite Code:</span>
-              <span className="text-xs font-mono font-bold text-[#D9480F] dark:text-[#FB6514]">{selfInviteCode}</span>
+              <span className="text-xs font-mono font-bold ap-text-brand">{selfInviteCode}</span>
               <button
                 onClick={handleCopyInvite}
                 className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
@@ -373,17 +373,17 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="px-6 border-b border-stone-200/80 dark:border-slate-800/80 bg-[#F3EFEA]/80 dark:bg-[#0F131A] flex items-center justify-between flex-wrap gap-2">
+        <div className="px-6 border-b border-stone-200/80 dark:border-slate-800/80 bg-[#ECEEE6]/80 dark:bg-[#0E1210] flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-1 overflow-x-auto">
             <button
               onClick={() => setActiveTab('TEAMS_BRANDING')}
               className={`px-3.5 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 activeTab === 'TEAMS_BRANDING'
-                  ? 'border-[#1D4ED8] text-slate-900 dark:text-white font-semibold'
+                  ? 'border-[#558B00] dark:border-[#C8FF00] text-slate-900 dark:text-white font-semibold'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Users className="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#60A5FA]" />
+              <Users className="w-3.5 h-3.5 ap-text-brand" />
               <span>Teams, Bulk Invite &amp; Branding ({myTeams.length})</span>
             </button>
 

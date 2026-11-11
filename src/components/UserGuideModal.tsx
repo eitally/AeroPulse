@@ -799,7 +799,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-[#1D4ED8] flex items-center justify-center text-white shadow-md shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] flex items-center justify-center shadow-md shrink-0">
                 <HelpCircle className="w-5 h-5" weight="duotone" />
               </div>
               <div className="min-w-0">

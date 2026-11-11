@@ -1,7 +1,7 @@
 /**
- * THRESH "Precision Editorial" v2.0 Design System Tokens for JS/Canvas/SVG Charts
- * Synchronizes Warm Alabaster (#F7F6F2) Light Mode and Matte Carbon (#121419) Dark Mode
- * with the locked 6-zone physiological effort spectrum and WCAG-accessible chart accents.
+ * THRESH "Track Volt & Obsidian" v3.0 Design System Tokens for JS/Canvas/SVG Charts
+ * Synchronizes Stadium Chalk (#F4F5F0) Light Mode and Carbon-Pine (#121715) Dark Mode
+ * with Track Volt (#C8FF00 / #558B00) brand chrome and the locked 6-zone effort spectrum.
  */
 
 export interface AeroPulseThemePalette {
@@ -39,20 +39,20 @@ export type ThreshThemePalette = AeroPulseThemePalette;
 export function getAeroPulseThemePalette(isDark: boolean): AeroPulseThemePalette {
   return {
     isDark,
-    canvasBg: isDark ? '#0A0B0D' : '#F7F6F2',
-    cardBg: isDark ? '#121419' : '#FFFFFF',
-    insetBg: isDark ? '#181B22' : '#F1F0EC',
-    borderSubtle: isDark ? 'rgba(255, 255, 255, 0.085)' : 'rgba(17, 19, 24, 0.08)',
-    textPrimary: isDark ? '#F4F5F7' : '#111318',
-    textSecondary: isDark ? '#CBD5E1' : '#334155',
-    textMuted: isDark ? '#94A3B8' : '#525866',
-    axisLine: isDark ? '#334155' : '#CBD5E1',
-    splitLine: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(17, 19, 24, 0.06)',
-    tooltipBg: isDark ? 'rgba(18, 20, 25, 0.96)' : 'rgba(255, 255, 255, 0.98)',
-    tooltipBorder: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(17, 19, 24, 0.12)',
-    tooltipText: isDark ? '#F4F5F7' : '#111318',
-    brandCobalt: isDark ? '#60A5FA' : '#1D4ED8',
-    brandSignalOrange: isDark ? '#FB6514' : '#D9480F',
+    canvasBg: isDark ? '#080A09' : '#F4F5F0',
+    cardBg: isDark ? '#121715' : '#FFFFFF',
+    insetBg: isDark ? '#171E1B' : '#ECEEE6',
+    borderSubtle: isDark ? 'rgba(200, 255, 0, 0.12)' : 'rgba(16, 20, 17, 0.09)',
+    textPrimary: isDark ? '#F4F7F4' : '#101411',
+    textSecondary: isDark ? '#D1D8D3' : '#334155',
+    textMuted: isDark ? '#94A39B' : '#525866',
+    axisLine: isDark ? '#2A3630' : '#CBD5E1',
+    splitLine: isDark ? 'rgba(200, 255, 0, 0.08)' : 'rgba(16, 20, 17, 0.06)',
+    tooltipBg: isDark ? 'rgba(14, 18, 16, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+    tooltipBorder: isDark ? 'rgba(200, 255, 0, 0.18)' : 'rgba(16, 20, 17, 0.12)',
+    tooltipText: isDark ? '#F4F7F4' : '#101411',
+    brandCobalt: isDark ? '#C8FF00' : '#3F6212',
+    brandSignalOrange: isDark ? '#C8FF00' : '#558B00',
     ctlCyan: isDark ? '#2DD4BF' : '#0D9488',
     atlRose: isDark ? '#FB7185' : '#E11D48',
     tsbOptimalEmerald: isDark ? '#34D399' : '#059669',

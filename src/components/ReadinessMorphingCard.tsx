@@ -740,7 +740,7 @@ ${dataLines.join('\n')}
           <button
             type="button"
             onClick={handleToggleExpand}
-            className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors cursor-pointer"
+            className="ap-btn-primary !min-h-[36px] !px-3 !py-1 !rounded-xl text-[11px] font-bold tracking-wide uppercase cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>{placementLabel}</span>
@@ -755,7 +755,7 @@ ${dataLines.join('\n')}
             <button
               type="button"
               onClick={handleToggleExpand}
-              className="text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-[#1D4ED8] dark:hover:text-[#60A5FA] transition-colors"
+              className="text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:opacity-80 transition-opacity"
             >
               {morphedWorkout.title}{' '}
               <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
@@ -1128,7 +1128,7 @@ ${dataLines.join('\n')}
                   aria-haspopup="menu"
                   className="ap-btn-secondary px-3.5 text-xs sm:text-sm"
                 >
-                  <Download className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                  <Download className="w-4 h-4 ap-text-brand" />
                   <span>Export &amp; Device Push</span>
                   <ChevronDown className="w-3.5 h-3.5 opacity-75" />
                 </button>
@@ -1148,7 +1148,7 @@ ${dataLines.join('\n')}
                       className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
                     >
                       <span className="inline-flex items-center gap-2">
-                        <Zap className="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                        <Zap className="w-3.5 h-3.5 ap-text-brand" />
                         Push Direct to Garmin Connect
                       </span>
                     </button>
@@ -1209,7 +1209,7 @@ ${dataLines.join('\n')}
                   `Explain today's readiness-morphed workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my HRV (${recentHrvDay.hrvRMSSD || 'uncalibrated'} ms), Sleep Score (${recentSleepDay.sleepScore || 'uncalibrated'}), Form (TSB ${latestWellness.tsb.toFixed(1)}), and synced FTP (${activeFtp}W) / LTHR (${athleteProfile.lthr} bpm).`
                 )
               }
-              className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold text-[#1D4ED8] dark:text-[#60A5FA] hover:underline"
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold ap-text-brand hover:underline"
             >
               <span>Ask Thresh Coach</span>
               <ArrowRight className="w-3.5 h-3.5" />

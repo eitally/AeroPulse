@@ -482,10 +482,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
             <div className="liquid-glass rounded-xl p-4 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono uppercase tracking-wider text-[#1D4ED8] dark:text-[#60A5FA] font-bold">
+                <span className="text-xs font-mono uppercase tracking-wider ap-text-brand font-bold">
                   01 / 7-DAY PRODUCTIVITY
                 </span>
-                <Activity className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                <Activity className="w-4 h-4 ap-text-brand" />
               </div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                 First-Touch Morning Verdict
@@ -527,10 +527,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
             <div className="liquid-glass rounded-xl p-4 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono uppercase tracking-wider text-[#D9480F] dark:text-[#FB6514] font-bold">
+                <span className="text-xs font-mono uppercase tracking-wider ap-text-brand font-bold">
                   04 / WATCHLESS INCLUSIVE
                 </span>
-                <Trophy className="w-4 h-4 text-[#D9480F] dark:text-[#FB6514]" />
+                <Trophy className="w-4 h-4 ap-text-brand" />
               </div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                 Garmin, .FIT, or Race-Time VDOT
@@ -588,7 +588,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <KeyRound className="w-3.5 h-3.5 text-[#D9480F]" />
+                <KeyRound className="w-3.5 h-3.5 ap-text-brand" />
                 <span>Email Sign-In</span>
               </button>
             </div>
@@ -605,7 +605,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             {mode === 'EMAIL_OTP' && (
               <div className="space-y-4">
                 <div className="border-b border-stone-200 dark:border-slate-800 pb-3">
-                  <span className="text-[11px] font-mono uppercase tracking-widest text-[#D9480F] dark:text-[#FB6514] block font-bold">
+                  <span className="text-[11px] font-mono uppercase tracking-widest ap-text-brand block font-bold">
                     PASSWORDLESS CROSS-DEVICE SYNC
                   </span>
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">
@@ -704,7 +704,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               <>
                 <div className="flex items-center justify-between border-b border-stone-200 dark:border-slate-800 pb-4 gap-2">
                   <div>
-                    <span className="text-[11px] font-mono uppercase tracking-widest text-[#D9480F] dark:text-[#FB6514] block font-bold">
+                    <span className="text-[11px] font-mono uppercase tracking-widest ap-text-brand block font-bold">
                       {mode === 'TEAM_JOIN'
                         ? '45-SECOND TEAM ROSTER CLAIM'
                         : '60-SECOND CALIBRATION'}
@@ -717,7 +717,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           : 'Configure Your THRESH Workspace'}
                     </h2>
                   </div>
-                  <div className="inline-flex rounded-lg p-0.5 bg-stone-200/70 dark:bg-slate-800 text-xs font-mono shrink-0">
+                  <div className="inline-flex rounded-lg p-0.5 liquid-capsule-track text-xs font-mono shrink-0">
                     {(['mi', 'km'] as const).map((u) => (
                       <button
                         key={u}
@@ -725,7 +725,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         onClick={() => handleUnitChange(u)}
                         className={`min-h-[32px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                           distanceUnit === u
-                            ? 'bg-[#1D4ED8] text-white'
+                            ? 'bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09]'
                             : 'text-slate-700 dark:text-slate-300'
                         }`}
                       >
@@ -850,7 +850,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <button
                         type="button"
                         onClick={() => setUseExactLabThresholds((prev) => !prev)}
-                        className="text-[11px] font-mono font-semibold text-[#1D4ED8] dark:text-[#60A5FA] hover:underline cursor-pointer"
+                        className="text-[11px] font-mono font-semibold ap-text-brand hover:underline cursor-pointer"
                       >
                         {useExactLabThresholds
                           ? 'Use Race Time instead'
@@ -963,7 +963,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         disabled={busy}
                         className="ap-btn-secondary text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <Database className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                        <Database className="w-4 h-4 ap-text-brand" />
                         <span>Join + Connect Garmin / Intervals</span>
                       </button>
 
@@ -1001,7 +1001,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         disabled={busy}
                         className="ap-btn-secondary text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <Database className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA]" />
+                        <Database className="w-4 h-4 ap-text-brand" />
                         <span>Connect Garmin / Intervals.icu</span>
                       </button>
 

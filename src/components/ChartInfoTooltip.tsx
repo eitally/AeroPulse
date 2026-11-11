@@ -131,16 +131,16 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
         aria-label={`Physiological & Coaching Guide: ${title}`}
         aria-expanded={isOpen}
         title={`What is ${title}?`}
-        className="inline-flex items-center justify-center -m-1.5 p-1.5 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1D4ED8]"
+        className="inline-flex items-center justify-center -m-1.5 p-1.5 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#558B00] dark:focus-visible:ring-[#C8FF00]"
       >
         <span
           className={`inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors select-none ${
             isOpen
-              ? 'bg-[#EFF6FF] dark:bg-blue-500/20 text-[#1D4ED8] dark:text-blue-300 border border-[#BFDBFE] dark:border-blue-400/40'
-              : 'liquid-capsule-track text-[#525866] dark:text-slate-400 hover:text-[#1D4ED8] dark:hover:text-blue-300'
+              ? 'bg-[#F7FEE7] dark:bg-[#C8FF00]/15 text-[#3F6212] dark:text-[#C8FF00] border border-[#BEF264] dark:border-[#C8FF00]/40'
+              : 'liquid-capsule-track text-[#525866] dark:text-slate-400 hover:opacity-85'
           }`}
         >
-          <HelpCircle className="w-3.5 h-3.5 shrink-0 text-[#1D4ED8] dark:text-[#60A5FA]" />
+          <HelpCircle className="w-3.5 h-3.5 shrink-0 ap-text-brand" />
         </span>
       </button>
 
@@ -170,7 +170,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
             <div className="flex items-start justify-between gap-2 border-b border-black/8 dark:border-white/10 pb-2">
               <div>
                 <div className="flex items-center gap-1.5">
-                  <HelpCircle className="w-4 h-4 text-[#1D4ED8] dark:text-[#60A5FA] shrink-0" />
+                  <HelpCircle className="w-4 h-4 ap-text-brand shrink-0" />
                   <span className="text-xs font-bold text-[#111318] dark:text-white leading-snug">
                     {title}
                   </span>
@@ -236,7 +236,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
             </div>
 
             <div className="space-y-1 pt-0.5">
-              <div className="text-[11px] font-mono uppercase tracking-wider text-[#1D4ED8] dark:text-[#60A5FA] font-semibold flex items-center gap-1">
+              <div className="text-[11px] font-mono uppercase tracking-wider ap-text-brand font-semibold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>3. Coaching Action</span>
               </div>
