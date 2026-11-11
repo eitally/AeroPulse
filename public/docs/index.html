@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH v2.3 — Online Documentation & Physiology Reference</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <style>
+    :root {
+      --bg-canvas: #F6F4F0;
+      --bg-surface: #FFFFFF;
+      --bg-recessed: #EDEAE4;
+      --text-primary: #11161F;
+      --text-secondary: #4B5563;
+      --text-muted: #6B7280;
+      --border-hairline: rgba(17, 22, 31, 0.11);
+      --accent-cobalt: #1D4ED8;
+      --accent-teal: #0D9488;
+      --accent-amber: #D97706;
+      --accent-vermilion: #D9480F;
+      --code-bg: #11161F;
+      --code-fg: #F3F5F8;
+    }
+    html.dark {
+      --bg-canvas: #0A0D12;
+      --bg-surface: #121721;
+      --bg-recessed: #07090D;
+      --text-primary: #F3F5F8;
+      --text-secondary: #9CA3AF;
+      --text-muted: #6B7280;
+      --border-hairline: rgba(255, 255, 255, 0.09);
+      --accent-cobalt: #38BDF8;
+      --accent-teal: #2DD4BF;
+      --accent-amber: #FBBF24;
+      --accent-vermilion: #FB7185;
+      --code-bg: #07090D;
+      --code-fg: #E5E7EB;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", sans-serif;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    code, pre, .mono {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-hairline);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #1D4ED8, #0D9488);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.95rem;
+      letter-spacing: 0.05em;
+    }
+    .brand-title {
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      font-size: 1rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-recessed);
+      color: var(--accent-cobalt);
+    }
+    .badge-teal { color: var(--accent-teal); }
+    .badge-amber { color: var(--accent-amber); }
+    .badge-red { color: var(--accent-vermilion); }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex: 1;
+      max-width: 580px;
+      justify-content: flex-end;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 210px;
+      padding: 0.5rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-recessed);
+      color: var(--text-primary);
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--accent-cobalt);
+    }
+    .btn {
+      padding: 0.48rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-recessed);
+      color: var(--text-primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: #1D4ED8;
+      color: #ffffff;
+      border-color: #1D4ED8;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      flex: 1;
+    }
+    aside {
+      border-right: 1px solid var(--border-hairline);
+      padding: 1.25rem 1rem;
+      position: sticky;
+      top: 61px;
+      height: calc(100vh - 61px);
+      overflow-y: auto;
+      background: var(--bg-surface);
+    }
+    .nav-group-title {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin: 1rem 0 0.45rem 0.5rem;
+    }
+    .nav-group-title:first-child { margin-top: 0; }
+    .nav-link {
+      display: block;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 500;
+      margin-bottom: 0.15rem;
+      transition: all 0.15s;
+    }
+    .nav-link:hover, .nav-link.active {
+      background: var(--bg-recessed);
+      color: var(--accent-cobalt);
+      font-weight: 700;
+    }
+    main {
+      padding: 2rem 2.5rem 5rem;
+      max-width: 980px;
+    }
+    .doc-section {
+      margin-bottom: 3.25rem;
+      padding-bottom: 2.25rem;
+      border-bottom: 1px solid var(--border-hairline);
+      scroll-margin-top: 84px;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.6rem;
+    }
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 0.35rem 0 0.75rem;
+    }
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 1.25rem 0 0.45rem;
+    }
+    p {
+      color: var(--text-secondary);
+      font-size: 0.93rem;
+      margin-bottom: 0.85rem;
+    }
+    ul, ol {
+      padding-left: 1.25rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    li { margin-bottom: 0.35rem; }
+    li strong { color: var(--text-primary); }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 14px;
+      padding: 1.15rem;
+    }
+    .formula-box {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      overflow-x: auto;
+      margin: 0.65rem 0 1rem;
+      border: 1px solid var(--border-hairline);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.25rem;
+      font-size: 0.83rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    th {
+      background: var(--bg-recessed);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      aside {
+        position: static;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border-hairline);
+      }
+      main { padding: 1.5rem 1.15rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">
+      <div class="brand-mark">T</div>
+      <div>
+        <div class="brand-title">THRESH <span class="badge mono">v2.3 DOCS</span></div>
+        <div style="font-size:0.72rem;color:var(--text-muted);">Precision Endurance Physiology, Load &amp; Scholastic Team Platform</div>
+      </div>
+    </a>
+    <div class="header-controls">
+      <input
+        id="docSearch"
+        type="search"
+        class="search-input"
+        placeholder="Filter sections, formulas, NCAA conversions, API routes (Press /)..."
+        aria-label="Search documentation"
+      />
+      <button id="themeBtn" type="button" class="btn mono">Light / Dark</button>
+      <a href="/" class="btn btn-primary">← Back to THRESH App</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside id="sidebarNav">
+      <div class="nav-group-title">Platform Overview</div>
+      <a href="#sec-overview" class="nav-link active">1. Architecture &amp; Why THRESH</a>
+      <a href="#sec-today" class="nav-link">2. Circadian Loop, Ortho &amp; Git-Diff</a>
+      <a href="#sec-inspector" class="nav-link">3. 1Hz Inspector &amp; No-Lap Detector</a>
+
+      <div class="nav-group-title">Physiology &amp; Race Moat</div>
+      <a href="#sec-durability" class="nav-link">4. CP/W' &amp; kJ/kcal Durability (10x #2)</a>
+      <a href="#sec-racesim" class="nav-link">5. Course &amp; Fueling Simulator (10x #4)</a>
+      <a href="#sec-passports" class="nav-link">6. FAT Rubber-Banding &amp; Passports</a>
+
+      <div class="nav-group-title">HS &amp; Collegiate Pack (v2.3)</div>
+      <a href="#sec-pods" class="nav-link">7. VDOT Pods &amp; Watchless Split Pad</a>
+      <a href="#sec-ncaa" class="nav-link">8. NCAA Track Indexing &amp; Standards</a>
+      <a href="#sec-safesport" class="nav-link">9. Safe-Sport, BSI &amp; 20h CARA Audit</a>
+
+      <div class="nav-group-title">Engineering &amp; Reference</div>
+      <a href="#sec-formulas" class="nav-link">10. Complete Mathematical Formulas</a>
+      <a href="#sec-api" class="nav-link">11. REST API, Webhooks &amp; Vault Security</a>
+    </aside>
+
+    <main id="docMain">
+      <!-- SECTION 1 -->
+      <section id="sec-overview" class="doc-section">
+        <span class="badge mono">CHAPTER 01 · ARCHITECTURE</span>
+        <h1>THRESH v2.3 — Precision Endurance &amp; Team Physiology</h1>
+        <p>
+          <strong>THRESH</strong> is a full-stack Progressive Web App (PWA) built in the <strong>Precision Editorial</strong> aesthetic. It combines the 1Hz mathematical depth of <em>Intervals.icu</em> and <em>WKO5</em>, the closed-loop daily readiness adaptation of <em>Runna / TrainerRoad</em>, and a purpose-built <strong>High School &amp; Collegiate Team Pack</strong> (VDOT Pacing Pods, Watchless Track Split Pad, NCAA Indoor/Altitude Indexing, Recruiting Standards, Safe-Sport / RED-S Protection, and NCAA 20-Hour CARA compliance).
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Intervals.icu</th>
+              <th>Strava</th>
+              <th>Final Surge / VDOT O2</th>
+              <th>THRESH v2.3</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1Hz Stream Inspector (`W`, `HR`, `Pace`, `W' Bal`, `Pa:Hr`)</strong></td>
+              <td>Yes</td>
+              <td>Partial</td>
+              <td>No</td>
+              <td><strong>Yes + 1Hz No-Lap Unstructured Rep Detector</strong></td>
+            </tr>
+            <tr>
+              <td><strong>3-Channel Orthopedic Interference &amp; 1-Tap Bike/Pool Swap</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (`10x #1` Central / Impact / Torque ACWR)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Fatigue-Sliced Durability (`0–40 kJ/kg` &amp; `0–2,000 kcal`)</strong></td>
+              <td>Manual Custom</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (`10x #2` Built-in Retention &amp; Fueling Rx)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Weekly Training Git-Diff (`- Original / + Proposed`)</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (`10x #3` 1-Tap 7-Day Schedule Commit)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Course Physics, Weather/Altitude &amp; Carb/Sodium Simulator</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (`10x #4` Dual-Source `g/hr` &amp; `mg/hr` Plan)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>GPS-to-Official Chip/FAT Rubber-Banding &amp; Passports</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (`10x #6` `THV-...` Cryptographic Hash)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Auto-Scaled Squad VDOT Pods + Watchless Split Pad</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>Partial</td>
+              <td><strong>Yes (Pods A–D + Printable Sheet + 0.01s Pad)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>NCAA Flat/Banked/Altitude Indexing &amp; Recruiting Matrix</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (HS State, Nationals, NCAA D1/D2/D3)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Safe-Sport Weight Shield, Shin BSI Alert &amp; 20h CARA Audit</strong></td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td><strong>Yes (RED-S Shield + Ferritin + NCAA Bylaw 17.1)</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- SECTION 2 -->
+      <section id="sec-today" class="doc-section">
+        <span class="badge badge-teal mono">CHAPTER 02 · CIRCADIAN TODAY LOOP</span>
+        <h2>Circadian Readiness, 3-Channel Orthopedic Strip &amp; Weekly Git-Diff (`10x #1` &amp; `10x #3`)</h2>
+        <p>
+          The <strong>Today / Fitness</strong> workspace adapts to your circadian training cycle—presenting your morning readiness brief and workout morphing options before training, and transitioning into a <strong>Session Complete Compliance Banner</strong> once your workout is logged.
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>10x #1 · 3-Channel Orthopedic Load Strip</h3>
+            <p>Decomposes 7-day training strain into three independent biological vectors:</p>
+            <ul>
+              <li><strong>Central Autonomic Load:</strong> Cardiorespiratory &amp; HRV stress across all sports.</li>
+              <li><strong>Eccentric Run Impact:</strong> Tibial/Achilles ground-reaction force (`Run` &amp; `Track` volume weighted by intensity).</li>
+              <li><strong>Concentric Bike Torque:</strong> Muscular force without osteogenic impact.</li>
+            </ul>
+            <p>When Eccentric Run Impact ACWR exceeds <code>1.28x</code> while Central ACWR remains healthy, THRESH offers a 1-tap <strong>Zero-Impact Z2 Ride / Pool Swap</strong>.</p>
+          </div>
+          <div class="card">
+            <h3>10x #3 · Weekly Training Git-Diff</h3>
+            <p>Whenever morning HRV drops below your 60-day corridor or TSB plunges below <code>-28</code>, THRESH computes a 7-day rolling schedule diff:</p>
+            <div class="formula-box mono">- Thu: 5x1km VO2max Track (Running · 55m · 82 TSS)
++ Thu: Modulated Threshold Cruise (Running · 45m · 64 TSS)
+Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
+            <p>Click <strong>Commit Weekly Git-Diff to Plan</strong> to update your calendar in one transaction.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3 -->
+      <section id="sec-inspector" class="doc-section">
+        <span class="badge mono">CHAPTER 03 · 1HZ TELEMETRY &amp; INTERVALS</span>
+        <h2>1Hz Stream Inspector, 30s Post-Workout Debrief &amp; Unstructured Rep Recovery</h2>
+        <p>
+          Drop `.FIT`, `.FIT.GZ`, `.GPX`, `.TCX`, or bulk `.ZIP` archives directly into THRESH. A dedicated Web Worker (`activityProcessor.worker.ts`) upsamples and analyzes 1Hz streams off the main thread.
+        </p>
+        <ul>
+          <li><strong>Interactive Drag-to-Zoom (`UPlotStreamChart`):</strong> Drag across any time window on the 1Hz canvas to compute instantaneous live slice metrics (`Avg W`, `NP`, `W/kg`, `Avg/Max HR`, `Pace`, `GAP`, `Cadence`, `ΔElev`, and `W' Depletion`).</li>
+          <li><strong>30-Second Post-Workout Debrief:</strong> Automatically extracts 3–4 timestamped coaching insights (e.g., <em>"Cardiac Drift Alert (+6.2% Pa:Hr after 42:00)"</em>, <em>"Deep W' Match Burn (18% remaining)"</em>, <em>"Fastest 60s HR Recovery (-34 bpm)"</em>) with 1-click chart zoom.</li>
+          <li><strong>5-Second Post-Workout Quick-Log:</strong> Stamp Borg RPE (`1–10`), Feel (`STRONG`/`NORMAL`/`HEAVY`/`DEPLETED`), `g/hr` Carbs, `mg/hr` Sodium, and Gear onto any workout.</li>
+          <li><strong>1Hz Unstructured Interval Auto-Detector ("Forgot-to-Lap Recovery"):</strong> Forgot to press the watch <code>Lap</code> button during <code>8 x 400m</code> or a Fartlek? Click <strong>Recover Unstructured Reps (1Hz No-Lap Detector)</strong> in the Activity Modal. THRESH runs bimodal quantile (`P30`/`P82`/`P92`) hysteresis segmentation on 5-second smoothed velocity/power streams, recovers every work rep down to <code>18s</code> (`200m` track reps), and snaps standard track distances (`~200m`, `~400m`, `~800m`, `~1000m`, `~1600m`).</li>
+        </ul>
+      </section>
+
+      <!-- SECTION 4 -->
+      <section id="sec-durability" class="doc-section">
+        <span class="badge badge-teal mono">CHAPTER 04 · PHYSIOLOGY LAB &amp; DURABILITY</span>
+        <h2>Empirical 1Hz `CP/W'` &amp; Fatigue-Sliced `kJ/kg` / `kcal` Durability (`10x #2`)</h2>
+        <p>
+          Two athletes can share the exact same fresh 20-minute FTP (`300W`) or 5K PR (`15:30`), yet diverge dramatically after 2 hours of racing. In the <strong>Physiology / Curves</strong> view, THRESH slices your historical 1Hz streams by accumulated mechanical work performed <em>prior</em> to each effort:
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Cycling Work Buckets (`0–40 kJ/kg`)</h3>
+            <p>Evaluates Peak 5m and 20m power at <code>0</code> (Fresh), <code>10</code>, <code>20</code>, <code>30</code>, and <code>40 kJ/kg</code> of prior mechanical work.</p>
+          </div>
+          <div class="card">
+            <h3>Running Metabolic Buckets (`0–2,000 kcal`)</h3>
+            <p>Evaluates Peak 5m and 20m Grade-Adjusted Pace (`GAP`) at <code>0</code> (Fresh), <code>500</code>, <code>1,000</code>, <code>1,500</code>, and <code>2,000 kcal</code> of prior expenditure.</p>
+          </div>
+        </div>
+        <p>
+          Classifies your phenotype into <code>PRO_TOUR_RESILIENT</code> (`&ge; 95%` retention at deep fatigue), <code>WELL_CONDITIONED</code>, <code>MODERATE_FADE</code>, or <code>GLYCOGEN_FRAGILE</code>, and prescribes exact intra-session carbohydrate oxidation targets (`60–110 g/hr`).
+        </p>
+      </section>
+
+      <!-- SECTION 5 -->
+      <section id="sec-racesim" class="doc-section">
+        <span class="badge badge-amber mono">CHAPTER 05 · COURSE &amp; FUELING SIMULATOR</span>
+        <h2>Course Physics, Weather, Altitude &amp; Carb/Sodium Race Simulator (`10x #4`)</h2>
+        <p>
+          Located in <strong>Goals &amp; Totals</strong>, the Race Simulator models your target event across 5 course segments by combining:
+        </p>
+        <ul>
+          <li><strong>Gravitational &amp; Aerodynamic Grade Cost:</strong> Minetti metabolic cost of uphill/downhill running and cycling climbing resistance.</li>
+          <li><strong>Thermal Derating (`> 18°C`):</strong> Quantifies skin blood-flow shunting and cardiac drift penalty per degree Celsius above optimal (`12–16°C`).</li>
+          <li><strong>Hypoxic Altitude Derating (`> 1,000m`):</strong> Adjusts sustainable aerobic fraction for elevation.</li>
+          <li><strong>Fueling &amp; Hydration Prescription:</strong> Outputs total and hourly Dual-Source Carbohydrates (`1:0.8` glucose:fructose for `> 90 g/hr`, `2:1` for `60–90 g/hr`), Sodium (`mg/hr`), Fluid (`mL/hr`), Gel equivalents, and pre-race Caffeine (`3 mg/kg`).</li>
+        </ul>
+      </section>
+
+      <!-- SECTION 6 -->
+      <section id="sec-passports" class="doc-section">
+        <span class="badge mono">CHAPTER 06 · OFFICIAL FAT &amp; VERIFIED PASSPORTS</span>
+        <h2>GPS-to-Official Chip/FAT Rubber-Banding &amp; `THV-...` Passports (`10x #6`)</h2>
+        <p>
+          GPS watches routinely over-read track and road courses by `1.2%–2.5%` (e.g., logging `5,085m` for a certified `5,000m`), distorting lap paces. Inside <strong>Log Official Race Result</strong>:
+        </p>
+        <ul>
+          <li>Import results from <strong>Athletic.net</strong>, <strong>TFRRS</strong>, <strong>MileSplit</strong>, or <strong>RunSignup</strong>, or log a watchless 0.01s FAT track race.</li>
+          <li>Enter your watch’s raw GPS distance alongside the certified USATF/World Athletics distance: THRESH rubber-bands every split to the exact certified course markers and generates a shareable <strong>`THV-...` Verified Race Passport</strong> with a deterministic FNV-1a verification hash.</li>
+        </ul>
+      </section>
+
+      <!-- SECTION 7 -->
+      <section id="sec-pods" class="doc-section">
+        <span class="badge badge-amber mono">CHAPTER 07 · HIGH SCHOOL &amp; COLLEGIATE COACH DECK</span>
+        <h2>Auto-Scaled VDOT Pacing Pods &amp; Watchless Multi-Athlete Split Pad</h2>
+        <p>
+          High school and collegiate cross-country/track coaches manage 25 to 80+ athletes spanning a wide range of VDOT scores. Open <strong>Athletes, Friends &amp; Coaching Hub → HS &amp; College Coach Deck</strong>:
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>1. Auto-Clustered VDOT Pacing Pods</h3>
+            <p>Select one workout intensity (<code>Easy</code>, <code>Marathon</code>, <code>Threshold / Tinman CV</code>, <code>VO2max Interval</code>, or <code>Mile Repetition</code>), rep count, and rep distance (<code>200m–1600m</code>). THRESH clusters your squad into <strong>Pods A–D</strong> (`&le; 3.0 VDOT` spread / `&pm;2s` per 400m) with exact `200m`, `400m`, `800m`, `1000m`, and `1600m` splits, <strong>1-Click Push to Pod Calendars</strong>, and <strong>Copy Printable Clipboard Sheet</strong>.</p>
+          </div>
+          <div class="card">
+            <h3>2. Trackside "Spikes-On / Watchless" Split Pad</h3>
+            <p>Athletes often race or run fast track intervals in spikes without GPS watches. Start the built-in 0.01s gun stopwatch and tap <strong>+ Tap Split</strong> on any athlete row as they cross the line to capture cumulative and per-lap splits, then export all splits as CSV in one click.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 8 -->
+      <section id="sec-ncaa" class="doc-section">
+        <span class="badge mono">CHAPTER 08 · NCAA TRACK INDEXING &amp; RECRUITING</span>
+        <h2>Official NCAA Indoor/Outdoor/Altitude Track Conversions &amp; Recruiting Standards</h2>
+        <p>
+          Inside <strong>Log Official Race Result → Quick Watchless FAT Logger</strong>, THRESH automatically indexes marks across:
+        </p>
+        <ul>
+          <li><strong>NCAA Indoor Facility Multipliers:</strong> Converts between <code>200m Flat Indoor</code>, <code>200m Banked/Oversized Indoor</code>, and <code>400m Outdoor</code> using gender- and event-specific NCAA indexing factors (e.g., Men's Flat-to-Banked: `800m ×0.9857`, `Mile/1500m ×0.9869`, `3000m ×0.9885`, `5000m ×0.9907`; Women's: `800m ×0.9872`, `Mile/1500m ×0.9882`, `3000m ×0.9896`, `5000m ×0.9919`).</li>
+          <li><strong>NCAA Altitude Allowance (`&ge; 3,000 ft`):</strong> Applies nonlinear aerobic time credit for marks run at elevation (e.g., Boulder `5,280 ft`, Albuquerque `4,950 ft`, Flagstaff `6,910 ft`).</li>
+          <li><strong>6-Tier Recruiting &amp; Championship Standards Matrix:</strong> Live progress bars and exact seconds-to-qualify gaps for Men's and Women's <strong>HS State Qualifier</strong>, <strong>NCAA D3 Impact Recruit</strong>, <strong>NCAA D2 Scholarship</strong>, <strong>HS Nationals (Nike / New Balance)</strong>, <strong>NCAA D1 Walk-On</strong>, and <strong>NCAA D1 Scholarship</strong> across `800m`, `1500m`, `1600m`, `Mile`, `3000m`, `3200m`, `5000m`, and `10000m`.</li>
+        </ul>
+      </section>
+
+      <!-- SECTION 9 -->
+      <section id="sec-safesport" class="doc-section">
+        <span class="badge badge-teal mono">CHAPTER 09 · SAFE-SPORT, BSI &amp; NCAA CARA</span>
+        <h2>Safe-Sport Weight Shield, Bone-Stress / Ferritin Guardrails &amp; 20h CARA Audit</h2>
+        <ul>
+          <li><strong>Safe-Sport / RED-S Protection (`Hide Weight & W/kg`):</strong> Toggle in <strong>Athlete Profile</strong> to mask body weight (`kg`/`lbs`) and `W/kg` across student-athlete UI views while keeping absolute power, pace, and heart rate zones calibrated underneath.</li>
+          <li><strong>Focal Shin / Metatarsal Bone-Stress Injury (BSI) Stop:</strong> In the <strong>5-Second Student-Athlete Check-In</strong> on Today/Fitness, reporting focal shin or foot bone tenderness (`&ge; 2/3`) immediately triggers a red <code>BONE_STRESS_STOP</code> (`0%` impact intensity cap) and routes the athlete to zero-impact cross-training.</li>
+          <li><strong>Serum Ferritin (`ng/mL`) &amp; Academic Exam Modulation:</strong> Flags iron depletion when serum ferritin drops below `30 ng/mL` (endurance hematology floor) and down-scales interval volume by `15–20%` during Midterm/Finals weeks (`Academic Stress 4–5` or `Sleep &lt; 6.2h`).</li>
+          <li><strong>Training Room Cross-Training → Virtual Running Miles:</strong> Converts <code>Aqua Jogging</code> (`100%` impact saved), <code>AlterG (75% BW)</code> (`62%` impact saved), <code>Elliptical</code>, <code>Arc Trainer</code>, and <code>Stationary Bike</code> minutes + RPE into equivalent virtual running miles/km and systemic TSS.</li>
+          <li><strong>NCAA Bylaw 17.1 (`20-Hour Weekly / 4-Hour Daily CARA`) Audit:</strong> Automatically audits rolling 7-day countable hours across connected roster athletes in the Coach Deck.</li>
+        </ul>
+      </section>
+
+      <!-- SECTION 10 -->
+      <section id="sec-formulas" class="doc-section">
+        <span class="badge mono">CHAPTER 10 · MATHEMATICAL REFERENCE</span>
+        <h2>Core Physiological Equations &amp; Algorithms</h2>
+        <div class="formula-box mono">1. Banister EWMA Load Model:
+   CTL_t = CTL_{t-1} + (TSS_t - CTL_{t-1}) / 42
+   ATL_t = ATL_{t-1} + (TSS_t - ATL_{t-1}) / 7
+   TSB_t = CTL_t - ATL_t
+
+2. Coggan Normalized Power &amp; TSS:
+   NP = [ (1/N) * Σ (Rolling_30s_Watts_i)^4 ]^(1/4)
+   IF = NP / FTP
+   TSS = (Duration_secs * NP * IF) / (FTP * 3600) * 100
+
+3. Monod-Scherrer Critical Power (CP) &amp; Skiba W' Balance:
+   P(t) = CP + W' / t
+   W'_bal(t) = W' - ∫ max(0, P(u) - CP) * exp(-(t - u) / τ_W') du
+
+4. Minetti Grade-Adjusted Pace (GAP) Energy Cost:
+   Cr(i) = 155.4*i^5 - 30.4*i^4 - 43.3*i^3 + 46.3*i^2 + 19.5*i + 3.6  (J/kg/m)
+
+5. Jack Daniels VDOT Oxygen Cost &amp; Fractional Utilization:
+   VO2(v) = -4.60 + 0.182258*v + 0.000104*v^2   (v in m/min)
+   %VO2max(t) = 0.8 + 0.1894393*e^(-0.012778*t) + 0.2989558*e^(-0.1932605*t)
+   VDOT = VO2(v) / %VO2max(t)</div>
+      </section>
+
+      <!-- SECTION 11 -->
+      <section id="sec-api" class="doc-section">
+        <span class="badge badge-red mono">CHAPTER 11 · REST API &amp; SECURITY ARCHITECTURE</span>
+        <h2>Server Endpoints, Multi-Wearable Webhooks, OTA Export &amp; AES-256-GCM Token Vault</h2>
+        <p>
+          THRESH enforces strict session isolation (`HttpOnly` signed cookies), an encrypted server-side OAuth Token Vault (`AES-256-GCM` in `server/tokenVault.ts`), and a <strong>Clean-Room Provider Firewall (`server/cleanRoomFirewall.ts`)</strong> that strips third-party `Strava`-sourced records before any AI prompt or multi-user coach export.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Method</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">/api/vault/status</td>
+              <td class="mono">GET</td>
+              <td>Returns current session’s encrypted provider connection metadata without exposing raw tokens.</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/physiology/mmp-debrief</td>
+              <td class="mono">POST</td>
+              <td>Computes 1Hz Empirical MMP/GAP curves (`CP/W'`, `CS/D'`), 3-Channel Orthopedic Load, and 30s Post-Workout Debrief.</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/physiology/durability</td>
+              <td class="mono">POST</td>
+              <td>Computes `0–40 kJ/kg` (Cycling) or `0–2,000 kcal` (Running) fatigue-sliced durability curve (`10x #2`).</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/physiology/race-simulator</td>
+              <td class="mono">POST</td>
+              <td>Runs the 5-segment Course Physics, Weather/Altitude &amp; Dual-Source Carb/Sodium Race Simulator (`10x #4`).</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/physiology/race-passport</td>
+              <td class="mono">POST</td>
+              <td>Rubber-bands raw GPS splits to certified USATF/World Athletics distance and mints a `THV-...` Verified Passport (`10x #6`).</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/webhooks/:provider</td>
+              <td class="mono">POST</td>
+              <td>First-party webhook ingestion for `garmin`, `wahoo`, `coros`, `polar`, `oura`, `whoop`, and `apple-healthkit`.</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/workouts/export</td>
+              <td class="mono">POST</td>
+              <td>Compiles structured Intervals-syntax workouts into Apple `WorkoutKit` JSON, Garmin Training JSON, Zwift `.ZWO`, or `.ERG`.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('docSearch');
+    const sections = Array.from(document.querySelectorAll('.doc-section'));
+    const navLinks = Array.from(document.querySelectorAll('.nav-link'));
+    const themeBtn = document.getElementById('themeBtn');
+
+    themeBtn.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      sections.forEach((sec) => {
+        const match = !q || sec.textContent.toLowerCase().includes(q);
+        sec.classList.toggle('hidden', !match);
+      });
+    });
+
+    navLinks.forEach((link) => {
+      link.addEventListener('click', () => {
+        navLinks.forEach((l) => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

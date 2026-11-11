@@ -182,3 +182,24 @@ Click the **AI Coach** button in the top navigation bar (or any **"Ask AI Coach"
   3. **Active Recovery** (Parasympathetic Z1/Z2 flush)
 - Click **Push to Calendar** on any option to schedule it immediately with full structured steps and Effort Skyline preview.
 - **Multi-Turn Physiological Chat**: Ask questions about your taper timing, decoupling drift, or threshold progression; every response cites your live physiological tokens (`CTL`, `ATL`, `TSB`, `HRV rMSSD`, `eFTP`, `VDOT`).
+
+---
+
+## Chapter 8 · Horizon 1–3 & v2.3 High School / Collegiate Workflows
+
+### 8.1 3-Channel Orthopedic Strip (`10x #1`) & Weekly Training Git-Diff (`10x #3`)
+- On the **Today / Fitness** tab, inspect your 7-day **Central Autonomic**, **Eccentric Run Impact**, and **Concentric Bike Torque** ACWR ratios.
+- Click **Inspect 7-Day Diff ▼** in the **Weekly Training Git-Diff** bar to review `- Original / + Proposed` schedule adjustments with net $\Delta\text{TSS}$, $\Delta\text{CTL}$, and $\Delta\text{TSB}$, then click **Commit Weekly Git-Diff to Plan**.
+
+### 8.2 Fatigue-Sliced `0–40 kJ/kg` & `0–2,000 kcal` Durability (`10x #2`)
+- Open the **Physiology / Curves** tab to inspect how your Peak 5-minute and 20-minute power or Grade-Adjusted Pace (`GAP`) retains output across `0, 10, 20, 30, 40 kJ/kg` (Cycling) or `0, 500, 1000, 1500, 2000 kcal` (Running) fatigue buckets.
+
+### 8.3 Course Physics & Carb/Sodium Race Simulator (`10x #4`)
+- Open the **Goals & Totals** tab to simulate your target race across 5 course segments with grade, ambient temperature (`°C`), and altitude (`m`) derating plus an hourly Dual-Source Carbohydrate (`g/hr`), Sodium (`mg/hr`), and Fluid (`mL/hr`) prescription.
+
+### 8.4 GPS Rubber-Banding & Verified Race Passports (`10x #6`) + NCAA Recruiting Matrix
+- Open **Log Official Race Result** (`OfficialRaceModal.tsx`) → **Quick Watchless FAT Logger** to rubber-band watch GPS distance drift to certified USATF/World Athletics course distances, copy a **`THV-...` Verified Race Passport**, convert `200m Flat` ↔ `200m Banked` ↔ `400m Outdoor` + altitude times, and check progress against **HS State, HS Nationals, and NCAA D1/D2/D3 Recruiting Standards**.
+
+### 8.5 High School & Collegiate Coach Deck (`v2.3`)
+- Open **Athletes, Friends & Coaching Hub → HS & College Coach Deck** to generate **VDOT Pacing Pods (Pods A–D)** with printable clipboard sheets, time watchless athletes on the **Spikes-On Multi-Athlete Split Pad**, and audit **NCAA Bylaw 17.1 (20-Hour Weekly CARA)** compliance. See [docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md](SCHOLASTIC_AND_COLLEGIATE_GUIDE.md) for full details.
+

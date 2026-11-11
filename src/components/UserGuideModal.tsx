@@ -62,6 +62,7 @@ type ChapterId =
   | 'ch5-activities'
   | 'ch6-lab'
   | 'ch7-coaching'
+  | 'ch8-scholastic'
   | 'glossary';
 
 interface GuideFeatureCard {
@@ -188,6 +189,46 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
     explanation:
       'Tracks both your morning rMSSD (ms) relative to your 60-day normal corridor and day-to-day stability (CV%). Used by the Daily Readiness Morphing Engine to modulate workout intensity.',
   },
+  {
+    code: 'kJ/kg & kcal Durability',
+    name: 'Fatigue-Sliced Physiological Durability (10x #2)',
+    category: 'Power & Pace',
+    formula: 'Retention(%) = MMP_{20m}(@ 30 kJ/kg or 1,500 kcal) / MMP_{20m}(Fresh) × 100%',
+    benchmark: '>= 95% Pro-Tour Resilient · 90–94% Well-Conditioned · < 88% Glycogen Fragile',
+    colorHex: '#0d9488',
+    explanation:
+      'Measures how well your 5-minute and 20-minute power or Grade-Adjusted Pace holds up after accumulating 10–40 kJ/kg of mechanical work (Cycling) or 500–2,000 kcal (Running).',
+  },
+  {
+    code: '3-Channel Ortho ACWR',
+    name: 'Central, Eccentric Impact & Concentric Torque Load (10x #1)',
+    category: 'Autonomic & Recovery',
+    formula: 'Impact_ACWR = Impact_{7d} / Impact_{28d}  |  Guardrail >= 1.28x',
+    benchmark: '< 1.18x Optimal · 1.18–1.28x Elevated · > 1.28x Zero-Impact Bike/Pool Swap',
+    colorHex: '#d97706',
+    explanation:
+      'Separates systemic cardiorespiratory load from tibial/Achilles eccentric running impact and concentric cycling torque so high impact spikes can be morphed to zero-impact rides before injury.',
+  },
+  {
+    code: 'NCAA Track Index',
+    name: 'NCAA Indoor 200m Flat / Banked / Altitude Conversion (v2.3)',
+    category: 'Power & Pace',
+    formula: 'T_{indexed} = T_{raw} × Factor_{facility} - Allowance_{altitude(>=3000ft)}',
+    benchmark: "Men's Mile Flat->Banked ×0.9869 · Women's Mile Flat->Banked ×0.9882",
+    colorHex: '#f59e0b',
+    explanation:
+      'Applies official NCAA turn-radius facility indexing and elevation hypoxia allowances (>= 3,000 ft) to compare indoor flat, banked, and outdoor marks against HS & NCAA D1/D2/D3 standards.',
+  },
+  {
+    code: '1Hz No-Lap Detector',
+    name: 'Unstructured Interval Bimodal Hysteresis Detector (v2.3)',
+    category: 'Power & Pace',
+    formula: 'Entry = min(Ref_{LT}, P_{50} + 0.42(P_{92} - P_{50})) · Exit = 0.88 × Entry',
+    benchmark: 'Recovers >= 18s work reps (200m–3200m) when athlete forgot to press Lap',
+    colorHex: '#3b82f6',
+    explanation:
+      'Scans 5-second smoothed 1Hz velocity or power streams using empirical quantile hysteresis to extract true WORK and float reps even when the watch Lap button was never pressed.',
+  },
 ];
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({
@@ -297,19 +338,29 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       id: 'ch7-coaching',
       number: '07',
       shortTitle: 'Roster, Privacy & AI',
-      fullTitle: 'Ch 7 · Coaching Roster, Privacy Shield & Gemini AI Coach',
+      fullTitle: 'Ch 7 · Coaching Roster, 6:00 AM Triage, Privacy Shield & Gemini AI',
       subtitle:
-        'Manage Coach-Edit vs. Friend-View connections, Strava Compliance Shield redaction, remote calendar pushes, and the Gemini AI Coach.',
+        'Manage Coach-Edit vs. Friend-View connections, 6:00 AM Exception Triage, Clean-Room Privacy Shield, and the Gemini AI Coach.',
       icon: Bot,
       accentClass: 'text-amber-500 bg-amber-500/12 border-amber-500/30',
     },
     {
-      id: 'glossary',
+      id: 'ch8-scholastic',
       number: '08',
+      shortTitle: 'HS & College Pack',
+      fullTitle: 'Ch 8 · High School & Collegiate Team Pack (v2.3)',
+      subtitle:
+        'Auto-scaled VDOT Pacing Pods, Watchless Split Pad, NCAA Track Indexing, Recruiting Standards, Safe-Sport Shield, Shin BSI Guardrail & 20h CARA Audit.',
+      icon: Trophy,
+      accentClass: 'text-emerald-500 bg-emerald-500/12 border-emerald-500/30',
+    },
+    {
+      id: 'glossary',
+      number: '09',
       shortTitle: 'Physiology Glossary',
       fullTitle: 'Interactive Physiological Glossary & Color Legend',
       subtitle:
-        "Complete mathematical formulas, physiological benchmarks, and color codes for CTL, ATL, TSB, Garmin Load Focus, NP, IF, TSS, EF, Pa:Hr, CP/W', VDOT, and HRV CV.",
+        "Complete mathematical formulas, physiological benchmarks, and color codes for CTL, ATL, TSB, Durability, Ortho ACWR, NCAA Index, CP/W', VDOT, and HRV CV.",
       icon: HelpCircle,
       accentClass: 'text-teal-500 bg-teal-500/12 border-teal-500/30',
     },
@@ -630,6 +681,72 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         ctaLabel: 'Try It Live: Open Gemini AI Coach Drawer →',
         onAction: () => triggerAndClose(() => onOpenAICoach()),
       },
+
+      // Chapter 8: High School & Collegiate Team Pack (v2.3)
+      {
+        id: 'c8-1',
+        chapterId: 'ch8-scholastic',
+        badge: 'AUTO-SCALED SQUAD PACING PODS',
+        badgeColor: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/25',
+        title: 'VDOT Pacing Pod Generator, Printable Clipboard Sheet & Watchless Split Pad',
+        summary:
+          'Write one team workout once: THRESH clusters your varsity and developmental squad into Pods A–D (±2s/400m) with exact 200m–1600m splits and a live 0.01s Spikes-On Split Stopwatch.',
+        bullets: [
+          'Auto-calculates 200m, 400m, 800m, 1000m, and 1600m target splits across Easy, Marathon, Threshold/CV, VO2max, and Mile Repetition intensities.',
+          '1-Click Push to Pod schedules the auto-scaled workout directly onto every coached athlete’s calendar in that pod.',
+          'Trackside Watchless Split Pad lets coaches or managers tap 0.01s splits for athletes racing or repping in spikes without GPS watches.',
+        ],
+        ctaLabel: 'Try It Live: Open HS & College Coach Deck →',
+        onAction: () => triggerAndClose(() => onOpenRosterModal()),
+      },
+      {
+        id: 'c8-2',
+        chapterId: 'ch8-scholastic',
+        badge: 'NCAA TRACK INDEXING & RECRUITING',
+        badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
+        title: 'Official NCAA Flat/Banked/Altitude Track Converter & Recruiting Matrix',
+        summary:
+          'Converts indoor 200m flat, 200m banked, and 400m outdoor track marks with official NCAA multipliers and altitude allowances (>= 3,000 ft), plus live recruiting standard bars.',
+        bullets: [
+          'Supports Men’s and Women’s standards across 800m, 1500m, 1600m, Mile, 3000m, 3200m, 5000m, and 10000m.',
+          'Displays exact seconds-to-qualify and progress bars for HS State, HS Nationals, NCAA D3, NCAA D2, NCAA D1 Walk-On, and NCAA D1 Scholarship.',
+          'Includes 10x #6 GPS-to-Official Chip/FAT Rubber-Banding and shareable THV-... Verified Race Passports.',
+        ],
+        ctaLabel: 'Try It Live: Open NCAA Converter & Race Logger →',
+        onAction: () => triggerAndClose(() => onOpenOfficialRaceModal()),
+      },
+      {
+        id: 'c8-3',
+        chapterId: 'ch8-scholastic',
+        badge: 'SAFE-SPORT, BSI GUARDRAIL & 20H CARA',
+        badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
+        title: 'Safe-Sport Weight Shield, Shin BSI / Ferritin Check-In & Cross-Training Miles',
+        summary:
+          'Protects student-athletes from RED-S and Bone Stress Injuries (BSI) while translating training-room cross-training into virtual running miles.',
+        bullets: [
+          'Safe-Sport Mode masks body weight (kg/lbs) and W/kg across student-athlete views while keeping power/pace zones calibrated.',
+          '5-Second Student-Athlete Check-In flags focal shin/metatarsal bone pain (>= 2/3), low serum ferritin (< 30 ng/mL), and Midterm/Finals exam stress.',
+          'Converts Aqua Jogging, AlterG, Elliptical, Arc Trainer, and Spin Bike minutes + RPE into Virtual Running Miles and audits NCAA 20-Hour CARA caps.',
+        ],
+        ctaLabel: 'Try It Live: Open Student-Athlete Check-In →',
+        onAction: () => triggerAndClose(() => onNavigateTab('fitness')),
+      },
+      {
+        id: 'c8-4',
+        chapterId: 'ch8-scholastic',
+        badge: 'FORGOT-TO-LAP 1HZ REP RECOVERY',
+        badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
+        title: '1Hz Unstructured Track & Fartlek Interval Auto-Detection',
+        summary:
+          'Recovers crisp WORK and float reps from 1Hz velocity or power streams even when the athlete forgot to press the watch Lap button.',
+        bullets: [
+          'Bimodal quantile hysteresis detector extracts work reps down to 18s (capturing fast 200m repeats) and overrides 1-mile auto-laps.',
+          'Snaps standard track distances (~200m, ~400m, ~800m, ~1000m, ~1600m) automatically.',
+          'Click any recovered rep in the Activity Inspector to zoom the 1Hz stream canvas to that exact window.',
+        ],
+        ctaLabel: 'Try It Live: Open Activity Inspector →',
+        onAction: () => triggerAndClose(() => onNavigateTab('activities')),
+      },
     ],
     []
   );
@@ -736,6 +853,24 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              <a
+                href="/docs/index.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap transition-colors"
+              >
+                Open Online Docs (/docs) ↗
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setActiveChapter('ch8-scholastic');
+                }}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 whitespace-nowrap transition-colors"
+              >
+                HS &amp; College Pack
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -754,7 +889,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 }}
                 className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/25 whitespace-nowrap transition-colors"
               >
-                Formulas & Glossary ({GLOSSARY_ENTRIES.length})
+                Formulas &amp; Glossary ({GLOSSARY_ENTRIES.length})
               </button>
             </div>
           </div>

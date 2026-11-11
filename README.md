@@ -1,149 +1,52 @@
-# AeroPulse — Unified Multi-Sport Physiology, Load, Segments & AI Coaching PWA
+# THRESH v2.3 — Precision Endurance Physiology, Load, Race Simulation & Scholastic Team Platform
 
-**AeroPulse** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit built in the **Editorial Endurance Lab** aesthetic. It unifies **Intervals.icu** (including auto-synced **Garmin Connect** daily health & workout telemetry) and **Strava** accounts with local **1Hz `.FIT` / `.GPX` / `.TCX` binary parsing**, **Daily Stacked Garmin Load Focus bars**, **Closed-Loop Readiness Workout Morphing**, and a context-aware **Google Gemini Training & Recovery Coach**.
-
----
-
-## Documentation Suite
-
-| Guide | Purpose |
-| :--- | :--- |
-| **[Interactive In-App Guide](src/components/UserGuideModal.tsx)** | Click the **`?` (User Guide)** button in the top navigation bar at any time for an interactive, searchable 7-chapter walkthrough with **"Try It Live →"** deep links. |
-| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | Step-by-step manual covering all 7 chapters: Onboarding, Strava/Intervals Sync, `.FIT` import, PMC & Garmin Load Focus, Calendar & Block Builder, 1Hz Activity Inspector, Lab Curves, and Coaching Roster. |
-| **[Physiology & Math Reference (`docs/PHYSIOLOGY_AND_METRICS.md`)](docs/PHYSIOLOGY_AND_METRICS.md)** | Complete mathematical formulas and exercise physiology reference: Banister `CTL`/`ATL`/`TSB`, Garmin Load Focus zone classification, Coggan `NP`/`IF`/`TSS`, `Pa:Hr` Aerobic Decoupling, Monod-Scherrer `CP`/`W'`, Skiba `W' Balance`, Daniels `VDOT`, and 7-day `HRV CV`. |
-| **[Design System (`docs/DESIGN_SYSTEM.md`)](docs/DESIGN_SYSTEM.md)** | Complete reference for the **Editorial Endurance Lab** design system, Tailwind v4 `@theme` tokens, macOS Tahoe `.liquid-glass` surfaces, z-index hierarchy (`z-[15]` to `z-[110]`), and Light/Dark mode contrast rules. |
+**THRESH** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit built in the **Precision Editorial** aesthetic. It unifies **Intervals.icu** (including auto-synced **Garmin Connect** daily health & workout telemetry), **Strava**, and first-party hardware webhooks with local **1Hz `.FIT` / `.FIT.GZ` / `.GPX` / `.TCX` / `.ZIP` archive parsing**, **3-Channel Orthopedic Load Guardrails (`10x #1`)**, **Fatigue-Sliced `kJ/kg` & `kcal` Durability (`10x #2`)**, **Weekly Training Git-Diffs (`10x #3`)**, **Course & Fueling Race Simulation (`10x #4`)**, **Verified `THV-...` Race Passports (`10x #6`)**, and a purpose-built **High School & Collegiate Team Pack (`v2.3`)**.
 
 ---
 
-## Why AeroPulse? (AeroPulse vs. Intervals.icu vs. Strava vs. Runna / TrainerRoad)
+## Complete Online Documentation Suite
 
-Endurance athletes typically juggle three disconnected platforms:
-1. **Intervals.icu / WKO5** for deep physiological charts (`CTL`, `ATL`, `CP`, `W'`, `Pa:Hr`), which lack automated daily workout morphing when morning HRV or sleep crashes.
-2. **Runna / TrainerRoad** for structured workout prescriptions, which often operate in a silo without combining multi-sport outdoor GPS segments, track FAT marks, and real-time autonomic readiness.
-3. **Strava** for GPS route maps, segment PR leaderboards, and social kudos, which lacks Banister impulse-response modeling, 1Hz W' balance depletion, and autonomic HRV baselines.
+| Resource | Path / URL | Description |
+| :--- | :--- | :--- |
+| **[Online Documentation Portal (`/docs`)](public/docs/index.html)** | `/docs/index.html` | Standalone, searchable online documentation website served directly by the app with Light/Dark theme toggle, architecture matrices, NCAA tables, mathematical formulas, and REST API reference. |
+| **[In-App Interactive Guide (`UserGuideModal.tsx`)](src/components/UserGuideModal.tsx)** | Click **`?` (Guide)** in top header | Interactive 9-chapter searchable manual with **18 physiological formula cards** and **"Try It Live →"** deep links into every modal and workspace. |
+| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | `docs/USER_GUIDE.md` | Complete step-by-step walkthrough across all 8 chapters, from onboarding and bulk `.ZIP` import to Weekly Git-Diffs, Durability curves, and Race Simulation. |
+| **[High School & Collegiate Team Pack Guide (`docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`)](docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)** | `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md` | Deep dive into Auto-Scaled VDOT Pacing Pods, Watchless Spikes-On Split Stopwatch, NCAA Flat/Banked/Altitude Track Conversions, Recruiting Standards, Safe-Sport / RED-S Protection, Bone-Stress / Ferritin Guardrails, Cross-Training Virtual Miles, and NCAA 20-Hour CARA audits. |
+| **[Physiology & Math Reference (`docs/PHYSIOLOGY_AND_METRICS.md`)](docs/PHYSIOLOGY_AND_METRICS.md)** | `docs/PHYSIOLOGY_AND_METRICS.md` | Mathematical derivations for Banister `CTL`/`ATL`/`TSB`, 3-Channel Orthopedic ACWR, `0–40 kJ/kg` & `0–2,000 kcal` Durability, Coggan `NP`/`IF`/`TSS`, Minetti `GAP`, Monod-Scherrer `CP`/`W'`, Skiba `W' Balance`, Daniels `VDOT`, and 1Hz Unstructured Interval Hysteresis. |
+| **[REST API, Webhooks & Security (`docs/API_AND_SECURITY.md`)](docs/API_AND_SECURITY.md)** | `docs/API_AND_SECURITY.md` | Documentation for per-visitor signed session isolation, the `AES-256-GCM` OAuth Token Vault, Clean-Room Strava Firewall, hardware webhooks, and OTA workout export (`WorkoutKit`, Garmin JSON, `.ZWO`, `.ERG`). |
+| **[Design System (`docs/DESIGN_SYSTEM.md`)](docs/DESIGN_SYSTEM.md)** | `docs/DESIGN_SYSTEM.md` | Precision Editorial color tokens (`#F6F4F0` Alabaster Paper / `#0A0D12` Carbon Obsidian), WCAG AA status pills, typography, and layout architecture. |
 
-**AeroPulse bridges all three into a single zero-compromise cockpit:**
+---
 
-| Capability | Intervals.icu | Strava | Runna / TrainerRoad | **AeroPulse** |
+## Why THRESH v2.3? (THRESH vs. Intervals.icu vs. Strava vs. Final Surge / VDOT O2)
+
+| Capability | Intervals.icu | Strava | Final Surge / VDOT O2 | **THRESH v2.3** |
 | :--- | :---: | :---: | :---: | :---: |
-| **Banister PMC (`42d CTL`, `7d ATL`, `TSB`, `Ramp Rate`)** | Yes | No | No | **Yes (Interactive ECharts + Future Projection)** |
-| **Chronological Multi-Workout Garmin Load Focus Stack** | Partial | No | No | **Yes (`Low Aerobic`, `High Aerobic`, `Anaerobic` per-workout stack)** |
-| **Closed-Loop Morning Readiness Workout Morphing** | No | No | Partial | **Yes (Optimal / Modulated -15% / Recovery auto-morphing)** |
-| **Separate Outdoor vs. Indoor/Smart-Trainer FTP & Curves** | Yes | No | Partial | **Yes (Global `Combined` / `Outdoor` / `Virtual` modality filter)** |
-| **1Hz Stream Inspector (`Watts`, `HR`, `Pace`, `W' Bal`, `Pa:Hr`)** | Yes | Partial | Partial | **Yes (Synchronized crosshair, lap table & 2-workout overlay)** |
-| **Strava Segment PR Leaderboard & Leaflet Route Map** | Partial | Yes | No | **Yes (Zone-colored polylines + benchmark climb history)** |
-| **Verified 0.01s FAT Track/XC Race Logger & VDOT Predictor** | No | No | Partial | **Yes (Athletic.net / TFRRS / MileSplit / RunSignup + Riegel)** |
-| **Coach-Edit Roster + Strava Compliance Privacy Shield** | Yes | No | No | **Yes (Granular per-domain visibility + GPS redaction shield)** |
+| **Banister PMC (`42d CTL`, `7d ATL`, `TSB`, `Ramp Rate`)** | Yes | No | No | **Yes + Dual-Sport Systemic vs. Modality Split** |
+| **3-Channel Orthopedic Load Strip (`10x #1`)** | No | No | No | **Yes (Central / Run Impact / Bike Torque + 1-Tap Swap)** |
+| **Fatigue-Sliced Durability (`0–40 kJ/kg` & `0–2,000 kcal`, `10x #2`)** | Manual Custom | No | No | **Yes (Built-in Retention Curve & Carb `g/hr` Rx)** |
+| **Weekly Training Git-Diff (`- Original / + Proposed`, `10x #3`)** | No | No | No | **Yes ($\Delta\text{TSS}$, $\Delta\text{CTL}$, $\Delta\text{TSB}$ + 1-Tap Commit)** |
+| **Course Physics, Weather/Altitude & Carb/Sodium Simulator (`10x #4`)** | No | No | No | **Yes (5-Segment Pacing + Dual-Source Fueling Plan)** |
+| **GPS-to-Official Chip/FAT Rubber-Banding & Passports (`10x #6`)** | No | No | No | **Yes (`THV-...` Cryptographic Hash + Course Correction)** |
+| **1Hz Stream Inspector + Unstructured No-Lap Rep Detector** | Partial | Partial | No | **Yes (Drag-to-Zoom + Bimodal Hysteresis Rep Recovery)** |
+| **Auto-Scaled VDOT Pacing Pods + Watchless Split Stopwatch** | No | No | Partial | **Yes (Pods A–D + Printable Sheet + 0.01s Multi-Runner Pad)** |
+| **NCAA Flat/Banked/Altitude Track Indexer & Recruiting Matrix** | No | No | No | **Yes (HS State, Nationals, NCAA D1/D2/D3 Walk-On & Scholarship)** |
+| **Safe-Sport Weight Shield, Shin BSI Guardrail & 20h CARA Audit** | No | No | No | **Yes (RED-S Shield + Ferritin + Pool/AlterG Virtual Miles)** |
 
 ---
 
-## System Architecture
-
-```mermaid
-flowchart LR
-  subgraph Sources["External Telemetry & Local Files"]
-    S1["Strava OAuth v3 API\n(Activities, 1Hz Streams, Segments, Gear)"]
-    S2["Intervals.icu + Garmin Connect\n(Wellness HRV/RHR/Sleep, CTL/ATL, SportSettings)"]
-    S3["Local .FIT / .GPX / .TCX Files\n& Official 0.01s FAT Race Marks"]
-  end
-
-  subgraph Engine["AeroPulse Client & Worker Engine"]
-    W1["Web Worker 1Hz Parser\n(NP, IF, TSS, W' Bal, Pa:Hr, MMP)"]
-    DB[("Browser IndexedDB (Dexie)\n+ Non-Destructive Merger")]
-    PHY["Physiology & Readiness Engine\n(Banister PMC, Garmin Load Stack, CP/W', VDOT)"]
-  end
-
-  subgraph UI["5-Pillar Editorial Endurance Lab UI"]
-    T1["1. Load & Readiness\n(PMC, Garmin Load Stack, 14d HRV Ledger)"]
-    T2["2. Calendar\n(8-Col Grid, Effort Skylines, 3:1 Block Builder)"]
-    T3["3. Activities\n(1Hz Streams, Leaflet GPS Map, Segment PRs, Overlay)"]
-    T4["4. Lab & Goals\n(CP/W' Curves, 6-Axis Radar, Biometrics, VDOT, Comparator)"]
-    T5["5. Gemini AI Coach & Roster\n(3-Option Daily Generator, Multi-Turn Chat, Privacy Shield)"]
-  end
-
-  S1 --> DB
-  S2 --> DB
-  S3 --> W1 --> DB
-  DB --> PHY
-  PHY --> T1 & T2 & T3 & T4 & T5
-```
-
----
-
-## Key Capabilities
-
-1. **Autonomic Readiness & Performance Management Chart (PMC)**:
-   - Correlates daily **HRV (`rMSSD`)** vs. 7-day rolling baseline and 60-day normal corridor, **Resting HR**, **Sleep Duration & Score**, and **VO2max** with chronic training load (**Fitness `CTL`**, **Fatigue `ATL`**, **Form `TSB`**, and weekly **Ramp Rate**).
-   - **Daily Stacked Garmin Load Focus Bars**: Every daily bar on the PMC stacks your chronological workouts (`Morning` -> `Afternoon` -> `Evening`) color-coded by **Low Aerobic (`#38bdf8` Cyan)**, **High Aerobic (`#f97316` Orange)**, and **Anaerobic (`#d946ef` Magenta)**.
-2. **Closed-Loop Readiness Workout Morphing & 8-Column Training Calendar**:
-   - Evaluates morning autonomic state to morph today's scheduled workout between **Optimal Progression**, **Modulated Aerobic (`-15%` load)**, and **Parasympathetic Recovery**.
-   - Includes an **Intervals-Syntax Structured Workout Builder** (`- 15m 60% FTP`) with live Effort Zone Skylines (`Z1`–`Z6`) and a **Multi-Week `3:1` Periodized Block Generator** with automatic pre-race taper.
-3. **Global Outdoor vs. Indoor (Smart Trainer / Treadmill) Modality Split**:
-   - One-click filtering across all running and cycling workouts, power/pace curves, and annual mileage trackers to isolate **Outdoor Only**, **Virtual / Smart Trainer / Treadmill**, or **Combined** telemetry.
-4. **4-Workspace Activity Inspector & Strava Segment Performance**:
-   - Inspects 1Hz time-series streams (`Watts`, `Heart Rate`, `Pace`, `Cadence`, `Altitude`, `W' Balance`), **Aerobic Decoupling (`Pw:Hr` / `Pa:Hr`)**, 7-zone histograms, interactive **Leaflet GPS Route Maps**, **Strava Segment Efforts** (`PR #1/2/3`, grade, W/kg), and **2-Workout Overlay Comparisons**.
-5. **Lab & Goals (`Goals & Totals`, `Power & Pace`, `Biometrics`, `Benchmarks`)**:
-   - **Goals & Totals**: Independent Running & Cycling annual distance targets, **Daniels VDOT + Riegel Race Predictor**, Verified **0.01s FAT Track/Road/XC Race Logger**, and Bike/Shoe gear wear alerts.
-   - **Power & Pace**: Monod-Scherrer **Critical Power (`CP`) & `W'`** hyperbolic curve solver and **6-Axis Athlete Phenotype Radar**.
-   - **Biometrics**: 7-day **HRV Coefficient of Variation (`CV%`)**, Sleep Debt, and **Efficiency Factor (`EF`) vs. Decoupling (`Pa:Hr`)** quadrant scatter.
-   - **Benchmarks**: **2-Athlete Side-by-Side Comparator** and custom dual-metric time-series/scatter chart builder.
-6. **Coaching Roster, Privacy Shield & Gemini AI Coach**:
-   - Connect with coaches (`COACH_EDIT`) or training partners (`FRIEND_VIEW`), enforce the **Strava Compliance Shield** (redacting third-party Strava-only raw GPS while sharing derived fitness), and chat with the context-aware **Google Gemini Coach**.
-
----
-
-## Forking & Self-Hosting Guide (Bring Your Own API Keys)
-
-Anyone can fork this repository and connect their own **Intervals.icu**, **Garmin Connect**, **Strava**, and **Google Gemini** accounts. You can provide credentials either via **Environment Variables** or directly inside the app's **Data Sources** modal (`Database` icon in the top header).
-
-### Step 1: Link Garmin Connect to Intervals.icu (For Garmin Users)
-Because Garmin's enterprise API is closed to personal developer keys, AeroPulse syncs your Garmin workouts and daily wellness metrics (`HRV`, `Resting HR`, `Sleep`, `VO2max`, `Weight`) through **Intervals.icu**:
-1. Log into [https://intervals.icu](https://intervals.icu) and open **Settings**.
-2. Under the **Garmin** section, check both **Download activities** and **Download wellness data** (`HRV`, `RHR`, `Sleep`, `Weight`, `Stress`).
-3. Scroll down to **Developer Settings** and click **View** next to **API Key** to copy your personal `INTERVALS_API_KEY`.
-4. Note your **Athlete ID** (or use `0`, which automatically resolves to the owner of the API key).
-
-### Step 2: Create Your Personal Strava API Application
-1. Go to [https://www.strava.com/settings/api](https://www.strava.com/settings/api) and create an API application.
-2. Note your **Client ID** (`STRAVA_CLIENT_ID`) and **Client Secret** (`STRAVA_CLIENT_SECRET`).
-3. Set the **Authorization Callback Domain** to the hostname where your app is hosted:
-   - For Vercel: `your-project-name.vercel.app` (do not include `https://` or paths in Strava's domain field)
-   - For Local Development: `localhost`
-
-### Step 3: Get a Google Gemini API Key
-1. Visit [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) and generate a Gemini API key (`GEMINI_API_KEY`).
-
----
-
-## Local Setup & Environment Variables
+## Quick Start & Commands
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Copy .env.example to .env and fill in your keys (optional — can also be entered in the UI)
-cp .env.example .env
+# 2. Generate production session & AES-256-GCM vault secrets (optional)
+npm run secrets:generate
 
-# 3. Start the full-stack Express + Vite development server on port 3000
+# 3. Start full-stack Express + Vite server (http://localhost:3000 & http://localhost:3000/docs/)
 npm run dev
 
-# 4. Run production typecheck & bundle build
-npm run build
+# 4. Run strict TypeScript check, Vitest unit suites (23 tests), production build & <220KB gzip gate
+npm run lint && npm test && npm run build && npm run check:bundle
 ```
-
-### Supported `.env` Variables
-
-```env
-GEMINI_API_KEY=your_gemini_api_key
-INTERVALS_API_KEY=your_intervals_icu_personal_api_key
-INTERVALS_ATHLETE_ID=0
-STRAVA_CLIENT_ID=your_strava_client_id
-STRAVA_CLIENT_SECRET=your_strava_client_secret
-```
-
----
-
-## Installing as a Mobile / Desktop PWA
-
-- **Android / Desktop (Chrome, Edge, Brave)**: Click the **Install App** button in the top navigation bar (or inside the **Data Sources** modal) for one-tap native installation.
-- **iOS / iPadOS (Safari)**: Tap **Install on iOS** in the header (or tap the Safari **Share** button and select **Add to Home Screen**) to launch AeroPulse in standalone full-screen mode with offline IndexedDB persistence.

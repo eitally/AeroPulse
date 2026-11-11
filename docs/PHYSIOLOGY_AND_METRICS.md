@@ -167,3 +167,32 @@ AeroPulse's **Readiness Morphing Engine** combines morning `HRV rMSSD` vs. the 6
 1. **`OPTIMAL` (Green)**: $\text{rMSSD}_t \ge \text{Band}_{\text{low}}$, $\text{TSB}_t \ge -22$, and $\text{Sleep Score} \ge 72$ → Execute full planned `Z4`/`Z5` prescription.
 2. **`MODULATED` (Amber — `-15% Load`)**: Mild autonomic dip ($\text{rMSSD}_t$ near lower band boundary or $-30 \le \text{TSB}_t < -22$) → Downshifts `VO2max` / `Threshold` intervals to controlled `Sweet Spot` / `Tempo` (`85–90% FTP`).
 3. **`RECOVERY` (Rose — Active Flush)**: Significant vagal suppression ($\text{rMSSD}_t < \text{Band}_{\text{low}}$, $\text{HRV CV}_{7\text{d}} > 8.5\%$, or $\text{TSB}_t < -30$) → Replaces high-intensity work with a $45\text{ min}$ `Z1`/`Z2` (`55–62% FTP`) parasympathetic recovery spin/jog.
+
+---
+
+## 9. Horizon 1–3 & v2.3 Scholastic Mathematical Models (`@thresh/physiology`)
+
+### 9.1 3-Channel Orthopedic Load Decomposition (`orthopedicEngine.ts`)
+Each activity $i$ with training load $\text{TSS}_i$ and sport modality $s_i$ is projected onto three orthogonal physiological strain channels:
+- **Central Autonomic Load**: $L_{\text{central},i} = \text{TSS}_i$
+- **Eccentric Run Impact Load**: $L_{\text{impact},i} = \text{TSS}_i \times 1.35$ (for outdoor/track running), $0.15 \times \text{TSS}_i$ (for cycling/swimming)
+- **Concentric Bike Torque Load**: $L_{\text{torque},i} = \text{TSS}_i \times 1.25$ (for cycling/smart trainer), $0.35 \times \text{TSS}_i$ (for running)
+
+When $\text{ACWR}_{\text{impact}} = \frac{\sum_{7\text{d}} L_{\text{impact}}}{\frac{1}{4}\sum_{28\text{d}} L_{\text{impact}}} \ge 1.28$ while $\text{ACWR}_{\text{central}} \le 1.18$, the engine prescribes a cross-modal aerobic-equivalent cycling/pool swap.
+
+### 9.2 Fatigue-Sliced Durability (`durabilityEngine.ts`)
+Cumulative mechanical work prior to sample index $k$ at 1Hz is integrated as:
+$$W_{\text{prior}}(k) = \frac{1}{1000 \cdot m_{\text{kg}}} \sum_{j=0}^{k-1} P_j \, \Delta t_j \quad (\text{kJ/kg})$$
+For running streams without power, metabolic expenditure is integrated via Minetti grade cost $C_r(g_j)$ (`kcal`). Peak 5-minute and 20-minute rolling windows are partitioned into work buckets (`0, 10, 20, 30, 40 kJ/kg` or `0, 500, 1000, 1500, 2000 kcal`), and deep-fatigue retention is defined as:
+$$\text{Retention}_{\%} = \frac{\text{MMP}_{20\text{m}}(\text{Deep Bucket})}{\text{MMP}_{20\text{m}}(\text{Bucket } 0)} \times 100\%$$
+
+### 9.3 NCAA Track Facility & Altitude Indexing (`scholasticEngine.ts`)
+For a raw track time $T_{\text{raw}}$ run on facility $F_{\text{from}}$ at elevation $E_{\text{ft}}$ feet:
+$$T_{\text{indexed}} = T_{\text{raw}} \cdot M(F_{\text{from}} \to F_{\text{to}}, \text{event}, \text{gender}) - \Delta T_{\text{alt}}(E_{\text{ft}}, \text{event})$$
+where $M < 1.0$ when converting from `INDOOR_FLAT_200M` to `INDOOR_BANKED_200M` or `OUTDOOR_400M`, and $\Delta T_{\text{alt}} > 0$ for $E_{\text{ft}} \ge 3,000\text{ ft}$.
+
+### 9.4 1Hz Unstructured Interval Bimodal Hysteresis Detector (`autoDetectUnstructuredIntervals`)
+Given a 5-second boxcar-smoothed 1Hz velocity or wattage series $S_t$, let $P_{30}, P_{50}, P_{82}, P_{92}$ denote the empirical quantiles of active samples. When the bimodal spread satisfies $P_{82}/P_{30} \ge 1.16$ (running) or $1.25$ (cycling), two-state hysteresis segmentation triggers `WORK` entry at:
+$$\theta_{\text{enter}} = \min\!\left(\theta_{\text{calibrated}}, \; P_{50} + 0.42\,(P_{92} - P_{50})\right), \quad \theta_{\text{exit}} = \alpha \, \theta_{\text{enter}}$$
+with $\alpha \in [0.84, 0.88]$ and minimum work hold $t_{\min} = 18\text{ s}$.
+
