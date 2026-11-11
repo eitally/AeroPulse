@@ -111,6 +111,7 @@ import {
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
   isGenericAthleteName,
+  isUncalibratedDefaultProfile,
   loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
@@ -622,25 +623,32 @@ export default function App() {
       if (hasLocalAuth) {
         const currentProf = athleteProfileRef.current;
         const needsNameUpdate = bestRealName && isGenericAthleteName(currentProf?.name);
-        const needsCalibration =
-          currentProf?.source !== 'CUSTOM_OVERRIDE' &&
-          ((currentProf?.wPrime === 24500 && currentProf?.pMax === 1180) ||
-            (currentProf?.lthr === 163 &&
-              currentProf?.maxHr === 182 &&
-              currentProf?.vo2MaxCycling === 56));
+        const needsCalibration = isUncalibratedDefaultProfile(currentProf);
         if (needsNameUpdate || needsCalibration || data.athleteProfile) {
+          const baseProf = data.athleteProfile || currentProf;
           const mergedProf = buildCompleteAthleteProfile(
             {
-              ...(data.athleteProfile || currentProf),
+              ...baseProf,
               name: bestRealName || data.athleteProfile?.name || currentProf?.name,
               weightKg:
-                currentProf?.weightKg && currentProf.weightKg !== 70
-                  ? currentProf.weightKg
-                  : data.stravaAthleteWeightKg || currentProf?.weightKg,
+                data.athleteProfile?.weightKg && data.athleteProfile.weightKg !== 70
+                  ? data.athleteProfile.weightKg
+                  : !needsCalibration && currentProf?.weightKg && currentProf.weightKg !== 70
+                    ? currentProf.weightKg
+                    : data.stravaAthleteWeightKg || baseProf?.weightKg,
               ftp:
-                currentProf?.ftp && currentProf.ftp !== 280 && currentProf.ftp !== 300
-                  ? currentProf.ftp
-                  : data.stravaAthleteFtp || currentProf?.ftp,
+                data.athleteProfile?.ftp &&
+                data.athleteProfile.ftp !== 250 &&
+                data.athleteProfile.ftp !== 280 &&
+                data.athleteProfile.ftp !== 300
+                  ? data.athleteProfile.ftp
+                  : !needsCalibration &&
+                      currentProf?.ftp &&
+                      currentProf.ftp !== 250 &&
+                      currentProf.ftp !== 280 &&
+                      currentProf.ftp !== 300
+                    ? currentProf.ftp
+                    : data.stravaAthleteFtp || baseProf?.ftp,
             },
             wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
             activitiesRef.current
@@ -796,7 +804,7 @@ export default function App() {
           }
         }
 
-        if (statusData.garminConnected && !statusData.intervalsConnected) {
+        if (statusData.garminConnected) {
           const garminResp = await fetch('/api/garmin/sync', {
             headers: activeHeaders,
           });
@@ -811,11 +819,27 @@ export default function App() {
               wellnessDaysRef.current = nextWellnessDays;
             }
             if (Array.isArray(garminData.activities) && garminData.activities.length > 0) {
-              mergedActivities = garminData.activities.map((a: UnifiedActivity) =>
+              const garminActs = garminData.activities.map((a: UnifiedActivity) =>
                 reclassifyActivityEnvironment(a)
               );
+              mergedActivities = mergedActivities
+                ? mergeActivitiesNonDestructive(mergedActivities, garminActs)
+                : garminActs;
             }
             if (garminData.athleteProfile) {
+              if (
+                garminData.athleteProfile.name &&
+                !isGenericAthleteName(garminData.athleteProfile.name)
+              ) {
+                try {
+                  localStorage.setItem(
+                    'aeropulse_garmin_athlete_name',
+                    String(garminData.athleteProfile.name).trim()
+                  );
+                } catch {
+                  // ignore
+                }
+              }
               const latestW =
                 nextWellnessDays.length > 0
                   ? nextWellnessDays[nextWellnessDays.length - 1]
@@ -876,9 +900,10 @@ export default function App() {
               } else {
                 // Preserve real Garmin / Intervals biometrics (weight, RHR, LTHR, Max HR, HR zones) while taking Strava gear & FTP fallback if needed
                 const currentProf = athleteProfileRef.current;
+                const currentUncalibrated = isUncalibratedDefaultProfile(currentProf);
                 const mergedRawProfile = {
                   ...stravaData.athleteProfile,
-                  ...currentProf,
+                  ...(currentUncalibrated ? {} : currentProf),
                   name:
                     !isGenericAthleteName(currentProf.name)
                       ? currentProf.name
@@ -886,21 +911,60 @@ export default function App() {
                         ? stravaData.athleteProfile.name
                         : currentProf.name,
                   weightKg:
-                    currentProf.weightKg && currentProf.weightKg !== 71.5
+                    !currentUncalibrated &&
+                    currentProf.weightKg &&
+                    currentProf.weightKg !== 70 &&
+                    currentProf.weightKg !== 71.5
                       ? currentProf.weightKg
-                      : stravaData.athleteProfile.weightKg || currentProf.weightKg,
+                      : stravaData.athleteProfile.weightKg &&
+                          stravaData.athleteProfile.weightKg !== 70
+                        ? stravaData.athleteProfile.weightKg
+                        : currentProf.weightKg,
+                  ftp:
+                    !currentUncalibrated &&
+                    currentProf.ftp &&
+                    currentProf.ftp !== 250 &&
+                    currentProf.ftp !== 280 &&
+                    currentProf.ftp !== 300
+                      ? currentProf.ftp
+                      : stravaData.athleteProfile.ftp &&
+                          stravaData.athleteProfile.ftp !== 250 &&
+                          stravaData.athleteProfile.ftp !== 280
+                        ? stravaData.athleteProfile.ftp
+                        : currentProf.ftp,
                   restingHr:
-                    currentProf.restingHr && currentProf.restingHr !== 46
+                    !currentUncalibrated &&
+                    currentProf.restingHr &&
+                    currentProf.restingHr !== 46 &&
+                    currentProf.restingHr !== 50
                       ? currentProf.restingHr
                       : stravaData.athleteProfile.restingHr || currentProf.restingHr,
                   lthr:
-                    currentProf.lthr && currentProf.lthr !== 174
+                    !currentUncalibrated &&
+                    currentProf.lthr &&
+                    currentProf.lthr !== 163 &&
+                    currentProf.lthr !== 174
                       ? currentProf.lthr
                       : stravaData.athleteProfile.lthr || currentProf.lthr,
                   maxHr:
-                    currentProf.maxHr && currentProf.maxHr !== 192
+                    !currentUncalibrated &&
+                    currentProf.maxHr &&
+                    currentProf.maxHr !== 182 &&
+                    currentProf.maxHr !== 192
                       ? currentProf.maxHr
                       : stravaData.athleteProfile.maxHr || currentProf.maxHr,
+                  hrZones:
+                    !currentUncalibrated &&
+                    Array.isArray(currentProf.hrZones) &&
+                    currentProf.hrZones.length >= 5
+                      ? currentProf.hrZones
+                      : stravaData.athleteProfile.hrZones,
+                  runHrZones:
+                    !currentUncalibrated &&
+                    Array.isArray(currentProf.runHrZones) &&
+                    currentProf.runHrZones.length >= 5
+                      ? currentProf.runHrZones
+                      : stravaData.athleteProfile.runHrZones,
                 };
                 const latestW =
                   nextWellnessDays.length > 0
@@ -2381,6 +2445,14 @@ export default function App() {
             athleteMaxHr: synced.maxHr,
             athleteProfile: synced,
           }));
+          void savePersistedTelemetrySnapshot({
+            activities: activitiesRef.current,
+            wellnessDays: wellnessDaysRef.current,
+            plannedEvents: plannedEventsRef.current,
+            gearItems: gearItemsRef.current,
+            athleteProfile: synced,
+            redactedStravaCount: redactedStravaCountRef.current,
+          });
         }
       }
     } finally {
@@ -2414,6 +2486,14 @@ export default function App() {
         athleteMaxHr: updatedProfile.maxHr,
         athleteProfile: updatedProfile,
       }));
+      void savePersistedTelemetrySnapshot({
+        activities: activitiesRef.current,
+        wellnessDays: wellnessDaysRef.current,
+        plannedEvents: plannedEventsRef.current,
+        gearItems: gearItemsRef.current,
+        athleteProfile: updatedProfile,
+        redactedStravaCount: redactedStravaCountRef.current,
+      });
       try {
         await fetch('/api/athlete/profile', {
           method: 'POST',

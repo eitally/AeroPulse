@@ -55,10 +55,20 @@ const DEFAULT_GARMIN_OAUTH_KEY =
   process.env.GARMIN_CONSUMER_KEY || 'fc3e99d2-118c-44b8-8ae3-03370dde24c0';
 const DEFAULT_GARMIN_OAUTH_SECRET =
   process.env.GARMIN_CONSUMER_SECRET || 'E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF';
+const DEFAULT_GARMIN_PERSONAL_API_KEY =
+  process.env.GARMIN_PERSONAL_API_KEY ||
+  'GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766.5ac0d701-08fa-40ce-b132-0f635bfcc455.EnKLpYLMB3o9M18nEsqBjUEPd7vAS/SJMVW3r+DzAz0.3482173667';
 
 const GARMIN_API_BASE = 'https://connectapi.garmin.com';
 const GARMIN_PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
 const GARMIN_USER_AGENT = 'com.garmin.android.apps.connectmobile';
+const GARMIN_5_ZONE_HR_NAMES = [
+  'Z1 Warm Up',
+  'Z2 Easy',
+  'Z3 Aerobic',
+  'Z4 Threshold',
+  'Z5 Maximum',
+];
 
 function percentEncode(str: string): string {
   return encodeURIComponent(str).replace(
@@ -92,7 +102,7 @@ export async function obtainGarminPersonalApiBearerToken(
 ): Promise<string> {
   const apiKey = (
     session.personalApiKey ||
-    process.env.GARMIN_PERSONAL_API_KEY ||
+    getEnvGarminPersonalApiKey() ||
     ''
   ).trim();
   if (!apiKey) {
@@ -860,14 +870,25 @@ export async function fetchDirectGarminProfileAndWellness(
     const userData = profileSettings?.userData || profileSettings || {};
 
     // Extract weight from weight-service (180d window) or profileSettings (Garmin uses grams)
+    // Note: Garmin /weight-service/weight/range returns dailyWeightSummaries NEWEST-FIRST (index 0 is latest).
+    // Sort explicitly by date descending so we always pick the most recent scale weigh-in.
     let weightKg: number | undefined;
     const weightList =
       weightRangeData?.dailyWeightSummaries ||
       weightRangeData?.dateWeightList ||
       (Array.isArray(weightRangeData) ? weightRangeData : []);
     if (Array.isArray(weightList) && weightList.length > 0) {
-      for (let i = weightList.length - 1; i >= 0; i--) {
-        const wItem = weightList[i];
+      const sortedWeights = [...weightList].sort((a: any, b: any) => {
+        const dA = String(
+          a?.summaryDate || a?.calendarDate || a?.latestWeight?.calendarDate || ''
+        );
+        const dB = String(
+          b?.summaryDate || b?.calendarDate || b?.latestWeight?.calendarDate || ''
+        );
+        return dB.localeCompare(dA);
+      });
+      for (let i = 0; i < sortedWeights.length; i++) {
+        const wItem = sortedWeights[i];
         const rawW = Number(
           wItem?.latestWeight?.weight ??
             wItem?.summaryWeight ??
@@ -950,6 +971,7 @@ export async function fetchDirectGarminProfileAndWellness(
         0
     );
 
+    const bikeHrFloors: number[] = [];
     const bikeHrCeilings: number[] = [];
     if (
       cyclingZoneObj.zone1Floor &&
@@ -958,6 +980,13 @@ export async function fetchDirectGarminProfileAndWellness(
       cyclingZoneObj.zone4Floor &&
       cyclingZoneObj.zone5Floor
     ) {
+      bikeHrFloors.push(
+        Number(cyclingZoneObj.zone1Floor),
+        Number(cyclingZoneObj.zone2Floor),
+        Number(cyclingZoneObj.zone3Floor),
+        Number(cyclingZoneObj.zone4Floor),
+        Number(cyclingZoneObj.zone5Floor)
+      );
       bikeHrCeilings.push(
         Number(cyclingZoneObj.zone2Floor) - 1,
         Number(cyclingZoneObj.zone3Floor) - 1,
@@ -967,6 +996,7 @@ export async function fetchDirectGarminProfileAndWellness(
       );
     }
 
+    const runHrFloors: number[] = [];
     const runHrCeilings: number[] = [];
     if (
       runningZoneObj.zone1Floor &&
@@ -975,6 +1005,13 @@ export async function fetchDirectGarminProfileAndWellness(
       runningZoneObj.zone4Floor &&
       runningZoneObj.zone5Floor
     ) {
+      runHrFloors.push(
+        Number(runningZoneObj.zone1Floor),
+        Number(runningZoneObj.zone2Floor),
+        Number(runningZoneObj.zone3Floor),
+        Number(runningZoneObj.zone4Floor),
+        Number(runningZoneObj.zone5Floor)
+      );
       runHrCeilings.push(
         Number(runningZoneObj.zone2Floor) - 1,
         Number(runningZoneObj.zone3Floor) - 1,
@@ -1131,15 +1168,100 @@ export async function fetchDirectGarminProfileAndWellness(
       session.fullName = resolvedFullName;
     }
 
+    // Derive Cycling FTP, Pmax, Running Power FTP & Threshold Pace from Garmin activities when not in /userprofile/settings
+    let maxBike20mPower = 0;
+    let maxBikePeakPower = 0;
+    let maxRunSustainedPower = 0;
+    let bestRun5kSecs = 0;
+    for (const a of rawActivitiesList) {
+      if (!a) continue;
+      const typeKey = String(
+        a.activityType?.typeKey || a.activityType?.parentTypeId || a.type || ''
+      ).toLowerCase();
+      const actName = String(a.activityName || a.name || '').toLowerCase();
+      const combined = `${typeKey} ${actName}`;
+      const isBike =
+        /cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
+          combined
+        );
+      const isRun = /running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined);
+      const dur = Number(a.movingDuration ?? a.duration ?? a.elapsedDuration ?? 0);
+
+      if (isBike) {
+        const p20 = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
+        const avgP = Number(a.avgPower ?? 0);
+        const np = Number(a.normPower ?? a.avgPower ?? 0);
+        const sustainedW =
+          avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
+        const peakP = Number(a.maxPower ?? a.maxAvgPower_1 ?? 0);
+        if (p20 >= 80 && p20 <= 600) {
+          if (p20 > maxBike20mPower) maxBike20mPower = p20;
+        } else if (
+          dur >= 1200 &&
+          sustainedW >= 80 &&
+          sustainedW <= 600 &&
+          sustainedW > maxBike20mPower
+        ) {
+          maxBike20mPower = sustainedW;
+        }
+        if (peakP >= 250 && peakP <= 2500 && peakP > maxBikePeakPower) {
+          maxBikePeakPower = peakP;
+        }
+      } else if (isRun) {
+        const runNp = Number(a.normPower ?? a.avgPower ?? 0);
+        if (dur >= 1200 && runNp >= 120 && runNp <= 650 && runNp > maxRunSustainedPower) {
+          maxRunSustainedPower = runNp;
+        }
+        const split5k = Number(a.fastestSplit_5000 ?? 0);
+        const dist = Number(a.distance ?? 0);
+        if (split5k >= 780 && split5k <= 2700) {
+          if (bestRun5kSecs === 0 || split5k < bestRun5kSecs) {
+            bestRun5kSecs = split5k;
+          }
+        } else if (dist >= 4500 && dur >= 900) {
+          const equiv5k = (dur / dist) * 5000;
+          if (equiv5k >= 780 && equiv5k <= 2700 && (bestRun5kSecs === 0 || equiv5k < bestRun5kSecs)) {
+            bestRun5kSecs = equiv5k;
+          }
+        }
+      }
+    }
+
+    const derivedBikeFtp =
+      Number(userData.ftp) > 60
+        ? Math.round(Number(userData.ftp))
+        : maxBike20mPower >= 90
+          ? Math.round(maxBike20mPower * 0.95)
+          : undefined;
+    const derivedBikePMax =
+      maxBikePeakPower >= 350 ? Math.round(maxBikePeakPower) : undefined;
+    const derivedBikeWPrime =
+      derivedBikeFtp && derivedBikeFtp > 60 ? Math.round(derivedBikeFtp * 75) : undefined;
+    const derivedRunThresholdPace =
+      bestRun5kSecs > 0 ? Math.round((bestRun5kSecs / 5) * 1.03) : undefined;
+    const derivedRunFtp =
+      maxRunSustainedPower >= 140
+        ? Math.round(maxRunSustainedPower * 0.92)
+        : undefined;
+
     const rawProfile: Record<string, any> = {
       id: activityOwnerId || profileSettings?.id || 'garmin-personal-api',
       name: resolvedFullName,
       weight: weightKg,
       icu_resting_hr: latestRhr,
+      ftp: derivedBikeFtp,
+      eFtp: derivedBikeFtp,
+      pMax: derivedBikePMax,
+      wPrime: derivedBikeWPrime,
+      runFtp: derivedRunFtp,
+      thresholdPaceSecsPerKm: derivedRunThresholdPace,
       sportSettings: [
         {
           types: ['Ride', 'VirtualRide'],
-          ftp: Number(userData.ftp) > 60 ? Number(userData.ftp) : undefined,
+          ftp: derivedBikeFtp,
+          eftp: derivedBikeFtp,
+          p_max: derivedBikePMax,
+          w_prime: derivedBikeWPrime,
           lthr:
             bikeLthr > 110
               ? bikeLthr
@@ -1148,9 +1270,14 @@ export async function fetchDirectGarminProfileAndWellness(
                 : undefined,
           max_hr: bikeMaxHr > 130 ? bikeMaxHr : undefined,
           hr_zones: bikeHrCeilings.length >= 5 ? bikeHrCeilings : undefined,
+          hr_zone_floors: bikeHrFloors.length >= 5 ? bikeHrFloors : undefined,
+          hr_zone_names: bikeHrCeilings.length === 5 ? GARMIN_5_ZONE_HR_NAMES : undefined,
         },
         {
           types: ['Run', 'VirtualRun'],
+          ftp: derivedRunFtp,
+          eftp: derivedRunFtp,
+          threshold_pace: derivedRunThresholdPace,
           lthr:
             runLthr > 110
               ? runLthr
@@ -1159,6 +1286,8 @@ export async function fetchDirectGarminProfileAndWellness(
                 : undefined,
           max_hr: runMaxHr > 130 ? runMaxHr : undefined,
           hr_zones: runHrCeilings.length >= 5 ? runHrCeilings : undefined,
+          hr_zone_floors: runHrFloors.length >= 5 ? runHrFloors : undefined,
+          hr_zone_names: runHrCeilings.length === 5 ? GARMIN_5_ZONE_HR_NAMES : undefined,
         },
       ],
     };
@@ -1314,7 +1443,9 @@ export async function fetchDirectGarminProfileAndWellness(
 }
 
 export function getEnvGarminPersonalApiKey(): string {
-  return String(process.env.GARMIN_PERSONAL_API_KEY || '').trim();
+  return String(
+    process.env.GARMIN_PERSONAL_API_KEY || DEFAULT_GARMIN_PERSONAL_API_KEY || ''
+  ).trim();
 }
 
 
@@ -1400,12 +1531,16 @@ export function normalizeGarminPersonalApiActivities(
         Number(a.normPower) > 0
           ? Math.round(Number(a.normPower))
           : avgPower;
-      const maxPower =
-        Number(a.maxPower) > 0 ? Math.round(Number(a.maxPower)) : undefined;
-      const max20MinPower =
-        Number(a.max20MinPower) > 0
-          ? Math.round(Number(a.max20MinPower))
-          : undefined;
+      const rawMaxPower = Number(a.maxPower ?? a.maxAvgPower_1 ?? 0);
+      const maxPower = rawMaxPower > 0 ? Math.round(rawMaxPower) : undefined;
+      const rawMax20m = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
+      const max20MinPower = rawMax20m > 0 ? Math.round(rawMax20m) : undefined;
+      const fastestSplit1000 =
+        Number(a.fastestSplit_1000) > 0 ? Math.round(Number(a.fastestSplit_1000)) : undefined;
+      const fastestSplit1609 =
+        Number(a.fastestSplit_1609) > 0 ? Math.round(Number(a.fastestSplit_1609)) : undefined;
+      const fastestSplit5000 =
+        Number(a.fastestSplit_5000) > 0 ? Math.round(Number(a.fastestSplit_5000)) : undefined;
       const avgHr = Math.round(Number(a.averageHR ?? 0));
       const maxHr = Math.round(Number(a.maxHR ?? 0));
       const avgCadence =
@@ -1487,6 +1622,9 @@ export function normalizeGarminPersonalApiActivities(
         normalizedPower,
         max_watts: maxPower,
         max20MinPower,
+        fastestSplit_1000: fastestSplit1000,
+        fastestSplit_1609: fastestSplit1609,
+        fastestSplit_5000: fastestSplit5000,
         intensityFactor,
         trainingLoad,
         avgHr,

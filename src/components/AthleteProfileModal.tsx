@@ -247,7 +247,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               </span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              {athleteProfile.name} · Biometrics, FTP &amp; 7-Zone Calibration
+              {athleteProfile.name} · Biometrics, FTP &amp; Sport Zone Calibration
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Directly powers your adapted workout prescriptions, calendar effort zones, power curves, and zone distribution analysis.
@@ -723,12 +723,12 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Right: 7-Zone Heart Rate Table (Cycling & Running) */}
+          {/* Right: Sport Heart Rate Table (Garmin 5-Zone or Friel 7-Zone) */}
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  7-Zone Heart Rate Table ({hrTab === 'CYCLING' ? 'Cycling' : 'Running'})
+                  {(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).length}-Zone Heart Rate Table ({hrTab === 'CYCLING' ? 'Cycling' : 'Running'})
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {hrTab === 'CYCLING'

@@ -395,32 +395,54 @@ function deriveObservedPhysiologyFromActivities(
   let maxBikeSustainedHr = 0;
   let maxRunHr = 0;
   let maxRunSustainedHr = 0;
+  let maxRunSustainedWatts = 0;
   let bestRunPaceSecsPerKm = 0;
 
   if (Array.isArray(activities)) {
     for (const a of activities) {
       if (!a) continue;
-      const sport = String(a.sportCategory || a.sport_type || a.type || '');
-      const isBike = /ride|cycling|virtualride|bike/i.test(sport);
-      const isRun = /run|trailrun|virtualrun/i.test(sport);
-      const dur = Number(a.movingTimeSecs ?? a.moving_time ?? a.elapsed_time ?? 0);
+      const sport = String(
+        a.sportCategory ||
+          a.sport_type ||
+          a.type ||
+          a.activityType?.typeKey ||
+          ''
+      );
+      const isBike = /ride|cycling|virtualride|bike|biking|zwift|peloton|spin/i.test(sport);
+      const isRun = /run|trailrun|virtualrun|running|treadmill/i.test(sport);
+      const dur = Number(
+        a.movingTimeSecs ?? a.movingDuration ?? a.moving_time ?? a.elapsed_time ?? a.duration ?? 0
+      );
       const dist = Number(a.distanceMeters ?? a.distance ?? 0);
+      const avgP = Number(
+        a.avgPower ?? a.icu_average_watts ?? a.average_watts ?? 0
+      );
       const np = Number(
         a.normalizedPower ??
+          a.normPower ??
           a.icu_weighted_avg_watts ??
           a.weighted_average_watts ??
-          a.avgPower ??
-          a.icu_average_watts ??
-          a.average_watts ??
-          0
+          avgP
       );
-      const maxW = Number(a.max_watts ?? a.pMax ?? np * 2.2);
-      const avgHr = Number(a.avgHr ?? a.average_heartrate ?? 0);
-      const peakHr = Number(a.maxHr ?? a.max_heartrate ?? 0);
+      const sustainedBikeW =
+        avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
+      const p20 = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
+      const maxW = Number(
+        a.max_watts ?? a.maxPower ?? a.maxAvgPower_1 ?? a.pMax ?? np * 2.2
+      );
+      const avgHr = Number(a.avgHr ?? a.averageHR ?? a.average_heartrate ?? 0);
+      const peakHr = Number(a.maxHr ?? a.maxHR ?? a.max_heartrate ?? 0);
 
       if (isBike) {
-        if (dur >= 1200 && np >= 80 && np <= 600 && np > maxBikeWatts20m) {
-          maxBikeWatts20m = np;
+        if (p20 >= 80 && p20 <= 600) {
+          if (p20 > maxBikeWatts20m) maxBikeWatts20m = p20;
+        } else if (
+          dur >= 1200 &&
+          sustainedBikeW >= 80 &&
+          sustainedBikeW <= 600 &&
+          sustainedBikeW > maxBikeWatts20m
+        ) {
+          maxBikeWatts20m = sustainedBikeW;
         }
         if (maxW >= 250 && maxW <= 2500 && maxW > maxBikePeakWatts) {
           maxBikePeakWatts = maxW;
@@ -438,10 +460,21 @@ function deriveObservedPhysiologyFromActivities(
         if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
           maxRunSustainedHr = avgHr;
         }
+        if (dur >= 1200 && np >= 120 && np <= 650 && np > maxRunSustainedWatts) {
+          maxRunSustainedWatts = np;
+        }
+        const split5k = Number(a.fastestSplit_5000 ?? 0);
+        const paceFrom5k =
+          split5k >= 780 && split5k <= 2700 ? Math.round(split5k / 5) : 0;
         const pace =
+          paceFrom5k ||
           Number(a.gapPaceSecsPerKm ?? a.avgPaceSecsPerKm ?? 0) ||
           (dist >= 3000 && dur >= 900 ? Math.round(dur / (dist / 1000)) : 0);
-        if (dur >= 1200 && dist >= 3000 && pace >= 165 && pace <= 600) {
+        if (
+          (paceFrom5k > 0 || (dur >= 1200 && dist >= 3000)) &&
+          pace >= 165 &&
+          pace <= 600
+        ) {
           if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
             bestRunPaceSecsPerKm = pace;
           }
@@ -479,7 +512,11 @@ function deriveObservedPhysiologyFromActivities(
     bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
   const safeW = weightKg > 30 ? weightKg : 70;
   const obsRunFtp =
-    obsThresholdPace > 0 ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98) : 0;
+    maxRunSustainedWatts >= 140
+      ? Math.round(maxRunSustainedWatts * 0.92)
+      : obsThresholdPace > 0
+        ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98)
+        : 0;
   const obsVo2Bike =
     obsFtp > 0 && safeW > 30
       ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7)))
@@ -723,21 +760,25 @@ function buildServerAthleteProfile(
   const rawPowerCeilings: number[] =
     Array.isArray(bikeSetting?.power_zones) && bikeSetting.power_zones.length >= 5
       ? bikeSetting.power_zones.map((v: any) => Number(v))
-      : Array.isArray(prev.powerZones) && prev.powerZones.length >= 5
-        ? prev.powerZones.map((z: any) => Number(z.maxPct))
-        : [55, 75, 90, 105, 120, 150, 999];
+      : Array.isArray(rawProfile?.powerZones) && rawProfile.powerZones.length >= 5
+        ? rawProfile.powerZones.map((z: any) => Number(z.maxPct))
+        : Array.isArray(prev.powerZones) && prev.powerZones.length >= 5
+          ? prev.powerZones.map((z: any) => Number(z.maxPct))
+          : [55, 75, 90, 105, 120, 150, 999];
   const rawPowerNames: string[] =
     Array.isArray(bikeSetting?.power_zone_names) && bikeSetting.power_zone_names.length >= 5
       ? bikeSetting.power_zone_names
-      : [
-          'Active Recovery',
-          'Endurance',
-          'Tempo',
-          'Lactate Threshold',
-          'VO2 Max',
-          'Anaerobic Capacity',
-          'Neuromuscular Power',
-        ];
+      : Array.isArray(rawProfile?.powerZones) && rawProfile.powerZones.length >= 5
+        ? rawProfile.powerZones.map((z: any) => String(z.name || ''))
+        : [
+            'Active Recovery',
+            'Endurance',
+            'Tempo',
+            'Lactate Threshold',
+            'VO2 Max',
+            'Anaerobic Capacity',
+            'Neuromuscular Power',
+          ];
 
   const powerZones = rawPowerCeilings.slice(0, 7).map((ceilPct, i) => {
     const minPct = i === 0 ? 0 : rawPowerCeilings[i - 1] + 1;
@@ -757,37 +798,75 @@ function buildServerAthleteProfile(
     };
   });
 
-  // Cycling HR Zones
+  const garmin5ZoneNames = [
+    'Z1 Warm Up',
+    'Z2 Easy',
+    'Z3 Aerobic',
+    'Z4 Threshold',
+    'Z5 Maximum',
+  ];
+  const friel7ZoneNames = [
+    'Z1 Recovery',
+    'Z2 Aerobic Base',
+    'Z3 Tempo',
+    'Z4 Sub-Threshold',
+    'Z5a Super-Threshold',
+    'Z5b Aerobic Capacity',
+    'Z5c Anaerobic',
+  ];
+
+  // Cycling HR Zones (Supports Garmin 5-Zone with exact floors OR Intervals.icu 7-Zone)
   const defaultBikeHrCeilings = [
-    Math.round(lthr * 0.81),
-    Math.round(lthr * 0.89),
-    Math.round(lthr * 0.93),
-    Math.round(lthr * 0.99),
-    Math.round(lthr * 1.02),
-    Math.round(lthr * 1.06),
+    Math.round(lthr * 0.85),
+    Math.round(lthr * 0.98),
+    Math.round(lthr * 1.05),
+    Math.round(lthr * 1.09),
     maxHr,
+  ];
+  const defaultBikeHrFloors = [
+    Math.round(lthr * 0.71),
+    defaultBikeHrCeilings[0] + 1,
+    defaultBikeHrCeilings[1] + 1,
+    defaultBikeHrCeilings[2] + 1,
+    defaultBikeHrCeilings[3] + 1,
   ];
   const rawHrCeilings: number[] =
     Array.isArray(bikeSetting?.hr_zones) && bikeSetting.hr_zones.length >= 5
       ? bikeSetting.hr_zones.map((v: any) => Number(v))
-      : Array.isArray(prev.hrZones) && prev.hrZones.length >= 5
-        ? prev.hrZones.map((z: any) => Number(z.maxBpm))
-        : defaultBikeHrCeilings;
+      : Array.isArray(rawProfile?.hrZones) && rawProfile.hrZones.length >= 5
+        ? rawProfile.hrZones.map((z: any) => Number(z.maxBpm))
+        : Array.isArray(prev.hrZones) && prev.hrZones.length >= 5
+          ? prev.hrZones.map((z: any) => Number(z.maxBpm))
+          : defaultBikeHrCeilings;
+  const rawHrFloors: number[] =
+    Array.isArray(bikeSetting?.hr_zone_floors) &&
+    bikeSetting.hr_zone_floors.length === rawHrCeilings.length
+      ? bikeSetting.hr_zone_floors.map((v: any) => Number(v))
+      : Array.isArray(rawProfile?.hrZones) &&
+          rawProfile.hrZones.length === rawHrCeilings.length
+        ? rawProfile.hrZones.map((z: any) => Number(z.minBpm))
+        : rawHrCeilings.length === 5
+          ? defaultBikeHrFloors
+          : [];
   const rawHrNames: string[] =
     Array.isArray(bikeSetting?.hr_zone_names) && bikeSetting.hr_zone_names.length >= 5
       ? bikeSetting.hr_zone_names
-      : [
-          'Z1 Recovery',
-          'Z2 Aerobic Base',
-          'Z3 Tempo',
-          'Z4 Sub-Threshold',
-          'Z5a Super-Threshold',
-          'Z5b Aerobic Capacity',
-          'Z5c Anaerobic',
-        ];
+      : Array.isArray(rawProfile?.hrZones) &&
+          rawProfile.hrZones.length === rawHrCeilings.length
+        ? rawProfile.hrZones.map((z: any) => String(z.name || ''))
+        : rawHrCeilings.length === 5
+          ? garmin5ZoneNames
+          : friel7ZoneNames;
 
   const hrZones = rawHrCeilings.slice(0, 7).map((ceilBpm, i) => {
-    const minBpm = i === 0 ? 60 : rawHrCeilings[i - 1] + 1;
+    const minBpm =
+      rawHrFloors[i] && rawHrFloors[i] > 40
+        ? rawHrFloors[i]
+        : i === 0
+          ? rawHrCeilings.length === 5
+            ? Math.round(lthr * 0.71)
+            : 60
+          : rawHrCeilings[i - 1] + 1;
     const maxBpm = i === rawHrCeilings.length - 1 ? Math.max(ceilBpm, maxHr) : ceilBpm;
     return {
       zone: i + 1,
@@ -795,33 +874,62 @@ function buildServerAthleteProfile(
       name: rawHrNames[i] || `HR Zone ${i + 1}`,
       minBpm,
       maxBpm,
-      minPctLthr: i === 0 ? 50 : Math.round((minBpm / Math.max(100, lthr)) * 100),
+      minPctLthr: Math.round((minBpm / Math.max(100, lthr)) * 100),
       maxPctLthr: Math.round((maxBpm / Math.max(100, lthr)) * 100),
       color: SERVER_ZONE_COLORS[i] || '#EF4444',
     };
   });
 
-  // Running HR Zones
+  // Running HR Zones (Supports Garmin 5-Zone with exact floors OR Intervals.icu 7-Zone)
   const defaultRunHrCeilings = [
-    Math.round(runLthr * 0.81),
-    Math.round(runLthr * 0.89),
-    Math.round(runLthr * 0.93),
-    Math.round(runLthr * 0.99),
-    Math.round(runLthr * 1.02),
-    Math.round(runLthr * 1.06),
+    Math.round(runLthr * 0.87),
+    Math.round(runLthr * 0.97),
+    Math.round(runLthr * 1.03),
+    Math.round(runLthr * 1.1),
     runMaxHr,
+  ];
+  const defaultRunHrFloors = [
+    Math.round(runLthr * 0.71),
+    defaultRunHrCeilings[0] + 1,
+    defaultRunHrCeilings[1] + 1,
+    defaultRunHrCeilings[2] + 1,
+    defaultRunHrCeilings[3] + 1,
   ];
   const rawRunHrCeilings: number[] =
     Array.isArray(runSetting?.hr_zones) && runSetting.hr_zones.length >= 5
       ? runSetting.hr_zones.map((v: any) => Number(v))
-      : defaultRunHrCeilings;
+      : Array.isArray(rawProfile?.runHrZones) && rawProfile.runHrZones.length >= 5
+        ? rawProfile.runHrZones.map((z: any) => Number(z.maxBpm))
+        : defaultRunHrCeilings;
+  const rawRunHrFloors: number[] =
+    Array.isArray(runSetting?.hr_zone_floors) &&
+    runSetting.hr_zone_floors.length === rawRunHrCeilings.length
+      ? runSetting.hr_zone_floors.map((v: any) => Number(v))
+      : Array.isArray(rawProfile?.runHrZones) &&
+          rawProfile.runHrZones.length === rawRunHrCeilings.length
+        ? rawProfile.runHrZones.map((z: any) => Number(z.minBpm))
+        : rawRunHrCeilings.length === 5
+          ? defaultRunHrFloors
+          : [];
   const rawRunHrNames: string[] =
     Array.isArray(runSetting?.hr_zone_names) && runSetting.hr_zone_names.length >= 5
       ? runSetting.hr_zone_names
-      : rawHrNames;
+      : Array.isArray(rawProfile?.runHrZones) &&
+          rawProfile.runHrZones.length === rawRunHrCeilings.length
+        ? rawProfile.runHrZones.map((z: any) => String(z.name || ''))
+        : rawRunHrCeilings.length === 5
+          ? garmin5ZoneNames
+          : friel7ZoneNames;
 
   const runHrZones = rawRunHrCeilings.slice(0, 7).map((ceilBpm, i) => {
-    const minBpm = i === 0 ? 60 : rawRunHrCeilings[i - 1] + 1;
+    const minBpm =
+      rawRunHrFloors[i] && rawRunHrFloors[i] > 40
+        ? rawRunHrFloors[i]
+        : i === 0
+          ? rawRunHrCeilings.length === 5
+            ? Math.round(runLthr * 0.71)
+            : 60
+          : rawRunHrCeilings[i - 1] + 1;
     const maxBpm = i === rawRunHrCeilings.length - 1 ? Math.max(ceilBpm, runMaxHr) : ceilBpm;
     return {
       zone: i + 1,
@@ -829,7 +937,7 @@ function buildServerAthleteProfile(
       name: rawRunHrNames[i] || `Run HR Zone ${i + 1}`,
       minBpm,
       maxBpm,
-      minPctLthr: i === 0 ? 50 : Math.round((minBpm / Math.max(100, runLthr)) * 100),
+      minPctLthr: Math.round((minBpm / Math.max(100, runLthr)) * 100),
       maxPctLthr: Math.round((maxBpm / Math.max(100, runLthr)) * 100),
       color: SERVER_ZONE_COLORS[i] || '#EF4444',
     };
@@ -1442,10 +1550,11 @@ apiRouter.get('/api/config/status', async (req: Request, res: Response) => {
     autoSyncCronActive: true,
     totalActivitiesCount: 0,
     earliestActivityDate: '',
-    garminActivitiesCount: 0,
-    stravaActivitiesCount: 0,
-    redactedStravaCount: 0,
-    gearItems: [],
+    garminActivitiesCount: runtimeStore.garminActivitiesCount || 0,
+    stravaActivitiesCount: runtimeStore.stravaActivitiesCount || 0,
+    redactedStravaCount: runtimeStore.redactedStravaCount || 0,
+    gearItems: runtimeStore.gearItems || [],
+    athleteProfile: runtimeStore.athleteProfile || undefined,
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
     sessionToken,
@@ -1602,6 +1711,14 @@ apiRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
       garminData.activities || [],
       syncedProfile.ftp || 250
     );
+
+    runtimeStore.athleteFtp = syncedProfile.ftp;
+    runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
+    runtimeStore.athleteRunFtp = syncedProfile.runFtp;
+    runtimeStore.athleteLthr = syncedProfile.lthr;
+    runtimeStore.athleteMaxHr = syncedProfile.maxHr;
+    runtimeStore.athleteProfile = syncedProfile;
+    saveSessionCache(req);
 
     // Format Garmin wellnessRows into UnifiedWellnessDay objects
     const loadByDate = new Map<string, number>();
@@ -1819,8 +1936,22 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
 
         const latestGarminW =
           garminDirect?.wellnessRows && garminDirect.wellnessRows.length > 0
-            ? garminDirect.wellnessRows[garminDirect.wellnessRows.length - 1]
-            : null;
+            ? {
+                ...garminDirect.wellnessRows[garminDirect.wellnessRows.length - 1],
+                weightKg: garminDirect.rawProfile?.weight,
+                restingHR: garminDirect.rawProfile?.icu_resting_hr,
+              }
+            : {
+                weightKg: garminDirect?.rawProfile?.weight,
+                restingHR: garminDirect?.rawProfile?.icu_resting_hr,
+              };
+
+        const normalizedGarminActs = garminDirect?.activities
+          ? normalizeGarminPersonalApiActivities(
+              garminDirect.activities,
+              garminDirect.rawProfile?.ftp || 250
+            )
+          : [];
 
         const directSyncedProfile = buildServerAthleteProfile(
           {
@@ -1829,6 +1960,7 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
             name: sName,
             ftp:
               garminDirect?.rawProfile?.sportSettings?.[0]?.ftp ??
+              garminDirect?.rawProfile?.ftp ??
               (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : undefined),
             weightKg:
               garminDirect?.rawProfile?.weight ??
@@ -1837,10 +1969,15 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
             source: garminDirect ? 'INTERVALS_GARMIN' : 'STRAVA_OAUTH',
           },
           latestGarminW,
-          sActs
+          [...normalizedGarminActs, ...sActs]
         );
         runtimeStore.athleteProfile = directSyncedProfile;
-        saveSessionCache();
+        runtimeStore.athleteFtp = directSyncedProfile.ftp;
+        runtimeStore.athleteIndoorFtp = directSyncedProfile.indoorFtp;
+        runtimeStore.athleteRunFtp = directSyncedProfile.runFtp;
+        runtimeStore.athleteLthr = directSyncedProfile.lthr;
+        runtimeStore.athleteMaxHr = directSyncedProfile.maxHr;
+        saveSessionCache(req);
         res.json({ ok: true, athleteProfile: directSyncedProfile, mode: 'LIVE' });
         return;
       }
@@ -1854,7 +1991,7 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
     const todayStr = new Date().toISOString().slice(0, 10);
     const oldest60d = new Date(Date.now() - 60 * 86400 * 1000).toISOString().slice(0, 10);
 
-    const [profileResp, wellnessResp, actsResp] = await Promise.all([
+    const [profileResp, wellnessResp, actsResp, garminDirect] = await Promise.all([
       fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
         headers: { Authorization: authHeader, Accept: 'application/json' },
       }),
@@ -1870,16 +2007,21 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
           headers: { Authorization: authHeader, Accept: 'application/json' },
         }
       ),
+      garminSession
+        ? fetchDirectGarminProfileAndWellness(garminSession, 14).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
-    if (!profileResp.ok) {
+    if (!profileResp.ok && !garminDirect) {
       res.status(profileResp.status).json({
         error: `Intervals.icu athlete profile request returned ${profileResp.status}.`,
       });
       return;
     }
 
-    const rawProfile = (await profileResp.json()) as Record<string, any>;
+    const rawProfile = profileResp.ok
+      ? ((await profileResp.json()) as Record<string, any>)
+      : {};
     const rawWellnessList = wellnessResp.ok
       ? ((await wellnessResp.json()) as Record<string, any>[])
       : [];
@@ -1906,20 +2048,48 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
       }
     }
 
+    if (garminDirect?.rawProfile?.weight) {
+      latestWellnessSummary.weightKg = garminDirect.rawProfile.weight;
+    }
+    if (garminDirect?.rawProfile?.icu_resting_hr) {
+      latestWellnessSummary.restingHR = garminDirect.rawProfile.icu_resting_hr;
+    }
+
+    const garminActs = garminDirect?.activities
+      ? normalizeGarminPersonalApiActivities(
+          garminDirect.activities,
+          garminDirect.rawProfile?.ftp || 250
+        )
+      : [];
+
     const mergedRawProfile = {
       ...rawProfile,
+      ...(garminDirect?.rawProfile || {}),
       name:
+        garminDirect?.rawProfile?.name ||
         rawProfile.name ||
         [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(' ') ||
         stravaIdentity?.athleteName,
-      weight: rawProfile.icu_weight || rawProfile.weight || stravaIdentity?.weightKg,
-      ftp: rawProfile.ftp || stravaIdentity?.ftp,
+      weight:
+        garminDirect?.rawProfile?.weight ||
+        rawProfile.icu_weight ||
+        rawProfile.weight ||
+        stravaIdentity?.weightKg,
+      ftp:
+        garminDirect?.rawProfile?.ftp ||
+        rawProfile.ftp ||
+        stravaIdentity?.ftp,
+      sportSettings:
+        Array.isArray(garminDirect?.rawProfile?.sportSettings) &&
+        garminDirect!.rawProfile!.sportSettings.length > 0
+          ? garminDirect!.rawProfile!.sportSettings
+          : rawProfile.sportSettings,
     };
 
     const syncedProfile = buildServerAthleteProfile(
       mergedRawProfile,
       latestWellnessSummary,
-      rawActsList
+      [...garminActs, ...rawActsList]
     );
     runtimeStore.athleteFtp = syncedProfile.ftp;
     runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
@@ -1927,7 +2097,7 @@ apiRouter.post('/api/intervals/profile/sync', async (req: Request, res: Response
     runtimeStore.athleteLthr = syncedProfile.lthr;
     runtimeStore.athleteMaxHr = syncedProfile.maxHr;
     runtimeStore.athleteProfile = syncedProfile;
-    saveSessionCache();
+    saveSessionCache(req);
 
     res.json({
       ok: true,
@@ -1947,6 +2117,13 @@ apiRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
     { ...incoming, source: 'CUSTOM_OVERRIDE' },
     null
   );
+  runtimeStore.athleteFtp = updated.ftp;
+  runtimeStore.athleteIndoorFtp = updated.indoorFtp;
+  runtimeStore.athleteRunFtp = updated.runFtp;
+  runtimeStore.athleteLthr = updated.lthr;
+  runtimeStore.athleteMaxHr = updated.maxHr;
+  runtimeStore.athleteProfile = updated;
+  saveSessionCache(req);
 
   res.json({
     ok: true,
