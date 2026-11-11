@@ -726,9 +726,9 @@ ${dataLines.join('\n')}
 
   return (
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
-      {/* Signature 2px THRESH Top Hairline */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
-      <ThreshBrandWatermark className="w-28 h-28 absolute -right-4 -top-4 text-[#0B4F9E] dark:text-sky-400" />
+      {/* Signature 4px THRESH Volt Top Rail */}
+      <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
+      <ThreshBrandWatermark className="w-32 h-32 absolute -right-3 -top-3 text-slate-900 dark:text-white" />
 
       {/* Top Bar: Collapsible Summary Header */}
       <div

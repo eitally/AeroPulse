@@ -915,8 +915,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
                 isOrthoDrawerOpen ||
                 orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                  ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
-                  : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
+                  ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
+                  : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
               }`}
             >
               <div className="min-w-0">
@@ -960,8 +960,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 onClick={() => setIsGitDiffOpen((prev) => !prev)}
                 className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
                   isGitDiffOpen
-                    ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
-                    : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
+                    ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
+                    : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
                 }`}
               >
                 <div className="min-w-0">
@@ -1003,8 +1003,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
                 isStudentCheckInOpen ||
                 studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
-                  ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
-                  : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
+                  ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
+                  : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
               }`}
             >
               <div className="min-w-0">
@@ -1491,7 +1491,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
-                  className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#0B4F9E] hover:bg-[#093e7d] text-white text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-colors"
+                  className="ap-btn-primary !min-h-[30px] !px-2.5 !py-1 !rounded-xl text-[11px] uppercase tracking-wide"
                 >
                   <Sparkles className="w-3 h-3" />
                   <span>Daily Workout Prescription</span>
@@ -1500,7 +1500,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               <button
                 type="button"
                 onClick={() => toggleSection('pmc')}
-                className="px-3 py-1 rounded-xl bg-sky-500/15 text-sky-500 text-xs font-mono font-semibold flex items-center gap-1"
+                className="px-3 py-1 rounded-xl ap-badge-volt text-xs font-mono flex items-center gap-1"
               >
                 <span>Expand Chart</span>
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -1541,12 +1541,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDatePickerOpen((prev) => !prev)}
-                className="min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-blue-500/50 text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100 transition-all"
+                className="min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/50 text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100 transition-all"
               >
                 <span className="font-mono">
                   {formatIntervalsRangeLabel(startDateStr, endDateStr)}
                 </span>
-                <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                <Calendar className="w-3.5 h-3.5 ap-text-brand" />
               </button>
 
               {isDatePickerOpen && (
@@ -1629,7 +1629,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 onClick={() => setRangePreset(p.id)}
                 className={`min-h-[28px] px-2.5 py-0.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                   rangePreset === p.id
-                    ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
+                    ? 'ap-nav-volt-active'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
@@ -1646,8 +1646,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
                 className={`min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-all cursor-pointer ${
                   isPrescriptionExpanded
-                    ? 'bg-sky-500/20 text-blue-700 dark:text-sky-300 border border-sky-500/40'
-                    : 'bg-[#0B4F9E] hover:bg-[#093e7d] text-white'
+                    ? 'ap-badge-volt'
+                    : 'ap-btn-primary !min-h-[32px] !py-1 !px-3'
                 }`}
                 title="Open or collapse today's readiness-calibrated Daily Workout Prescription"
               >

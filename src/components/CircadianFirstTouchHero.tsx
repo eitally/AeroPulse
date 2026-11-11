@@ -279,15 +279,15 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
   return (
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
-      {/* Signature THRESH Top Hairline */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
-      <ThreshBrandWatermark className="w-28 h-28 absolute -right-4 -top-4 text-[#0B4F9E] dark:text-sky-400 pointer-events-none" />
+      {/* Signature 4px THRESH Volt Top Rail */}
+      <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
+      <ThreshBrandWatermark className="w-32 h-32 absolute -right-3 -top-3 text-slate-900 dark:text-white pointer-events-none" />
 
       {/* Top Circadian Header Bar */}
-      <div className="relative px-4 sm:px-5 py-3 border-b border-slate-200/75 dark:border-white/10 bg-white/45 dark:bg-slate-900/45 flex flex-wrap items-center justify-between gap-2.5">
+      <div className="relative px-4 sm:px-5 py-3 border-b border-lime-600/20 dark:border-[#C8FF00]/15 bg-[#F8FAEE]/75 dark:bg-[#0D1310]/75 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           {mode === 'MORNING' ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B4F9E]/12 dark:bg-sky-500/15 text-[#0B4F9E] dark:text-sky-300 text-[11px] font-mono font-bold uppercase tracking-wide">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-badge-volt text-[11px] font-mono uppercase tracking-wide">
               <Sun className="w-3.5 h-3.5" />
               <span>Morning Check-In · 7d Rolling</span>
             </span>
@@ -645,7 +645,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           <div className="lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold bg-[#0B4F9E]/12 dark:bg-sky-500/15 text-[#0B4F9E] dark:text-sky-300">
+                <span className="px-2 py-0.5 rounded-md text-[10.5px] font-mono ap-badge-volt">
                   {productivity.gapPrescription.focusBadge}
                 </span>
 
@@ -770,7 +770,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                     className="min-h-[34px] px-2.5 rounded-xl border border-slate-300/80 dark:border-white/15 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 inline-flex items-center justify-center cursor-pointer"
                     title="Ask AI Coach about your 7-day productivity & load focus"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-[#0B4F9E] dark:text-sky-300" />
+                    <Sparkles className="w-3.5 h-3.5 ap-text-brand" />
                   </button>
                 )}
               </div>

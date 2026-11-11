@@ -111,13 +111,13 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg h-full bg-white dark:bg-[#0B0F17] border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+        className="w-full max-w-lg h-full bg-white dark:bg-[#080A09] border-l-[3px] border-[#9EF000] dark:border-[#C8FF00] shadow-2xl flex flex-col"
       >
         {/* Drawer Header */}
-        <div className="relative px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-white dark:bg-[#111827] overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
+        <div className="relative px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 border-b border-lime-600/25 dark:border-[#C8FF00]/20 flex items-center justify-between gap-3 bg-[#F8FAEE] dark:bg-[#111714] overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#0B4F9E]/10 dark:bg-sky-500/15 border border-[#0B4F9E]/25 dark:border-sky-500/30 flex items-center justify-center text-[#0B4F9E] dark:text-sky-400 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[#C8FF00] border border-[#65A30D] flex items-center justify-center text-[#080A09] shrink-0">
               <Bot className="w-4 h-4" />
             </div>
             <div className="min-w-0">

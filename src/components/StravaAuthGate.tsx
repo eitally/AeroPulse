@@ -428,10 +428,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const activeBrand = mode === 'TEAM_JOIN' && invitePreview?.found ? invitePreview.brand : null;
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2] dark:bg-[#0A0B0D] text-slate-900 dark:text-slate-100 flex flex-col justify-between">
+    <div className="min-h-screen bg-[var(--ap-canvas-bg)] text-slate-900 dark:text-slate-100 flex flex-col justify-between">
+      <div className="ap-viewport-frame" aria-hidden="true" />
       {/* Top Header (Co-Branded immediately when opening a Team Invite Link!) */}
-      <header className="relative border-b border-stone-200 dark:border-slate-800/80 bg-[#F7F6F2]/95 dark:bg-[#121419]/95 px-4 sm:px-6 pt-[max(0.875rem,env(safe-area-inset-top,0px))] pb-3.5 flex items-center justify-between overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-[2px] ap-brand-hairline pointer-events-none" />
+      <header className="relative border-b-[3px] border-[#9EF000] dark:border-[#C8FF00] bg-white/95 dark:bg-[#111714]/95 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 flex items-center justify-between overflow-hidden">
         <AeroPulseLogo size="md" showTagline teamBrand={activeBrand} />
 
         <div className="flex items-center gap-2.5">
@@ -441,7 +441,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               <span>Safe-Sport Youth Defaults ON</span>
             </span>
           )}
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono ap-status-info px-2.5 py-1 rounded-lg">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono ap-badge-volt px-2.5 py-1 rounded-lg">
             <Lock className="w-3 h-3" />
             <span className="hidden xs:inline">Isolated Session</span>
             <span className="xs:hidden">Private</span>
@@ -453,7 +453,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       <main className="flex-1 max-w-[1380px] w-full mx-auto px-4 sm:px-6 py-8 lg:py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left 6 Columns: THRESH Value Proposition (or Team Context Highlights) */}
         <div className="lg:col-span-6 space-y-6 order-2 lg:order-1 lg:pt-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full ap-status-info text-xs font-mono font-semibold">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full ap-badge-volt text-xs font-mono">
             <span>
               {activeBrand
                 ? `${activeBrand.shortName} · OFFICIAL TEAM ROSTER INVITATION`
@@ -555,7 +555,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 }}
                 className={`min-h-[38px] px-2 py-1.5 rounded-lg transition-all cursor-pointer ${
                   mode === 'NEW_ATHLETE'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                    ? 'ap-nav-volt-active'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -569,11 +569,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 }}
                 className={`min-h-[38px] px-2 py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   mode === 'TEAM_JOIN'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                    ? 'ap-nav-volt-active'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <Users className="w-3.5 h-3.5 text-[#0D9488]" />
+                <Users className="w-3.5 h-3.5" />
                 <span>Join w/ Team Code</span>
               </button>
               <button
@@ -584,11 +584,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 }}
                 className={`min-h-[38px] px-2 py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   mode === 'EMAIL_OTP'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                    ? 'ap-nav-volt-active'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <KeyRound className="w-3.5 h-3.5 ap-text-brand" />
+                <KeyRound className="w-3.5 h-3.5" />
                 <span>Email Sign-In</span>
               </button>
             </div>
@@ -725,7 +725,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         onClick={() => handleUnitChange(u)}
                         className={`min-h-[32px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                           distanceUnit === u
-                            ? 'bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09]'
+                            ? 'ap-nav-volt-active'
                             : 'text-slate-700 dark:text-slate-300'
                         }`}
                       >

@@ -16,13 +16,13 @@ export function getTeamMonogramInitials(shortName?: string, fullName?: string): 
 }
 
 function buildTeamFaviconDataUri(accentLight: string, accentDark: string): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" fill="none"><style>.bg{fill:#F4F5F0}.ink{fill:#101411}.ac{fill:${accentLight}}@media (prefers-color-scheme:dark){.bg{fill:#080A09}.ink{fill:#F4F7F4}.ac{fill:${accentDark}}}</style><rect width="192" height="192" rx="42" class="bg"/><g transform="translate(0,2)"><g class="ink"><path d="M 176.84 138.5 L 96 138.5 A 46.5 46.5 0 0 1 91.14 45.75 L 92.03 54.21 A 38 38 0 0 0 96 130 L 179.36 130 Z"/><path d="M 173.23 150.7 L 96 150.7 A 58.7 58.7 0 1 1 108.2 34.58 L 106.44 42.9 A 50.2 50.2 0 1 0 96 142.2 L 175.75 142.2 Z"/><path d="M 169.61 162.9 L 96 162.9 A 70.9 70.9 0 1 1 131.45 30.6 L 127.2 37.96 A 62.4 62.4 0 1 0 96 154.4 L 172.13 154.4 Z"/><path d="M 166 175.1 L 96 175.1 A 83.1 83.1 0 1 1 157.76 36.4 L 151.44 42.08 A 74.6 74.6 0 1 0 96 166.6 L 168.52 166.6 Z"/></g><g class="ac"><path d="M 97.62 45.53 A 46.5 46.5 0 0 1 142.5 92 L 134 92 A 38 38 0 0 0 97.33 54.02 Z"/><path d="M 116.08 36.84 A 58.7 58.7 0 0 1 154.7 92 L 146.2 92 A 50.2 50.2 0 0 0 113.17 44.83 Z"/><path d="M 139.65 36.13 A 70.9 70.9 0 0 1 166.9 92 L 158.4 92 A 62.4 62.4 0 0 0 134.42 42.83 Z"/><path d="M 164.89 45.53 A 83.1 83.1 0 0 1 179.1 92 L 170.6 92 A 74.6 74.6 0 0 0 157.85 50.28 Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M 107.89 88.14 A 12.5 12.5 0 1 1 98.6 79.77 L 116.79 65.63 L 120.05 68.57 Z M 100.5 92 A 4.5 4.5 0 1 0 91.5 92 A 4.5 4.5 0 1 0 100.5 92 Z"/></g></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -2 198 196" fill="none"><style>.bg{fill:#F3F5ED}.ink{fill:#101411}.ac{fill:${accentLight}}@media (prefers-color-scheme:dark){.bg{fill:#080A09}.ink{fill:#F4F7F4}.ac{fill:${accentDark}}}</style><rect x="0" y="-2" width="198" height="196" rx="44" class="bg"/><g class="ink"><path d="M 188.4 143 L 98 143 A 47 47 0 0 1 91.46 49.46 L 92.99 60.35 A 36 36 0 0 0 98 132 L 191.65 132 Z"/><path d="M 183.6 159.2 L 98 159.2 A 63.2 63.2 0 1 1 108.97 33.76 L 107.06 44.59 A 52.2 52.2 0 1 0 98 148.2 L 186.86 148.2 Z"/><path d="M 178.8 175.4 L 98 175.4 A 79.4 79.4 0 1 1 135.28 25.89 L 130.11 35.61 A 68.4 68.4 0 1 0 98 164.4 L 182.06 164.4 Z"/><path d="M 174 191.6 L 98 191.6 A 95.6 95.6 0 1 1 166.77 29.59 L 158.86 37.23 A 84.6 84.6 0 1 0 98 180.6 L 177.26 180.6 Z"/></g><g class="ac"><path d="M 99.64 49.03 A 47 47 0 0 1 145 96 L 134 96 A 36 36 0 0 0 99.26 60.02 Z"/><path d="M 119.62 36.61 A 63.2 63.2 0 0 1 161.2 96 L 150.2 96 A 52.2 52.2 0 0 0 115.85 46.95 Z"/><path d="M 146.88 33.43 A 79.4 79.4 0 0 1 177.4 96 L 166.4 96 A 68.4 68.4 0 0 0 140.11 42.1 Z"/><path d="M 177.26 42.54 A 95.6 95.6 0 0 1 193.6 96 L 182.6 96 A 84.6 84.6 0 0 0 168.14 48.69 Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M 112.3 91.47 A 15 15 0 1 1 101.01 81.3 L 118.28 69.59 L 122.15 73.07 Z M 103.2 96 A 5.2 5.2 0 1 0 92.8 96 A 5.2 5.2 0 1 0 103.2 96 Z"/></g></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 /**
  * Dynamically injects WCAG 2.1 AA contrast-clamped school/club accent tokens into
- * the document chrome (`.ap-brand-hairline`, `.ap-btn-primary`, `--ap-brand-primary`)
+ * the document chrome (`.ap-viewport-frame`, `.ap-brand-hairline`, `.ap-btn-primary`, `.ap-nav-volt-active`)
  * AND re-themes the browser tab's T3 Track-Gauge SVG favicon to the team's primary color,
  * while strictly preserving THRESH physiological zone colors (`Z1–Z7`) and Readiness signals.
  */
@@ -47,6 +47,7 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
       --ap-brand-primary: ${palette.primaryOnLight};
       --ap-action-cobalt: ${palette.primaryOnLight};
       --ap-thresh-vermilion: ${palette.primaryOnLight};
+      --ap-viewport-border: ${palette.primaryOnLight};
       --ap-team-primary: ${palette.primaryOnLight};
       --ap-team-secondary: ${palette.secondaryOnLight};
     }
@@ -55,6 +56,7 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
       --ap-brand-primary: ${palette.primaryOnDark};
       --ap-action-cobalt: ${palette.primaryOnDark};
       --ap-thresh-vermilion: ${palette.primaryOnDark};
+      --ap-viewport-border: ${palette.primaryOnDark};
       --ap-team-primary: ${palette.primaryOnDark};
       --ap-team-secondary: ${palette.secondaryOnDark};
     }
@@ -64,8 +66,20 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
     .dark .ap-brand-hairline {
       background: ${palette.hairlineGradientDark};
     }
+    .ap-header-bar,
+    .liquid-glass-header {
+      border-color: ${palette.primaryOnLight};
+      border-bottom-color: ${palette.primaryOnLight};
+    }
+    .dark .ap-header-bar,
+    .dark .liquid-glass-header {
+      border-color: ${palette.primaryOnDark};
+      border-bottom-color: ${palette.primaryOnDark};
+    }
     .ap-btn-primary,
-    .dark .ap-btn-primary {
+    .dark .ap-btn-primary,
+    .ap-nav-volt-active,
+    .dark .ap-nav-volt-active {
       background-color: ${palette.primaryOnLight};
       color: ${palette.textOnPrimaryLight};
       border-color: transparent;

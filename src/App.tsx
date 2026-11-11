@@ -141,7 +141,16 @@ const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-w
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('fitness');
-  const [isDark, setIsDark] = useState<boolean>(false);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('thresh_theme_dark');
+      if (saved === '1') return true;
+      if (saved === '0') return false;
+      return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    } catch {
+      return false;
+    }
+  });
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() => {
     try {
       const saved = localStorage.getItem('thresh_distance_unit');
@@ -419,6 +428,11 @@ export default function App() {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('thresh_theme_dark', isDark ? '1' : '0');
+    } catch {
+      // ignore
     }
   }, [isDark]);
 
@@ -3613,10 +3627,11 @@ export default function App() {
   return (
     <IconContext.Provider value={{ weight: 'duotone' }}>
       <div className="ap-shell text-slate-900 dark:text-slate-100">
+        <div className="ap-viewport-frame" aria-hidden="true" />
         <OfflineIndicator />
 
         {/* Simplified 5-Element Global Header Bar (Responsive Mobile & Desktop) */}
-        <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1">
+        <div className="sticky top-[max(0.625rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1.5">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
               {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
@@ -3780,18 +3795,12 @@ export default function App() {
                       }}
                       className={`min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
                         isActive
-                          ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
+                          ? 'ap-nav-volt-active'
+                          : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white font-medium'
                       }`}
                     >
-                      {isActive && (
-                        <span
-                          className="w-1.5 h-1.5 rounded-full ap-dot-brand shrink-0"
-                          aria-hidden="true"
-                        />
-                      )}
                       <NavIcon
-                        className={`w-3.5 h-3.5 ${isActive ? 'ap-text-brand' : ''}`}
+                        className="w-3.5 h-3.5"
                         weight={isActive ? 'fill' : 'duotone'}
                       />
                       <span>{item.label}</span>
@@ -4534,7 +4543,7 @@ export default function App() {
                         onClick={() => setActiveTab(sub.id)}
                         className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
                           isSubActive
-                            ? 'liquid-capsule-active ap-text-brand font-semibold'
+                            ? 'ap-nav-volt-active'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
                         }`}
                       >
@@ -4731,7 +4740,7 @@ export default function App() {
               onClick={() => setActiveTab(tab.id === 'totals' ? lastLabTabRef.current : tab.id)}
               className={`min-h-[44px] flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
-                  ? 'liquid-capsule-active ap-text-brand font-semibold'
+                  ? 'ap-nav-volt-active'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
             >
