@@ -27,6 +27,7 @@ import {
 } from './FourteenDayReadinessLedger';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
+import { CircadianFirstTouchHero } from './CircadianFirstTouchHero';
 import { DualAthleteComparator } from './DualAthleteComparator';
 import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 import {
@@ -44,6 +45,7 @@ import {
   evaluatePlannedVsCompletedCompliance,
   evaluateStudentAthleteGuardrail,
   generateWeeklyTrainingGitDiff,
+  getLocalDateIso,
 } from '../physiology';
 
 interface FitnessHealthViewProps {
@@ -158,9 +160,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     d.setUTCFullYear(d.getUTCFullYear() - 1);
     return d.toISOString().slice(0, 10);
   });
-  const [customEnd, setCustomEnd] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
-  );
+  const [customEnd, setCustomEnd] = useState<string>(() => getLocalDateIso());
   const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState<boolean>(false);
   const [isCompactMobile, setIsCompactMobile] = useState<boolean>(() =>
@@ -193,7 +193,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   const isBrushingRef = useRef<boolean>(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => getLocalDateIso(), []);
   const hasWellnessTelemetry = wellnessDays.length > 0;
   const [orthoSwappedToast, setOrthoSwappedToast] = useState<string | null>(null);
 
@@ -796,15 +796,14 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     [activitiesByDate, todayIso]
   );
 
-  const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(
-    () => (activities || []).every((a) => (a.startDateLocal || '').slice(0, 10) !== new Date().toISOString().slice(0, 10))
-  );
+  const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(false);
+  const [isOrthoDrawerOpen, setIsOrthoDrawerOpen] = useState<boolean>(false);
 
   const [collapsedSections, setCollapsedSections] = useState<
     Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
   >({
     pmc: false,
-    ledger: false,
+    ledger: true,
     comparator: true,
     radars: true,
   });
@@ -858,61 +857,30 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* ==========================================================================
-          0A. CIRCADIAN POST-WORKOUT COMPLETED STATE (9:30 AM+ Mode when today has logged activity)
+          0A. BI-MODAL CIRCADIAN FIRST-TOUCH HERO (Morning Wake-Up <-> Post-Session Receipt)
          ========================================================================== */}
-      {todayCompletedActivities.length > 0 && (
-        <section className="rounded-2xl liquid-glass px-4 sm:px-5 py-4 border-l-4 border-l-[#0D9488] flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold uppercase ap-status-prime">
-                Session Complete · {todayIso}
-              </span>
-              {todayCompliance && todayCompliance.matchedActivityId && (
-                <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold ap-status-info">
-                  {todayCompliance.summaryLabel}
-                </span>
-              )}
-              <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {todayCompletedActivities.map((a) => a.name).join(' + ')}
-              </span>
-            </div>
-            <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
-              Logged{' '}
-              <strong>
-                {Math.round(
-                  todayCompletedActivities.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
-                )}{' '}
-                TSS
-              </strong>{' '}
-              ·{' '}
-              {Math.round(
-                todayCompletedActivities.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 60
-              )}
-              m duration
-              {typeof todayCompletedActivities[0]?.aerobicDecouplingPct === 'number' &&
-                ` · ${todayCompletedActivities[0].aerobicDecouplingPct.toFixed(1)}% Pa:Hr drift`}
-              {typeof todayCompletedActivities[0]?.efficiencyFactor === 'number' &&
-                ` · EF ${todayCompletedActivities[0].efficiencyFactor.toFixed(2)}`}
-            </p>
-          </div>
-          {onSelectActivity && (
-            <button
-              type="button"
-              onClick={() => onSelectActivity(todayCompletedActivities[0])}
-              className="ap-btn-secondary px-3.5 text-xs"
-            >
-              <span>Inspect Session Telemetry →</span>
-            </button>
-          )}
-        </section>
-      )}
+      <CircadianFirstTouchHero
+        wellnessDays={wellnessDays}
+        activities={activities}
+        plannedEvents={plannedEvents}
+        athleteProfile={athleteProfile}
+        distanceUnit={distanceUnit}
+        todayCompliance={todayCompliance}
+        isWorkbenchExpanded={isPrescriptionExpanded}
+        onToggleWorkbench={() => setIsPrescriptionExpanded((prev) => !prev)}
+        onSelectActivity={onSelectActivity}
+        onSyncMorphedToCalendar={onSyncMorphedToCalendar}
+        onOpenAthleteProfileModal={onOpenAthleteProfileModal}
+        onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+      />
 
       {/* ==========================================================================
-          0B. 6:00 AM MORNING BRIEF & DAILY WORKOUT PRESCRIPTION HERO
+          0B. ON-DEMAND SKYLINE INTERVAL WORKBENCH & GARMIN/.FIT EXPORT DRAWER
          ========================================================================== */}
-      {athleteProfile &&
+      {isPrescriptionExpanded &&
+        athleteProfile &&
         onSyncMorphedToCalendar &&
         onOpenAthleteProfileModal && (
           <ReadinessMorphingCard
@@ -925,8 +893,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             onToggleExpand={() => setIsPrescriptionExpanded((prev) => !prev)}
             placementLabel={
               todayCompletedActivities.length > 0
-                ? 'Morning Brief · Prescription Completed'
-                : 'Morning Brief · Daily Prescription'
+                ? 'Skyline Workbench · Session Completed'
+                : 'Skyline Workbench · Garmin & .FIT Export'
             }
             onSyncMorphedToCalendar={onSyncMorphedToCalendar}
             onOpenAthleteProfileModal={onOpenAthleteProfileModal}
@@ -935,336 +903,386 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         )}
 
       {/* ==========================================================================
-          0C. SEPARATED DUAL-SPORT CTL & 3-CHANNEL ORTHOPEDIC INTERFERENCE ENGINE
+          0C. PROGRESSIVE DISCLOSURE GUARDRAIL & BLOCK STATUS STRIP (3-Pill Glance)
          ========================================================================== */}
       {orthopedicSummary && (
-        <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold ${
-                  orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                    ? 'ap-status-strained'
-                    : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
-                      ? 'ap-status-caution'
-                      : 'ap-status-prime'
+        <section className="rounded-2xl liquid-glass p-3 sm:p-3.5 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {/* Pill 1: Dual-Sport CTL & 3-Channel Orthopedic Chassis */}
+            <button
+              type="button"
+              onClick={() => setIsOrthoDrawerOpen((prev) => !prev)}
+              className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                isOrthoDrawerOpen ||
+                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                  ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
+                  : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                      orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                        ? 'ap-status-strained'
+                        : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                          ? 'ap-status-caution'
+                          : 'ap-status-prime'
+                    }`}
+                  >
+                    {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                      ? 'Impact Guardrail'
+                      : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                        ? 'Elevated Impact'
+                        : 'Chassis Clear'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    Orthopedic &amp; Dual-Sport CTL
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                  {dualSportLatest
+                    ? `Bike ${dualSportLatest.cyclingCtl.toFixed(0)} · Run ${dualSportLatest.runningCtl.toFixed(0)} CTL · Impact ${orthopedicSummary.impactAcwr.toFixed(2)}x`
+                    : `Impact ACWR ${orthopedicSummary.impactAcwr.toFixed(2)}x · Torque ${orthopedicSummary.torqueAcwr.toFixed(2)}x`}
+                </div>
+              </div>
+              {isOrthoDrawerOpen ? (
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              )}
+            </button>
+
+            {/* Pill 2: Weekly Training Git-Diff */}
+            {weeklyGitDiffProposal && (
+              <button
+                type="button"
+                onClick={() => setIsGitDiffOpen((prev) => !prev)}
+                className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                  isGitDiffOpen
+                    ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
+                    : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
                 }`}
               >
-                {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                  ? 'Impact Guardrail Active'
-                  : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
-                    ? 'Elevated Run Impact'
-                    : 'Orthopedic Balance'}
-              </span>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {orthopedicSummary.guardrailHeadline}
-              </h3>
-            </div>
-
-            {dualSportLatest && (
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono tabular-nums">
-                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
-                  Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
-                </span>
-                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-[#1D4ED8] dark:text-sky-300 font-semibold">
-                  Bike CTL {dualSportLatest.cyclingCtl.toFixed(1)}
-                </span>
-                <span className="px-2.5 py-1 rounded-lg liquid-capsule-track text-[#0D9488] dark:text-teal-300 font-semibold">
-                  Run CTL {dualSportLatest.runningCtl.toFixed(1)}
-                </span>
-              </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="ap-status-info px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase">
+                      7d Git-Diff
+                    </span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      Adaptive Schedule Diff
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                    ΔTSS{' '}
+                    {weeklyGitDiffProposal.netTssDelta >= 0
+                      ? `+${weeklyGitDiffProposal.netTssDelta}`
+                      : weeklyGitDiffProposal.netTssDelta}{' '}
+                    · ΔCTL{' '}
+                    {weeklyGitDiffProposal.netCtlDelta >= 0
+                      ? `+${weeklyGitDiffProposal.netCtlDelta}`
+                      : weeklyGitDiffProposal.netCtlDelta}{' '}
+                    · ΔTSB{' '}
+                    {weeklyGitDiffProposal.netTsbDelta >= 0
+                      ? `+${weeklyGitDiffProposal.netTsbDelta}`
+                      : weeklyGitDiffProposal.netTsbDelta}
+                  </div>
+                </div>
+                {isGitDiffOpen ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                )}
+              </button>
             )}
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                1. Central Cardiorespiratory (7d)
+            {/* Pill 3: Student-Athlete Check-In & Cross-Training Converter */}
+            <button
+              type="button"
+              onClick={() => setIsStudentCheckInOpen((prev) => !prev)}
+              className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                isStudentCheckInOpen ||
+                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+                  ? 'border-[#0B4F9E]/45 bg-[#0B4F9E]/[0.06] dark:bg-sky-500/10'
+                  : 'liquid-glass-subtle hover:border-slate-300 dark:hover:border-white/20'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                      studentGuardrail.status === 'BONE_STRESS_STOP'
+                        ? 'ap-status-strained'
+                        : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
+                          ? 'ap-status-prime'
+                          : 'ap-status-caution'
+                    }`}
+                  >
+                    {studentGuardrail.status === 'BONE_STRESS_STOP'
+                      ? 'BSI Stop'
+                      : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
+                        ? 'Cleared'
+                        : 'Modulated'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    Academic / Shin &amp; Pool Miles
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                  {studentGuardrail.headline}
+                </div>
               </div>
-              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                <span className="text-base font-bold text-slate-900 dark:text-white">
-                  {orthopedicSummary.centralAutonomicLoad7d} TSS
-                </span>
-                <span className="text-xs text-[#1D4ED8] dark:text-sky-300">
-                  {orthopedicSummary.centralAcwr.toFixed(2)}x ACWR
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                2. Eccentric Run Impact (7d)
-              </div>
-              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                <span className="text-base font-bold text-slate-900 dark:text-white">
-                  {orthopedicSummary.eccentricImpactLoad7d} pts
-                </span>
-                <span
-                  className={`text-xs font-semibold ${
-                    orthopedicSummary.impactAcwr >= 1.32
-                      ? 'text-[#D9480F]'
-                      : orthopedicSummary.impactAcwr >= 1.18
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-[#0D9488] dark:text-teal-300'
-                  }`}
-                >
-                  {orthopedicSummary.impactAcwr.toFixed(2)}x ACWR
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                3. Concentric Bike Torque (7d)
-              </div>
-              <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                <span className="text-base font-bold text-slate-900 dark:text-white">
-                  {orthopedicSummary.concentricTorqueLoad7d} pts
-                </span>
-                <span className="text-xs text-slate-600 dark:text-slate-300">
-                  {orthopedicSummary.torqueAcwr.toFixed(2)}x ACWR
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <p className="text-xs text-slate-600 dark:text-slate-300 flex-1 min-w-[240px]">
-              {orthopedicSummary.guardrailRecommendation}
-            </p>
-
-            {onSyncMorphedToCalendar &&
-              (orthopedicSummary.canMorphTodayRunToBike ||
-                plannedEvents.some(
-                  (p) => (p.date || '').slice(0, 10) === todayIso && p.sportCategory === 'Running'
-                )) && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await onSyncMorphedToCalendar({
-                      date: todayIso,
-                      name: `Orthopedic Swap: ${orthopedicSummary.suggestedBikeDurationMins}m High-Cadence Z2 Ride`,
-                      sportCategory: 'Cycling',
-                      environmentPreference: 'FLEXIBLE',
-                      plannedDurationSecs: orthopedicSummary.suggestedBikeDurationMins * 60,
-                      plannedLoad: orthopedicSummary.suggestedBikeTss,
-                      workoutSyntax: orthopedicSummary.suggestedBikeWorkoutSyntax,
-                      description:
-                        'Cross-modal aerobic-equivalent ride generated by THRESH Orthopedic Interference Engine (zero tibial/Achilles impact).',
-                      replaceExistingDate: true,
-                    });
-                    setOrthoSwappedToast(
-                      `Swapped today to ${orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Z2 Ride (${orthopedicSummary.suggestedBikeTss} TSS).`
-                    );
-                    window.setTimeout(() => setOrthoSwappedToast(null), 4500);
-                  }}
-                  className="ap-btn-primary px-3.5 text-xs whitespace-nowrap"
-                >
-                  Morph Run → {orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Ride
-                </button>
+              {isStudentCheckInOpen ? (
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               )}
+            </button>
           </div>
 
-          {orthoSwappedToast && (
-            <div className="rounded-xl ap-status-prime px-3 py-2 text-xs font-medium">
-              {orthoSwappedToast}
+          {/* Expandable Drawer 1: 3-Channel Orthopedic Interference & Run->Bike Swap */}
+          {(isOrthoDrawerOpen ||
+            orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL') && (
+            <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  {orthopedicSummary.guardrailHeadline}
+                </h3>
+                {dualSportLatest && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono tabular-nums">
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
+                      Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#1D4ED8] dark:text-sky-300 font-semibold">
+                      Bike CTL {dualSportLatest.cyclingCtl.toFixed(1)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#0D9488] dark:text-teal-300 font-semibold">
+                      Run CTL {dualSportLatest.runningCtl.toFixed(1)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    1. Central Cardiorespiratory (7d)
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                    <span className="text-base font-bold text-slate-900 dark:text-white">
+                      {orthopedicSummary.centralAutonomicLoad7d} TSS
+                    </span>
+                    <span className="text-xs text-[#1D4ED8] dark:text-sky-300">
+                      {orthopedicSummary.centralAcwr.toFixed(2)}x ACWR
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    2. Eccentric Run Impact (7d)
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                    <span className="text-base font-bold text-slate-900 dark:text-white">
+                      {orthopedicSummary.eccentricImpactLoad7d} pts
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        orthopedicSummary.impactAcwr >= 1.32
+                          ? 'text-[#D9480F]'
+                          : orthopedicSummary.impactAcwr >= 1.18
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-[#0D9488] dark:text-teal-300'
+                      }`}
+                    >
+                      {orthopedicSummary.impactAcwr.toFixed(2)}x ACWR
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    3. Concentric Bike Torque (7d)
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                    <span className="text-base font-bold text-slate-900 dark:text-white">
+                      {orthopedicSummary.concentricTorqueLoad7d} pts
+                    </span>
+                    <span className="text-xs text-slate-600 dark:text-slate-300">
+                      {orthopedicSummary.torqueAcwr.toFixed(2)}x ACWR
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-600 dark:text-slate-300 flex-1 min-w-[240px]">
+                  {orthopedicSummary.guardrailRecommendation}
+                </p>
+
+                {onSyncMorphedToCalendar &&
+                  (orthopedicSummary.canMorphTodayRunToBike ||
+                    plannedEvents.some(
+                      (p) =>
+                        (p.date || '').slice(0, 10) === todayIso &&
+                        p.sportCategory === 'Running'
+                    )) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await onSyncMorphedToCalendar({
+                          date: todayIso,
+                          name: `Orthopedic Swap: ${orthopedicSummary.suggestedBikeDurationMins}m High-Cadence Z2 Ride`,
+                          sportCategory: 'Cycling',
+                          environmentPreference: 'FLEXIBLE',
+                          plannedDurationSecs:
+                            orthopedicSummary.suggestedBikeDurationMins * 60,
+                          plannedLoad: orthopedicSummary.suggestedBikeTss,
+                          workoutSyntax:
+                            orthopedicSummary.suggestedBikeWorkoutSyntax,
+                          description:
+                            'Cross-modal aerobic-equivalent ride generated by THRESH Orthopedic Interference Engine (zero tibial/Achilles impact).',
+                          replaceExistingDate: true,
+                        });
+                        setOrthoSwappedToast(
+                          `Swapped today to ${orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Z2 Ride (${orthopedicSummary.suggestedBikeTss} TSS).`
+                        );
+                        window.setTimeout(() => setOrthoSwappedToast(null), 4500);
+                      }}
+                      className="ap-btn-primary px-3.5 text-xs whitespace-nowrap"
+                    >
+                      Morph Run → {orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Ride
+                    </button>
+                  )}
+              </div>
+
+              {orthoSwappedToast && (
+                <div className="rounded-xl ap-status-prime px-3 py-2 text-xs font-medium">
+                  {orthoSwappedToast}
+                </div>
+              )}
             </div>
           )}
 
-          {/* 10x #3: 6:00 AM Autonomous Morph & Weekly Training Git-Diff */}
-          {weeklyGitDiffProposal && (
+          {/* Expandable Drawer 2: Weekly Training Git-Diff */}
+          {weeklyGitDiffProposal && isGitDiffOpen && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="ap-status-info px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
-                    Weekly Training Git-Diff
-                  </span>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
                   <span className="font-semibold text-slate-900 dark:text-slate-100">
                     {weeklyGitDiffProposal.triggerReason}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] tabular-nums">
-                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
-                    ΔTSS{' '}
-                    <strong>
-                      {weeklyGitDiffProposal.netTssDelta >= 0
-                        ? `+${weeklyGitDiffProposal.netTssDelta}`
-                        : weeklyGitDiffProposal.netTssDelta}
-                    </strong>
-                  </span>
-                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
-                    ΔCTL{' '}
-                    <strong>
-                      {weeklyGitDiffProposal.netCtlDelta >= 0
-                        ? `+${weeklyGitDiffProposal.netCtlDelta}`
-                        : weeklyGitDiffProposal.netCtlDelta}
-                    </strong>
-                  </span>
-                  <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200">
-                    ΔTSB{' '}
-                    <strong>
-                      {weeklyGitDiffProposal.netTsbDelta >= 0
-                        ? `+${weeklyGitDiffProposal.netTsbDelta}`
-                        : weeklyGitDiffProposal.netTsbDelta}
-                    </strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsGitDiffOpen((prev) => !prev)}
-                    className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-sans font-semibold text-slate-800 dark:text-slate-100 transition-colors"
-                  >
-                    {isGitDiffOpen ? 'Hide 7-Day Diff ▲' : 'Inspect 7-Day Diff ▼'}
-                  </button>
-                </div>
-              </div>
-
-              {isGitDiffOpen && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-2.5 text-xs">
-                  <div className="space-y-1.5 font-mono">
-                    {weeklyGitDiffProposal.dayChanges.map((dayChange) => {
-                      const isChanged = dayChange.changeType !== 'UNCHANGED';
-                      return (
-                        <div
-                          key={dayChange.date}
-                          className={`rounded-lg px-3 py-2 border ${
-                            isChanged
-                              ? 'border-blue-500/35 bg-blue-500/5 dark:bg-sky-500/10'
-                              : 'border-slate-200/70 dark:border-slate-800/80'
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-bold text-slate-900 dark:text-slate-100">
-                              {dayChange.dayLabel}
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                dayChange.changeType === 'MODIFIED'
-                                  ? 'ap-status-caution'
-                                  : dayChange.changeType === 'SWAPPED'
-                                    ? 'ap-status-info'
-                                    : 'ap-status-prime'
-                              }`}
-                            >
-                              {dayChange.changeType}
-                            </span>
-                          </div>
-                          {isChanged ? (
-                            <div className="mt-1 space-y-0.5 text-[11px]">
-                              <div className="text-rose-600 dark:text-rose-400 line-through">
-                                - {dayChange.originalTitle} ({dayChange.originalSport} ·{' '}
-                                {dayChange.originalDurationMins}m · {dayChange.originalTss} TSS)
-                              </div>
-                              <div className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                                + {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
-                                {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
-                              </div>
-                              <div className="font-sans text-slate-600 dark:text-slate-400 pt-0.5">
-                                {dayChange.reason}
-                              </div>
+                <div className="space-y-1.5 font-mono">
+                  {weeklyGitDiffProposal.dayChanges.map((dayChange) => {
+                    const isChanged = dayChange.changeType !== 'UNCHANGED';
+                    return (
+                      <div
+                        key={dayChange.date}
+                        className={`rounded-lg px-3 py-2 border ${
+                          isChanged
+                            ? 'border-blue-500/35 bg-blue-500/5 dark:bg-sky-500/10'
+                            : 'border-slate-200/70 dark:border-slate-800/80'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                            {dayChange.dayLabel}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              dayChange.changeType === 'MODIFIED'
+                                ? 'ap-status-caution'
+                                : dayChange.changeType === 'SWAPPED'
+                                  ? 'ap-status-info'
+                                  : 'ap-status-prime'
+                            }`}
+                          >
+                            {dayChange.changeType}
+                          </span>
+                        </div>
+                        {isChanged ? (
+                          <div className="mt-1 space-y-0.5 text-[11px]">
+                            <div className="text-rose-600 dark:text-rose-400 line-through">
+                              - {dayChange.originalTitle} ({dayChange.originalSport} ·{' '}
+                              {dayChange.originalDurationMins}m · {dayChange.originalTss} TSS)
                             </div>
-                          ) : (
-                            <div className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
-                              = {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
+                            <div className="text-emerald-700 dark:text-emerald-300 font-semibold">
+                              + {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
                               {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {onSyncMorphedToCalendar && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                      <span className="text-[11px] text-slate-500">
-                        Commits modified/swapped sessions directly to your Training Plan calendar.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const changed = weeklyGitDiffProposal.dayChanges.filter(
-                            (d) => d.changeType !== 'UNCHANGED'
-                          );
-                          const targets =
-                            changed.length > 0 ? changed : [weeklyGitDiffProposal.dayChanges[0]];
-                          for (const item of targets) {
-                            await onSyncMorphedToCalendar({
-                              date: item.date,
-                              name: item.proposedTitle,
-                              sportCategory: item.proposedSport,
-                              environmentPreference: 'FLEXIBLE',
-                              plannedDurationSecs: item.proposedDurationMins * 60,
-                              plannedLoad: item.proposedTss,
-                              workoutSyntax:
-                                item.proposedWorkoutSyntax ||
-                                `Warmup\n- 10m 55%-68%\n\nMain Set\n- ${Math.max(
-                                  15,
-                                  item.proposedDurationMins - 20
-                                )}m 72%-82%\n\nCooldown\n- 10m 50%-60%`,
-                              description: item.reason,
-                              replaceExistingDate: true,
-                            });
-                          }
-                          setGitDiffAppliedToast(
-                            `Committed ${targets.length} weekly schedule adjustment${
-                              targets.length === 1 ? '' : 's'
-                            } to your Training Plan.`
-                          );
-                          window.setTimeout(() => setGitDiffAppliedToast(null), 4500);
-                        }}
-                        className="ap-btn-primary px-3.5 text-xs"
-                      >
-                        Commit Weekly Git-Diff to Plan
-                      </button>
-                    </div>
-                  )}
-
-                  {gitDiffAppliedToast && (
-                    <div className="rounded-lg ap-status-prime px-3 py-1.5 text-xs font-medium">
-                      {gitDiffAppliedToast}
-                    </div>
-                  )}
+                            <div className="font-sans text-slate-600 dark:text-slate-400 pt-0.5">
+                              {dayChange.reason}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                            = {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
+                            {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+
+                {onSyncMorphedToCalendar && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] text-slate-500">
+                      Commits modified/swapped sessions directly to your Training Plan calendar.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const changed = weeklyGitDiffProposal.dayChanges.filter(
+                          (d) => d.changeType !== 'UNCHANGED'
+                        );
+                        const targets =
+                          changed.length > 0 ? changed : [weeklyGitDiffProposal.dayChanges[0]];
+                        for (const item of targets) {
+                          await onSyncMorphedToCalendar({
+                            date: item.date,
+                            name: item.proposedTitle,
+                            sportCategory: item.proposedSport,
+                            environmentPreference: 'FLEXIBLE',
+                            plannedDurationSecs: item.proposedDurationMins * 60,
+                            plannedLoad: item.proposedTss,
+                            workoutSyntax:
+                              item.proposedWorkoutSyntax ||
+                              `Warmup\n- 10m 55%-68%\n\nMain Set\n- ${Math.max(
+                                15,
+                                item.proposedDurationMins - 20
+                              )}m 72%-82%\n\nCooldown\n- 10m 50%-60%`,
+                            description: item.reason,
+                            replaceExistingDate: true,
+                          });
+                        }
+                        setGitDiffAppliedToast(
+                          `Committed ${targets.length} weekly schedule adjustment${
+                            targets.length === 1 ? '' : 's'
+                          } to your Training Plan.`
+                        );
+                        window.setTimeout(() => setGitDiffAppliedToast(null), 4500);
+                      }}
+                      className="ap-btn-primary px-3.5 text-xs"
+                    >
+                      Commit Weekly Git-Diff to Plan
+                    </button>
+                  </div>
+                )}
+
+                {gitDiffAppliedToast && (
+                  <div className="rounded-lg ap-status-prime px-3 py-1.5 text-xs font-medium">
+                    {gitDiffAppliedToast}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Scholastic / Collegiate Student-Athlete Guardrail & Training Room Cross-Training Equivalence */}
-          <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span
-                  className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase ${
-                    studentGuardrail.status === 'BONE_STRESS_STOP'
-                      ? 'ap-status-strained'
-                      : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
-                        ? 'ap-status-prime'
-                        : 'ap-status-caution'
-                  }`}
-                >
-                  Student-Athlete Guardrail
-                </span>
-                <span className="font-semibold text-slate-900 dark:text-slate-100">
-                  {studentGuardrail.headline}
-                </span>
-                {athleteProfile?.safeSportHideWeight && (
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold">
-                    Safe-Sport Shield ON
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsStudentCheckInOpen((prev) => !prev)}
-                className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-colors"
-              >
-                {isStudentCheckInOpen
-                  ? 'Hide Exam / Bone Check-In & Pool/AlterG Converter ▲'
-                  : 'Exam / Shin Check-In & Cross-Training Miles ▼'}
-              </button>
-            </div>
-
-            {(isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
+          {/* Expandable Drawer 3: Scholastic / Collegiate Student-Athlete Check-In & Cross-Training Equivalence */}
+          {(isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
+            <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
                 {/* Left 6 Cols: 5-Second Student-Athlete Check-In (Exams, Shin/Metatarsal BSI, Ferritin) */}
                 <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-3">
@@ -1448,8 +1466,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   )}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
       )}
 

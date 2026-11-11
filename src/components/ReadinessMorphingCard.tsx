@@ -29,6 +29,10 @@ import {
   classifyZoneFromPct,
   parseWorkoutSteps,
 } from '../utils/workoutParser';
+import {
+  evaluateRollingTrainingProductivity,
+  getLocalDateIso,
+} from '../physiology/trainingProductivityEngine';
 
 export type MorphReadinessMode =
   | 'AUTO'
@@ -139,7 +143,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [syncedBanner, setSyncedBanner] = useState<string | null>(null);
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => getLocalDateIso(), []);
 
   // Latest morning wellness (honest zeros when uncalibrated — never invent fake readiness metrics)
   const latestWellness = useMemo(() => {
@@ -349,7 +353,18 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
       : athleteProfile.ftp || 300;
   }, [sportMode, envMode, athleteProfile]);
 
-  // Baseline / Scheduled Workout (uses today's plannedEvent if present, or default build session)
+  // Baseline / Scheduled Workout (uses today's plannedEvent if present, else 7-day Load Focus Gap-Filler)
+  const rollingProductivity = useMemo(
+    () =>
+      evaluateRollingTrainingProductivity({
+        activities,
+        wellnessDays,
+        athleteProfile,
+        asOfDateIso: todayIso,
+      }),
+    [activities, wellnessDays, athleteProfile, todayIso]
+  );
+
   const baselineWorkout = useMemo(() => {
     const todayPlanned = plannedEvents.find(
       (ev) => ev.date.slice(0, 10) === todayIso && ev.sportCategory === sportMode
@@ -370,25 +385,33 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
       };
     }
 
-    // Default structured baseline workout for the active sport
+    // Use 7-Day Rolling Load Focus Gap-Filling Prescription so workbench & hero match
+    const gapRx = rollingProductivity.gapPrescription;
     const defaultSyntax =
       sportMode === 'Cycling'
-        ? `- 12m 58% FTP Warmup\n- 6m 96% FTP Threshold Block 1\n- 3m 55% FTP Recovery\n- 6m 100% FTP Threshold Block 2\n- 3m 55% FTP Recovery\n- 5m 108% FTP VO2max Ceiling\n- 3m 55% FTP Recovery\n- 5m 108% FTP VO2max Ceiling\n- 10m 54% FTP Cooldown`
-        : `- 12m 62% FTP Easy Warmup Jog\n- 5m 98% FTP Threshold Cruise 1\n- 2m 55% FTP Float Recovery\n- 5m 100% FTP Threshold Cruise 2\n- 2m 55% FTP Float Recovery\n- 4m 108% FTP VO2max Track Repeat\n- 2m 55% FTP Float Recovery\n- 4m 108% FTP VO2max Track Repeat\n- 10m 55% FTP Cooldown`;
+        ? gapRx.workoutSyntaxCycling
+        : gapRx.workoutSyntaxRunning;
 
     const steps = parseStepsToSkyline(defaultSyntax, activeFtp, athleteProfile);
     const summary = computeSummaryFromSkyline(steps);
     return {
       title:
         sportMode === 'Cycling'
-          ? 'Threshold + VO2max Ceiling Progression'
-          : 'Threshold Cruise + VO2max Track Repeats',
-      sourceLabel: 'Baseline Build Prescription',
+          ? gapRx.recommendedTitleCycling
+          : gapRx.recommendedTitleRunning,
+      sourceLabel: `7d Focus · ${gapRx.focusBadge}`,
       syntax: defaultSyntax,
       steps,
       ...summary,
     };
-  }, [plannedEvents, todayIso, sportMode, activeFtp, athleteProfile]);
+  }, [
+    plannedEvents,
+    todayIso,
+    sportMode,
+    activeFtp,
+    athleteProfile,
+    rollingProductivity,
+  ]);
 
   // Morphed Workout Prescription based on effectiveMode + synced AthleteProfile zones
   const morphedWorkout = useMemo(() => {
