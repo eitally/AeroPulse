@@ -471,6 +471,13 @@ export function buildCompleteAthleteProfile(
     thresholdHistory: Array.isArray(partial?.thresholdHistory)
       ? partial.thresholdHistory
       : undefined,
+    safeSportHideWeight: Boolean(partial?.safeSportHideWeight),
+    academicDivision: partial?.academicDivision,
+    competitionGender: partial?.competitionGender,
+    ferritinNgMl:
+      typeof partial?.ferritinNgMl === 'number' && partial.ferritinNgMl > 0
+        ? Number(partial.ferritinNgMl.toFixed(1))
+        : undefined,
     lastSyncedAt: partial?.lastSyncedAt || new Date().toISOString(),
     source: partial?.source || 'INTERVALS_GARMIN',
   };

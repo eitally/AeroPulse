@@ -458,6 +458,11 @@ export interface AthleteProfile {
   runHrZones: AthleteHrZone[];
   // Effective-Dated Threshold Ledger (protects historical TSS when thresholds change)
   thresholdHistory?: ThresholdHistoryEntry[];
+  // Safe-Sport / Scholastic & Collegiate Athlete Settings
+  safeSportHideWeight?: boolean; // RED-S protection: masks weight (kg/lbs) & W/kg in UI
+  academicDivision?: ScholasticDivision;
+  competitionGender?: 'MEN' | 'WOMEN';
+  ferritinNgMl?: number; // Optional serum ferritin lab tracking (ng/mL)
   // Sync Metadata
   lastSyncedAt: string;
   source: 'INTERVALS_GARMIN' | 'CUSTOM_OVERRIDE' | 'DEFAULT';
@@ -786,6 +791,153 @@ export interface VerifiedRacePassport {
   equivalentMarathonSecs: number;
   splits: RubberBandedSplit[];
 }
+
+// ============================================================================
+// HORIZON 4 (v2.3): HIGH SCHOOL & COLLEGIATE TEAM PACK
+// ============================================================================
+
+export type ScholasticDivision =
+  | 'HS_VARSITY'
+  | 'NCAA_D1'
+  | 'NCAA_D2'
+  | 'NCAA_D3'
+  | 'CLUB_OPEN';
+
+export type VdotPodIntensity =
+  | 'EASY'
+  | 'MARATHON'
+  | 'THRESHOLD_CV'
+  | 'INTERVAL_VO2'
+  | 'REPETITION';
+
+export interface VdotPodAthleteMember {
+  id: string;
+  name: string;
+  vdot: number;
+  thresholdPaceSecsPerKm: number;
+}
+
+export interface VdotTrainingPod {
+  podId: string;
+  podName: string;
+  minVdot: number;
+  maxVdot: number;
+  centerVdot: number;
+  athletes: VdotPodAthleteMember[];
+  intensity: VdotPodIntensity;
+  targetPaceSecsPerKm: number;
+  splitsSecs: {
+    split200m: number;
+    split400m: number;
+    split800m: number;
+    split1000m: number;
+    split1600m: number;
+  };
+  workoutPrescriptionLine: string;
+  workoutSyntax: string;
+}
+
+export type NcaaTrackFacilityType =
+  | 'INDOOR_FLAT_200M'
+  | 'INDOOR_BANKED_200M'
+  | 'OUTDOOR_400M';
+
+export type ScholasticTrackEventLabel =
+  | '800m'
+  | '1500m'
+  | '1600m'
+  | 'Mile'
+  | '3000m'
+  | '3200m'
+  | '5000m'
+  | '10000m';
+
+export interface NcaaTrackConversionResult {
+  eventLabel: ScholasticTrackEventLabel;
+  gender: 'MEN' | 'WOMEN';
+  rawTimeSecs: number;
+  fromFacility: NcaaTrackFacilityType;
+  toFacility: NcaaTrackFacilityType;
+  altitudeFeet: number;
+  facilityMultiplier: number;
+  altitudeAllowanceSecs: number;
+  convertedTimeSecs: number;
+  displayRawTime: string;
+  displayConvertedTime: string;
+  deltaSecs: number;
+  ncaaRuleSummary: string;
+}
+
+export interface RecruitingStandardComparison {
+  tierId:
+    | 'HS_STATE'
+    | 'HS_NATIONALS'
+    | 'NCAA_D3_RECRUIT'
+    | 'NCAA_D2_SCHOLARSHIP'
+    | 'NCAA_D1_WALK_ON'
+    | 'NCAA_D1_SCHOLARSHIP';
+  tierLabel: string;
+  standardSecs: number;
+  displayStandard: string;
+  athleteConvertedSecs: number;
+  gapSecs: number;
+  achieved: boolean;
+  progressPct: number;
+}
+
+export type CrossTrainingModality =
+  | 'AQUA_JOGGING'
+  | 'ALTER_G'
+  | 'ELLIPTICAL'
+  | 'ARC_TRAINER'
+  | 'STATIONARY_BIKE';
+
+export interface CrossTrainingEquivalence {
+  modality: CrossTrainingModality;
+  modalityLabel: string;
+  durationMins: number;
+  rpe: number;
+  equivalentRunKm: number;
+  equivalentRunMiles: number;
+  estimatedSystemicTss: number;
+  impactLoadSavedPct: number;
+  caraCountableHours: number;
+  coachingNote: string;
+}
+
+export interface NcaaCaraWeeklyAudit {
+  rolling7dCountableHours: number;
+  weeklyCapHours: number;
+  maxSingleDayHours: number;
+  dailyCapHours: number;
+  remainingWeeklyHours: number;
+  compliant: boolean;
+  statusLabel: string;
+}
+
+export interface StudentAthleteCheckIn {
+  date: string;
+  academicStress: 1 | 2 | 3 | 4 | 5;
+  shinMetatarsalSoreness: 0 | 1 | 2 | 3;
+  achillesTendonSoreness: 0 | 1 | 2 | 3;
+  sleepHours: number;
+  ferritinNgMl?: number;
+  energyFeel: 'FRESH' | 'NORMAL' | 'FLAT';
+}
+
+export interface StudentAthleteGuardrailResult {
+  status:
+    | 'CLEARED_FULL_WORKOUT'
+    | 'ACADEMIC_MODULATION'
+    | 'IRON_DEPLETION_CAUTION'
+    | 'BONE_STRESS_STOP';
+  headline: string;
+  recommendation: string;
+  intensityScalePct: number;
+  suggestCrossTrainingSwap: boolean;
+  flags: string[];
+}
+
 
 
 

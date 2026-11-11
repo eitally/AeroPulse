@@ -7,3 +7,4 @@ export * from './complianceAndGitDiff';
 export * from './durabilityEngine';
 export * from './raceSimulator';
 export * from './raceRubberBander';
+export * from './scholasticEngine';

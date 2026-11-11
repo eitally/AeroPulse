@@ -17,12 +17,18 @@ import {
 import {
   AthleteProfile,
   DistanceUnit,
+  NcaaTrackFacilityType,
   OfficialRacePlatform,
   OfficialTrackSurface,
+  ScholasticTrackEventLabel,
   UnifiedActivity,
 } from '../types';
 import { formatDuration, formatPace } from '../utils/formatters';
 import { generateVerifiedRacePassport } from '../physiology/raceRubberBander';
+import {
+  convertNcaaTrackPerformance,
+  evaluateRecruitingStandards,
+} from '../physiology/scholasticEngine';
 import {
   computeJackDanielsVdot,
   computeOfficialRaceTrainingLoad,
@@ -83,6 +89,12 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   const [quickIncludeWarmup, setQuickIncludeWarmup] = useState<boolean>(true);
   const [rawGpsDistanceInput, setRawGpsDistanceInput] = useState<string>('814');
   const [copiedPassport, setCopiedPassport] = useState<boolean>(false);
+  const [ncaaTargetFacility, setNcaaTargetFacility] =
+    useState<NcaaTrackFacilityType>('OUTDOOR_400M');
+  const [ncaaAltitudeFeetInput, setNcaaAltitudeFeetInput] = useState<string>('0');
+  const [standardsGender, setStandardsGender] = useState<'MEN' | 'WOMEN'>(
+    athleteProfile?.competitionGender || 'MEN'
+  );
 
   const selectedQuickEventDef = useMemo(
     () =>
@@ -195,6 +207,55 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
       quickRaceAnalytics.fatTimeSecs,
       quickRaceAnalytics.splits,
     ]
+  );
+
+  const scholasticEventKey = useMemo<ScholasticTrackEventLabel>(() => {
+    const lbl = selectedQuickEventDef.label;
+    if (lbl === '800m') return '800m';
+    if (lbl === '1500m') return '1500m';
+    if (lbl === '1600m') return '1600m';
+    if (lbl === '1 Mile') return 'Mile';
+    if (lbl === '3000m') return '3000m';
+    if (lbl === '3200m') return '3200m';
+    if (lbl === '10000m') return '10000m';
+    return '5000m';
+  }, [selectedQuickEventDef.label]);
+
+  const fromNcaaFacility: NcaaTrackFacilityType =
+    quickTrackType === 'INDOOR_FLAT_200M'
+      ? 'INDOOR_FLAT_200M'
+      : quickTrackType === 'INDOOR_BANKED_200M'
+        ? 'INDOOR_BANKED_200M'
+        : 'OUTDOOR_400M';
+
+  const ncaaConversion = useMemo(
+    () =>
+      convertNcaaTrackPerformance({
+        eventLabel: scholasticEventKey,
+        gender: standardsGender,
+        rawTimeSecs: quickRaceAnalytics.fatTimeSecs,
+        fromFacility: fromNcaaFacility,
+        toFacility: ncaaTargetFacility,
+        altitudeFeet: Math.max(0, Number(ncaaAltitudeFeetInput) || 0),
+      }),
+    [
+      scholasticEventKey,
+      standardsGender,
+      quickRaceAnalytics.fatTimeSecs,
+      fromNcaaFacility,
+      ncaaTargetFacility,
+      ncaaAltitudeFeetInput,
+    ]
+  );
+
+  const recruitingStandards = useMemo(
+    () =>
+      evaluateRecruitingStandards({
+        eventLabel: scholasticEventKey,
+        gender: standardsGender,
+        convertedTimeSecs: ncaaConversion.convertedTimeSecs,
+      }),
+    [scholasticEventKey, standardsGender, ncaaConversion.convertedTimeSecs]
   );
 
   if (!isOpen) return null;
@@ -950,6 +1011,113 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     </div>
                     <div className="text-[11px] text-slate-500">42.195 km Riegel projection</div>
                   </div>
+                </div>
+              </div>
+
+              {/* High School & Collegiate NCAA Track Facility / Altitude Indexer + Recruiting Standards */}
+              <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/80 p-4 space-y-3.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="ap-status-caution px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                        NCAA Facility &amp; Recruiting Index
+                      </span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {scholasticEventKey} Championship Conversion &amp; HS / NCAA D1·D2·D3 Standards
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {ncaaConversion.ncaaRuleSummary}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 font-mono">
+                    <select
+                      value={standardsGender}
+                      onChange={(e) => setStandardsGender(e.target.value as 'MEN' | 'WOMEN')}
+                      aria-label="Recruiting Standards Category"
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs"
+                    >
+                      <option value="MEN">Men&apos;s Standards</option>
+                      <option value="WOMEN">Women&apos;s Standards</option>
+                    </select>
+
+                    <select
+                      value={ncaaTargetFacility}
+                      onChange={(e) =>
+                        setNcaaTargetFacility(e.target.value as NcaaTrackFacilityType)
+                      }
+                      aria-label="Target NCAA Facility"
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs"
+                    >
+                      <option value="OUTDOOR_400M">Index → 400m Outdoor</option>
+                      <option value="INDOOR_BANKED_200M">Index → 200m Banked Indoor</option>
+                      <option value="INDOOR_FLAT_200M">Index → 200m Flat Indoor</option>
+                    </select>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-slate-500">Alt (ft):</span>
+                      <input
+                        type="number"
+                        step={500}
+                        min={0}
+                        max={10000}
+                        value={ncaaAltitudeFeetInput}
+                        onChange={(e) => setNcaaAltitudeFeetInput(e.target.value)}
+                        className="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs"
+                      />
+                    </div>
+
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-amber-700 dark:text-amber-300 font-bold tabular-nums">
+                      Indexed: {ncaaConversion.displayConvertedTime}{' '}
+                      ({ncaaConversion.deltaSecs <= 0 ? ncaaConversion.deltaSecs.toFixed(2) : `+${ncaaConversion.deltaSecs.toFixed(2)}`}s)
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6-Tier HS State -> Nationals -> NCAA D3/D2/D1 Recruiting Standards Matrix */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 font-mono tabular-nums">
+                  {recruitingStandards.map((std) => (
+                    <div
+                      key={std.tierId}
+                      className={`rounded-lg border p-2.5 space-y-1.5 ${
+                        std.achieved
+                          ? 'border-emerald-500/45 bg-emerald-500/10'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-sans text-[11px] font-bold text-slate-900 dark:text-white truncate">
+                          {std.tierLabel}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            std.achieved
+                              ? 'ap-status-prime'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {std.achieved ? '✓ QUALIFIED' : `Need −${std.gapSecs.toFixed(2)}s`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="text-slate-500">Standard: {std.displayStandard}</span>
+                        <span className="font-bold text-blue-600 dark:text-sky-400">
+                          {std.progressPct}%
+                        </span>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          style={{ width: `${std.progressPct}%` }}
+                          className={`h-full rounded-full ${
+                            std.achieved ? 'bg-emerald-500' : 'bg-blue-500'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

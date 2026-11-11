@@ -14,6 +14,7 @@ import {
 import {
   AthleteProfile,
   ConnectedAthleteRecord,
+  CrossTrainingModality,
   DistanceUnit,
   PlannedWorkoutEvent,
   SportCategory,
@@ -37,9 +38,11 @@ import {
 } from './charts/EChartsPMCDashboard';
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 import {
+  computeCrossTrainingEquivalence,
   computeDualSportPmcSeries,
   evaluateOrthopedicInterference,
   evaluatePlannedVsCompletedCompliance,
+  evaluateStudentAthleteGuardrail,
   generateWeeklyTrainingGitDiff,
 } from '../physiology';
 
@@ -806,6 +809,50 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     radars: true,
   });
 
+  // Student-Athlete Check-In (Academic/Exam Stress, Shin/Bone Soreness, Ferritin) & Cross-Training Equivalence
+  const [isStudentCheckInOpen, setIsStudentCheckInOpen] = useState<boolean>(false);
+  const [academicStress, setAcademicStress] = useState<1 | 2 | 3 | 4 | 5>(2);
+  const [shinBoneSoreness, setShinBoneSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [achillesSoreness, setAchillesSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [crossTrainModality, setCrossTrainModality] =
+    useState<CrossTrainingModality>('AQUA_JOGGING');
+  const [crossTrainMins, setCrossTrainMins] = useState<number>(45);
+  const [crossTrainRpe, setCrossTrainRpe] = useState<number>(6);
+  const [crossTrainToast, setCrossTrainToast] = useState<string | null>(null);
+
+  const studentGuardrail = useMemo(
+    () =>
+      evaluateStudentAthleteGuardrail({
+        date: todayIso,
+        academicStress,
+        shinMetatarsalSoreness: shinBoneSoreness,
+        achillesTendonSoreness: achillesSoreness,
+        sleepHours:
+          latestWithSleep.sleepSecs > 0 ? Number((latestWithSleep.sleepSecs / 3600).toFixed(1)) : 7.4,
+        ferritinNgMl: athleteProfile?.ferritinNgMl,
+        energyFeel: latestDay.readinessStatus === 'Strain' ? 'FLAT' : 'NORMAL',
+      }),
+    [
+      todayIso,
+      academicStress,
+      shinBoneSoreness,
+      achillesSoreness,
+      latestWithSleep.sleepSecs,
+      athleteProfile?.ferritinNgMl,
+      latestDay.readinessStatus,
+    ]
+  );
+
+  const crossTrainEquiv = useMemo(
+    () =>
+      computeCrossTrainingEquivalence({
+        modality: crossTrainModality,
+        durationMins: crossTrainMins,
+        rpe: crossTrainRpe,
+      }),
+    [crossTrainModality, crossTrainMins, crossTrainRpe]
+  );
+
   const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -1180,6 +1227,229 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               )}
             </div>
           )}
+
+          {/* Scholastic / Collegiate Student-Athlete Guardrail & Training Room Cross-Training Equivalence */}
+          <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span
+                  className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase ${
+                    studentGuardrail.status === 'BONE_STRESS_STOP'
+                      ? 'ap-status-strained'
+                      : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
+                        ? 'ap-status-prime'
+                        : 'ap-status-caution'
+                  }`}
+                >
+                  Student-Athlete Guardrail
+                </span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {studentGuardrail.headline}
+                </span>
+                {athleteProfile?.safeSportHideWeight && (
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold">
+                    Safe-Sport Shield ON
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsStudentCheckInOpen((prev) => !prev)}
+                className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-colors"
+              >
+                {isStudentCheckInOpen
+                  ? 'Hide Exam / Bone Check-In & Pool/AlterG Converter ▲'
+                  : 'Exam / Shin Check-In & Cross-Training Miles ▼'}
+              </button>
+            </div>
+
+            {(isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
+                {/* Left 6 Cols: 5-Second Student-Athlete Check-In (Exams, Shin/Metatarsal BSI, Ferritin) */}
+                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      5-Second Student-Athlete Check-In (Academic + Bone Stress)
+                    </span>
+                    <span className="font-mono text-[11px] text-blue-600 dark:text-sky-300 font-bold">
+                      Intensity Cap: {studentGuardrail.intensityScalePct}%
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Academic / Exam Stress
+                      </label>
+                      <select
+                        value={academicStress}
+                        onChange={(e) =>
+                          setAcademicStress(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
+                        }
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      >
+                        <option value={1}>1 — Normal Classes</option>
+                        <option value={2}>2 — Light Papers</option>
+                        <option value={3}>3 — Midterms / Labs</option>
+                        <option value={4}>4 — Heavy Exams</option>
+                        <option value={5}>5 — Finals / All-Nighter</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Shin / Foot Bone Pain
+                      </label>
+                      <select
+                        value={shinBoneSoreness}
+                        onChange={(e) =>
+                          setShinBoneSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
+                        }
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      >
+                        <option value={0}>0 — Zero Pain</option>
+                        <option value={1}>1 — Mild Diffuse Tightness</option>
+                        <option value={2}>2 — Focal Point Tenderness</option>
+                        <option value={3}>3 — Hop / Walk Pain (BSI)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Achilles / Calf Tendon
+                      </label>
+                      <select
+                        value={achillesSoreness}
+                        onChange={(e) =>
+                          setAchillesSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
+                        }
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      >
+                        <option value={0}>0 — Springy / Clear</option>
+                        <option value={1}>1 — Morning Stiffness</option>
+                        <option value={2}>2 — Pinch Soreness</option>
+                        <option value={3}>3 — Sharp Load Pain</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {studentGuardrail.recommendation}
+                  </p>
+                </div>
+
+                {/* Right 6 Cols: Training Room Cross-Training -> Virtual Running Miles Converter */}
+                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      Training Room Cross-Training → Virtual Miles
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[11px] font-bold tabular-nums">
+                      ≈{' '}
+                      {distanceUnit === 'km'
+                        ? `${crossTrainEquiv.equivalentRunKm} virtual km`
+                        : `${crossTrainEquiv.equivalentRunMiles} virtual mi`}{' '}
+                      · {crossTrainEquiv.estimatedSystemicTss} TSS ({crossTrainEquiv.impactLoadSavedPct}% impact saved)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Modality
+                      </label>
+                      <select
+                        value={crossTrainModality}
+                        onChange={(e) =>
+                          setCrossTrainModality(e.target.value as CrossTrainingModality)
+                        }
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      >
+                        <option value="AQUA_JOGGING">Aqua Jogging</option>
+                        <option value="ALTER_G">AlterG (75% BW)</option>
+                        <option value="ELLIPTICAL">Elliptical (90+ RPM)</option>
+                        <option value="ARC_TRAINER">Arc Trainer</option>
+                        <option value="STATIONARY_BIKE">Spin / Smart Bike</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Duration (min)
+                      </label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={240}
+                        step={5}
+                        value={crossTrainMins}
+                        onChange={(e) => setCrossTrainMins(Math.max(10, Number(e.target.value) || 30))}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                        Effort RPE (1–10)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={crossTrainRpe}
+                        onChange={(e) =>
+                          setCrossTrainRpe(Math.max(1, Math.min(10, Number(e.target.value) || 6)))
+                        }
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-500 flex-1 min-w-[180px]">
+                      {crossTrainEquiv.coachingNote} ({crossTrainEquiv.caraCountableHours}h NCAA CARA)
+                    </span>
+                    {onSyncMorphedToCalendar && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onSyncMorphedToCalendar({
+                            date: todayIso,
+                            name: `Training Room Swap: ${crossTrainEquiv.durationMins}m ${crossTrainEquiv.modalityLabel}`,
+                            sportCategory:
+                              crossTrainModality === 'STATIONARY_BIKE' ? 'Cycling' : 'Multisport',
+                            environmentPreference: 'INDOOR',
+                            plannedDurationSecs: crossTrainEquiv.durationMins * 60,
+                            plannedLoad: crossTrainEquiv.estimatedSystemicTss,
+                            workoutSyntax: `Warmup\n- 10m RPE 4\n\nMain Set\n- ${Math.max(
+                              10,
+                              crossTrainEquiv.durationMins - 15
+                            )}m RPE ${crossTrainEquiv.rpe}\n\nCooldown\n- 5m RPE 3`,
+                            description: `${crossTrainEquiv.coachingNote} Equivalent to ${crossTrainEquiv.equivalentRunMiles} virtual running miles (${crossTrainEquiv.impactLoadSavedPct}% bone-impact reduction).`,
+                            replaceExistingDate: true,
+                          });
+                          setCrossTrainToast(
+                            `Scheduled ${crossTrainEquiv.durationMins}m ${crossTrainEquiv.modalityLabel} (≈ ${crossTrainEquiv.equivalentRunMiles} virtual mi · ${crossTrainEquiv.estimatedSystemicTss} TSS) for ${todayIso}.`
+                          );
+                          window.setTimeout(() => setCrossTrainToast(null), 4000);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs whitespace-nowrap"
+                      >
+                        Schedule Cross-Training Swap
+                      </button>
+                    )}
+                  </div>
+
+                  {crossTrainToast && (
+                    <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-[11px] font-medium">
+                      {crossTrainToast}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </section>
       )}
 

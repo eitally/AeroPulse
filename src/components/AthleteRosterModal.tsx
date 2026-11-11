@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Users,
@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   Trash2,
   ArrowUpRight,
+  Timer,
+  Trophy,
+  Zap,
 } from "./icons/PhosphorIcons";
 import {
   AthleteConnectionRole,
@@ -23,8 +26,16 @@ import {
   ConnectedAthleteRecord,
   DistanceUnit,
   PrivacyVisibilityTier,
+  VdotPodIntensity,
 } from '../types';
 import { applyAthletePrivacyShield } from '../data/athleteRosterData';
+import {
+  computeTeamVdotPacingPods,
+  formatPrintablePodSplitSheet,
+  formatTrackMark,
+  summarizeNcaaCaraWeeklyHours,
+  type VdotPodRosterInput,
+} from '../physiology/scholasticEngine';
 import { AeroPulseLogo } from './AeroPulseLogo';
 
 interface AthleteRosterModalProps {
@@ -65,7 +76,7 @@ interface AthleteRosterModalProps {
   distanceUnit: DistanceUnit;
 }
 
-type RosterTab = 'LEADERBOARD' | 'CONNECT_INVITE' | 'PRIVACY_SHIELD';
+type RosterTab = 'LEADERBOARD' | 'SCHOLASTIC_COACH' | 'CONNECT_INVITE' | 'PRIVACY_SHIELD';
 
 const AVATAR_PALETTE = ['#F97316', '#38BDF8', '#10B981', '#A855F7', '#F43F5E'];
 
@@ -118,10 +129,75 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   );
   const [pushSuccessBanner, setPushSuccessBanner] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  // HS & College Coach Deck State (VDOT Pacing Pods + Watchless Multi-Athlete Split Pad)
+  const [podIntensity, setPodIntensity] = useState<VdotPodIntensity>('THRESHOLD_CV');
+  const [podRepCount, setPodRepCount] = useState<number>(6);
+  const [podRepDistance, setPodRepDistance] = useState<200 | 400 | 800 | 1000 | 1600>(1000);
+  const [podRecoveryLabel, setPodRecoveryLabel] = useState<string>('60s jog');
+  const [extraPodAthletes, setExtraPodAthletes] = useState<VdotPodRosterInput[]>([]);
+  const [guestPodName, setGuestPodName] = useState<string>('');
+  const [guestPodVdot, setGuestPodVdot] = useState<string>('56.0');
+  const [copiedSplitSheet, setCopiedSplitSheet] = useState<boolean>(false);
 
-  const connectedRoster = roster.filter((a) => a.status === 'CONNECTED');
-  const pendingRequests = roster.filter((a) => a.status !== 'CONNECTED');
+  // Trackside Watchless / Spikes-On Multi-Athlete Split Stopwatch
+  const [stopwatchRunning, setStopwatchRunning] = useState<boolean>(false);
+  const [stopwatchElapsedMs, setStopwatchElapsedMs] = useState<number>(0);
+  const stopwatchStartRef = useRef<number | null>(null);
+  const [athleteLapTimestampsSecs, setAthleteLapTimestampsSecs] = useState<
+    Record<string, number[]>
+  >({});
+  const [copiedStopwatchCsv, setCopiedStopwatchCsv] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!stopwatchRunning) return;
+    stopwatchStartRef.current = performance.now() - stopwatchElapsedMs;
+    const id = window.setInterval(() => {
+      if (stopwatchStartRef.current !== null) {
+        setStopwatchElapsedMs(Math.max(0, performance.now() - stopwatchStartRef.current));
+      }
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [stopwatchRunning]);
+
+  const connectedRoster = useMemo(
+    () => roster.filter((a) => a.status === 'CONNECTED'),
+    [roster]
+  );
+  const pendingRequests = useMemo(
+    () => roster.filter((a) => a.status !== 'CONNECTED'),
+    [roster]
+  );
+
+  const combinedPodRoster = useMemo<VdotPodRosterInput[]>(() => {
+    const base: VdotPodRosterInput[] = [
+      {
+        id: 'SELF',
+        name: selfName || 'Coach / Lead',
+        thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+      },
+      ...connectedRoster.map((c) => ({
+        id: c.id,
+        name: c.name,
+        thresholdPaceSecsPerKm: c.athleteProfile.thresholdPaceSecsPerKm || 250,
+      })),
+      ...extraPodAthletes,
+    ];
+    return base;
+  }, [selfName, selfProfile.thresholdPaceSecsPerKm, connectedRoster, extraPodAthletes]);
+
+  const generatedVdotPods = useMemo(
+    () =>
+      computeTeamVdotPacingPods({
+        roster: combinedPodRoster,
+        intensity: podIntensity,
+        repCount: podRepCount,
+        repDistanceMeters: podRepDistance,
+        recoveryLabel: podRecoveryLabel,
+      }),
+    [combinedPodRoster, podIntensity, podRepCount, podRepDistance, podRecoveryLabel]
+  );
+
+  if (!isOpen) return null;
 
   const handleCopyInvite = () => {
     navigator.clipboard.writeText(selfInviteCode);
@@ -279,6 +355,18 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             >
               <Activity className="w-3.5 h-3.5 text-[#F97316]" />
               <span>Team &amp; Friends Roster ({connectedRoster.length + 1})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('SCHOLASTIC_COACH')}
+              className={`px-4 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === 'SCHOLASTIC_COACH'
+                  ? 'border-amber-500 text-slate-900 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+              <span>HS &amp; College Coach Deck</span>
             </button>
 
             <button
@@ -501,7 +589,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       </td>
                       <td className="py-3.5 px-3 font-mono text-emerald-600 dark:text-[#10B981]">{selfHrv} ms</td>
                       <td className="py-3.5 px-3 font-mono text-slate-700 dark:text-slate-300">
-                        {selfProfile.ftp}W ({(selfProfile.ftp / Math.max(40, selfProfile.weightKg)).toFixed(2)} W/kg)
+                        {selfProfile.safeSportHideWeight
+                          ? `${selfProfile.ftp}W (Safe-Sport)`
+                          : `${selfProfile.ftp}W (${(selfProfile.ftp / Math.max(40, selfProfile.weightKg)).toFixed(2)} W/kg)`}
                       </td>
                       <td className="py-3.5 px-3">
                         <div className="text-xs text-slate-900 dark:text-white font-medium">
@@ -819,6 +909,493 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   </div>
                 </form>
               )}
+            </div>
+          )}
+
+          {/* TAB 1B: HIGH SCHOOL & COLLEGIATE COACH DECK (VDOT PODS, WATCHLESS SPLIT PAD & NCAA CARA) */}
+          {activeTab === 'SCHOLASTIC_COACH' && (
+            <div className="space-y-6">
+              {pushSuccessBanner && (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-mono flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    {pushSuccessBanner}
+                  </span>
+                  <button
+                    onClick={() => setPushSuccessBanner(null)}
+                    className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Section 1: Auto-Clustered VDOT Pacing Pods & Trackside Split Sheet */}
+              <div className="rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="ap-status-caution px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase">
+                        Auto-Scaled Squad Pacing
+                      </span>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                        VDOT Pacing Pod Generator &amp; Printable Trackside Sheet
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                      Write 1 workout once: Thresh clusters your varsity &amp; developmental squad into cohesive VDOT pods (±2s/400m) with exact 200m–1600m splits.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sheet = formatPrintablePodSplitSheet(
+                        `${podRepCount}x${podRepDistance}m (${podIntensity})`,
+                        workoutDate,
+                        generatedVdotPods
+                      );
+                      navigator.clipboard.writeText(sheet);
+                      setCopiedSplitSheet(true);
+                      window.setTimeout(() => setCopiedSplitSheet(false), 2500);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold font-mono transition-colors flex items-center gap-1.5"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>
+                      {copiedSplitSheet
+                        ? 'Copied Printable Pod Sheet!'
+                        : 'Copy Printable Clipboard Sheet'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Workout Prescription Controls + Walk-On Tryout Adder */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+                  <div className="lg:col-span-2">
+                    <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">
+                      Physiological Intensity
+                    </label>
+                    <select
+                      value={podIntensity}
+                      onChange={(e) => setPodIntensity(e.target.value as VdotPodIntensity)}
+                      className="w-full rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                    >
+                      <option value="THRESHOLD_CV">Threshold / Tinman CV (~99% LT)</option>
+                      <option value="INTERVAL_VO2">VO2max Interval (3K–5K Pace)</option>
+                      <option value="REPETITION">Mile / Speed Repetition</option>
+                      <option value="MARATHON">Steady State / Aerobic Tempo</option>
+                      <option value="EASY">Easy / Recovery Run</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">
+                      Rep Count
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={podRepCount}
+                      onChange={(e) => setPodRepCount(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-full rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">
+                      Rep Distance
+                    </label>
+                    <select
+                      value={podRepDistance}
+                      onChange={(e) =>
+                        setPodRepDistance(Number(e.target.value) as 200 | 400 | 800 | 1000 | 1600)
+                      }
+                      className="w-full rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                    >
+                      <option value={200}>200m</option>
+                      <option value={400}>400m</option>
+                      <option value={800}>800m</option>
+                      <option value={1000}>1000m</option>
+                      <option value={1600}>1600m</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">
+                      Recovery Cue
+                    </label>
+                    <input
+                      type="text"
+                      value={podRecoveryLabel}
+                      onChange={(e) => setPodRecoveryLabel(e.target.value)}
+                      className="w-full rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">
+                      Scheduled Date
+                    </label>
+                    <input
+                      type="date"
+                      value={workoutDate}
+                      onChange={(e) => setWorkoutDate(e.target.value)}
+                      className="w-full rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Optional Quick Add Walk-On / Tryout Runner to Pod Sheet */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                  <span className="text-[11px] font-mono text-slate-500">
+                    + Add Walk-On / Unconnected Teammate to Pod Sheet:
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Runner Name (e.g. J. Ramirez)"
+                    value={guestPodName}
+                    onChange={(e) => setGuestPodName(e.target.value)}
+                    className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-48"
+                  />
+                  <input
+                    type="number"
+                    step="0.5"
+                    min={30}
+                    max={85}
+                    placeholder="VDOT"
+                    value={guestPodVdot}
+                    onChange={(e) => setGuestPodVdot(e.target.value)}
+                    className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!guestPodName.trim()) return;
+                      const v = Math.max(30, Math.min(85, Number(guestPodVdot) || 55));
+                      setExtraPodAthletes((prev) => [
+                        ...prev,
+                        {
+                          id: `guest-${Date.now()}`,
+                          name: guestPodName.trim(),
+                          thresholdPaceSecsPerKm: 250,
+                          vdotOverride: v,
+                        },
+                      ]);
+                      setGuestPodName('');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-white font-mono text-[11px]"
+                  >
+                    + Add to Pod
+                  </button>
+                  {extraPodAthletes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExtraPodAthletes([])}
+                      className="text-[11px] font-mono text-slate-500 hover:text-rose-500"
+                    >
+                      Clear {extraPodAthletes.length} guest{extraPodAthletes.length === 1 ? '' : 's'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Generated Pod Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  {generatedVdotPods.map((pod) => {
+                    const coachedMemberIds = pod.athletes
+                      .map((m) => m.id)
+                      .filter((id) =>
+                        connectedRoster.some(
+                          (c) =>
+                            c.id === id &&
+                            c.role === 'COACH_EDIT' &&
+                            c.privacySettings.allowCoachCalendarEdits
+                        )
+                      );
+
+                    return (
+                      <div
+                        key={pod.podId}
+                        className="rounded-xl border border-stone-200 dark:border-slate-800 bg-white/85 dark:bg-slate-950/75 p-4 space-y-2.5 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              <Zap className="w-3.5 h-3.5 text-amber-500" />
+                              <span>{pod.podName}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-sky-300 font-mono text-[10px]">
+                                VDOT{' '}
+                                {pod.minVdot === pod.maxVdot
+                                  ? pod.centerVdot
+                                  : `${pod.minVdot}–${pod.maxVdot}`}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold mt-0.5">
+                              {pod.workoutPrescriptionLine}
+                            </div>
+                          </div>
+
+                          {coachedMemberIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                for (const athId of coachedMemberIds) {
+                                  onPushCoachWorkout(athId, {
+                                    date: workoutDate,
+                                    name: `${pod.podName}: ${podRepCount}x${podRepDistance}m`,
+                                    sportCategory: 'Running',
+                                    plannedDurationSecs: 55 * 60,
+                                    plannedLoad: 78,
+                                    workoutSyntax: pod.workoutSyntax,
+                                    description: `${pod.workoutPrescriptionLine} · Auto-scaled for ${pod.podName} (VDOT ${pod.centerVdot}).`,
+                                  });
+                                }
+                                setPushSuccessBanner(
+                                  `Pushed ${pod.podName} splits (${podRepCount}x${podRepDistance}m) to ${coachedMemberIds.length} coached athlete calendar${
+                                    coachedMemberIds.length === 1 ? '' : 's'
+                                  } for ${workoutDate}.`
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] whitespace-nowrap"
+                            >
+                              Push to Pod ({coachedMemberIds.length})
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {pod.athletes.map((a) => (
+                            <span
+                              key={a.id}
+                              className="px-2 py-0.5 rounded-md bg-stone-200/70 dark:bg-slate-800 font-mono text-[11px] text-slate-800 dark:text-slate-200"
+                            >
+                              {a.name} ({a.vdot})
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-5 gap-1.5 pt-1 font-mono tabular-nums text-center">
+                          {[
+                            { lbl: '200m', val: pod.splitsSecs.split200m },
+                            { lbl: '400m', val: pod.splitsSecs.split400m },
+                            { lbl: '800m', val: pod.splitsSecs.split800m },
+                            { lbl: '1000m', val: pod.splitsSecs.split1000m },
+                            { lbl: '1600m', val: pod.splitsSecs.split1600m },
+                          ].map((sp) => (
+                            <div
+                              key={sp.lbl}
+                              className="rounded-lg bg-stone-100 dark:bg-slate-900 border border-stone-200/80 dark:border-slate-800 py-1.5 px-1"
+                            >
+                              <div className="text-[10px] text-slate-500">{sp.lbl}</div>
+                              <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                {formatTrackMark(sp.val, 1)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Section 2: Trackside "Watchless / Spikes-On" Multi-Athlete Split Pad + NCAA CARA Cap */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                <div className="lg:col-span-7 rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Timer className="w-4 h-4 text-sky-500" />
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Trackside &quot;Spikes-On / Watchless&quot; Multi-Athlete Split Pad
+                        </h3>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                        Athletes racing or repping in spikes without GPS watches? Tap an athlete&apos;s row as they cross the line to capture 0.01s splits.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className="text-lg font-extrabold tabular-nums text-sky-600 dark:text-sky-300 px-3 py-1 rounded-lg bg-slate-900/5 dark:bg-slate-950 border border-stone-200 dark:border-slate-800">
+                        {formatTrackMark(stopwatchElapsedMs / 1000, 2)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setStopwatchRunning((r) => !r)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-colors ${
+                          stopwatchRunning
+                            ? 'bg-amber-600 hover:bg-amber-500'
+                            : 'bg-emerald-600 hover:bg-emerald-500'
+                        }`}
+                      >
+                        {stopwatchRunning ? 'Pause' : stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStopwatchRunning(false);
+                          setStopwatchElapsedMs(0);
+                          setAthleteLapTimestampsSecs({});
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:bg-stone-200/60 dark:hover:bg-slate-800"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {combinedPodRoster.map((runner) => {
+                      const marks = athleteLapTimestampsSecs[runner.id] || [];
+                      const lapDeltas = marks.map((cumSecs, i) =>
+                        Number((i === 0 ? cumSecs : cumSecs - marks[i - 1]).toFixed(2))
+                      );
+                      const lastLap = lapDeltas[lapDeltas.length - 1];
+                      const cumTotal = marks[marks.length - 1];
+
+                      return (
+                        <div
+                          key={runner.id}
+                          className="rounded-lg border border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-[140px]">
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {runner.name}
+                            </div>
+                            <div className="font-mono text-[11px] text-slate-500 tabular-nums">
+                              {lapDeltas.length === 0
+                                ? 'No laps tapped yet'
+                                : `Laps (${lapDeltas.length}): ${lapDeltas
+                                    .map((d) => formatTrackMark(d, 2))
+                                    .join(', ')}`}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 font-mono tabular-nums">
+                            {lastLap !== undefined && (
+                              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
+                                Last: {formatTrackMark(lastLap, 2)} (Cum {formatTrackMark(cumTotal, 2)})
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nowSecs = Number(
+                                  Math.max(0.01, stopwatchElapsedMs / 1000).toFixed(2)
+                                );
+                                setAthleteLapTimestampsSecs((prev) => ({
+                                  ...prev,
+                                  [runner.id]: [...(prev[runner.id] || []), nowSecs],
+                                }));
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs"
+                            >
+                              + Tap Split
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {Object.keys(athleteLapTimestampsSecs).length > 0 && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const csvRows = ['Athlete,LapCount,CumulativeTime,LapSplits'];
+                          for (const r of combinedPodRoster) {
+                            const m = athleteLapTimestampsSecs[r.id];
+                            if (!m || m.length === 0) continue;
+                            const deltas = m.map((c, i) =>
+                              formatTrackMark(i === 0 ? c : c - m[i - 1], 2)
+                            );
+                            csvRows.push(
+                              `"${r.name}",${m.length},${formatTrackMark(
+                                m[m.length - 1],
+                                2
+                              )},"${deltas.join(' | ')}"`
+                            );
+                          }
+                          navigator.clipboard.writeText(csvRows.join('\n'));
+                          setCopiedStopwatchCsv(true);
+                          window.setTimeout(() => setCopiedStopwatchCsv(false), 2500);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 dark:bg-slate-700 text-white font-mono text-xs"
+                      >
+                        {copiedStopwatchCsv ? '✓ Copied Split CSV' : 'Copy All Splits (CSV)'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right 5 Cols: NCAA Bylaw 17.1 (20-Hour Weekly CARA Cap) Compliance Monitor */}
+                <div className="lg:col-span-5 rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-3">
+                  <div>
+                    <span className="ap-status-info px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase">
+                      NCAA Bylaw 17.1 Compliance
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                      20-Hour Weekly / 4-Hour Daily CARA Audit
+                    </h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                      Rolling 7-day Countable Athletically Related Activities (CARA) across connected roster athletes.
+                    </p>
+                  </div>
+
+                  {connectedRoster.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-stone-300 dark:border-slate-700 p-3.5 text-xs text-slate-500">
+                      Connect squad athletes via Invite Code in the &quot;Follow Friends &amp; Requests&quot; tab to audit live rolling 7-day NCAA CARA hours automatically.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {connectedRoster.map((ath) => {
+                        const audit = summarizeNcaaCaraWeeklyHours(ath.activities);
+                        const barPct = Math.min(
+                          100,
+                          Math.round((audit.rolling7dCountableHours / audit.weeklyCapHours) * 100)
+                        );
+                        return (
+                          <div
+                            key={ath.id}
+                            className="rounded-lg border border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3 space-y-1.5 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {ath.name}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                                  audit.compliant ? 'ap-status-prime' : 'ap-status-strained'
+                                }`}
+                              >
+                                {audit.statusLabel}
+                              </span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-stone-200 dark:bg-slate-800 overflow-hidden">
+                              <div
+                                style={{ width: `${barPct}%` }}
+                                className={`h-full rounded-full ${
+                                  !audit.compliant
+                                    ? 'bg-rose-500'
+                                    : barPct >= 85
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex justify-between font-mono text-[11px] text-slate-500 tabular-nums">
+                              <span>7d Logged: {audit.rolling7dCountableHours}h / 20h</span>
+                              <span>Peak Day: {audit.maxSingleDayHours}h / 4h</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

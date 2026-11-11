@@ -7,12 +7,19 @@ import {
   Heart,
   RefreshCw,
   Scale,
+  Shield,
   Sliders,
   UserCheck,
   X,
   Zap,
 } from "./icons/PhosphorIcons";
-import { AthleteProfile, DistanceUnit, ThresholdHistoryEntry, UnifiedWellnessDay } from '../types';
+import {
+  AthleteProfile,
+  DistanceUnit,
+  ScholasticDivision,
+  ThresholdHistoryEntry,
+  UnifiedWellnessDay,
+} from '../types';
 import {
   buildCompleteAthleteProfile,
   buildHrZonesFromCeilings,
@@ -68,6 +75,18 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const [thresholdHistory, setThresholdHistory] = useState<ThresholdHistoryEntry[]>(
     athleteProfile.thresholdHistory || []
   );
+  const [safeSportHideWeight, setSafeSportHideWeight] = useState<boolean>(
+    Boolean(athleteProfile.safeSportHideWeight)
+  );
+  const [academicDivision, setAcademicDivision] = useState<ScholasticDivision>(
+    athleteProfile.academicDivision || 'CLUB_OPEN'
+  );
+  const [competitionGender, setCompetitionGender] = useState<'MEN' | 'WOMEN'>(
+    athleteProfile.competitionGender || 'MEN'
+  );
+  const [ferritinInput, setFerritinInput] = useState<string>(
+    athleteProfile.ferritinNgMl ? String(athleteProfile.ferritinNgMl) : ''
+  );
 
   useEffect(() => {
     setWeightKg(athleteProfile.weightKg);
@@ -85,6 +104,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     setRunMaxHr(athleteProfile.runMaxHr);
     setThresholdPaceSecsPerKm(athleteProfile.thresholdPaceSecsPerKm);
     setThresholdHistory(athleteProfile.thresholdHistory || []);
+    setSafeSportHideWeight(Boolean(athleteProfile.safeSportHideWeight));
+    setAcademicDivision(athleteProfile.academicDivision || 'CLUB_OPEN');
+    setCompetitionGender(athleteProfile.competitionGender || 'MEN');
+    setFerritinInput(athleteProfile.ferritinNgMl ? String(athleteProfile.ferritinNgMl) : '');
   }, [athleteProfile]);
 
   if (!isOpen) return null;
@@ -166,6 +189,13 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         hrZones: previewBikeHrZones,
         runHrZones: previewRunHrZones,
         thresholdHistory: mergedHistory,
+        safeSportHideWeight,
+        academicDivision,
+        competitionGender,
+        ferritinNgMl:
+          ferritinInput.trim() && Number(ferritinInput) > 0
+            ? Number(ferritinInput)
+            : undefined,
         source: 'CUSTOM_OVERRIDE',
         lastSyncedAt: new Date().toISOString(),
       },
@@ -264,7 +294,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span>Outdoor FTP</span>
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-              {ftp}W <span className="text-xs font-semibold text-sky-500">({outdoorWkg} W/kg)</span>
+              {ftp}W{' '}
+              {!safeSportHideWeight && (
+                <span className="text-xs font-semibold text-sky-500">({outdoorWkg} W/kg)</span>
+              )}
             </div>
             <div className="text-[10px] font-mono text-slate-400">
               eFTP {athleteProfile.eFtp}W · W&apos; {(wPrime / 1000).toFixed(1)}kJ
@@ -278,7 +311,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
               {indoorFtp}W{' '}
-              <span className="text-xs font-semibold text-indigo-400">({indoorWkg} W/kg)</span>
+              {!safeSportHideWeight && (
+                <span className="text-xs font-semibold text-indigo-400">({indoorWkg} W/kg)</span>
+              )}
             </div>
             <div className="text-[10px] font-mono text-slate-400">
               Sweet Spot {athleteProfile.sweetSpotMinPct}–{athleteProfile.sweetSpotMaxPct}%
@@ -304,10 +339,18 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span>Body Weight</span>
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-              {distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}
+              {safeSportHideWeight
+                ? 'Hidden'
+                : distanceUnit === 'mi'
+                  ? `${weightLbs} lbs`
+                  : `${weightKg.toFixed(1)} kg`}
             </div>
             <div className="text-[10px] font-mono text-slate-400">
-              {distanceUnit === 'mi' ? `${weightKg.toFixed(1)} kg` : `${weightLbs} lbs`}
+              {safeSportHideWeight
+                ? 'Safe-Sport Shield ON'
+                : distanceUnit === 'mi'
+                  ? `${weightKg.toFixed(1)} kg`
+                  : `${weightLbs} lbs`}
             </div>
           </div>
 
@@ -356,22 +399,28 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
                 Weight ({distanceUnit === 'mi' ? 'lbs' : 'kg'})
               </label>
-              <input
-                type="number"
-                step="0.1"
-                min={distanceUnit === 'mi' ? 80 : 35}
-                max={distanceUnit === 'mi' ? 350 : 160}
-                value={
-                  distanceUnit === 'mi'
-                    ? Number((weightKg * 2.20462).toFixed(1))
-                    : Number(weightKg.toFixed(1))
-                }
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setWeightKg(distanceUnit === 'mi' ? Number((val / 2.20462).toFixed(2)) : val);
-                }}
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
-              />
+              {safeSportHideWeight ? (
+                <div className="w-full min-h-[32px] rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center">
+                  Protected (Safe-Sport)
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  step="0.1"
+                  min={distanceUnit === 'mi' ? 80 : 35}
+                  max={distanceUnit === 'mi' ? 350 : 160}
+                  value={
+                    distanceUnit === 'mi'
+                      ? Number((weightKg * 2.20462).toFixed(1))
+                      : Number(weightKg.toFixed(1))
+                  }
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setWeightKg(distanceUnit === 'mi' ? Number((val / 2.20462).toFixed(2)) : val);
+                  }}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+                />
+              )}
             </div>
 
             <div>
@@ -526,6 +575,74 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Safe-Sport / RED-S Protection & Scholastic / Collegiate Settings */}
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
+            <label className="md:col-span-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2.5 flex items-start justify-between gap-3 cursor-pointer">
+              <div className="space-y-0.5">
+                <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>Safe-Sport / RED-S Protection (Hide Weight &amp; W/kg)</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Masks body weight and W/kg across student-athlete views while keeping pace, HR, and absolute watts active.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={safeSportHideWeight}
+                onChange={(e) => setSafeSportHideWeight(e.target.checked)}
+                className="mt-1 accent-emerald-600 w-4 h-4 shrink-0"
+              />
+            </label>
+
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Scholastic / Collegiate Division
+              </label>
+              <select
+                value={academicDivision}
+                onChange={(e) => setAcademicDivision(e.target.value as ScholasticDivision)}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+              >
+                <option value="HS_VARSITY">High School Varsity / Prep</option>
+                <option value="NCAA_D1">NCAA Division I</option>
+                <option value="NCAA_D2">NCAA Division II</option>
+                <option value="NCAA_D3">NCAA Division III</option>
+                <option value="CLUB_OPEN">Club / Post-Collegiate Open</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Standards Category
+              </label>
+              <select
+                value={competitionGender}
+                onChange={(e) => setCompetitionGender(e.target.value as 'MEN' | 'WOMEN')}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+              >
+                <option value="MEN">Men&apos;s Standards</option>
+                <option value="WOMEN">Women&apos;s Standards</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Serum Ferritin (ng/mL)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min={1}
+                max={400}
+                placeholder="Optional (e.g. 42)"
+                value={ferritinInput}
+                onChange={(e) => setFerritinInput(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs"
+              />
+            </div>
+          </div>
         </form>
 
         {/* Side-by-Side 7-Zone Power & 7-Zone Heart Rate Tables */}
@@ -538,12 +655,14 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   Cycling 7-Zone Power Table
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Calibrated for Outdoor ({ftp}W) &amp; Virtual/Indoor ({indoorFtp}W) @{' '}
-                  {distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}
+                  Calibrated for Outdoor ({ftp}W) &amp; Virtual/Indoor ({indoorFtp}W)
+                  {safeSportHideWeight
+                    ? ' · Safe-Sport Mode'
+                    : ` @ ${distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}`}
                 </p>
               </div>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-sky-300 font-semibold">
-                {outdoorWkg} W/kg
+                {safeSportHideWeight ? 'Safe-Sport' : `${outdoorWkg} W/kg`}
               </span>
             </div>
 
@@ -590,7 +709,11 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                             : `${pz.minIndoorWatts}–${pz.maxIndoorWatts}W`}
                         </td>
                         <td className="py-2 pl-2 text-right text-slate-500 dark:text-slate-400">
-                          {pz.zone === 7 ? `>${minWkg}` : `${minWkg}–${maxWkg}`}
+                          {safeSportHideWeight
+                            ? '—'
+                            : pz.zone === 7
+                              ? `>${minWkg}`
+                              : `${minWkg}–${maxWkg}`}
                         </td>
                       </tr>
                     );

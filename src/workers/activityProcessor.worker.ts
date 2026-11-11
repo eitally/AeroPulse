@@ -6,6 +6,7 @@ import type {
   SportCategory,
   UnifiedActivity,
 } from '../types';
+import { autoDetectUnstructuredIntervals } from '../physiology/scholasticEngine';
 
 export interface WorkerAthleteThresholds {
   ftp: number;
@@ -648,10 +649,22 @@ export function runStreamAnalyticsPipeline(
     tss = Math.round((movingTimeSecs / 3600) * 65);
   }
 
-  const intervals =
-    existingIntervals && existingIntervals.length > 0
-      ? existingIntervals
-      : detectIntervalsFromStream(streams, thresholds);
+  const intervals = (() => {
+    if (existingIntervals && existingIntervals.length > 1) {
+      return existingIntervals;
+    }
+    const unstructured = autoDetectUnstructuredIntervals(streams, sportCategory, {
+      ftpWatts: safeFtp,
+      thresholdPaceSecsPerKm: thresholds.thresholdPaceSecsPerKm,
+    });
+    if (unstructured.filter((iv) => iv.type === 'WORK').length >= 2) {
+      return unstructured;
+    }
+    if (existingIntervals && existingIntervals.length > 0) {
+      return existingIntervals;
+    }
+    return detectIntervalsFromStream(streams, thresholds);
+  })();
 
   const peakWindows = computePeakDurationWindows(streams, thresholds.weightKg || 70);
 

@@ -20,6 +20,7 @@ import {
   ZoomOut,
 } from "./icons/PhosphorIcons";
 import {
+  ActivityInterval,
   AthleteProfile,
   DistanceUnit,
   EnvironmentFilter,
@@ -53,6 +54,7 @@ import {
   type ArchiveImportProgress,
 } from '../utils/archiveImporter';
 import { generatePostWorkoutDebrief } from '../physiology/workoutDebrief';
+import { autoDetectUnstructuredIntervals } from '../physiology/scholasticEngine';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 
 interface ActivitiesViewProps {
@@ -286,6 +288,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   // Web Worker & Dexie Live Stream State
   const [isWorkerProcessing, setIsWorkerProcessing] = useState<boolean>(false);
   const [workerAnalytics, setWorkerAnalytics] = useState<ComputedStreamAnalytics | null>(null);
+  const [recoveredIntervalsByActivityId, setRecoveredIntervalsByActivityId] = useState<
+    Record<string, ActivityInterval[]>
+  >({});
+  const [intervalRecoveryNote, setIntervalRecoveryNote] = useState<string | null>(null);
   const liveDexieStream = useLiveActivityStream(selectedActivity?.id || null);
   const dexieStats = useLiveWorkoutStoreStats();
   const importMenuDetailsRef = useRef<HTMLDetailsElement | null>(null);
@@ -4932,102 +4938,182 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 );
               })()}
 
-              {/* Auto-Detected Intervals & Lap Splits (Intervals.icu icu_intervals) */}
-              {selectedActivity.intervals && selectedActivity.intervals.length > 0 && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                      Auto-Detected Intervals &amp; Lap Splits ({selectedActivity.intervals.length} Intervals)
-                    </h3>
-                    <span className="text-xs font-mono text-slate-500">
-                      Auto-Detected Lap &amp; Interval Splits
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs sm:text-sm border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 text-xs">
-                          <th className="py-2 pr-3">Interval / Type</th>
-                          <th className="py-2 px-3 text-right">Duration &amp; Distance</th>
-                          <th className="py-2 px-3 text-right">Power / %FTP</th>
-                          <th className="py-2 px-3 text-right">Pace / GAP</th>
-                          <th className="py-2 px-3 text-right">Heart Rate</th>
-                          <th className="py-2 px-3 text-right">Cadence / Drift</th>
-                          <th className="py-2 pl-3 text-right">Chart Zoom</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
-                        {selectedActivity.intervals.map((iv) => (
-                          <tr
-                            key={iv.id}
-                            onClick={() =>
-                              zoomStreamToTimeWindow(
-                                Math.max(0, iv.startTimeSecs - 15),
-                                iv.startTimeSecs + iv.durationSecs + 15
-                              )
-                            }
-                            className={`cursor-pointer transition-colors ${
-                              iv.type === 'WORK'
-                                ? 'bg-blue-500/5 dark:bg-blue-500/10 font-medium hover:bg-blue-500/15'
-                                : 'opacity-75 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                            }`}
+              {/* Auto-Detected Intervals & Lap Splits + 1Hz Unstructured Track/Fartlek Rep Recovery */}
+              {(() => {
+                const candidateStream = liveDexieStream?.streams || selectedActivity.streams;
+                const manualRecovered = recoveredIntervalsByActivityId[selectedActivity.id];
+                const baseIntervals =
+                  selectedActivity.intervals && selectedActivity.intervals.length > 0
+                    ? selectedActivity.intervals
+                    : workerAnalytics?.intervals || [];
+                const effectiveIntervals =
+                  manualRecovered && manualRecovered.length > 0 ? manualRecovered : baseIntervals;
+
+                if (effectiveIntervals.length === 0 && !candidateStream) return null;
+
+                return (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                          Intervals &amp; Lap Splits ({effectiveIntervals.length} Segments)
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Forgot to hit Lap on track repeats or fartleks? Run 1Hz change-point detection to extract true WORK &amp; float reps.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {manualRecovered && manualRecovered.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRecoveredIntervalsByActivityId((prev) => {
+                                const next = { ...prev };
+                                delete next[selectedActivity.id];
+                                return next;
+                              });
+                              setIntervalRecoveryNote(null);
+                            }}
+                            className="min-h-[30px] px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                           >
-                            <td className="py-2.5 pr-3 font-sans">
-                              <span
-                                className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold mr-2 ${
-                                  iv.type === 'WORK'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                }`}
-                              >
-                                {iv.type}
-                              </span>
-                              <span className="text-slate-900 dark:text-slate-100">{iv.label}</span>
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {formatStopwatch(iv.durationSecs)} ·{' '}
-                              {iv.distanceMeters > 0
-                                ? formatDistance(iv.distanceMeters, distanceUnit, 2)
-                                : '—'}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {iv.avgWatts ? `${iv.avgWatts}W` : '—'}{' '}
-                              {iv.intensityPct ? `(${iv.intensityPct}%)` : ''}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {iv.avgPaceSecsPerKm
-                                ? formatPace(iv.avgPaceSecsPerKm, distanceUnit)
-                                : '—'}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {iv.avgHr ? `${iv.avgHr} / ${iv.maxHr} bpm` : '—'}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {iv.avgCadence ? `${iv.avgCadence} rpm/spm` : '—'}
-                              {iv.decouplingPct !== undefined ? ` · ${iv.decouplingPct}%` : ''}
-                            </td>
-                            <td className="py-2.5 pl-3 text-right font-sans">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                            Reset Device Laps
+                          </button>
+                        )}
+                        {candidateStream && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const detected = autoDetectUnstructuredIntervals(
+                                candidateStream,
+                                selectedActivity.sportCategory,
+                                {
+                                  ftpWatts: athleteProfile?.ftp,
+                                  thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm,
+                                }
+                              );
+                              const workCount = detected.filter((d) => d.type === 'WORK').length;
+                              if (workCount > 0) {
+                                setRecoveredIntervalsByActivityId((prev) => ({
+                                  ...prev,
+                                  [selectedActivity.id]: detected,
+                                }));
+                                setIntervalRecoveryNote(
+                                  `Recovered ${workCount} unstructured WORK rep${
+                                    workCount === 1 ? '' : 's'
+                                  } (${detected.length} total segments) from 1Hz velocity/power telemetry.`
+                                );
+                              } else {
+                                setIntervalRecoveryNote(
+                                  'Steady-state effort detected — no distinct bimodal interval surges (>16% spread) found in 1Hz stream.'
+                                );
+                              }
+                            }}
+                            className="min-h-[30px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                          >
+                            Recover Unstructured Reps (1Hz No-Lap Detector)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {intervalRecoveryNote && (
+                      <div className="rounded-lg ap-status-info px-3 py-1.5 text-xs font-medium">
+                        {intervalRecoveryNote}
+                      </div>
+                    )}
+
+                    {effectiveIntervals.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs sm:text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 text-xs">
+                              <th className="py-2 pr-3">Interval / Type</th>
+                              <th className="py-2 px-3 text-right">Duration &amp; Distance</th>
+                              <th className="py-2 px-3 text-right">Power / %FTP</th>
+                              <th className="py-2 px-3 text-right">Pace / GAP</th>
+                              <th className="py-2 px-3 text-right">Heart Rate</th>
+                              <th className="py-2 px-3 text-right">Cadence / Drift</th>
+                              <th className="py-2 pl-3 text-right">Chart Zoom</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
+                            {effectiveIntervals.map((iv) => (
+                              <tr
+                                key={iv.id}
+                                onClick={() =>
                                   zoomStreamToTimeWindow(
                                     Math.max(0, iv.startTimeSecs - 15),
                                     iv.startTimeSecs + iv.durationSecs + 15
-                                  );
-                                }}
-                                className="min-h-[26px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold transition-colors whitespace-nowrap"
+                                  )
+                                }
+                                className={`cursor-pointer transition-colors ${
+                                  iv.type === 'WORK'
+                                    ? 'bg-blue-500/5 dark:bg-blue-500/10 font-medium hover:bg-blue-500/15'
+                                    : 'opacity-75 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                }`}
                               >
-                                Zoom Section
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                                <td className="py-2.5 pr-3 font-sans">
+                                  <span
+                                    className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold mr-2 ${
+                                      iv.type === 'WORK'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    {iv.type}
+                                  </span>
+                                  <span className="text-slate-900 dark:text-slate-100">{iv.label}</span>
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  {formatStopwatch(iv.durationSecs)} ·{' '}
+                                  {iv.distanceMeters > 0
+                                    ? formatDistance(iv.distanceMeters, distanceUnit, 2)
+                                    : '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  {iv.avgWatts ? `${iv.avgWatts}W` : '—'}{' '}
+                                  {iv.intensityPct ? `(${iv.intensityPct}%)` : ''}
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  {iv.avgPaceSecsPerKm
+                                    ? formatPace(iv.avgPaceSecsPerKm, distanceUnit)
+                                    : '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  {iv.avgHr ? `${iv.avgHr} / ${iv.maxHr} bpm` : '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  {iv.avgCadence ? `${iv.avgCadence} rpm/spm` : '—'}
+                                  {iv.decouplingPct !== undefined ? ` · ${iv.decouplingPct}%` : ''}
+                                </td>
+                                <td className="py-2.5 pl-3 text-right font-sans">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      zoomStreamToTimeWindow(
+                                        Math.max(0, iv.startTimeSecs - 15),
+                                        iv.startTimeSecs + iv.durationSecs + 15
+                                      );
+                                    }}
+                                    className="min-h-[26px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold transition-colors whitespace-nowrap"
+                                  >
+                                    Zoom Section
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 py-1">
+                        No device laps recorded on this workout. Click &quot;Recover Unstructured Reps&quot; above to scan 1Hz velocity/power streams.
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Strava Segments on This Activity & Segment Performance Over Time Chart */}
               {(selectedActivity.environment === 'OUTDOOR' ||
@@ -5111,7 +5197,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   </td>
                                   <td className="py-2.5 px-3 text-right text-blue-600 dark:text-blue-400 font-semibold">
                                     {eff.avgWatts
-                                      ? `${eff.avgWatts}W (${(eff.avgWatts / athleteWeightKg).toFixed(2)} W/kg)`
+                                      ? athleteProfile?.safeSportHideWeight
+                                        ? `${eff.avgWatts}W`
+                                        : `${eff.avgWatts}W (${(eff.avgWatts / athleteWeightKg).toFixed(2)} W/kg)`
                                       : eff.avgPaceSecsPerKm
                                         ? formatPace(eff.avgPaceSecsPerKm, distanceUnit)
                                         : '—'}
