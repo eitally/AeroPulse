@@ -22,7 +22,7 @@ Welcome to the **THRESH (`#1 Stadium Track` Edition)** User Guide. You can also 
 ### The Three Pillars of THRESH
 THRESH eliminates the fragmentation between physiological analysis platforms, adaptive workout planners, and school/club team hubs:
 1. **Intervals.icu Physiological Rigor**: True Banister impulse-response modeling (`42d CTL`, `7d ATL`, `TSB`), Monod-Scherrer Critical Power (`CP`) & Anaerobic Work Capacity (`W'`), Skiba 1Hz `W' Balance`, two-pass calibrated running `rTSS`, and first-vs-second-half Aerobic Decoupling (`Pa:Hr`).
-2. **Closed-Loop Daily Adaptivity**: Daily morning readiness evaluation (`HRV rMSSD`, `Resting HR`, `Sleep Score`, `TSB`) that morphs today's scheduled workout between **Optimal Progression**, **Modulated Aerobic (`-15%` load)**, and **Active Recovery**—plus **Weekly Training Git-Diffs** and **3-Channel Orthopedic Guardrails**.
+2. **Closed-Loop Daily Adaptivity**: Daily morning readiness evaluation (`HRV rMSSD`, `Resting HR`, `Sleep Score`, `TSB`) that morphs today's scheduled workout between **Optimal Progression**, **Modulated Aerobic (`-15%` load)**, and **Active Recovery**—plus the **Plan vs. Actual Ledger** and **3-Channel Orthopedic Guardrails**.
 3. **Strava Identity, Official FAT Race Intelligence & Team Hub**: Universal Strava OAuth sign-in, full-bleed Leaflet GPS route maps, Strava segment PR leaderboards, verified `0.01s` Fully Automatic Timing (`FAT`) track/road/XC race logging with Daniels `VDOT` projections, and branded High School / Collegiate / Club team workspaces.
 
 ### 3-Step New User Onboarding Flow
@@ -71,8 +71,8 @@ Garmin Connect and Intervals.icu are **never mandatory**—they are optional add
 
 ### 1. Reading the Interactive Performance Management Chart (PMC)
 Located on the **Today / Fitness** tab, the dual-canvas ECharts PMC plots:
-- **Fitness (`CTL` — Cyan Line + Area, `#0ea5e9`)**: Your 42-day exponentially weighted moving average of daily TSS.
-- **Fatigue (`ATL` — Purple Line, `#a855f7`)**: Your 7-day exponentially weighted moving average of daily TSS.
+- **Fitness (`CTL` — Teal Line + Area, `#0D9488` Light / `#2DD4BF` Dark)**: Your 42-day exponentially weighted moving average of daily TSS.
+- **Fatigue (`ATL` — Rose Line, `#E11D48` Light / `#FB7185` Dark)**: Your 7-day exponentially weighted moving average of daily TSS.
 - **Future Planned Projection (Dashed Lines)**: Extends your `CTL`, `ATL`, and `TSB` forward across all scheduled workouts on your Training Calendar.
 - **Honest Day-1 Calibration**: Brand-new accounts with zero workouts start cleanly in `CALIBRATING` state without synthetic fitness or resting HR numbers.
 
@@ -138,8 +138,8 @@ Switch between four sub-workspaces in **Activities**:
 
 ## Chapter 8 · Horizon 1–3 & v2.3 High School / Collegiate Workflows
 
-- **3-Channel Orthopedic Strip (`10x #1`) & Weekly Training Git-Diff (`10x #3`)** on **Today / Fitness**.
-- **Fatigue-Sliced `0–40 kJ/kg` & `0–2,000 kcal` Durability (`10x #2`)** on **Curves**.
-- **Course Physics & Carb/Sodium Race Simulator (`10x #4`)** on **Goals & Totals**.
-- **GPS Rubber-Banding, `THV-...` Verified Passports (`10x #6`) & NCAA Track Converter** in **Log Official Race Result**.
+- **3-Channel Orthopedic Strip & Plan vs. Actual Ledger** on **Today / Fitness**.
+- **Fatigue-Sliced `0–40 kJ/kg` & `0–2,000 kcal` Durability** on **Curves**.
+- **Course Physics & Carb/Sodium Race Simulator** on **Goals & Totals**.
+- **GPS Rubber-Banding, `THV-...` Verified Passports & NCAA Track Converter** in **Log Official Race Result**.
 - **VDOT Pacing Pods (Pods A–D), Watchless Split Stopwatch & NCAA 20-Hour CARA Audit** in **HS & College Coach Deck** (see [docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md](SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)).

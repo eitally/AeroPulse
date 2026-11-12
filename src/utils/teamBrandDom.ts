@@ -24,7 +24,7 @@ function buildTeamFaviconDataUri(_accentLight: string, accentDark: string): stri
  * Dynamically injects WCAG 2.1 AA contrast-clamped school/club accent tokens into
  * the document chrome (`.ap-content-stage`, `.ap-brand-hairline`, `.ap-btn-primary`, `.ap-nav-volt-active`)
  * AND re-themes the browser tab's THRESH Gauge SVG favicon to the team's primary color,
- * while strictly preserving THRESH physiological zone colors (`Z1–Z7`) and Readiness signals.
+ * while strictly preserving THRESH physiological zone colors (`Z1–Z6`) and Readiness signals.
  */
 export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefined): void {
   if (typeof document === 'undefined') return;
@@ -75,17 +75,25 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
       border-color: ${palette.primaryOnDark};
     }
     .ap-btn-primary,
-    .dark .ap-btn-primary,
-    .ap-nav-volt-active,
-    .dark .ap-nav-volt-active {
+    .ap-nav-volt-active {
       background-color: ${palette.primaryOnLight};
       color: ${palette.textOnPrimaryLight};
       border-color: transparent;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     }
-    .ap-btn-primary:hover,
-    .dark .ap-btn-primary:hover {
+    .dark .ap-btn-primary,
+    .dark .ap-nav-volt-active {
+      background-color: ${palette.primaryOnDark};
+      color: ${palette.textOnPrimaryDark};
+      border-color: transparent;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.36);
+    }
+    .ap-btn-primary:hover {
       background-color: ${palette.primaryOnLight};
+      filter: brightness(0.92);
+    }
+    .dark .ap-btn-primary:hover {
+      background-color: ${palette.primaryOnDark};
       filter: brightness(0.92);
     }
   `;

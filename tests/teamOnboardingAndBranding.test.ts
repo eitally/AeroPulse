@@ -53,18 +53,24 @@ describe('Team Onboarding, Custom Branding, Resend Bulk Invites & Safeguarding',
     expect(veloClub.enableParentGuardianCc).toBe(false);
   });
 
-  it('clamps extreme school colors to WCAG 2.1 AA >= 4.5:1 on both Light (#FFFFFF) and Dark (#121419) surfaces', () => {
+  it('clamps extreme school colors to WCAG 2.1 AA >= 4.5:1 on both Light (#FFFFFF/#E9EFE9) and Dark (#15231B/#121419) surfaces plus button foregrounds', () => {
     // Bright athletic yellow (#FACC15) fails raw contrast on white; dark navy (#0A192F) fails on matte carbon
     const extreme = computeAccessibleTeamPalette('#FACC15', '#0A192F');
     expect(contrastRatio(extreme.primaryOnLight, '#FFFFFF')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(extreme.primaryOnLight, '#E9EFE9')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(extreme.primaryOnDark, '#15231B')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(extreme.primaryOnDark, '#121419')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(extreme.secondaryOnLight, '#FFFFFF')).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(extreme.secondaryOnDark, '#121419')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(extreme.secondaryOnDark, '#15231B')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(extreme.primaryOnLight, extreme.textOnPrimaryLight)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(extreme.primaryOnDark, extreme.textOnPrimaryDark)).toBeGreaterThanOrEqual(4.5);
 
     for (const preset of CURATED_TEAM_PALETTE_PRESETS) {
       const p = computeAccessibleTeamPalette(preset.primaryHex, preset.secondaryHex);
       expect(contrastRatio(p.primaryOnLight, '#FFFFFF')).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(p.primaryOnDark, '#121419')).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(p.primaryOnDark, '#15231B')).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(p.primaryOnLight, p.textOnPrimaryLight)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(p.primaryOnDark, p.textOnPrimaryDark)).toBeGreaterThanOrEqual(4.5);
     }
   });
 

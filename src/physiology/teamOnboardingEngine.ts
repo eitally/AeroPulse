@@ -7,11 +7,12 @@ import type {
 export interface AccessibleTeamPalette {
   primaryHex: string;
   secondaryHex: string;
-  primaryOnLight: string; // >= 4.5:1 against #FFFFFF
-  primaryOnDark: string; // >= 4.5:1 against #121419
+  primaryOnLight: string; // >= 4.5:1 against #FFFFFF & #F4F7F2
+  primaryOnDark: string; // >= 4.5:1 against #15231B, #101B15 & #0B120E
   secondaryOnLight: string;
   secondaryOnDark: string;
-  textOnPrimaryLight: '#FFFFFF' | '#111318';
+  textOnPrimaryLight: '#FFFFFF' | '#080A09' | '#111318';
+  textOnPrimaryDark: '#FFFFFF' | '#080A09';
   hairlineGradientLight: string;
   hairlineGradientDark: string;
 }
@@ -135,7 +136,7 @@ export function getOrgTypeSafeguardingDefaults(
   }
 }
 
-export function normalizeHexColor(input: string, fallback = '#1D4ED8'): string {
+export function normalizeHexColor(input: string, fallback = '#1C5436'): string {
   const clean = String(input || '')
     .trim()
     .replace(/^#/, '');
@@ -264,7 +265,13 @@ function ensureContrastAgainstSurface(
       return candidate;
     }
   }
-  return darken ? '#1E3A8A' : '#93C5FD';
+  return darken ? '#14532D' : '#A3E635';
+}
+
+function selectButtonInk(bgHex: string): '#FFFFFF' | '#080A09' {
+  const whiteCr = contrastRatio(bgHex, '#FFFFFF');
+  const darkCr = contrastRatio(bgHex, '#080A09');
+  return darkCr >= whiteCr ? '#080A09' : '#FFFFFF';
 }
 
 /**
@@ -275,25 +282,28 @@ export function computeAccessibleTeamPalette(
   rawPrimaryHex: string,
   rawSecondaryHex: string
 ): AccessibleTeamPalette {
-  const primaryHex = normalizeHexColor(rawPrimaryHex, '#1D4ED8');
-  const secondaryHex = normalizeHexColor(rawSecondaryHex, '#D9480F');
+  const primaryHex = normalizeHexColor(rawPrimaryHex, '#1C5436');
+  const secondaryHex = normalizeHexColor(rawSecondaryHex, '#65A30D');
 
-  const primaryOnLight = ensureContrastAgainstSurface(primaryHex, '#FFFFFF', 4.6);
-  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, '#121419', 4.6);
-  const secondaryOnLight = ensureContrastAgainstSurface(
-    secondaryHex,
-    '#FFFFFF',
-    4.5
-  );
+  // Clamp light variants against #E9EFE9 (inset) & #FFFFFF (card) so >= 4.6:1 holds everywhere in Light Mode
+  let primaryOnLight = ensureContrastAgainstSurface(primaryHex, '#E9EFE9', 4.6);
+  primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, '#FFFFFF', 4.65);
+
+  // Clamp dark variants against #15231B (Dark Carbon-Pine inset — lightest dark surface)
+  // which automatically guarantees >= 4.6:1 against #15231B, #101B15, #121419, and #0B120E.
+  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, '#15231B', 4.65);
+
+  let secondaryOnLight = ensureContrastAgainstSurface(secondaryHex, '#E9EFE9', 4.55);
+  secondaryOnLight = ensureContrastAgainstSurface(secondaryOnLight, '#FFFFFF', 4.6);
+
   const secondaryOnDark = ensureContrastAgainstSurface(
     secondaryHex,
-    '#121419',
-    4.5
+    '#15231B',
+    4.6
   );
 
-  const whiteContrast = contrastRatio(primaryOnLight, '#FFFFFF');
-  const textOnPrimaryLight: '#FFFFFF' | '#111318' =
-    whiteContrast >= 4.2 ? '#FFFFFF' : '#111318';
+  const textOnPrimaryLight = selectButtonInk(primaryOnLight);
+  const textOnPrimaryDark = selectButtonInk(primaryOnDark);
 
   return {
     primaryHex,
@@ -303,6 +313,7 @@ export function computeAccessibleTeamPalette(
     secondaryOnLight,
     secondaryOnDark,
     textOnPrimaryLight,
+    textOnPrimaryDark,
     hairlineGradientLight: `linear-gradient(90deg, ${primaryOnLight} 0%, ${secondaryOnLight} 100%)`,
     hairlineGradientDark: `linear-gradient(90deg, ${primaryOnDark} 0%, ${secondaryOnDark} 100%)`,
   };

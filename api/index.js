@@ -1812,7 +1812,7 @@ function getOrgTypeSafeguardingDefaults(orgType) {
       };
   }
 }
-function normalizeHexColor(input, fallback = "#1D4ED8") {
+function normalizeHexColor(input, fallback = "#1C5436") {
   const clean = String(input || "").trim().replace(/^#/, "");
   if (/^[0-9a-fA-F]{3}$/.test(clean)) {
     return `#${clean.split("").map((c) => c + c).join("").toUpperCase()}`;
@@ -1915,25 +1915,28 @@ function ensureContrastAgainstSurface(hex, surfaceHex, minRatio = 4.55) {
       return candidate;
     }
   }
-  return darken ? "#1E3A8A" : "#93C5FD";
+  return darken ? "#14532D" : "#A3E635";
+}
+function selectButtonInk(bgHex) {
+  const whiteCr = contrastRatio(bgHex, "#FFFFFF");
+  const darkCr = contrastRatio(bgHex, "#080A09");
+  return darkCr >= whiteCr ? "#080A09" : "#FFFFFF";
 }
 function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
-  const primaryHex = normalizeHexColor(rawPrimaryHex, "#1D4ED8");
-  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#D9480F");
-  const primaryOnLight = ensureContrastAgainstSurface(primaryHex, "#FFFFFF", 4.6);
-  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#121419", 4.6);
-  const secondaryOnLight = ensureContrastAgainstSurface(
-    secondaryHex,
-    "#FFFFFF",
-    4.5
-  );
+  const primaryHex = normalizeHexColor(rawPrimaryHex, "#1C5436");
+  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#65A30D");
+  let primaryOnLight = ensureContrastAgainstSurface(primaryHex, "#E9EFE9", 4.6);
+  primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, "#FFFFFF", 4.65);
+  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#15231B", 4.65);
+  let secondaryOnLight = ensureContrastAgainstSurface(secondaryHex, "#E9EFE9", 4.55);
+  secondaryOnLight = ensureContrastAgainstSurface(secondaryOnLight, "#FFFFFF", 4.6);
   const secondaryOnDark = ensureContrastAgainstSurface(
     secondaryHex,
-    "#121419",
-    4.5
+    "#15231B",
+    4.6
   );
-  const whiteContrast = contrastRatio(primaryOnLight, "#FFFFFF");
-  const textOnPrimaryLight = whiteContrast >= 4.2 ? "#FFFFFF" : "#111318";
+  const textOnPrimaryLight = selectButtonInk(primaryOnLight);
+  const textOnPrimaryDark = selectButtonInk(primaryOnDark);
   return {
     primaryHex,
     secondaryHex,
@@ -1942,6 +1945,7 @@ function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
     secondaryOnLight,
     secondaryOnDark,
     textOnPrimaryLight,
+    textOnPrimaryDark,
     hairlineGradientLight: `linear-gradient(90deg, ${primaryOnLight} 0%, ${secondaryOnLight} 100%)`,
     hairlineGradientDark: `linear-gradient(90deg, ${primaryOnDark} 0%, ${secondaryOnDark} 100%)`
   };

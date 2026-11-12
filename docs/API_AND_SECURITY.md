@@ -60,9 +60,9 @@ This document covers the server-side architecture of **THRESH v2.3**, including 
 | :--- | :--- | :--- |
 | `GET` | `/api/vault/status` | Returns encrypted provider connection metadata with zero raw token leakage. |
 | `POST` | `/api/physiology/mmp-debrief` | Computes 1Hz Empirical MMP/GAP (`CP/W'`), 3-Channel Orthopedic Load, and 30s Post-Workout Debrief. |
-| `POST` | `/api/physiology/durability` | Computes `0–40 kJ/kg` (Cycling) or `0–2,000 kcal` (Running) fatigue-sliced durability (`10x #2`). |
-| `POST` | `/api/physiology/race-simulator` | Computes 5-segment Course Physics, Weather/Altitude & Carb/Sodium Race Simulation (`10x #4`). |
-| `POST` | `/api/physiology/race-passport` | Rubber-bands GPS splits to certified course distance and mints `THV-...` Verified Passports (`10x #6`). |
+| `POST` | `/api/physiology/durability` | Computes `0–40 kJ/kg` (Cycling) or `0–2,000 kcal` (Running) fatigue-sliced durability. |
+| `POST` | `/api/physiology/race-simulator` | Computes 5-segment Course Physics, Weather/Altitude & Carb/Sodium Race Simulation. |
+| `POST` | `/api/physiology/race-passport` | Rubber-bands GPS splits to certified course distance and mints `THV-...` Verified Passports. |
 | `POST` | `/api/webhooks/:provider` | First-party hardware webhook ingestion for `garmin`, `wahoo`, `coros`, `polar`, `oura`, `whoop`, and `apple-healthkit`. |
 | `POST` | `/api/workouts/export` | Compiles Intervals-syntax workouts into `WORKOUTKIT_JSON`, `GARMIN_TRAINING_JSON`, `ZWO`, or `ERG`. |
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import {
   CalendarPlus,
   Check,
@@ -193,6 +193,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
   const originUrl =
     typeof window !== 'undefined' ? window.location.origin : 'https://thresh.app';
+  const formId = useId();
 
   const handleOrgTypeChange = (nextOrg: TeamOrgType) => {
     setOrgType(nextOrg);
@@ -273,7 +274,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     [livePalette.primaryOnLight]
   );
   const darkRatio = useMemo(
-    () => contrastRatio(livePalette.primaryOnDark, '#121419').toFixed(1),
+    () => contrastRatio(livePalette.primaryOnDark, '#15231B').toFixed(1),
     [livePalette.primaryOnDark]
   );
 
@@ -585,22 +586,22 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       {/* Multi-Team Switcher & Quick Actions Bar */}
       <div className="rounded-2xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
-              MULTI-TEAM WORKSPACE SWITCHER
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
               {myTeams.length === 0
                 ? 'Launch Your High School, Collegiate, or Club Team Hub'
                 : `Your Active School & Club Teams (${myTeams.length})`}
             </h3>
+            <span className="ap-lane-badge">
+              <span>Multi-Team Hub</span>
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setShowJoinAnotherBar((prev) => !prev)}
-              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#14181F] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-blue-500/50 inline-flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-blue-500/50 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5 text-[#0D9488]" />
               <span>Join Team w/ Code</span>
@@ -609,7 +610,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             <button
               type="button"
               onClick={openCreateNewTeam}
-              className="px-3 py-1.5 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] text-white dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Create New Team</span>
@@ -631,8 +632,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   }}
                   className={`px-3 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-white dark:bg-[#1E222B] border-slate-900/30 dark:border-white/30 shadow-xs text-slate-900 dark:text-white'
-                      : 'bg-white/60 dark:bg-[#0E1117] border-stone-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-[#15231B] border-slate-900/30 dark:border-emerald-400/40 shadow-xs text-slate-900 dark:text-white'
+                      : 'bg-white/60 dark:bg-[#101B15] border-stone-200 dark:border-emerald-400/20 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <span
@@ -640,7 +641,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     style={{ backgroundColor: t.brand.primaryHex }}
                   />
                   <span>{t.brand.shortName || t.brand.name}</span>
-                  <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-stone-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  <span className="text-2xs font-mono uppercase px-1.5 py-0.5 rounded bg-stone-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                     {t.myRole === 'ATHLETE' ? 'Athlete' : 'Coach'}
                   </span>
                 </button>
@@ -651,7 +652,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectActiveTeam(null)}
-                className="px-2.5 py-2 rounded-xl text-[11px] font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                className="px-2.5 py-2 rounded-xl text-2xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
                 Neutral THRESH Chrome
               </button>
@@ -667,14 +668,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             <input
               type="text"
               value={joinAnotherCode}
+              aria-label="Enter 6-character Team Join Code or slug"
               onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
               placeholder="Enter 6-character Team Join Code (e.g. PAXC-26) or slug"
-              className="flex-1 min-w-[220px] min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+              className="flex-1 min-w-[220px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
             />
             <button
               type="submit"
               disabled={isJoiningTeam || !joinAnotherCode.trim()}
-              className="px-3.5 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
             >
               {isJoiningTeam ? 'Joining...' : 'Claim Multi-Team Membership'}
             </button>
@@ -684,6 +686,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
       {bannerMessage && (
         <div
+          role={bannerMessage.tone === 'error' ? 'alert' : 'status'}
+          aria-live={bannerMessage.tone === 'error' ? undefined : 'polite'}
           className={`rounded-xl px-4 py-3 text-xs font-medium flex items-center justify-between gap-2 ${
             bannerMessage.tone === 'error'
               ? 'ap-status-strained'
@@ -699,7 +703,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           <button
             type="button"
             onClick={() => setBannerMessage(null)}
-            className="underline text-[11px] font-mono cursor-pointer"
+            className="min-h-[44px] sm:min-h-[36px] px-2 underline text-2xs font-mono cursor-pointer"
           >
             Dismiss
           </button>
@@ -717,13 +721,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm"
           >
             <div className="space-y-1.5">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-prime">
-                <UserPlus className="w-3 h-3" />
-                <span>Athlete or Assistant Coach</span>
-              </span>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Join a School or Club Team
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Join a School or Club Team
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-prime">
+                  <UserPlus className="w-3 h-3" />
+                  <span>Athlete or Assistant</span>
+                </span>
+              </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                 Have a 6-character Team Join Code or magic link slug from your coach? Enter it below to link your Strava identity and sync squad workouts.
               </p>
@@ -733,9 +739,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <input
                 type="text"
                 value={joinAnotherCode}
+                aria-label="Enter Team Join Code"
                 onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
                 placeholder="Enter Team Code (e.g. PAXC-26)"
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
               />
               <button
                 type="submit"
@@ -751,13 +758,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           {/* Card 2: Head Coach / Club Captain Creating New Team */}
           <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm">
             <div className="space-y-1.5">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-info">
-                <Users className="w-3 h-3" />
-                <span>Head Coach or Club Director</span>
-              </span>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Create a Coach &amp; Team Workspace
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Create a Coach &amp; Team Workspace
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-info">
+                  <Users className="w-3 h-3" />
+                  <span>Head Coach / Director</span>
+                </span>
+              </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                 Set up school or club colors, U18 Safe-Sport weight shielding, printable locker-room QR sheets, CSV roster invites, and VDOT pacing pods.
               </p>
@@ -784,17 +793,19 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 space-y-5 shadow-md"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 dark:border-slate-800 pb-3.5">
-            <div>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-[#D9480F] dark:text-[#FB6514] font-bold">
-                {studioMode === 'EDIT'
-                  ? 'EDIT TEAM IDENTITY & SAFEGUARDING'
-                  : 'STEP 1 · TEAM BRANDING & SAFEGUARDING STUDIO'}
-              </span>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {studioMode === 'EDIT'
                   ? `Customize ${activeTeam?.brand.name}`
                   : 'Create Branded School, Collegiate, or Club Workspace'}
               </h3>
+              <span className="ap-lane-badge">
+                <span>
+                  {studioMode === 'EDIT'
+                    ? 'Edit Identity & Safeguarding'
+                    : 'Step 1 · Branding & Safeguarding'}
+                </span>
+              </span>
             </div>
             {myTeams.length > 0 && (
               <button
@@ -809,25 +820,33 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
           {/* Organization Type Cards */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <div
+              id={`${formId}-org-type-label`}
+              className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2"
+            >
               Program Type (Automatically Configures Safeguarding Defaults)
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            </div>
+            <div
+              role="group"
+              aria-labelledby={`${formId}-org-type-label`}
+              className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2"
+            >
               {ORG_TYPE_OPTIONS.map((opt) => {
                 const selected = orgType === opt.id;
                 return (
                   <button
                     key={opt.id}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => handleOrgTypeChange(opt.id)}
-                    className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    className={`min-h-[44px] text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
                       selected
-                        ? 'border-[#1D4ED8] bg-[#EFF6FF] dark:bg-blue-500/15 text-slate-900 dark:text-white'
-                        : 'border-stone-200 dark:border-slate-800 bg-white dark:bg-[#0E1015] text-slate-700 dark:text-slate-300'
+                        ? 'liquid-capsule-active text-[#101411] dark:text-[#F4F7F4]'
+                        : 'border-emerald-900/15 dark:border-emerald-400/20 bg-white dark:bg-[#15231B] text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <div className="text-xs font-bold leading-snug">{opt.label}</div>
-                    <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                    <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 mt-0.5">
                       {opt.subtitle}
                     </div>
                   </button>
@@ -839,43 +858,55 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           {/* Name, Short Lockup, Motto, Coach Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="lg:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label
+                htmlFor={`${formId}-team-name`}
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
                 Full School / Club Name
               </label>
               <input
+                id={`${formId}-team-name`}
                 type="text"
                 required
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 placeholder="e.g. Palo Alto High Varsity XC"
-                className="w-full min-h-[42px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label
+                htmlFor={`${formId}-short-name`}
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
                 Header Short Name
               </label>
               <input
+                id={`${formId}-short-name`}
                 type="text"
                 value={shortName}
                 onChange={(e) => setShortName(e.target.value.toUpperCase())}
                 placeholder="e.g. PALY XC"
                 maxLength={18}
-                className="w-full min-h-[42px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label
+                htmlFor={`${formId}-coach-name`}
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
                 Coach Display Name
               </label>
               <input
+                id={`${formId}-coach-name`}
                 type="text"
                 value={coachDisplayName}
                 onChange={(e) => setCoachDisplayName(e.target.value)}
                 placeholder="e.g. Coach Rivera"
-                className="w-full min-h-[42px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -884,15 +915,22 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
             <div className="lg:col-span-7 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <div
+                  id={`${formId}-palette-label`}
+                  className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                >
                   School / Club Palette (WCAG 2.1 AA Contrast-Clamped)
-                </label>
-                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300">
+                </div>
+                <span className="text-2xs font-mono text-emerald-700 dark:text-emerald-300">
                   Light {lightRatio}:1 · Dark {darkRatio}:1 · Zones Z1–Z7 Protected
                 </span>
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
+              <div
+                role="group"
+                aria-labelledby={`${formId}-palette-label`}
+                className="flex flex-wrap gap-1.5"
+              >
                 {CURATED_TEAM_PALETTE_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
@@ -901,7 +939,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       setPrimaryHex(preset.primaryHex);
                       setSecondaryHex(preset.secondaryHex);
                     }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#0E1015] hover:border-slate-400 text-[11px] font-medium cursor-pointer"
+                    className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] hover:border-slate-400 text-2xs font-medium cursor-pointer"
                   >
                     <span
                       className="w-3 h-3 rounded-full"
@@ -917,38 +955,43 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2">
+                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
                   <input
+                    id={`${formId}-primary-color`}
                     type="color"
                     value={primaryHex}
+                    aria-label="Primary school or club color"
                     onChange={(e) => setPrimaryHex(e.target.value)}
-                    className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent"
+                    className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
                   />
-                  <div className="text-xs">
-                    <div className="font-semibold">Primary</div>
-                    <div className="font-mono text-[11px] text-slate-500">{primaryHex}</div>
-                  </div>
+                  <label htmlFor={`${formId}-primary-color`} className="text-xs cursor-pointer">
+                    <span className="block font-semibold">Primary</span>
+                    <span className="block font-mono text-2xs text-slate-500">{primaryHex}</span>
+                  </label>
                 </div>
 
-                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2">
+                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
                   <input
+                    id={`${formId}-secondary-color`}
                     type="color"
                     value={secondaryHex}
+                    aria-label="Secondary school or club color"
                     onChange={(e) => setSecondaryHex(e.target.value)}
-                    className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent"
+                    className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
                   />
-                  <div className="text-xs">
-                    <div className="font-semibold">Secondary</div>
-                    <div className="font-mono text-[11px] text-slate-500">
+                  <label htmlFor={`${formId}-secondary-color`} className="text-xs cursor-pointer">
+                    <span className="block font-semibold">Secondary</span>
+                    <span className="block font-mono text-2xs text-slate-500">
                       {secondaryHex}
-                    </div>
-                  </div>
+                    </span>
+                  </label>
                 </div>
 
                 <div>
                   <input
                     ref={logoFileInputRef}
                     type="file"
+                    aria-label="Upload team crest or logo image"
                     accept="image/svg+xml,image/png,image/webp,image/jpeg"
                     className="hidden"
                     onChange={async (e) => {
@@ -968,7 +1011,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => logoFileInputRef.current?.click()}
-                    className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
+                    className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-[#1D4ED8]" />
                     <span>{logoDataUrl ? 'Replace Crest' : 'Upload Crest / Logo'}</span>
@@ -979,10 +1022,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
             {/* Live Header & Safeguarding Preview */}
             <div className="lg:col-span-5 rounded-xl liquid-glass-subtle p-4 space-y-3">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
                 LIVE CO-BRANDED HEADER PREVIEW
               </div>
-              <div className="rounded-xl bg-white dark:bg-[#121419] border border-stone-200 dark:border-slate-800 p-3 relative overflow-hidden">
+              <div className="rounded-xl bg-white dark:bg-[#101B15] border border-stone-200 dark:border-emerald-400/20 p-3 relative overflow-hidden">
                 <div
                   className="absolute top-0 left-0 right-0 h-[3px]"
                   style={{ background: livePalette.hairlineGradientLight }}
@@ -1003,7 +1046,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     <strong className="text-slate-900 dark:text-white">
                       Safe-Sport Weight Shield (Default ON for High School)
                     </strong>
-                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="block text-2xs text-slate-500 dark:text-slate-400">
                       Masks body weight &amp; W/kg across team views to protect youth athletes.
                     </span>
                   </span>
@@ -1020,7 +1063,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     <strong className="text-slate-900 dark:text-white">
                       Parent / Guardian CC on Roster Invites
                     </strong>
-                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="block text-2xs text-slate-500 dark:text-slate-400">
                       Automatically CCs parent emails when importing rosters &amp; sending Resend invites.
                     </span>
                   </span>
@@ -1067,11 +1110,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <div className="space-y-1.5 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-info">
+                  <span className="px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-info">
                     Code: {activeTeam.brand.joinCode}
                   </span>
                   {activeTeam.brand.defaultSafeSportShield && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-prime inline-flex items-center gap-1">
+                    <span className="px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-prime inline-flex items-center gap-1">
                       <ShieldCheck className="w-3 h-3" />
                       <span>Safe-Sport Shield ON</span>
                     </span>
@@ -1151,7 +1194,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   <div className="text-base sm:text-lg font-bold font-mono text-slate-900 dark:text-white">
                     {kpi.val}
                   </div>
-                  <div className="text-[10px] font-mono uppercase text-slate-500">
+                  <div className="text-2xs font-mono uppercase text-slate-500">
                     {kpi.label}
                   </div>
                 </div>
@@ -1181,13 +1224,17 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                  <label
+                    htmlFor={`${formId}-broadcast-squad`}
+                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                  >
                     Target Squad Pod
                   </label>
                   <select
+                    id={`${formId}-broadcast-squad`}
                     value={broadcastSquad}
                     onChange={(e) => setBroadcastSquad(e.target.value)}
-                    className="w-full min-h-[40px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-2.5 text-xs font-semibold"
+                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-semibold"
                   >
                     <option value="ALL">All Squads ({activeTeam.activeCount} active)</option>
                     {distinctSquads.map((sq) => (
@@ -1199,25 +1246,33 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                  <label
+                    htmlFor={`${formId}-broadcast-date`}
+                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                  >
                     Workout Date
                   </label>
                   <input
+                    id={`${formId}-broadcast-date`}
                     type="date"
                     value={broadcastDate}
                     onChange={(e) => setBroadcastDate(e.target.value)}
-                    className="w-full min-h-[40px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-2.5 text-xs font-mono"
+                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                  <label
+                    htmlFor={`${formId}-broadcast-sport`}
+                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                  >
                     Sport
                   </label>
                   <select
+                    id={`${formId}-broadcast-sport`}
                     value={broadcastSport}
                     onChange={(e) => setBroadcastSport(e.target.value as SportCategory)}
-                    className="w-full min-h-[40px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-2.5 text-xs font-semibold"
+                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-semibold"
                   >
                     <option value="Running">Running</option>
                     <option value="Cycling">Cycling</option>
@@ -1226,25 +1281,33 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                    <label
+                      htmlFor={`${formId}-broadcast-mins`}
+                      className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                    >
                       Mins
                     </label>
                     <input
+                      id={`${formId}-broadcast-mins`}
                       type="number"
                       value={broadcastDurationMins}
                       onChange={(e) => setBroadcastDurationMins(Number(e.target.value))}
-                      className="w-full min-h-[40px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-2.5 text-xs font-mono"
+                      className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                    <label
+                      htmlFor={`${formId}-broadcast-load`}
+                      className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                    >
                       Load
                     </label>
                     <input
+                      id={`${formId}-broadcast-load`}
                       type="number"
                       value={broadcastLoad}
                       onChange={(e) => setBroadcastLoad(Number(e.target.value))}
-                      className="w-full min-h-[40px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-2.5 text-xs font-mono"
+                      className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
                     />
                   </div>
                 </div>
@@ -1252,32 +1315,41 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                  <label
+                    htmlFor={`${formId}-broadcast-title`}
+                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                  >
                     Session Title &amp; Coach Notes
                   </label>
                   <input
+                    id={`${formId}-broadcast-title`}
                     type="text"
                     value={broadcastName}
                     onChange={(e) => setBroadcastName(e.target.value)}
-                    className="w-full min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3 py-1.5 text-xs font-semibold mb-2"
+                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-semibold mb-2"
                   />
                   <textarea
                     rows={2}
                     value={broadcastNotes}
+                    aria-label="Coach notes for squad workout"
                     onChange={(e) => setBroadcastNotes(e.target.value)}
-                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] p-2.5 text-xs"
+                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-2.5 text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-slate-500 mb-1">
+                  <label
+                    htmlFor={`${formId}-broadcast-steps`}
+                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
+                  >
                     Structured Steps (Auto-scales to each athlete&apos;s threshold)
                   </label>
                   <textarea
+                    id={`${formId}-broadcast-steps`}
                     rows={4}
                     value={broadcastSyntax}
                     onChange={(e) => setBroadcastSyntax(e.target.value)}
-                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] p-2.5 text-xs font-mono"
+                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-2.5 text-xs font-mono"
                   />
                 </div>
               </div>
@@ -1300,11 +1372,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-[#1D4ED8] dark:text-[#60A5FA] font-bold">
+                    <span className="text-2xs font-mono uppercase tracking-widest text-[#1D4ED8] dark:text-[#60A5FA] font-bold">
                       BULK ROSTER IMPORTER · EMAIL, MAGIC LINKS &amp; TAP-TO-TEXT
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                      className={`px-2 py-0.5 rounded text-2xs font-mono font-bold ${
                         resendConfigured ? 'ap-status-prime' : 'ap-status-info'
                       }`}
                     >
@@ -1321,10 +1393,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     ref={csvFileInputRef}
                     type="file"
+                    aria-label="Upload roster CSV or text file"
                     accept=".csv,.tsv,.txt"
                     className="hidden"
                     onChange={(e) => {
@@ -1338,7 +1411,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => csvFileInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Upload .CSV</span>
@@ -1356,7 +1429,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         ].join('\n')
                       )
                     }
-                    className="px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-mono cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-mono cursor-pointer"
                   >
                     Load Sample CSV
                   </button>
@@ -1366,16 +1439,17 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <textarea
                 rows={4}
                 value={rawRosterInput}
+                aria-label="Paste spreadsheet rows or athlete email list for roster import"
                 onChange={(e) => setRawRosterInput(e.target.value)}
                 placeholder={`Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark\nMaya Chen, maya@school.edu, 650-555-0119, Varsity, 2027, parent@family.com, 18:05 5K`}
-                className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
               />
 
               {parsedRosterPreview.length > 0 && (
                 <div className="space-y-3">
                   <div className="overflow-x-auto rounded-xl border border-stone-200 dark:border-slate-800">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-stone-100 dark:bg-[#0F131A] text-[10px] font-mono uppercase text-slate-500">
+                      <thead className="bg-stone-100 dark:bg-[#101B15] text-2xs font-mono uppercase text-slate-500">
                         <tr>
                           <th className="py-2 px-3">Athlete</th>
                           <th className="py-2 px-3">Email</th>
@@ -1389,25 +1463,25 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         {parsedRosterPreview.slice(0, 12).map((row, idx) => (
                           <tr key={`${row.invitedName}-${idx}`}>
                             <td className="py-2 px-3 font-semibold">{row.invitedName}</td>
-                            <td className="py-2 px-3 font-mono text-[11px]">
+                            <td className="py-2 px-3 font-mono text-2xs">
                               {row.invitedEmail || '—'}
                             </td>
-                            <td className="py-2 px-3 font-mono text-[11px]">
+                            <td className="py-2 px-3 font-mono text-2xs">
                               {row.invitedPhone || '—'}
                             </td>
                             <td className="py-2 px-3">{row.squadGroup}</td>
-                            <td className="py-2 px-3 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                            <td className="py-2 px-3 font-mono text-2xs text-emerald-700 dark:text-emerald-300">
                               {row.seedMarkOrFtp || 'Auto'}
                             </td>
                             <td className="py-2 px-3">
                               <div className="flex flex-wrap gap-1">
                                 {row.isMinorU18 && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono ap-status-prime">
+                                  <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-status-prime">
                                     Safe-Sport Shield
                                   </span>
                                 )}
                                 {row.parentGuardianEmail && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono ap-status-info">
+                                  <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-status-info">
                                     CC: {row.parentGuardianEmail}
                                   </span>
                                 )}
@@ -1456,7 +1530,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   {activeTeam.brand.name} — Roster &amp; Onboarding Funnel (
                   {activeTeam.memberships.length})
                 </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="text-2xs text-slate-500 dark:text-slate-400">
                   Track who has opened their invite, claimed their spot, and synced their morning readiness.
                 </p>
               </div>
@@ -1467,7 +1541,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     type="button"
                     disabled={isSendingBulk}
                     onClick={() => handleResendPending('ALL_PENDING')}
-                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Nudge All Pending</span>
@@ -1477,7 +1551,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-stone-100 dark:bg-[#0F131A] text-[10px] font-mono uppercase text-slate-500">
+                <thead className="bg-stone-100 dark:bg-[#101B15] text-2xs font-mono uppercase text-slate-500">
                   <tr>
                     <th className="py-2.5 px-4">Member</th>
                     <th className="py-2.5 px-3">Squad / Role</th>
@@ -1517,7 +1591,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                             <span>{m.invitedName}</span>
                             {m.isMinorU18 && (
                               <span
-                                className="px-1.5 py-0.2 rounded text-[9px] font-mono ap-status-prime"
+                                className="px-1.5 py-0.2 rounded text-2xs font-mono ap-status-prime"
                                 title="Safe-Sport Weight Shield Active"
                               >
                                 Safe-Sport
@@ -1525,7 +1599,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                             )}
                           </div>
                           {m.invitedEmail && (
-                            <div className="text-[11px] font-mono text-slate-500">
+                            <div className="text-2xs font-mono text-slate-500">
                               {m.invitedEmail}
                               {m.parentGuardianEmail ? ` · CC: ${m.parentGuardianEmail}` : ''}
                             </div>
@@ -1534,14 +1608,14 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
                         <td className="py-3 px-3">
                           <div className="font-medium">{m.squadGroup}</div>
-                          <div className="text-[10px] font-mono uppercase text-slate-500">
+                          <div className="text-2xs font-mono uppercase text-slate-500">
                             {m.role.replace('_', ' ')}
                           </div>
                         </td>
 
                         <td className="py-3 px-3">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                            className={`px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
                               m.status === 'ACTIVE'
                                 ? 'ap-status-prime'
                                 : m.status === 'OPENED'
@@ -1556,19 +1630,19 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 : 'Invited'}
                           </span>
                           {m.emailDeliveryStatus === 'SENT_RESEND' && (
-                            <span className="ml-1.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                            <span className="ml-1.5 text-2xs font-mono text-emerald-600 dark:text-emerald-400">
                               · Resend ✓
                             </span>
                           )}
                         </td>
 
-                        <td className="py-3 px-3 font-mono text-[11px]">
+                        <td className="py-3 px-3 font-mono text-2xs">
                           {m.liveSnapshot ? (
                             <div>
                               <span className="font-semibold text-slate-900 dark:text-white">
                                 {m.liveSnapshot.verdictLabel}
                               </span>
-                              <span className="block text-[10px] text-slate-500">
+                              <span className="block text-2xs text-slate-500">
                                 CTL {Math.round(m.liveSnapshot.ctl)} · TSB{' '}
                                 {m.liveSnapshot.tsb >= 0
                                   ? `+${Math.round(m.liveSnapshot.tsb)}`
@@ -1590,7 +1664,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 onClick={() =>
                                   copyTextWithFeedback(m.membershipId, joinLink)
                                 }
-                                className="px-2 py-1 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300 text-[11px] font-mono inline-flex items-center gap-1 cursor-pointer"
+                                className="px-2 py-1 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer"
                               >
                                 {copiedId === m.membershipId ? (
                                   <>
@@ -1608,7 +1682,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                               {smsHref && (
                                 <a
                                   href={smsHref}
-                                  className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-[11px] font-mono inline-flex items-center gap-1"
+                                  className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-2xs font-mono inline-flex items-center gap-1"
                                   title="Open native Messages / SMS pre-filled with Magic Join Link ($0)"
                                 >
                                   <MessageSquare className="w-3 h-3" />
@@ -1621,7 +1695,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleResendPending(m.membershipId)}
-                                    className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-[11px] font-mono cursor-pointer"
+                                    className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono cursor-pointer"
                                   >
                                     Nudge
                                   </button>
@@ -1629,7 +1703,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                   mailtoHref && (
                                     <a
                                       href={mailtoHref}
-                                      className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-[11px] font-mono inline-flex items-center gap-1"
+                                      className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono inline-flex items-center gap-1"
                                     >
                                       <ExternalLink className="w-3 h-3" />
                                       <span>Email</span>

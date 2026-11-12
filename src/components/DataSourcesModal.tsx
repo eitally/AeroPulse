@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
   StravaSyncWindow,
   UnifiedActivity,
 } from '../types';
+import { useModalDialog } from '../hooks/useModalDialog';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
   importWorkoutFilesOrArchive,
@@ -163,6 +164,14 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     athleteId,
     mapTileApiKey,
   ]);
+
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useModalDialog({
+    isOpen,
+    onClose,
+    dialogRef,
+  });
 
   if (!isOpen) return null;
 
@@ -402,23 +411,27 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Connected Apps & Sync Preferences"
       onClick={onClose}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[#070F0B]/82 p-3 sm:p-6 overflow-y-auto"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="thresh-data-sources-title"
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-2xl ap-content-stage overflow-hidden my-auto"
       >
         {/* Clean Header */}
-        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-[#28573B]/25 dark:border-[#25573A] bg-white/90 dark:bg-[#0F1B14]/95">
+        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-[#28573B]/25 dark:border-[#25573A] bg-white/95 dark:bg-[#0F1B14]">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            <h2
+              id="thresh-data-sources-title"
+              className="text-lg font-bold text-slate-900 dark:text-slate-100"
+            >
               Identity, Sync Window &amp; Optional Add-Ons
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
               {totalWorkouts > 0
                 ? `${totalWorkouts.toLocaleString()} workouts synced${
                     status.lastSyncedAt
@@ -441,7 +454,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 )
               }
               disabled={isSyncing}
-              className="ap-btn-primary !min-h-[40px] !px-3.5 !py-1.5 text-xs cursor-pointer disabled:opacity-50"
+              className="ap-btn-primary !min-h-[44px] !px-3.5 !py-1.5 text-xs cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
@@ -449,8 +462,8 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
-              aria-label="Close modal"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
+              aria-label="Close Data Sources modal"
             >
               <X className="w-4 h-4" />
             </button>
@@ -460,10 +473,18 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
         {/* Simplified Body */}
         <div className="p-5 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           {errorMessage && (
-            <div className="ap-status-strained rounded-xl px-4 py-3 text-xs">{errorMessage}</div>
+            <div role="alert" className="ap-status-strained rounded-xl px-4 py-3 text-xs">
+              {errorMessage}
+            </div>
           )}
           {localStatusMsg && (
-            <div className="ap-status-prime rounded-xl px-4 py-3 text-xs">{localStatusMsg}</div>
+            <div
+              role="status"
+              aria-live="polite"
+              className="ap-status-prime rounded-xl px-4 py-3 text-xs"
+            >
+              {localStatusMsg}
+            </div>
           )}
 
           {/* 1. STRAVA — IDENTITY & PRIMARY WORKOUT SYNC */}
@@ -472,15 +493,15 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">Strava</h3>
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-[#FC4C02]/15 text-[#FC4C02] border border-[#FC4C02]/35">
+                  <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider bg-[#C23800]/12 dark:bg-[#FC4C02]/15 ap-text-strava border border-[#C23800]/30 dark:border-[#FC4C02]/35">
                     Primary Identity
                   </span>
                   {status.stravaConnected ? (
-                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold">
+                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
                       Connected{status.stravaAthleteName ? ` · ${status.stravaAthleteName}` : ''}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    <span className="px-2 py-0.5 rounded-md text-2xs font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                       Not Signed In
                     </span>
                   )}
@@ -495,7 +516,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   type="button"
                   onClick={() => onLaunchStravaOAuth('cloud')}
                   disabled={isSyncing}
-                  className="min-h-[40px] inline-flex items-center gap-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#e34402] px-3.5 py-2 text-xs font-bold text-white transition-colors cursor-pointer"
+                  className="ap-btn-strava !min-h-[44px] sm:!min-h-[40px] rounded-xl px-3.5 py-2 text-xs font-bold cursor-pointer"
                 >
                   <Activity className="w-4 h-4" />
                   <span>{status.stravaConnected ? 'Switch / Re-Auth' : 'Sign In with Strava'}</span>
@@ -523,7 +544,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onLaunchStravaOAuth('cloud')}
-                  className="px-3 py-1.5 rounded-lg bg-[#FC4C02] text-white font-semibold text-xs cursor-pointer"
+                  className="ap-btn-strava !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer"
                 >
                   Grant Activity Read Access
                 </button>
@@ -537,7 +558,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     Strava Workout Sync Window
                   </span>
                   {isSavingPolicy && (
-                    <span className="text-[11px] font-mono ap-text-brand">Saving…</span>
+                    <span className="text-2xs font-mono ap-text-brand">Saving…</span>
                   )}
                 </div>
 
@@ -559,7 +580,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         <div className="text-xs font-bold text-slate-900 dark:text-white">
                           {opt.label}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                        <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 mt-0.5">
                           {opt.hint}
                         </div>
                       </button>
@@ -581,7 +602,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               </div>
             )}
 
-            <div className="rounded-xl bg-emerald-950/5 dark:bg-[#0C1D14]/80 border border-[#28573B]/20 dark:border-[#25573A] px-3 py-2 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+            <div className="rounded-xl bg-emerald-950/5 dark:bg-[#0C1D14]/80 border border-[#28573B]/20 dark:border-[#25573A] px-3 py-2 flex items-center gap-2 text-2xs text-emerald-950/85 dark:text-emerald-100/85">
               <Lock className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>
                 <strong>Read-Only Pledge:</strong> THRESH never posts to your Strava feed, edits activity titles, or sends kudos without you clicking it.
@@ -597,7 +618,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   Self-Hosted Setup: Configure Strava Client ID &amp; Secret
                 </summary>
                 <div className="mt-3 space-y-3 rounded-xl liquid-glass-subtle p-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-2xs">
                     <span className="text-slate-600 dark:text-slate-300">
                       In{' '}
                       <a
@@ -638,21 +659,23 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   >
                     <input
                       type="text"
+                      aria-label="Strava Client ID"
                       value={stravaClientId}
                       onChange={(e) => setStravaClientId(e.target.value)}
                       placeholder="Client ID"
-                      className="sm:col-span-4 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-4 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <input
                       type="password"
+                      aria-label="Strava Client Secret"
                       value={stravaClientSecret}
                       onChange={(e) => setStravaClientSecret(e.target.value)}
                       placeholder="Client Secret"
-                      className="sm:col-span-5 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-5 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
-                      className="sm:col-span-3 min-h-[38px] rounded-lg bg-[#FC4C02] hover:bg-[#e34402] text-white font-semibold text-xs px-3 cursor-pointer"
+                      className="sm:col-span-3 min-h-[40px] rounded-lg bg-[#080A09] hover:bg-[#15231B] border border-[#FC4C02]/60 text-white font-semibold text-xs px-3 cursor-pointer"
                     >
                       Save &amp; Connect
                     </button>
@@ -664,15 +687,16 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   >
                     <input
                       type="password"
+                      aria-label="Strava refresh token or redirect URL"
                       value={stravaFallbackInput}
                       onChange={(e) => setStravaFallbackInput(e.target.value)}
                       placeholder="Or paste Strava Refresh Token / redirect URL..."
-                      className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
                       disabled={!stravaFallbackInput.trim()}
-                      className="ap-btn-secondary !min-h-[36px] text-xs cursor-pointer disabled:opacity-50"
+                      className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
                     >
                       Verify Token
                     </button>
@@ -694,12 +718,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     Garmin Connect
                   </h3>
                   {isGarminConnected ? (
-                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold">
+                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
                       Connected
                       {status.garminAthleteName ? ` · ${status.garminAthleteName}` : ''}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    <span className="px-2 py-0.5 rounded-md text-2xs font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                       Optional Add-On
                     </span>
                   )}
@@ -719,7 +743,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGarminMode('CREDENTIALS')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-md text-2xs font-semibold cursor-pointer ${
                       garminMode === 'CREDENTIALS'
                         ? 'liquid-capsule-active text-slate-900 dark:text-white'
                         : 'text-slate-500 dark:text-slate-400'
@@ -730,7 +754,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGarminMode('PERSONAL_KEY')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-md text-2xs font-semibold cursor-pointer ${
                       garminMode === 'PERSONAL_KEY'
                         ? 'liquid-capsule-active text-slate-900 dark:text-white'
                         : 'text-slate-500 dark:text-slate-400'
@@ -744,7 +768,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   <button
                     type="button"
                     onClick={handleDisconnectGarminClick}
-                    className="ap-btn-secondary !min-h-[34px] text-xs cursor-pointer"
+                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] text-xs cursor-pointer"
                   >
                     Disconnect Garmin
                   </button>
@@ -758,28 +782,31 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 >
                   <input
                     type="email"
+                    aria-label="Garmin Connect email"
                     autoComplete="username"
                     value={garminEmail}
                     onChange={(e) => setGarminEmail(e.target.value)}
                     placeholder="Garmin Connect Email"
-                    className="sm:col-span-5 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-5 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                   <input
                     type="password"
+                    aria-label="Garmin Connect password"
                     autoComplete="current-password"
                     value={garminPassword}
                     onChange={(e) => setGarminPassword(e.target.value)}
                     placeholder="Garmin Password"
-                    className="sm:col-span-4 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-4 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                   {garminNeedsMfa && (
                     <input
                       type="text"
+                      aria-label="Garmin 6-digit two-factor code"
                       inputMode="numeric"
                       value={garminMfaCode}
                       onChange={(e) => setGarminMfaCode(e.target.value)}
                       placeholder="6-digit 2FA Code"
-                      className="sm:col-span-12 min-h-[40px] rounded-xl border border-amber-500 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-12 min-h-[44px] rounded-xl border border-amber-500 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                   )}
                   <button
@@ -787,11 +814,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     disabled={
                       isConnectingGarmin || !garminEmail.trim() || !garminPassword.trim()
                     }
-                    className="sm:col-span-3 ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                    className="sm:col-span-3 ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
                   >
                     {isConnectingGarmin ? 'Linking...' : 'Link Garmin'}
                   </button>
-                  <p className="sm:col-span-12 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="sm:col-span-12 text-2xs text-slate-600 dark:text-slate-300">
                     Your password is exchanged once for an OAuth token and never stored by THRESH.
                   </p>
                 </form>
@@ -802,16 +829,17 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 >
                   <input
                     type="password"
+                    aria-label="Garmin personal API token"
                     autoComplete="off"
                     value={garminPersonalApiKey}
                     onChange={(e) => setGarminPersonalApiKey(e.target.value)}
                     placeholder="Paste Garmin Personal API Token (GCDC_...)"
-                    className="flex-1 min-w-[200px] min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
                     disabled={isConnectingGarmin || !garminPersonalApiKey.trim()}
-                    className="ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                    className="ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
                   >
                     {isConnectingGarmin ? 'Verifying...' : 'Verify Token'}
                   </button>
@@ -832,12 +860,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     Intervals.icu
                   </h3>
                   {status.intervalsConnected ? (
-                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold">
+                    <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
                       Connected
                       {status.intervalsAthleteName ? ` · ${status.intervalsAthleteName}` : ''}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    <span className="px-2 py-0.5 rounded-md text-2xs font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                       Optional Add-On
                     </span>
                   )}
@@ -873,13 +901,15 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
               >
                 <input
                   type="text"
+                  aria-label="Intervals.icu Athlete ID"
                   value={athleteId}
                   onChange={(e) => setAthleteId(e.target.value)}
                   placeholder="Athlete ID (0 for self)"
-                  className="sm:col-span-3 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="sm:col-span-3 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <input
                   type="password"
+                  aria-label="Intervals.icu API Key"
                   value={intervalsKey}
                   onChange={(e) => setIntervalsKey(e.target.value)}
                   placeholder={
@@ -887,13 +917,13 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       ? 'API Key Connected (paste to update)'
                       : 'Paste Intervals.icu API Key'
                   }
-                  className="sm:col-span-6 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="sm:col-span-6 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <div className="sm:col-span-3 flex gap-2">
                   <button
                     type="submit"
                     disabled={!intervalsKey.trim()}
-                    className="flex-1 ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                    className="flex-1 ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
                   >
                     {status.intervalsConnected ? 'Update' : 'Connect'}
                   </button>
@@ -901,7 +931,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <button
                       type="button"
                       onClick={onDisconnectIntervals}
-                      className="ap-btn-secondary !min-h-[40px] !px-2.5 text-xs cursor-pointer"
+                      className="ap-btn-secondary !min-h-[44px] !px-2.5 text-xs cursor-pointer"
                     >
                       Disconnect
                     </button>
@@ -912,7 +942,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
           </details>
 
           {/* SMART DEDUPLICATION ASSURANCE */}
-          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 flex items-center gap-2.5 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 flex items-center gap-2.5 text-2xs text-slate-600 dark:text-slate-300">
             <Shield className="w-4 h-4 ap-text-brand shrink-0" />
             <span>
               <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin or Intervals.icu alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
@@ -1031,9 +1061,10 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   className="grid grid-cols-1 sm:grid-cols-12 gap-2"
                 >
                   <select
+                    aria-label="Activity map tile provider"
                     value={mapTileProvider}
                     onChange={(e) => setMapTileProvider(e.target.value as MapTileProvider)}
-                    className="sm:col-span-4 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-4 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="OSM_KEYLESS">OpenStreetMap (Free / No Key)</option>
                     <option value="MAPBOX">Mapbox High-DPI</option>
@@ -1041,6 +1072,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </select>
                   <input
                     type="password"
+                    aria-label="Optional Mapbox or Thunderforest API key"
                     value={mapTileApiKey}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -1048,11 +1080,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       if (val.trim().startsWith('pk.')) setMapTileProvider('MAPBOX');
                     }}
                     placeholder="Optional Mapbox (pk.ey...) or Thunderforest key"
-                    className="sm:col-span-5 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-5 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
-                    className="sm:col-span-3 ap-btn-secondary !min-h-[38px] text-xs cursor-pointer"
+                    className="sm:col-span-3 ap-btn-secondary !min-h-[40px] text-xs cursor-pointer"
                   >
                     Save Map Style
                   </button>
@@ -1075,7 +1107,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         setLocalStatusMsg('Copied Connection Bundle to clipboard.');
                       }
                     }}
-                    className="ap-btn-secondary !min-h-[34px] text-xs cursor-pointer"
+                    className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer"
                   >
                     {copiedLabel === 'bundle' ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -1099,15 +1131,16 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 >
                   <input
                     type="text"
+                    aria-label="Connection bundle string to restore"
                     value={bundleInput}
                     onChange={(e) => setBundleInput(e.target.value)}
                     placeholder="Paste Connection Bundle here to restore optional keys..."
-                    className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
                     disabled={isSyncing || !bundleInput.trim()}
-                    className="ap-btn-secondary !min-h-[36px] text-xs cursor-pointer disabled:opacity-50"
+                    className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
                   >
                     Restore
                   </button>
@@ -1116,7 +1149,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
               {/* Local Cache & PWA Install */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200/70 dark:border-white/10">
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="text-2xs text-slate-500 dark:text-slate-400">
                   {idbSavedAt
                     ? `Local cache saved at ${new Date(idbSavedAt).toLocaleTimeString([], {
                         hour: '2-digit',

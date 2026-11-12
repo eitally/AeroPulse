@@ -51,6 +51,7 @@ import {
   INITIAL_CHAT_MESSAGES,
   INITIAL_POWER_PACE_CURVES,
 } from './data/mockTelemetry';
+import { buildSampleDemoDataset } from './data/sampleDemoData';
 import {
   DEFAULT_SELF_PRIVACY_SETTINGS,
   applyAthletePrivacyShield,
@@ -64,6 +65,8 @@ import {
 } from './components/StravaAuthGate';
 import { AeroPulseLogo } from './components/AeroPulseLogo';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
+import { TracksideLiveHeaderPill } from './components/TracksideLiveHeaderPill';
+import type { RosterTab } from './components/AthleteRosterModal';
 import { applyTeamBrandToDocument } from './utils/teamBrandDom';
 
 const CalendarView = lazy(() =>
@@ -179,9 +182,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
-  const [rosterInitialTab, setRosterInitialTab] = useState<
-    'TEAMS_BRANDING' | 'LEADERBOARD' | 'SCHOLASTIC_COACH' | 'CONNECT_INVITE' | 'PRIVACY_SHIELD'
-  >('TEAMS_BRANDING');
+  const [rosterInitialTab, setRosterInitialTab] = useState<RosterTab>('TEAMS_BRANDING');
   const [myTeams, setMyTeams] = useState<TeamSummaryWithRole[]>(() => {
     try {
       const cached = localStorage.getItem('thresh_my_teams_v1');
@@ -211,6 +212,7 @@ export default function App() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState<boolean>(false);
   const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
     try {
@@ -330,6 +332,79 @@ export default function App() {
     }
   });
   const [dismissedQuickConnectBanner, setDismissedQuickConnectBanner] = useState<boolean>(false);
+  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(false);
+  const sampleDemoDataset = useMemo(() => buildSampleDemoDataset(), []);
+  const [sampleDemoPlannedEvents, setSampleDemoPlannedEvents] = useState<PlannedWorkoutEvent[]>(
+    () => sampleDemoDataset.plannedEvents
+  );
+  const [sampleDemoProfile, setSampleDemoProfile] = useState<AthleteProfile>(
+    () => sampleDemoDataset.athleteProfile
+  );
+  const [sampleDemoActivities, setSampleDemoActivities] = useState<UnifiedActivity[]>(
+    () => sampleDemoDataset.activities
+  );
+  const [sampleDemoAnnualGoals, setSampleDemoAnnualGoals] = useState<AnnualMileageGoal[]>(
+    () => INITIAL_ANNUAL_MILEAGE_GOALS
+  );
+  const [sampleDemoTargetGoals, setSampleDemoTargetGoals] = useState<TargetGoal[]>(
+    () => sampleDemoDataset.targetGoals
+  );
+  const [sampleDemoPrivacySettings, setSampleDemoPrivacySettings] =
+    useState<AthletePrivacySettings>(() => DEFAULT_SELF_PRIVACY_SETTINGS);
+  const [sampleDemoConnectedAthletes, setSampleDemoConnectedAthletes] = useState<
+    ConnectedAthleteRecord[]
+  >(() => buildInitialConnectedAthletes());
+
+  const resetSampleDemoEphemeralState = useCallback(() => {
+    const fresh = buildSampleDemoDataset();
+    setSampleDemoPlannedEvents(fresh.plannedEvents);
+    setSampleDemoProfile(fresh.athleteProfile);
+    setSampleDemoActivities(fresh.activities);
+    setSampleDemoAnnualGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
+    setSampleDemoTargetGoals(fresh.targetGoals);
+    setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
+    setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
+    setSelectedActivity(null);
+    setActiveViewedAthleteId('SELF');
+    try {
+      window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
+      window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Global Workspace Keyboard Accelerators: Alt+1..4 switches Today / Plan / Activities / Progress
+  useEffect(() => {
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === '1') {
+        e.preventDefault();
+        setActiveTab('fitness');
+      } else if (e.key === '2') {
+        e.preventDefault();
+        setActiveTab('calendar');
+      } else if (e.key === '3') {
+        e.preventDefault();
+        setActiveTab('activities');
+      } else if (e.key === '4') {
+        e.preventDefault();
+        setActiveTab(lastLabTabRef.current);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, []);
 
   useEffect(() => {
     redactedStravaCountRef.current = redactedStravaCount;
@@ -348,22 +423,6 @@ export default function App() {
     const t = window.setTimeout(() => setReadOnlyNotice(null), 5000);
     return () => window.clearTimeout(t);
   }, [readOnlyNotice]);
-
-  // Global Escape key listener to dismiss any open modal or slide-over drawer
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsRosterModalOpen(false);
-        setIsOfficialRaceModalOpen(false);
-        setIsProfileModalOpen(false);
-        setIsDataSourcesOpen(false);
-        setIsCoachDrawerOpen(false);
-        setSelectedActivity(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   const lastLabTabRef = useRef<'totals' | 'curves' | 'trends' | 'charts'>('totals');
   useEffect(() => {
@@ -396,7 +455,7 @@ export default function App() {
 
   // Automatically persist telemetry state changes (workouts, planned events, calibrated profile) to IndexedDB
   useEffect(() => {
-    if (!idbHydratedRef.current) return;
+    if (isSampleDemoMode || !idbHydratedRef.current) return;
     if (
       !hasEnteredWorkspace &&
       activities.length === 0 &&
@@ -423,7 +482,16 @@ export default function App() {
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [activities, wellnessDays, plannedEvents, gearItems, athleteProfile, redactedStravaCount]);
+  }, [
+    isSampleDemoMode,
+    hasEnteredWorkspace,
+    activities,
+    wellnessDays,
+    plannedEvents,
+    gearItems,
+    athleteProfile,
+    redactedStravaCount,
+  ]);
 
   // Sync Dark Mode class with <html>
   useEffect(() => {
@@ -440,51 +508,56 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Save goals to localStorage
+  // Save goals & privacy/roster preferences to localStorage (never during ephemeral Sample Demo Mode)
   useEffect(() => {
+    if (isSampleDemoMode) return;
     try {
       localStorage.setItem('aeropulse_annual_mileage_goals', JSON.stringify(annualMileageGoals));
     } catch {
       // ignore storage quota errors
     }
-  }, [annualMileageGoals]);
+  }, [annualMileageGoals, isSampleDemoMode]);
 
   useEffect(() => {
+    if (isSampleDemoMode) return;
     try {
       localStorage.setItem('aeropulse_target_goals', JSON.stringify(targetGoals));
     } catch {
       // ignore
     }
-  }, [targetGoals]);
+  }, [targetGoals, isSampleDemoMode]);
 
   useEffect(() => {
+    if (isSampleDemoMode) return;
     try {
       localStorage.setItem('aeropulse_self_privacy_settings', JSON.stringify(selfPrivacySettings));
     } catch {
       // ignore
     }
-  }, [selfPrivacySettings]);
+  }, [selfPrivacySettings, isSampleDemoMode]);
 
   useEffect(() => {
+    if (isSampleDemoMode) return;
     try {
       localStorage.setItem('aeropulse_connected_athletes_v1', JSON.stringify(connectedAthletes));
     } catch {
       // ignore
     }
-  }, [connectedAthletes]);
+  }, [connectedAthletes, isSampleDemoMode]);
 
   useEffect(() => {
+    if (isSampleDemoMode) return;
     try {
       localStorage.setItem('thresh_distance_unit', distanceUnit);
     } catch {
       // ignore
     }
-  }, [distanceUnit]);
+  }, [distanceUnit, isSampleDemoMode]);
 
   useEffect(() => {
-    if (!hasEnteredWorkspace || isSessionLoggedOut) return;
+    if (isSampleDemoMode || !hasEnteredWorkspace || isSessionLoggedOut) return;
     fetch('/api/auth/session', { method: 'POST', credentials: 'include' }).catch(() => null);
-  }, [hasEnteredWorkspace, isSessionLoggedOut]);
+  }, [isSampleDemoMode, hasEnteredWorkspace, isSessionLoggedOut]);
 
   const getSavedIntervalsHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {};
@@ -572,6 +645,7 @@ export default function App() {
         setMyTeams([]);
         setActiveTeamId(null);
         setActiveViewedAthleteId('SELF');
+        localStorage.removeItem('thresh_primary_sport');
         const cleanProf = buildCompleteAthleteProfile(null);
         setAthleteProfile(cleanProf);
         athleteProfileRef.current = cleanProf;
@@ -1953,7 +2027,7 @@ export default function App() {
         try {
           popup.document.open();
           popup.document.write(
-            '<!doctype html><html><head><title>Connecting to Strava…</title></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0C1D14;color:#F8FAFC;font-family:system-ui,sans-serif;text-align:center;"><div style="padding:28px 32px;border-radius:16px;background:#111915;border:2px solid #25573A;"><div style="font-weight:700;font-size:16px;color:#FC4C02;margin-bottom:6px;">Connecting to Strava…</div><div style="font-size:13px;color:#CBD5E1;">Opening secure Strava authorization…</div></div></body></html>'
+            '<!doctype html><html><head><title>Connecting to Strava…</title></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0C1D14;color:#F8FAFC;font-family:system-ui,sans-serif;text-align:center;"><div style="padding:28px 32px;border-radius:16px;background:#111915;border:2px solid #25573A;"><div style="font-weight:700;font-size:16px;color:#FF7A45;margin-bottom:6px;">Connecting to Strava…</div><div style="font-size:13px;color:#CBD5E1;">Opening secure Strava authorization…</div></div></body></html>'
           );
           popup.document.close();
         } catch {
@@ -2357,38 +2431,79 @@ export default function App() {
     }
   }, []);
 
-  const handleToggleActivityKudos = useCallback(async (activity: UnifiedActivity) => {
-    const key = activity.stravaId || activity.intervalsId || activity.id;
-    try {
-      const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
-        body: JSON.stringify({ action: 'toggle_kudos' }),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setActivities((prev) =>
+  const handleToggleActivityKudos = useCallback(
+    async (activity: UnifiedActivity) => {
+      if (isSampleDemoMode) {
+        setSampleDemoActivities((prev) =>
           prev.map((a) => {
             if (a.id !== activity.id) return a;
+            const nextKudoed = !a.hasKudoed;
             const updated: UnifiedActivity = {
               ...a,
-              hasKudoed: Boolean(data.hasKudoed),
-              kudosCount: typeof data.kudosCount === 'number' ? data.kudosCount : a.kudosCount,
-              kudoers: Array.isArray(data.kudoers) ? data.kudoers : a.kudoers,
+              hasKudoed: nextKudoed,
+              kudosCount: Math.max(0, (a.kudosCount || 0) + (nextKudoed ? 1 : -1)),
             };
             setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
             return updated;
           })
         );
+        return;
       }
-    } catch {
-      // ignore
-    }
-  }, []);
+      const key = activity.stravaId || activity.intervalsId || activity.id;
+      try {
+        const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+          body: JSON.stringify({ action: 'toggle_kudos' }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setActivities((prev) =>
+            prev.map((a) => {
+              if (a.id !== activity.id) return a;
+              const updated: UnifiedActivity = {
+                ...a,
+                hasKudoed: Boolean(data.hasKudoed),
+                kudosCount: typeof data.kudosCount === 'number' ? data.kudosCount : a.kudosCount,
+                kudoers: Array.isArray(data.kudoers) ? data.kudoers : a.kudoers,
+              };
+              setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+              return updated;
+            })
+          );
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [isSampleDemoMode]
+  );
 
   const handleAddActivityComment = useCallback(
     async (activity: UnifiedActivity, commentText: string, authorName?: string) => {
       if (!commentText.trim()) return;
+      if (isSampleDemoMode) {
+        const demoComment = {
+          id: `demo-c-${Date.now()}`,
+          authorName: authorName || 'Sample Athlete (Demo)',
+          text: commentText.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        setSampleDemoActivities((prev) =>
+          prev.map((a) => {
+            if (a.id !== activity.id) return a;
+            const nextComments = [...(a.comments || []), demoComment];
+            const updated: UnifiedActivity = {
+              ...a,
+              comments: nextComments,
+              commentCount: nextComments.length,
+            };
+            setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+            return updated;
+          })
+        );
+        return;
+      }
       const key = activity.stravaId || activity.intervalsId || activity.id;
       try {
         const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
@@ -2421,12 +2536,48 @@ export default function App() {
         // ignore
       }
     },
-    [connectionStatus.stravaAthleteName]
+    [isSampleDemoMode, connectionStatus.stravaAthleteName]
   );
 
   // Load real streams + auto-detected intervals + Strava segment efforts + GPS route for any activity
   const loadStreamsForActivity = useCallback(
     async (activity: UnifiedActivity) => {
+      if (isSampleDemoMode) {
+        if (!activity.streams || activity.streams.time.length < 60) {
+          try {
+            const { streams: workerStreams, analytics } =
+              await upsampleAndAnalyzeActivityInWorker(activity);
+            setSampleDemoActivities((prev) =>
+              prev.map((a) =>
+                a.id === activity.id
+                  ? {
+                      ...a,
+                      streams: workerStreams,
+                      intervals:
+                        a.intervals && a.intervals.length > 0 ? a.intervals : analytics.intervals,
+                    }
+                  : a
+              )
+            );
+            setSelectedActivity((curr) =>
+              curr && curr.id === activity.id
+                ? {
+                    ...curr,
+                    streams: workerStreams,
+                    intervals:
+                      curr.intervals && curr.intervals.length > 0
+                        ? curr.intervals
+                        : analytics.intervals,
+                  }
+                : curr
+            );
+          } catch {
+            // ignore worker fallback error
+          }
+        }
+        return;
+      }
+
       // 1. Check Dexie.js activityStreams table first for high-frequency 1Hz stream cache
       const cachedDexieRecord = await getActivityStreamFromDexie(activity.id);
       const cachedDexieStream = cachedDexieRecord?.streams;
@@ -2595,49 +2746,57 @@ export default function App() {
         // Fallback handled in view if stream endpoint unavailable
       }
     },
-    [connectionStatus.intervalsConnected, connectionStatus.stravaConnected, reRankActivitiesSegments]
+    [
+      isSampleDemoMode,
+      connectionStatus.intervalsConnected,
+      connectionStatus.stravaConnected,
+      reRankActivitiesSegments,
+    ]
   );
 
   // Load real streams + auto-detected intervals + Strava segments when selecting an activity
-  const handleSelectActivity = async (activity: UnifiedActivity | null) => {
-    setSelectedActivity(activity);
-    if (activity) {
-      await loadStreamsForActivity(activity);
-      if (activity.stravaId) {
-        try {
-          const resp = await fetch(
-            `/api/strava/activities/${encodeURIComponent(activity.stravaId)}/kudos`,
-            { headers: getSavedIntervalsHeaders() }
-          );
-          if (resp.ok) {
-            const kData = await resp.json();
-            setActivities((prev) =>
-              prev.map((a) => {
-                if (a.id !== activity.id) return a;
-                const updated: UnifiedActivity = {
-                  ...a,
-                  hasKudoed: kData.hasKudoed ?? a.hasKudoed,
-                  kudosCount: Math.max(a.kudosCount || 0, (kData.kudoers || []).length),
-                  kudoers:
-                    Array.isArray(kData.kudoers) && kData.kudoers.length > 0
-                      ? kData.kudoers
-                      : a.kudoers,
-                  comments:
-                    Array.isArray(kData.comments) && kData.comments.length > 0
-                      ? kData.comments
-                      : a.comments,
-                };
-                setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
-                return updated;
-              })
+  const handleSelectActivity = useCallback(
+    async (activity: UnifiedActivity | null) => {
+      setSelectedActivity(activity);
+      if (activity) {
+        await loadStreamsForActivity(activity);
+        if (!isSampleDemoMode && activity.stravaId) {
+          try {
+            const resp = await fetch(
+              `/api/strava/activities/${encodeURIComponent(activity.stravaId)}/kudos`,
+              { headers: getSavedIntervalsHeaders() }
             );
+            if (resp.ok) {
+              const kData = await resp.json();
+              setActivities((prev) =>
+                prev.map((a) => {
+                  if (a.id !== activity.id) return a;
+                  const updated: UnifiedActivity = {
+                    ...a,
+                    hasKudoed: kData.hasKudoed ?? a.hasKudoed,
+                    kudosCount: Math.max(a.kudosCount || 0, (kData.kudoers || []).length),
+                    kudoers:
+                      Array.isArray(kData.kudoers) && kData.kudoers.length > 0
+                        ? kData.kudoers
+                        : a.kudoers,
+                    comments:
+                      Array.isArray(kData.comments) && kData.comments.length > 0
+                        ? kData.comments
+                        : a.comments,
+                  };
+                  setSelectedActivity((curr) => (curr && curr.id === activity.id ? updated : curr));
+                  return updated;
+                })
+              );
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
       }
-    }
-  };
+    },
+    [isSampleDemoMode, loadStreamsForActivity]
+  );
 
   // Multi-Team Brand Resolution & Cloud Teammate Projection
   const activeTeam = useMemo(
@@ -2646,18 +2805,23 @@ export default function App() {
     [myTeams, activeTeamId]
   );
 
-  const handleSelectActiveTeam = useCallback((nextId: string | null) => {
-    setActiveTeamId(nextId);
-    try {
-      if (nextId) localStorage.setItem('thresh_active_team_id_v1', nextId);
-      else localStorage.removeItem('thresh_active_team_id_v1');
-    } catch {
-      // ignore
-    }
-  }, []);
+  const handleSelectActiveTeam = useCallback(
+    (nextId: string | null) => {
+      setActiveTeamId(nextId);
+      if (isSampleDemoMode) return;
+      try {
+        if (nextId) localStorage.setItem('thresh_active_team_id_v1', nextId);
+        else localStorage.removeItem('thresh_active_team_id_v1');
+      } catch {
+        // ignore
+      }
+    },
+    [isSampleDemoMode]
+  );
 
   const handleTeamsUpdated = useCallback(
     (nextTeams: TeamSummaryWithRole[], nextActiveId?: string) => {
+      if (isSampleDemoMode) return;
       setMyTeams(nextTeams);
       try {
         localStorage.setItem('thresh_my_teams_v1', JSON.stringify(nextTeams));
@@ -2670,7 +2834,7 @@ export default function App() {
         handleSelectActiveTeam(nextTeams[0].brand.teamId);
       }
     },
-    [activeTeamId, handleSelectActiveTeam]
+    [isSampleDemoMode, activeTeamId, handleSelectActiveTeam]
   );
 
   useEffect(() => {
@@ -2680,7 +2844,7 @@ export default function App() {
 
   // Hydrate Multi-Team memberships from server & detect `/join/<slug>` for already-logged-in athletes
   useEffect(() => {
-    if (!hasEnteredWorkspace || isSessionLoggedOut) return;
+    if (isSampleDemoMode || !hasEnteredWorkspace || isSessionLoggedOut) return;
     let cancelled = false;
     (async () => {
       try {
@@ -2862,8 +3026,13 @@ export default function App() {
   }, [activeTeam]);
 
   const combinedRoster = useMemo(
-    () => (myTeams.length > 0 ? cloudTeamRosterAthletes : connectedAthletes),
-    [myTeams.length, cloudTeamRosterAthletes, connectedAthletes]
+    () =>
+      isSampleDemoMode
+        ? sampleDemoConnectedAthletes
+        : myTeams.length > 0
+          ? cloudTeamRosterAthletes
+          : connectedAthletes,
+    [isSampleDemoMode, sampleDemoConnectedAthletes, myTeams.length, cloudTeamRosterAthletes, connectedAthletes]
   );
 
   // Multi-Athlete Context Resolution & Privacy Shield Enforcement
@@ -2876,17 +3045,18 @@ export default function App() {
   );
 
   // Calendar Planned Workout Creation & Deletion (syncs to Intervals.icu + local state + COACH_EDIT roster + Cloud Team Broadcast)
-  const handleCreatePlannedEvent = async (eventInput: {
-    date: string;
-    name: string;
-    sportCategory: SportCategory;
-    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-    plannedDurationSecs: number;
-    plannedLoad: number;
-    workoutSyntax: string;
-    description: string;
-    replaceExistingDate?: boolean;
-  }) => {
+  const handleCreatePlannedEvent = useCallback(
+    async (eventInput: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      replaceExistingDate?: boolean;
+    }) => {
     if (activeConnectedAthlete) {
       if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
         triggerReadOnlyAlert(activeConnectedAthlete.name, 'schedule workouts');
@@ -2943,7 +3113,7 @@ export default function App() {
         workoutSyntax: eventInput.workoutSyntax,
         source: 'USER',
       };
-      setConnectedAthletes((prev) =>
+      const applyCoachEvt = (prev: ConnectedAthleteRecord[]) =>
         prev.map((a) => {
           if (a.id !== activeConnectedAthlete.id) return a;
           const base = eventInput.replaceExistingDate
@@ -2959,8 +3129,42 @@ export default function App() {
             ...a,
             plannedEvents: [...base, coachEvt].sort((x, y) => x.date.localeCompare(y.date)),
           };
-        })
-      );
+        });
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyCoachEvt);
+      } else {
+        setConnectedAthletes(applyCoachEvt);
+      }
+      return;
+    }
+
+    if (isSampleDemoMode) {
+      setSampleDemoPlannedEvents((prev) => {
+        const base = eventInput.replaceExistingDate
+          ? prev.filter(
+              (e) =>
+                !(
+                  e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
+                  e.sportCategory === eventInput.sportCategory
+                )
+            )
+          : prev;
+        return [
+          ...base,
+          {
+            id: `sample-local-${Date.now()}`,
+            date: eventInput.date,
+            name: eventInput.name,
+            sportCategory: eventInput.sportCategory,
+            environmentPreference: eventInput.environmentPreference,
+            description: eventInput.description,
+            plannedLoad: eventInput.plannedLoad,
+            plannedDurationSecs: eventInput.plannedDurationSecs,
+            targetZoneSummary: 'Sample Planned Session',
+            workoutSyntax: eventInput.workoutSyntax,
+          },
+        ].sort((a, b) => a.date.localeCompare(b.date));
+      });
       return;
     }
 
@@ -3020,22 +3224,25 @@ export default function App() {
         },
       ];
     });
-  };
+  },
+  [activeConnectedAthlete, activeTeam, handleTeamsUpdated, isSampleDemoMode, triggerReadOnlyAlert]
+);
 
-  const handleBatchCreatePlannedEvents = async (
-    items: Array<{
-      date: string;
-      name: string;
-      sportCategory: SportCategory;
-      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-      description: string;
-      plannedLoad: number;
-      plannedDurationSecs: number;
-      targetZoneSummary?: string;
-      workoutSyntax: string;
-      replaceExistingDate?: boolean;
-    }>
-  ) => {
+  const handleBatchCreatePlannedEvents = useCallback(
+    async (
+      items: Array<{
+        date: string;
+        name: string;
+        sportCategory: SportCategory;
+        environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+        description: string;
+        plannedLoad: number;
+        plannedDurationSecs: number;
+        targetZoneSummary?: string;
+        workoutSyntax: string;
+        replaceExistingDate?: boolean;
+      }>
+    ) => {
     const nowTs = Date.now();
     const createdEvents = items.map((item, idx) => ({
       id: `plan-block-${nowTs}-${idx}`,
@@ -3056,7 +3263,7 @@ export default function App() {
         return;
       }
       const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
-      setConnectedAthletes((prev) =>
+      const applyBatchToRoster = (prev: ConnectedAthleteRecord[]) =>
         prev.map((a) => {
           if (a.id !== activeConnectedAthlete.id) return a;
           const filtered = a.plannedEvents.filter(
@@ -3068,8 +3275,23 @@ export default function App() {
               x.date.localeCompare(y.date)
             ),
           };
-        })
-      );
+        });
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyBatchToRoster);
+      } else {
+        setConnectedAthletes(applyBatchToRoster);
+      }
+      return;
+    }
+
+    if (isSampleDemoMode) {
+      setSampleDemoPlannedEvents((prev) => {
+        const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
+        const filtered = prev.filter(
+          (e) => !targetDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`)
+        );
+        return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
+      });
       return;
     }
 
@@ -3080,7 +3302,9 @@ export default function App() {
       );
       return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
     });
-  };
+  },
+  [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
+);
 
   // Sync Athlete Profile & Sport Zones on demand from Intervals.icu & Garmin
   const handleSyncProfileFromRemote = useCallback(async () => {
@@ -3150,11 +3374,20 @@ export default function App() {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'update physiological zones');
           return;
         }
-        setConnectedAthletes((prev) =>
+        const applyRosterProfile = (prev: ConnectedAthleteRecord[]) =>
           prev.map((a) =>
             a.id === activeConnectedAthlete.id ? { ...a, athleteProfile: updatedProfile } : a
-          )
-        );
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(applyRosterProfile);
+        } else {
+          setConnectedAthletes(applyRosterProfile);
+        }
+        return;
+      }
+
+      if (isSampleDemoMode) {
+        setSampleDemoProfile(updatedProfile);
         return;
       }
 
@@ -3190,35 +3423,47 @@ export default function App() {
         // ignore offline error
       }
     },
-    [activeConnectedAthlete, triggerReadOnlyAlert]
+    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
   );
 
-  const handleDeletePlannedEvent = async (id: string) => {
-    if (activeConnectedAthlete) {
-      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-        triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete planned workouts');
+  const handleDeletePlannedEvent = useCallback(
+    async (id: string) => {
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete planned workouts');
+          return;
+        }
+        const removeFromRoster = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? { ...a, plannedEvents: a.plannedEvents.filter((e) => e.id !== id) }
+              : a
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(removeFromRoster);
+        } else {
+          setConnectedAthletes(removeFromRoster);
+        }
         return;
       }
-      setConnectedAthletes((prev) =>
-        prev.map((a) =>
-          a.id === activeConnectedAthlete.id
-            ? { ...a, plannedEvents: a.plannedEvents.filter((e) => e.id !== id) }
-            : a
-        )
-      );
-      return;
-    }
 
-    setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
-    try {
-      await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: getSavedIntervalsHeaders(),
-      });
-    } catch {
-      // ignore
-    }
-  };
+      if (isSampleDemoMode) {
+        setSampleDemoPlannedEvents((prev) => prev.filter((e) => e.id !== id));
+        return;
+      }
+
+      setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
+      try {
+        await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: getSavedIntervalsHeaders(),
+        });
+      } catch {
+        // ignore
+      }
+    },
+    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
+  );
 
   // Import watchless Official FAT Race Results into activities archive & IndexedDB
   const handleImportOfficialRaces = useCallback(
@@ -3229,13 +3474,21 @@ export default function App() {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'import official race results');
           return;
         }
-        setConnectedAthletes((prev) =>
+        const mergeRosterRaces = (prev: ConnectedAthleteRecord[]) =>
           prev.map((a) =>
             a.id === activeConnectedAthlete.id
               ? { ...a, activities: mergeActivitiesNonDestructive(a.activities, importedRaces) }
               : a
-          )
-        );
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(mergeRosterRaces);
+        } else {
+          setConnectedAthletes(mergeRosterRaces);
+        }
+        return;
+      }
+      if (isSampleDemoMode) {
+        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, importedRaces));
         return;
       }
       setActivities((prev) => {
@@ -3252,20 +3505,113 @@ export default function App() {
         return merged;
       });
     },
-    [activeConnectedAthlete, triggerReadOnlyAlert]
+    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
   );
+
+  // Privacy Shield Enforcement & Ephemeral Sample Demo Resolution
+  const shieldedConnectedTelemetry = useMemo(
+    () => (activeConnectedAthlete ? applyAthletePrivacyShield(activeConnectedAthlete) : null),
+    [activeConnectedAthlete]
+  );
+
+  const effectiveWellnessDays = useMemo(() => {
+    if (shieldedConnectedTelemetry) return shieldedConnectedTelemetry.wellnessDays;
+    if (isSampleDemoMode) return sampleDemoDataset.wellnessDays;
+    return wellnessDays;
+  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoDataset.wellnessDays, wellnessDays]);
+
+  const effectiveActivities = useMemo(() => {
+    if (shieldedConnectedTelemetry) return shieldedConnectedTelemetry.activities;
+    if (isSampleDemoMode) return sampleDemoActivities;
+    return activities;
+  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoActivities, activities]);
+
+  const effectivePlannedEvents = useMemo(() => {
+    if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
+    if (isSampleDemoMode) return sampleDemoPlannedEvents;
+    if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
+    const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
+      .filter(
+        (bw) =>
+          bw.targetSquadGroup === 'ALL' ||
+          bw.targetSquadGroup === activeTeam.mySquadGroup ||
+          (Boolean(activeTeam.myMembershipId) &&
+            Array.isArray(bw.targetMembershipIds) &&
+            bw.targetMembershipIds.includes(activeTeam.myMembershipId))
+      )
+      .map((bw) => ({
+        id: bw.broadcastId,
+        date: bw.date,
+        name: bw.name,
+        sportCategory: bw.sportCategory,
+        environmentPreference: 'FLEXIBLE',
+        description: bw.description,
+        plannedLoad: bw.plannedLoad,
+        plannedDurationSecs: bw.plannedDurationSecs,
+        targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+        workoutSyntax: bw.workoutSyntax,
+        source: 'USER',
+      }));
+    const existingIds = new Set(plannedEvents.map((e) => e.id));
+    return [
+      ...plannedEvents,
+      ...teamEvents.filter((te) => !existingIds.has(te.id)),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoPlannedEvents, plannedEvents, activeTeam]);
+
+  const effectiveAthleteProfile = useMemo(() => {
+    if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
+    if (isSampleDemoMode) return sampleDemoProfile;
+    if (activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight) {
+      return { ...athleteProfile, safeSportHideWeight: true };
+    }
+    return athleteProfile;
+  }, [
+    activeConnectedAthlete,
+    isSampleDemoMode,
+    sampleDemoProfile,
+    athleteProfile,
+    activeTeam,
+  ]);
+
+  const effectiveTargetGoals = useMemo(() => {
+    if (activeConnectedAthlete) return activeConnectedAthlete.targetGoals;
+    if (isSampleDemoMode) return sampleDemoTargetGoals;
+    return targetGoals;
+  }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoTargetGoals, targetGoals]);
+
+  const effectiveAnnualMileageGoals = isSampleDemoMode
+    ? sampleDemoAnnualGoals
+    : annualMileageGoals;
+  const effectiveGearItems = useMemo(
+    () => (isSampleDemoMode ? [] : gearItems),
+    [isSampleDemoMode, gearItems]
+  );
+  const effectiveSelfPrivacySettings = isSampleDemoMode
+    ? sampleDemoPrivacySettings
+    : selfPrivacySettings;
 
   // Build concise physiological + Garmin Sleep/HRV + mileage telemetry payload for Gemini AI Coach
   const telemetrySummaryForGemini = useMemo(() => {
-    const today = wellnessDays[wellnessDays.length - 1];
+    const today = effectiveWellnessDays[effectiveWellnessDays.length - 1];
     const runGoal =
-      annualMileageGoals.find((g) => g.sportCategory === 'Running')?.targetDistanceMeters ||
-      2414016;
+      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Running')
+        ?.targetDistanceMeters || 2414016;
     const bikeGoal =
-      annualMileageGoals.find((g) => g.sportCategory === 'Cycling')?.targetDistanceMeters ||
-      8046720;
-    const runSummary = computeAnnualMileageSummary('Running', runGoal, activities, envFilter);
-    const bikeSummary = computeAnnualMileageSummary('Cycling', bikeGoal, activities, envFilter);
+      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Cycling')
+        ?.targetDistanceMeters || 8046720;
+    const runSummary = computeAnnualMileageSummary(
+      'Running',
+      runGoal,
+      effectiveActivities,
+      envFilter
+    );
+    const bikeSummary = computeAnnualMileageSummary(
+      'Cycling',
+      bikeGoal,
+      effectiveActivities,
+      envFilter
+    );
 
     return {
       todayWellness: today,
@@ -3302,7 +3648,7 @@ export default function App() {
         annualTarget: formatDistance(bikeSummary.targetMeters, distanceUnit, 0),
         deltaVsSchedule: formatDistance(bikeSummary.deltaVsScheduleMeters, distanceUnit, 1),
       },
-      recentWorkouts: activities.slice(0, 10).map((a) => ({
+      recentWorkouts: effectiveActivities.slice(0, 10).map((a) => ({
         date: a.startDateLocal.slice(0, 10),
         name: a.name,
         sport: a.sportCategory,
@@ -3315,99 +3661,41 @@ export default function App() {
         npWatts: a.normalizedPower,
         avgHr: a.avgHr,
       })),
-      upcomingPlannedWorkouts: plannedEvents.slice(0, 8),
-      targetGoals,
+      upcomingPlannedWorkouts: effectivePlannedEvents.slice(0, 8),
+      targetGoals: effectiveTargetGoals,
       athleteProfile: {
-        weightKg: athleteProfile.weightKg,
-        restingHr: athleteProfile.restingHr,
-        ftp: athleteProfile.ftp,
-        indoorFtp: athleteProfile.indoorFtp,
-        lthr: athleteProfile.lthr,
-        maxHr: athleteProfile.maxHr,
-        runFtp: athleteProfile.runFtp,
-        powerZones: athleteProfile.powerZones,
-        hrZones: athleteProfile.hrZones,
+        weightKg: effectiveAthleteProfile.weightKg,
+        restingHr: effectiveAthleteProfile.restingHr,
+        ftp: effectiveAthleteProfile.ftp,
+        indoorFtp: effectiveAthleteProfile.indoorFtp,
+        lthr: effectiveAthleteProfile.lthr,
+        maxHr: effectiveAthleteProfile.maxHr,
+        runFtp: effectiveAthleteProfile.runFtp,
+        powerZones: effectiveAthleteProfile.powerZones,
+        hrZones: effectiveAthleteProfile.hrZones,
       },
     };
   }, [
-    wellnessDays,
-    annualMileageGoals,
-    activities,
+    effectiveWellnessDays,
+    effectiveAnnualMileageGoals,
+    effectiveActivities,
     envFilter,
     distanceUnit,
-    plannedEvents,
-    targetGoals,
-    athleteProfile,
+    effectivePlannedEvents,
+    effectiveTargetGoals,
+    effectiveAthleteProfile,
   ]);
 
-  // Privacy Shield Enforcement for Connected Athletes
-
-  const shieldedConnectedTelemetry = useMemo(
-    () => (activeConnectedAthlete ? applyAthletePrivacyShield(activeConnectedAthlete) : null),
-    [activeConnectedAthlete]
-  );
-
-  const effectiveWellnessDays = useMemo(
-    () => (shieldedConnectedTelemetry ? shieldedConnectedTelemetry.wellnessDays : wellnessDays),
-    [shieldedConnectedTelemetry, wellnessDays]
-  );
-
-  const effectiveActivities = useMemo(
-    () => (shieldedConnectedTelemetry ? shieldedConnectedTelemetry.activities : activities),
-    [shieldedConnectedTelemetry, activities]
-  );
-
-  const effectivePlannedEvents = useMemo(() => {
-    if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
-    if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
-    const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
-      .filter(
-        (bw) =>
-          bw.targetSquadGroup === 'ALL' ||
-          bw.targetSquadGroup === activeTeam.mySquadGroup ||
-          (Boolean(activeTeam.myMembershipId) &&
-            Array.isArray(bw.targetMembershipIds) &&
-            bw.targetMembershipIds.includes(activeTeam.myMembershipId))
-      )
-      .map((bw) => ({
-        id: bw.broadcastId,
-        date: bw.date,
-        name: bw.name,
-        sportCategory: bw.sportCategory,
-        environmentPreference: 'FLEXIBLE',
-        description: bw.description,
-        plannedLoad: bw.plannedLoad,
-        plannedDurationSecs: bw.plannedDurationSecs,
-        targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
-        workoutSyntax: bw.workoutSyntax,
-        source: 'USER',
-      }));
-    const existingIds = new Set(plannedEvents.map((e) => e.id));
-    return [
-      ...plannedEvents,
-      ...teamEvents.filter((te) => !existingIds.has(te.id)),
-    ].sort((a, b) => a.date.localeCompare(b.date));
-  }, [activeConnectedAthlete, plannedEvents, activeTeam]);
-
-  const effectiveAthleteProfile = useMemo(() => {
-    if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
-    if (activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight) {
-      return { ...athleteProfile, safeSportHideWeight: true };
-    }
-    return athleteProfile;
-  }, [activeConnectedAthlete, athleteProfile, activeTeam]);
-
-  const effectiveTargetGoals = useMemo(
-    () => (activeConnectedAthlete ? activeConnectedAthlete.targetGoals : targetGoals),
-    [activeConnectedAthlete, targetGoals]
-  );
-
-  const selfLatestWellness = wellnessDays[wellnessDays.length - 1] || undefined;
+  const selfLatestWellness = isSampleDemoMode
+    ? sampleDemoDataset.wellnessDays[sampleDemoDataset.wellnessDays.length - 1] || undefined
+    : wellnessDays[wellnessDays.length - 1] || undefined;
   const latestWellness = effectiveWellnessDays[effectiveWellnessDays.length - 1] || undefined;
 
   // Debounced Clean-Room readiness & 7d productivity sync across joined teams
   useEffect(() => {
-    if (!hasEnteredWorkspace || isSessionLoggedOut || myTeams.length === 0) return;
+    if (isSampleDemoMode || !hasEnteredWorkspace || isSessionLoggedOut || myTeams.length === 0) {
+      return;
+    }
     if (activities.length === 0 && wellnessDays.length === 0) return;
 
     const timer = window.setTimeout(() => {
@@ -3503,7 +3791,7 @@ export default function App() {
   const athleteFtp =
     effectiveAthleteProfile.ftp || connectionStatus.athleteFtp || latestWellness?.rideEftp || 250;
 
-  // Close Account & Settings Menu on outside click or Escape key
+  // Close Account & Settings Menu on outside click or Escape key, and support Arrow-key menu navigation
   useEffect(() => {
     if (!isAccountMenuOpen) return;
     const handleOutsideClick = (e: MouseEvent) => {
@@ -3512,7 +3800,36 @@ export default function App() {
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsAccountMenuOpen(false);
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setIsAccountMenuOpen(false);
+        window.requestAnimationFrame(() => {
+          accountTriggerRef.current?.focus();
+        });
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+      const container = accountMenuRef.current;
+      if (!container) return;
+      const items = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled])'
+        )
+      );
+      if (items.length === 0) return;
+      e.preventDefault();
+      const activeIdx = items.indexOf(document.activeElement as HTMLElement);
+      if (e.key === 'Home') {
+        items[0].focus();
+      } else if (e.key === 'End') {
+        items[items.length - 1].focus();
+      } else if (e.key === 'ArrowDown') {
+        const nextIdx = activeIdx < 0 ? 0 : (activeIdx + 1) % items.length;
+        items[nextIdx].focus();
+      } else if (e.key === 'ArrowUp') {
+        const prevIdx = activeIdx <= 0 ? items.length - 1 : activeIdx - 1;
+        items[prevIdx].focus();
+      }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleKeyDown);
@@ -3523,6 +3840,7 @@ export default function App() {
   }, [isAccountMenuOpen]);
 
   const primaryAthleteDisplayName = useMemo(() => {
+    if (isSampleDemoMode) return 'Sample Athlete (Demo)';
     const storedStravaName =
       typeof window !== 'undefined'
         ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
@@ -3551,6 +3869,7 @@ export default function App() {
     }
     return 'Athlete';
   }, [
+    isSampleDemoMode,
     athleteProfile.name,
     connectionStatus.stravaAthleteName,
     connectionStatus.garminAthleteName,
@@ -3558,11 +3877,18 @@ export default function App() {
   ]);
 
   const primaryAthleteInitials = useMemo(() => {
-    const parts = primaryAthleteDisplayName.trim().split(/\s+/);
+    const cleaned = primaryAthleteDisplayName.replace(/\([^)]*\)/g, '').trim();
+    const parts = cleaned
+      .split(/\s+/)
+      .map((p) => p.replace(/[^A-Za-z0-9]/g, ''))
+      .filter(Boolean);
     if (parts.length >= 2) {
       return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
     }
-    return primaryAthleteDisplayName.slice(0, 2).toUpperCase() || 'AT';
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase() || 'AT';
+    }
+    return 'AT';
   }, [primaryAthleteDisplayName]);
 
   const selfInviteCode = useMemo(() => {
@@ -3580,6 +3906,8 @@ export default function App() {
 
   const resetClientWorkspaceStateOnLogout = useCallback(async (clearAllVaultKeys: boolean) => {
     setIsAccountMenuOpen(false);
+    setIsSampleDemoMode(false);
+    resetSampleDemoEphemeralState();
     setIsSessionLoggedOut(true);
     setHasEnteredWorkspace(false);
     hasEnteredWorkspaceRef.current = false;
@@ -3598,6 +3926,7 @@ export default function App() {
       localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
       localStorage.removeItem('aeropulse_strava_athlete_ftp');
       localStorage.removeItem('aeropulse_store_owner_athlete_id');
+      localStorage.removeItem('thresh_primary_sport');
       localStorage.removeItem('thresh_my_teams_v1');
       localStorage.removeItem('thresh_active_team_id_v1');
       sessionStorage.removeItem('thresh_pending_team_join_v1');
@@ -3661,7 +3990,7 @@ export default function App() {
     await clearPersistedTelemetrySnapshot();
     setIdbSavedAt(null);
     await fetchServerConfigStatus();
-  }, [fetchServerConfigStatus]);
+  }, [fetchServerConfigStatus, resetSampleDemoEphemeralState]);
 
   const handleLogoutSession = useCallback(() => {
     void resetClientWorkspaceStateOnLogout(false);
@@ -3673,39 +4002,64 @@ export default function App() {
 
   const handleApproveAthleteRequest = useCallback(
     (athleteId: string, role: 'COACH_EDIT' | 'FRIEND_VIEW') => {
-      setConnectedAthletes((prev) =>
-        prev.map((a) => (a.id === athleteId ? { ...a, role, status: 'CONNECTED' } : a))
-      );
+      const applyApprove = (prev: ConnectedAthleteRecord[]) =>
+        prev.map((a) => (a.id === athleteId ? { ...a, role, status: 'CONNECTED' as const } : a));
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyApprove);
+      } else {
+        setConnectedAthletes(applyApprove);
+      }
     },
-    []
+    [isSampleDemoMode]
   );
 
   const handleRemoveOrDeclineAthlete = useCallback(
     (athleteId: string) => {
-      setConnectedAthletes((prev) => prev.filter((a) => a.id !== athleteId));
+      const applyRemove = (prev: ConnectedAthleteRecord[]) => prev.filter((a) => a.id !== athleteId);
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyRemove);
+      } else {
+        setConnectedAthletes(applyRemove);
+      }
       setActiveViewedAthleteId((curr) => (curr === athleteId ? 'SELF' : curr));
     },
-    []
+    [isSampleDemoMode]
   );
 
-  const handleToggleAthleteRole = useCallback((athleteId: string) => {
-    setConnectedAthletes((prev) =>
-      prev.map((a) =>
-        a.id === athleteId
-          ? { ...a, role: a.role === 'COACH_EDIT' ? 'FRIEND_VIEW' : 'COACH_EDIT' }
-          : a
-      )
-    );
-  }, []);
+  const handleToggleAthleteRole = useCallback(
+    (athleteId: string) => {
+      const applyToggle = (prev: ConnectedAthleteRecord[]) =>
+        prev.map((a) =>
+          a.id === athleteId
+            ? {
+                ...a,
+                role: (a.role === 'COACH_EDIT' ? 'FRIEND_VIEW' : 'COACH_EDIT') as
+                  | 'COACH_EDIT'
+                  | 'FRIEND_VIEW',
+              }
+            : a
+        );
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyToggle);
+      } else {
+        setConnectedAthletes(applyToggle);
+      }
+    },
+    [isSampleDemoMode]
+  );
 
   const handleAddFollowByInviteOrName = useCallback(
     (query: string, role: 'COACH_EDIT' | 'FRIEND_VIEW', specialty: 'Running' | 'Cycling') => {
       const clean = query.trim();
       if (!clean) return;
       const newRecord = createConnectedAthleteRecord(clean, role, specialty);
-      setConnectedAthletes((prev) => [newRecord, ...prev]);
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes((prev) => [newRecord, ...prev]);
+      } else {
+        setConnectedAthletes((prev) => [newRecord, ...prev]);
+      }
     },
-    []
+    [isSampleDemoMode]
   );
 
   const handlePushCoachWorkout = useCallback(
@@ -3721,7 +4075,7 @@ export default function App() {
         description: string;
       }
     ) => {
-      if (athleteId.startsWith('team-mem-') && activeTeam) {
+      if (!isSampleDemoMode && athleteId.startsWith('team-mem-') && activeTeam) {
         const targetMemId = athleteId.replace(/^team-mem-/, '');
         fetch(`/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`, {
           method: 'POST',
@@ -3765,7 +4119,7 @@ export default function App() {
         workoutSyntax: workout.workoutSyntax,
         source: 'USER',
       };
-      setConnectedAthletes((prev) =>
+      const applyPush = (prev: ConnectedAthleteRecord[]) =>
         prev.map((a) =>
           a.id === athleteId
             ? {
@@ -3775,10 +4129,14 @@ export default function App() {
                 ),
               }
             : a
-        )
-      );
+        );
+      if (isSampleDemoMode) {
+        setSampleDemoConnectedAthletes(applyPush);
+      } else {
+        setConnectedAthletes(applyPush);
+      }
     },
-    [activeTeam, handleTeamsUpdated]
+    [isSampleDemoMode, activeTeam, handleTeamsUpdated]
   );
 
   const [coachDraftPrompt, setCoachDraftPrompt] = useState('');
@@ -3983,55 +4341,153 @@ export default function App() {
     }
   };
 
-  const handleUpdateAnnualMileageGoal = (sport: 'Running' | 'Cycling', targetMeters: number) => {
-    setAnnualMileageGoals((prev) =>
-      prev.map((g) => (g.sportCategory === sport ? { ...g, targetDistanceMeters: targetMeters } : g))
-    );
-  };
-
-  const handleAddTargetGoal = (newGoal: Omit<TargetGoal, 'id'>) => {
-    if (activeConnectedAthlete) {
-      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-        triggerReadOnlyAlert(activeConnectedAthlete.name, 'add target race or power goals');
+  const handleUpdateAnnualMileageGoal = useCallback(
+    (sport: 'Running' | 'Cycling', targetMeters: number) => {
+      const updater = (prev: AnnualMileageGoal[]) =>
+        prev.map((g) =>
+          g.sportCategory === sport ? { ...g, targetDistanceMeters: targetMeters } : g
+        );
+      if (isSampleDemoMode) {
+        setSampleDemoAnnualGoals(updater);
         return;
       }
-      const created: TargetGoal = { ...newGoal, id: `goal-${Date.now()}` };
-      setConnectedAthletes((prev) =>
-        prev.map((a) =>
-          a.id === activeConnectedAthlete.id
-            ? { ...a, targetGoals: [created, ...a.targetGoals] }
-            : a
-        )
-      );
-      return;
-    }
-    setTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
-  };
+      setAnnualMileageGoals(updater);
+    },
+    [isSampleDemoMode]
+  );
 
-  const handleDeleteTargetGoal = (id: string) => {
-    if (activeConnectedAthlete) {
-      if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-        triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete target goals');
+  const handleAddTargetGoal = useCallback(
+    (newGoal: Omit<TargetGoal, 'id'>) => {
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'add target race or power goals');
+          return;
+        }
+        const created: TargetGoal = { ...newGoal, id: `goal-${Date.now()}` };
+        const applyAddRosterGoal = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? { ...a, targetGoals: [created, ...a.targetGoals] }
+              : a
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(applyAddRosterGoal);
+        } else {
+          setConnectedAthletes(applyAddRosterGoal);
+        }
         return;
       }
-      setConnectedAthletes((prev) =>
-        prev.map((a) =>
-          a.id === activeConnectedAthlete.id
-            ? { ...a, targetGoals: a.targetGoals.filter((g) => g.id !== id) }
-            : a
-        )
-      );
-      return;
-    }
-    setTargetGoals((prev) => prev.filter((g) => g.id !== id));
-  };
+      if (isSampleDemoMode) {
+        setSampleDemoTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
+        return;
+      }
+      setTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
+    },
+    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
+  );
 
-  const handleOpenCoachWithPrompt = (prompt: string) => {
+  const handleDeleteTargetGoal = useCallback(
+    (id: string) => {
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete target goals');
+          return;
+        }
+        const applyDeleteRosterGoal = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? { ...a, targetGoals: a.targetGoals.filter((g) => g.id !== id) }
+              : a
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(applyDeleteRosterGoal);
+        } else {
+          setConnectedAthletes(applyDeleteRosterGoal);
+        }
+        return;
+      }
+      if (isSampleDemoMode) {
+        setSampleDemoTargetGoals((prev) => prev.filter((g) => g.id !== id));
+        return;
+      }
+      setTargetGoals((prev) => prev.filter((g) => g.id !== id));
+    },
+    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
+  );
+
+  const handleOpenCoachWithPrompt = useCallback((prompt: string) => {
     if (prompt.trim()) {
       setCoachDraftPrompt(prompt.trim());
     }
     setIsCoachDrawerOpen(true);
-  };
+  }, []);
+
+  const handleSelectActivityAndOpenTab = useCallback(
+    (act: UnifiedActivity) => {
+      void handleSelectActivity(act);
+      setActiveTab('activities');
+    },
+    [handleSelectActivity]
+  );
+
+  const handleCalendarCreatePlannedEvent = useCallback(
+    async (evt: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      replaceExistingDate?: boolean;
+    }) => {
+      if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {
+        handlePushCoachWorkout(activeConnectedAthlete.id, {
+          date: evt.date,
+          name: evt.name,
+          sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+          plannedDurationSecs: evt.plannedDurationSecs,
+          plannedLoad: evt.plannedLoad,
+          workoutSyntax: evt.workoutSyntax || '',
+          description: evt.description,
+        });
+      } else {
+        await handleCreatePlannedEvent(evt);
+      }
+    },
+    [activeConnectedAthlete, handlePushCoachWorkout, handleCreatePlannedEvent]
+  );
+
+  const handleOpenTodayTab = useCallback(() => setActiveTab('fitness'), []);
+  const handleOpenGoalsTab = useCallback(() => setActiveTab('totals'), []);
+  const handleSwitchToCalendarTab = useCallback(() => setActiveTab('calendar'), []);
+  const handleOpenActivitiesTab = useCallback(() => setActiveTab('activities'), []);
+  const handleOpenProfileModal = useCallback(() => setIsProfileModalOpen(true), []);
+  const handleOpenOfficialRaceModal = useCallback(() => setIsOfficialRaceModalOpen(true), []);
+  const handleOpenRosterModal = useCallback(() => setIsRosterModalOpen(true), []);
+
+  const handleImportSingleParsedActivity = useCallback(
+    (newAct: UnifiedActivity) => {
+      if (isSampleDemoMode) {
+        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+        return;
+      }
+      setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+    },
+    [isSampleDemoMode]
+  );
+
+  const handleImportMultipleParsedActivities = useCallback(
+    (newActs: UnifiedActivity[]) => {
+      if (isSampleDemoMode) {
+        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+        return;
+      }
+      setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+    },
+    [isSampleDemoMode]
+  );
 
   const handleCompleteCalibrationEntry = async (payload: FirstRunCalibrationPayload) => {
     const cleanName = payload.athleteName.trim() || athleteProfileRef.current.name || 'Athlete';
@@ -4061,6 +4517,7 @@ export default function App() {
         ...athleteProfileRef.current,
         ...(hasSeedOverride ? { source: 'CUSTOM_OVERRIDE' as const } : {}),
         name: !isGenericAthleteName(cleanName) ? cleanName : athleteProfileRef.current.name,
+        primarySport: payload.primarySport,
         ...(customFtp ? { ftp: customFtp, indoorFtp: customFtp } : {}),
         ...(hasSeedOverride ? { thresholdPaceSecsPerKm } : {}),
         safeSportHideWeight: Boolean(
@@ -4071,8 +4528,10 @@ export default function App() {
       activitiesRef.current
     );
 
+    setIsSampleDemoMode(false);
     setDistanceUnit(payload.distanceUnit);
     try {
+      localStorage.setItem('thresh_primary_sport', payload.primarySport);
       localStorage.setItem('thresh_distance_unit', payload.distanceUnit);
       localStorage.setItem('thresh_distance_unit_user_set', '1');
       localStorage.removeItem('aeropulse_logged_out');
@@ -4137,7 +4596,10 @@ export default function App() {
     }
   };
 
-  if (isSessionLoggedOut || !hasEnteredWorkspace || !hasLocalClientCredentials()) {
+  if (
+    !isSampleDemoMode &&
+    (isSessionLoggedOut || !hasEnteredWorkspace || !hasLocalClientCredentials())
+  ) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
@@ -4158,6 +4620,11 @@ export default function App() {
           errorMessage={syncError}
           isDark={isDark}
           onToggleDark={() => setIsDark((d) => !d)}
+          onEnterSampleDemo={() => {
+            resetSampleDemoEphemeralState();
+            setIsSampleDemoMode(true);
+            setActiveTab('fitness');
+          }}
         />
       </IconContext.Provider>
     );
@@ -4172,14 +4639,17 @@ export default function App() {
   return (
     <IconContext.Provider value={{ weight: 'duotone' }}>
       <div className="ap-shell text-slate-900 dark:text-slate-100">
+        <a href="#main-content" className="ap-skip-link">
+          Skip to main content
+        </a>
         <OfflineIndicator />
 
         {/* Simplified Global Header Bar (Responsive Mobile & Desktop) */}
         <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-2">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
-            <div className="flex items-center justify-between gap-2 sm:gap-3">
+            <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 sm:gap-3">
               {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+              <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                 <a
                   href="#fitness"
                   onClick={(e) => {
@@ -4192,7 +4662,7 @@ export default function App() {
                 </a>
 
                 {myTeams.length > 0 ? (
-                  <div className="hidden sm:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1">
+                  <div className="hidden xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{
@@ -4206,7 +4676,7 @@ export default function App() {
                         handleSelectActiveTeam(e.target.value ? e.target.value : null)
                       }
                       aria-label="Switch Active Team Workspace"
-                      className="bg-transparent text-[11px] font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[115px] truncate"
+                      className="bg-transparent text-2xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[115px] truncate"
                     >
                       {myTeams.map((t) => (
                         <option
@@ -4230,7 +4700,7 @@ export default function App() {
                         setRosterInitialTab('TEAMS_BRANDING');
                         setIsRosterModalOpen(true);
                       }}
-                      className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-[#171E1B] text-slate-700 dark:text-slate-200 hover:opacity-85 cursor-pointer"
+                      className="text-2xs font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-[#171E1B] text-slate-700 dark:text-slate-200 hover:opacity-85 cursor-pointer"
                       title="Manage Team Branding, Bulk CSV Invites & Roster"
                     >
                       Manage
@@ -4243,7 +4713,7 @@ export default function App() {
                       setRosterInitialTab('TEAMS_BRANDING');
                       setIsRosterModalOpen(true);
                     }}
-                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                    className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
                     title="Create or Join a High School, Collegiate, or Club Team"
                   >
                     <Users className="w-3 h-3 ap-text-brand" />
@@ -4255,7 +4725,7 @@ export default function App() {
                   type="button"
                   onClick={() => syncLiveTelemetry(true)}
                   disabled={isSyncing}
-                  className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                  className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
                   title="Sync connected telemetry sources in the background"
                 >
                   <RefreshCw
@@ -4276,7 +4746,7 @@ export default function App() {
                       setEnvFilter('COMBINED');
                       setSelectedSport('ALL');
                     }}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-[11px] font-mono font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-2xs font-mono font-semibold transition-colors whitespace-nowrap cursor-pointer"
                     title="Active viewport filter — click to reset to All Sports & Environments"
                   >
                     <span>
@@ -4298,7 +4768,10 @@ export default function App() {
               </div>
 
               {/* 2. Center: 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
-              <nav className="hidden md:flex items-center gap-1.5 px-1.5 py-1">
+              <nav
+                aria-label="Primary workspaces"
+                className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
+              >
                 {(
                   [
                     {
@@ -4332,12 +4805,25 @@ export default function App() {
                   return (
                     <a
                       key={item.id}
-                      href={`#${item.id === 'totals' ? lastLabTabRef.current : item.id}`}
+                      href={`#${
+                        item.id === 'totals'
+                          ? isActive
+                            ? 'totals'
+                            : lastLabTabRef.current
+                          : item.id
+                      }`}
+                      aria-current={isActive ? 'page' : undefined}
                       onClick={(e) => {
                         e.preventDefault();
-                        setActiveTab(item.id === 'totals' ? lastLabTabRef.current : item.id);
+                        setActiveTab(
+                          item.id === 'totals'
+                            ? isActive
+                              ? 'totals'
+                              : lastLabTabRef.current
+                            : item.id
+                        );
                       }}
-                      className={`min-h-[36px] inline-flex items-center px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                      className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
                         isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                       }`}
                     >
@@ -4353,11 +4839,21 @@ export default function App() {
                 })}
               </nav>
 
-              {/* Right: Athlete Switcher (Team Mode) + Data Sources + AI Coach + Theme + Account */}
+              {/* Right: Trackside Split Pad + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
               <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <div className="hidden sm:inline-flex shrink-0">
+                  <TracksideLiveHeaderPill
+                    onOpenTracksidePad={() => {
+                      setRosterInitialTab('TRACKSIDE_PAD');
+                      setIsRosterModalOpen(true);
+                    }}
+                    showIdleLauncher={myTeams.length > 0}
+                  />
+                </div>
+
                 {/* Athlete Context Switcher — shown only when part of a team or viewing a teammate */}
                 {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
-                  <div className="hidden sm:flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-emerald-800/25 dark:border-emerald-700/40 min-w-0">
+                  <div className="hidden xl:flex min-h-[36px] items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-emerald-800/25 dark:border-emerald-700/40 min-w-0">
                     <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                     <select
                       value={activeViewedAthleteId}
@@ -4366,7 +4862,7 @@ export default function App() {
                         setSelectedActivity(null);
                       }}
                       aria-label="Switch Active Athlete Profile"
-                      className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[130px] truncate"
+                      className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[130px] truncate"
                     >
                       <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                         {primaryAthleteDisplayName} (You)
@@ -4386,7 +4882,8 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="hidden sm:inline-flex min-h-[34px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap cursor-pointer"
+                  aria-label={anySourceConnected ? 'Manage Data Sources' : 'Connect Data Sources'}
+                  className="hidden sm:inline-flex min-h-[36px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap cursor-pointer"
                   title="Connect Strava, Garmin Connect, Intervals.icu, or upload .FIT workouts"
                 >
                   <span
@@ -4400,13 +4897,14 @@ export default function App() {
                   <Database className="w-3.5 h-3.5 lg:hidden text-emerald-600 dark:text-emerald-400" />
                 </button>
 
-                {/* AI Coach Primary Action Button */}
+                {/* AI Coach Action Button — Stadium Pine Instrument Pill (Preserves 5% Track Volt Budget for Page Primary CTA) */}
                 <button
                   type="button"
                   onClick={() => setIsCoachDrawerOpen(true)}
-                  className="ap-btn-primary !min-h-[34px] !py-1 !px-2.5 sm:!px-3.5 !rounded-xl text-xs whitespace-nowrap cursor-pointer"
+                  aria-label="Open AI Coach"
+                  className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 sm:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
                 >
-                  <Bot className="w-3.5 h-3.5" weight="fill" />
+                  <Bot className="w-4 h-4 sm:w-3.5 sm:h-3.5" weight="fill" />
                   <span className="hidden sm:inline">AI Coach</span>
                 </button>
 
@@ -4414,35 +4912,37 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsDark((prev) => !prev)}
-                  className="min-h-[34px] w-[34px] inline-flex items-center justify-center rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                  className="min-h-[44px] w-[44px] sm:min-h-[36px] sm:w-[36px] inline-flex items-center justify-center rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
                   title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                   aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
                   {isDark ? (
-                    <Sun className="w-3.5 h-3.5 text-[#C8FF00]" weight="fill" />
+                    <Sun className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#C8FF00]" weight="fill" />
                   ) : (
-                    <Moon className="w-3.5 h-3.5 text-[#1D3828]" weight="fill" />
+                    <Moon className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#1D3828]" weight="fill" />
                   )}
                 </button>
 
                 {/* Unified Account, Preferences & Logout Menu */}
                 <div className="relative" ref={accountMenuRef}>
                   <button
+                    ref={accountTriggerRef}
                     type="button"
                     onClick={() => setIsAccountMenuOpen((prev) => !prev)}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all cursor-pointer"
+                    aria-label={`Account and preferences menu (${primaryAthleteDisplayName})`}
+                    className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all cursor-pointer"
                     aria-expanded={isAccountMenuOpen}
                     aria-haspopup="menu"
                     title="Account, Profile Zones, Data Sources, Guide & Log Out"
                   >
-                    <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-[11px] font-bold flex items-center justify-center shadow-xs">
+                    <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
                       {primaryAthleteInitials}
                     </span>
                     <span className="hidden xl:inline max-w-[90px] truncate">
                       {primaryAthleteDisplayName}
                     </span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                      className={`w-3.5 h-3.5 text-slate-600 dark:text-slate-400 transition-transform ${
                         isAccountMenuOpen ? 'rotate-180 ap-text-brand' : ''
                       }`}
                     />
@@ -4451,7 +4951,8 @@ export default function App() {
                   {isAccountMenuOpen && (
                     <div
                       role="menu"
-                      className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white/95 dark:bg-[#0D1310]/95 backdrop-blur-xl border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
+                      aria-label="Account and workspace settings"
+                      className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#101B15] border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
                     >
                       {/* Account Identity & Connection Summary */}
                       <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
@@ -4463,7 +4964,7 @@ export default function App() {
                             <div className="font-bold text-slate-900 dark:text-white truncate">
                               {primaryAthleteDisplayName}
                             </div>
-                            <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                            <div className="text-2xs font-mono text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span className="truncate">
                                 {effectiveActivities.length.toLocaleString()} workouts synced
@@ -4474,12 +4975,13 @@ export default function App() {
 
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={() => {
                             syncLiveTelemetry(true);
                             setIsAccountMenuOpen(false);
                           }}
                           disabled={isSyncing}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#FC4C02]/15 hover:bg-[#FC4C02]/25 text-[#FC4C02] font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                          className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1.5 rounded-xl bg-[#C23800]/12 dark:bg-[#FC4C02]/15 hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/25 ap-text-strava font-mono text-2xs font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
                           title="Initiate a full Strava history sync in the background"
                         >
                           <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -4489,57 +4991,60 @@ export default function App() {
 
                       {/* Section 1: Athlete & Coaching Settings */}
                       <div className="space-y-1">
-                        <div className="px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                        <div className="px-2 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                           Athlete &amp; Connections
                         </div>
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={() => {
                             setIsDataSourcesOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Data Sources (Strava, Garmin &amp; Intervals)</span>
                           </span>
-                          <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                          <span className="font-mono text-2xs text-emerald-600 dark:text-emerald-400">
                             {anySourceConnected ? 'Active ●' : 'Connect'}
                           </span>
                         </button>
 
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={() => {
                             setIsProfileModalOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <Sliders className="w-4 h-4 ap-text-brand" />
                             <span>Profile, FTP &amp; Sport Zones</span>
                           </span>
-                          <span className="font-mono text-[11px] font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                          <span className="font-mono text-2xs font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
                             {effectiveAthleteProfile.ftp}W
                           </span>
                         </button>
 
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={() => {
                             setRosterInitialTab('TEAMS_BRANDING');
                             setIsRosterModalOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Teams, Bulk Invites &amp; Roster</span>
                           </span>
-                          <span className="font-mono text-[11px] text-slate-400">
+                          <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
                             {myTeams.length > 0
                               ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
                               : 'Manage'}
@@ -4548,17 +5053,37 @@ export default function App() {
 
                         <button
                           type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setRosterInitialTab('TRACKSIDE_PAD');
+                            setIsRosterModalOpen(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Activity className="w-4 h-4 ap-text-brand" />
+                            <span>Trackside Split Stopwatch (0.01s)</span>
+                          </span>
+                          <span className="font-mono text-2xs ap-text-brand">
+                            Open
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          role="menuitem"
                           onClick={() => {
                             setShowMetricsGuide(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <HelpCircle className="w-4 h-4 text-amber-500" />
                             <span>User Guide &amp; Metrics Glossary</span>
                           </span>
-                          <span className="font-mono text-[10px] text-slate-400">
+                          <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
                             Help
                           </span>
                         </button>
@@ -4566,7 +5091,7 @@ export default function App() {
 
                       {/* Section 2: Quick Display Preferences (Units, Modality, Theme) */}
                       <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-white/10">
-                        <div className="px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                        <div className="px-2 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                           Display Preferences
                         </div>
 
@@ -4575,7 +5100,7 @@ export default function App() {
                           <span className="text-slate-600 dark:text-slate-300 font-medium">
                             Environment
                           </span>
-                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[11px]">
+                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
                             {(
                               [
                                 { id: 'COMBINED', label: 'All' },
@@ -4586,8 +5111,10 @@ export default function App() {
                               <button
                                 key={env.id}
                                 type="button"
+                                role="menuitemradio"
+                                aria-checked={envFilter === env.id}
                                 onClick={() => setEnvFilter(env.id)}
-                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                                   envFilter === env.id
                                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                                     : 'text-slate-500 dark:text-slate-400'
@@ -4605,11 +5132,13 @@ export default function App() {
                             Units &amp; Theme
                           </span>
                           <div className="flex items-center gap-1.5">
-                            <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-[11px]">
+                            <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-2xs">
                               {(['mi', 'km'] as const).map((u) => (
                                 <button
                                   key={u}
                                   type="button"
+                                  role="menuitemradio"
+                                  aria-checked={distanceUnit === u}
                                   onClick={() => {
                                     setDistanceUnit(u);
                                     try {
@@ -4618,7 +5147,7 @@ export default function App() {
                                       // ignore
                                     }
                                   }}
-                                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                  className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                                     distanceUnit === u
                                       ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                                       : 'text-slate-500 dark:text-slate-400'
@@ -4631,8 +5160,9 @@ export default function App() {
 
                             <button
                               type="button"
+                              role="menuitem"
                               onClick={() => setIsDark(!isDark)}
-                              className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-[11px] font-medium cursor-pointer"
+                              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-2xs font-medium cursor-pointer"
                             >
                               {isDark ? (
                                 <>
@@ -4658,8 +5188,9 @@ export default function App() {
                       <div className="pt-2 border-t border-slate-200/80 dark:border-white/10 space-y-1">
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={handleLogoutSession}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2">
                             <LogOut className="w-4 h-4" weight="bold" />
@@ -4669,11 +5200,12 @@ export default function App() {
 
                         <button
                           type="button"
+                          role="menuitem"
                           onClick={handleLogoutAndClearData}
-                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-rose-500/10 text-slate-500 dark:text-slate-400 hover:text-rose-400 text-[11px] transition-colors cursor-pointer"
+                          className="w-full min-h-[44px] sm:min-h-[34px] flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-rose-500/10 text-rose-700/80 dark:text-rose-300/80 hover:text-rose-700 dark:hover:text-rose-300 text-2xs transition-colors cursor-pointer"
                         >
                           <span>Disconnect All Credentials &amp; Reset</span>
-                          <span className="font-mono text-[10px]">Reset</span>
+                          <span className="font-mono text-2xs">Reset</span>
                         </button>
                       </div>
                     </div>
@@ -4681,19 +5213,118 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Mobile & Compact (< xl) Quick-Context Strip: Team, Athlete, Sources & Live Split Pad */}
+            <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              <div className="sm:hidden shrink-0">
+                <TracksideLiveHeaderPill
+                  onOpenTracksidePad={() => {
+                    setRosterInitialTab('TRACKSIDE_PAD');
+                    setIsRosterModalOpen(true);
+                  }}
+                  showIdleLauncher
+                />
+              </div>
+              {myTeams.length > 0 ? (
+                <div className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{
+                      backgroundColor:
+                        activeTeam?.brand.primaryHex || 'var(--ap-thresh-vermilion)',
+                    }}
+                  />
+                  <select
+                    value={activeTeamId || ''}
+                    onChange={(e) =>
+                      handleSelectActiveTeam(e.target.value ? e.target.value : null)
+                    }
+                    aria-label="Switch Active Team Workspace (Mobile)"
+                    className="bg-transparent text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[110px] truncate"
+                  >
+                    {myTeams.map((t) => (
+                      <option
+                        key={t.brand.teamId}
+                        value={t.brand.teamId}
+                        className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                      >
+                        {t.brand.shortName || t.brand.name}
+                      </option>
+                    ))}
+                    <option
+                      value=""
+                      className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                    >
+                      Personal Mode
+                    </option>
+                  </select>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRosterInitialTab('TEAMS_BRANDING');
+                    setIsRosterModalOpen(true);
+                  }}
+                  className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>+ Team</span>
+                </button>
+              )}
+
+              {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
+                <div className="min-h-[44px] inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
+                  <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
+                  <select
+                    value={activeViewedAthleteId}
+                    onChange={(e) => {
+                      setActiveViewedAthleteId(e.target.value);
+                      setSelectedActivity(null);
+                    }}
+                    aria-label="Switch Active Athlete Profile (Mobile)"
+                    className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[125px] truncate"
+                  >
+                    <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                      {primaryAthleteDisplayName} (You)
+                    </option>
+                    {combinedRoster
+                      .filter((a) => a.status === 'CONNECTED')
+                      .map((a) => (
+                        <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                          {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsDataSourcesOpen(true)}
+                className="sm:hidden min-h-[44px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-semibold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    anySourceConnected ? 'bg-emerald-500' : 'bg-[#FC4C02]'
+                  }`}
+                />
+                <span>{anySourceConnected ? 'Sources' : 'Connect'}</span>
+              </button>
+            </div>
           </header>
         </div>
 
         {/* Main Content Viewport — Framed by Darker-Green Outer Surround & Content Border */}
         <div className="flex-1 ap-container py-3 sm:py-4 min-w-0">
           <div className="ap-content-stage p-3.5 sm:p-6 space-y-5 min-w-0">
-            <main className="space-y-5 min-w-0">
+            <main id="main-content" tabIndex={-1} className="space-y-4 sm:space-y-5 min-w-0 focus:outline-none">
         {/* Multi-Team Magic Join Offer Banner (when an already-signed-in athlete opens a 2nd team link) */}
         {pendingUrlJoinOffer && (
           <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-[#C8FF00]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs">
-              <span className="font-mono uppercase text-[10px] font-bold ap-text-brand block">
-                MULTI-TEAM INVITATION DETECTED
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="px-2 py-0.5 rounded-md font-mono uppercase text-2xs font-bold ap-badge-volt">
+                Team Invite
               </span>
               <span className="font-bold text-slate-900 dark:text-white text-sm">
                 Join {pendingUrlJoinOffer.teamName} and add it to your Team Switcher?
@@ -4750,7 +5381,11 @@ export default function App() {
         )}
         {/* Non-blocking Background Strava History Sync Progress Bar */}
         {isSyncing && (
-          <div className="rounded-2xl liquid-glass border-[#FC4C02]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-2xl liquid-glass border-[#FC4C02]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+          >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-[#FC4C02]/15 border border-[#FC4C02]/40 flex items-center justify-center text-[#FC4C02] shrink-0">
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -4759,7 +5394,7 @@ export default function App() {
                 <div className="font-bold text-slate-900 dark:text-white">
                   Syncing your selected training window in the background…
                 </div>
-                <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                <div className="text-2xs text-slate-600 dark:text-slate-300">
                   {activities.length > 0
                     ? `${activities.length.toLocaleString()} workouts loaded so far. You can explore THRESH while this finishes.`
                     : 'Importing workouts, routes, and gear mileage. You can explore THRESH while this finishes.'}
@@ -4770,7 +5405,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsDataSourcesOpen(true)}
-                className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Database className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Sync Settings &amp; Optional Sources</span>
@@ -4791,19 +5426,19 @@ export default function App() {
                     Viewing {activeConnectedAthlete.name}
                   </span>
                   {activeConnectedAthlete.role === 'COACH_EDIT' ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-orange-500/15 text-orange-400 border border-orange-500/40">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-orange-500/15 text-orange-400 border border-orange-500/40">
                       <CalendarPlus className="w-3 h-3" />
                       Coach Access (Calendar Edit Enabled)
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-sky-500/15 text-sky-400 border border-sky-500/40">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-sky-500/15 text-sky-400 border border-sky-500/40">
                       <Eye className="w-3 h-3" />
                       Friend Access (Read-Only View)
                     </span>
                   )}
                   {(shieldedConnectedTelemetry?.redactedWellness ||
                     shieldedConnectedTelemetry?.redactedGpsRoutes) && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/15 text-amber-400 border border-amber-500/40">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-amber-500/15 text-amber-400 border border-amber-500/40">
                       <Lock className="w-3 h-3" />
                       Privacy Shield Active (HRV/GPS Masked for Friends)
                     </span>
@@ -4818,11 +5453,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsRosterModalOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-300 flex items-center gap-1.5"
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-300 flex items-center gap-1.5 cursor-pointer"
               >
                 <Shield className="w-3.5 h-3.5" />
                 <span>Manage Roster &amp; Coach Push</span>
@@ -4833,7 +5468,7 @@ export default function App() {
                   setActiveViewedAthleteId('SELF');
                   setSelectedActivity(null);
                 }}
-                className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-mono font-semibold transition-colors"
+                className="ap-btn-primary min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs font-mono cursor-pointer"
               >
                 Return to My Profile
               </button>
@@ -4841,7 +5476,11 @@ export default function App() {
           </div>
         )}
         {readOnlyNotice && (
-          <div className="rounded-2xl liquid-glass border-amber-500/50 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-300 font-medium">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-2xl liquid-glass border-amber-500/50 bg-amber-500/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-300 font-medium"
+          >
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-amber-500 shrink-0" />
               <span>{readOnlyNotice}</span>
@@ -4850,14 +5489,14 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsRosterModalOpen(true)}
-                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-[11px] font-mono font-semibold"
+                className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-2xs font-mono font-semibold cursor-pointer"
               >
                 Open Roster Roles
               </button>
               <button
                 type="button"
                 onClick={() => setReadOnlyNotice(null)}
-                className="px-2 py-1 rounded-lg hover:bg-white/10 text-[11px] font-mono"
+                className="min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-lg hover:bg-white/10 text-2xs font-mono cursor-pointer"
               >
                 Dismiss
               </button>
@@ -4878,19 +5517,20 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleLaunchStravaOAuth('cloud')}
-                  className="min-h-[34px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                  className="ap-btn-strava !min-h-[44px] sm:!min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
                 >
                   Connect Strava
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Data Sources
                 </button>
                 <button
                   type="button"
+                  aria-label="Dismiss Strava unlock notice"
                   onClick={() => {
                     setDismissedStravaBanner(true);
                     try {
@@ -4899,7 +5539,7 @@ export default function App() {
                       // ignore
                     }
                   }}
-                  className="min-h-[34px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] px-2 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
                   title="Dismiss notice"
                 >
                   ✕
@@ -4908,7 +5548,51 @@ export default function App() {
             </div>
           )}
 
-        {!anySourceConnected &&
+        {isSampleDemoMode && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl liquid-glass-subtle border-[#28573B]/35 dark:border-[#25573A] px-3 py-2 flex flex-wrap items-center justify-between gap-2"
+          >
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#35463B] dark:text-slate-200 min-w-0">
+              <span className="ap-lane-badge shrink-0">
+                <span className="ap-lane-badge-inner">Sample Demo</span>
+              </span>
+              <span className="hidden sm:inline">
+                Illustrative athlete &amp; coach telemetry — nothing is saved to your device or Strava.
+              </span>
+              <span className="sm:hidden text-2xs">
+                Illustrative sample data — nothing saved.
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSampleDemoMode(false);
+                  resetSampleDemoEphemeralState();
+                  void handleLaunchStravaOAuth('cloud');
+                }}
+                className="ap-btn-strava !min-h-[44px] sm:!min-h-[32px] px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
+              >
+                Connect Strava
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSampleDemoMode(false);
+                  resetSampleDemoEphemeralState();
+                }}
+                className="ap-btn-secondary !min-h-[44px] sm:!min-h-[32px] px-2.5 py-1 text-xs font-semibold whitespace-nowrap cursor-pointer"
+              >
+                Exit Demo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isSampleDemoMode &&
+          !anySourceConnected &&
           activities.length === 0 &&
           !isSyncing &&
           !dismissedQuickConnectBanner && (
@@ -4921,21 +5605,22 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleLaunchStravaOAuth('cloud')}
-                  className="min-h-[34px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                  className="ap-btn-strava !min-h-[44px] sm:!min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
                 >
                   Connect Strava
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Garmin / Intervals.icu
                 </button>
                 <button
                   type="button"
+                  aria-label="Dismiss connect training data notice"
                   onClick={() => setDismissedQuickConnectBanner(true)}
-                  className="min-h-[34px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] px-2 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
                   title="Dismiss"
                 >
                   ✕
@@ -4957,31 +5642,14 @@ export default function App() {
               distanceUnit={distanceUnit}
               athleteFtp={athleteFtp}
               athleteProfile={effectiveAthleteProfile}
-              onSelectActivity={(act) => {
-                handleSelectActivity(act);
-                setActiveTab('activities');
-              }}
-              onCreatePlannedEvent={async (evt) => {
-                if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {
-                  handlePushCoachWorkout(activeConnectedAthlete.id, {
-                    date: evt.date,
-                    name: evt.name,
-                    sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
-                    plannedDurationSecs: evt.plannedDurationSecs,
-                    plannedLoad: evt.plannedLoad,
-                    workoutSyntax: evt.workoutSyntax || '',
-                    description: evt.description,
-                  });
-                } else {
-                  await handleCreatePlannedEvent(evt);
-                }
-              }}
+              onSelectActivity={handleSelectActivityAndOpenTab}
+              onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
               onDeletePlannedEvent={handleDeletePlannedEvent}
               onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
-              onOpenTodayWorkout={() => setActiveTab('fitness')}
-              onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
-              onOpenGoalsArchitect={() => setActiveTab('totals')}
-              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+              onOpenTodayWorkout={handleOpenTodayTab}
+              onOpenAthleteProfileModal={handleOpenProfileModal}
+              onOpenGoalsArchitect={handleOpenGoalsTab}
+              onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
               onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             />
           )}
@@ -4993,7 +5661,37 @@ export default function App() {
             activeTab === 'charts') && (
             <div className="rounded-2xl liquid-glass p-1.5">
               <div className="flex flex-wrap items-center gap-1.5">
-                <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1 p-1 rounded-xl liquid-capsule-track">
+                <div
+                  role="tablist"
+                  aria-label="Progress & Physiology Lab views"
+                  onKeyDown={(e) => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+                    const progressTabs: Array<'totals' | 'curves' | 'trends' | 'charts'> = [
+                      'totals',
+                      'curves',
+                      'trends',
+                      'charts',
+                    ];
+                    const currentIdx = progressTabs.indexOf(
+                      activeTab as 'totals' | 'curves' | 'trends' | 'charts'
+                    );
+                    if (currentIdx === -1) return;
+                    e.preventDefault();
+                    const nextIdx =
+                      e.key === 'Home'
+                        ? 0
+                        : e.key === 'End'
+                          ? progressTabs.length - 1
+                          : e.key === 'ArrowRight'
+                            ? (currentIdx + 1) % progressTabs.length
+                            : (currentIdx - 1 + progressTabs.length) % progressTabs.length;
+                    const nextTab = progressTabs[nextIdx];
+                    setActiveTab(nextTab);
+                    const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+                    buttons[nextIdx]?.focus();
+                  }}
+                  className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-1 p-1 rounded-xl liquid-capsule-track"
+                >
                   {(
                     [
                       {
@@ -5024,8 +5722,11 @@ export default function App() {
                       <button
                         key={sub.id}
                         type="button"
+                        role="tab"
+                        tabIndex={isSubActive ? 0 : -1}
+                        aria-selected={isSubActive}
                         onClick={() => setActiveTab(sub.id)}
-                        className={`min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all ${
+                        className={`min-h-[44px] sm:min-h-[40px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all cursor-pointer ${
                           isSubActive
                             ? 'ap-nav-volt-active'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -5049,16 +5750,13 @@ export default function App() {
               athleteProfile={effectiveAthleteProfile}
               distanceUnit={distanceUnit}
               selfName={primaryAthleteDisplayName}
-              selfProfile={athleteProfile}
-              selfWellnessDays={wellnessDays}
-              connectedAthletes={connectedAthletes}
-              onOpenRosterModal={() => setIsRosterModalOpen(true)}
-              onSelectActivity={(act) => {
-                handleSelectActivity(act);
-                setActiveTab('activities');
-              }}
+              selfProfile={effectiveAthleteProfile}
+              selfWellnessDays={effectiveWellnessDays}
+              connectedAthletes={combinedRoster}
+              onOpenRosterModal={handleOpenRosterModal}
+              onSelectActivity={handleSelectActivityAndOpenTab}
               onSyncMorphedToCalendar={handleCreatePlannedEvent}
-              onOpenAthleteProfileModal={() => setIsProfileModalOpen(true)}
+              onOpenAthleteProfileModal={handleOpenProfileModal}
               onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             />
           )}
@@ -5100,13 +5798,9 @@ export default function App() {
               isHydratingRoutes={isHydratingRoutes}
               onToggleKudos={handleToggleActivityKudos}
               onAddComment={handleAddActivityComment}
-              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
-              onImportParsedActivity={(newAct) => {
-                setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
-              }}
-              onImportParsedActivities={(newActs) => {
-                setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
-              }}
+              onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
+              onImportParsedActivity={handleImportSingleParsedActivity}
+              onImportParsedActivities={handleImportMultipleParsedActivities}
               athleteWeightKg={latestWeightKg}
               athleteProfile={effectiveAthleteProfile}
             />
@@ -5124,17 +5818,14 @@ export default function App() {
               athleteProfile={effectiveAthleteProfile}
               onScanMoreSegments={handleScanMoreSegments}
               isScanningSegments={isScanningSegments}
-              onSelectActivity={(act) => {
-                handleSelectActivity(act);
-                setActiveTab('activities');
-              }}
-              onOpenActivitiesSegments={() => setActiveTab('activities')}
+              onSelectActivity={handleSelectActivityAndOpenTab}
+              onOpenActivitiesSegments={handleOpenActivitiesTab}
             />
           )}
 
           {activeTab === 'totals' && (
             <GoalsView
-              annualMileageGoals={annualMileageGoals}
+              annualMileageGoals={effectiveAnnualMileageGoals}
               onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
               targetGoals={effectiveTargetGoals}
               onAddTargetGoal={handleAddTargetGoal}
@@ -5142,7 +5833,7 @@ export default function App() {
               activities={effectiveActivities}
               wellnessDays={effectiveWellnessDays}
               plannedEvents={effectivePlannedEvents}
-              gearItems={gearItems}
+              gearItems={effectiveGearItems}
               envFilter={envFilter}
               onSelectEnvFilter={setEnvFilter}
               distanceUnit={distanceUnit}
@@ -5150,12 +5841,9 @@ export default function App() {
               athleteProfile={effectiveAthleteProfile}
               onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
               onSaveProfileOverride={handleSaveProfileOverride}
-              onSelectActivity={(act) => {
-                handleSelectActivity(act);
-                setActiveTab('activities');
-              }}
-              onSwitchToCalendar={() => setActiveTab('calendar')}
-              onOpenOfficialRaceModal={() => setIsOfficialRaceModalOpen(true)}
+              onSelectActivity={handleSelectActivityAndOpenTab}
+              onSwitchToCalendar={handleSwitchToCalendarTab}
+              onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
               onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             />
           )}
@@ -5166,8 +5854,8 @@ export default function App() {
             <footer className="pt-5 border-t border-emerald-900/15 dark:border-[#244331] flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-3">
                 <AeroPulseLogo size="sm" />
-                <span className="hidden sm:inline text-slate-400 dark:text-slate-500">·</span>
-                <span className="hidden sm:inline font-mono text-[11px]">
+                <span className="hidden sm:inline text-slate-600 dark:text-slate-400">·</span>
+                <span className="hidden sm:inline font-mono text-2xs">
                   Run &amp; Ride Threshold Telemetry
                 </span>
               </div>
@@ -5199,7 +5887,10 @@ export default function App() {
         </div>
 
       {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
-      <nav className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock">
+      <nav
+        aria-label="Mobile primary workspaces"
+        className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
+      >
         {(
           [
             {
@@ -5223,15 +5914,25 @@ export default function App() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id === 'totals' ? lastLabTabRef.current : tab.id)}
-              className={`min-h-[44px] flex flex-col items-center justify-center rounded-xl transition-all ${
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() =>
+                setActiveTab(
+                  tab.id === 'totals'
+                    ? isActive
+                      ? 'totals'
+                      : lastLabTabRef.current
+                    : tab.id
+                )
+              }
+              className={`min-h-[46px] flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
                 isActive
                   ? 'ap-nav-volt-active'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
             >
               <Icon className="w-4 h-4" weight={isActive ? 'fill' : 'duotone'} />
-              <span className="text-[11px] tracking-tight mt-0.5 whitespace-nowrap">
+              <span className="text-2xs tracking-tight mt-0.5 whitespace-nowrap">
                 {tab.label}
               </span>
             </button>
@@ -5313,6 +6014,10 @@ export default function App() {
             onRebuildPersistedArchive={handleClearPersistedArchive}
             existingActivities={effectiveActivities}
             onImportBatchActivities={(newActs) => {
+              if (isSampleDemoMode) {
+                setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+                return;
+              }
               setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
             }}
           />
@@ -5345,8 +6050,10 @@ export default function App() {
             selfTsb={selfLatestWellness?.tsb ?? 0}
             selfHrv={selfLatestWellness?.hrvRMSSD ?? 0}
             selfProfile={effectiveAthleteProfile}
-            selfPrivacySettings={selfPrivacySettings}
-            onUpdateSelfPrivacy={setSelfPrivacySettings}
+            selfPrivacySettings={effectiveSelfPrivacySettings}
+            onUpdateSelfPrivacy={
+              isSampleDemoMode ? setSampleDemoPrivacySettings : setSelfPrivacySettings
+            }
             roster={combinedRoster}
             activeAthleteId={activeViewedAthleteId}
             onSelectAthleteViewport={(id) => {
@@ -5359,8 +6066,8 @@ export default function App() {
             onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
             onPushCoachWorkout={handlePushCoachWorkout}
             distanceUnit={distanceUnit}
-            myTeams={myTeams}
-            activeTeamId={activeTeamId}
+            myTeams={isSampleDemoMode ? [] : myTeams}
+            activeTeamId={isSampleDemoMode ? null : activeTeamId}
             resendConfigured={resendConfigured}
             initialTab={rosterInitialTab}
             onSelectActiveTeam={handleSelectActiveTeam}

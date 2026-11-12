@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useModalDialog } from '../hooks/useModalDialog';
 import {
   ArrowLeftRight,
   ChevronLeft,
@@ -35,13 +36,18 @@ import {
   formatPace,
   formatStopwatch,
 } from '../utils/formatters';
-import { InteractiveRouteMap } from './InteractiveRouteMap';
 import {
   buildRepeatedSegmentsFromActivities,
   SegmentEffortOverTimeChart,
 } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
-import { UPlotStreamChart } from './charts/UPlotStreamChart';
+
+const InteractiveRouteMap = lazy(() =>
+  import('./InteractiveRouteMap').then((m) => ({ default: m.InteractiveRouteMap }))
+);
+const UPlotStreamChart = lazy(() =>
+  import('./charts/UPlotStreamChart').then((m) => ({ default: m.UPlotStreamChart }))
+);
 import {
   buildSample1HzGpxString,
   parseWorkoutFileInWorker,
@@ -174,7 +180,7 @@ function sampleSeriesAt(
   return best;
 }
 
-export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
+const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
   activities,
   plannedEvents = [],
   selectedSport,
@@ -219,6 +225,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     }
   });
   const [quickLogSavedMsg, setQuickLogSavedMsg] = useState<string | null>(null);
+  const inspectorDialogRef = useRef<HTMLDivElement>(null);
+  const formId = useId();
+  useModalDialog({
+    isOpen: Boolean(selectedActivity),
+    onClose: () => onSelectActivity(null),
+    dialogRef: inspectorDialogRef,
+  });
 
   const saveQuickLogForActivity = (actId: string, patch: Partial<WorkoutQuickLog>) => {
     setQuickLogsById((prev) => {
@@ -295,6 +308,41 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   const liveDexieStream = useLiveActivityStream(selectedActivity?.id || null);
   const dexieStats = useLiveWorkoutStoreStats();
   const importMenuDetailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  const activeSelectedStream = liveDexieStream?.streams || selectedActivity?.streams;
+
+  const selectedDebriefReport = useMemo(() => {
+    if (
+      !selectedActivity ||
+      !activeSelectedStream ||
+      !Array.isArray(activeSelectedStream.time) ||
+      activeSelectedStream.time.length <= 1
+    ) {
+      return null;
+    }
+    const effectiveProfile =
+      athleteProfile || buildCompleteAthleteProfile({ weightKg: athleteWeightKg });
+    return generatePostWorkoutDebrief(selectedActivity, activeSelectedStream, effectiveProfile);
+  }, [selectedActivity, activeSelectedStream, athleteProfile, athleteWeightKg]);
+
+  const handleRouteMapSelectActivity = useCallback(
+    (act: UnifiedActivity) => {
+      onSelectActivity(act);
+      setStreamHoverIndex(null);
+    },
+    [onSelectActivity]
+  );
+
+  const handleTriggerWorker1HzUpsample = useCallback(() => {
+    if (!selectedActivity) return;
+    setIsWorkerProcessing(true);
+    upsampleAndAnalyzeActivityInWorker({
+      ...selectedActivity,
+      streams: activeSelectedStream,
+    })
+      .then(({ analytics }) => setWorkerAnalytics(analytics))
+      .finally(() => setIsWorkerProcessing(false));
+  }, [selectedActivity, activeSelectedStream]);
 
   useEffect(() => {
     const handlePointerDown = (e: MouseEvent) => {
@@ -917,7 +965,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   }`}
                 >
                   <span>{mod.label}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800/90 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800/90 text-2xs font-mono">
                     {mod.count}
                   </span>
                 </button>
@@ -926,11 +974,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
             <select
               value={yearFilter}
+              aria-label="Filter workouts by year"
               onChange={(e) => {
                 setYearFilter(e.target.value);
                 setVisibleLimit(60);
               }}
-              className="min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
             >
               <option value="ALL">All Years ({activities.length})</option>
               {availableYears.map((y) => (
@@ -941,25 +990,26 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             </select>
 
             <div className="relative flex-1 sm:flex-initial w-full sm:w-56 min-w-[180px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
+                aria-label="Search workouts or routes"
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search workouts, routes..."
-                className="w-full min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             {/* Consolidated + Import & Actions Dropdown Menu */}
             <div className="relative">
               <details ref={importMenuDetailsRef} className="group">
-                <summary className="list-none cursor-pointer min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
+                <summary className="list-none cursor-pointer min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 text-xs font-bold text-blue-700 dark:text-sky-300 transition-colors whitespace-nowrap select-none">
                   <Upload className="w-3.5 h-3.5 text-blue-500" />
                   <span>{isWorkerProcessing ? 'Parsing...' : '+ Import ▾'}</span>
                 </summary>
                 <div className="absolute right-0 mt-2 w-64 rounded-2xl liquid-glass border border-slate-300/80 dark:border-white/15 shadow-2xl p-2 z-40 space-y-1 text-xs">
-                  <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  <div className="px-2.5 py-1 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                     Import &amp; Telemetry Actions
                   </div>
 
@@ -969,7 +1019,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       <div className="font-semibold">
                         Import .FIT / .GPX / .TCX or Bulk .ZIP Archive
                       </div>
-                      <div className="text-[10px] text-slate-500">
+                      <div className="text-2xs text-slate-500">
                         Multi-file, Garmin/Strava .ZIP, and .FIT.GZ supported
                       </div>
                     </div>
@@ -997,7 +1047,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
                       <div>
                         <div className="font-semibold">Log Official Race Result</div>
-                        <div className="text-[10px] text-slate-500">Track, XC, or road chip times</div>
+                        <div className="text-2xs text-slate-500">Track, XC, or road chip times</div>
                       </div>
                     </button>
                   )}
@@ -1017,7 +1067,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         <div className="font-semibold">
                           {isScanningSegments ? 'Scanning Segments...' : 'Scan Route Segments'}
                         </div>
-                        <div className="text-[10px] text-slate-500">Index PRs &amp; repeated climbs</div>
+                        <div className="text-2xs text-slate-500">Index PRs &amp; repeated climbs</div>
                       </div>
                     </button>
                   )}
@@ -1037,7 +1087,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         <div className="font-semibold">
                           {isHydratingRoutes ? 'Hydrating GPS...' : 'Hydrate Missing GPS Routes'}
                         </div>
-                        <div className="text-[10px] text-slate-500">Backfill outdoor route polylines</div>
+                        <div className="text-2xs text-slate-500">Backfill outdoor route polylines</div>
                       </div>
                     </button>
                   )}
@@ -1053,7 +1103,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 text-left text-slate-600 dark:text-slate-300 font-medium transition-colors disabled:opacity-50"
                     >
                       <Cpu className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <span className="text-[11px]">Load Sample 1Hz Workout</span>
+                      <span className="text-2xs">Load Sample 1Hz Workout</span>
                     </button>
                   </div>
                 </div>
@@ -1075,9 +1125,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 {archiveImportProgress.skippedCount} skipped
               </span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-blue-500/20 overflow-hidden">
+            <div className="h-1.5 w-full rounded-full bg-emerald-950/15 dark:bg-emerald-400/20 overflow-hidden">
               <div
-                className="h-full bg-blue-600 transition-all duration-150"
+                className="h-full bg-[#1C5436] dark:bg-[#C8FF00] transition-all duration-150"
                 style={{
                   width: `${Math.min(
                     100,
@@ -1097,7 +1147,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             <button
               type="button"
               onClick={() => setArchiveImportBanner(null)}
-              className="text-emerald-700 dark:text-emerald-300 hover:underline font-mono text-[11px]"
+              className="text-emerald-700 dark:text-emerald-300 hover:underline font-mono text-2xs"
             >
               Dismiss ×
             </button>
@@ -1151,7 +1201,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               }`}
             >
               <span>Log</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-2xs font-mono">
                 {filteredActivities.length.toLocaleString()}
               </span>
             </button>
@@ -1161,7 +1211,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               onClick={() => setActiveWorkspace('MAP_KUDOS')}
               className={`min-h-[38px] flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                 activeWorkspace === 'MAP_KUDOS'
-                  ? 'liquid-capsule-active text-[#FC4C02]'
+                  ? 'liquid-capsule-active ap-text-strava'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
@@ -1180,7 +1230,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             >
               <Trophy className="w-3.5 h-3.5" />
               <span>Segments</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono">
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-2xs font-mono">
                 {repeatedSegmentsList.length}
               </span>
             </button>
@@ -1254,7 +1304,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#FC4C02] text-white">
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#C23800] text-white">
                         <ThumbsUp className="w-3.5 h-3.5" />
                       </span>
                       <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -1269,16 +1319,19 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   {/* Kudos & Route Rollup Pills + Feed Filter */}
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono">
-                      <span className="text-[#FC4C02] font-bold">
-                        👍 {totalKudosEarned.toLocaleString()} Kudos
+                      <span className="inline-flex items-center gap-1 ap-text-strava font-bold">
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                        <span>{totalKudosEarned.toLocaleString()} Kudos</span>
                       </span>
                       <span className="text-slate-300 dark:text-slate-700">|</span>
-                      <span className="text-amber-600 dark:text-amber-400 font-bold">
-                        🏆 {totalPrAchievements.toLocaleString()} PRs
+                      <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-bold">
+                        <Trophy className="w-3.5 h-3.5" />
+                        <span>{totalPrAchievements.toLocaleString()} PRs</span>
                       </span>
                       <span className="text-slate-300 dark:text-slate-700">|</span>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                        🗺️ {mappedActivitiesCount} GPS Routes
+                      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-bold">
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>{mappedActivitiesCount} GPS Routes</span>
                       </span>
                     </div>
 
@@ -1297,7 +1350,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           onClick={() => setKudosFeedFilter(tab.id)}
                           className={`min-h-[28px] px-2.5 py-0.5 rounded-md font-semibold transition-colors whitespace-nowrap ${
                             kudosFeedFilter === tab.id
-                              ? 'bg-[#FC4C02] text-white'
+                              ? 'bg-[#C23800] text-white'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                           }`}
                         >
@@ -1312,18 +1365,23 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                   {/* Left 7 Columns: Interactive Multi-Workout GPS Route Map */}
                   <div className="lg:col-span-7 space-y-2">
-                    <InteractiveRouteMap
-                      mode="MULTI"
-                      activities={filteredActivities}
-                      distanceUnit={distanceUnit}
-                      highlightedActivityId={hoveredRouteActivityId}
-                      onHoverActivity={setHoveredRouteActivityId}
-                      onSelectActivity={(act) => {
-                        onSelectActivity(act);
-                        setStreamHoverIndex(null);
-                      }}
-                      heightClass="h-[460px] sm:h-[540px]"
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="h-[460px] sm:h-[540px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                          Loading Route Map…
+                        </div>
+                      }
+                    >
+                      <InteractiveRouteMap
+                        mode="MULTI"
+                        activities={filteredActivities}
+                        distanceUnit={distanceUnit}
+                        highlightedActivityId={hoveredRouteActivityId}
+                        onHoverActivity={setHoveredRouteActivityId}
+                        onSelectActivity={handleRouteMapSelectActivity}
+                        heightClass="h-[460px] sm:h-[540px]"
+                      />
+                    </Suspense>
                     {onHydrateMoreRoutes && (
                       <div className="flex items-center justify-between gap-2 px-1">
                         <span className="text-xs text-slate-500">
@@ -1377,12 +1435,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             {/* Card Header: Sport Badge, Workout Name, Date, Strava External Link */}
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-slate-500">
+                                <div className="flex flex-wrap items-center gap-1.5 text-2xs font-mono text-slate-500">
                                   <span
-                                    className={`px-1.5 py-0.5 rounded font-sans font-bold text-[10px] uppercase ${
+                                    className={`px-1.5 py-0.5 rounded font-sans font-bold text-2xs uppercase ${
                                       act.sportCategory === 'Running'
-                                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                        : 'bg-[#FC4C02]/15 text-[#FC4C02]'
+                                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                                        : 'bg-[#C23800]/12 dark:bg-[#FC4C02]/15 ap-text-strava'
                                     }`}
                                   >
                                     {act.sportCategory}
@@ -1391,7 +1449,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   <span>·</span>
                                   <span>{act.gearName || act.subType}</span>
                                   {hasGps && (
-                                    <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    <span className="inline-flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400 font-semibold">
                                       <MapPin className="w-3 h-3" />
                                       GPS
                                     </span>
@@ -1400,7 +1458,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectActivity(act)}
-                                  className="text-left text-sm font-bold text-slate-900 dark:text-slate-100 hover:text-[#FC4C02] dark:hover:text-[#FC4C02] transition-colors mt-0.5 line-clamp-1"
+                                  className="text-left text-sm font-bold text-slate-900 dark:text-slate-100 hover:text-[#B83500] dark:hover:text-[#FF7A45] transition-colors mt-0.5 line-clamp-1"
                                 >
                                   {act.name}
                                 </button>
@@ -1415,7 +1473,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#FC4C02]/40 bg-[#FC4C02]/10 hover:bg-[#FC4C02]/20 text-[11px] font-semibold text-[#FC4C02] transition-colors whitespace-nowrap"
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#C23800]/35 dark:border-[#FC4C02]/40 bg-[#C23800]/10 dark:bg-[#FC4C02]/10 hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/20 text-2xs font-semibold ap-text-strava transition-colors whitespace-nowrap"
                                     title="Open activity on Strava.com"
                                   >
                                     <span>Strava</span>
@@ -1425,7 +1483,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectActivity(act)}
-                                  className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold transition-colors whitespace-nowrap"
+                                  className="px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-semibold transition-colors whitespace-nowrap"
                                 >
                                   Inspect Map &amp; Streams
                                 </button>
@@ -1435,7 +1493,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             {/* Key Workout Telemetry Strip */}
                             <div className="grid grid-cols-4 gap-2 text-xs font-mono tabular-nums bg-white dark:bg-slate-950 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-800">
                               <div>
-                                <div className="text-[10px] font-sans text-slate-500">Distance</div>
+                                <div className="text-2xs font-sans text-slate-500">Distance</div>
                                 <div className="font-bold text-slate-900 dark:text-slate-100">
                                   {act.distanceMeters > 0
                                     ? formatDistance(act.distanceMeters, distanceUnit, 1)
@@ -1443,13 +1501,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 </div>
                               </div>
                               <div>
-                                <div className="text-[10px] font-sans text-slate-500">Duration</div>
+                                <div className="text-2xs font-sans text-slate-500">Duration</div>
                                 <div className="font-bold text-slate-900 dark:text-slate-100">
                                   {formatDuration(act.movingTimeSecs)}
                                 </div>
                               </div>
                               <div>
-                                <div className="text-[10px] font-sans text-slate-500">
+                                <div className="text-2xs font-sans text-slate-500">
                                   {act.sportCategory === 'Running' ? 'Avg Pace' : 'NP / Watts'}
                                 </div>
                                 <div className="font-bold text-blue-600 dark:text-blue-400">
@@ -1463,7 +1521,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 </div>
                               </div>
                               <div>
-                                <div className="text-[10px] font-sans text-slate-500">
+                                <div className="text-2xs font-sans text-slate-500">
                                   Elev / HR
                                 </div>
                                 <div className="font-bold text-slate-900 dark:text-slate-100">
@@ -1477,7 +1535,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             {(act.stravaPrCount > 0 || topSegments.length > 0) && (
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {act.stravaPrCount > 0 && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] font-bold">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-2xs font-bold">
                                     <Trophy className="w-3 h-3" />
                                     {act.stravaPrCount} Strava PR{act.stravaPrCount > 1 ? 's' : ''}
                                   </span>
@@ -1487,10 +1545,10 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                     key={`${seg.id}-${seg.segmentId}-${segIdx}`}
                                     type="button"
                                     onClick={() => onSelectActivity(act)}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-blue-500/15 text-[11px] font-mono text-slate-700 dark:text-slate-300 transition-colors"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-2xs font-mono text-emerald-950 dark:text-emerald-100 transition-colors"
                                   >
                                     {seg.prRank === 1 && (
-                                      <span className="text-amber-500 font-bold">👑</span>
+                                      <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
                                     )}
                                     <span className="truncate max-w-[130px] font-sans font-medium">
                                       {seg.name}
@@ -1511,8 +1569,8 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   onClick={() => onToggleKudos && onToggleKudos(act)}
                                   className={`min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
                                     act.hasKudoed
-                                      ? 'bg-[#FC4C02] text-white shadow-xs'
-                                      : 'border border-[#FC4C02]/40 bg-[#FC4C02]/10 text-[#FC4C02] hover:bg-[#FC4C02]/20'
+                                      ? 'bg-[#C23800] text-white shadow-xs'
+                                      : 'border border-[#C23800]/35 dark:border-[#FC4C02]/40 bg-[#C23800]/10 dark:bg-[#FC4C02]/10 ap-text-strava hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/20'
                                   }`}
                                 >
                                   <ThumbsUp className="w-3.5 h-3.5" />
@@ -1541,9 +1599,9 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                     <span
                                       key={k.id || `${dispName}-${kIdx}`}
                                       title={`${dispName}${dispLoc ? ` (${dispLoc})` : ''}`}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-slate-300"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-2xs font-medium text-slate-700 dark:text-slate-300"
                                     >
-                                      <span className="w-4 h-4 rounded-full bg-[#FC4C02]/20 text-[#FC4C02] font-mono text-[9px] font-bold flex items-center justify-center">
+                                      <span className="w-4 h-4 rounded-full bg-[#C23800]/15 dark:bg-[#FC4C02]/20 ap-text-strava font-mono text-2xs font-bold flex items-center justify-center">
                                         {dispInitials}
                                       </span>
                                       <span className="truncate max-w-[90px]">{dispName}</span>
@@ -1552,7 +1610,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 })}
                               </div>
 
-                              <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-500">
+                              <span className="inline-flex items-center gap-1 text-2xs font-mono text-slate-500">
                                 <MessageSquare className="w-3 h-3" />
                                 {comments.length} {comments.length === 1 ? 'note' : 'notes'}
                               </span>
@@ -1566,7 +1624,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                     key={c.id}
                                     className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200/70 dark:border-slate-800 px-2.5 py-1.5 text-xs"
                                   >
-                                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                    <div className="flex items-center justify-between text-2xs text-slate-500">
                                       <span className="font-bold text-slate-800 dark:text-slate-200">
                                         {c.authorName || c.athleteName || 'Athlete'}
                                       </span>
@@ -1596,6 +1654,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 <input
                                   type="text"
                                   value={commentDraft}
+                                  aria-label={`Add workout note for ${act.name}`}
                                   onChange={(e) =>
                                     setCommentDrafts((prev) => ({
                                       ...prev,
@@ -1603,14 +1662,15 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                     }))
                                   }
                                   placeholder="Add workout note or Strava club comment..."
-                                  className="flex-1 min-h-[30px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
+                                  className="flex-1 min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
                                 />
                                 <button
                                   type="submit"
                                   disabled={!commentDraft.trim()}
-                                  className="min-h-[30px] px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 hover:bg-[#FC4C02] disabled:opacity-40 text-white text-xs font-semibold transition-colors inline-flex items-center gap-1"
+                                  aria-label={`Post workout comment for ${act.name}`}
+                                  className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 hover:bg-[#C23800] disabled:opacity-40 text-white text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1"
                                 >
-                                  <Send className="w-3 h-3" />
+                                  <Send className="w-3.5 h-3.5" />
                                 </button>
                               </form>
                             )}
@@ -1650,7 +1710,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
           WORKSPACE 4: SPLIT-VIEW SIDE-BY-SIDE WORKOUT COMPARISON WORKSPACE
          ========================================================================== */}
       {activeWorkspace === 'COMPARE' && (
-        <section className="rounded-xl bg-white dark:bg-[#111827] border-2 border-blue-500/40 shadow-lg p-5 space-y-6">
+        <section className="rounded-xl bg-white dark:bg-[#101B15] border-2 border-blue-500/40 shadow-lg p-5 space-y-6">
           {/* Top Bar: Title, Alignment Controls, Smoothing Toggle & Close */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
             <div>
@@ -1693,7 +1753,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   onClick={() => setCompareXMode('PERCENT')}
                   className={`min-h-[30px] px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     compareXMode === 'PERCENT'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
@@ -1704,7 +1764,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   onClick={() => setCompareXMode('TIME')}
                   className={`min-h-[30px] px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     compareXMode === 'TIME'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
@@ -1753,11 +1813,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
               <select
                 value={compareIdA || ''}
+                aria-label="Select Workout A for baseline comparison"
                 onChange={(e) => {
                   const found = activities.find((a) => a.id === e.target.value);
                   if (found) handleAssignToCompareSlot(found, 'A');
                 }}
-                className="w-full min-h-[38px] rounded-lg border border-blue-500/30 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-blue-500/30 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
               >
                 <option value="">Select Workout A...</option>
                 {filteredActivities.slice(0, 250).map((act) => (
@@ -1774,18 +1835,18 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               {compareActivityA ? (
                 <div className="grid grid-cols-3 gap-2 pt-1 text-xs font-mono tabular-nums">
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Distance / Time</div>
+                    <div className="text-2xs font-sans text-slate-500">Distance / Time</div>
                     <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       {compareActivityA.distanceMeters > 0
                         ? formatDistance(compareActivityA.distanceMeters, distanceUnit, 2)
                         : 'Indoor'}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       {formatDuration(compareActivityA.movingTimeSecs)}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Power / Pace</div>
+                    <div className="text-2xs font-sans text-slate-500">Power / Pace</div>
                     <div className="font-bold text-blue-600 dark:text-blue-400 mt-0.5">
                       {compareActivityA.normalizedPower
                         ? `NP ${compareActivityA.normalizedPower}W`
@@ -1793,17 +1854,17 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           ? formatPace(compareActivityA.avgPaceSecsPerKm, distanceUnit)
                           : `${compareActivityA.trainingLoad} TSS`}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       Avg {compareActivityA.avgPower ? `${compareActivityA.avgPower}W` : '—'} · EF{' '}
                       {compareActivityA.efficiencyFactor || '—'}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Heart Rate</div>
+                    <div className="text-2xs font-sans text-slate-500">Heart Rate</div>
                     <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       {compareActivityA.avgHr > 0 ? `${compareActivityA.avgHr} bpm` : '—'}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       Max {compareActivityA.maxHr || '—'} · Drift{' '}
                       {compareActivityA.aerobicDecouplingPct}%
                     </div>
@@ -1858,11 +1919,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
               <select
                 value={compareIdB || ''}
+                aria-label="Select Workout B for comparison"
                 onChange={(e) => {
                   const found = activities.find((a) => a.id === e.target.value);
                   if (found) handleAssignToCompareSlot(found, 'B');
                 }}
-                className="w-full min-h-[38px] rounded-lg border border-amber-500/30 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-amber-500/30 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
               >
                 <option value="">Select Workout B...</option>
                 {filteredActivities.slice(0, 250).map((act) => (
@@ -1879,18 +1941,18 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               {compareActivityB ? (
                 <div className="grid grid-cols-3 gap-2 pt-1 text-xs font-mono tabular-nums">
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Distance / Time</div>
+                    <div className="text-2xs font-sans text-slate-500">Distance / Time</div>
                     <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       {compareActivityB.distanceMeters > 0
                         ? formatDistance(compareActivityB.distanceMeters, distanceUnit, 2)
                         : 'Indoor'}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       {formatDuration(compareActivityB.movingTimeSecs)}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Power / Pace</div>
+                    <div className="text-2xs font-sans text-slate-500">Power / Pace</div>
                     <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">
                       {compareActivityB.normalizedPower
                         ? `NP ${compareActivityB.normalizedPower}W`
@@ -1898,17 +1960,17 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           ? formatPace(compareActivityB.avgPaceSecsPerKm, distanceUnit)
                           : `${compareActivityB.trainingLoad} TSS`}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       Avg {compareActivityB.avgPower ? `${compareActivityB.avgPower}W` : '—'} · EF{' '}
                       {compareActivityB.efficiencyFactor || '—'}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2.5 border border-slate-200/70 dark:border-slate-800">
-                    <div className="text-[11px] font-sans text-slate-500">Heart Rate</div>
+                    <div className="text-2xs font-sans text-slate-500">Heart Rate</div>
                     <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       {compareActivityB.avgHr > 0 ? `${compareActivityB.avgHr} bpm` : '—'}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       Max {compareActivityB.maxHr || '—'} · Drift{' '}
                       {compareActivityB.aerobicDecouplingPct}%
                     </div>
@@ -1927,30 +1989,38 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             <div className="space-y-5">
               {/* SYNCHRONIZED 1HZ UPLOT TELEMETRY COMPARATOR (Shared uPlot.sync crosshair) */}
               {(compareActivityA.streams || compareActivityB.streams) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {compareActivityA.streams && (
-                    <UPlotStreamChart
-                      streams={compareActivityA.streams}
-                      sportCategory={compareActivityA.sportCategory}
-                      distanceUnit={distanceUnit}
-                      athleteWeightKg={athleteWeightKg}
-                      intervals={compareActivityA.intervals}
-                      syncKey="aeropulse-compare-sync"
-                      height={220}
-                    />
-                  )}
-                  {compareActivityB.streams && (
-                    <UPlotStreamChart
-                      streams={compareActivityB.streams}
-                      sportCategory={compareActivityB.sportCategory}
-                      distanceUnit={distanceUnit}
-                      athleteWeightKg={athleteWeightKg}
-                      intervals={compareActivityB.intervals}
-                      syncKey="aeropulse-compare-sync"
-                      height={220}
-                    />
-                  )}
-                </div>
+                <Suspense
+                  fallback={
+                    <div className="h-56 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                      Loading 1Hz Stream Comparator…
+                    </div>
+                  }
+                >
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {compareActivityA.streams && (
+                      <UPlotStreamChart
+                        streams={compareActivityA.streams}
+                        sportCategory={compareActivityA.sportCategory}
+                        distanceUnit={distanceUnit}
+                        athleteWeightKg={athleteWeightKg}
+                        intervals={compareActivityA.intervals}
+                        syncKey="aeropulse-compare-sync"
+                        height={220}
+                      />
+                    )}
+                    {compareActivityB.streams && (
+                      <UPlotStreamChart
+                        streams={compareActivityB.streams}
+                        sportCategory={compareActivityB.sportCategory}
+                        distanceUnit={distanceUnit}
+                        athleteWeightKg={athleteWeightKg}
+                        intervals={compareActivityB.intervals}
+                        syncKey="aeropulse-compare-sync"
+                        height={220}
+                      />
+                    )}
+                  </div>
+                </Suspense>
               )}
 
               {/* 1. OVERLAID POWER / OUTPUT COMPARISON CHART */}
@@ -2098,7 +2168,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 x={chartLeft - 8}
                                 y={y + 4}
                                 textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                               >
                                 {wVal}W
                               </text>
@@ -2142,7 +2212,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               x={x}
                               y={174}
                               textAnchor="middle"
-                              className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
                               {label}
                             </text>
@@ -2377,7 +2447,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 x={chartLeft - 8}
                                 y={y + 4}
                                 textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                               >
                                 {hrVal}
                               </text>
@@ -2421,7 +2491,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               x={x}
                               y={174}
                               textAnchor="middle"
-                              className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
                               {label}
                             </text>
@@ -2676,7 +2746,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               <td
                                 className={`py-2 pl-3 text-right font-bold ${
                                   r.delta === '—'
-                                    ? 'text-slate-400'
+                                    ? 'text-slate-600 dark:text-slate-400'
                                     : r.good
                                       ? 'text-emerald-600 dark:text-emerald-400'
                                       : 'text-amber-600 dark:text-amber-400'
@@ -2752,7 +2822,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         );
                       }
                     )}
-                    <div className="text-center text-[11px] font-semibold text-slate-500 pt-1">
+                    <div className="text-center text-2xs font-semibold text-slate-500 pt-1">
                       Y-Axis: Physiological HR Zone · X-Axis: Share of Workout Time (0% – 100%)
                     </div>
                   </div>
@@ -2825,7 +2895,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
               <details className="group rounded-2xl liquid-glass border border-stone-200/80 dark:border-slate-800">
                 <summary className="list-none cursor-pointer px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 select-none">
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#D9480F] dark:text-[#FB6514]">
+                    <span className="inline-flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-[#D9480F] dark:text-[#FB6514]">
                       <Trophy className="w-3.5 h-3.5" />
                       <span>Matched Runs &amp; Rides</span>
                     </span>
@@ -2850,7 +2920,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           setCompareIdB(bestEfAttempt.id);
                           setActiveWorkspace('COMPARE');
                         }}
-                        className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold transition-colors"
+                        className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#1C5436] hover:bg-[#16422A] text-white dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] dark:text-[#080A09] text-xs font-semibold transition-colors"
                       >
                         <Columns2 className="w-3.5 h-3.5" />
                         <span>Compare Latest vs. Best Attempt in Split-View</span>
@@ -2869,13 +2939,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         onClick={() => setSelectedMatchedClusterKey(cl.key)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all inline-flex items-center gap-1.5 ${
                           isAct
-                            ? 'bg-[#FC4C02] text-white font-semibold shadow-2xs'
+                            ? 'bg-[#C23800] text-white font-semibold shadow-2xs'
                             : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
                         }`}
                       >
                         <span className="truncate max-w-[180px]">{cl.title}</span>
                         <span
-                          className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                          className={`px-1.5 py-0.2 rounded text-2xs font-mono ${
                             isAct
                               ? 'bg-white/20 text-white'
                               : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
@@ -2909,19 +2979,26 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-950/60 hover:border-blue-500/50'
                         }`}
                       >
-                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                        <div className="flex items-center justify-between text-2xs text-slate-500">
                           <span>#{idx + 1}</span>
                           <span>{att.startDateLocal.slice(5, 10)}</span>
                         </div>
                         <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
                           {outStr}
                         </div>
-                        <div className="flex items-center justify-between text-[10px]">
+                        <div className="flex items-center justify-between text-2xs">
                           <span className="text-rose-500">
                             {att.avgHr > 0 ? `${att.avgHr}bpm` : '—'}
                           </span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                            {isBest ? '★ Best EF' : `EF ${att.efficiencyFactor || '—'}`}
+                          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-bold">
+                            {isBest ? (
+                              <>
+                                <Trophy className="w-3 h-3 text-amber-500" />
+                                <span>Best EF</span>
+                              </>
+                            ) : (
+                              `EF ${att.efficiencyFactor || '—'}`
+                            )}
                           </span>
                         </div>
                       </button>
@@ -2946,7 +3023,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 setYearFilter('ALL');
                 setSearchQuery('');
               }}
-              className="min-h-[40px] px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium"
+              className="min-h-[40px] px-4 py-2 rounded-lg bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] text-xs font-medium"
             >
               Reset All Filters
             </button>
@@ -2974,11 +3051,21 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   return (
                     <tr
                       key={act.id}
+                      tabIndex={0}
+                      aria-label={`Inspect workout ${act.name} on ${act.startDateLocal.slice(0, 10)}`}
                       onClick={() => {
                         onSelectActivity(act);
                         setStreamHoverIndex(null);
                       }}
-                      className={`cursor-pointer transition-colors ${
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onSelectActivity(act);
+                          setStreamHoverIndex(null);
+                        }
+                      }}
+                      className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                         isSelected
                           ? 'bg-blue-50/70 dark:bg-blue-950/30'
                           : isCompareA
@@ -3019,14 +3106,18 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             </span>
                           )}
                           {(act.kudosCount || 0) > 0 && (
-                            <span className="text-[#FC4C02] font-bold">
-                              · 👍 {act.kudosCount}
+                            <span className="inline-flex items-center gap-1 ap-text-strava font-bold">
+                              <span>·</span>
+                              <ThumbsUp className="w-3 h-3" />
+                              <span>{act.kudosCount}</span>
                             </span>
                           )}
                           {((Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 2) ||
                             (act.streams?.latlng && act.streams.latlng.length > 2)) && (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                              · 🗺️ GPS
+                            <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
+                              <span>·</span>
+                              <MapPin className="w-3 h-3" />
+                              <span>GPS</span>
                             </span>
                           )}
                         </div>
@@ -3037,7 +3128,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         </div>
                         <div className="mt-1">
                           {act.environment === 'INDOOR' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-mono font-semibold">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-2xs font-mono font-semibold">
                               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
                               <span>
                                 {act.subType === 'Virtual Cycling' ||
@@ -3049,7 +3140,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               </span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[11px] font-mono font-semibold">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-2xs font-mono font-semibold">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span>Outdoor · {act.subType}</span>
                             </span>
@@ -3113,7 +3204,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           if (!matchedPlan || !matchedPlan.plannedLoad || matchedPlan.plannedLoad <= 0) {
                             return (
                               <span
-                                className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-stone-100 dark:bg-slate-800/80"
+                                className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-2xs font-medium text-slate-500 dark:text-slate-400 bg-stone-100 dark:bg-slate-800/80"
                                 title="No scheduled calendar workout on this date"
                               >
                                 Unscheduled
@@ -3134,7 +3225,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           );
                           return (
                             <span
-                              className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                              className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-2xs font-bold ${
                                 adherence >= 85 ? 'ap-status-prime' : 'ap-status-caution'
                               }`}
                               title={`Scheduled: "${matchedPlan.name}" (${matchedPlan.plannedLoad} TSS)`}
@@ -3155,7 +3246,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             title="Set as Workout A in Split-View Comparison"
                             className={`min-h-[28px] min-w-[28px] px-2 py-0.5 rounded text-xs font-mono font-bold transition-colors ${
                               isCompareA
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                                 : 'border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-500 hover:text-blue-500'
                             }`}
                           >
@@ -3167,7 +3258,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             title="Set as Workout B in Split-View Comparison"
                             className={`min-h-[28px] min-w-[28px] px-2 py-0.5 rounded text-xs font-mono font-bold transition-colors ${
                               isCompareB
-                                ? 'bg-amber-500 text-white'
+                                ? 'bg-amber-500 text-[#080A09]'
                                 : 'border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500 hover:text-amber-500'
                             }`}
                           >
@@ -3204,16 +3295,17 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
       {selectedActivity && (
         <div className="ap-modal-backdrop" onClick={() => onSelectActivity(null)}>
           <div
+            ref={inspectorDialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={selectedActivity.name}
+            aria-labelledby="thresh-activity-inspector-title"
             className="ap-modal-sheet max-w-5xl liquid-glass shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3" />
 
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md flex flex-wrap items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="sticky top-0 z-30 bg-white dark:bg-[#0D1310] flex flex-wrap items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedActivity.sportCategory} ·{' '}
@@ -3223,7 +3315,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   · {selectedActivity.startDateLocal.replace('T', ' ').slice(0, 16)} ·{' '}
                   {selectedActivity.deviceName || selectedActivity.sourceBadges.join(' + ')}
                 </div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                <h2 id="thresh-activity-inspector-title" className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
                   {selectedActivity.name}
                 </h2>
               </div>
@@ -3237,15 +3329,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     }
                     onSelectActivity(null);
                   }}
-                  className="min-h-[36px] inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] px-3 py-1.5 text-xs font-semibold text-white dark:text-[#080A09] transition-colors"
                 >
                   <Columns2 className="w-3.5 h-3.5" />
                   <span className="hidden xs:inline sm:inline">Open in Split-View Compare</span>
                   <span className="inline sm:hidden">Compare</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => onSelectActivity(null)}
-                  className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
                   aria-label="Close inspector"
                 >
                   <X className="w-4 h-4" />
@@ -3474,7 +3567,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/70 dark:border-white/10 pb-3">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-sky-300 text-[11px] font-mono font-bold uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-sky-300 text-2xs font-mono font-bold uppercase tracking-wider">
                             <Sparkles className="w-3.5 h-3.5" />
                             Coach Insights
                           </span>
@@ -3507,7 +3600,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       </div>
 
                       <div className="text-right font-mono text-xs">
-                        <span className="text-slate-500 block font-sans text-[11px]">
+                        <span className="text-slate-500 block font-sans text-2xs">
                           Modality Peer Baseline ({selectedActivity.environment === 'INDOOR' ? 'Virtual / Trainer' : 'Outdoor'})
                         </span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">
@@ -3532,17 +3625,17 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         {/* Metric 1: Overall Aerobic Efficiency (EF) */}
                         <div className="rounded-xl liquid-glass-subtle p-3.5 flex flex-col justify-between">
                           <div>
-                            <div className="text-[11px] font-sans font-semibold text-slate-500">
+                            <div className="text-2xs font-sans font-semibold text-slate-500">
                               Aerobic Efficiency (EF)
                             </div>
                             <div className="text-2xl font-extrabold text-blue-600 dark:text-sky-400 mt-1">
                               {efOverall.toFixed(2)}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-2xs text-slate-500 mt-0.5">
                               Watts / Heartbeat (NP ÷ HR)
                             </div>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-white/10 text-[11px]">
+                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-white/10 text-2xs">
                             <span
                               className={`font-bold ${
                                 efVsBaselinePct >= 0
@@ -3559,7 +3652,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         {/* Metric 2: Cardiac Decoupling (Pa:Hr%) */}
                         <div className="rounded-xl liquid-glass-subtle p-3.5 flex flex-col justify-between">
                           <div>
-                            <div className="text-[11px] font-sans font-semibold text-slate-500">
+                            <div className="text-2xs font-sans font-semibold text-slate-500">
                               Cardiac Decoupling
                             </div>
                             <div
@@ -3573,11 +3666,11 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             >
                               {decouplingPct > 0 ? `+${decouplingPct.toFixed(1)}%` : `${decouplingPct.toFixed(1)}%`}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-2xs text-slate-500 mt-0.5">
                               1st vs 2nd Half Drift
                             </div>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-white/10 text-[11px] font-sans">
+                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-white/10 text-2xs font-sans">
                             Benchmark:{' '}
                             <strong className="font-mono text-emerald-600 dark:text-emerald-400">
                               &lt; 3.5% Optimal
@@ -3587,12 +3680,12 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
                         {/* Metric 3: 1st Half vs 2nd Half EF Split Bars */}
                         <div className="rounded-xl liquid-glass-subtle p-3.5 flex flex-col justify-between space-y-2">
-                          <div className="text-[11px] font-sans font-semibold text-slate-500">
+                          <div className="text-2xs font-sans font-semibold text-slate-500">
                             Half-by-Half Economy Split
                           </div>
                           <div className="space-y-1.5 text-xs">
                             <div>
-                              <div className="flex justify-between text-[11px]">
+                              <div className="flex justify-between text-2xs">
                                 <span className="font-sans text-slate-500">1st Half EF₁</span>
                                 <span className="font-bold text-slate-900 dark:text-white">
                                   {efFirstHalf.toFixed(2)}
@@ -3606,7 +3699,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               </div>
                             </div>
                             <div>
-                              <div className="flex justify-between text-[11px]">
+                              <div className="flex justify-between text-2xs">
                                 <span className="font-sans text-slate-500">2nd Half EF₂</span>
                                 <span
                                   className={`font-bold ${
@@ -3636,7 +3729,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       {/* Right 5 Cols: Exercise Physiologist Narrative & Coach Prescription */}
                       <div className="lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 flex flex-col justify-between space-y-2.5 text-xs">
                         <div className="space-y-1">
-                          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                          <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                             Physiological Assessment
                           </div>
                           <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
@@ -3644,7 +3737,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           </p>
                         </div>
                         <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-1">
-                          <div className="text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
+                          <div className="text-2xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
                             Coach Prescription
                           </div>
                           <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
@@ -3666,8 +3759,8 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       onClick={() => onToggleKudos && onToggleKudos(selectedActivity)}
                       className={`min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                         selectedActivity.hasKudoed
-                          ? 'bg-[#FC4C02] text-white shadow-xs'
-                          : 'border border-[#FC4C02]/40 bg-[#FC4C02]/10 text-[#FC4C02] hover:bg-[#FC4C02]/20'
+                          ? 'bg-[#C23800] text-white shadow-xs'
+                          : 'border border-[#C23800]/35 dark:border-[#FC4C02]/40 bg-[#C23800]/10 dark:bg-[#FC4C02]/10 ap-text-strava hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/20'
                       }`}
                     >
                       <ThumbsUp className="w-3.5 h-3.5" />
@@ -3700,7 +3793,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           key={k.id || `${dispName}-${kIdx}`}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300"
                         >
-                          <span className="w-4 h-4 rounded-full bg-[#FC4C02]/20 text-[#FC4C02] font-mono text-[10px] font-bold flex items-center justify-center">
+                          <span className="w-4 h-4 rounded-full bg-[#C23800]/15 dark:bg-[#FC4C02]/20 ap-text-strava font-mono text-2xs font-bold flex items-center justify-center">
                             {dispInitials}
                           </span>
                           <span>{dispName}</span>
@@ -3711,7 +3804,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
                   <div className="flex items-center gap-2">
                     {selectedActivity.stravaPrCount > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold font-mono">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs font-bold font-mono">
                         <Trophy className="w-3.5 h-3.5" />
                         {selectedActivity.stravaPrCount} PR
                         {selectedActivity.stravaPrCount > 1 ? 's' : ''}
@@ -3724,7 +3817,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FC4C02]/40 bg-[#FC4C02]/10 hover:bg-[#FC4C02]/20 text-xs font-semibold text-[#FC4C02] transition-colors"
+                        className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#C23800]/35 dark:border-[#FC4C02]/40 bg-[#C23800]/10 dark:bg-[#FC4C02]/10 hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/20 text-xs font-semibold ap-text-strava transition-colors"
                       >
                         <span>View on Strava</span>
                         <ExternalLink className="w-3.5 h-3.5" />
@@ -3741,7 +3834,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         key={c.id}
                         className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 text-xs"
                       >
-                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <div className="flex items-center justify-between text-2xs text-slate-500">
                           <span className="font-bold text-slate-900 dark:text-slate-100">
                             {c.authorName || c.athleteName || 'Athlete'}
                           </span>
@@ -3767,14 +3860,15 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     <input
                       type="text"
                       value={modalCommentInput}
+                      aria-label={`Add a coaching note to ${selectedActivity.name}`}
                       onChange={(e) => setModalCommentInput(e.target.value)}
                       placeholder="Add a coaching note or Strava comment to this workout..."
-                      className="flex-1 min-h-[34px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
                       disabled={!modalCommentInput.trim()}
-                      className="min-h-[34px] px-3.5 py-1.5 rounded-lg bg-[#FC4C02] hover:bg-[#E34402] disabled:opacity-40 text-white text-xs font-semibold transition-colors inline-flex items-center gap-1.5"
+                      className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-lg bg-[#080A09] hover:bg-[#15231B] disabled:opacity-40 text-white text-xs font-semibold transition-colors inline-flex items-center gap-1.5"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Post Note</span>
@@ -3790,19 +3884,25 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                 Boolean(
                   selectedActivity.streams?.latlng && selectedActivity.streams.latlng.length > 2
                 )) && (
-                <InteractiveRouteMap
-                  mode="SINGLE"
-                  activity={selectedActivity}
-                  distanceUnit={distanceUnit}
-                  activeStreamIndex={streamHoverIndex}
-                  onHoverStreamIndex={setStreamHoverIndex}
-                  zoomStreamRange={streamZoomRange}
-                  selectedSegmentId={modalSelectedSegmentId}
-                  onSelectSegmentId={(segId: string) => {
-                    setModalSelectedSegmentId(segId);
-                  }}
-                  heightClass="h-[340px] sm:h-[400px]"
-                />
+                <Suspense
+                  fallback={
+                    <div className="h-[340px] sm:h-[400px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                      Loading GPS Route Map…
+                    </div>
+                  }
+                >
+                  <InteractiveRouteMap
+                    mode="SINGLE"
+                    activity={selectedActivity}
+                    distanceUnit={distanceUnit}
+                    activeStreamIndex={streamHoverIndex}
+                    onHoverStreamIndex={setStreamHoverIndex}
+                    zoomStreamRange={streamZoomRange}
+                    selectedSegmentId={modalSelectedSegmentId}
+                    onSelectSegmentId={setModalSelectedSegmentId}
+                    heightClass="h-[340px] sm:h-[400px]"
+                  />
+                </Suspense>
               )}
 
               {/* 5-Second Post-Workout RPE, Fueling (g/hr Carbs & mg/hr Sodium) & Gear Quick-Log */}
@@ -3820,7 +3920,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/60 p-3.5 space-y-2.5 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="ap-status-prime px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase">
+                        <span className="ap-status-prime px-2 py-0.5 rounded-md font-mono text-2xs font-bold uppercase">
                           5s Post-Workout Quick-Log
                         </span>
                         <span className="font-semibold text-slate-800 dark:text-slate-100">
@@ -3828,11 +3928,11 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         </span>
                       </div>
                       {quickLogSavedMsg ? (
-                        <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                        <span className="font-mono text-2xs text-emerald-600 dark:text-emerald-400 font-semibold">
                           ✓ {quickLogSavedMsg}
                         </span>
                       ) : curLog.loggedAt ? (
-                        <span className="font-mono text-[11px] text-slate-400">
+                        <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
                           Logged {new Date(curLog.loggedAt).toLocaleDateString()}
                         </span>
                       ) : null}
@@ -3841,20 +3941,22 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
                       {/* 1-Tap RPE 1–10 Selector */}
                       <div className="sm:col-span-5 flex flex-wrap items-center gap-1">
-                        <span className="text-[11px] font-mono text-slate-500 mr-1">RPE:</span>
+                        <span className="text-2xs font-mono text-slate-500 mr-1">RPE:</span>
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
+                            aria-pressed={curLog.rpe === val}
+                            aria-label={`RPE ${val} of 10`}
                             onClick={() =>
                               saveQuickLogForActivity(selectedActivity.id, { rpe: val })
                             }
-                            className={`w-6 h-6 rounded-md font-mono text-[11px] font-bold transition-colors ${
+                            className={`min-h-[36px] min-w-[30px] sm:min-h-[28px] sm:min-w-[26px] rounded-md font-mono text-2xs font-bold transition-colors ${
                               curLog.rpe === val
                                 ? val >= 8
                                   ? 'bg-rose-600 text-white'
                                   : val >= 5
-                                    ? 'bg-amber-500 text-white'
+                                    ? 'bg-amber-500 text-[#080A09]'
                                     : 'bg-emerald-600 text-white'
                                 : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
                             }`}
@@ -3866,10 +3968,14 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
                       {/* Carbs g/hr */}
                       <div className="sm:col-span-2 flex items-center gap-1.5">
-                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                        <label
+                          htmlFor={`${formId}-quicklog-carbs`}
+                          className="text-2xs font-mono text-slate-500 whitespace-nowrap"
+                        >
                           Carbs:
                         </label>
                         <input
+                          id={`${formId}-quicklog-carbs`}
                           type="number"
                           min={0}
                           max={150}
@@ -3880,17 +3986,21 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               carbsGramsPerHour: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-16 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                          className="w-16 min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                         />
-                        <span className="text-[10px] font-mono text-slate-400">g/hr</span>
+                        <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">g/hr</span>
                       </div>
 
                       {/* Sodium mg/hr */}
                       <div className="sm:col-span-2 flex items-center gap-1.5">
-                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                        <label
+                          htmlFor={`${formId}-quicklog-sodium`}
+                          className="text-2xs font-mono text-slate-500 whitespace-nowrap"
+                        >
                           Na+:
                         </label>
                         <input
+                          id={`${formId}-quicklog-sodium`}
                           type="number"
                           min={0}
                           max={2000}
@@ -3901,17 +4011,21 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               sodiumMgPerHour: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-16 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                          className="w-16 min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                         />
-                        <span className="text-[10px] font-mono text-slate-400">mg/h</span>
+                        <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">mg/h</span>
                       </div>
 
                       {/* Gear / Shoe Tag */}
                       <div className="sm:col-span-3 flex items-center gap-1.5">
-                        <label className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
+                        <label
+                          htmlFor={`${formId}-quicklog-gear`}
+                          className="text-2xs font-mono text-slate-500 whitespace-nowrap"
+                        >
                           Gear:
                         </label>
                         <input
+                          id={`${formId}-quicklog-gear`}
                           type="text"
                           placeholder={
                             selectedActivity.sportCategory === 'Cycling'
@@ -3924,7 +4038,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               gearName: e.target.value,
                             })
                           }
-                          className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
+                          className="w-full min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
                         />
                       </div>
                     </div>
@@ -3934,7 +4048,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
               {/* High-Frequency 1Hz uPlot Telemetry Canvas + Web Worker Analytics Strip */}
               {(() => {
-                const activeStream = liveDexieStream?.streams || selectedActivity.streams;
+                const activeStream = activeSelectedStream;
                 const hasStreamPoints = Boolean(activeStream && Array.isArray(activeStream.time) && activeStream.time.length > 1);
                 if (!hasStreamPoints) {
                   return (
@@ -3959,13 +4073,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                     </div>
                   );
                 }
-                const effectiveProfile =
-                  athleteProfile || buildCompleteAthleteProfile({ weightKg: athleteWeightKg });
-                const debriefReport = generatePostWorkoutDebrief(
-                  selectedActivity,
-                  activeStream,
-                  effectiveProfile
-                );
+                const debriefReport = selectedDebriefReport;
 
                 return (
                   <div className="space-y-4">
@@ -3974,14 +4082,14 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="ap-status-info px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider">
+                              <span className="ap-status-info px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider">
                                 30-Second Signal Debrief
                               </span>
                               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                                 {debriefReport.headline}
                               </h3>
                             </div>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            <p className="text-2xs text-slate-500 dark:text-slate-400 mt-0.5">
                               Deterministic 1Hz physiology scan — click any insight below to zoom the stream canvas to its exact telemetry window.
                             </p>
                           </div>
@@ -4040,18 +4148,18 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span
-                                    className={`${pillClass} px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider`}
+                                    className={`${pillClass} px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider`}
                                   >
                                     {ins.badge}
                                   </span>
-                                  <span className="text-[11px] font-mono text-blue-600 dark:text-sky-400 font-semibold group-hover:underline">
+                                  <span className="text-2xs font-mono text-blue-600 dark:text-sky-400 font-semibold group-hover:underline">
                                     {ins.timestampLabel} ↗
                                   </span>
                                 </div>
                                 <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
                                   {ins.title}
                                 </div>
-                                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
                                   {ins.detail}
                                 </p>
                               </button>
@@ -4061,35 +4169,35 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       </div>
                     )}
 
-                    <UPlotStreamChart
-                      streams={activeStream!}
-                      sportCategory={selectedActivity.sportCategory}
-                      distanceUnit={distanceUnit}
-                      athleteWeightKg={athleteWeightKg}
-                      intervals={
-                        workerAnalytics?.intervals ||
-                        liveDexieStream?.intervals ||
-                        selectedActivity.intervals
+                    <Suspense
+                      fallback={
+                        <div className="h-[280px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                          Loading 1Hz Stream Canvas…
+                        </div>
                       }
-                      peakWindows={workerAnalytics?.peakWindows}
-                      workerMetrics={workerAnalytics}
-                      isWorkerProcessing={isWorkerProcessing}
-                      onTriggerWorker1HzUpsample={() => {
-                        setIsWorkerProcessing(true);
-                        upsampleAndAnalyzeActivityInWorker({
-                          ...selectedActivity,
-                          streams: activeStream,
-                        })
-                          .then(({ analytics }) => setWorkerAnalytics(analytics))
-                          .finally(() => setIsWorkerProcessing(false));
-                      }}
-                      syncKey="thresh-activity-inspector"
-                      onHoverIndex={setStreamHoverIndex}
-                      zoomRange={streamZoomRange}
-                      zoomWindowSecs={debriefZoomWindow}
-                      onZoomRangeChange={setStreamZoomRange}
-                      height={280}
-                    />
+                    >
+                      <UPlotStreamChart
+                        streams={activeStream!}
+                        sportCategory={selectedActivity.sportCategory}
+                        distanceUnit={distanceUnit}
+                        athleteWeightKg={athleteWeightKg}
+                        intervals={
+                          workerAnalytics?.intervals ||
+                          liveDexieStream?.intervals ||
+                          selectedActivity.intervals
+                        }
+                        peakWindows={workerAnalytics?.peakWindows}
+                        workerMetrics={workerAnalytics}
+                        isWorkerProcessing={isWorkerProcessing}
+                        onTriggerWorker1HzUpsample={handleTriggerWorker1HzUpsample}
+                        syncKey="thresh-activity-inspector"
+                        onHoverIndex={setStreamHoverIndex}
+                        zoomRange={streamZoomRange}
+                        zoomWindowSecs={debriefZoomWindow}
+                        onZoomRangeChange={setStreamZoomRange}
+                        height={280}
+                      />
+                    </Suspense>
                   </div>
                 );
               })()}
@@ -4448,7 +4556,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                           <span>Auto-Zone Insight</span>
                           <span
-                            className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+                            className={`px-1.5 py-0.2 rounded text-2xs font-mono font-bold ${
                               showAutoZoneInsight
                                 ? 'bg-indigo-600 text-white'
                                 : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
@@ -4487,7 +4595,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       <div className="rounded-xl bg-indigo-500/8 dark:bg-indigo-500/12 border border-indigo-500/30 p-3.5 space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-mono font-bold uppercase tracking-wider">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600 text-white text-2xs font-mono font-bold uppercase tracking-wider">
                               <Sparkles className="w-3 h-3" />
                               Auto-Zone Coach Overlay
                             </span>
@@ -4566,7 +4674,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
                       {/* Actual 100% Stacked Bar */}
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                        <div className="flex items-center justify-between text-2xs font-mono text-slate-500">
                           <span>Actual Session Distribution</span>
                           <span>100%</span>
                         </div>
@@ -4588,7 +4696,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       {/* Coach Expected 100% Stacked Bar (when Auto-Zone Insight is ON) */}
                       {showAutoZoneInsight && (
                         <div className="space-y-1 pt-0.5">
-                          <div className="flex items-center justify-between text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
+                          <div className="flex items-center justify-between text-2xs font-mono text-indigo-600 dark:text-indigo-400">
                             <span>
                               Coach Expected Distribution ({expectedProfile.shortLabel})
                             </span>
@@ -4622,7 +4730,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         onMouseLeave={() => setHrZoneHoverIdx(null)}
                       >
                         {showAutoZoneInsight && (
-                          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] font-mono">
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-2xs font-mono">
                             <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
                               <span className="w-2.5 h-2.5 rounded-xs bg-blue-500 inline-block" />
                               Solid Bar = Actual Time in Zone
@@ -4663,7 +4771,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   y={96}
                                   transform="rotate(-90 14 96)"
                                   textAnchor="middle"
-                                  className="fill-slate-600 dark:fill-slate-300 text-[11px] font-sans font-bold"
+                                  className="fill-slate-600 dark:fill-slate-300 text-2xs font-sans font-bold"
                                 >
                                   Time in Zone (mm:ss)
                                 </text>
@@ -4674,7 +4782,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   y={96}
                                   transform="rotate(90 528 96)"
                                   textAnchor="middle"
-                                  className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans font-bold"
+                                  className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans font-bold"
                                 >
                                   Share of Workout (%)
                                 </text>
@@ -4701,14 +4809,14 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         x={chartLeft - 6}
                                         y={y + 4}
                                         textAnchor="end"
-                                        className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
+                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                                       >
                                         {formatStopwatch(tSecs)}
                                       </text>
                                       <text
                                         x={chartRight + 6}
                                         y={y + 4}
-                                        className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
+                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                                       >
                                         {pctVal}%
                                       </text>
@@ -4789,7 +4897,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                           (showAutoZoneInsight ? Math.min(barY, expY) : barY) - 5
                                         )}
                                         textAnchor="middle"
-                                        className="fill-slate-800 dark:fill-slate-100 text-[10px] font-mono font-bold"
+                                        className="fill-slate-800 dark:fill-slate-100 text-2xs font-mono font-bold"
                                       >
                                         {z.secs > 0 ? `${Math.round(z.pct)}%` : '0%'}
                                         {showAutoZoneInsight ? ` / ${z.expectedPct}%` : ''}
@@ -4800,7 +4908,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         x={centerX}
                                         y={186}
                                         textAnchor="middle"
-                                        className="fill-slate-700 dark:fill-slate-200 text-[11px] font-mono font-bold"
+                                        className="fill-slate-700 dark:fill-slate-200 text-2xs font-mono font-bold"
                                       >
                                         {z.zone}
                                       </text>
@@ -4808,7 +4916,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         x={centerX}
                                         y={199}
                                         textAnchor="middle"
-                                        className="fill-slate-500 dark:fill-slate-400 text-[9px] font-mono"
+                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                                       >
                                         {z.bpmRange.replace(' bpm', '')}
                                       </text>
@@ -4844,7 +4952,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   x={chartLeft + chartW / 2}
                                   y={218}
                                   textAnchor="middle"
-                                  className="fill-slate-600 dark:fill-slate-300 text-[11px] font-sans font-bold"
+                                  className="fill-slate-600 dark:fill-slate-300 text-2xs font-sans font-bold"
                                 >
                                   X-Axis: Physiological Heart Rate Zones (Z1–Z6 · Actual % vs Coach Target %)
                                 </text>
@@ -4856,7 +4964,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
                       {/* Right 5 Cols: Detailed Zone Table with Horizontal Progress Bars, Coach Target Pins & Delta Badges */}
                       <div className="lg:col-span-5 space-y-2">
-                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800 pb-1">
+                        <div className="flex items-center justify-between text-2xs font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800 pb-1">
                           <span>Zone &amp; HR Threshold</span>
                           <span>
                             {showAutoZoneInsight
@@ -4884,7 +4992,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
                                   {z.shortLabel}
                                 </span>
-                                <span className="font-mono text-[11px] text-slate-500 hidden sm:inline">
+                                <span className="font-mono text-2xs text-slate-500 hidden sm:inline">
                                   ({z.bpmRange})
                                 </span>
                               </div>
@@ -4895,7 +5003,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 </span>
                                 {showAutoZoneInsight && (
                                   <span
-                                    className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                                    className={`text-2xs px-1.5 py-0.2 rounded font-mono ${
                                       Math.abs(z.deltaPct) <= 6
                                         ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                                         : z.deltaPct > 6
@@ -5008,7 +5116,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                 );
                               }
                             }}
-                            className="min-h-[30px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                            className="min-h-[30px] px-3 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold transition-colors whitespace-nowrap"
                           >
                             Recover Unstructured Reps (1Hz No-Lap Detector)
                           </button>
@@ -5040,13 +5148,24 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             {effectiveIntervals.map((iv) => (
                               <tr
                                 key={iv.id}
+                                tabIndex={0}
                                 onClick={() =>
                                   zoomStreamToTimeWindow(
                                     Math.max(0, iv.startTimeSecs - 15),
                                     iv.startTimeSecs + iv.durationSecs + 15
                                   )
                                 }
-                                className={`cursor-pointer transition-colors ${
+                                onKeyDown={(e) => {
+                                  if (e.target !== e.currentTarget) return;
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    zoomStreamToTimeWindow(
+                                      Math.max(0, iv.startTimeSecs - 15),
+                                      iv.startTimeSecs + iv.durationSecs + 15
+                                    );
+                                  }
+                                }}
+                                className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                                   iv.type === 'WORK'
                                     ? 'bg-blue-500/5 dark:bg-blue-500/10 font-medium hover:bg-blue-500/15'
                                     : 'opacity-75 hover:bg-slate-50 dark:hover:bg-slate-900/50'
@@ -5056,7 +5175,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   <span
                                     className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold mr-2 ${
                                       iv.type === 'WORK'
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                                         : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                     }`}
                                   >
@@ -5170,13 +5289,23 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                               return (
                                 <tr
                                   key={`${eff.id}-${sid}-${effIdx}`}
+                                  tabIndex={totalAttempts >= 2 ? 0 : undefined}
                                   onClick={() => {
                                     if (totalAttempts >= 2) {
                                       setModalSelectedSegmentId(sid);
                                     }
                                   }}
+                                  onKeyDown={(e) => {
+                                    if (totalAttempts < 2 || e.target !== e.currentTarget) return;
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setModalSelectedSegmentId(sid);
+                                    }
+                                  }}
                                   className={`${
-                                    totalAttempts >= 2 ? 'cursor-pointer' : ''
+                                    totalAttempts >= 2
+                                      ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500'
+                                      : ''
                                   } transition-colors ${
                                     isSelectedForChart
                                       ? 'bg-blue-500/10 dark:bg-blue-500/15'
@@ -5236,7 +5365,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                         }}
                                         className={`min-h-[28px] px-2.5 py-1 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
                                           isSelectedForChart
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                                             : 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'
                                         }`}
                                       >
@@ -5245,7 +5374,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                           : `Effort Over Time (${totalAttempts}x)`}
                                       </button>
                                     ) : (
-                                      <span className="text-xs font-mono text-slate-400">1st effort</span>
+                                      <span className="text-xs font-mono text-slate-600 dark:text-slate-400">1st effort</span>
                                     )}
                                   </td>
                                 </tr>
@@ -5331,8 +5460,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                         {similarHistoricalWorkouts.map((sim) => (
                           <tr
                             key={sim.id}
+                            tabIndex={0}
                             onClick={() => onSelectActivity(sim)}
-                            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60"
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget) return;
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelectActivity(sim);
+                              }
+                            }}
+                            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
                           >
                             <td className="py-2.5 pr-3 font-sans">
                               <span className="font-mono text-slate-500 mr-2">
@@ -5372,7 +5509,7 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                                   handleAssignToCompareSlot(sim, 'B');
                                   onSelectActivity(null);
                                 }}
-                                className="min-h-[28px] px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                                className="min-h-[28px] px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold transition-colors whitespace-nowrap"
                               >
                                 Overlay in Split-View
                               </button>
@@ -5391,3 +5528,5 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
     </div>
   );
 };
+
+export const ActivitiesView = React.memo(ActivitiesViewInner);

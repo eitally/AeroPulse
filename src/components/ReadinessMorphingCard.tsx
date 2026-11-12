@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Bike,
@@ -50,6 +50,8 @@ interface ReadinessMorphingCardProps {
   defaultExpanded?: boolean;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  sportMode?: 'Cycling' | 'Running';
+  onSportModeChange?: (sport: 'Cycling' | 'Running') => void;
   placementLabel?: string;
   onSyncMorphedToCalendar: (eventInput: {
     date: string;
@@ -113,6 +115,17 @@ function computeSummaryFromSkyline(steps: SkylineStep[]) {
   return { totalMins, tss, ifVal };
 }
 
+function formatThresholdPaceDisplay(
+  secsPerKm: number,
+  distanceUnit: DistanceUnit
+): string {
+  const safeSecs = Math.max(150, secsPerKm || 255);
+  const perUnit = distanceUnit === 'mi' ? Math.round(safeSecs * 1.609344) : Math.round(safeSecs);
+  const mins = Math.floor(perUnit / 60);
+  const secs = perUnit % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}/${distanceUnit}`;
+}
+
 export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   wellnessDays,
   activities,
@@ -122,6 +135,8 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   defaultExpanded = true,
   isExpanded: controlledExpanded,
   onToggleExpand,
+  sportMode: controlledSportMode,
+  onSportModeChange,
   placementLabel = 'Morning Brief · Daily Prescription',
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -136,14 +151,67 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
       setInternalExpanded((prev) => !prev);
     }
   };
+  const todayIso = useMemo(() => getLocalDateIso(), []);
+
+  const inferredSport = useMemo<'Cycling' | 'Running'>(() => {
+    const todayPlanned = plannedEvents.find(
+      (ev) =>
+        (ev.date || '').slice(0, 10) === todayIso &&
+        (ev.sportCategory === 'Running' || ev.sportCategory === 'Cycling')
+    );
+    if (todayPlanned?.sportCategory === 'Running' || todayPlanned?.sportCategory === 'Cycling') {
+      return todayPlanned.sportCategory;
+    }
+    if (athleteProfile.primarySport === 'Running') return 'Running';
+    if (athleteProfile.primarySport === 'Cycling') return 'Cycling';
+    const runCount = activities.filter((a) => a.sportCategory === 'Running').length;
+    const bikeCount = activities.filter((a) => a.sportCategory === 'Cycling').length;
+    return runCount > bikeCount ? 'Running' : 'Cycling';
+  }, [plannedEvents, todayIso, athleteProfile.primarySport, activities]);
+
   const [selectedMode, setSelectedMode] = useState<MorphReadinessMode>('AUTO');
-  const [sportMode, setSportMode] = useState<'Cycling' | 'Running'>('Cycling');
-  const [envMode, setEnvMode] = useState<'INDOOR' | 'OUTDOOR'>('INDOOR');
+  const [internalSportMode, setInternalSportMode] = useState<'Cycling' | 'Running'>(inferredSport);
+  const [hasManualSport, setHasManualSport] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!hasManualSport && controlledSportMode === undefined) {
+      setInternalSportMode(inferredSport);
+    }
+  }, [inferredSport, hasManualSport, controlledSportMode]);
+
+  const sportMode = controlledSportMode ?? internalSportMode;
+  const handleSelectSportMode = (nextSport: 'Cycling' | 'Running') => {
+    setHasManualSport(true);
+    if (onSportModeChange) {
+      onSportModeChange(nextSport);
+    } else {
+      setInternalSportMode(nextSport);
+    }
+  };
+
+  const inferredEnvMode = useMemo<'INDOOR' | 'OUTDOOR'>(() => {
+    const todayPlanned = plannedEvents.find(
+      (ev) => (ev.date || '').slice(0, 10) === todayIso && ev.sportCategory === sportMode
+    );
+    if (todayPlanned?.environmentPreference === 'INDOOR') return 'INDOOR';
+    if (todayPlanned?.environmentPreference === 'OUTDOOR') return 'OUTDOOR';
+    const recentMatching = activities.find((a) => a.sportCategory === sportMode);
+    if (recentMatching?.environment === 'INDOOR') return 'INDOOR';
+    return 'OUTDOOR';
+  }, [plannedEvents, todayIso, sportMode, activities]);
+
+  const [envMode, setEnvMode] = useState<'INDOOR' | 'OUTDOOR'>(inferredEnvMode);
+  const [hasManualEnv, setHasManualEnv] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!hasManualEnv) {
+      setEnvMode(inferredEnvMode);
+    }
+  }, [inferredEnvMode, hasManualEnv]);
+
   const [isSyncingCalendar, setIsSyncingCalendar] = useState<boolean>(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [syncedBanner, setSyncedBanner] = useState<string | null>(null);
-
-  const todayIso = useMemo(() => getLocalDateIso(), []);
 
   // Latest morning wellness (honest zeros when uncalibrated — never invent fake readiness metrics)
   const latestWellness = useMemo(() => {
@@ -740,7 +808,7 @@ ${dataLines.join('\n')}
           <button
             type="button"
             onClick={handleToggleExpand}
-            className="ap-btn-primary !min-h-[36px] !px-3 !py-1 !rounded-xl text-[11px] font-bold tracking-wide uppercase cursor-pointer"
+            className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] !px-3 !py-1 !rounded-xl text-2xs font-bold tracking-wide uppercase cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>{placementLabel}</span>
@@ -755,10 +823,10 @@ ${dataLines.join('\n')}
             <button
               type="button"
               onClick={handleToggleExpand}
-              className="text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:opacity-80 transition-opacity"
+              className="min-h-[44px] sm:min-h-0 inline-flex flex-wrap items-center gap-1.5 text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:opacity-80 transition-opacity"
             >
               {morphedWorkout.title}{' '}
-              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="font-mono text-2xs text-slate-500 dark:text-slate-400">
                 · {morphedWorkout.totalMins}m · {morphedWorkout.tss} TSS
               </span>
             </button>
@@ -789,33 +857,57 @@ ${dataLines.join('\n')}
             <button
               type="button"
               onClick={onOpenAthleteProfileModal}
-              className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/50 text-[11px] font-mono text-slate-700 dark:text-slate-200 transition-colors"
-              title="Inspect or edit Athlete Profile, FTP, Weight & 7-Zone Power/HR Tables"
+              className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-emerald-500/50 text-2xs font-mono text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              title="Inspect or edit Athlete Profile, Thresholds & 7-Zone Tables"
             >
-              <Sliders className="w-3 h-3 text-blue-500" />
-              <span>
-                {envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP{' '}
-                <strong className="text-blue-600 dark:text-sky-300">{activeFtp}W</strong>
-              </span>
-              <span className="opacity-40">·</span>
-              <span>LTHR {athleteProfile.lthr}bpm</span>
-              <span className="opacity-40">·</span>
-              <span>
-                {distanceUnit === 'mi'
-                  ? `${(athleteProfile.weightKg * 2.20462).toFixed(1)} lbs`
-                  : `${athleteProfile.weightKg.toFixed(1)} kg`}
-              </span>
+              <Sliders className="w-3 h-3 ap-text-brand" />
+              {sportMode === 'Running' ? (
+                <>
+                  <span>
+                    LT2{' '}
+                    <strong className="ap-text-brand">
+                      {formatThresholdPaceDisplay(
+                        athleteProfile.thresholdPaceSecsPerKm,
+                        distanceUnit
+                      )}
+                    </strong>
+                  </span>
+                  <span className="opacity-40">·</span>
+                  <span>LTHR {athleteProfile.runLthr || athleteProfile.lthr}bpm</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP{' '}
+                    <strong className="ap-text-brand">{activeFtp}W</strong>
+                  </span>
+                  <span className="opacity-40">·</span>
+                  <span>LTHR {athleteProfile.lthr}bpm</span>
+                </>
+              )}
+              {!athleteProfile.safeSportHideWeight && (
+                <>
+                  <span className="opacity-40">·</span>
+                  <span>
+                    {distanceUnit === 'mi'
+                      ? `${(athleteProfile.weightKg * 2.20462).toFixed(1)} lbs`
+                      : `${athleteProfile.weightKg.toFixed(1)} kg`}
+                  </span>
+                </>
+              )}
             </button>
 
             {/* Sport & Modality Toggle */}
-            <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-[11px]">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-2xs">
               <button
                 type="button"
+                aria-pressed={sportMode === 'Cycling' && envMode === 'INDOOR'}
                 onClick={() => {
-                  setSportMode('Cycling');
+                  handleSelectSportMode('Cycling');
+                  setHasManualEnv(true);
                   setEnvMode('INDOOR');
                 }}
-                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 transition-all cursor-pointer ${
                   sportMode === 'Cycling' && envMode === 'INDOOR'
                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                     : 'text-slate-500 dark:text-slate-400'
@@ -826,11 +918,13 @@ ${dataLines.join('\n')}
               </button>
               <button
                 type="button"
+                aria-pressed={sportMode === 'Cycling' && envMode === 'OUTDOOR'}
                 onClick={() => {
-                  setSportMode('Cycling');
+                  handleSelectSportMode('Cycling');
+                  setHasManualEnv(true);
                   setEnvMode('OUTDOOR');
                 }}
-                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 transition-all cursor-pointer ${
                   sportMode === 'Cycling' && envMode === 'OUTDOOR'
                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                     : 'text-slate-500 dark:text-slate-400'
@@ -841,8 +935,13 @@ ${dataLines.join('\n')}
               </button>
               <button
                 type="button"
-                onClick={() => setSportMode('Running')}
-                className={`px-2 py-1 rounded-lg inline-flex items-center gap-1 transition-all ${
+                aria-pressed={sportMode === 'Running'}
+                onClick={() => {
+                  handleSelectSportMode('Running');
+                  setHasManualEnv(true);
+                  setEnvMode('OUTDOOR');
+                }}
+                className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 transition-all cursor-pointer ${
                   sportMode === 'Running'
                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                     : 'text-slate-500 dark:text-slate-400'
@@ -869,7 +968,7 @@ ${dataLines.join('\n')}
           {/* Explainable Physiological Triggers Strip */}
           <div className="px-4 sm:px-5 py-2.5 bg-white/40 dark:bg-slate-950/40 border-b border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <span className="text-2xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 Why It Adapted:
               </span>
               {triggers.items.map((t) => {
@@ -882,23 +981,23 @@ ${dataLines.join('\n')}
                 return (
                   <div
                     key={t.id}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] ${pillClass}`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-2xs ${pillClass}`}
                     title={`${t.label}: ${t.value} (${t.detail})`}
                   >
                     <span className="font-semibold">{t.label.split(' ')[0]}:</span>
                     <span className="font-mono font-bold tabular-nums">{t.value}</span>
-                    <span className="opacity-75 text-[10px] hidden sm:inline">({t.detail})</span>
+                    <span className="opacity-75 text-2xs hidden sm:inline">({t.detail})</span>
                   </div>
                 );
               })}
             </div>
 
             {/* Readiness State Simulator Switcher */}
-            <div className="flex items-center gap-1 text-[11px]">
-              <span className="text-[10px] text-slate-400 font-medium hidden xl:inline">
+            <div className="flex items-center gap-1 text-2xs">
+              <span className="text-2xs text-slate-600 dark:text-slate-400 font-medium hidden xl:inline">
                 Mode:
               </span>
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[10px]">
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
                 {(
                   [
                     { id: 'AUTO', label: 'Auto' },
@@ -932,19 +1031,19 @@ ${dataLines.join('\n')}
             <div className="rounded-xl bg-slate-50/85 dark:bg-slate-900/75 border border-slate-200/90 dark:border-slate-800 p-4 flex flex-col justify-between space-y-3">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                      1. {baselineWorkout.sourceLabel}
-                    </div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                       {baselineWorkout.title}
                     </h3>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-2xs font-mono text-slate-700 dark:text-slate-300">
+                      {baselineWorkout.sourceLabel}
+                    </span>
                   </div>
                   <div className="text-right font-mono tabular-nums text-xs shrink-0">
                     <div className="font-bold text-slate-900 dark:text-slate-100">
                       {baselineWorkout.totalMins}m · {baselineWorkout.tss} TSS
                     </div>
-                    <div className="text-[10px] text-slate-500">
+                    <div className="text-2xs text-slate-500">
                       IF {baselineWorkout.ifVal} · Next TSB{' '}
                       {morphedWorkout.projTomorrowTsbBaseline > 0
                         ? `+${morphedWorkout.projTomorrowTsbBaseline}`
@@ -955,9 +1054,13 @@ ${dataLines.join('\n')}
 
                 {/* Original Effort Zone Skyline */}
                 <div className="rounded-lg bg-white dark:bg-slate-950/90 border border-slate-200/80 dark:border-slate-800 p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  <div className="flex items-center justify-between text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>Baseline Effort Zone Skyline</span>
-                    <span>FTP {activeFtp}W</span>
+                    <span>
+                      {sportMode === 'Running'
+                        ? `LT2 ${formatThresholdPaceDisplay(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)}`
+                        : `FTP ${activeFtp}W`}
+                    </span>
                   </div>
                   <div className="relative h-16 w-full flex items-end gap-0.5 pt-1">
                     {baselineWorkout.steps.map((s, idx) => (
@@ -969,7 +1072,7 @@ ${dataLines.join('\n')}
                           backgroundColor: s.zoneColor,
                         }}
                         className="rounded-t-[2px] opacity-85 hover:opacity-100 transition-opacity"
-                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% FTP, ${s.zoneCode})`}
+                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ${s.zoneCode})`}
                       />
                     ))}
                     <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/75" />
@@ -981,7 +1084,7 @@ ${dataLines.join('\n')}
                   {baselineWorkout.steps.map((s, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded bg-white/70 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800/70"
+                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/70 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800/70"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
@@ -1005,31 +1108,31 @@ ${dataLines.join('\n')}
             </div>
 
             {/* RIGHT PANEL: READINESS-MORPHED WORKOUT SKYLINE */}
-            <div className="rounded-xl bg-blue-500/[0.04] dark:bg-sky-500/[0.06] border border-blue-500/35 p-4 flex flex-col justify-between space-y-3">
+            <div className="rounded-xl bg-emerald-500/[0.05] dark:bg-emerald-500/[0.08] border border-emerald-500/35 p-4 flex flex-col justify-between space-y-3">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-bold flex items-center gap-1">
-                      <Zap className="w-3 h-3" />
-                      <span>2. Adapted Workout Prescription</span>
-                    </div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-emerald-950 dark:text-emerald-50">
                       {morphedWorkout.title}
                     </h3>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-2xs font-mono font-semibold text-emerald-800 dark:text-emerald-300">
+                      <Zap className="w-3 h-3" />
+                      <span>Adapted Prescription</span>
+                    </span>
                   </div>
                   <div className="text-right font-mono tabular-nums text-xs shrink-0">
-                    <div className="font-bold text-blue-600 dark:text-sky-300">
+                    <div className="font-bold text-emerald-800 dark:text-emerald-300">
                       {morphedWorkout.totalMins}m · {morphedWorkout.tss} TSS{' '}
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15">
+                      <span className="text-2xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-900 dark:text-emerald-200">
                         {morphedWorkout.tssDelta >= 0
                           ? `+${morphedWorkout.tssDelta}`
                           : morphedWorkout.tssDelta}{' '}
                         TSS
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    <div className="text-2xs text-emerald-900/75 dark:text-emerald-200/80">
                       IF {morphedWorkout.ifVal} · Next TSB{' '}
-                      <strong className="text-emerald-600 dark:text-emerald-400">
+                      <strong className="text-emerald-800 dark:text-emerald-300">
                         {morphedWorkout.projTomorrowTsbMorphed > 0
                           ? `+${morphedWorkout.projTomorrowTsbMorphed}`
                           : morphedWorkout.projTomorrowTsbMorphed}
@@ -1039,12 +1142,17 @@ ${dataLines.join('\n')}
                 </div>
 
                 {/* Morphed Effort Zone Skyline */}
-                <div className="rounded-lg bg-white dark:bg-slate-950/90 border border-blue-500/30 p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-blue-600 dark:text-sky-300">
+                <div className="rounded-lg bg-white dark:bg-slate-950/90 border border-emerald-500/30 p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-2xs font-mono text-emerald-800 dark:text-emerald-300">
                     <span>Adapted Effort Zone Skyline (Z1–Z6+)</span>
                     <span>
-                      {envMode === 'INDOOR' ? 'Virtual' : 'Outdoor'} FTP {activeFtp}W ·{' '}
-                      {(activeFtp / Math.max(35, athleteProfile.weightKg)).toFixed(2)} W/kg
+                      {sportMode === 'Running'
+                        ? `LT2 ${formatThresholdPaceDisplay(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)}`
+                        : `${envMode === 'INDOOR' ? 'Virtual' : 'Outdoor'} FTP ${activeFtp}W${
+                            !athleteProfile.safeSportHideWeight
+                              ? ` · ${(activeFtp / Math.max(35, athleteProfile.weightKg)).toFixed(2)} W/kg`
+                              : ''
+                          }`}
                     </span>
                   </div>
                   <div className="relative h-16 w-full flex items-end gap-0.5 pt-1">
@@ -1057,7 +1165,7 @@ ${dataLines.join('\n')}
                           backgroundColor: s.zoneColor,
                         }}
                         className="rounded-t-[2px] transition-all"
-                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% FTP, ${s.targetWkg} W/kg, ≤${s.hrCeilingBpm} bpm)`}
+                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ≤${s.hrCeilingBpm} bpm)`}
                       />
                     ))}
                     <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]" />
@@ -1069,7 +1177,7 @@ ${dataLines.join('\n')}
                   {morphedWorkout.steps.map((s, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded bg-white/90 dark:bg-slate-950/80 border border-blue-500/20"
+                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/90 dark:bg-slate-950/80 border border-emerald-500/25"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
@@ -1085,14 +1193,14 @@ ${dataLines.join('\n')}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
                         {s.diffBadge && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-sky-300 font-semibold">
+                          <span className="text-2xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-sky-300 font-semibold">
                             {s.diffBadge}
                           </span>
                         )}
                         <span className="font-bold text-indigo-600 dark:text-indigo-300">
                           {s.targetWatts}W
                         </span>
-                        <span className="text-rose-600 dark:text-rose-400 text-[10px]">
+                        <span className="text-rose-600 dark:text-rose-400 text-2xs">
                           ≤{s.hrCeilingBpm}bpm
                         </span>
                       </div>
@@ -1165,7 +1273,7 @@ ${dataLines.join('\n')}
                         <Download className="w-3.5 h-3.5 text-[#0D9488]" />
                         Download Garmin .FIT Binary
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500">.FIT</span>
+                      <span className="text-2xs font-mono text-slate-500">.FIT</span>
                     </button>
                     <button
                       type="button"
@@ -1180,7 +1288,7 @@ ${dataLines.join('\n')}
                         <Download className="w-3.5 h-3.5 text-[#EA580C]" />
                         Download Structured Workout
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500">.ZWO</span>
+                      <span className="text-2xs font-mono text-slate-500">.ZWO</span>
                     </button>
                     <button
                       type="button"
@@ -1195,7 +1303,7 @@ ${dataLines.join('\n')}
                         <Download className="w-3.5 h-3.5 text-[#7C3AED]" />
                         Download Smart Trainer ERG
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500">{activeFtp}W</span>
+                      <span className="text-2xs font-mono text-slate-500">{activeFtp}W</span>
                     </button>
                   </div>
                 )}

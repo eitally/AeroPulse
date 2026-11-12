@@ -5,7 +5,7 @@ import type {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { classifyActivityGarminLoad } from '../components/charts/EChartsPMCDashboard';
+import { classifyActivityGarminLoad } from './garminLoadFocus';
 import { generatePostWorkoutDebrief } from './workoutDebrief';
 
 export type TrainingProductivityVerdict =
@@ -477,11 +477,14 @@ function buildBucketSummary(
   };
 }
 
-function formatRunPaceKm(secsPerKm: number): string {
-  const clamped = Math.max(135, Math.min(600, Math.round(secsPerKm)));
+function formatRunPace(secsPerKm: number, distanceUnit: 'km' | 'mi' = 'km'): string {
+  const rawSecs = distanceUnit === 'mi' ? secsPerKm * 1.609344 : secsPerKm;
+  const minFloor = distanceUnit === 'mi' ? 215 : 135;
+  const maxCeil = distanceUnit === 'mi' ? 965 : 600;
+  const clamped = Math.max(minFloor, Math.min(maxCeil, Math.round(rawSecs)));
   const mins = Math.floor(clamped / 60);
   const secs = clamped % 60;
-  return `${mins}:${String(secs).padStart(2, '0')}/km`;
+  return `${mins}:${String(secs).padStart(2, '0')}/${distanceUnit}`;
 }
 
 function buildGapFillingPrescription(params: {
@@ -494,8 +497,16 @@ function buildGapFillingPrescription(params: {
   ];
   primarySport: SportCategory;
   profile?: AthleteProfile | null;
+  distanceUnit?: 'km' | 'mi';
 }): GapFillingPrescription {
-  const { verdict, autonomicState, buckets, primarySport, profile } = params;
+  const {
+    verdict,
+    autonomicState,
+    buckets,
+    primarySport,
+    profile,
+    distanceUnit = 'km',
+  } = params;
   const [lowBucket, highBucket, neuroBucket] = buckets;
   const ftp = profile?.ftp || 290;
   const runLthr = profile?.runLthr || profile?.lthr || 168;
@@ -506,11 +517,11 @@ function buildGapFillingPrescription(params: {
     ((profile?.sweetSpotMinPct || 86) + (profile?.sweetSpotMaxPct || 94)) / 2
   );
   const ltPaceSecs = profile?.thresholdPaceSecsPerKm || 250;
-  const runEasyPace = formatRunPaceKm(ltPaceSecs * 1.32);
-  const runZ2Pace = formatRunPaceKm(ltPaceSecs * 1.22);
-  const runTempoPace = formatRunPaceKm(ltPaceSecs * 1.07);
-  const runLtPace = formatRunPaceKm(ltPaceSecs);
-  const runStridePace = formatRunPaceKm(ltPaceSecs * 0.84);
+  const runEasyPace = formatRunPace(ltPaceSecs * 1.32, distanceUnit);
+  const runZ2Pace = formatRunPace(ltPaceSecs * 1.22, distanceUnit);
+  const runTempoPace = formatRunPace(ltPaceSecs * 1.07, distanceUnit);
+  const runLtPace = formatRunPace(ltPaceSecs, distanceUnit);
+  const runStridePace = formatRunPace(ltPaceSecs * 0.84, distanceUnit);
 
   // 1. Overreaching or Suppressed Autonomics -> Parasympathetic Flush
   if (verdict === 'OVERREACHING' || autonomicState === 'SUPPRESSED') {
@@ -520,7 +531,7 @@ function buildGapFillingPrescription(params: {
         : `≤64% FTP / ~${Math.round(ftp * 0.62)}W`;
     return {
       primaryDeficit: 'RECOVERY_NEEDED',
-      focusBadge: '🛡️ Autonomic Recovery Cap',
+      focusBadge: 'Autonomic Recovery Cap',
       headline: 'Cap intensity at strict Z1/Z2 to absorb recent acute strain',
       rationale: `Acute strain or overnight autonomic markers warrant parasympathetic recovery today. Keep HR ≤${z2MaxBpm} bpm (${outputCue}) so recent work converts into fitness.`,
       recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
@@ -541,7 +552,7 @@ function buildGapFillingPrescription(params: {
     const needed = Math.max(12, Math.abs(neuroBucket.deltaPtsToTarget));
     return {
       primaryDeficit: 'NEUROMUSCULAR',
-      focusBadge: `⚡ Neuromuscular Shortfall (${neuroBucket.sharePct}% vs 6–14%)`,
+      focusBadge: `Neuromuscular Shortfall (${neuroBucket.sharePct}% vs 6–14%)`,
       headline: `Add neuromuscular surges + Z2 base (+${needed} Neuro pts needed)`,
       rationale: `Your 7-day Neuromuscular/VO2 bucket is only ${neuroBucket.sharePct}% while autonomic readiness is ${autonomicState.toLowerCase()}. Pairing crisp 15–20s neuromuscular bursts inside a Z2 aerobic ride/run recruits fast-twitch motor units without heavy glycolytic fatigue.`,
       recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
@@ -559,7 +570,7 @@ function buildGapFillingPrescription(params: {
     const needed = Math.max(25, Math.abs(lowBucket.deltaPtsToTarget));
     return {
       primaryDeficit: 'LOW_AEROBIC',
-      focusBadge: `🌊 Low Aerobic Gap (${lowBucket.sharePct}% vs 65–78%)`,
+      focusBadge: `Low Aerobic Gap (${lowBucket.sharePct}% vs 65–78%)`,
       headline: `Rebalance polarization with disciplined Z2 base (+${needed} Low Aer pts)`,
       rationale: `High Aerobic load is ${highBucket.sharePct}% over the past 7 days while Low Aerobic Z1–Z2 sits at ${lowBucket.sharePct}%. A strictly capped Z2 endurance session (HR ≤${z2MaxBpm} bpm) expands mitochondrial density and clears residual threshold fatigue.`,
       recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
@@ -577,7 +588,7 @@ function buildGapFillingPrescription(params: {
     const needed = Math.max(18, Math.abs(highBucket.deltaPtsToTarget));
     return {
       primaryDeficit: 'HIGH_AEROBIC',
-      focusBadge: `🔥 High Aerobic Opportunity (${highBucket.sharePct}% vs 15–25%)`,
+      focusBadge: `High Aerobic Opportunity (${highBucket.sharePct}% vs 15–25%)`,
       headline: `Build threshold durability (+${needed} High Aerobic pts to target)`,
       rationale: `Your Low Aerobic foundation (${lowBucket.sharePct}%) is well-stocked and autonomic readiness supports quality work. Controlled Z3/Z4 Sweet Spot / Threshold intervals will push lactate clearance upward.`,
       recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
@@ -593,7 +604,7 @@ function buildGapFillingPrescription(params: {
   // 5. All 3 Systems Balanced inside Target Corridors!
   return {
     primaryDeficit: 'BALANCED',
-    focusBadge: '✓ 3-System Load Balanced',
+    focusBadge: '3-System Load Balanced',
     headline: 'All 3 energy systems are inside your 7-day target corridor',
     rationale: `Low Aerobic (${lowBucket.sharePct}%), High Aerobic (${highBucket.sharePct}%), and Neuromuscular (${neuroBucket.sharePct}%) strain are balanced cleanly. Maintain momentum with steady aerobic volume or your scheduled session.`,
     recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
@@ -615,6 +626,7 @@ export function evaluateRollingTrainingProductivity(params: {
   athleteProfile?: AthleteProfile | null;
   asOfDateIso?: string;
   excludeActivityIds?: ReadonlySet<string>;
+  distanceUnit?: 'km' | 'mi';
 }): TrainingProductivitySummary {
   const {
     activities,
@@ -622,6 +634,7 @@ export function evaluateRollingTrainingProductivity(params: {
     athleteProfile,
     asOfDateIso = getLocalDateIso(),
     excludeActivityIds,
+    distanceUnit = 'km',
   } = params;
 
   const windowStartIso = shiftIsoDate(asOfDateIso, -6);
@@ -639,8 +652,20 @@ export function evaluateRollingTrainingProductivity(params: {
   });
   const runCount = recent28Acts.filter((a) => a.sportCategory === 'Running').length;
   const bikeCount = recent28Acts.filter((a) => a.sportCategory === 'Cycling').length;
+  const totalRunCount = filteredActivities.filter((a) => a.sportCategory === 'Running').length;
+  const totalBikeCount = filteredActivities.filter((a) => a.sportCategory === 'Cycling').length;
   const primarySport: 'Cycling' | 'Running' =
-    runCount > bikeCount ? 'Running' : 'Cycling';
+    runCount !== bikeCount
+      ? runCount > bikeCount
+        ? 'Running'
+        : 'Cycling'
+      : totalRunCount !== totalBikeCount
+        ? totalRunCount > totalBikeCount
+          ? 'Running'
+          : 'Cycling'
+        : athleteProfile?.primarySport === 'Running'
+          ? 'Running'
+          : 'Cycling';
 
   // Index 7-day rolling window day-by-day
   const actsByDate = new Map<string, UnifiedActivity[]>();
@@ -989,6 +1014,7 @@ export function evaluateRollingTrainingProductivity(params: {
     buckets,
     primarySport,
     profile: athleteProfile,
+    distanceUnit,
   });
 
   return {

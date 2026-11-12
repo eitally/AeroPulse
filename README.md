@@ -15,7 +15,7 @@
 | :--- | :--- | :--- |
 | **[Online Documentation Portal (`/docs`)](public/docs/index.html)** | `/docs/index.html` | Standalone, searchable online documentation website served in `#1 Stadium Track` Light/Dark themes covering 3-step Strava onboarding, team QR/CSV workflows, NCAA tables, mathematical formulas, and REST API security. |
 | **[In-App Interactive Guide (`UserGuideModal.tsx`)](src/components/UserGuideModal.tsx)** | Click **`?` (Guide)** in top header | Interactive 9-chapter searchable manual with **15 physiological formula cards** and **"Try It Live →"** deep links into every modal and workspace. |
-| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | `docs/USER_GUIDE.md` | Complete step-by-step walkthrough across all 8 chapters, from 3-step Strava sign-in & sync policy selection to Weekly Git-Diffs, Durability curves, and Team Join codes. |
+| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | `docs/USER_GUIDE.md` | Complete step-by-step walkthrough across all 8 chapters, from 3-step Strava sign-in & sync policy selection to the Plan vs. Actual Ledger, Durability curves, and Team Join codes. |
 | **[High School & Collegiate Team Pack Guide (`docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`)](docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)** | `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md` | Deep dive into Team Branding Studio, QR posters, `.CSV` roster auto-matching, `SUMMARY_ONLY` / `FULL_STREAMS` / `LOAD_ONLY` sharing tiers, VDOT Pacing Pods, Watchless Split Pad, NCAA Track Conversions, Safe-Sport / RED-S Protection, and 20-Hour CARA audits. |
 | **[Physiology & Math Reference (`docs/PHYSIOLOGY_AND_METRICS.md`)](docs/PHYSIOLOGY_AND_METRICS.md)** | `docs/PHYSIOLOGY_AND_METRICS.md` | Mathematical derivations for Seed-Mark Calibration, Two-Pass Strava `rTSS` & `EF`, Banister `CTL`/`ATL`/`TSB`, 3-Channel Orthopedic ACWR, `0–40 kJ/kg` & `0–2,000 kcal` Durability, `CP`/`W'`, Skiba `W' Balance`, Daniels `VDOT`, and 1Hz Unstructured Interval Hysteresis. |
 | **[REST API, OAuth & Security (`docs/API_AND_SECURITY.md`)](docs/API_AND_SECURITY.md)** | `docs/API_AND_SECURITY.md` | Documentation for deterministic Strava session derivation, CSRF-signed OAuth `state`, `AES-256-GCM` Token Vault (`TOKEN_VAULT_KEY` + serverless `thresh_vault` backup), Clean-Room Strava Firewall, hardware webhooks, and OTA workout export. |
@@ -29,11 +29,11 @@
 | :--- | :---: | :---: | :---: | :---: |
 | **Strava Identity + Explicit Sync Window (`90d` / `6mo` / `All` / `None`)** | No | Native | No | **Yes + Optional Garmin / Intervals Add-Ons** |
 | **Banister PMC (`42d CTL`, `7d ATL`, `TSB`, `Ramp Rate`)** | Yes | No | No | **Yes + Two-Pass Calibrated Strava `rTSS`** |
-| **3-Channel Orthopedic Load Strip (`10x #1`)** | No | No | No | **Yes (Central / Run Impact / Bike Torque + 1-Tap Swap)** |
-| **Fatigue-Sliced Durability (`0–40 kJ/kg` & `0–2,000 kcal`, `10x #2`)** | Manual Custom | No | No | **Yes (Built-in Retention Curve & Carb `g/hr` Rx)** |
-| **Weekly Training Git-Diff (`- Original / + Proposed`, `10x #3`)** | No | No | No | **Yes ($\Delta\text{TSS}$, $\Delta\text{CTL}$, $\Delta\text{TSB}$ + 1-Tap Commit)** |
-| **Course Physics, Weather/Altitude & Carb/Sodium Simulator (`10x #4`)** | No | No | No | **Yes (5-Segment Pacing + Dual-Source Fueling Plan)** |
-| **GPS-to-Official Chip/FAT Rubber-Banding & Passports (`10x #6`)** | No | No | No | **Yes (`THV-...` Cryptographic Hash + Course Correction)** |
+| **3-Channel Orthopedic Load Strip** | No | No | No | **Yes (Central / Run Impact / Bike Torque + 1-Tap Swap)** |
+| **Fatigue-Sliced Durability (`0–40 kJ/kg` & `0–2,000 kcal`)** | Manual Custom | No | No | **Yes (Built-in Retention Curve & Carb `g/hr` Rx)** |
+| **Plan vs. Actual Ledger (`- Original / + Proposed`)** | No | No | No | **Yes ($\Delta\text{TSS}$, $\Delta\text{CTL}$, $\Delta\text{TSB}$ + 1-Tap Commit)** |
+| **Course Physics, Weather/Altitude & Carb/Sodium Simulator** | No | No | No | **Yes (5-Segment Pacing + Dual-Source Fueling Plan)** |
+| **GPS-to-Official Chip/FAT Rubber-Banding & Passports** | No | No | No | **Yes (`THV-...` Cryptographic Hash + Course Correction)** |
 | **Auto-Scaled VDOT Pacing Pods + Watchless Split Stopwatch** | No | No | Partial | **Yes (Pods A–D + Printable Sheet + 0.01s Multi-Runner Pad)** |
 | **Team QR Posters, `.CSV` Auto-Match, Safe-Sport & 20h CARA Audit** | No | No | Partial | **Yes (RED-S Shield + Sharing Tiers + NCAA Bylaw 17.1)** |
 

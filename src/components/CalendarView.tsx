@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalDialog } from '../hooks/useModalDialog';
 import {
   Bike,
   Calendar as CalendarIcon,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Dumbbell,
   FileText,
   Footprints,
   Heart,
   Moon,
   Plus,
+  Sliders,
   Sparkles,
   Trash2,
   Trophy,
@@ -680,7 +684,7 @@ function buildActivityEffortPresentation(
   };
 }
 
-export const CalendarView: React.FC<CalendarViewProps> = ({
+const CalendarViewInner: React.FC<CalendarViewProps> = ({
   activities,
   wellnessDays,
   plannedEvents,
@@ -733,26 +737,52 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Workout Builder Modal State
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+  const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
+  const viewOptionsRef = useRef<HTMLDivElement>(null);
+  const [pendingDeletePlannedId, setPendingDeletePlannedId] = useState<string | null>(null);
+  const builderDialogRef = useRef<HTMLDivElement>(null);
+  const builderFormId = useId();
+  useModalDialog({
+    isOpen: isBuilderOpen,
+    onClose: () => setIsBuilderOpen(false),
+    dialogRef: builderDialogRef,
+  });
 
   useEffect(() => {
-    if (!isBuilderOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsBuilderOpen(false);
+    if (!isViewOptionsOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(e.target as Node)) {
+        setIsViewOptionsOpen(false);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBuilderOpen]);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsViewOptionsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isViewOptionsOpen]);
 
   const [builderDate, setBuilderDate] = useState<string>(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [builderName, setBuilderName] = useState('4x8m Sweet Spot Progression');
-  const [builderSport, setBuilderSport] = useState<SportCategory>('Cycling');
+  const defaultIsRunner = athleteProfile?.primarySport === 'Running';
+  const [builderName, setBuilderName] = useState(() =>
+    defaultIsRunner ? '4x6m Cruise Threshold + 2m Float' : '4x8m Sweet Spot Progression'
+  );
+  const [builderSport, setBuilderSport] = useState<SportCategory>(() =>
+    defaultIsRunner ? 'Running' : 'Cycling'
+  );
   const [builderEnv, setBuilderEnv] = useState<'OUTDOOR' | 'INDOOR' | 'FLEXIBLE'>('FLEXIBLE');
-  const [builderSyntax, setBuilderSyntax] = useState(
-    `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`
+  const [builderSyntax, setBuilderSyntax] = useState(() =>
+    defaultIsRunner
+      ? `- 15m 68% Pace Warmup\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 10m 65% Pace Cooldown`
+      : `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`
   );
   const [builderNotes, setBuilderNotes] = useState(
     'Maintain smooth 90+ rpm cadence. Abort final interval if cardiac decoupling exceeds 5%.'
@@ -1085,9 +1115,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const getSportHeaderColor = (sport: SportCategory) => {
     if (sport === 'Cycling') return 'bg-[#0066CC] text-white';
-    if (sport === 'Running') return 'bg-[#16A34A] text-white';
-    if (sport === 'Swimming') return 'bg-[#0891B2] text-white';
-    return 'bg-[#6B6661] dark:bg-[#57534E] text-white';
+    if (sport === 'Running') return 'bg-[#15803D] text-white';
+    if (sport === 'Swimming') return 'bg-[#0E7490] text-white';
+    return 'bg-[#57534E] text-white';
   };
 
   const getSportIcon = (sport: SportCategory, className = 'w-3.5 h-3.5') => {
@@ -1160,21 +1190,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Primary Objective & Block Phase Ribbon */}
-      <section className="rounded-2xl liquid-glass px-4 py-3 border border-blue-500/25 flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-2xl liquid-glass px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="px-2.5 py-1 rounded-lg bg-[#1D4ED8] text-white text-[10px] font-mono font-bold uppercase tracking-wider">
-            Primary Goal Glance
+          <span className="ap-lane-badge">
+            <span className="ap-lane-badge-inner">Goal Glance</span>
           </span>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
                 {primaryObjective.title}
               </span>
-              <span className="px-2 py-0.5 rounded-md ap-status-prime text-[10px] font-mono font-bold">
+              <span className="px-2 py-0.5 rounded-md ap-status-prime text-2xs font-mono font-bold">
                 {primaryObjective.phase}
               </span>
               {primaryObjective.hasGoal && (
-                <span className="text-[11px] font-mono text-slate-500">
+                <span className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                   · {primaryObjective.weeksOut} wks ({primaryObjective.daysOut}d) to target
                 </span>
               )}
@@ -1184,16 +1214,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <div className="w-36 sm:w-48 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                   <div
                     style={{ width: `${primaryObjective.pct}%` }}
-                    className="h-full bg-[#1D4ED8] rounded-full"
+                    className="h-full bg-[#1C5436] dark:bg-[#C8FF00] rounded-full"
                   />
                 </div>
-                <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
                   {primaryObjective.currentStr} → <strong>{primaryObjective.targetStr}</strong> (
                   {primaryObjective.pct}%)
                 </span>
               </div>
             ) : (
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+              <p className="text-2xs text-[#43584B] dark:text-[#93A39A] mt-0.5">
                 Baseline: <strong className="font-mono">{primaryObjective.currentStr}</strong> · Add an A-race or FTP target in Progress to unlock periodized phase countdowns.
               </p>
             )}
@@ -1205,7 +1235,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={onOpenTodayWorkout}
-              className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl liquid-glass-subtle hover:border-sky-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
             >
               <span>Today&apos;s Readiness &amp; Workout →</span>
             </button>
@@ -1214,7 +1244,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={onOpenGoalsArchitect}
-              className="min-h-[32px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shadow-xs"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-semibold transition-colors whitespace-nowrap shadow-xs cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Training Block &amp; Race Goals →</span>
@@ -1227,7 +1257,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2.5">
-            <CalendarIcon className="w-4 h-4 text-blue-500" />
+            <CalendarIcon className="w-4 h-4 ap-text-brand" />
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
               {MONTH_NAMES[viewMonth]} {viewYear}
             </h1>
@@ -1253,10 +1283,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       setSportFilter(sp);
                       onSelectSport?.(sp);
                     }}
-                    className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                    className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
                       active
-                        ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE] font-semibold'
+                        : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
                     }`}
                   >
                     {sp === 'ALL' ? 'All Sports' : sp}
@@ -1270,7 +1300,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <button
                 type="button"
                 onClick={handlePrevMonth}
-                className="min-h-[30px] px-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+                aria-label="Previous Month"
+                className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2 rounded-lg flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
                 title="Previous Month"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -1278,14 +1309,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <button
                 type="button"
                 onClick={handleJumpToday}
-                className="min-h-[30px] px-2.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-xs font-mono font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-xs font-mono font-semibold text-slate-700 dark:text-slate-200 transition-colors"
               >
                 Today
               </button>
               <button
                 type="button"
                 onClick={handleNextMonth}
-                className="min-h-[30px] px-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+                aria-label="Next Month"
+                className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2 rounded-lg flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
                 title="Next Month"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -1296,7 +1328,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenOfficialRaceModal}
-                className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
+                className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
                 title="Log official track or road race results"
               >
                 <Trophy className="w-3.5 h-3.5 text-amber-500" />
@@ -1307,9 +1339,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={() => handleOpenBuilderForDate(todayIso)}
-              className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors whitespace-nowrap"
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs font-bold whitespace-nowrap cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5" weight="bold" />
               <span>Schedule</span>
             </button>
 
@@ -1320,104 +1352,144 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   `Review my ${MONTH_NAMES[viewMonth]} ${viewYear} training calendar, weekly load progression, and effort zone distribution. Propose 2 structured workouts for this week.`
                 )
               }
-              className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-sky-300 transition-colors whitespace-nowrap"
+              className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition-colors whitespace-nowrap cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>AI Review</span>
             </button>
+
+            {/* View Options Popover (Density, Effort Stripes & Z1–Z6 Legend) */}
+            <div ref={viewOptionsRef} className="relative">
+              <button
+                type="button"
+                aria-expanded={isViewOptionsOpen}
+                onClick={() => setIsViewOptionsOpen((v) => !v)}
+                className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5 ap-text-brand" />
+                <span>View Options</span>
+                {isViewOptionsOpen ? (
+                  <ChevronUp className="w-3.5 h-3.5 opacity-75" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 opacity-75" />
+                )}
+              </button>
+
+              {isViewOptionsOpen && (
+                <div className="absolute right-0 mt-2 z-30 w-[min(19rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3.5 text-xs shadow-2xl">
+                  <div className="space-y-1.5">
+                    <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
+                      Card Density
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl liquid-capsule-track">
+                      <button
+                        type="button"
+                        aria-pressed={cardDensity === 'intervals'}
+                        onClick={() => setCardDensity('intervals')}
+                        className={`min-h-[40px] sm:min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          cardDensity === 'intervals'
+                            ? 'ap-nav-volt-active'
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        Detailed
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={cardDensity === 'compact'}
+                        onClick={() => setCardDensity('compact')}
+                        className={`min-h-[40px] sm:min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          cardDensity === 'compact'
+                            ? 'ap-nav-volt-active'
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        Compact
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-white/10">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      Daily Effort Stripes
+                    </span>
+                    <button
+                      type="button"
+                      aria-pressed={showDayEffortStripe}
+                      onClick={() => setShowDayEffortStripe((v) => !v)}
+                      className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 rounded-lg border text-2xs font-mono font-bold transition-all cursor-pointer ${
+                        showDayEffortStripe
+                          ? 'ap-status-prime'
+                          : 'border-slate-300/70 dark:border-slate-700/70 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {showDayEffortStripe ? 'On' : 'Off'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200/70 dark:border-white/10">
+                    <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
+                      Effort Zone Key
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {INTERVALS_EFFORT_ZONES.map((z) => (
+                        <span
+                          key={z.code}
+                          className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-mono text-2xs"
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-xs shrink-0"
+                            style={{ backgroundColor: z.color }}
+                          />
+                          <strong className="text-slate-900 dark:text-white">{z.code}</strong>
+                          <span className="truncate font-sans">{z.name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Compact Effort Zone Swatches & Card Density Toggle */}
-        <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px]">
-              Zones:
-            </span>
-            {INTERVALS_EFFORT_ZONES.map((z) => (
-              <span
-                key={z.code}
-                className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-mono text-[10px]"
-                title={`${z.code}: ${z.name}`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-xs shrink-0"
-                  style={{ backgroundColor: z.color }}
-                />
-                <strong className="text-slate-900 dark:text-white">{z.code}</strong>
-              </span>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Mobile View Mode Toggle (Agenda vs 8-Column Grid) */}
-            <div className="flex md:hidden items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[10px]">
-              <button
-                type="button"
-                onClick={() => setMobileLayout('agenda')}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  mobileLayout === 'agenda'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Agenda
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobileLayout('grid')}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  mobileLayout === 'grid'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Full Grid
-              </button>
-            </div>
+        {/* Mobile / Tablet Layout Switcher (< xl only) */}
+        <div className="flex xl:hidden pt-2 border-t border-slate-200/70 dark:border-slate-800/80 items-center justify-between gap-2 text-xs">
+          <span className="text-2xs font-mono text-slate-500 dark:text-slate-400">
+            Calendar Layout
+          </span>
+          <div className="flex items-center gap-0.5 p-1 rounded-lg liquid-capsule-track">
             <button
               type="button"
-              onClick={() => setShowDayEffortStripe((v) => !v)}
-              className={`px-2 py-0.5 rounded-lg border text-[10px] font-semibold transition-all inline-flex items-center gap-1.5 ${
-                showDayEffortStripe
-                  ? 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-sky-300'
-                  : 'border-slate-300/70 dark:border-slate-700/70 text-slate-500 dark:text-slate-400'
+              aria-pressed={mobileLayout === 'agenda'}
+              onClick={() => setMobileLayout('agenda')}
+              className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-md transition-all cursor-pointer ${
+                mobileLayout === 'agenda'
+                  ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                  : 'text-slate-500 dark:text-slate-400'
               }`}
-              title="Toggle daily planned workout Effort Stripes"
             >
-              <span>Stripes: {showDayEffortStripe ? 'On' : 'Off'}</span>
+              Agenda
             </button>
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[10px]">
-              <button
-                type="button"
-                onClick={() => setCardDensity('intervals')}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  cardDensity === 'intervals'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Detailed
-              </button>
-              <button
-                type="button"
-                onClick={() => setCardDensity('compact')}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  cardDensity === 'compact'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Compact
-              </button>
-            </div>
+            <button
+              type="button"
+              aria-pressed={mobileLayout === 'grid'}
+              onClick={() => setMobileLayout('grid')}
+              className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-md transition-all cursor-pointer ${
+                mobileLayout === 'grid'
+                  ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              Full Grid
+            </button>
           </div>
         </div>
       </section>
 
-      {/* Mobile Week & Day Agenda View (< md when mobileLayout === 'agenda') */}
+      {/* Mobile & Tablet Week & Day Agenda View (< xl when mobileLayout === 'agenda') */}
       {mobileLayout === 'agenda' && (
-        <section className="md:hidden space-y-3">
+        <section className="xl:hidden space-y-3">
           {calendarWeeks.map((week) => {
             const eow = week.endOfWeekWellness;
             const tsbVal = eow ? Math.round(eow.tsb) : null;
@@ -1442,7 +1514,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <span className="px-2 py-0.5 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-extrabold font-mono">
                         W{week.isoWeekNum}
                       </span>
-                      <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                      <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
                         {formatHeaderDate(week.days[0].dateStr)} –{' '}
                         {formatHeaderDate(week.days[6].dateStr)}
                       </span>
@@ -1454,14 +1526,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
                         )
                       }
-                      className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-sky-400 text-[11px] font-semibold"
+                      className="min-h-[44px] sm:min-h-[32px] inline-flex items-center px-3 sm:px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-sky-400 text-2xs font-semibold"
                     >
                       AI Coach
                     </button>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 text-[11px] font-mono">
+                  <div className="grid grid-cols-4 gap-1.5 text-2xs font-mono">
                     <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
-                      <span className="text-[9px] uppercase text-slate-400 block">Time</span>
+                      <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Time</span>
                       <strong className="text-slate-900 dark:text-white">
                         {week.totalDurationSecs > 0
                           ? formatCompactDuration(week.totalDurationSecs)
@@ -1469,17 +1541,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       </strong>
                     </div>
                     <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
-                      <span className="text-[9px] uppercase text-slate-400 block">Load</span>
+                      <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Load</span>
                       <strong className="text-slate-900 dark:text-white">{week.totalLoad}</strong>
                     </div>
-                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
-                      <span className="text-[9px] uppercase text-slate-400 block">CTL</span>
-                      <strong className="text-[#7C3AED] dark:text-purple-400">
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-[#101B15] border border-emerald-900/15 dark:border-emerald-400/15">
+                      <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">CTL</span>
+                      <strong className="text-[#0F766E] dark:text-[#2DD4BF]">
                         {eow ? Math.round(eow.ctl) : '—'}
                       </strong>
                     </div>
                     <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
-                      <span className="text-[9px] uppercase text-slate-400 block">Form</span>
+                      <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Form</span>
                       <strong className="text-emerald-600 dark:text-emerald-400">
                         {tsbVal !== null ? (tsbVal > 0 ? `+${tsbVal}` : tsbVal) : '—'}
                       </strong>
@@ -1517,14 +1589,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <span
                               className={`text-xs font-bold font-mono ${
                                 isToday
-                                  ? 'px-2 py-0.5 rounded-md bg-blue-600 text-white'
+                                  ? 'px-2 py-0.5 rounded-md bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
                                   : 'text-slate-900 dark:text-slate-100'
                               }`}
                             >
                               {formatHeaderDate(day.dateStr)}
                             </span>
                             {w && (
-                              <div className="flex items-center gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                              <div className="flex items-center gap-2 text-2xs font-mono text-slate-600 dark:text-slate-300">
                                 {sleepH && <span>{sleepH}</span>}
                                 {w.restingHR > 0 && <span>{w.restingHR}bpm</span>}
                                 {w.hrvRMSSD > 0 && (
@@ -1549,9 +1621,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   : undefined
                               )
                             }
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] font-semibold"
+                            className="min-h-[44px] inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold"
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-3.5 h-3.5" />
                             <span>Plan</span>
                           </button>
                         </div>
@@ -1569,7 +1641,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             }
                             className="w-full text-left rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-2 space-y-1"
                           >
-                            <div className="flex items-center justify-between gap-2 text-[10px]">
+                            <div className="flex items-center justify-between gap-2 text-2xs">
                               <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
                                 {dayStripe.sportCategory === 'Running' ? 'Run' : 'Bike'} Rx:{' '}
                                 {dayStripe.workoutName}
@@ -1605,10 +1677,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             athleteProfile
                           );
                           return (
-                            <div
+                            <button
                               key={`mob-act-${act.id}`}
+                              type="button"
                               onClick={() => onSelectActivity(act)}
-                              className="cursor-pointer rounded-xl overflow-hidden border border-slate-300/90 dark:border-slate-700/90 bg-white dark:bg-[#1E222B] shadow-xs"
+                              className="w-full text-left cursor-pointer rounded-xl overflow-hidden border border-slate-300/90 dark:border-emerald-900/50 bg-white dark:bg-[#15231B] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1C5436] dark:focus-visible:ring-[#C8FF00]"
                             >
                               <div
                                 className={`px-2.5 py-1.5 flex items-center justify-between gap-2 ${getSportHeaderColor(
@@ -1619,12 +1692,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   {getSportIcon(act.sportCategory, 'w-3.5 h-3.5 shrink-0')}
                                   <span className="truncate">{act.name}</span>
                                 </div>
-                                <span className="text-[11px] font-mono font-extrabold shrink-0">
+                                <span className="text-2xs font-mono font-extrabold shrink-0">
                                   {formatCompactDuration(act.movingTimeSecs)} · Load{' '}
                                   {act.trainingLoad}
                                 </span>
                               </div>
-                              <div className="p-2 flex items-center justify-between gap-3 text-[11px] font-mono text-slate-700 dark:text-slate-200">
+                              <div className="p-2 flex items-center justify-between gap-3 text-2xs font-mono text-slate-700 dark:text-slate-200">
                                 <span>
                                   {act.distanceMeters > 0
                                     ? formatDistance(act.distanceMeters, distanceUnit, 1)
@@ -1657,7 +1730,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   ))}
                                 </div>
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
 
@@ -1665,26 +1738,49 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {day.dayPlanned.map((ev) => (
                           <div
                             key={`mob-plan-${ev.id}`}
-                            className="rounded-xl border border-dashed border-blue-500/45 bg-blue-500/[0.05] p-2.5 flex items-center justify-between gap-2"
+                            className="rounded-xl border border-dashed border-[#1C5436]/45 dark:border-[#C8FF00]/35 bg-[#1C5436]/[0.05] dark:bg-[#C8FF00]/[0.04] p-2.5 flex items-center justify-between gap-2"
                           >
                             <div className="min-w-0">
-                              <div className="text-[10px] font-mono uppercase text-blue-600 dark:text-sky-400 font-semibold">
+                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                {ev.name}
+                              </div>
+                              <div className="mt-0.5 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00] font-semibold">
                                 Planned · {ev.sportCategory} ·{' '}
                                 {formatCompactDuration(ev.plannedDurationSecs)} · ~{ev.plannedLoad}{' '}
                                 TSS
                               </div>
-                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                                {ev.name}
-                              </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => onDeletePlannedEvent(ev.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500"
-                              title="Delete planned workout"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {pendingDeletePlannedId === ev.id ? (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDeletePlannedEvent(ev.id);
+                                    setPendingDeletePlannedId(null);
+                                  }}
+                                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-2xs font-bold"
+                                >
+                                  Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDeletePlannedId(null)}
+                                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-2xs font-semibold"
+                                >
+                                  Keep
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setPendingDeletePlannedId(ev.id)}
+                                aria-label={`Delete planned workout ${ev.name}`}
+                                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-rose-700/75 dark:text-rose-300/75 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/10"
+                                title="Delete planned workout"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1700,16 +1796,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Intervals.icu 8-Column Calendar Grid (Left Week Summary Column + 7 Day Columns) */}
       <section
         className={`${
-          mobileLayout === 'agenda' ? 'hidden md:block' : 'block'
+          mobileLayout === 'agenda' ? 'hidden xl:block' : 'block'
         } rounded-2xl liquid-glass overflow-hidden border border-slate-200/90 dark:border-slate-800/90`}
       >
         <div className="overflow-x-auto">
-          <div className="min-w-[1140px]">
+          <div className="min-w-[940px]">
             {/* Sticky 8-Column Day Header Row */}
-            <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-900/90 text-[10px] font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400">
-              <div className="px-3 py-2.5 border-r border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-900/90 text-2xs font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400">
+              <div className="px-2.5 py-2.5 border-r border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1">
                 <span>WEEK</span>
-                <span className="font-mono text-[9px] text-slate-400">CTL / TSB</span>
+                <span className="font-mono text-2xs text-slate-600 dark:text-slate-400 hidden 2xl:inline">CTL · TSB</span>
               </div>
               {WEEKDAYS.map((day) => (
                 <div
@@ -1743,7 +1839,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     className="grid grid-cols-8 min-h-[210px] bg-white/60 dark:bg-slate-950/40"
                   >
                     {/* COLUMN 1 (LEFT): STREAMLINED WEEKLY SUMMARY COLUMN */}
-                    <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-[11px]">
+                    <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-2xs">
                       <div className="space-y-2">
                         {/* Week Number Title */}
                         <div className="flex items-center justify-between">
@@ -1757,7 +1853,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Fatigue ${eow ? Math.round(eow.atl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
                               )
                             }
-                            className="text-[10px] font-semibold text-blue-600 dark:text-sky-400 hover:underline"
+                            className="text-2xs font-semibold ap-text-brand hover:underline cursor-pointer"
                             title="Ask AI Coach about this week"
                           >
                             Coach
@@ -1765,32 +1861,32 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
 
                         {/* 4 Core Weekly Metrics: Time, Load, CTL, Form */}
-                        <div className="grid grid-cols-2 gap-x-2.5 gap-y-1 text-[11px] leading-snug">
-                          <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-slate-500 dark:text-slate-400">Time</span>
-                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-2xs leading-tight">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[#43584B] dark:text-[#93A39A]">Time</span>
+                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100 truncate">
                               {formatCompactDuration(week.totalDurationSecs)}
                             </span>
                           </div>
-                          <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-slate-500 dark:text-slate-400">Load</span>
-                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[#43584B] dark:text-[#93A39A]">Load</span>
+                            <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100 truncate">
                               {week.totalLoad}
                             </span>
                           </div>
 
                           {eow && (
                             <>
-                              <div className="flex items-baseline justify-between gap-1">
-                                <span className="text-slate-500 dark:text-slate-400">CTL</span>
-                                <span className="font-mono font-bold tabular-nums text-[#0284C7] dark:text-sky-400">
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-[#43584B] dark:text-[#93A39A]">CTL</span>
+                                <span className="font-mono font-bold tabular-nums text-[#0F766E] dark:text-[#2DD4BF] truncate">
                                   {Math.round(eow.ctl)}
                                 </span>
                               </div>
-                              <div className="flex items-baseline justify-between gap-1">
-                                <span className="text-slate-500 dark:text-slate-400">Form</span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-[#43584B] dark:text-[#93A39A]">Form</span>
                                 <span
-                                  className={`font-mono font-bold tabular-nums ${tsbColorClass}`}
+                                  className={`font-mono font-bold tabular-nums truncate ${tsbColorClass}`}
                                 >
                                   {tsbVal !== null && tsbVal > 0 ? `+${tsbVal}` : tsbVal}
                                 </span>
@@ -1799,33 +1895,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           )}
                         </div>
 
-                        {/* Per-Sport Time / Dist / Load Table (matching Intervals.icu screenshot) */}
+                        {/* Per-Sport Time / Dist / Load Table */}
                         {week.bySport.length > 0 && (
                           <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800/80">
-                            <div className="grid grid-cols-12 text-[10px] text-slate-400 dark:text-slate-500 pb-1 font-medium">
+                            <div className="grid grid-cols-12 gap-1 text-2xs text-slate-600 dark:text-slate-400 pb-1 font-medium">
                               <span className="col-span-2" />
                               <span className="col-span-4 text-right">Time</span>
                               <span className="col-span-3 text-right">Dist</span>
                               <span className="col-span-3 text-right">Load</span>
                             </div>
-                            <div className="space-y-1 font-mono tabular-nums text-[10px]">
+                            <div className="space-y-1 font-mono tabular-nums text-2xs">
                               {week.bySport.map((row) => (
                                 <div
                                   key={row.sport}
-                                  className="grid grid-cols-12 items-center text-slate-700 dark:text-slate-200"
+                                  className="grid grid-cols-12 gap-1 items-center text-slate-700 dark:text-slate-200 whitespace-nowrap"
                                 >
                                   <span className="col-span-2 text-[#0284C7] dark:text-sky-400 flex items-center">
                                     {getSportIcon(row.sport, 'w-3 h-3')}
                                   </span>
-                                  <span className="col-span-4 text-right font-medium">
+                                  <span className="col-span-4 text-right font-medium truncate">
                                     {formatCompactDuration(row.timeSecs)}
                                   </span>
-                                  <span className="col-span-3 text-right text-slate-600 dark:text-slate-300">
+                                  <span className="col-span-3 text-right text-slate-600 dark:text-slate-300 truncate">
                                     {row.distanceMeters > 100
                                       ? formatDistance(row.distanceMeters, distanceUnit, 0)
                                       : '-'}
                                   </span>
-                                  <span className="col-span-3 text-right font-semibold">
+                                  <span className="col-span-3 text-right font-semibold truncate">
                                     {row.load}
                                   </span>
                                 </div>
@@ -1838,7 +1934,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       {/* Weekly Zone Classification & Mini Effort Distribution Bar */}
                       {week.totalDurationSecs > 0 && (
                         <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800/80 space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px]">
+                          <div className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0.5 text-2xs">
                             <span className="text-slate-500 dark:text-slate-400">Zones</span>
                             <span className="font-bold text-slate-900 dark:text-slate-100 font-mono">
                               {week.weekZoneLabel} {week.weekZoneRatio}
@@ -1907,7 +2003,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               <div className="flex items-center justify-between gap-1">
                                 {plannedStripe ? (
                                   <span
-                                    className="text-[9px] font-mono font-bold px-1 py-0.2 rounded-xs leading-tight"
+                                    className="text-2xs font-mono font-bold px-1 py-0.2 rounded-xs leading-tight"
                                     style={{
                                       backgroundColor: `${plannedStripe.dominantZone.color}22`,
                                       color: plannedStripe.dominantZone.color,
@@ -1920,7 +2016,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   <span className="w-4" aria-hidden="true" />
                                 )}
                                 <span
-                                  className={`text-[11px] font-mono ${
+                                  className={`text-2xs font-mono ${
                                     isToday
                                       ? 'font-bold text-blue-600 dark:text-sky-400'
                                       : 'font-medium text-slate-500 dark:text-slate-400'
@@ -1942,10 +2038,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         : undefined
                                     )
                                   }
-                                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500 transition-opacity"
+                                  aria-label={`Schedule or edit planned workout on ${cell.dateStr}`}
+                                  className="opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 min-h-[44px] min-w-[44px] xl:min-h-0 xl:min-w-0 p-1 inline-flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-500 transition-opacity"
                                   title={`Schedule or edit planned workout on ${cell.dateStr}`}
                                 >
-                                  <Plus className="w-3 h-3" />
+                                  <Plus className="w-3.5 h-3.5 xl:w-3 xl:h-3" />
                                 </button>
                               </div>
 
@@ -1988,13 +2085,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   className="w-full text-left group/stripe rounded-xs overflow-hidden border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/60 transition-colors focus:outline-hidden"
                                   title={`${plannedStripe.sportCategory} (Scheduled Workout): ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\n${plannedStripe.description}\nZones: ${plannedZoneBreakdownTooltip}`}
                                 >
-                                  {/* Dimensional Mini Effort Skyline with Y-Axis Amplitude */}
-                                  <div className="relative h-[18px] w-full flex items-stretch bg-slate-100/90 dark:bg-slate-900/90">
-                                    {/* Mini Y-Axis Amplitude Scale Gutter */}
-                                    <div className="w-[14px] shrink-0 border-r border-slate-300/70 dark:border-slate-700/70 flex flex-col justify-between items-end pr-[2px] py-[1px] text-[6.5px] leading-none font-mono text-slate-400 dark:text-slate-500 select-none">
-                                      <span>100</span>
-                                      <span>50</span>
-                                    </div>
+                                  {/* Dimensional Mini Effort Skyline with Threshold Reference */}
+                                  <div className="relative h-[18px] w-full flex items-stretch bg-slate-100/90 dark:bg-[#15231B]">
                                     {/* Proportional Effort Amplitude Bars */}
                                     <div className="relative flex-1 flex items-end px-[1px] pt-[2px]">
                                       {/* 100% FTP / Threshold Reference Dashed Line */}
@@ -2017,7 +2109,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   </div>
                                   {/* Compact Micro Label with Cycling / Running Modality Icon */}
                                   <div className="flex items-center justify-between gap-1 px-1 py-0.5 bg-slate-100/80 dark:bg-slate-900/80 group-hover/stripe:bg-blue-500/10 border-t border-slate-200/60 dark:border-slate-800/60 transition-colors">
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-mono text-slate-600 dark:text-slate-300 truncate min-w-0">
+                                    <span className="inline-flex items-center gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300 truncate min-w-0">
                                       {plannedStripe.sportCategory === 'Running' ? (
                                         <Footprints className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                       ) : (
@@ -2027,16 +2119,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         {plannedStripe.workoutName}
                                       </span>
                                     </span>
-                                    <span className="text-[9px] font-mono font-semibold text-slate-600 dark:text-slate-300 shrink-0">
+                                    <span className="text-2xs font-mono font-semibold text-slate-600 dark:text-slate-300 shrink-0">
                                       {plannedStripe.totalDurationMins}m
                                     </span>
                                   </div>
                                 </button>
                               )}
 
-                              {/* Line 1 of Morning Wellness: Sleep duration + score + weight */}
-                              {w && (sleepHm || w.sleepScore > 0 || w.weightKg > 0) && (
-                                <div className="flex flex-wrap items-center justify-center gap-x-1 text-[10px] font-mono tabular-nums leading-tight pt-0.5">
+                              {/* Line 1 of Morning Wellness: Sleep duration + score + weight (shielded under Safe-Sport) */}
+                              {w &&
+                                (sleepHm ||
+                                  w.sleepScore > 0 ||
+                                  (!athleteProfile?.safeSportHideWeight && w.weightKg > 0)) && (
+                                <div className="flex flex-wrap items-center justify-center gap-x-1 text-2xs font-mono tabular-nums leading-tight pt-0.5">
                                   {sleepHm && (
                                     <span className="inline-flex items-center gap-0.5 text-slate-700 dark:text-slate-300 font-semibold">
                                       <Moon className="w-2.5 h-2.5 text-slate-800 dark:text-slate-200 fill-current" />
@@ -2061,8 +2156,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                       Q{w.sleepQuality}
                                     </span>
                                   )}
-                                  {w.weightKg > 0 && (
-                                    <span className="text-slate-400 dark:text-slate-500">
+                                  {!athleteProfile?.safeSportHideWeight && w.weightKg > 0 && (
+                                    <span className="text-slate-600 dark:text-slate-400">
                                       {distanceUnit === 'mi'
                                         ? `${Math.round(w.weightKg * 2.20462)}lbs`
                                         : `${w.weightKg.toFixed(1)}kg`}
@@ -2073,16 +2168,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                               {/* Line 2 of Morning Wellness: Resting HR + HRV + Day Load */}
                               {w && (w.restingHR > 0 || w.hrvRMSSD > 0 || dayLoadSum > 0) && (
-                                <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-[10px] font-mono tabular-nums leading-tight">
-                                  {(w.restingHR > 0 || w.hrvRMSSD > 0) && (
-                                    <span className="inline-flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-semibold">
+                                <div className="flex flex-wrap items-center justify-center gap-x-1 text-2xs font-mono tabular-nums leading-tight">
+                                  {w.restingHR > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-rose-700 dark:text-rose-400 font-semibold">
                                       <Heart className="w-2.5 h-2.5 fill-current" />
-                                      {w.restingHR > 0 && <span>{w.restingHR}</span>}
-                                      {w.hrvRMSSD > 0 && <span>{w.hrvRMSSD} ms</span>}
+                                      <span>{w.restingHR}bpm</span>
+                                    </span>
+                                  )}
+                                  {w.restingHR > 0 && w.hrvRMSSD > 0 && (
+                                    <span className="text-[#43584B] dark:text-[#93A39A]" aria-hidden="true">·</span>
+                                  )}
+                                  {w.hrvRMSSD > 0 && (
+                                    <span className="text-emerald-800 dark:text-emerald-300 font-semibold">
+                                      {w.hrvRMSSD}ms
                                     </span>
                                   )}
                                   {dayLoadSum > 0 && (
-                                    <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                                    <span className="text-[#43584B] dark:text-slate-300 font-semibold">
                                       Load {dayLoadSum}
                                     </span>
                                   )}
@@ -2130,34 +2232,34 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   >
                                     {/* 1. Sport-Colored Top Bar (or Gold Championship Bar for Official FAT Races) */}
                                     <div
-                                      className={`px-2 py-1 flex items-center justify-between gap-1 text-[11px] font-bold font-mono tabular-nums ${
+                                      className={`px-2 py-1 flex items-center justify-between gap-1 text-2xs font-bold font-mono tabular-nums ${
                                         act.officialRaceData
-                                          ? 'bg-[#D97706] text-white'
+                                          ? 'bg-amber-400 text-[#080A09]'
                                           : getSportHeaderColor(act.sportCategory)
                                       }`}
                                     >
-                                      <span className="inline-flex items-center gap-1 min-w-0">
+                                      <span className="inline-flex items-center gap-1 min-w-0 flex-1">
                                         {act.officialRaceData ? (
                                           <Trophy className="w-3.5 h-3.5 shrink-0" />
                                         ) : (
                                           getSportIcon(act.sportCategory, 'w-3.5 h-3.5 shrink-0')
                                         )}
-                                        <span>
+                                        <span className="truncate">
                                           {act.officialRaceData
-                                            ? `${act.officialRaceData.eventLabel} · ${act.officialRaceData.displayFatTime}`
+                                            ? act.officialRaceData.eventLabel
                                             : formatCompactDuration(act.movingTimeSecs)}
                                         </span>
                                       </span>
                                       {act.officialRaceData ? (
-                                        <span className="text-[9px] uppercase tracking-wider px-1 rounded bg-black/25">
-                                          {act.officialRaceData.platform}
+                                        <span className="font-extrabold shrink-0">
+                                          {act.officialRaceData.displayFatTime}
                                         </span>
                                       ) : act.distanceMeters > 100 ? (
-                                        <span className="truncate">
+                                        <span className="truncate shrink-0">
                                           {formatDistance(act.distanceMeters, distanceUnit, 1)}
                                         </span>
                                       ) : isVirtualRide ? (
-                                        <span className="text-[9px] uppercase tracking-wider px-1 rounded bg-white/20">
+                                        <span className="text-2xs uppercase tracking-wider px-1 rounded bg-white/20 shrink-0">
                                           Virtual
                                         </span>
                                       ) : null}
@@ -2167,12 +2269,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     {cardDensity === 'intervals' && (
                                       <div className="px-1.5 pt-1.5 pb-1 text-center space-y-0.5 font-mono tabular-nums">
                                         {act.officialRaceData && (
-                                          <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                                            {act.officialRaceData.placeFinish || 'Official FAT'} · VDOT{' '}
+                                          <div className="text-2xs font-bold text-amber-700 dark:text-amber-400">
+                                            {act.officialRaceData.platform.replace(/^OFFICIAL\s+/i, '')} · VDOT{' '}
                                             {act.officialRaceData.vdotScore.toFixed(1)}
                                           </div>
                                         )}
-                                        <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-[11px] font-bold leading-tight">
+                                        <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-2xs font-bold leading-tight">
                                           {act.avgHr > 0 && (
                                             <span className="text-[#B91C1C] dark:text-rose-400">
                                               {act.avgHr}bpm
@@ -2184,13 +2286,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                             </span>
                                           )}
                                           {paceLabel && (
-                                            <span className="text-[#1D4ED8] dark:text-sky-300">
+                                            <span className="text-[#0F766E] dark:text-[#2DD4BF]">
                                               {paceLabel}
                                             </span>
                                           )}
                                         </div>
 
-                                          <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                                          <div className="flex items-center justify-center gap-1.5 text-2xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
                                             <span>Load {act.trainingLoad}</span>
                                             {plannedStripe && (() => {
                                               const targetMins = Math.max(
@@ -2208,7 +2310,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                                 compliancePct >= 85 && compliancePct <= 115;
                                               return (
                                                 <span
-                                                  className={`px-1 py-0.2 rounded-xs text-[9px] font-mono ${
+                                                  className={`px-1 py-0.2 rounded-xs text-2xs font-mono ${
                                                     inRange
                                                       ? 'ap-status-prime'
                                                       : 'ap-status-caution'
@@ -2222,7 +2324,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                           </div>
 
                                           {gapLabel && (
-                                            <div className="text-[10px] font-bold text-[#4338CA] dark:text-indigo-300 leading-tight">
+                                            <div className="text-2xs font-bold text-[#4338CA] dark:text-indigo-300 leading-tight">
                                               GAP {gapLabel}
                                             </div>
                                           )}
@@ -2234,12 +2336,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                       className="w-full px-0.5 pt-1"
                                       title={`Completed Effort Zones (${act.sportCategory}) — ${zoneTooltip}`}
                                     >
-                                      <div className="relative h-[22px] w-full flex items-stretch bg-slate-100/75 dark:bg-slate-800/45 rounded-xs overflow-hidden">
-                                        {/* Small Y-Axis Amplitude Scale */}
-                                        <div className="w-[13px] shrink-0 border-r border-slate-300/60 dark:border-slate-700/60 flex flex-col justify-between items-end pr-[1.5px] py-[1px] text-[6px] leading-none font-mono text-slate-400 dark:text-slate-500 select-none">
-                                          <span>Z5</span>
-                                          <span>Z1</span>
-                                        </div>
+                                      <div className="relative h-[22px] w-full flex items-stretch bg-slate-100/75 dark:bg-[#15231B] rounded-xs overflow-hidden">
                                         <div className="relative flex-1 flex items-end px-[1px] pt-[2px]">
                                           <div
                                             className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-slate-400/40 dark:border-slate-500/40"
@@ -2264,18 +2361,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                                     {/* 4. Centered Activity Title Footer */}
                                     <div className="px-1.5 py-1.5 bg-slate-50/90 dark:bg-slate-900/90 border-t border-slate-200/70 dark:border-slate-800/80 text-center flex items-center justify-center gap-1">
-                                      <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200 leading-tight line-clamp-2">
+                                      <span className="text-2xs font-medium text-slate-700 dark:text-slate-200 leading-tight line-clamp-2">
                                         {act.name}
                                       </span>
                                       {act.stravaPrCount > 0 ? (
                                         <span
-                                          className="inline-flex items-center text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 shrink-0"
+                                          className="inline-flex items-center text-2xs font-mono font-bold text-amber-600 dark:text-amber-400 shrink-0"
                                           title={`${act.stravaPrCount} Strava PR(s)`}
                                         >
                                           <Trophy className="w-2.5 h-2.5" />
                                         </span>
                                       ) : (
-                                        <FileText className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 shrink-0 opacity-75" />
+                                        <FileText className="w-2.5 h-2.5 text-slate-600 dark:text-slate-400 shrink-0 opacity-75" />
                                       )}
                                     </div>
                                   </button>
@@ -2313,10 +2410,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     <div className="p-2 space-y-1.5">
                                       <div className="flex items-start justify-between gap-1">
                                         <div className="min-w-0">
-                                          <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
+                                          <div className="flex items-center gap-1 text-2xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
                                             <span>Planned · {ev.sportCategory}</span>
                                             <span
-                                              className="px-1 rounded-xs text-[9px] font-bold"
+                                              className="px-1 rounded-xs text-2xs font-bold"
                                               style={{
                                                 backgroundColor: `${evStripe.dominantZone.color}25`,
                                                 color: evStripe.dominantZone.color,
@@ -2325,18 +2422,42 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                               {evStripe.dominantZone.code}
                                             </span>
                                           </div>
-                                          <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">
+                                          <div className="text-2xs font-bold text-slate-900 dark:text-slate-100 truncate">
                                             {ev.name}
                                           </div>
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => onDeletePlannedEvent(ev.id)}
-                                          className="p-0.5 text-slate-400 hover:text-rose-500 transition-colors"
-                                          title="Delete planned workout"
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </button>
+                                        {pendingDeletePlannedId === ev.id ? (
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                onDeletePlannedEvent(ev.id);
+                                                setPendingDeletePlannedId(null);
+                                              }}
+                                              className="min-h-[44px] xl:min-h-0 px-2 xl:px-1.5 py-1 xl:py-0.5 rounded bg-rose-600 text-white text-2xs font-bold"
+                                            >
+                                              Del
+                                            </button>
+                                            <button
+                                              type="button"
+                                              aria-label="Cancel planned workout deletion"
+                                              onClick={() => setPendingDeletePlannedId(null)}
+                                              className="min-h-[44px] min-w-[44px] xl:min-h-0 xl:min-w-0 px-2 xl:px-1.5 py-1 xl:py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-2xs"
+                                            >
+                                              ×
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPendingDeletePlannedId(ev.id)}
+                                            aria-label={`Delete planned workout ${ev.name}`}
+                                            className="min-h-[44px] min-w-[44px] xl:min-h-0 xl:min-w-0 p-1 inline-flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-rose-500 transition-colors"
+                                            title="Delete planned workout"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5 xl:w-3 xl:h-3" />
+                                          </button>
+                                        )}
                                       </div>
 
                                       {evStripe.steps.length > 0 && (
@@ -2357,7 +2478,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         </div>
                                       )}
 
-                                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                      <div className="flex items-center justify-between text-2xs font-mono text-slate-600 dark:text-slate-300">
                                         <span>{formatCompactDuration(ev.plannedDurationSecs)}</span>
                                         <span>Load ~{ev.plannedLoad}</span>
                                       </div>
@@ -2383,29 +2504,32 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Structured Workout Builder Modal */}
       {isBuilderOpen && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Schedule Planned Session for ${builderDate}`}
-          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
           onClick={() => setIsBuilderOpen(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl liquid-glass p-6 space-y-5 shadow-2xl"
+            ref={builderDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="thresh-workout-builder-title"
+            tabIndex={-1}
+            className="w-full max-w-2xl rounded-2xl liquid-glass p-6 space-y-5 shadow-2xl focus:outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div>
-                <div className="text-xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
-                  Structured Workout Builder
-                </div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 id="thresh-workout-builder-title" className="text-lg font-bold text-slate-900 dark:text-slate-100">
                   Schedule Planned Session for {builderDate}
                 </h2>
+                <span className="px-2 py-0.5 rounded-md ap-status-info text-2xs font-mono uppercase font-semibold">
+                  Workout Builder
+                </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsBuilderOpen(false)}
-                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Close workout builder"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2414,40 +2538,52 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <form onSubmit={handleSubmitWorkoutBuilder} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label
+                    htmlFor={`${builderFormId}-title`}
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                  >
                     Workout Title
                   </label>
                   <input
+                    id={`${builderFormId}-title`}
                     type="text"
                     required
                     value={builderName}
                     onChange={(e) => setBuilderName(e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label
+                    htmlFor={`${builderFormId}-date`}
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                  >
                     Date
                   </label>
                   <input
+                    id={`${builderFormId}-date`}
                     type="date"
                     required
                     value={builderDate}
                     onChange={(e) => setBuilderDate(e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label
+                    htmlFor={`${builderFormId}-sport`}
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                  >
                     Sport Category
                   </label>
                   <select
+                    id={`${builderFormId}-sport`}
                     value={builderSport}
                     onChange={(e) => setBuilderSport(e.target.value as SportCategory)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="Cycling">Cycling</option>
                     <option value="Running">Running</option>
@@ -2457,15 +2593,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label
+                    htmlFor={`${builderFormId}-env`}
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                  >
                     Environment Preference
                   </label>
                   <select
+                    id={`${builderFormId}-env`}
                     value={builderEnv}
                     onChange={(e) =>
                       setBuilderEnv(e.target.value as 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE')
                     }
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="FLEXIBLE">Flexible (Outdoor or Indoor)</option>
                     <option value="OUTDOOR">Outdoor Only</option>
@@ -2476,7 +2616,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
               {/* Quick Workout Templates */}
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-slate-500">Presets:</span>
+                <span className="text-2xs text-slate-500">Presets:</span>
                 {[
                   {
                     label: 'Z2 Aerobic Endurance (90m)',
@@ -2501,7 +2641,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       setBuilderName(preset.name);
                       setBuilderSyntax(preset.syntax);
                     }}
-                    className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-300 transition-colors"
+                    className="min-h-[38px] px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-2xs font-medium text-slate-700 dark:text-slate-300 transition-colors"
                   >
                     {preset.label}
                   </button>
@@ -2510,15 +2650,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                  <label
+                    htmlFor={`${builderFormId}-syntax`}
+                    className="text-xs font-medium text-slate-600 dark:text-slate-400"
+                  >
                     Workout Steps (one step per line starting with <code>-</code>)
                   </label>
-                  <span className="text-[11px] font-mono text-blue-600 dark:text-sky-400">
+                  <span className="text-2xs font-mono text-blue-600 dark:text-sky-400">
                     Est. {Math.round(computedBuilderSummary.durationSecs / 60)}m ·{' '}
                     {computedBuilderSummary.load} TSS (FTP {athleteFtp}W)
                   </span>
                 </div>
                 <textarea
+                  id={`${builderFormId}-syntax`}
                   rows={6}
                   value={builderSyntax}
                   onChange={(e) => setBuilderSyntax(e.target.value)}
@@ -2529,7 +2673,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               {/* Live Visual Step Profile Preview */}
               {parsedBuilderSteps.length > 0 && (
                 <div className="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 space-y-2">
-                  <div className="text-[11px] font-mono text-slate-500 flex items-center justify-between">
+                  <div className="text-2xs font-mono text-slate-500 flex items-center justify-between">
                     <span>Live Effort Zone Skyline Preview</span>
                     <span>
                       {parsedBuilderSteps.length} steps ·{' '}
@@ -2554,14 +2698,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                <label
+                  htmlFor={`${builderFormId}-notes`}
+                  className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                >
                   Execution &amp; Pacing Notes
                 </label>
                 <input
+                  id={`${builderFormId}-notes`}
                   type="text"
                   value={builderNotes}
                   onChange={(e) => setBuilderNotes(e.target.value)}
-                  className="w-full min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                 />
               </div>
 
@@ -2569,14 +2717,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsBuilderOpen(false)}
-                  className="min-h-[38px] px-4 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300"
+                  className="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingWorkout}
-                  className="min-h-[38px] px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                  className="min-h-[44px] px-4 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-white dark:text-[#080A09] text-xs font-semibold transition-colors"
                 >
                   {isSavingWorkout ? 'Saving...' : 'Save to Calendar'}
                 </button>
@@ -2604,7 +2752,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             {/* Header: Sport Badge (Cycling vs. Running) + Date */}
             <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 pb-2">
               <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider ${
                   hoveredPrescription.stripe.sportCategory === 'Running'
                     ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35'
                     : 'bg-blue-500/15 text-blue-700 dark:text-sky-300 border border-blue-500/35'
@@ -2622,27 +2770,27 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     : 'Prescription'}
                 </span>
               </span>
-              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+              <span className="text-2xs font-mono text-slate-500 dark:text-slate-400">
                 {hoveredPrescription.dateStr}
               </span>
             </div>
 
             {/* Workout Title, Duration, Target Load & Dominant Zone */}
             <div>
-              <div className="font-bold text-slate-900 dark:text-white text-[13px] leading-snug">
+              <div className="font-bold text-slate-900 dark:text-white text-sm leading-snug">
                 {hoveredPrescription.stripe.workoutName}
               </div>
-              <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] font-mono">
+              <div className="flex flex-wrap items-center gap-2 mt-1 text-2xs font-mono">
                 <span className="text-slate-700 dark:text-slate-200 font-semibold">
                   {hoveredPrescription.stripe.totalDurationMins} min
                 </span>
-                <span className="text-slate-400">·</span>
+                <span className="text-slate-600 dark:text-slate-400">·</span>
                 <span className="text-blue-600 dark:text-sky-400 font-semibold">
                   ~{hoveredPrescription.stripe.plannedLoad} TSS
                 </span>
-                <span className="text-slate-400">·</span>
+                <span className="text-slate-600 dark:text-slate-400">·</span>
                 <span
-                  className="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                  className="px-1.5 py-0.2 rounded text-2xs font-bold"
                   style={{
                     backgroundColor: `${hoveredPrescription.stripe.dominantZone.color}22`,
                     color: hoveredPrescription.stripe.dominantZone.color,
@@ -2655,13 +2803,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </div>
 
             {/* Plain-English Prescription Description */}
-            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {hoveredPrescription.stripe.description}
             </p>
 
             {/* Dimensional Skyline with Y-Axis (% FTP or % Threshold Pace) */}
             <div className="rounded-lg bg-slate-100/90 dark:bg-slate-900/90 p-2 border border-slate-200/70 dark:border-slate-800/70 space-y-1.5">
-              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between text-2xs font-mono text-slate-500 dark:text-slate-400">
                 <span>
                   Y-Axis Amplitude:{' '}
                   {hoveredPrescription.stripe.sportCategory === 'Running'
@@ -2671,7 +2819,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <span>Click stripe to edit</span>
               </div>
               <div className="relative h-8 w-full flex items-stretch">
-                <div className="w-7 shrink-0 border-r border-slate-300/70 dark:border-slate-700/70 flex flex-col justify-between items-end pr-1 text-[8px] font-mono text-slate-400">
+                <div className="w-7 shrink-0 border-r border-slate-300/70 dark:border-slate-700/70 flex flex-col justify-between items-end pr-1 text-2xs font-mono text-slate-600 dark:text-slate-400">
                   <span>100%</span>
                   <span>50%</span>
                 </div>
@@ -2697,14 +2845,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
             {/* Step-by-Step Intervals Breakdown */}
             <div className="space-y-1 pt-0.5">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
+              <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                 Prescribed Structure ({hoveredPrescription.stripe.steps.length} steps)
               </div>
               <div className="space-y-0.5 max-h-28 overflow-hidden">
                 {hoveredPrescription.stripe.steps.slice(0, 6).map((st, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between gap-2 text-[10.5px] font-mono"
+                    className="flex items-center justify-between gap-2 text-2xs font-mono"
                   >
                     <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200 truncate">
                       <span
@@ -2719,7 +2867,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   </div>
                 ))}
                 {hoveredPrescription.stripe.steps.length > 6 && (
-                  <div className="text-[10px] font-mono text-slate-400 italic">
+                  <div className="text-2xs font-mono text-slate-600 dark:text-slate-400 italic">
                     +{hoveredPrescription.stripe.steps.length - 6} more interval steps…
                   </div>
                 )}
@@ -2731,3 +2879,5 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     </div>
   );
 };
+
+export const CalendarView = React.memo(CalendarViewInner);
