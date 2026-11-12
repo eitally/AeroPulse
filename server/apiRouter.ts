@@ -1145,6 +1145,52 @@ async function saveSessionCacheAsync(
   emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
 }
 
+/**
+ * SEC-01: Server-owned secrets (platform Strava app secret, platform AI/map keys, vault keys)
+ * may be *used* server-side but must never be serialized back to any client or cached into
+ * a per-athlete session store. Values are compared after the same quote/whitespace
+ * normalization used when reading them.
+ */
+const SERVER_OWNED_SECRET_ENV_KEYS = [
+  'STRAVA_CLIENT_SECRET',
+  'STRAVA_REFRESH_TOKEN',
+  'STRAVA_ACCESS_TOKEN',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'VITE_GEMINI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'NEXT_PUBLIC_GEMINI_API_KEY',
+  'API_KEY',
+  'MAPBOX_ACCESS_TOKEN',
+  'VITE_MAPBOX_ACCESS_TOKEN',
+  'THUNDERFOREST_API_KEY',
+  'INTERVALS_API_KEY',
+  'GARMIN_PERSONAL_API_KEY',
+  'SESSION_SECRET',
+  'TOKEN_VAULT_KEY',
+] as const;
+
+function normalizeSecretValue(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim();
+}
+
+export function isServerOwnedSecret(value: unknown): boolean {
+  const clean = normalizeSecretValue(value);
+  if (!clean) return false;
+  return SERVER_OWNED_SECRET_ENV_KEYS.some(
+    (key) => normalizeSecretValue(process.env[key]) === clean
+  );
+}
+
+/** Returns the value only when it was supplied by the user (never a server env secret). */
+function userOwnedSecretOnly(value: unknown): string {
+  const clean = normalizeSecretValue(value);
+  return clean && !isServerOwnedSecret(clean) ? clean : '';
+}
+
 function getEffectiveGeminiApiKey(req?: Request): string {
   const headerKey = (req?.headers['x-gemini-api-key'] as string | undefined)?.trim();
   const bodyKey =
@@ -1175,7 +1221,7 @@ function getEffectiveGeminiApiKey(req?: Request): string {
 function getGeminiClient(req?: Request): GoogleGenAI | null {
   const apiKey = getEffectiveGeminiApiKey(req);
   if (!apiKey) return null;
-  if (!runtimeStore.geminiApiKey) {
+  if (!runtimeStore.geminiApiKey && !isServerOwnedSecret(apiKey)) {
     runtimeStore.geminiApiKey = apiKey;
   }
   return new GoogleGenAI({
@@ -1339,7 +1385,7 @@ async function ensureValidStravaAccessToken(req?: Request, forceRefresh = false)
     return '';
   }
   if (clientId && !runtimeStore.stravaClientId) runtimeStore.stravaClientId = clientId;
-  if (clientSecret && !runtimeStore.stravaClientSecret)
+  if (clientSecret && !runtimeStore.stravaClientSecret && !isServerOwnedSecret(clientSecret))
     runtimeStore.stravaClientSecret = clientSecret;
 
   let activeAccessToken = accessToken;
@@ -1624,14 +1670,18 @@ apiRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request, r
     refreshToken: stravaRefreshToken,
     accessToken: stravaAccessToken,
   } = getEffectiveStravaClientConfig(req);
-  if (intervalsKey && !runtimeStore.intervalsApiKey) {
+  if (intervalsKey && !runtimeStore.intervalsApiKey && !isServerOwnedSecret(intervalsKey)) {
     runtimeStore.intervalsApiKey = intervalsKey;
     runtimeStore.intervalsAthleteId = athleteId;
   }
   if (stravaClientId && !runtimeStore.stravaClientId) {
     runtimeStore.stravaClientId = stravaClientId;
   }
-  if (stravaClientSecret && !runtimeStore.stravaClientSecret) {
+  if (
+    stravaClientSecret &&
+    !runtimeStore.stravaClientSecret &&
+    !isServerOwnedSecret(stravaClientSecret)
+  ) {
     runtimeStore.stravaClientSecret = stravaClientSecret;
   }
   if (stravaRefreshToken && !runtimeStore.stravaRefreshToken) {
@@ -1672,7 +1722,7 @@ apiRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request, r
 
   const hasStravaEnv = Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
   const effectiveGeminiKey = getEffectiveGeminiApiKey(req);
-  if (effectiveGeminiKey && !runtimeStore.geminiApiKey) {
+  if (effectiveGeminiKey && !runtimeStore.geminiApiKey && !isServerOwnedSecret(effectiveGeminiKey)) {
     runtimeStore.geminiApiKey = effectiveGeminiKey;
   }
   const hasGeminiServerKey = Boolean(effectiveGeminiKey);
@@ -2376,25 +2426,24 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     res.status(401).json({ error: 'Valid authenticated session required to export credentials.' });
     return;
   }
-  const { apiKey: intervalsApiKey, athleteId: intervalsAthleteId } = getEffectiveIntervalsConfig(req);
-  const {
-    clientId: stravaClientId,
-    clientSecret: stravaClientSecret,
-    refreshToken: stravaRefreshToken,
-    accessToken: stravaAccessToken,
-  } = getEffectiveStravaClientConfig(req);
+  const effectiveIntervals = getEffectiveIntervalsConfig(req);
+  const effectiveStrava = getEffectiveStravaClientConfig(req);
+  // SEC-01: export only credentials the user supplied; never server env fallbacks.
+  const intervalsApiKey = userOwnedSecretOnly(effectiveIntervals.apiKey);
+  const intervalsAthleteId = intervalsApiKey ? effectiveIntervals.athleteId : '0';
+  const stravaClientId = effectiveStrava.clientId;
+  const stravaClientSecret = userOwnedSecretOnly(effectiveStrava.clientSecret);
+  const stravaRefreshToken = userOwnedSecretOnly(effectiveStrava.refreshToken);
+  const stravaAccessToken = userOwnedSecretOnly(effectiveStrava.accessToken);
   if (!intervalsApiKey && !stravaRefreshToken && !stravaAccessToken) {
     res.status(401).json({ error: 'Authentication required to export connection bundle.' });
     return;
   }
-  const mapTileApiKey = (
-    (req.headers['x-map-tile-api-key'] as string | undefined) ||
-    runtimeStore.mapTileApiKey ||
-    process.env.MAPBOX_ACCESS_TOKEN ||
-    ''
-  ).trim();
+  const mapTileApiKey = userOwnedSecretOnly(
+    (req.headers['x-map-tile-api-key'] as string | undefined) || runtimeStore.mapTileApiKey || ''
+  );
   const mapTileProvider = runtimeStore.mapTileProvider || 'OSM_KEYLESS';
-  const geminiApiKey = getEffectiveGeminiApiKey(req);
+  const geminiApiKey = userOwnedSecretOnly(getEffectiveGeminiApiKey(req));
 
   const payload = {
     v: 1,
@@ -2418,7 +2467,7 @@ apiRouter.get('/api/config/export-bundle', (req: Request, res: Response) => {
     `INTERVALS_API_KEY="${intervalsApiKey}"`,
     `INTERVALS_ATHLETE_ID="${intervalsAthleteId || '0'}"`,
     `STRAVA_CLIENT_ID="${stravaClientId}"`,
-    `STRAVA_CLIENT_SECRET="${stravaClientSecret}"`,
+    ...(stravaClientSecret ? [`STRAVA_CLIENT_SECRET="${stravaClientSecret}"`] : []),
     `STRAVA_REFRESH_TOKEN="${stravaRefreshToken}"`,
     ...(mapTileApiKey ? [`MAPBOX_ACCESS_TOKEN="${mapTileApiKey}"`] : []),
   ].join('\n');

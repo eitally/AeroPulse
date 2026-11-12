@@ -5520,6 +5520,38 @@ async function saveSessionCacheAsync(req, res, explicitSid) {
   await saveTenantVaultAsync(`session_${scopeKey}`, store);
   emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
 }
+var SERVER_OWNED_SECRET_ENV_KEYS = [
+  "STRAVA_CLIENT_SECRET",
+  "STRAVA_REFRESH_TOKEN",
+  "STRAVA_ACCESS_TOKEN",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "VITE_GEMINI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "NEXT_PUBLIC_GEMINI_API_KEY",
+  "API_KEY",
+  "MAPBOX_ACCESS_TOKEN",
+  "VITE_MAPBOX_ACCESS_TOKEN",
+  "THUNDERFOREST_API_KEY",
+  "INTERVALS_API_KEY",
+  "GARMIN_PERSONAL_API_KEY",
+  "SESSION_SECRET",
+  "TOKEN_VAULT_KEY"
+];
+function normalizeSecretValue(value) {
+  return String(value ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+}
+function isServerOwnedSecret(value) {
+  const clean = normalizeSecretValue(value);
+  if (!clean) return false;
+  return SERVER_OWNED_SECRET_ENV_KEYS.some(
+    (key) => normalizeSecretValue(process.env[key]) === clean
+  );
+}
+function userOwnedSecretOnly(value) {
+  const clean = normalizeSecretValue(value);
+  return clean && !isServerOwnedSecret(clean) ? clean : "";
+}
 function getEffectiveGeminiApiKey(req) {
   const headerKey = req?.headers["x-gemini-api-key"]?.trim();
   const bodyKey = typeof req?.body?.geminiApiKey === "string" ? req.body.geminiApiKey.trim() : "";
@@ -5545,7 +5577,7 @@ function getEffectiveGeminiApiKey(req) {
 function getGeminiClient(req) {
   const apiKey = getEffectiveGeminiApiKey(req);
   if (!apiKey) return null;
-  if (!runtimeStore.geminiApiKey) {
+  if (!runtimeStore.geminiApiKey && !isServerOwnedSecret(apiKey)) {
     runtimeStore.geminiApiKey = apiKey;
   }
   return new GoogleGenAI({
@@ -5640,7 +5672,7 @@ async function ensureValidStravaAccessToken(req, forceRefresh = false) {
     return "";
   }
   if (clientId && !runtimeStore.stravaClientId) runtimeStore.stravaClientId = clientId;
-  if (clientSecret && !runtimeStore.stravaClientSecret)
+  if (clientSecret && !runtimeStore.stravaClientSecret && !isServerOwnedSecret(clientSecret))
     runtimeStore.stravaClientSecret = clientSecret;
   let activeAccessToken = accessToken;
   let activeRefreshToken = refreshToken;
@@ -5872,14 +5904,14 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     refreshToken: stravaRefreshToken,
     accessToken: stravaAccessToken
   } = getEffectiveStravaClientConfig(req);
-  if (intervalsKey && !runtimeStore.intervalsApiKey) {
+  if (intervalsKey && !runtimeStore.intervalsApiKey && !isServerOwnedSecret(intervalsKey)) {
     runtimeStore.intervalsApiKey = intervalsKey;
     runtimeStore.intervalsAthleteId = athleteId;
   }
   if (stravaClientId && !runtimeStore.stravaClientId) {
     runtimeStore.stravaClientId = stravaClientId;
   }
-  if (stravaClientSecret && !runtimeStore.stravaClientSecret) {
+  if (stravaClientSecret && !runtimeStore.stravaClientSecret && !isServerOwnedSecret(stravaClientSecret)) {
     runtimeStore.stravaClientSecret = stravaClientSecret;
   }
   if (stravaRefreshToken && !runtimeStore.stravaRefreshToken) {
@@ -5900,7 +5932,7 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
   const effectiveMapProvider = runtimeStore.mapTileProvider || (effectiveMapKey.startsWith("pk.") ? "MAPBOX" : effectiveMapKey ? "THUNDERFOREST" : "OSM_KEYLESS");
   const hasStravaEnv = Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
   const effectiveGeminiKey = getEffectiveGeminiApiKey(req);
-  if (effectiveGeminiKey && !runtimeStore.geminiApiKey) {
+  if (effectiveGeminiKey && !runtimeStore.geminiApiKey && !isServerOwnedSecret(effectiveGeminiKey)) {
     runtimeStore.geminiApiKey = effectiveGeminiKey;
   }
   const hasGeminiServerKey = Boolean(effectiveGeminiKey);
@@ -6403,20 +6435,23 @@ apiRouter.get("/api/config/export-bundle", (req, res) => {
     res.status(401).json({ error: "Valid authenticated session required to export credentials." });
     return;
   }
-  const { apiKey: intervalsApiKey, athleteId: intervalsAthleteId } = getEffectiveIntervalsConfig(req);
-  const {
-    clientId: stravaClientId,
-    clientSecret: stravaClientSecret,
-    refreshToken: stravaRefreshToken,
-    accessToken: stravaAccessToken
-  } = getEffectiveStravaClientConfig(req);
+  const effectiveIntervals = getEffectiveIntervalsConfig(req);
+  const effectiveStrava = getEffectiveStravaClientConfig(req);
+  const intervalsApiKey = userOwnedSecretOnly(effectiveIntervals.apiKey);
+  const intervalsAthleteId = intervalsApiKey ? effectiveIntervals.athleteId : "0";
+  const stravaClientId = effectiveStrava.clientId;
+  const stravaClientSecret = userOwnedSecretOnly(effectiveStrava.clientSecret);
+  const stravaRefreshToken = userOwnedSecretOnly(effectiveStrava.refreshToken);
+  const stravaAccessToken = userOwnedSecretOnly(effectiveStrava.accessToken);
   if (!intervalsApiKey && !stravaRefreshToken && !stravaAccessToken) {
     res.status(401).json({ error: "Authentication required to export connection bundle." });
     return;
   }
-  const mapTileApiKey = (req.headers["x-map-tile-api-key"] || runtimeStore.mapTileApiKey || process.env.MAPBOX_ACCESS_TOKEN || "").trim();
+  const mapTileApiKey = userOwnedSecretOnly(
+    req.headers["x-map-tile-api-key"] || runtimeStore.mapTileApiKey || ""
+  );
   const mapTileProvider = runtimeStore.mapTileProvider || "OSM_KEYLESS";
-  const geminiApiKey = getEffectiveGeminiApiKey(req);
+  const geminiApiKey = userOwnedSecretOnly(getEffectiveGeminiApiKey(req));
   const payload = {
     v: 1,
     intervalsApiKey,
@@ -6438,7 +6473,7 @@ apiRouter.get("/api/config/export-bundle", (req, res) => {
     `INTERVALS_API_KEY="${intervalsApiKey}"`,
     `INTERVALS_ATHLETE_ID="${intervalsAthleteId || "0"}"`,
     `STRAVA_CLIENT_ID="${stravaClientId}"`,
-    `STRAVA_CLIENT_SECRET="${stravaClientSecret}"`,
+    ...stravaClientSecret ? [`STRAVA_CLIENT_SECRET="${stravaClientSecret}"`] : [],
     `STRAVA_REFRESH_TOKEN="${stravaRefreshToken}"`,
     ...mapTileApiKey ? [`MAPBOX_ACCESS_TOKEN="${mapTileApiKey}"`] : []
   ].join("\n");
