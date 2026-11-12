@@ -4,7 +4,7 @@ import type {
   RaceFuelingPlan,
   RaceSimulationReport,
   RaceSimulationSegment,
-} from '../types';
+} from '../types.ts';
 
 export interface RaceSimulatorInput {
   sport: 'Cycling' | 'Running';

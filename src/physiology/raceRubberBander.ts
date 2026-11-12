@@ -2,8 +2,8 @@ import type {
   OfficialRacePlatform,
   RubberBandedSplit,
   VerifiedRacePassport,
-} from '../types';
-import { estimateVdotFromRace } from './powerPaceMetrics';
+} from '../types.ts';
+import { estimateVdotFromRace } from './powerPaceMetrics.ts';
 
 export interface RubberBanderInput {
   athleteName: string;

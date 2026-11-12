@@ -4,8 +4,8 @@ import type {
   EmpiricalMmpModelSummary,
   EmpiricalMmpPoint,
   UnifiedActivity,
-} from '../types';
-import { computeGradeAdjustedPaceStream } from './powerPaceMetrics';
+} from '../types.ts';
+import { computeGradeAdjustedPaceStream } from './powerPaceMetrics.ts';
 
 export const CANONICAL_MMP_DURATIONS: readonly { secs: number; label: string }[] = [
   { secs: 1, label: '1s' },

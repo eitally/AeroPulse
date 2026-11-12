@@ -1518,6 +1518,48 @@ export default function App() {
       syncLiveTelemetry(true);
     };
 
+    const handledOAuthKeys = new Set<string>();
+    const processIncomingOAuthPayload = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return;
+      if (payload.type === 'OAUTH_AUTH_SUCCESS') {
+        const dedupeKey = `ok:${payload.tokens?.accessToken || payload.sessionToken || 'strava'}`;
+        if (handledOAuthKeys.has(dedupeKey)) return;
+        handledOAuthKeys.add(dedupeKey);
+        void applyNewStravaOAuthTokens(payload.tokens, payload.sessionToken);
+      } else if (payload.type === 'OAUTH_AUTH_CODE' && payload.code) {
+        const codeStr = String(payload.code).trim();
+        const dedupeKey = `code:${codeStr}`;
+        if (!codeStr || handledOAuthKeys.has(dedupeKey)) return;
+        handledOAuthKeys.add(dedupeKey);
+        void (async () => {
+          const exResp = await fetch('/api/strava/exchange-code', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+            body: JSON.stringify({ code: codeStr }),
+          });
+          const exData = await safeParseResponseJson(exResp);
+          if (exResp.ok && (exData.accessToken || exData.refreshToken)) {
+            await applyNewStravaOAuthTokens(
+              {
+                accessToken: exData.accessToken,
+                refreshToken: exData.refreshToken,
+                expiresAt: exData.expiresAt,
+                clientId: exData.clientId,
+                athleteId: exData.athleteId,
+                athleteName: exData.athleteName,
+              },
+              exData.sessionToken
+            );
+          } else if (exData?.error) {
+            setSyncError(exData.error);
+          }
+        })();
+      } else if (payload.type === 'OAUTH_AUTH_ERROR' && payload.error) {
+        setSyncError(String(payload.error));
+      }
+    };
+
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
       if (
@@ -1527,9 +1569,7 @@ export default function App() {
       ) {
         return;
       }
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        applyNewStravaOAuthTokens(event.data?.tokens, event.data?.sessionToken);
-      }
+      processIncomingOAuthPayload(event.data);
     };
     window.addEventListener('message', handleMessage);
 
@@ -1537,9 +1577,7 @@ export default function App() {
     try {
       bc = new BroadcastChannel('aeropulse_oauth');
       bc.onmessage = (ev) => {
-        if (ev.data?.type === 'OAUTH_AUTH_SUCCESS') {
-          applyNewStravaOAuthTokens(ev.data?.tokens, ev.data?.sessionToken);
-        }
+        processIncomingOAuthPayload(ev.data);
       };
     } catch {
       // ignore if BroadcastChannel unsupported
@@ -1629,32 +1667,120 @@ export default function App() {
         ? crypto.randomUUID()
         : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
+    // Open centered Strava OAuth popup synchronously inside the user click gesture on desktop
+    // (falls back automatically to top-level navigation on mobile phones, installed PWAs, or if blocked).
+    const isStandalonePwa =
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      Boolean((window.navigator as any)?.standalone);
+    const isMobileViewport = window.innerWidth < 680 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    const shouldUsePopup = mode === 'localhost' || (!isStandalonePwa && !isMobileViewport);
+
+    let popup: Window | null = null;
+    if (shouldUsePopup) {
+      const width = 600;
+      const height = 740;
+      const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+      const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+      popup = window.open(
+        'about:blank',
+        'strava_oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      );
+      if (popup) {
+        try {
+          popup.document.open();
+          popup.document.write(
+            '<!doctype html><html><head><title>Connecting to Strava…</title></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0C1D14;color:#F8FAFC;font-family:system-ui,sans-serif;text-align:center;"><div style="padding:28px 32px;border-radius:16px;background:#111915;border:2px solid #25573A;"><div style="font-weight:700;font-size:16px;color:#FC4C02;margin-bottom:6px;">Connecting to Strava…</div><div style="font-size:13px;color:#CBD5E1;">Opening secure Strava authorization…</div></div></body></html>'
+          );
+          popup.document.close();
+        } catch {
+          // ignore cross-document write edge cases
+        }
+      }
+    }
+
     try {
+      void fetch('/api/auth/session', { method: 'POST', credentials: 'include' }).catch(() => null);
       const origin = encodeURIComponent(window.location.origin);
       const prompt = hasEnteredWorkspace && !isSessionLoggedOut ? 'force' : 'auto';
       const resp = await fetch(
         `/api/strava/auth/url?origin=${origin}&mode=${mode}&prompt=${prompt}&state=${encodeURIComponent(oauthState)}`,
-        { headers: getSavedIntervalsHeaders() }
+        {
+          credentials: 'include',
+          headers: getSavedIntervalsHeaders(),
+        }
       );
       const data = await safeParseResponseJson(resp);
       if (!resp.ok || !data?.url) {
+        if (popup && !popup.closed) {
+          try {
+            popup.close();
+          } catch {
+            // ignore
+          }
+        }
         setSyncError(
           data?.error ||
-            'Strava OAuth is not configured on this server yet (STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET missing).'
+            'Strava OAuth is not configured yet. Enter your Strava Client ID & Secret below or set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in Vercel.'
         );
         return;
       }
 
-      // Standard Intervals.icu-style top-level OAuth 2.0 redirect for cloud mode:
-      // Works reliably across Vercel serverless instances, desktop browsers, mobile Safari, and installed PWAs.
-      if (mode === 'cloud') {
-        window.location.assign(data.url);
+      if (popup && !popup.closed) {
+        popup.location.replace(data.url);
+        popup.focus();
+
+        // Poll /api/strava/auth/poll alongside postMessage & BroadcastChannel for cross-browser resilience
+        if (mode === 'cloud') {
+          let attempts = 0;
+          const pollTimer = window.setInterval(async () => {
+            attempts += 1;
+            if (attempts > 90 || (popup && popup.closed && attempts > 3)) {
+              window.clearInterval(pollTimer);
+              return;
+            }
+            try {
+              const pollResp = await fetch(
+                `/api/strava/auth/poll?state=${encodeURIComponent(oauthState)}`,
+                { credentials: 'include', headers: getSavedIntervalsHeaders() }
+              );
+              if (!pollResp.ok) return;
+              const pollData = await pollResp.json();
+              if (pollData?.completed && pollData.tokens) {
+                window.clearInterval(pollTimer);
+                try {
+                  if (popup && !popup.closed) popup.close();
+                } catch {
+                  // ignore
+                }
+                if (pollData.sessionToken) {
+                  localStorage.setItem('aeropulse_session_token', String(pollData.sessionToken));
+                }
+                saveRotatedStravaTokensToStorage(pollData.tokens);
+                localStorage.removeItem('aeropulse_logged_out');
+                localStorage.setItem('aeropulse_auth_gate_passed', '1');
+                setIsSessionLoggedOut(false);
+                setHasEnteredWorkspace(true);
+                void syncLiveTelemetry(true);
+              }
+            } catch {
+              // ignore transient poll errors
+            }
+          }, 1200);
+        }
         return;
       }
 
-      // Localhost manual code-exchange popup (available inside Data Sources after login)
-      window.open(data.url, 'strava_oauth_popup', 'width=620,height=740');
+      // Fallback when on mobile, standalone PWA, or when popup opening was blocked
+      window.location.assign(data.url);
     } catch (err) {
+      if (popup && !popup.closed) {
+        try {
+          popup.close();
+        } catch {
+          // ignore
+        }
+      }
       setSyncError(err instanceof Error ? err.message : 'Failed to start Strava OAuth sign-in.');
     }
   };

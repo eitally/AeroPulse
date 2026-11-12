@@ -6,7 +6,7 @@ import type {
   UnifiedWellnessDay,
   WeeklyGitDiffDayChange,
   WeeklyGitDiffProposal,
-} from '../types';
+} from '../types.ts';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 

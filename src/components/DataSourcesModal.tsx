@@ -140,9 +140,22 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const handleStravaKeysAndLaunch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalStatusMsg(null);
-    await onSaveStravaCredentials(stravaClientId.trim(), stravaClientSecret.trim());
-    setLocalStatusMsg('Strava API keys saved. Launching Strava authorization...');
-    await onLaunchStravaOAuth('cloud');
+    try {
+      if (stravaClientId.trim()) {
+        localStorage.setItem('aeropulse_strava_client_id', stravaClientId.trim());
+      }
+      if (stravaClientSecret.trim()) {
+        localStorage.setItem('aeropulse_strava_client_secret', stravaClientSecret.trim());
+      }
+    } catch {
+      // ignore
+    }
+    const launchPromise = onLaunchStravaOAuth('cloud');
+    if (stravaClientId.trim() && stravaClientSecret.trim()) {
+      void onSaveStravaCredentials(stravaClientId.trim(), stravaClientSecret.trim());
+    }
+    setLocalStatusMsg('Strava API keys saved. Opening Strava authorization popup...');
+    await launchPromise;
   };
 
   const handleStravaFallbackSubmit = async (e: React.FormEvent) => {

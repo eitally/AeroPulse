@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
-import { apiRouter } from '../server/apiRouter.ts';
-import { securityHeadersMiddleware } from '../server/securityUtils.ts';
+import { apiRouter } from './apiRouter.ts';
+import { securityHeadersMiddleware } from './securityUtils.ts';
 
 const app = express();
 app.disable('x-powered-by');

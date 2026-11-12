@@ -15,7 +15,7 @@ import type {
   VdotPodAthleteMember,
   VdotPodIntensity,
   VdotTrainingPod,
-} from '../types';
+} from '../types.ts';
 
 /**
  * Formats seconds with 0.01s or 0.1s precision into Track & Field stopwatch format (`m:ss.xx` or `ss.xx`).

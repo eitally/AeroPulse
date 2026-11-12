@@ -268,14 +268,17 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     }
   };
 
+  // Auto-expand custom Strava API keys guide if server reports missing STRAVA_CLIENT_ID / SECRET
+  useEffect(() => {
+    if (errorMessage && /STRAVA_CLIENT_ID|not configured/i.test(errorMessage)) {
+      setShowCustomStravaKeys(true);
+    }
+  }, [errorMessage]);
+
   const handleStravaLaunchClick = async (oauthMode: 'cloud' | 'localhost' = 'cloud') => {
     setIsRedirecting(true);
     setStepNotice(null);
     try {
-      await fetch('/api/auth/session', {
-        method: 'POST',
-        credentials: 'include',
-      }).catch(() => null);
       await onLaunchStravaOAuth(oauthMode);
     } finally {
       setIsRedirecting(false);
@@ -288,14 +291,21 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setIsRedirecting(true);
     setStepNotice(null);
     try {
-      await fetch('/api/auth/session', {
-        method: 'POST',
-        credentials: 'include',
-      }).catch(() => null);
-      if (onSaveStravaCredentials) {
-        await onSaveStravaCredentials(stravaClientId.trim(), stravaClientSecret.trim());
+      // Save keys to localStorage synchronously BEFORE launching OAuth so the popup opens
+      // inside the direct user click gesture without being blocked by browser popup blockers.
+      try {
+        localStorage.setItem('aeropulse_strava_client_id', stravaClientId.trim());
+        if (stravaClientSecret.trim()) {
+          localStorage.setItem('aeropulse_strava_client_secret', stravaClientSecret.trim());
+        }
+      } catch {
+        // ignore storage errors
       }
-      await onLaunchStravaOAuth('cloud');
+      const launchPromise = onLaunchStravaOAuth('cloud');
+      if (onSaveStravaCredentials && stravaClientSecret.trim()) {
+        void onSaveStravaCredentials(stravaClientId.trim(), stravaClientSecret.trim());
+      }
+      await launchPromise;
     } finally {
       setIsRedirecting(false);
     }

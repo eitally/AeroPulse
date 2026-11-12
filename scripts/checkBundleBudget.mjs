@@ -57,4 +57,29 @@ for (const file of entryJsFiles) {
   }
 }
 
+// 3. Verify both native TypeScript server (`server/vercelApp.ts`) and bundled Vercel function (`api/index.js`) boot cleanly
+try {
+  const tsMod = await import('../server/vercelApp.ts');
+  const jsMod = await import('../api/index.js');
+  if (!tsMod?.default || !jsMod?.default) {
+    console.error('ERROR: Server entry did not export a default Express app.');
+    process.exit(1);
+  }
+  const srv = jsMod.default.listen(0);
+  const port = srv.address().port;
+  const probe = await fetch(
+    `http://127.0.0.1:${port}/api/strava/auth/url?origin=https%3A%2F%2Faeropulse.vercel.app&mode=cloud&state=smoketest1234`,
+    { headers: { 'x-strava-client-id': '10001', 'x-strava-client-secret': 'smoke_secret' } }
+  );
+  srv.close();
+  if (probe.status !== 200) {
+    console.error(`ERROR: /api/strava/auth/url smoke probe returned HTTP ${probe.status}`);
+    process.exit(1);
+  }
+  console.log('[Server Bundle Check] PASS — api/index.js & server/vercelApp.ts verified (Strava OAuth URL HTTP 200).');
+} catch (err) {
+  console.error('ERROR: Server entry verification failed (would cause HTTP 500 on Vercel):', err);
+  process.exit(1);
+}
+
 console.log('[Bundle Budget] PASS — entry bundle within budget and dist/ clean.');

@@ -4182,8 +4182,53 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
     }
 
     const oauthState = String(req.query.state || '').trim();
-    const tokenData = await exchangeStravaAuthCode(code, req);
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+
+    // Stateless serverless fallback: if this cold container has no server-side Strava env keys
+    // (user entered personal Client ID & Secret in browser localStorage), relay the code back
+    // to the opener/same-origin app so it immediately exchanges with its stored key headers.
+    if (!clientId || !clientSecret) {
+      const codeRelayJson = safeJsonForScript({
+        type: 'OAUTH_AUTH_CODE',
+        provider: 'strava',
+        code,
+        state: oauthState || undefined,
+      });
+      res.type('html').send(`<!doctype html>
+<html>
+  <head><title>Completing Strava Sign-In…</title></head>
+  <body style="font-family:system-ui,sans-serif;background:#0C1D14;color:#F8FAFC;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:24px;">
+    <div style="background:#111915;border:2px solid #25573A;border-radius:16px;padding:28px;max-width:380px;">
+      <h2 style="margin:0 0 8px;color:#C8FF00;font-size:17px;">Finishing Strava Connection…</h2>
+      <p style="margin:0;color:#CBD5E1;font-size:13px;">Returning to THRESH…</p>
+    </div>
+    <script>
+      (function() {
+        var payload = ${codeRelayJson};
+        var hasOpener = false;
+        try {
+          if (window.opener && window.opener !== window) {
+            hasOpener = true;
+            window.opener.postMessage(payload, window.location.origin);
+          }
+        } catch (e) {}
+        try {
+          var bc = new BroadcastChannel('aeropulse_oauth');
+          bc.postMessage(payload);
+        } catch (e) {}
+        if (hasOpener || window.name === 'strava_oauth_popup') {
+          setTimeout(function() { try { window.close(); } catch (e) {} }, 350);
+        } else {
+          window.location.replace('/?code=' + encodeURIComponent(payload.code) + '#fitness');
+        }
+      })();
+    </script>
+  </body>
+</html>`);
+      return;
+    }
+
+    const tokenData = await exchangeStravaAuthCode(code, req);
 
     let athleteName =
       [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ').trim() ||
@@ -4339,10 +4384,11 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
                 var bc = new BroadcastChannel('aeropulse_oauth');
                 bc.postMessage(payload);
               } catch (e) {}
-              if (hasOpener) {
+              var isPopupWindow = hasOpener || window.name === 'strava_oauth_popup';
+              if (isPopupWindow) {
                 setTimeout(function() {
                   try { window.close(); } catch (e) {}
-                }, 400);
+                }, 350);
               } else {
                 window.location.replace('/#fitness');
               }
@@ -4353,7 +4399,36 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
     `);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    res.redirect(302, `/?auth_error=${encodeURIComponent(`Strava sign-in failed: ${errMsg}`)}`);
+    const errJson = safeJsonForScript({
+      type: 'OAUTH_AUTH_ERROR',
+      provider: 'strava',
+      error: `Strava sign-in failed: ${errMsg}`,
+    });
+    res.status(400).type('html').send(`<!doctype html>
+<html>
+  <head><title>Strava Sign-In Error</title></head>
+  <body style="font-family:system-ui,sans-serif;background:#0C1D14;color:#F8FAFC;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:24px;">
+    <div style="background:#111915;border:2px solid #25573A;border-radius:16px;padding:28px;max-width:420px;">
+      <h2 style="margin:0 0 8px;color:#FB7185;font-size:17px;">Strava Sign-In Could Not Complete</h2>
+      <p style="margin:0 0 18px;color:#CBD5E1;font-size:13px;line-height:1.5;">${escapeHtml(errMsg)}</p>
+      <a href="/?auth_error=${encodeURIComponent(`Strava sign-in failed: ${errMsg}`)}" onclick="if (window.opener || window.name === 'strava_oauth_popup') { window.close(); return false; }" style="display:inline-block;background:#C8FF00;color:#0B0F0D;text-decoration:none;border-radius:10px;padding:10px 20px;font-weight:700;font-size:13px;">Return to THRESH</a>
+    </div>
+    <script>
+      (function() {
+        var payload = ${errJson};
+        try {
+          if (window.opener && window.opener !== window) {
+            window.opener.postMessage(payload, window.location.origin);
+          }
+        } catch (e) {}
+        try {
+          var bc = new BroadcastChannel('aeropulse_oauth');
+          bc.postMessage(payload);
+        } catch (e) {}
+      })();
+    </script>
+  </body>
+</html>`);
   }
 };
 

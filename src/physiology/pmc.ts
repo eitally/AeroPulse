@@ -3,8 +3,8 @@ import type {
   DualSportPmcPoint,
   ThresholdHistoryEntry,
   UnifiedActivity,
-} from '../types';
-import { computeCyclingTss, computeRunningTss } from './powerPaceMetrics';
+} from '../types.ts';
+import { computeCyclingTss, computeRunningTss } from './powerPaceMetrics.ts';
 
 export interface ResolvedDateThresholds {
   ftp: number;

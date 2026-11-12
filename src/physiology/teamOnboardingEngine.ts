@@ -2,7 +2,7 @@ import type {
   DistanceUnit,
   TeamBrandConfig,
   TeamOrgType,
-} from '../types';
+} from '../types.ts';
 
 export interface AccessibleTeamPalette {
   primaryHex: string;

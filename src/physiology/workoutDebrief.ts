@@ -4,12 +4,12 @@ import type {
   PostWorkoutDebriefInsight,
   PostWorkoutDebriefReport,
   UnifiedActivity,
-} from '../types';
+} from '../types.ts';
 import {
   computeGradeAdjustedPaceStream,
   computeNormalizedPower,
-} from './powerPaceMetrics';
-import { resolveThresholdsAtDate } from './pmc';
+} from './powerPaceMetrics.ts';
+import { resolveThresholdsAtDate } from './pmc.ts';
 
 function formatClockOffset(sec: number): string {
   const clean = Math.max(0, Math.round(sec));

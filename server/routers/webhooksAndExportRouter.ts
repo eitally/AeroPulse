@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
-import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine';
-import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator';
-import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander';
+import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine.ts';
+import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator.ts';
+import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander.ts';
 
 export const webhooksAndExportRouter = Router();
 

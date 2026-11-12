@@ -4,9 +4,9 @@ import type {
   DurabilityAnalysisReport,
   DurabilityBucketPoint,
   UnifiedActivity,
-} from '../types';
-import { computeSlidingWindowPeaks } from './mmpCurves';
-import { computeGradeAdjustedPaceStream } from './powerPaceMetrics';
+} from '../types.ts';
+import { computeSlidingWindowPeaks } from './mmpCurves.ts';
+import { computeGradeAdjustedPaceStream } from './powerPaceMetrics.ts';
 
 const CYCLING_KJ_KG_THRESHOLDS = [0, 10, 20, 30, 40] as const;
 const RUNNING_KCAL_THRESHOLDS = [0, 500, 1000, 1500, 2000] as const;

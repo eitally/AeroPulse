@@ -3,8 +3,8 @@ import type {
   OrthopedicLoadSummary,
   PlannedWorkoutEvent,
   UnifiedActivity,
-} from '../types';
-import { computeHistoricalActivityLoad } from './pmc';
+} from '../types.ts';
+import { computeHistoricalActivityLoad } from './pmc.ts';
 
 /**
  * 10x Differentiator #1: Cross-Modal Run ↔ Bike 3-Channel Orthopedic Interference Engine
