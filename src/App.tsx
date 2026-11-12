@@ -3890,7 +3890,7 @@ export default function App() {
               </div>
 
               {/* 2. Center: 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
-              <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
+              <nav className="hidden md:flex items-center gap-1.5 px-1.5 py-1">
                 {(
                   [
                     {
@@ -3929,17 +3929,17 @@ export default function App() {
                         e.preventDefault();
                         setActiveTab(item.id === 'totals' ? lastLabTabRef.current : item.id);
                       }}
-                      className={`min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap shrink-0 ${
-                        isActive
-                          ? 'ap-nav-volt-active'
-                          : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white font-medium'
+                      className={`min-h-[36px] inline-flex items-center px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                        isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                       }`}
                     >
-                      <NavIcon
-                        className="w-3.5 h-3.5"
-                        weight={isActive ? 'fill' : 'duotone'}
-                      />
-                      <span>{item.label}</span>
+                      <span className="ap-track-tab-inner">
+                        <NavIcon
+                          className="w-3.5 h-3.5"
+                          weight={isActive ? 'fill' : 'duotone'}
+                        />
+                        <span>{item.label}</span>
+                      </span>
                     </a>
                   );
                 })}
@@ -4759,7 +4759,7 @@ export default function App() {
             </main>
 
             {/* Subtle THRESH Branded Footer inside Content Stage */}
-            <footer className="pt-5 border-t border-slate-200/90 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+            <footer className="pt-5 border-t border-emerald-900/15 dark:border-[#244331] flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-3">
                 <AeroPulseLogo size="sm" />
                 <span className="hidden sm:inline text-slate-400 dark:text-slate-500">·</span>

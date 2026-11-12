@@ -28,7 +28,7 @@ import {
 } from '../types';
 import { calibrateThresholdsFromSeedMark } from '../physiology/teamOnboardingEngine';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
-import { AeroPulseLogo } from './AeroPulseLogo';
+import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
@@ -610,7 +610,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         </header>
 
         {/* Main Darker-Green Framed Content Area */}
-        <main className="ap-content-stage p-5 sm:p-8 space-y-6">
+        <main className="ap-content-stage relative overflow-hidden p-5 sm:p-8 space-y-6">
+          <ThreshBrandWatermark className="w-56 h-48 absolute -right-4 -bottom-6 pointer-events-none" />
           {(errorMessage || joinError) && (
             <div className="ap-status-strained rounded-xl p-3.5 text-xs leading-relaxed break-words">
               {joinError || errorMessage}
@@ -629,8 +630,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
              ============================================================== */}
           {mode === 'NEW_ATHLETE' && (
             <>
-              {/* Simple 3-Step Pill Progress Bar */}
-              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl liquid-capsule-track text-xs">
+              {/* Simple 3-Step Stadium Track Progress Bar */}
+              <div className="grid grid-cols-3 gap-2 px-1 py-0.5 text-xs">
                 {(
                   [
                     { id: 1 as const, label: '1. Why THRESH' },
@@ -642,13 +643,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     key={s.id}
                     type="button"
                     onClick={() => setStep(s.id)}
-                    className={`min-h-[36px] px-2 py-1 rounded-lg transition-all cursor-pointer truncate ${
-                      step === s.id
-                        ? 'ap-nav-volt-active'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium'
+                    className={`min-h-[36px] px-2 py-1 transition-all cursor-pointer truncate ap-track-tab ${
+                      step === s.id ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                     }`}
                   >
-                    {s.label}
+                    <span className="ap-track-tab-inner justify-center w-full truncate">
+                      {s.label}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -656,8 +657,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               {/* STEP 1: PRIMARY BENEFITS */}
               {step === 1 && (
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <span className="ap-eyebrow block">Step 1 of 3 · Welcome</span>
+                  <div className="space-y-2.5">
+                    <div>
+                      <span className="ap-lane-badge">
+                        <span className="ap-lane-badge-inner">Lane 1 · Step 1 of 3 · Welcome</span>
+                      </span>
+                    </div>
                     <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
                       Know How Hard to Push Today—Before You Head Out.
                     </h1>

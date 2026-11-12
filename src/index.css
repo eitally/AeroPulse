@@ -52,27 +52,27 @@
 
 @layer base {
   :root {
-    --ap-outer-bg: #1d3828;
-    --ap-canvas-bg: #f4f6f0;
-    --ap-content-border: #28573b;
+    --ap-outer-bg: #163022;
+    --ap-canvas-bg: #f4f7f2;
+    --ap-content-border: #2b5b3f;
     --ap-card-bg: #ffffff;
-    --ap-card-border: rgba(38, 83, 56, 0.16);
-    --ap-inset-bg: #eaeee6;
-    --ap-inset-border: rgba(38, 83, 56, 0.14);
+    --ap-card-border: rgba(38, 88, 58, 0.19);
+    --ap-inset-bg: #e9efe9;
+    --ap-inset-border: rgba(38, 88, 58, 0.16);
     --ap-brand-volt: #a6f000;
-    --ap-brand-primary: #28573b;
-    --ap-action-cobalt: #28573b;
+    --ap-brand-primary: #1c5436;
+    --ap-action-cobalt: #1c5436;
     --ap-thresh-vermilion: #84cc16;
   }
 
   .dark {
     --ap-outer-bg: #0c1d14;
-    --ap-canvas-bg: #0d1210;
-    --ap-content-border: #25573a;
-    --ap-card-bg: #121815;
-    --ap-card-border: rgba(52, 120, 80, 0.34);
-    --ap-inset-bg: #17201c;
-    --ap-inset-border: rgba(52, 120, 80, 0.24);
+    --ap-canvas-bg: #0b120e;
+    --ap-content-border: #2b543b;
+    --ap-card-bg: #101b15;
+    --ap-card-border: rgba(57, 150, 99, 0.36);
+    --ap-inset-bg: #15231b;
+    --ap-inset-border: rgba(57, 150, 99, 0.26);
     --ap-brand-volt: #c8ff00;
     --ap-brand-primary: #c8ff00;
     --ap-action-cobalt: #c8ff00;
@@ -85,11 +85,31 @@
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
     background-color: var(--ap-outer-bg);
+    background-image:
+      repeating-linear-gradient(
+        -14deg,
+        rgba(200, 255, 0, 0.068) 0px,
+        rgba(200, 255, 0, 0.068) 1px,
+        transparent 1px,
+        transparent 28px
+      ),
+      radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.14), transparent 52%);
+    background-attachment: fixed;
     color: #101411;
   }
 
   .dark body {
     background-color: var(--ap-outer-bg);
+    background-image:
+      repeating-linear-gradient(
+        -14deg,
+        rgba(200, 255, 0, 0.055) 0px,
+        rgba(200, 255, 0, 0.055) 1px,
+        transparent 1px,
+        transparent 28px
+      ),
+      radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.12), transparent 52%);
+    background-attachment: fixed;
     color: #f4f7f4;
   }
 
@@ -156,16 +176,82 @@
   background-color: #c8ff00;
   color: #080a09;
   border: 1.5px solid #65a30d;
-  box-shadow: 0 2px 8px rgba(101, 163, 13, 0.25);
-  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(101, 163, 13, 0.28);
+  font-weight: 800;
 }
 
 .dark .ap-nav-volt-active {
   background-color: #c8ff00;
   color: #080a09;
   border: 1px solid #e2ff66;
-  box-shadow: 0 2px 14px rgba(200, 255, 0, 0.28);
+  box-shadow: 0 2px 14px rgba(200, 255, 0, 0.3);
+  font-weight: 800;
+}
+
+/* Signature #1 Stadium Track -14° Velocity-Sheared Navigation Tabs & Lane Callouts */
+.ap-track-tab {
+  transform: skewX(-14deg);
+  border-radius: 0.425rem;
+}
+
+.ap-track-tab-inner {
+  transform: skewX(14deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ap-track-tab-idle {
+  background-color: #e8efe9;
+  color: #1f3528;
+  border: 1px solid rgba(39, 88, 58, 0.22);
+  font-weight: 600;
+}
+
+.ap-track-tab-idle:hover {
+  background-color: #dce7de;
+  color: #0a140e;
+}
+
+.dark .ap-track-tab-idle {
+  background-color: #15251c;
+  color: #a9beb1;
+  border: 1px solid #254331;
+  font-weight: 600;
+}
+
+.dark .ap-track-tab-idle:hover {
+  background-color: #1c3125;
+  color: #f4f7f4;
+}
+
+.ap-lane-badge {
+  display: inline-flex;
+  align-items: center;
+  transform: skewX(-14deg);
+  border-radius: 0.35rem;
+  padding: 0.1875rem 0.625rem;
+  background-color: rgba(86, 186, 0, 0.14);
+  border: 1px solid rgba(77, 166, 0, 0.42);
+  color: #296300;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dark .ap-lane-badge {
+  background-color: rgba(200, 255, 0, 0.15);
+  border-color: rgba(200, 255, 0, 0.45);
+  color: #c8ff00;
+}
+
+.ap-lane-badge-inner {
+  transform: skewX(14deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
 }
 
 .ap-badge-volt {
@@ -201,10 +287,10 @@
     0 2px 6px -1px rgba(0, 0, 0, 0.4);
 }
 
-/* Floating Navigation Header Surface — Cohesive Darker-Green Framing */
+/* Floating Navigation Header Surface — Cohesive Stadium Track Framing */
 .liquid-glass-header,
 .ap-header-bar {
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 2px solid var(--ap-content-border);
@@ -215,7 +301,7 @@
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
-  background: rgba(16, 23, 19, 0.96);
+  background: rgba(16, 27, 21, 0.96);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 2px solid var(--ap-content-border);
@@ -240,14 +326,14 @@
 /* Segmented Switcher Track */
 .liquid-capsule-track,
 .ap-pill-track {
-  background: #e5e9da;
-  border: 1px solid rgba(101, 163, 13, 0.22);
+  background: #e3ece5;
+  border: 1px solid rgba(40, 87, 59, 0.22);
 }
 
 .dark .liquid-capsule-track,
 .dark .ap-pill-track {
-  background: #070908;
-  border: 1px solid rgba(200, 255, 0, 0.16);
+  background: #0b140f;
+  border: 1px solid rgba(57, 150, 99, 0.28);
 }
 
 /* Raised Active Switcher Pill — Crisp Volt Ring & Bottom Accent Bar */

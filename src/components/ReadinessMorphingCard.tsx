@@ -728,12 +728,12 @@ ${dataLines.join('\n')}
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
       {/* Signature 4px THRESH Volt Top Rail */}
       <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
-      <ThreshBrandWatermark className="w-32 h-32 absolute -right-3 -top-3 text-slate-900 dark:text-white" />
+      <ThreshBrandWatermark className="w-52 h-44 absolute -right-3 -bottom-5 pointer-events-none" />
 
       {/* Top Bar: Collapsible Summary Header */}
       <div
-        className={`relative px-4 sm:px-5 py-3 bg-slate-50/70 dark:bg-white/[0.02] ${
-          isExpanded ? 'border-b border-slate-200 dark:border-white/10' : ''
+        className={`relative px-4 sm:px-5 py-3 bg-[#EDF4EF]/80 dark:bg-[#0D1711]/85 ${
+          isExpanded ? 'border-b border-emerald-900/15 dark:border-[#254431]' : ''
         } flex flex-wrap items-center justify-between gap-3`}
       >
         <div className="flex flex-wrap items-center gap-2 select-none">

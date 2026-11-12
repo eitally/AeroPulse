@@ -281,15 +281,17 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
       {/* Signature 4px THRESH Volt Top Rail */}
       <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
-      <ThreshBrandWatermark className="w-32 h-32 absolute -right-3 -top-3 text-slate-900 dark:text-white pointer-events-none" />
+      <ThreshBrandWatermark className="w-52 h-44 absolute -right-3 -bottom-5 pointer-events-none" />
 
       {/* Top Circadian Header Bar */}
-      <div className="relative px-4 sm:px-5 py-3 border-b border-lime-600/20 dark:border-[#C8FF00]/15 bg-[#F8FAEE]/75 dark:bg-[#0D1310]/75 flex flex-wrap items-center justify-between gap-2.5">
+      <div className="relative px-4 sm:px-5 py-3 border-b border-emerald-900/15 dark:border-[#254431] bg-[#EDF4EF]/85 dark:bg-[#0D1711]/90 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           {mode === 'MORNING' ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-badge-volt text-[11px] font-mono uppercase tracking-wide">
-              <Sun className="w-3.5 h-3.5" />
-              <span>Morning Check-In · 7d Rolling</span>
+            <span className="ap-lane-badge">
+              <span className="ap-lane-badge-inner">
+                <Sun className="w-3.5 h-3.5" />
+                <span>Lane 1 · Morning Check-In · 7d Rolling</span>
+              </span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-status-prime text-[11px] font-mono font-bold uppercase tracking-wide">
