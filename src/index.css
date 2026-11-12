@@ -52,29 +52,31 @@
 
 @layer base {
   :root {
-    --ap-canvas-bg: #f3f5ed;
+    --ap-outer-bg: #1d3828;
+    --ap-canvas-bg: #f4f6f0;
+    --ap-content-border: #28573b;
     --ap-card-bg: #ffffff;
-    --ap-card-border: rgba(101, 163, 13, 0.26);
-    --ap-inset-bg: #eaede1;
-    --ap-inset-border: rgba(101, 163, 13, 0.18);
+    --ap-card-border: rgba(38, 83, 56, 0.16);
+    --ap-inset-bg: #eaeee6;
+    --ap-inset-border: rgba(38, 83, 56, 0.14);
     --ap-brand-volt: #a6f000;
-    --ap-brand-primary: #3f6212;
-    --ap-action-cobalt: #3f6212;
+    --ap-brand-primary: #28573b;
+    --ap-action-cobalt: #28573b;
     --ap-thresh-vermilion: #84cc16;
-    --ap-viewport-border: #9ef000;
   }
 
   .dark {
-    --ap-canvas-bg: #080a09;
-    --ap-card-bg: #111714;
-    --ap-card-border: rgba(200, 255, 0, 0.22);
-    --ap-inset-bg: #17201b;
-    --ap-inset-border: rgba(200, 255, 0, 0.14);
+    --ap-outer-bg: #0c1d14;
+    --ap-canvas-bg: #0d1210;
+    --ap-content-border: #25573a;
+    --ap-card-bg: #121815;
+    --ap-card-border: rgba(52, 120, 80, 0.34);
+    --ap-inset-bg: #17201c;
+    --ap-inset-border: rgba(52, 120, 80, 0.24);
     --ap-brand-volt: #c8ff00;
     --ap-brand-primary: #c8ff00;
     --ap-action-cobalt: #c8ff00;
     --ap-thresh-vermilion: #c8ff00;
-    --ap-viewport-border: #c8ff00;
   }
 
   body {
@@ -82,12 +84,12 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
-    background-color: var(--ap-canvas-bg);
+    background-color: var(--ap-outer-bg);
     color: #101411;
   }
 
   .dark body {
-    background-color: var(--ap-canvas-bg);
+    background-color: var(--ap-outer-bg);
     color: #f4f7f4;
   }
 
@@ -106,30 +108,36 @@
    THRESH Track Volt & Obsidian Surface & Component System
    ========================================================================== */
 
-/* Signature THRESH Top Brand Hairline & Full-Viewport Architectural Volt Frame */
+/* Signature THRESH Top Brand Hairline & Darker-Green Framed Content Stage */
 .ap-brand-hairline {
-  background: linear-gradient(90deg, #c8ff00 0%, #84cc16 55%, #101411 100%);
+  background: linear-gradient(90deg, #c8ff00 0%, #65a30d 55%, #1d3828 100%);
 }
 
 .dark .ap-brand-hairline {
-  background: linear-gradient(90deg, #c8ff00 0%, #a3e635 60%, #22c55e 100%);
+  background: linear-gradient(90deg, #c8ff00 0%, #84cc16 60%, #25573a 100%);
 }
 
-.ap-viewport-frame {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  pointer-events: none;
-  border: 4px solid var(--ap-viewport-border);
-  border-top-width: 6px;
-  box-shadow: inset 0 0 0 1px rgba(16, 20, 17, 0.18);
-}
-
-.dark .ap-viewport-frame {
-  border-color: var(--ap-viewport-border);
+.ap-content-stage {
+  background-color: var(--ap-canvas-bg);
+  border: 2px solid var(--ap-content-border);
+  border-radius: 1.25rem;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 0 28px rgba(200, 255, 0, 0.05);
+    0 18px 40px -16px rgba(7, 18, 12, 0.42),
+    0 2px 8px 0 rgba(7, 18, 12, 0.18);
+}
+
+.dark .ap-content-stage {
+  background-color: var(--ap-canvas-bg);
+  border: 2px solid var(--ap-content-border);
+  box-shadow:
+    0 22px 48px -16px rgba(0, 0, 0, 0.78),
+    0 2px 10px 0 rgba(0, 0, 0, 0.5);
+}
+
+@media (min-width: 640px) {
+  .ap-content-stage {
+    border-radius: 1.5rem;
+  }
 }
 
 /* Unified Brand Ink, Solid Volt Nav Pill & Volt Callout Badge */
@@ -193,29 +201,27 @@
     0 2px 6px -1px rgba(0, 0, 0, 0.4);
 }
 
-/* Floating Navigation Header Surface — Bold Track Volt Bottom Rail & Perimeter */
+/* Floating Navigation Header Surface — Cohesive Darker-Green Framing */
 .liquid-glass-header,
 .ap-header-bar {
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
-  border: 1.5px solid rgba(132, 204, 22, 0.65);
-  border-bottom: 3px solid #9ef000;
+  border: 2px solid var(--ap-content-border);
   box-shadow:
-    0 8px 22px -8px rgba(101, 163, 13, 0.16),
-    0 1px 2px 0 rgba(16, 20, 17, 0.04);
+    0 10px 26px -10px rgba(10, 24, 16, 0.32),
+    0 1px 3px 0 rgba(16, 20, 17, 0.08);
 }
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
-  background: rgba(14, 19, 16, 0.95);
+  background: rgba(16, 23, 19, 0.96);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
-  border: 1.5px solid rgba(200, 255, 0, 0.42);
-  border-bottom: 3px solid #c8ff00;
+  border: 2px solid var(--ap-content-border);
   box-shadow:
-    0 12px 28px -10px rgba(0, 0, 0, 0.7),
-    0 2px 14px 0 rgba(200, 255, 0, 0.08);
+    0 12px 30px -10px rgba(0, 0, 0, 0.75),
+    0 1px 4px 0 rgba(0, 0, 0, 0.45);
 }
 
 /* Nested Inset Wells — Tonal Luminance Step Without Nested Boxitis */

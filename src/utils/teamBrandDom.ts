@@ -22,7 +22,7 @@ function buildTeamFaviconDataUri(accentLight: string, accentDark: string): strin
 
 /**
  * Dynamically injects WCAG 2.1 AA contrast-clamped school/club accent tokens into
- * the document chrome (`.ap-viewport-frame`, `.ap-brand-hairline`, `.ap-btn-primary`, `.ap-nav-volt-active`)
+ * the document chrome (`.ap-content-stage`, `.ap-brand-hairline`, `.ap-btn-primary`, `.ap-nav-volt-active`)
  * AND re-themes the browser tab's T3 Track-Gauge SVG favicon to the team's primary color,
  * while strictly preserving THRESH physiological zone colors (`Z1–Z7`) and Readiness signals.
  */
@@ -47,7 +47,7 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
       --ap-brand-primary: ${palette.primaryOnLight};
       --ap-action-cobalt: ${palette.primaryOnLight};
       --ap-thresh-vermilion: ${palette.primaryOnLight};
-      --ap-viewport-border: ${palette.primaryOnLight};
+      --ap-content-border: ${palette.primaryOnLight};
       --ap-team-primary: ${palette.primaryOnLight};
       --ap-team-secondary: ${palette.secondaryOnLight};
     }
@@ -56,7 +56,7 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
       --ap-brand-primary: ${palette.primaryOnDark};
       --ap-action-cobalt: ${palette.primaryOnDark};
       --ap-thresh-vermilion: ${palette.primaryOnDark};
-      --ap-viewport-border: ${palette.primaryOnDark};
+      --ap-content-border: ${palette.primaryOnDark};
       --ap-team-primary: ${palette.primaryOnDark};
       --ap-team-secondary: ${palette.secondaryOnDark};
     }
@@ -69,12 +69,10 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
     .ap-header-bar,
     .liquid-glass-header {
       border-color: ${palette.primaryOnLight};
-      border-bottom-color: ${palette.primaryOnLight};
     }
     .dark .ap-header-bar,
     .dark .liquid-glass-header {
       border-color: ${palette.primaryOnDark};
-      border-bottom-color: ${palette.primaryOnDark};
     }
     .ap-btn-primary,
     .dark .ap-btn-primary,

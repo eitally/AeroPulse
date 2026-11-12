@@ -7,14 +7,16 @@
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <style>
     :root {
-      --bg-canvas: #F4F5F0;
+      --bg-outer: #1D3828;
+      --bg-canvas: #F4F6F0;
       --bg-surface: #FFFFFF;
-      --bg-recessed: #ECEEE6;
+      --bg-recessed: #EAEEE6;
+      --content-border: #28573B;
       --text-primary: #101411;
       --text-secondary: #3F4742;
       --text-muted: #5F6862;
-      --border-hairline: rgba(16, 20, 17, 0.11);
-      --accent-cobalt: #3F6212;
+      --border-hairline: rgba(38, 83, 56, 0.16);
+      --accent-cobalt: #28573B;
       --accent-teal: #0D9488;
       --accent-amber: #D97706;
       --accent-vermilion: #558B00;
@@ -22,13 +24,15 @@
       --code-fg: #F4F7F4;
     }
     html.dark {
-      --bg-canvas: #080A09;
-      --bg-surface: #121715;
-      --bg-recessed: #070908;
+      --bg-outer: #0C1D14;
+      --bg-canvas: #0D1210;
+      --bg-surface: #121815;
+      --bg-recessed: #17201C;
+      --content-border: #25573A;
       --text-primary: #F4F7F4;
       --text-secondary: #A3AEA7;
       --text-muted: #6B7870;
-      --border-hairline: rgba(200, 255, 0, 0.13);
+      --border-hairline: rgba(52, 120, 80, 0.3);
       --accent-cobalt: #C8FF00;
       --accent-teal: #2DD4BF;
       --accent-amber: #FBBF24;
@@ -39,7 +43,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", sans-serif;
-      background: var(--bg-canvas);
+      background: var(--bg-outer);
       color: var(--text-primary);
       line-height: 1.6;
       display: flex;
@@ -55,27 +59,13 @@
       top: 0;
       z-index: 40;
       background: var(--bg-surface);
-      border-bottom: 3px solid #9EF000;
+      border-bottom: 2px solid var(--content-border);
       padding: 0.75rem 1.5rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 1rem;
       flex-wrap: wrap;
-    }
-    html.dark header {
-      border-bottom-color: #C8FF00;
-    }
-    .viewport-volt-frame {
-      position: fixed;
-      inset: 0;
-      z-index: 90;
-      pointer-events: none;
-      border: 4px solid #9EF000;
-      border-top-width: 6px;
-    }
-    html.dark .viewport-volt-frame {
-      border-color: #C8FF00;
     }
     .brand {
       display: flex;
@@ -166,9 +156,13 @@
     .layout {
       display: grid;
       grid-template-columns: 280px 1fr;
-      max-width: 1440px;
-      width: 100%;
-      margin: 0 auto;
+      max-width: 1380px;
+      width: calc(100% - 2rem);
+      margin: 1.25rem auto 2rem;
+      background: var(--bg-canvas);
+      border: 2px solid var(--content-border);
+      border-radius: 20px;
+      overflow: hidden;
       flex: 1;
     }
     aside {
@@ -303,7 +297,6 @@
   </style>
 </head>
 <body>
-  <div class="viewport-volt-frame" aria-hidden="true"></div>
   <header>
     <a href="/" class="brand">
       <svg style="height:40px;width:auto;display:block;" viewBox="0 -2 458 196" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="THRESH">

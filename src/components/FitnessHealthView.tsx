@@ -798,6 +798,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
   const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(false);
   const [isOrthoDrawerOpen, setIsOrthoDrawerOpen] = useState<boolean>(false);
+  const [showGuardrailsBar, setShowGuardrailsBar] = useState<boolean>(false);
 
   const [collapsedSections, setCollapsedSections] = useState<
     Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
@@ -903,142 +904,197 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         )}
 
       {/* ==========================================================================
-          0C. PROGRESSIVE DISCLOSURE GUARDRAIL & BLOCK STATUS STRIP (3-Pill Glance)
+          0C. PROGRESSIVE DISCLOSURE GUARDRAIL & SCHEDULE TOOLS (Collapsed when Clear)
          ========================================================================== */}
       {orthopedicSummary && (
-        <section className="rounded-2xl liquid-glass p-3 sm:p-3.5 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {/* Pill 1: Dual-Sport CTL & 3-Channel Orthopedic Chassis */}
+        <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase ${
+                  orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+                  studentGuardrail.status === 'BONE_STRESS_STOP'
+                    ? 'ap-status-strained'
+                    : orthopedicSummary.riskTier === 'ELEVATED_IMPACT' ||
+                        studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+                      ? 'ap-status-caution'
+                      : 'ap-status-prime'
+                }`}
+              >
+                {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+                studentGuardrail.status === 'BONE_STRESS_STOP'
+                  ? 'Guardrail Active'
+                  : orthopedicSummary.riskTier === 'ELEVATED_IMPACT' ||
+                      studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+                    ? 'Elevated Load'
+                    : 'All Clear'}
+              </span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Injury Guardrails, Cross-Training &amp; Schedule Adjuster
+              </span>
+              {dualSportLatest && (
+                <span className="hidden lg:inline text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                  · Run {dualSportLatest.runningCtl.toFixed(0)} / Bike {dualSportLatest.cyclingCtl.toFixed(0)} CTL
+                </span>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setIsOrthoDrawerOpen((prev) => !prev)}
-              className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                isOrthoDrawerOpen ||
-                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                  ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
-                  : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
-              }`}
+              onClick={() => setShowGuardrailsBar((prev) => !prev)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 hover:opacity-90 cursor-pointer"
             >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
-                      orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                        ? 'ap-status-strained'
-                        : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
-                          ? 'ap-status-caution'
-                          : 'ap-status-prime'
-                    }`}
-                  >
-                    {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
-                      ? 'Impact Guardrail'
-                      : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
-                        ? 'Elevated Impact'
-                        : 'Chassis Clear'}
-                  </span>
-                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    Orthopedic &amp; Dual-Sport CTL
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
-                  {dualSportLatest
-                    ? `Bike ${dualSportLatest.cyclingCtl.toFixed(0)} · Run ${dualSportLatest.runningCtl.toFixed(0)} CTL · Impact ${orthopedicSummary.impactAcwr.toFixed(2)}x`
-                    : `Impact ACWR ${orthopedicSummary.impactAcwr.toFixed(2)}x · Torque ${orthopedicSummary.torqueAcwr.toFixed(2)}x`}
-                </div>
-              </div>
-              {isOrthoDrawerOpen ? (
-                <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>
+                {showGuardrailsBar ||
+                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+                  ? 'Hide Tools'
+                  : 'Open Tools'}
+              </span>
+              {showGuardrailsBar ||
+              orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+              studentGuardrail.status !== 'CLEARED_FULL_WORKOUT' ? (
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               )}
             </button>
+          </div>
 
-            {/* Pill 2: Weekly Training Git-Diff */}
-            {weeklyGitDiffProposal && (
+          {(showGuardrailsBar ||
+            orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+            studentGuardrail.status !== 'CLEARED_FULL_WORKOUT' ||
+            isOrthoDrawerOpen ||
+            isGitDiffOpen ||
+            isStudentCheckInOpen) && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
+              {/* Pill 1: Dual-Sport CTL & Impact Balance */}
               <button
                 type="button"
-                onClick={() => setIsGitDiffOpen((prev) => !prev)}
+                onClick={() => setIsOrthoDrawerOpen((prev) => !prev)}
                 className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                  isGitDiffOpen
+                  isOrthoDrawerOpen ||
+                  orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
                     ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
                     : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
                 }`}
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="ap-status-info px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase">
-                      7d Git-Diff
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                        orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                          ? 'ap-status-strained'
+                          : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                            ? 'ap-status-caution'
+                            : 'ap-status-prime'
+                      }`}
+                    >
+                      {orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                        ? 'High Impact'
+                        : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
+                          ? 'Elevated'
+                          : 'Balanced'}
                     </span>
                     <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                      Adaptive Schedule Diff
+                      Impact &amp; Run/Bike Load
                     </span>
                   </div>
                   <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
-                    ΔTSS{' '}
-                    {weeklyGitDiffProposal.netTssDelta >= 0
-                      ? `+${weeklyGitDiffProposal.netTssDelta}`
-                      : weeklyGitDiffProposal.netTssDelta}{' '}
-                    · ΔCTL{' '}
-                    {weeklyGitDiffProposal.netCtlDelta >= 0
-                      ? `+${weeklyGitDiffProposal.netCtlDelta}`
-                      : weeklyGitDiffProposal.netCtlDelta}{' '}
-                    · ΔTSB{' '}
-                    {weeklyGitDiffProposal.netTsbDelta >= 0
-                      ? `+${weeklyGitDiffProposal.netTsbDelta}`
-                      : weeklyGitDiffProposal.netTsbDelta}
+                    {dualSportLatest
+                      ? `Bike ${dualSportLatest.cyclingCtl.toFixed(0)} · Run ${dualSportLatest.runningCtl.toFixed(0)} CTL · Impact ${orthopedicSummary.impactAcwr.toFixed(2)}x`
+                      : `Impact Ratio ${orthopedicSummary.impactAcwr.toFixed(2)}x · Torque ${orthopedicSummary.torqueAcwr.toFixed(2)}x`}
                   </div>
                 </div>
-                {isGitDiffOpen ? (
+                {isOrthoDrawerOpen ? (
                   <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 ) : (
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 )}
               </button>
-            )}
 
-            {/* Pill 3: Student-Athlete Check-In & Cross-Training Converter */}
-            <button
-              type="button"
-              onClick={() => setIsStudentCheckInOpen((prev) => !prev)}
-              className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                isStudentCheckInOpen ||
-                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
-                  ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
-                  : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
-              }`}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
-                      studentGuardrail.status === 'BONE_STRESS_STOP'
-                        ? 'ap-status-strained'
-                        : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
-                          ? 'ap-status-prime'
-                          : 'ap-status-caution'
-                    }`}
-                  >
-                    {studentGuardrail.status === 'BONE_STRESS_STOP'
-                      ? 'BSI Stop'
-                      : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
-                        ? 'Cleared'
-                        : 'Modulated'}
-                  </span>
-                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    Academic / Shin &amp; Pool Miles
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
-                  {studentGuardrail.headline}
-                </div>
-              </div>
-              {isStudentCheckInOpen ? (
-                <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              {/* Pill 2: Weekly Schedule Adjuster */}
+              {weeklyGitDiffProposal && (
+                <button
+                  type="button"
+                  onClick={() => setIsGitDiffOpen((prev) => !prev)}
+                  className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                    isGitDiffOpen
+                      ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
+                      : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="ap-status-info px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase">
+                        7-Day Plan
+                      </span>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        Weekly Schedule Adjuster
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                      Load{' '}
+                      {weeklyGitDiffProposal.netTssDelta >= 0
+                        ? `+${weeklyGitDiffProposal.netTssDelta}`
+                        : weeklyGitDiffProposal.netTssDelta}{' '}
+                      TSS · Form{' '}
+                      {weeklyGitDiffProposal.netTsbDelta >= 0
+                        ? `+${weeklyGitDiffProposal.netTsbDelta}`
+                        : weeklyGitDiffProposal.netTsbDelta}
+                    </div>
+                  </div>
+                  {isGitDiffOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )}
+                </button>
               )}
-            </button>
-          </div>
+
+              {/* Pill 3: Soreness Check-In & Cross-Training */}
+              <button
+                type="button"
+                onClick={() => setIsStudentCheckInOpen((prev) => !prev)}
+                className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                  isStudentCheckInOpen ||
+                  studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+                    ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
+                    : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                        studentGuardrail.status === 'BONE_STRESS_STOP'
+                          ? 'ap-status-strained'
+                          : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
+                            ? 'ap-status-prime'
+                            : 'ap-status-caution'
+                      }`}
+                    >
+                      {studentGuardrail.status === 'BONE_STRESS_STOP'
+                        ? 'Rest Run'
+                        : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
+                          ? 'Cleared'
+                          : 'Adjusted'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      Soreness &amp; Cross-Training
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                    {studentGuardrail.headline}
+                  </div>
+                </div>
+                {isStudentCheckInOpen ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Expandable Drawer 1: 3-Channel Orthopedic Interference & Run->Bike Swap */}
           {(isOrthoDrawerOpen ||
@@ -1264,9 +1320,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         );
                         window.setTimeout(() => setGitDiffAppliedToast(null), 4500);
                       }}
-                      className="ap-btn-primary px-3.5 text-xs"
+                      className="ap-btn-primary px-3.5 text-xs cursor-pointer"
                     >
-                      Commit Weekly Git-Diff to Plan
+                      Apply Adjustments to Plan
                     </button>
                   </div>
                 )}

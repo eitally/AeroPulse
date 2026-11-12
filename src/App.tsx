@@ -317,8 +317,6 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [redactedStravaCount, setRedactedStravaCount] = useState<number>(0);
-  const [inlineStravaCode, setInlineStravaCode] = useState<string>('');
-  const [inlineBundleInput, setInlineBundleInput] = useState<string>('');
   const [dismissedStravaBanner, setDismissedStravaBanner] = useState<boolean>(() => {
     try {
       return localStorage.getItem('aeropulse_dismiss_strava_banner') === '1';
@@ -326,6 +324,7 @@ export default function App() {
       return false;
     }
   });
+  const [dismissedQuickConnectBanner, setDismissedQuickConnectBanner] = useState<boolean>(false);
 
   useEffect(() => {
     redactedStravaCountRef.current = redactedStravaCount;
@@ -3612,26 +3611,37 @@ export default function App() {
           onLaunchStravaOAuth={async (mode = 'cloud') => {
             await handleLaunchStravaOAuth(mode);
           }}
+          onSaveStravaCredentials={handleSaveStravaCredentials}
+          onSaveStravaDirectToken={handleSaveStravaDirectToken}
           onExchangeStravaCode={async (codeOrUrl) => {
             await handleExchangeStravaCode(codeOrUrl);
           }}
+          onConnectIntervals={handleConnectIntervals}
+          onSyncNow={syncLiveTelemetry}
           onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
           onDisconnectCredentials={handleLogoutAndClearData}
           isSyncing={isSyncing}
           errorMessage={syncError}
+          isDark={isDark}
+          onToggleDark={() => setIsDark((d) => !d)}
         />
       </IconContext.Provider>
     );
   }
 
+  const anySourceConnected = Boolean(
+    connectionStatus.stravaConnected ||
+      connectionStatus.garminConnected ||
+      connectionStatus.intervalsConnected
+  );
+
   return (
     <IconContext.Provider value={{ weight: 'duotone' }}>
       <div className="ap-shell text-slate-900 dark:text-slate-100">
-        <div className="ap-viewport-frame" aria-hidden="true" />
         <OfflineIndicator />
 
-        {/* Simplified 5-Element Global Header Bar (Responsive Mobile & Desktop) */}
-        <div className="sticky top-[max(0.625rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1.5">
+        {/* Simplified Global Header Bar (Responsive Mobile & Desktop) */}
+        <div className="sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-2">
           <header className="rounded-2xl liquid-glass-header px-3 sm:px-5 py-2">
             <div className="flex items-center justify-between gap-2 sm:gap-3">
               {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
@@ -3703,7 +3713,7 @@ export default function App() {
                     title="Create or Join a High School, Collegiate, or Club Team"
                   >
                     <Users className="w-3 h-3 ap-text-brand" />
-                    <span>+ Team Hub</span>
+                    <span>+ Team</span>
                   </button>
                 )}
 
@@ -3711,7 +3721,7 @@ export default function App() {
                   type="button"
                   onClick={() => syncLiveTelemetry(true)}
                   disabled={isSyncing}
-                  className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
                   title="Sync connected telemetry sources in the background"
                 >
                   <RefreshCw
@@ -3732,7 +3742,7 @@ export default function App() {
                       setEnvFilter('COMBINED');
                       setSelectedSport('ALL');
                     }}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-[11px] font-mono font-semibold transition-colors whitespace-nowrap"
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-[11px] font-mono font-semibold transition-colors whitespace-nowrap cursor-pointer"
                     title="Active viewport filter — click to reset to All Sports & Environments"
                   >
                     <span>
@@ -3809,34 +3819,54 @@ export default function App() {
                 })}
               </nav>
 
-              {/* Right: 3. Athlete Switcher Pill + 4. AI Coach CTA + 5. Account & Settings Menu */}
-              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                {/* 3. Athlete Context Switcher */}
-                <div className="flex items-center gap-1 rounded-xl liquid-capsule-track px-1.5 sm:px-2 py-1 border border-lime-600/20 dark:border-[#C8FF00]/20 min-w-0">
-                  <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
-                  <select
-                    value={activeViewedAthleteId}
-                    onChange={(e) => {
-                      setActiveViewedAthleteId(e.target.value);
-                      setSelectedActivity(null);
-                    }}
-                    aria-label="Switch Active Athlete Profile"
-                    className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[88px] sm:max-w-[155px] truncate"
-                  >
-                    <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
-                      {primaryAthleteDisplayName} (You)
-                    </option>
-                    {combinedRoster
-                      .filter((a) => a.status === 'CONNECTED')
-                      .map((a) => (
-                        <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
-                          {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Teammate'})
-                        </option>
-                      ))}
-                  </select>
-                </div>
+              {/* Right: Athlete Switcher (Team Mode) + Data Sources + AI Coach + Theme + Account */}
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                {/* Athlete Context Switcher — shown only when part of a team or viewing a teammate */}
+                {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
+                  <div className="hidden sm:flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-emerald-800/25 dark:border-emerald-700/40 min-w-0">
+                    <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
+                    <select
+                      value={activeViewedAthleteId}
+                      onChange={(e) => {
+                        setActiveViewedAthleteId(e.target.value);
+                        setSelectedActivity(null);
+                      }}
+                      aria-label="Switch Active Athlete Profile"
+                      className="bg-transparent text-[11px] font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[130px] truncate"
+                    >
+                      <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                        {primaryAthleteDisplayName} (You)
+                      </option>
+                      {combinedRoster
+                        .filter((a) => a.status === 'CONNECTED')
+                        .map((a) => (
+                          <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                            {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Teammate'})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
 
-                {/* 4. AI Coach Primary Action Button */}
+                {/* Direct Data Sources Pill Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDataSourcesOpen(true)}
+                  className="hidden sm:inline-flex min-h-[34px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap cursor-pointer"
+                  title="Connect Strava, Garmin Connect, Intervals.icu, or upload .FIT workouts"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      anySourceConnected ? 'bg-emerald-500' : 'bg-[#FC4C02]'
+                    }`}
+                  />
+                  <span className="hidden lg:inline">
+                    {anySourceConnected ? 'Sources' : 'Connect'}
+                  </span>
+                  <Database className="w-3.5 h-3.5 lg:hidden text-emerald-600 dark:text-emerald-400" />
+                </button>
+
+                {/* AI Coach Primary Action Button */}
                 <button
                   type="button"
                   onClick={() => setIsCoachDrawerOpen(true)}
@@ -3846,36 +3876,40 @@ export default function App() {
                   <span className="hidden sm:inline">AI Coach</span>
                 </button>
 
-                {/* 4b. Interactive User Guide & Feature Tour Button (also accessible inside Account menu on mobile) */}
+                {/* 1-Click Theme Toggle */}
                 <button
                   type="button"
-                  onClick={() => setShowMetricsGuide(true)}
-                  className="hidden sm:inline-flex min-h-[34px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap"
-                  title="Open Interactive THRESH User Guide, Walkthrough & Physiology Glossary"
+                  onClick={() => setIsDark((prev) => !prev)}
+                  className="min-h-[34px] w-[34px] inline-flex items-center justify-center rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                  title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                  aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
-                  <HelpCircle className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400" weight="duotone" />
-                  <span className="hidden lg:inline">Guide</span>
+                  {isDark ? (
+                    <Sun className="w-3.5 h-3.5 text-[#C8FF00]" weight="fill" />
+                  ) : (
+                    <Moon className="w-3.5 h-3.5 text-[#1D3828]" weight="fill" />
+                  )}
                 </button>
 
-                {/* 5. Unified Account, Preferences & Logout Menu */}
+                {/* Unified Account, Preferences & Logout Menu */}
                 <div className="relative" ref={accountMenuRef}>
                   <button
                     type="button"
                     onClick={() => setIsAccountMenuOpen((prev) => !prev)}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-blue-500/40 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all"
+                    className="min-h-[34px] inline-flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all cursor-pointer"
                     aria-expanded={isAccountMenuOpen}
                     aria-haspopup="menu"
-                    title="Account, Profile Zones, Data Sources, Preferences & Log Out"
+                    title="Account, Profile Zones, Data Sources, Guide & Log Out"
                   >
-                    <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-sky-400 text-white font-mono text-[11px] font-bold flex items-center justify-center shadow-xs">
+                    <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-[11px] font-bold flex items-center justify-center shadow-xs">
                       {primaryAthleteInitials}
                     </span>
-                    <span className="hidden sm:inline max-w-[90px] truncate">
+                    <span className="hidden xl:inline max-w-[90px] truncate">
                       {primaryAthleteDisplayName}
                     </span>
                     <ChevronDown
                       className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                        isAccountMenuOpen ? 'rotate-180 text-sky-400' : ''
+                        isAccountMenuOpen ? 'rotate-180 ap-text-brand' : ''
                       }`}
                     />
                   </button>
@@ -3883,20 +3917,20 @@ export default function App() {
                   {isAccountMenuOpen && (
                     <div
                       role="menu"
-                      className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white/95 dark:bg-[#0D131F]/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xl p-3 space-y-3 z-50 text-xs"
+                      className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white/95 dark:bg-[#0D1310]/95 backdrop-blur-xl border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
                     >
                       {/* Account Identity & Connection Summary */}
                       <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-sky-400 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
                             {primaryAthleteInitials}
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 dark:text-white truncate">
                               {primaryAthleteDisplayName}
                             </div>
-                            <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span className="truncate">
                                 {effectiveActivities.length.toLocaleString()} workouts synced
                               </span>
@@ -3911,11 +3945,11 @@ export default function App() {
                             setIsAccountMenuOpen(false);
                           }}
                           disabled={isSyncing}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#FC4C02]/15 hover:bg-[#FC4C02]/25 text-[#FC4C02] font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors"
+                          className="px-2.5 py-1.5 rounded-xl bg-[#FC4C02]/15 hover:bg-[#FC4C02]/25 text-[#FC4C02] font-mono text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
                           title="Initiate a full Strava history sync in the background"
                         >
                           <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                          <span>{isSyncing ? 'Syncing...' : 'Sync Strava'}</span>
+                          <span>{isSyncing ? 'Syncing...' : 'Sync'}</span>
                         </button>
                       </div>
 
@@ -3927,16 +3961,33 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            setIsDataSourcesOpen(true);
+                            setIsAccountMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Data Sources (Strava, Garmin &amp; Intervals)</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                            {anySourceConnected ? 'Active ●' : 'Connect'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
                             setIsProfileModalOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
-                            <Sliders className="w-4 h-4 text-blue-500" />
+                            <Sliders className="w-4 h-4 ap-text-brand" />
                             <span>Profile, FTP &amp; Sport Zones</span>
                           </span>
-                          <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-sky-300 bg-blue-500/10 px-2 py-0.5 rounded-md">
+                          <span className="font-mono text-[11px] font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
                             {effectiveAthleteProfile.ftp}W
                           </span>
                         </button>
@@ -3948,51 +3999,16 @@ export default function App() {
                             setIsRosterModalOpen(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
-                            <Users className="w-4 h-4 text-sky-500" />
+                            <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Teams, Bulk Invites &amp; Roster</span>
                           </span>
                           <span className="font-mono text-[11px] text-slate-400">
                             {myTeams.length > 0
                               ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
-                              : `${combinedRoster.length} athletes`}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsDataSourcesOpen(true);
-                            setIsAccountMenuOpen(false);
-                          }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
-                        >
-                          <span className="flex items-center gap-2 font-medium">
-                            <Database className="w-4 h-4 text-emerald-500" />
-                            <span>Data Sources (Garmin, Intervals &amp; Strava)</span>
-                          </span>
-                          <span className="font-mono text-[10px] text-emerald-500">
-                            {connectionStatus.stravaConnected ? 'Strava ●' : 'Setup'}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            syncLiveTelemetry(true);
-                            setIsAccountMenuOpen(false);
-                          }}
-                          disabled={isSyncing}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60"
-                        >
-                          <span className="flex items-center gap-2 font-medium">
-                            <RefreshCw className={`w-4 h-4 text-[#FC4C02] ${isSyncing ? 'animate-spin' : ''}`} />
-                            <span>Sync All Strava History (Background)</span>
-                          </span>
-                          <span className="font-mono text-[10px] text-[#FC4C02]">
-                            {isSyncing ? 'Running...' : 'All-Time'}
+                              : 'Manage'}
                           </span>
                         </button>
 
@@ -4002,14 +4018,14 @@ export default function App() {
                             setShowMetricsGuide(true);
                             setIsAccountMenuOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2 font-medium">
                             <HelpCircle className="w-4 h-4 text-amber-500" />
-                            <span>Interactive User Guide &amp; Glossary</span>
+                            <span>User Guide &amp; Metrics Glossary</span>
                           </span>
-                          <span className="font-mono text-[10px] text-blue-600 dark:text-sky-400">
-                            7 Chapters
+                          <span className="font-mono text-[10px] text-slate-400">
+                            Help
                           </span>
                         </button>
                       </div>
@@ -4017,27 +4033,27 @@ export default function App() {
                       {/* Section 2: Quick Display Preferences (Units, Modality, Theme) */}
                       <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-white/10">
                         <div className="px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                          Display &amp; Filter Preferences
+                          Display Preferences
                         </div>
 
                         {/* Modality Filter */}
                         <div className="flex items-center justify-between px-2">
                           <span className="text-slate-600 dark:text-slate-300 font-medium">
-                            Modality
+                            Environment
                           </span>
                           <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[11px]">
                             {(
                               [
                                 { id: 'COMBINED', label: 'All' },
                                 { id: 'OUTDOOR', label: 'Outdoor' },
-                                { id: 'INDOOR', label: 'Virtual' },
+                                { id: 'INDOOR', label: 'Indoor' },
                               ] as const
                             ).map((env) => (
                               <button
                                 key={env.id}
                                 type="button"
                                 onClick={() => setEnvFilter(env.id)}
-                                className={`px-2 py-0.5 rounded-md transition-all ${
+                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                                   envFilter === env.id
                                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                                     : 'text-slate-500 dark:text-slate-400'
@@ -4061,7 +4077,7 @@ export default function App() {
                                   key={u}
                                   type="button"
                                   onClick={() => setDistanceUnit(u)}
-                                  className={`px-2 py-0.5 rounded-md transition-all ${
+                                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                                     distanceUnit === u
                                       ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                                       : 'text-slate-500 dark:text-slate-400'
@@ -4075,7 +4091,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setIsDark(!isDark)}
-                              className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-[11px] font-medium"
+                              className="px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-[11px] font-medium cursor-pointer"
                             >
                               {isDark ? (
                                 <>
@@ -4102,21 +4118,20 @@ export default function App() {
                         <button
                           type="button"
                           onClick={handleLogoutSession}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors"
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors cursor-pointer"
                         >
                           <span className="flex items-center gap-2">
                             <LogOut className="w-4 h-4" weight="bold" />
-                            <span>Log Out ({primaryAthleteDisplayName})</span>
+                            <span>Back to Welcome / Sign Out</span>
                           </span>
-                          <span className="text-[10px] font-mono opacity-80">Lock Session</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={handleLogoutAndClearData}
-                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-rose-500/10 text-slate-500 dark:text-slate-400 hover:text-rose-400 text-[11px] transition-colors"
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-rose-500/10 text-slate-500 dark:text-slate-400 hover:text-rose-400 text-[11px] transition-colors cursor-pointer"
                         >
-                          <span>Log Out &amp; Disconnect Credentials</span>
+                          <span>Disconnect All Credentials &amp; Reset</span>
                           <span className="font-mono text-[10px]">Reset</span>
                         </button>
                       </div>
@@ -4128,8 +4143,10 @@ export default function App() {
           </header>
         </div>
 
-        {/* Main Content Viewport */}
-        <main className="flex-1 ap-container py-4 sm:py-5 space-y-5 min-w-0">
+        {/* Main Content Viewport — Framed by Darker-Green Outer Surround & Content Border */}
+        <div className="flex-1 ap-container py-3 sm:py-4 min-w-0">
+          <div className="ap-content-stage p-3.5 sm:p-6 space-y-5 min-w-0">
+            <main className="space-y-5 min-w-0">
         {/* Multi-Team Magic Join Offer Banner (when an already-signed-in athlete opens a 2nd team link) */}
         {pendingUrlJoinOffer && (
           <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-[#C8FF00]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -4320,143 +4337,80 @@ export default function App() {
         {redactedStravaCount > 0 &&
           !connectionStatus.stravaConnected &&
           !dismissedStravaBanner && (
-            <div className="rounded-xl liquid-glass border-amber-500/30 px-3.5 py-2.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-slate-700 dark:text-slate-200">
-                  <span className="font-bold text-amber-600 dark:text-amber-400">
-                    Strava ({redactedStravaCount.toLocaleString()} workouts):
-                  </span>{' '}
-                  Authorize <code className="font-mono">activity:read_all</code> below to unlock full workout details.
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchStravaOAuth('localhost')}
-                    className="min-h-[32px] px-3 py-1 rounded-lg bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap"
-                  >
-                    1. Authorize
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchStravaOAuth('cloud')}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg border border-[#FC4C02]/50 text-[#FC4C02] hover:bg-[#FC4C02]/10 text-xs font-semibold transition-colors whitespace-nowrap"
-                  >
-                    Cloud OAuth
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsDataSourcesOpen(true)}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-medium transition-colors whitespace-nowrap"
-                  >
-                    Sources
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDismissedStravaBanner(true);
-                      try {
-                        localStorage.setItem('aeropulse_dismiss_strava_banner', '1');
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                    className="min-h-[32px] px-2 py-1 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors"
-                    title="Dismiss banner"
-                  >
-                    ✕
-                  </button>
-                </div>
+            <div className="rounded-2xl liquid-glass border-amber-500/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-700 dark:text-slate-200">
+                <span className="font-bold text-amber-700 dark:text-amber-400">
+                  Unlock {redactedStravaCount.toLocaleString()} Strava workouts:
+                </span>{' '}
+                Connect Strava directly to load full GPS route maps, splits, and segment PRs.
               </div>
-
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!inlineStravaCode.trim()) return;
-                  try {
-                    await handleExchangeStravaCode(inlineStravaCode.trim());
-                    setInlineStravaCode('');
-                  } catch {
-                    // error displayed in syncError
-                  }
-                }}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={inlineStravaCode}
-                  onChange={(e) => setInlineStravaCode(e.target.value)}
-                  placeholder="2. Paste redirect URL or code here..."
-                  className="flex-1 min-w-[220px] min-h-[32px] rounded-lg border border-amber-500/40 bg-white/80 dark:bg-slate-950/80 px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
-                  type="submit"
-                  disabled={isSyncing || !inlineStravaCode.trim()}
-                  className="min-h-[32px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  type="button"
+                  onClick={() => handleLaunchStravaOAuth('cloud')}
+                  className="min-h-[34px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
                 >
-                  {isSyncing ? 'Syncing...' : '2. Sync'}
+                  Connect Strava
                 </button>
-              </form>
-              {syncError && (
-                <div className="text-xs text-red-600 dark:text-red-400 font-medium">
-                  {syncError}
-                </div>
-              )}
-            </div>
-          )}
-
-        {!connectionStatus.intervalsConnected &&
-          !connectionStatus.stravaConnected &&
-          activities.length === 0 &&
-          !isSyncing && (
-            <div className="rounded-xl liquid-glass border-blue-500/30 px-3.5 py-2.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-slate-700 dark:text-slate-200">
-                  <span className="font-bold text-blue-600 dark:text-blue-400">
-                    Connect Telemetry:
-                  </span>{' '}
-                  Paste your 1-Click Connection Bundle below or open Sources.
-                </div>
                 <button
                   type="button"
                   onClick={() => setIsDataSourcesOpen(true)}
-                  className="min-h-[32px] px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Data Sources
                 </button>
-              </div>
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!inlineBundleInput.trim()) return;
-                  try {
-                    await handleImportConnectionBundle(inlineBundleInput.trim());
-                    setInlineBundleInput('');
-                  } catch {
-                    // error shown below
-                  }
-                }}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={inlineBundleInput}
-                  onChange={(e) => setInlineBundleInput(e.target.value)}
-                  placeholder="Paste Connection Bundle or .env block..."
-                  className="flex-1 min-w-[220px] min-h-[32px] rounded-lg border border-blue-500/40 bg-white/80 dark:bg-slate-950/80 px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
                 <button
-                  type="submit"
-                  disabled={isSyncing || !inlineBundleInput.trim()}
-                  className="min-h-[32px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                  type="button"
+                  onClick={() => {
+                    setDismissedStravaBanner(true);
+                    try {
+                      localStorage.setItem('aeropulse_dismiss_strava_banner', '1');
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="min-h-[34px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+                  title="Dismiss notice"
                 >
-                  Import &amp; Sync
+                  ✕
                 </button>
-              </form>
-              {syncError && (
-                <div className="text-xs text-red-600 dark:text-red-400 font-medium">
-                  {syncError}
-                </div>
-              )}
+              </div>
+            </div>
+          )}
+
+        {!anySourceConnected &&
+          activities.length === 0 &&
+          !isSyncing &&
+          !dismissedQuickConnectBanner && (
+            <div className="rounded-2xl liquid-glass border-[#28573B]/35 dark:border-[#25573A] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-700 dark:text-slate-200 max-w-xl">
+                <span className="font-bold ap-text-brand">Connect your training data:</span>{' '}
+                Sign in with Strava for automatic run &amp; ride sync, or connect Garmin Connect / Intervals.icu for daily HRV &amp; sleep readiness.
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleLaunchStravaOAuth('cloud')}
+                  className="min-h-[34px] px-3.5 py-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#E34402] text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  Connect Strava
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDataSourcesOpen(true)}
+                  className="min-h-[34px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  Garmin / Intervals.icu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDismissedQuickConnectBanner(true)}
+                  className="min-h-[34px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           )}
 
@@ -4675,42 +4629,44 @@ export default function App() {
               onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             />
           )}
-        </Suspense>
-      </main>
+            </Suspense>
+            </main>
 
-      {/* Subtle THRESH Branded Footer */}
-      <footer className="ap-container mt-8 pt-5 pb-4 border-t border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
-        <div className="flex items-center gap-3">
-          <AeroPulseLogo size="sm" />
-          <span className="hidden sm:inline text-slate-400 dark:text-slate-500">·</span>
-          <span className="hidden sm:inline font-mono text-[11px]">
-            Run &amp; Ride Threshold Telemetry
-          </span>
+            {/* Subtle THRESH Branded Footer inside Content Stage */}
+            <footer className="pt-5 border-t border-slate-200/90 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex items-center gap-3">
+                <AeroPulseLogo size="sm" />
+                <span className="hidden sm:inline text-slate-400 dark:text-slate-500">·</span>
+                <span className="hidden sm:inline font-mono text-[11px]">
+                  Run &amp; Ride Threshold Telemetry
+                </span>
+              </div>
+              <div className="flex items-center gap-4 font-medium">
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  Zones &amp; FTP ({effectiveAthleteProfile.ftp}W)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDataSourcesOpen(true)}
+                  className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  Data Sources
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMetricsGuide(true)}
+                  className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  Guide
+                </button>
+              </div>
+            </footer>
+          </div>
         </div>
-        <div className="flex items-center gap-4 font-medium">
-          <button
-            type="button"
-            onClick={() => setIsProfileModalOpen(true)}
-            className="hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-            Zones &amp; FTP ({effectiveAthleteProfile.ftp}W)
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsDataSourcesOpen(true)}
-            className="hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-            Data Sources
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowMetricsGuide(true)}
-            className="hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-            Guide
-          </button>
-        </div>
-      </footer>
 
       {/* Mobile Bottom Tab Bar (< md) — 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
       <nav className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock">
