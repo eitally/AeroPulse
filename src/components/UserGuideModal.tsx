@@ -287,10 +287,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
     {
       id: 'ch2-sync',
       number: '02',
-      shortTitle: 'Sync, Strava & .FIT',
-      fullTitle: 'Ch 2 · Data Sync, Strava OAuth & .FIT Import',
+      shortTitle: 'Strava, Sync & .FIT',
+      fullTitle: 'Ch 2 · Strava Sign-In, Sync Windows & Optional Add-Ons',
       subtitle:
-        'Connect Strava OAuth, link Intervals.icu + Garmin Connect wellness, drop 1Hz .FIT/.GPX/.TCX files, and back up your IndexedDB archive.',
+        'Sign in with Strava identity, choose what syncs (90d / 6mo / All / Identity Only), optionally add Garmin Connect or Intervals.icu sleep/HRV, or drop .FIT files.',
       icon: Database,
       accentClass: 'text-orange-500 bg-orange-500/12 border-orange-500/30',
     },
@@ -429,17 +429,17 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c2-1',
         chapterId: 'ch2-sync',
-        badge: 'STRAVA OAUTH + INTERVALS.ICU',
+        badge: 'STEP 1 & 2 · STRAVA IDENTITY + SYNC CHOICE',
         badgeColor: 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/25',
-        title: 'Dual-Source Cloud Synchronization & Token Rotation',
+        title: 'Strava Sign-In, Explicit Sync Window & Optional Sleep/HRV Add-Ons',
         summary:
-          'Connect Strava OAuth for high-resolution activity streams, GPS routes, kudos, and segment efforts while Intervals.icu supplies Garmin Connect wellness (HRV, RHR, Sleep, VO2max).',
+          'Strava handles your THRESH identity across every device with zero passwords. Right after authenticating, you explicitly choose what syncs from Strava—and optionally add Garmin Connect or Intervals.icu later.',
         bullets: [
-          'Non-destructive activity merger deduplicates workouts recorded on both Garmin and Strava within ±5 minutes.',
-          'Automatic background Strava refresh token rotation persisted safely in browser storage.',
-          'Supports personal API keys in .env or runtime entry inside the Data Sources modal.',
+          'Choose Last 90 Days (Recommended), Last 6 Months, Full Archive, or Identity Only (0 workouts imported).',
+          'Optional Secondary Connections: Garmin Connect and Intervals.icu supply overnight HRV & Sleep Score whenever you want, but are never required.',
+          'Smart ±5-minute multi-source deduplicator merges workouts without double-counting TSS, while automatic token rotation keeps your session signed in across devices.',
         ],
-        ctaLabel: 'Try It Live: Open Data Sources & Sync →',
+        ctaLabel: 'Try It Live: Open Data Sources & Sync Policy →',
         onAction: () => triggerAndClose(() => onOpenDataSources()),
       },
       {
@@ -684,6 +684,22 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
 
       // Chapter 8: High School & Collegiate Team Pack (v2.3)
       {
+        id: 'c8-0',
+        chapterId: 'ch8-scholastic',
+        badge: 'TEAM ONBOARDING · QR, CSV & SHARING TIERS',
+        badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
+        title: 'School & Club Workspace Studio, Locker-Room QR Posters & Athlete Sharing Tiers',
+        summary:
+          'Create a branded High School, Collegiate, or Club workspace in 60 seconds or join an existing team via 6-character Team Code or /join/<slug> magic link using Strava Sign-In.',
+        bullets: [
+          'Print Locker-Room QR Sheets or import a roster CSV (Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark); THRESH auto-matches athletes when they sign in with Strava.',
+          'Athletes choose their Coach Sharing Tier during onboarding: Readiness & Training Summary (Recommended), Full Coach Telemetry, or Load Only.',
+          'High School programs default U18 Safe-Sport Weight Shield ON; Collegiate rosters preserve adult visibility while auditing NCAA 20-Hour CARA caps.',
+        ],
+        ctaLabel: 'Try It Live: Open Team Studio & Roster →',
+        onAction: () => triggerAndClose(() => onOpenRosterModal()),
+      },
+      {
         id: 'c8-1',
         chapterId: 'ch8-scholastic',
         badge: 'AUTO-SCALED SQUAD PACING PODS',
@@ -815,7 +831,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   id="thresh-user-guide-title"
                   className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate mt-0.5"
                 >
-                  THRESH Precision Editorial Lab — Interactive User Guide
+                  THRESH Stadium Track Edition — Interactive User Guide
                 </h2>
               </div>
             </div>
@@ -857,7 +873,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 href="/docs/index.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
               >
                 Open Online Docs (/docs) ↗
               </a>
@@ -929,7 +945,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/45 flex-col justify-between p-3 overflow-y-auto">
             <div className="space-y-1">
               <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
-                7 Chapters & Physiology Reference
+                9 Chapters &amp; Physiology Reference
               </div>
               {chapters.map((ch) => {
                 const Icon = ch.icon;
@@ -1139,7 +1155,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
-                        Chapter {activeChapterMeta.number} of 08
+                        Chapter {activeChapterMeta.number} of 09
                       </span>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
                         THRESH Telemetry & Coaching Manual
@@ -1190,10 +1206,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                             />
                           </div>
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
-                            Connect Strava, Intervals.icu or Drop .FIT
+                            Choose Strava Sync Window or Add Optional Sleep
                           </div>
                           <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Link OAuth streams & Garmin wellness or drag-and-drop local `.FIT` workout files.
+                            Pick 90d / 6mo / Full Strava history, optionally connect Garmin or Intervals.icu, or drop .FIT files.
                           </p>
                         </div>
                         <button

@@ -118,7 +118,7 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
 });
 
 // 3. List All Teams for Active Session (Multi-Team Switcher)
-teamRouter.get('/api/teams/mine', async (req: Request, res: Response) => {
+teamRouter.get(['/api/teams/mine', '/api/teams'], async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid) {
@@ -312,6 +312,13 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       athleteName || 'thresh-athlete'
     );
     const originUrl = resolveRequestOrigin(req);
+    const rawUnit = String(req.body?.distanceUnit || '').toLowerCase();
+    const distanceUnit: 'mi' | 'km' = rawUnit === 'km' ? 'km' : 'mi';
+    const rawTier = String(req.body?.sharingTier || '').toUpperCase();
+    const sharingTier =
+      rawTier === 'FULL_STREAMS' || rawTier === 'LOAD_ONLY'
+        ? rawTier
+        : 'SUMMARY_ONLY';
     const claimed = await claimTeamJoinInvite({
       callerSid: sid,
       originUrl,
@@ -319,8 +326,13 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       inviteToken: req.body?.inviteToken ? String(req.body.inviteToken).trim() : undefined,
       athleteName: athleteName || undefined,
       athleteEmail: req.body?.athleteEmail ? String(req.body.athleteEmail) : undefined,
+      stravaAthleteId: req.body?.stravaAthleteId
+        ? String(req.body.stravaAthleteId).trim()
+        : undefined,
       squadGroup: req.body?.squadGroup ? String(req.body.squadGroup) : undefined,
       seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : undefined,
+      distanceUnit,
+      sharingTier,
     });
 
     if (!claimed.ok || !claimed.summary) {
@@ -372,7 +384,7 @@ teamRouter.post('/api/teams/sync-snapshot', async (req: Request, res: Response) 
   }
 });
 
-// 11. Broadcast Structured Workout to Whole Team or Specific Squad Pod
+// 11. Broadcast Structured Workout to Whole Team, Squad Pod, or Specific Athletes
 teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -381,11 +393,15 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
       return;
     }
     const originUrl = resolveRequestOrigin(req);
+    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
+      ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : undefined;
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
       originUrl,
       targetSquadGroup: String(req.body?.targetSquadGroup || 'ALL'),
+      targetMembershipIds,
       date: String(req.body?.date || ''),
       name: String(req.body?.name || ''),
       sportCategory: req.body?.sportCategory || 'Running',

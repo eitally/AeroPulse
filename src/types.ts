@@ -468,6 +468,17 @@ export interface AthleteProfile {
   source: 'INTERVALS_GARMIN' | 'CUSTOM_OVERRIDE' | 'DEFAULT';
 }
 
+export type StravaSyncWindow = '90d' | '180d' | '365d' | 'all' | 'none';
+
+export interface StravaSyncPolicy {
+  window: StravaSyncWindow;
+  importProfileAndGear: boolean;
+  confirmedAt: string;
+  grantedScope?: string;
+}
+
+export type CoachDataSharingTier = 'SUMMARY_ONLY' | 'FULL_STREAMS' | 'LOAD_ONLY';
+
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   vaultStorageBackend?: 'POSTGRES' | 'ENCRYPTED_FILE';
@@ -477,9 +488,14 @@ export interface ConnectionStatus {
   intervalsAthleteId: string;
   intervalsAthleteName?: string;
   intervalsSource: 'ENV' | 'USER_INPUT' | 'NONE';
+  stravaConfigured?: boolean;
   stravaConnected: boolean;
   stravaClientId?: string;
+  stravaAthleteId?: string;
   stravaAthleteName?: string;
+  stravaMeasurementPreference?: DistanceUnit;
+  stravaGrantedScope?: string;
+  stravaSyncPolicy?: StravaSyncPolicy;
   stravaSource: 'OAUTH' | 'ENV' | 'NONE';
   hasGeminiServerKey: boolean;
   mapTileProvider?: MapTileProvider;
@@ -534,6 +550,7 @@ export interface ConnectedAthleteRecord {
   activities: UnifiedActivity[];
   plannedEvents: PlannedWorkoutEvent[];
   targetGoals: TargetGoal[];
+  caraHours7d?: number;
 }
 
 export interface DualSportPmcPoint {
@@ -987,6 +1004,8 @@ export interface TeamAthleteLiveSnapshot {
   ftpWatts?: number;
   thresholdPaceSecsPerKm?: number;
   safeSportHideWeight: boolean;
+  sharingTier?: CoachDataSharingTier;
+  privacySettings?: AthletePrivacySettings;
   wellnessDays?: UnifiedWellnessDay[];
   activities?: UnifiedActivity[];
 }
@@ -995,6 +1014,8 @@ export interface TeamMembershipRecord {
   membershipId: string;
   teamId: string;
   userSid?: string;
+  stravaAthleteId?: string;
+  sharingTier?: CoachDataSharingTier;
   role: TeamMemberRole;
   squadGroup: string;
   invitedName: string;
@@ -1017,6 +1038,7 @@ export interface TeamBroadcastWorkout {
   broadcastId: string;
   teamId: string;
   targetSquadGroup: string; // 'ALL' or specific squad like 'Varsity'
+  targetMembershipIds?: string[]; // Optional subset of membershipIds (e.g. single athlete or VDOT pod)
   date: string;
   name: string;
   sportCategory: SportCategory;

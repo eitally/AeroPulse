@@ -131,16 +131,14 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     [myTeams, activeTeamId]
   );
 
-  const [showCreateOrEditStudio, setShowCreateOrEditStudio] = useState<boolean>(
-    myTeams.length === 0
-  );
+  const [showCreateOrEditStudio, setShowCreateOrEditStudio] = useState<boolean>(false);
   const [studioMode, setStudioMode] = useState<'CREATE' | 'EDIT'>('CREATE');
 
-  // Studio Form State
+  // Studio Form State (clean empty defaults so coaches never submit sample school names)
   const [orgType, setOrgType] = useState<TeamOrgType>('HIGH_SCHOOL');
-  const [teamName, setTeamName] = useState('Palo Alto High Varsity XC');
-  const [shortName, setShortName] = useState('PALY XC');
-  const [mascotOrMotto, setMascotOrMotto] = useState('Vikings Distance');
+  const [teamName, setTeamName] = useState('');
+  const [shortName, setShortName] = useState('');
+  const [mascotOrMotto, setMascotOrMotto] = useState('');
   const [primarySport, setPrimarySport] = useState<'Running' | 'Cycling' | 'Hybrid'>(
     'Running'
   );
@@ -150,7 +148,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [defaultSafeSportShield, setDefaultSafeSportShield] = useState<boolean>(true);
   const [enableParentGuardianCc, setEnableParentGuardianCc] = useState<boolean>(true);
   const [coachDisplayName, setCoachDisplayName] = useState(
-    selfName && selfName !== 'Athlete' ? selfName : 'Coach Rivera'
+    selfName && selfName !== 'Athlete' ? selfName : ''
   );
 
   // Quick Join Second Team State
@@ -517,8 +515,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           tone: 'info',
           text:
             data.emailedCount > 0
-              ? `Nudged ${data.emailedCount} pending invite(s) via Resend.`
-              : 'Refreshed magic invite links (set RESEND_API_KEY in Vercel to dispatch direct emails, or use Copy Link / Mailto / SMS).',
+              ? `Sent ${data.emailedCount} invite reminder email(s).`
+              : 'Refreshed magic invite links — share via Copy Link, Email, or Text.',
         });
       }
     } finally {
@@ -705,6 +703,75 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* ====================================================================
+          EMPTY STATE 2-CARD CHOOSER: JOIN EXISTING TEAM vs CREATE COACH HUB
+         ==================================================================== */}
+      {myTeams.length === 0 && !showCreateOrEditStudio && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Card 1: Athlete / Assistant Joining w/ Team Code */}
+          <form
+            onSubmit={handleJoinAdditionalTeam}
+            className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm"
+          >
+            <div className="space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-prime">
+                <UserPlus className="w-3 h-3" />
+                <span>Athlete or Assistant Coach</span>
+              </span>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Join a School or Club Team
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Have a 6-character Team Join Code or magic link slug from your coach? Enter it below to link your Strava identity and sync squad workouts.
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              <input
+                type="text"
+                value={joinAnotherCode}
+                onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
+                placeholder="Enter Team Code (e.g. PAXC-26)"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0E1015] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+              />
+              <button
+                type="submit"
+                disabled={isJoiningTeam || !joinAnotherCode.trim()}
+                className="w-full min-h-[44px] ap-btn-primary justify-center text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>{isJoiningTeam ? 'Joining Team...' : 'Join Team With Code'}</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Card 2: Head Coach / Club Captain Creating New Team */}
+          <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm">
+            <div className="space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ap-status-info">
+                <Users className="w-3 h-3" />
+                <span>Head Coach or Club Director</span>
+              </span>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Create a Coach &amp; Team Workspace
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Set up school or club colors, U18 Safe-Sport weight shielding, printable locker-room QR sheets, CSV roster invites, and VDOT pacing pods.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openCreateNewTeam}
+              className="w-full min-h-[44px] ap-btn-secondary justify-center text-xs sm:text-sm font-bold cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Launch Team Branding Studio</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -1234,23 +1301,23 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono uppercase tracking-widest text-[#1D4ED8] dark:text-[#60A5FA] font-bold">
-                      BULK ROSTER IMPORTER · RESEND EMAIL + FREE NATIVE SMS
+                      BULK ROSTER IMPORTER · EMAIL, MAGIC LINKS &amp; TAP-TO-TEXT
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        resendConfigured ? 'ap-status-prime' : 'ap-status-caution'
+                        resendConfigured ? 'ap-status-prime' : 'ap-status-info'
                       }`}
                     >
                       {resendConfigured
-                        ? 'Resend Email API Active'
-                        : 'Link / Mailto Mode (Set RESEND_API_KEY for Auto-Email)'}
+                        ? 'Direct Branded Email Active'
+                        : 'Magic Link, Email & SMS Ready'}
                     </span>
                   </div>
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
                     Paste Spreadsheet Rows, Upload .CSV, or Enter Athlete Emails
                   </h4>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Supports columns: <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code> (or plain email lists). Phone numbers generate zero-cost native <code>sms:</code> tap-to-text links—no paid SMS required.
+                    Supports columns: <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code> (or plain email lists). When athletes sign in with Strava, THRESH automatically matches their roster spot, squad, and seed mark.
                   </p>
                 </div>
 
@@ -1416,7 +1483,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     <th className="py-2.5 px-3">Squad / Role</th>
                     <th className="py-2.5 px-3">Funnel Status</th>
                     <th className="py-2.5 px-3">7d Readiness / Seed</th>
-                    <th className="py-2.5 px-4 text-right">Share / Nudge Actions ($0)</th>
+                    <th className="py-2.5 px-4 text-right">Invite &amp; Share Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-200/70 dark:divide-slate-800">

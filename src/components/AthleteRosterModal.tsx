@@ -198,13 +198,25 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     [roster]
   );
 
+  const isCoachingActiveTeam =
+    activeTeamObj?.myRole === 'HEAD_COACH' || activeTeamObj?.myRole === 'ASSISTANT_COACH';
+  const [includeSelfInPods, setIncludeSelfInPods] = useState<boolean>(!isCoachingActiveTeam);
+
+  useEffect(() => {
+    setIncludeSelfInPods(!isCoachingActiveTeam);
+  }, [isCoachingActiveTeam]);
+
   const combinedPodRoster = useMemo<VdotPodRosterInput[]>(() => {
     const base: VdotPodRosterInput[] = [
-      {
-        id: 'SELF',
-        name: selfName || 'Coach / Lead',
-        thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
-      },
+      ...(includeSelfInPods || (connectedRoster.length === 0 && extraPodAthletes.length === 0)
+        ? [
+            {
+              id: 'SELF',
+              name: selfName || 'Coach / Lead',
+              thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+            },
+          ]
+        : []),
       ...connectedRoster.map((c) => ({
         id: c.id,
         name: c.name,
@@ -213,7 +225,13 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
       ...extraPodAthletes,
     ];
     return base;
-  }, [selfName, selfProfile.thresholdPaceSecsPerKm, connectedRoster, extraPodAthletes]);
+  }, [
+    includeSelfInPods,
+    selfName,
+    selfProfile.thresholdPaceSecsPerKm,
+    connectedRoster,
+    extraPodAthletes,
+  ]);
 
   const generatedVdotPods = useMemo(
     () =>
@@ -1107,55 +1125,69 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </div>
 
                 {/* Optional Quick Add Walk-On / Tryout Runner to Pod Sheet */}
-                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-                  <span className="text-[11px] font-mono text-slate-500">
-                    + Add Walk-On / Unconnected Teammate to Pod Sheet:
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Runner Name (e.g. J. Ramirez)"
-                    value={guestPodName}
-                    onChange={(e) => setGuestPodName(e.target.value)}
-                    className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-48"
-                  />
-                  <input
-                    type="number"
-                    step="0.5"
-                    min={30}
-                    max={85}
-                    placeholder="VDOT"
-                    value={guestPodVdot}
-                    onChange={(e) => setGuestPodVdot(e.target.value)}
-                    className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-20"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!guestPodName.trim()) return;
-                      const v = Math.max(30, Math.min(85, Number(guestPodVdot) || 55));
-                      setExtraPodAthletes((prev) => [
-                        ...prev,
-                        {
-                          id: `guest-${Date.now()}`,
-                          name: guestPodName.trim(),
-                          thresholdPaceSecsPerKm: 250,
-                          vdotOverride: v,
-                        },
-                      ]);
-                      setGuestPodName('');
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-white font-mono text-[11px]"
-                  >
-                    + Add to Pod
-                  </button>
-                  {extraPodAthletes.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-500">
+                      + Add Walk-On / Unconnected Teammate to Pod Sheet:
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Runner Name (e.g. J. Ramirez)"
+                      value={guestPodName}
+                      onChange={(e) => setGuestPodName(e.target.value)}
+                      className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-48"
+                    />
+                    <input
+                      type="number"
+                      step="0.5"
+                      min={30}
+                      max={85}
+                      placeholder="VDOT"
+                      value={guestPodVdot}
+                      onChange={(e) => setGuestPodVdot(e.target.value)}
+                      className="rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs w-20"
+                    />
                     <button
                       type="button"
-                      onClick={() => setExtraPodAthletes([])}
-                      className="text-[11px] font-mono text-slate-500 hover:text-rose-500"
+                      onClick={() => {
+                        if (!guestPodName.trim()) return;
+                        const v = Math.max(30, Math.min(85, Number(guestPodVdot) || 55));
+                        setExtraPodAthletes((prev) => [
+                          ...prev,
+                          {
+                            id: `guest-${Date.now()}`,
+                            name: guestPodName.trim(),
+                            thresholdPaceSecsPerKm: 250,
+                            vdotOverride: v,
+                          },
+                        ]);
+                        setGuestPodName('');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-white font-mono text-[11px]"
                     >
-                      Clear {extraPodAthletes.length} guest{extraPodAthletes.length === 1 ? '' : 's'}
+                      + Add to Pod
                     </button>
+                    {extraPodAthletes.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExtraPodAthletes([])}
+                        className="text-[11px] font-mono text-slate-500 hover:text-rose-500"
+                      >
+                        Clear {extraPodAthletes.length} guest{extraPodAthletes.length === 1 ? '' : 's'}
+                      </button>
+                    )}
+                  </div>
+
+                  {connectedRoster.length > 0 && (
+                    <label className="inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeSelfInPods}
+                        onChange={(e) => setIncludeSelfInPods(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span>Include {selfName || 'Me'} in pods</span>
+                    </label>
                   )}
                 </div>
 
@@ -1410,10 +1442,23 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   ) : (
                     <div className="space-y-2">
                       {connectedRoster.map((ath) => {
-                        const audit = summarizeNcaaCaraWeeklyHours(ath.activities);
+                        const baseAudit = summarizeNcaaCaraWeeklyHours(ath.activities);
+                        const resolvedHours =
+                          ath.activities.length === 0 && typeof ath.caraHours7d === 'number'
+                            ? Number(ath.caraHours7d.toFixed(1))
+                            : baseAudit.rolling7dCountableHours;
+                        const compliant =
+                          ath.activities.length === 0 && typeof ath.caraHours7d === 'number'
+                            ? resolvedHours <= baseAudit.weeklyCapHours
+                            : baseAudit.compliant;
+                        const statusLabel = !compliant
+                          ? 'Exceeds 20h Cap'
+                          : resolvedHours >= 17
+                            ? 'Approaching 20h Cap'
+                            : 'CARA Compliant';
                         const barPct = Math.min(
                           100,
-                          Math.round((audit.rolling7dCountableHours / audit.weeklyCapHours) * 100)
+                          Math.round((resolvedHours / baseAudit.weeklyCapHours) * 100)
                         );
                         return (
                           <div
@@ -1426,17 +1471,17 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               </span>
                               <span
                                 className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                                  audit.compliant ? 'ap-status-prime' : 'ap-status-strained'
+                                  compliant ? 'ap-status-prime' : 'ap-status-strained'
                                 }`}
                               >
-                                {audit.statusLabel}
+                                {statusLabel}
                               </span>
                             </div>
                             <div className="w-full h-2 rounded-full bg-stone-200 dark:bg-slate-800 overflow-hidden">
                               <div
                                 style={{ width: `${barPct}%` }}
                                 className={`h-full rounded-full ${
-                                  !audit.compliant
+                                  !compliant
                                     ? 'bg-rose-500'
                                     : barPct >= 85
                                       ? 'bg-amber-500'
@@ -1445,8 +1490,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               />
                             </div>
                             <div className="flex justify-between font-mono text-[11px] text-slate-500 tabular-nums">
-                              <span>7d Logged: {audit.rolling7dCountableHours}h / 20h</span>
-                              <span>Peak Day: {audit.maxSingleDayHours}h / 4h</span>
+                              <span>7d Logged: {resolvedHours}h / 20h</span>
+                              <span>
+                                {ath.activities.length > 0
+                                  ? `Peak Day: ${baseAudit.maxSingleDayHours}h / 4h`
+                                  : 'Summary Sync'}
+                              </span>
                             </div>
                           </div>
                         );

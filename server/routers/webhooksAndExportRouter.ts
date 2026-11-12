@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine.ts';
 import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator.ts';
 import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander.ts';
@@ -9,6 +9,7 @@ const SUPPORTED_WEBHOOK_PROVIDERS = new Set([
   'garmin',
   'wahoo',
   'coros',
+  'polar',
   'whoop',
   'oura',
   'apple-healthkit',
@@ -17,12 +18,16 @@ const SUPPORTED_WEBHOOK_PROVIDERS = new Set([
 /**
  * [P0.1] First-Party Hardware OAuth2 Push Webhook Receiver
  * Accepts normalized activity & overnight recovery/HRV pushes from Garmin Connect Developer Program,
- * Wahoo Cloud, COROS, WHOOP v2, Oura v2, and Apple HealthKit Companion without touching Strava API.
+ * Wahoo Cloud, COROS, Polar, WHOOP v2, Oura v2, and Apple HealthKit Companion without touching Strava API.
  */
-webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Response) => {
+webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Response, next: NextFunction) => {
   const provider = String(req.params.provider || '')
     .trim()
     .toLowerCase();
+  if (provider === 'strava' || provider === 'intervals') {
+    next();
+    return;
+  }
   if (!SUPPORTED_WEBHOOK_PROVIDERS.has(provider)) {
     res.status(400).json({
       ok: false,

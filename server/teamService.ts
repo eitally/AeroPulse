@@ -3,7 +3,7 @@ import { sanitizeTelemetryForCleanRoom } from './cleanRoomFirewall.ts';
 import { escapeHtml } from './securityUtils.ts';
 import {
   loadTenantVaultAsync,
-  saveTenantVaultSync,
+  saveTenantVaultAsync,
 } from './tokenVault.ts';
 import {
   type ParsedBulkRosterRow,
@@ -16,6 +16,8 @@ import {
   slugifyTeamName,
 } from '../src/physiology/teamOnboardingEngine.ts';
 import type {
+  CoachDataSharingTier,
+  DistanceUnit,
   SportCategory,
   TeamAthleteLiveSnapshot,
   TeamBrandConfig,
@@ -25,6 +27,7 @@ import type {
   TeamMembershipRecord,
   TeamOrgType,
   TeamSummaryWithRole,
+  UnifiedActivity,
 } from '../src/types.ts';
 
 interface TeamsDirectoryIndex {
@@ -42,6 +45,7 @@ interface StoredTeamDocument {
   brand: TeamBrandConfig;
   memberships: StoredMembershipInternal[];
   broadcastWorkouts: TeamBroadcastWorkout[];
+  anonymousLinkOpens?: number;
   updatedAt: string;
 }
 
@@ -213,12 +217,12 @@ function buildTeamInviteEmailContent(params: {
     <div style="padding:28px;">
       <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hi <strong>${safeFirstName}</strong>,</p>
       <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">
-        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for daily training readiness, workout pacing pods, and post-workout performance analysis.
+        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for daily training readiness, workout pacing pods, and post-workout performance analysis. Sign in with your free Strava account in one tap to claim your roster spot and choose what training summary you share.
         ${safeSeed ? `<br/><span style="color:#065F46;font-size:13px;">Your initial zones are pre-seeded from <strong>${safeSeed}</strong>.</span>` : ''}
       </p>
       <div style="text-align:center;margin:24px 0;">
         <a href="${safeUrl}" style="display:inline-block;padding:14px 26px;border-radius:12px;background:${palette.primaryOnLight};color:${palette.textOnPrimaryLight};text-decoration:none;font-weight:700;font-size:15px;">
-          Accept Invite &amp; Join ${safeShortName} &rarr;
+          Sign In With Strava &amp; Join ${safeShortName} &rarr;
         </a>
       </div>
       <div style="padding:12px 16px;border-radius:12px;background:#F3F4F6;text-align:center;font-size:13px;color:#4B5563;">
@@ -234,7 +238,7 @@ function buildTeamInviteEmailContent(params: {
     `Hi ${firstName},`,
     ``,
     `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on THRESH.`,
-    `Tap your personalized link to join in 45 seconds: ${magicJoinUrl}`,
+    `Tap your personalized link to sign in with Strava and join in 45 seconds: ${magicJoinUrl}`,
     `Team Join Code: ${brand.joinCode}`,
     brand.defaultSafeSportShield
       ? `Safe-Sport Protection: Body weight & W/kg are hidden by default.`
@@ -268,10 +272,10 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
     expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0,
   };
-  saveTenantVaultSync(emailOtpVaultKey(email), record);
+  await saveTenantVaultAsync(emailOtpVaultKey(email), record);
 
   const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#D9480F;text-transform:uppercase;">THRESH CROSS-DEVICE SIGN-IN</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">THRESH CROSS-DEVICE SIGN-IN</div>
     <h2 style="margin:8px 0 12px;color:#111318;">Your 6-Digit Verification Code</h2>
     <div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:0.16em;padding:14px 20px;background:#F3F4F6;border-radius:12px;text-align:center;color:#111318;">${escapeHtml(code)}</div>
     <p style="font-size:13px;color:#4B5563;margin-top:14px;">Expires in 10 minutes. Enter this code in THRESH to sync your teams and athlete profile across devices.</p>
@@ -285,6 +289,15 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
   });
 
   const isLocalDev = process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
+  if (!res.delivered && !isLocalDev) {
+    return {
+      ok: false,
+      deliveryStatus: res.status,
+      error:
+        res.error ||
+        'Email code delivery is not configured on this server. Please sign in with Strava instead.',
+    };
+  }
   return {
     ok: res.status !== 'FAILED',
     deliveryStatus: res.status,
@@ -324,12 +337,12 @@ export async function verifyEmailOtpCode(
   const b = Buffer.from(stored.codeHash);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     stored.attempts += 1;
-    saveTenantVaultSync(key, stored);
+    await saveTenantVaultAsync(key, stored);
     return { ok: false, error: 'Incorrect 6-digit code.' };
   }
 
   // Consume OTP
-  saveTenantVaultSync(key, { ...stored, expiresAt: 0 });
+  await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
 
   // Bind or retrieve persistent sid for this email
   const emailDir = await loadTenantVaultAsync<EmailAccountDirectory>(EMAIL_DIRECTORY_KEY, {
@@ -346,7 +359,7 @@ export async function verifyEmailOtpCode(
       updatedAt: new Date().toISOString(),
     };
     emailDir.byEmail[email] = account;
-    saveTenantVaultSync(EMAIL_DIRECTORY_KEY, emailDir);
+    await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
   }
 
   // Auto-link any pending team invites addressed to this email!
@@ -394,14 +407,14 @@ export async function verifyEmailOtpCode(
     }
     if (mutated) {
       doc.updatedAt = new Date().toISOString();
-      saveTenantVaultSync(teamDocVaultKey(teamId), doc);
+      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
     }
   }
 
   userTeams.updatedAt = new Date().toISOString();
-  saveTenantVaultSync(userTeamsVaultKey(account.sid), userTeams);
+  await saveTenantVaultAsync(userTeamsVaultKey(account.sid), userTeams);
   emailDir.byEmail[email] = account;
-  saveTenantVaultSync(EMAIL_DIRECTORY_KEY, emailDir);
+  await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
 
   return {
     ok: true,
@@ -439,7 +452,51 @@ async function addTeamToUserIndex(
   if (displayName) idx.displayName = displayName;
   if (email) idx.email = email;
   idx.updatedAt = new Date().toISOString();
-  saveTenantVaultSync(userTeamsVaultKey(sid), idx);
+  await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
+}
+
+/**
+ * Seamlessly migrates any teams created or joined under a temporary pre-OAuth browser `sid`
+ * onto the deterministic Strava identity `sid` when the user completes Strava OAuth.
+ */
+export async function migrateAnonymousTeamsToStravaSid(params: {
+  oldSid?: string | null;
+  stravaSid: string;
+  athleteName?: string;
+  stravaAthleteId?: string;
+}): Promise<void> {
+  const { oldSid, stravaSid, athleteName, stravaAthleteId } = params;
+  if (!oldSid || !stravaSid || oldSid === stravaSid) return;
+
+  const oldIdx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(oldSid), {
+    teamIds: [],
+    updatedAt: '',
+  });
+  if (oldIdx.teamIds.length === 0) return;
+
+  for (const teamId of oldIdx.teamIds) {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+    let changed = false;
+    for (const m of doc.memberships) {
+      if (m.userSid === oldSid && m.status !== 'REVOKED') {
+        m.userSid = stravaSid;
+        if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
+        if (athleteName && (!m.invitedName || m.invitedName === 'Team Athlete')) {
+          m.invitedName = athleteName.slice(0, 64);
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      doc.updatedAt = new Date().toISOString();
+      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      await addTeamToUserIndex(stravaSid, teamId, athleteName || oldIdx.displayName, oldIdx.email);
+    }
+  }
 }
 
 function projectTeamSummaryForCaller(
@@ -457,9 +514,13 @@ function projectTeamSummaryForCaller(
 
   const athleteMembers = doc.memberships.filter((m) => m.status !== 'REVOKED');
   const totalInvited = athleteMembers.length;
-  const openedCount = athleteMembers.filter(
+  const individualOpened = athleteMembers.filter(
     (m) => m.status === 'OPENED' || m.status === 'ACTIVE'
   ).length;
+  const openedCount = Math.max(
+    individualOpened,
+    individualOpened + (doc.anonymousLinkOpens || 0)
+  );
   const activeCount = athleteMembers.filter((m) => m.status === 'ACTIVE').length;
   const watchConnectedCount = athleteMembers.filter(
     (m) => Boolean(m.liveSnapshot?.hasConnectedWatch)
@@ -467,9 +528,36 @@ function projectTeamSummaryForCaller(
 
   const cleanOrigin = originUrl.replace(/\/+$/, '');
   const sanitizedMemberships: TeamMembershipRecord[] = athleteMembers.map((m) => {
+    const isSelf = m.userSid === callerSid;
+    const priv = m.liveSnapshot?.privacySettings;
+    const hideWellnessFromCoach = !isSelf && priv?.shareWellnessAndHrv === 'PRIVATE';
+    const hidePmcFromCoach = !isSelf && priv?.sharePmcAndZones === 'PRIVATE';
+    const safeSportShieldEnforced = Boolean(
+      doc.brand.defaultSafeSportShield || m.isMinorU18 || m.liveSnapshot?.safeSportHideWeight
+    );
+
+    let projectedSnapshot: TeamAthleteLiveSnapshot | undefined;
+    if (m.liveSnapshot) {
+      projectedSnapshot = {
+        ...m.liveSnapshot,
+        ftpWatts: safeSportShieldEnforced && !isCoach && !isSelf ? undefined : m.liveSnapshot.ftpWatts,
+        ctl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.ctl,
+        atl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.atl,
+        tsb: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.tsb,
+        // Never leak raw biometric wellnessDays or activity logs to fellow teammates
+        wellnessDays:
+          isSelf || (isCoach && !hideWellnessFromCoach)
+            ? m.liveSnapshot.wellnessDays
+            : undefined,
+        activities: isSelf || isCoach ? m.liveSnapshot.activities : undefined,
+      };
+    }
+
     const base: TeamMembershipRecord = {
       membershipId: m.membershipId,
       teamId: m.teamId,
+      stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : undefined,
+      sharingTier: m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
       invitedName: m.invitedName,
@@ -481,9 +569,9 @@ function projectTeamSummaryForCaller(
       invitedAt: m.invitedAt,
       openedAt: m.openedAt,
       joinedAt: m.joinedAt,
-      liveSnapshot: m.liveSnapshot,
+      liveSnapshot: projectedSnapshot,
     };
-    if (isCoach || m.userSid === callerSid) {
+    if (isCoach || isSelf) {
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
@@ -496,6 +584,17 @@ function projectTeamSummaryForCaller(
     return base;
   });
 
+  const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
+    if (isCoach) return true;
+    if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
+      return bw.targetMembershipIds.includes(myMembership.membershipId);
+    }
+    return (
+      bw.targetSquadGroup === 'ALL' ||
+      bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase()
+    );
+  });
+
   return {
     brand: doc.brand,
     myRole: myMembership.role,
@@ -506,7 +605,7 @@ function projectTeamSummaryForCaller(
     activeCount,
     watchConnectedCount,
     memberships: sanitizedMemberships,
-    broadcastWorkouts: doc.broadcastWorkouts || [],
+    broadcastWorkouts: visibleBroadcasts,
   };
 }
 
@@ -641,8 +740,8 @@ export async function createTeamForCoach(params: {
   dir.byJoinCode[joinCode.toUpperCase()] = teamId;
   if (!dir.allTeamIds.includes(teamId)) dir.allTeamIds.push(teamId);
 
-  saveTenantVaultSync(teamDocVaultKey(teamId), doc);
-  saveTenantVaultSync(TEAMS_DIRECTORY_KEY, dir);
+  await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+  await saveTenantVaultAsync(TEAMS_DIRECTORY_KEY, dir);
   await addTeamToUserIndex(
     params.callerSid,
     teamId,
@@ -722,7 +821,7 @@ export async function updateTeamBranding(params: {
   }
 
   doc.updatedAt = new Date().toISOString();
-  saveTenantVaultSync(teamDocVaultKey(params.teamId), doc);
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
 
@@ -807,7 +906,7 @@ export async function bulkCreateAndSendInvites(params: {
     const parentCc =
       doc.brand.enableParentGuardianCc && row.parentGuardianEmail
         ? row.parentGuardianEmail.trim().toLowerCase()
-        : row.parentGuardianEmail?.trim().toLowerCase();
+        : undefined;
 
     let emailDeliveryStatus: TeamMembershipRecord['emailDeliveryStatus'] =
       'READY_MANUAL_LINK';
@@ -845,7 +944,7 @@ export async function bulkCreateAndSendInvites(params: {
       invitedName: String(row.invitedName || 'Team Athlete').trim().slice(0, 64),
       invitedEmail: cleanEmail,
       invitedPhone: row.invitedPhone,
-      parentGuardianEmail: parentCc,
+      parentGuardianEmail: row.parentGuardianEmail?.trim().toLowerCase(),
       graduationYear: row.graduationYear,
       isMinorU18: Boolean(row.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL'),
       seedMarkOrFtp: row.seedMarkOrFtp,
@@ -859,7 +958,7 @@ export async function bulkCreateAndSendInvites(params: {
   }
 
   doc.updatedAt = nowIso;
-  saveTenantVaultSync(teamDocVaultKey(params.teamId), doc);
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
   return {
     summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -915,18 +1014,22 @@ export async function resendPendingTeamInvites(params: {
     }
 
     const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}`;
+    const ccEmail =
+      doc.brand.enableParentGuardianCc && m.parentGuardianEmail
+        ? m.parentGuardianEmail
+        : undefined;
     const emailContent = buildTeamInviteEmailContent({
       brand: doc.brand,
       invitedName: m.invitedName,
       squadGroup: m.squadGroup,
       magicJoinUrl,
-      hasParentCc: Boolean(m.parentGuardianEmail),
+      hasParentCc: Boolean(ccEmail),
       seedMarkOrFtp: m.seedMarkOrFtp,
     });
 
     const sendRes = await sendEmailViaResend({
       to: m.invitedEmail,
-      cc: m.parentGuardianEmail,
+      cc: ccEmail,
       subject: `Reminder: ${emailContent.subject}`,
       html: emailContent.html,
       text: emailContent.text,
@@ -937,7 +1040,7 @@ export async function resendPendingTeamInvites(params: {
   }
 
   doc.updatedAt = new Date().toISOString();
-  saveTenantVaultSync(teamDocVaultKey(params.teamId), doc);
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return {
     summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
     emailedCount,
@@ -976,8 +1079,11 @@ export async function previewTeamJoinInvite(
       matchedMem.status = 'OPENED';
       matchedMem.openedAt = new Date().toISOString();
       doc.updatedAt = matchedMem.openedAt;
-      saveTenantVaultSync(teamDocVaultKey(doc.brand.teamId), doc);
+      await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
     }
+  } else {
+    doc.anonymousLinkOpens = (doc.anonymousLinkOpens || 0) + 1;
+    await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
   }
 
   return {
@@ -1004,8 +1110,11 @@ export async function claimTeamJoinInvite(params: {
   inviteToken?: string;
   athleteName?: string;
   athleteEmail?: string;
+  stravaAthleteId?: string;
   squadGroup?: string;
   seedMarkOrFtp?: string;
+  distanceUnit?: DistanceUnit;
+  sharingTier?: CoachDataSharingTier;
 }): Promise<{
   ok: boolean;
   summary?: TeamSummaryWithRole;
@@ -1023,6 +1132,8 @@ export async function claimTeamJoinInvite(params: {
 
   const nowIso = new Date().toISOString();
   const cleanEmail = params.athleteEmail?.trim().toLowerCase();
+  const cleanNameLower = params.athleteName?.trim().toLowerCase().replace(/\s+/g, ' ');
+  const cleanStravaId = params.stravaAthleteId?.trim();
   let mem: StoredMembershipInternal | undefined;
 
   if (params.inviteToken) {
@@ -1036,18 +1147,35 @@ export async function claimTeamJoinInvite(params: {
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
     );
   }
+  if (!mem && cleanStravaId) {
+    mem = doc.memberships.find(
+      (m) => m.stravaAthleteId === cleanStravaId && m.status !== 'REVOKED'
+    );
+  }
   if (!mem && cleanEmail) {
     mem = doc.memberships.find(
       (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== 'REVOKED'
     );
   }
+  // Match against CSV-imported INVITED / OPENED roster row by full name when joining via universal team link
+  if (!mem && cleanNameLower && cleanNameLower !== 'team athlete' && cleanNameLower !== 'athlete') {
+    mem = doc.memberships.find(
+      (m) =>
+        (m.status === 'INVITED' || m.status === 'OPENED') &&
+        !m.userSid &&
+        m.invitedName.trim().toLowerCase().replace(/\s+/g, ' ') === cleanNameLower
+    );
+  }
 
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
+  const resolvedSharingTier: CoachDataSharingTier = params.sharingTier || 'SUMMARY_ONLY';
   if (!mem) {
     mem = {
       membershipId: `mem_${crypto.randomBytes(6).toString('hex')}`,
       teamId: doc.brand.teamId,
       userSid: params.callerSid,
+      stravaAthleteId: cleanStravaId,
+      sharingTier: resolvedSharingTier,
       role: 'ATHLETE',
       squadGroup:
         params.squadGroup?.trim() || orgDefaults.defaultSquads[0] || 'Varsity',
@@ -1064,11 +1192,17 @@ export async function claimTeamJoinInvite(params: {
     doc.memberships.push(mem);
   } else {
     mem.userSid = params.callerSid;
+    if (cleanStravaId) mem.stravaAthleteId = cleanStravaId;
+    if (params.sharingTier) mem.sharingTier = params.sharingTier;
+    else if (!mem.sharingTier) mem.sharingTier = 'SUMMARY_ONLY';
     if (params.athleteName?.trim()) {
       mem.invitedName = params.athleteName.trim().slice(0, 64);
     }
     if (cleanEmail && !mem.invitedEmail) {
       mem.invitedEmail = cleanEmail;
+    }
+    if (params.squadGroup?.trim()) {
+      mem.squadGroup = params.squadGroup.trim();
     }
     if (params.seedMarkOrFtp?.trim()) {
       mem.seedMarkOrFtp = params.seedMarkOrFtp.trim();
@@ -1084,31 +1218,38 @@ export async function claimTeamJoinInvite(params: {
   const calibrated = calibrateThresholdsFromSeedMark(
     mem.seedMarkOrFtp || params.seedMarkOrFtp || '',
     doc.brand.primarySport,
-    'mi'
+    params.distanceUnit || 'mi'
   );
 
   if (!mem.liveSnapshot) {
     mem.liveSnapshot = {
       updatedAt: nowIso,
       hasConnectedWatch: false,
-      verdictLabel: 'Calibrated · Ready',
-      readinessScore: 82,
-      ctl: 42,
-      atl: 40,
-      tsb: 2,
-      acuteLoad7d: 260,
-      lowAerobicPct: 78,
-      highAerobicPct: 16,
-      neuromuscularPct: 6,
-      caraHours7d: 6.5,
+      verdictLabel: 'Joined · Awaiting First Sync',
+      readinessScore: 0,
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+      acuteLoad7d: 0,
+      lowAerobicPct: 0,
+      highAerobicPct: 0,
+      neuromuscularPct: 0,
+      caraHours7d: 0,
       ftpWatts: calibrated.cyclingFtpWatts,
       thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
       safeSportHideWeight: safeSportShieldEnforced,
+      sharingTier: mem.sharingTier,
     };
+  } else {
+    if (params.seedMarkOrFtp?.trim()) {
+      mem.liveSnapshot.ftpWatts = calibrated.cyclingFtpWatts;
+      mem.liveSnapshot.thresholdPaceSecsPerKm = calibrated.thresholdPaceSecsPerKm;
+    }
+    mem.liveSnapshot.sharingTier = mem.sharingTier;
   }
 
   doc.updatedAt = nowIso;
-  saveTenantVaultSync(teamDocVaultKey(doc.brand.teamId), doc);
+  await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
   await addTeamToUserIndex(
     params.callerSid,
     doc.brand.teamId,
@@ -1129,6 +1270,7 @@ export async function broadcastWorkoutToTeamSquad(params: {
   teamId: string;
   originUrl: string;
   targetSquadGroup: string;
+  targetMembershipIds?: string[];
   date: string;
   name: string;
   sportCategory: SportCategory;
@@ -1154,10 +1296,14 @@ export async function broadcastWorkoutToTeamSquad(params: {
   }
 
   const nowIso = new Date().toISOString();
+  const cleanTargets = Array.isArray(params.targetMembershipIds)
+    ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
+    : undefined;
   const workout: TeamBroadcastWorkout = {
     broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
     teamId: doc.brand.teamId,
     targetSquadGroup: String(params.targetSquadGroup || 'ALL').trim() || 'ALL',
+    ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
     date: String(params.date || nowIso.slice(0, 10)).slice(0, 10),
     name: String(params.name || 'Team Prescribed Session').trim().slice(0, 100),
     sportCategory: params.sportCategory || 'Running',
@@ -1171,9 +1317,57 @@ export async function broadcastWorkoutToTeamSquad(params: {
 
   doc.broadcastWorkouts = [workout, ...(doc.broadcastWorkouts || [])].slice(0, 60);
   doc.updatedAt = nowIso;
-  saveTenantVaultSync(teamDocVaultKey(params.teamId), doc);
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
+
+/**
+ * Produces coach-consented activity summaries according to the athlete's chosen sharing tier.
+ * Always strips Strava social metadata (kudos, comments, segments), and strips GPS polylines/latlngs
+ * unless the athlete explicitly selected `FULL_STREAMS` AND `privacySettings.shareGpsRoutes !== 'PRIVATE'`
+ * on first-party/clean-room eligible workouts.
+ */
+function buildConsentedCoachActivities(
+  rawActivities: UnifiedActivity[] | undefined,
+  sharingTier: CoachDataSharingTier,
+  allowGpsRoutes: boolean
+): UnifiedActivity[] {
+  if (!Array.isArray(rawActivities) || sharingTier === 'LOAD_ONLY') {
+    return [];
+  }
+  const cleanRoomPayload = sanitizeTelemetryForCleanRoom({
+    activities: rawActivities.slice(-25),
+  });
+  const cleanRoomActivities = (
+    Array.isArray(cleanRoomPayload.activities) ? cleanRoomPayload.activities : []
+  ) as UnifiedActivity[];
+  const firstPartyIds = new Set(
+    cleanRoomActivities.map((a) => String(a?.id || ''))
+  );
+
+  // Clean-Room Firewall default: under SUMMARY_ONLY, strip Strava-only records;
+  // only include Strava workout summaries when the athlete explicitly selects FULL_STREAMS.
+  const sourceList =
+    sharingTier === 'FULL_STREAMS' ? rawActivities.slice(-25) : cleanRoomActivities;
+
+  return sourceList.map((act) => {
+    const isFirstParty = firstPartyIds.has(String(act.id || ''));
+    const includeGps = sharingTier === 'FULL_STREAMS' && allowGpsRoutes && isFirstParty;
+    const sanitized: UnifiedActivity = {
+      ...act,
+      // Always strip Strava social/segment payloads from cross-user coach snapshots
+      kudoers: undefined,
+      comments: undefined,
+      segmentEfforts: [],
+      summaryPolyline: includeGps ? act.summaryPolyline : undefined,
+      routeLatLngs: includeGps ? act.routeLatLngs : undefined,
+      startLatLng: includeGps ? act.startLatLng : undefined,
+      endLatLng: includeGps ? act.endLatLng : undefined,
+      streams: sharingTier === 'FULL_STREAMS' && isFirstParty ? act.streams : undefined,
+    };
+    return sanitized;
+  });
 }
 
 export async function syncAthleteSnapshotAcrossTeams(params: {
@@ -1191,16 +1385,6 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
   );
   if (userIdx.teamIds.length === 0) return [];
 
-  // Enforce Clean-Room Firewall on any activities before cross-athlete team sync
-  const cleanRoomPayload = sanitizeTelemetryForCleanRoom({
-    activities: Array.isArray(params.snapshot.activities)
-      ? params.snapshot.activities.slice(-25)
-      : [],
-  });
-  const cleanActivities = Array.isArray(cleanRoomPayload.activities)
-    ? cleanRoomPayload.activities
-    : [];
-
   const nowIso = new Date().toISOString();
   const summaries: TeamSummaryWithRole[] = [];
 
@@ -1216,10 +1400,24 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
     );
     if (!mem) continue;
 
+    const effectiveTier: CoachDataSharingTier =
+      params.snapshot.sharingTier || mem.sharingTier || 'SUMMARY_ONLY';
+    mem.sharingTier = effectiveTier;
+
     const enforceHideWeight = Boolean(
       doc.brand.defaultSafeSportShield ||
         mem.isMinorU18 ||
         params.snapshot.safeSportHideWeight
+    );
+
+    const priv = params.snapshot.privacySettings;
+    const allowGpsRoutes =
+      !priv || (priv.shareGpsRoutes !== 'PRIVATE' && !priv.stravaComplianceShield);
+
+    const coachActivities = buildConsentedCoachActivities(
+      params.snapshot.activities,
+      effectiveTier,
+      allowGpsRoutes
     );
 
     const sanitizedWellness = Array.isArray(params.snapshot.wellnessDays)
@@ -1236,24 +1434,26 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
       updatedAt: nowIso,
       hasConnectedWatch: Boolean(params.snapshot.hasConnectedWatch),
       verdictLabel: String(params.snapshot.verdictLabel || 'Active').slice(0, 48),
-      readinessScore: Number(params.snapshot.readinessScore ?? 80),
+      readinessScore: Number(params.snapshot.readinessScore ?? 0),
       ctl: Number(params.snapshot.ctl ?? 0),
       atl: Number(params.snapshot.atl ?? 0),
       tsb: Number(params.snapshot.tsb ?? 0),
       acuteLoad7d: Number(params.snapshot.acuteLoad7d ?? 0),
-      lowAerobicPct: Number(params.snapshot.lowAerobicPct ?? 75),
-      highAerobicPct: Number(params.snapshot.highAerobicPct ?? 18),
-      neuromuscularPct: Number(params.snapshot.neuromuscularPct ?? 7),
+      lowAerobicPct: Number(params.snapshot.lowAerobicPct ?? 0),
+      highAerobicPct: Number(params.snapshot.highAerobicPct ?? 0),
+      neuromuscularPct: Number(params.snapshot.neuromuscularPct ?? 0),
       caraHours7d: Number(params.snapshot.caraHours7d ?? 0),
       ftpWatts: params.snapshot.ftpWatts,
       thresholdPaceSecsPerKm: params.snapshot.thresholdPaceSecsPerKm,
       safeSportHideWeight: enforceHideWeight,
+      sharingTier: effectiveTier,
+      privacySettings: priv,
       wellnessDays: sanitizedWellness,
-      activities: cleanActivities,
+      activities: coachActivities,
     };
 
     doc.updatedAt = nowIso;
-    saveTenantVaultSync(teamDocVaultKey(teamId), doc);
+    await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
     const proj = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
     if (proj) summaries.push(proj);
   }

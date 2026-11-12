@@ -4,6 +4,7 @@ import path from 'path';
 import {
   deleteTenantVault,
   loadTenantVaultSync,
+  saveTenantVaultAsync,
   saveTenantVaultSync,
 } from './tokenVault.ts';
 
@@ -51,13 +52,8 @@ export interface GarminWorkoutPushResult {
   message: string;
 }
 
-const DEFAULT_GARMIN_OAUTH_KEY =
-  process.env.GARMIN_CONSUMER_KEY || 'fc3e99d2-118c-44b8-8ae3-03370dde24c0';
-const DEFAULT_GARMIN_OAUTH_SECRET =
-  process.env.GARMIN_CONSUMER_SECRET || 'E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF';
-const DEFAULT_GARMIN_PERSONAL_API_KEY =
-  process.env.GARMIN_PERSONAL_API_KEY ||
-  'GCDC_3be8ca10-eb29-489f-8fe2-3af08ef95766.5ac0d701-08fa-40ce-b132-0f635bfcc455.EnKLpYLMB3o9M18nEsqBjUEPd7vAS/SJMVW3r+DzAz0.3482173667';
+const DEFAULT_GARMIN_OAUTH_KEY = process.env.GARMIN_CONSUMER_KEY || '';
+const DEFAULT_GARMIN_OAUTH_SECRET = process.env.GARMIN_CONSUMER_SECRET || '';
 
 const GARMIN_API_BASE = 'https://connectapi.garmin.com';
 const GARMIN_PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
@@ -312,8 +308,28 @@ export function saveGarminSession(
   saveTenantVaultSync(`garmin_${scopeKey}`, session);
 }
 
+export async function saveGarminSessionAsync(
+  _dataDir: string,
+  scopeKey: string,
+  session: GarminSessionStore
+): Promise<void> {
+  await saveTenantVaultAsync(`garmin_${scopeKey}`, session);
+}
+
 export function clearGarminSession(dataDir: string, scopeKey: string): void {
   void deleteTenantVault(`garmin_${scopeKey}`);
+  const filePath = getGarminSessionFilePath(dataDir, scopeKey);
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearGarminSessionAsync(dataDir: string, scopeKey: string): Promise<void> {
+  await deleteTenantVault(`garmin_${scopeKey}`);
   const filePath = getGarminSessionFilePath(dataDir, scopeKey);
   try {
     if (fs.existsSync(filePath)) {
@@ -1443,9 +1459,10 @@ export async function fetchDirectGarminProfileAndWellness(
 }
 
 export function getEnvGarminPersonalApiKey(): string {
-  return String(
-    process.env.GARMIN_PERSONAL_API_KEY || DEFAULT_GARMIN_PERSONAL_API_KEY || ''
-  ).trim();
+  if (process.env.ALLOW_DEV_ENV_CREDENTIALS !== 'true') {
+    return '';
+  }
+  return String(process.env.GARMIN_PERSONAL_API_KEY || '').trim();
 }
 
 

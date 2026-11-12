@@ -331,8 +331,9 @@
     <aside id="sidebarNav">
       <div class="nav-group-title">Platform Overview</div>
       <a href="#sec-overview" class="nav-link active">1. Architecture &amp; Why THRESH</a>
-      <a href="#sec-today" class="nav-link">2. Circadian Loop, Ortho &amp; Git-Diff</a>
-      <a href="#sec-inspector" class="nav-link">3. 1Hz Inspector &amp; No-Lap Detector</a>
+      <a href="#sec-onboarding" class="nav-link">2. Strava Sign-In &amp; Sync Onboarding</a>
+      <a href="#sec-today" class="nav-link">3. Circadian Loop, Ortho &amp; Git-Diff</a>
+      <a href="#sec-inspector" class="nav-link">4. 1Hz Inspector &amp; No-Lap Detector</a>
 
       <div class="nav-group-title">Physiology &amp; Race Moat</div>
       <a href="#sec-durability" class="nav-link">4. CP/W' &amp; kJ/kcal Durability (10x #2)</a>
@@ -352,10 +353,10 @@
     <main id="docMain">
       <!-- SECTION 1 -->
       <section id="sec-overview" class="doc-section">
-        <span class="badge mono">CHAPTER 01 · ARCHITECTURE</span>
+        <span class="badge mono">CHAPTER 01 · ARCHITECTURE &amp; STADIUM TRACK DESIGN</span>
         <h1>THRESH v2.3 — Precision Endurance &amp; Team Physiology</h1>
         <p>
-          <strong>THRESH</strong> is a full-stack Progressive Web App (PWA) built in the <strong>Precision Editorial</strong> aesthetic. It combines the 1Hz mathematical depth of <em>Intervals.icu</em> and <em>WKO5</em>, the closed-loop daily readiness adaptation of <em>Runna / TrainerRoad</em>, and a purpose-built <strong>High School &amp; Collegiate Team Pack</strong> (VDOT Pacing Pods, Watchless Track Split Pad, NCAA Indoor/Altitude Indexing, Recruiting Standards, Safe-Sport / RED-S Protection, and NCAA 20-Hour CARA compliance).
+          <strong>THRESH</strong> is a full-stack Progressive Web App (PWA) crafted in the <strong>#1 Stadium Track</strong> graphic identity (Dark Pine track surround with diagonal Volt lane geometry, smooth continuous track-and-gauge lockup, and high-contrast physiological readouts). <strong>Strava OAuth</strong> serves as your universal cross-device identity, followed by an explicit post-auth choice of what syncs to THRESH, with <strong>Garmin Connect</strong> and <strong>Intervals.icu</strong> available anytime as optional overnight HRV &amp; Sleep add-ons.
         </p>
 
         <table>
@@ -434,6 +435,40 @@
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <!-- SECTION 1B: STRAVA IDENTITY & ONBOARDING -->
+      <section id="sec-onboarding" class="doc-section">
+        <span class="badge badge-teal mono">CHAPTER 01B · ONBOARDING &amp; DATA GOVERNANCE</span>
+        <h2>3-Step Strava-First Onboarding, Sync Windows &amp; Team Join Flow</h2>
+        <p>
+          Every individual athlete, coach, and student-athlete enters THRESH through a clean 3-step onboarding funnel—with zero passwords, zero unconsented background imports, and zero mandatory secondary integrations:
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Step 1 · Continue With Strava (Primary Identity)</h3>
+            <ul>
+              <li><strong>Universal Identity:</strong> Deterministic HMAC-SHA256 session derivation (<code>deriveStravaSessionSid</code>) restores your encrypted vault and team memberships across laptop and mobile browsers.</li>
+              <li><strong>Inline Team Join:</strong> Athletes arriving via <code>/join/&lt;slug&gt;</code>, QR poster scan, or a 6-character Team Code see a live preview of their school/club crest before signing in with Strava.</li>
+              <li><strong>Read-Only Pledge:</strong> THRESH never posts to your Strava feed, never modifies activity titles, and lets you revoke access in 1 click.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Step 2 · Choose What Syncs From Strava</h3>
+            <ul>
+              <li><strong>Last 90 Days (Recommended):</strong> Instant 42-day <code>CTL</code>, 7-day <code>ATL</code>, and Form (<code>TSB</code>) calibration.</li>
+              <li><strong>Last 6 Months / Full Archive:</strong> Deep seasonal <code>CP/W'</code> and durability curves.</li>
+              <li><strong>Identity Only (No Workouts):</strong> Uses Strava strictly for sign-in; syncs zero workouts.</li>
+              <li><strong>Sport, Units &amp; Seed Mark:</strong> Pre-fills <code>mi / lbs</code> or <code>km / kg</code> from Strava and optionally calibrates LT Pace / VDOT or Cycling FTP from a recent race mark (e.g., <code>18:45 5K</code>, <code>10:15 3200m</code>, <code>280W 20m</code>).</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card" style="margin-top:1rem;">
+          <h3>Step 3 · Optional Overnight Sleep &amp; HRV Add-Ons (Garmin Connect &amp; Intervals.icu)</h3>
+          <p style="margin-bottom:0;">
+            Connecting <strong>Garmin Connect</strong> (direct sign-in or token) or <strong>Intervals.icu</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, and <code>Resting HR</code> autonomic readiness morphing—but is <strong>100% optional</strong>. Athletes training with Strava alone get full Banister <code>CTL/ATL/TSB</code>, two-pass calibrated running <code>rTSS</code> &amp; Grade-Adjusted Efficiency Factor (<code>EF</code>), GPS segment PRs, VDOT pods, and structured workout planning on Day 1.
+          </p>
+        </div>
       </section>
 
       <!-- SECTION 2 -->
@@ -547,6 +582,14 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
             <p>Athletes often race or run fast track intervals in spikes without GPS watches. Start the built-in 0.01s gun stopwatch and tap <strong>+ Tap Split</strong> on any athlete row as they cross the line to capture cumulative and per-lap splits, then export all splits as CSV in one click.</p>
           </div>
         </div>
+        <div class="card" style="margin-top:1rem;">
+          <h3>3. Team Branding Studio, Printable QR Posters, CSV Auto-Match &amp; Coach Sharing Tiers</h3>
+          <ul>
+            <li><strong>2-Card Team Hub (<code>+ Team</code>):</strong> Athletes join an existing school/club with a 6-character code, while coaches launch a branded workspace with WCAG-clamped school colors, crest upload, and printable locker-room QR posters (<code>/join/&lt;slug&gt;</code>).</li>
+            <li><strong>CSV Roster Auto-Match:</strong> Upload or paste <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code>. When an invited athlete signs in with Strava, THRESH automatically matches their roster slot, squad pod, and seed mark.</li>
+            <li><strong>Athlete Sharing Tiers:</strong> Athletes joining a team choose <code>SUMMARY_ONLY</code> (Recommended — shares CTL/ATL/TSB, 7d load &amp; CARA hours), <code>FULL_STREAMS</code> (shares full workouts &amp; calendar edits with coaches), or <code>LOAD_ONLY</code> (shares aggregate training load only).</li>
+          </ul>
+        </div>
       </section>
 
       <!-- SECTION 8 -->
@@ -608,7 +651,7 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
         <span class="badge badge-red mono">CHAPTER 11 · REST API &amp; SECURITY ARCHITECTURE</span>
         <h2>Server Endpoints, Multi-Wearable Webhooks, OTA Export &amp; AES-256-GCM Token Vault</h2>
         <p>
-          THRESH enforces strict session isolation (`HttpOnly` signed cookies), an encrypted server-side OAuth Token Vault (`AES-256-GCM` in `server/tokenVault.ts`), and a <strong>Clean-Room Provider Firewall (`server/cleanRoomFirewall.ts`)</strong> that strips third-party `Strava`-sourced records before any AI prompt or multi-user coach export.
+          THRESH enforces strict session isolation (<code>HttpOnly</code> signed <code>thresh_session</code> cookies + deterministic Strava athlete session derivation), an encrypted server-side OAuth Token Vault (<code>AES-256-GCM</code> in <code>server/tokenVault.ts</code> using <code>TOKEN_VAULT_KEY</code> / <code>OAUTH_ENCRYPTION_KEY</code> + serverless <code>thresh_vault</code> backup cookie), HMAC-signed OAuth CSRF <code>state</code> tokens, and a <strong>Clean-Room Provider Firewall (<code>server/cleanRoomFirewall.ts</code>)</strong> that strips third-party <code>Strava</code>-sourced records before any AI prompt or multi-user coach export.
         </p>
         <table>
           <thead>
@@ -619,6 +662,21 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td class="mono">/api/strava/auth/url &amp; /callback</td>
+              <td class="mono">GET</td>
+              <td>Mints HMAC-signed Strava OAuth URL (<code>thresh_oauth_state</code> cookie), verifies callback <code>state</code>, binds deterministic Strava session ID, and preserves <code>/join/:slug</code> team claims.</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/strava/sync-policy &amp; /sync</td>
+              <td class="mono">POST / GET</td>
+              <td>Saves athlete sync window (<code>90d</code>, <code>180d</code>, <code>all</code>, <code>none</code>) and syncs Strava workouts with <code>after</code> pagination, two-pass <code>rTSS</code>, and unchecked-scope safety.</td>
+            </tr>
+            <tr>
+              <td class="mono">/api/teams &amp; /api/teams/join-claim</td>
+              <td class="mono">POST / GET</td>
+              <td>Creates school/club workspaces, previews <code>/join/:slug</code> invites, claims CSV roster slots on Strava sign-in, and enforces <code>SUMMARY_ONLY</code> / <code>FULL_STREAMS</code> / <code>LOAD_ONLY</code> coach projections.</td>
+            </tr>
             <tr>
               <td class="mono">/api/vault/status</td>
               <td class="mono">GET</td>

@@ -242,12 +242,14 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span>Athlete Profile &amp; Sport Zones</span>
               <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 text-[10px]">
                 {athleteProfile.source === 'CUSTOM_OVERRIDE'
-                  ? 'Custom Calibrated'
-                  : 'Synced Profile'}
+                  ? 'Custom Seed Calibrated'
+                  : athleteProfile.source === 'INTERVALS_GARMIN'
+                    ? 'Synced Profile'
+                    : 'Calibrated Baseline'}
               </span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              {athleteProfile.name} · Biometrics, FTP &amp; Sport Zone Calibration
+              {athleteProfile.name} · Pace, FTP &amp; Sport Zone Calibration
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Directly powers your adapted workout prescriptions, calendar effort zones, power curves, and zone distribution analysis.

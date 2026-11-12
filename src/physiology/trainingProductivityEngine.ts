@@ -392,6 +392,10 @@ function computeFallbackPmcAtDate(
   profile?: AthleteProfile | null
 ): { ctl: number; atl: number; tsb: number; ctlRamp7d: number } {
   const startIso = shiftIsoDate(asOfDateIso, -84);
+  if (activities.length === 0) {
+    return { ctl: 0, atl: 0, tsb: 0, ctlRamp7d: 0 };
+  }
+
   const loadByDate = new Map<string, number>();
   for (const act of activities) {
     const d = (act.startDateLocal || '').slice(0, 10);
@@ -399,9 +403,9 @@ function computeFallbackPmcAtDate(
     loadByDate.set(d, (loadByDate.get(d) || 0) + resolveActivityEffectiveLoad(act, profile));
   }
 
-  let ctl = 22;
-  let atl = 22;
-  let ctl7dAgo = 22;
+  let ctl = 0;
+  let atl = 0;
+  let ctl7dAgo = 0;
   const sevenDaysAgoIso = shiftIsoDate(asOfDateIso, -7);
 
   for (let offset = -84; offset <= 0; offset++) {
@@ -473,6 +477,13 @@ function buildBucketSummary(
   };
 }
 
+function formatRunPaceKm(secsPerKm: number): string {
+  const clamped = Math.max(135, Math.min(600, Math.round(secsPerKm)));
+  const mins = Math.floor(clamped / 60);
+  const secs = clamped % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}/km`;
+}
+
 function buildGapFillingPrescription(params: {
   verdict: TrainingProductivityVerdict;
   autonomicState: TrainingProductivitySummary['autonomicState'];
@@ -487,25 +498,38 @@ function buildGapFillingPrescription(params: {
   const { verdict, autonomicState, buckets, primarySport, profile } = params;
   const [lowBucket, highBucket, neuroBucket] = buckets;
   const ftp = profile?.ftp || 290;
-  const z2MaxBpm = profile?.hrZones?.[1]?.maxBpm || Math.round((profile?.lthr || 160) * 0.88);
+  const runLthr = profile?.runLthr || profile?.lthr || 168;
+  const z2MaxBpm =
+    profile?.hrZones?.[1]?.maxBpm ||
+    Math.round(((primarySport === 'Running' ? runLthr : profile?.lthr) || 160) * 0.88);
   const ssMidPct = Math.round(
     ((profile?.sweetSpotMinPct || 86) + (profile?.sweetSpotMaxPct || 94)) / 2
   );
+  const ltPaceSecs = profile?.thresholdPaceSecsPerKm || 250;
+  const runEasyPace = formatRunPaceKm(ltPaceSecs * 1.32);
+  const runZ2Pace = formatRunPaceKm(ltPaceSecs * 1.22);
+  const runTempoPace = formatRunPaceKm(ltPaceSecs * 1.07);
+  const runLtPace = formatRunPaceKm(ltPaceSecs);
+  const runStridePace = formatRunPaceKm(ltPaceSecs * 0.84);
 
   // 1. Overreaching or Suppressed Autonomics -> Parasympathetic Flush
   if (verdict === 'OVERREACHING' || autonomicState === 'SUPPRESSED') {
+    const outputCue =
+      primarySport === 'Running'
+        ? `conversational pace ~${runEasyPace}`
+        : `≤64% FTP / ~${Math.round(ftp * 0.62)}W`;
     return {
       primaryDeficit: 'RECOVERY_NEEDED',
       focusBadge: '🛡️ Autonomic Recovery Cap',
       headline: 'Cap intensity at strict Z1/Z2 to absorb recent acute strain',
-      rationale: `Acute strain or overnight autonomic markers warrant parasympathetic recovery today. Keep HR ≤${z2MaxBpm} bpm (≤64% FTP / ~${Math.round(ftp * 0.62)}W) so recent work converts into fitness.`,
+      rationale: `Acute strain or overnight autonomic markers warrant parasympathetic recovery today. Keep HR ≤${z2MaxBpm} bpm (${outputCue}) so recent work converts into fitness.`,
       recommendedSport: primarySport === 'Running' ? 'Running' : 'Cycling',
       recommendedTitleCycling: '45m Z1/Z2 Parasympathetic Capillary Spin',
       recommendedTitleRunning: '35m Z1/Z2 Easy Recovery Shakeout',
       recommendedDurationMins: primarySport === 'Running' ? 35 : 45,
       recommendedTss: 28,
       workoutSyntaxCycling: `- 10m 50% FTP Smooth Spin\n- 25m 62% FTP Z2 Capillary Flush\n- 10m 48% FTP Cooldown`,
-      workoutSyntaxRunning: `- 10m 55% FTP Easy Jog\n- 18m 64% FTP Z2 Relaxed Aerobic\n- 7m 52% FTP Walk/Jog Cooldown`,
+      workoutSyntaxRunning: `- 10m 74% Pace (${runEasyPace}) Easy Shakeout Jog\n- 18m 80% Pace (${runZ2Pace} · ≤${z2MaxBpm} bpm) Z2 Relaxed Aerobic\n- 7m 70% Pace Walk/Jog Cooldown`,
     };
   }
 
@@ -526,7 +550,7 @@ function buildGapFillingPrescription(params: {
       recommendedDurationMins: primarySport === 'Running' ? 50 : 65,
       recommendedTss: 58,
       workoutSyntaxCycling: `- 15m 62% FTP Z2 Warmup\n- 1m 145% FTP Neuromuscular Surge 1\n- 4m 64% FTP Z2 Float\n- 1m 145% FTP Neuromuscular Surge 2\n- 4m 64% FTP Z2 Float\n- 1m 150% FTP Neuromuscular Surge 3\n- 4m 64% FTP Z2 Float\n- 25m 68% FTP Steady Z2 Base\n- 10m 54% FTP Cooldown`,
-      workoutSyntaxRunning: `- 15m 66% FTP Easy Z2 Warmup\n- 1m 125% FTP Fast Stride Set 1\n- 3m 64% FTP Float\n- 1m 125% FTP Fast Stride Set 2\n- 3m 64% FTP Float\n- 1m 128% FTP Fast Stride Set 3\n- 18m 68% FTP Steady Z2 Run\n- 8m 56% FTP Cooldown`,
+      workoutSyntaxRunning: `- 15m 80% Pace (${runZ2Pace}) Easy Z2 Warmup\n- 1m 118% Pace (${runStridePace}) Crisp Track/Hill Stride Set 1\n- 3m 76% Pace (${runEasyPace}) Float Jog\n- 1m 118% Pace (${runStridePace}) Crisp Track/Hill Stride Set 2\n- 3m 76% Pace (${runEasyPace}) Float Jog\n- 1m 120% Pace (${runStridePace}) Crisp Track/Hill Stride Set 3\n- 18m 82% Pace (${runZ2Pace} · ≤${z2MaxBpm} bpm) Steady Z2 Run\n- 8m 74% Pace (${runEasyPace}) Cooldown`,
     };
   }
 
@@ -544,7 +568,7 @@ function buildGapFillingPrescription(params: {
       recommendedDurationMins: primarySport === 'Running' ? 55 : 75,
       recommendedTss: 56,
       workoutSyntaxCycling: `- 12m 56% FTP Progressive Warmup\n- 53m 68% FTP Disciplined Z2 Base\n- 10m 54% FTP Cooldown`,
-      workoutSyntaxRunning: `- 10m 60% FTP Easy Warmup\n- 38m 70% FTP Conversational Z2 Base\n- 7m 56% FTP Cooldown`,
+      workoutSyntaxRunning: `- 10m 76% Pace (${runEasyPace}) Easy Warmup\n- 38m 82% Pace (${runZ2Pace} · ≤${z2MaxBpm} bpm) Conversational Z2 Base\n- 7m 74% Pace (${runEasyPace}) Cooldown`,
     };
   }
 
@@ -562,7 +586,7 @@ function buildGapFillingPrescription(params: {
       recommendedDurationMins: primarySport === 'Running' ? 50 : 60,
       recommendedTss: 72,
       workoutSyntaxCycling: `- 12m 58% FTP Warmup\n- 10m ${ssMidPct}% FTP Threshold Cruise 1\n- 4m 55% FTP Recovery\n- 10m ${ssMidPct + 2}% FTP Threshold Cruise 2\n- 4m 55% FTP Recovery\n- 10m ${ssMidPct + 2}% FTP Threshold Cruise 3\n- 10m 52% FTP Cooldown`,
-      workoutSyntaxRunning: `- 12m 62% FTP Warmup Jog\n- 8m 96% FTP Threshold Cruise 1\n- 2m 58% FTP Float\n- 8m 98% FTP Threshold Cruise 2\n- 2m 58% FTP Float\n- 8m 98% FTP Threshold Cruise 3\n- 10m 56% FTP Cooldown`,
+      workoutSyntaxRunning: `- 12m 78% Pace (${runEasyPace}) Warmup Jog\n- 8m 99% Pace (${runLtPace} · ~${runLthr} bpm) Threshold Cruise 1\n- 2m 74% Pace (${runEasyPace}) Float Jog\n- 8m 100% Pace (${runLtPace} · ~${runLthr} bpm) Threshold Cruise 2\n- 2m 74% Pace (${runEasyPace}) Float Jog\n- 8m 100% Pace (${runLtPace} · ~${runLthr} bpm) Threshold Cruise 3\n- 10m 75% Pace (${runEasyPace}) Cooldown`,
     };
   }
 
@@ -578,7 +602,7 @@ function buildGapFillingPrescription(params: {
     recommendedDurationMins: primarySport === 'Running' ? 50 : 65,
     recommendedTss: 60,
     workoutSyntaxCycling: `- 12m 58% FTP Warmup\n- 35m 69% FTP Z2 Endurance\n- 8m 86% FTP Tempo Finish\n- 10m 54% FTP Cooldown`,
-    workoutSyntaxRunning: `- 10m 62% FTP Warmup\n- 28m 72% FTP Steady Z2\n- 6m 88% FTP Tempo Pickup\n- 6m 56% FTP Cooldown`,
+    workoutSyntaxRunning: `- 10m 78% Pace (${runEasyPace}) Warmup\n- 28m 83% Pace (${runZ2Pace} · ≤${z2MaxBpm} bpm) Steady Z2\n- 6m 93% Pace (${runTempoPace}) Aerobic Tempo Pickup\n- 6m 75% Pace (${runEasyPace}) Cooldown`,
   };
 }
 
@@ -744,8 +768,11 @@ export function evaluateRollingTrainingProductivity(params: {
     (hrv7dAvgMs > 0 ? Math.round(hrv7dAvgMs * 0.87) : 0);
 
   const rhrLatestBpm =
-    latestWithHrv?.restingHR || latestW?.restingHR || athleteProfile?.restingHr || 0;
-  const baseRhr = athleteProfile?.restingHr || rhrLatestBpm;
+    latestWithHrv?.restingHR ||
+    latestW?.restingHR ||
+    (wellnessUpToDate.length > 0 ? athleteProfile?.restingHr || 0 : 0);
+  const baseRhr =
+    wellnessUpToDate.length > 0 ? athleteProfile?.restingHr || rhrLatestBpm : rhrLatestBpm;
   const rhrDeltaBpm =
     rhrLatestBpm > 0 && baseRhr > 0 ? Math.round(rhrLatestBpm - baseRhr) : 0;
 
@@ -784,7 +811,13 @@ export function evaluateRollingTrainingProductivity(params: {
     autonomicState = 'PRIME';
   }
 
-  // Composite 0..100 Morning Readiness Score
+  const hasAnyHistory =
+    filteredActivities.length > 0 ||
+    wellnessUpToDate.some(
+      (w) => w.ctl > 0 || w.dailyLoad > 0 || w.hrvRMSSD > 0 || w.sleepSecs > 0
+    );
+
+  // Composite 0..100 Morning Readiness Score (0 while calibrating with zero synced history)
   const hrvPts =
     hrvLatestMs > 0 && hrv7dAvgMs > 0
       ? Math.min(35, Math.max(12, 26 + (hrvLatestMs - hrv7dAvgMs) * 1.4))
@@ -804,9 +837,9 @@ export function evaluateRollingTrainingProductivity(params: {
           ? 20
           : 25;
   const rhrPenalty = Math.max(0, rhrDeltaBpm - 1) * 2.5;
-  const readinessScore = Math.round(
-    Math.min(99, Math.max(25, hrvPts + sleepPts + formPts - rhrPenalty))
-  );
+  const readinessScore = hasAnyHistory
+    ? Math.round(Math.min(99, Math.max(25, hrvPts + sleepPts + formPts - rhrPenalty)))
+    : 0;
 
   // Sport-Matched Rolling Aerobic Efficiency (EF = Output / Heartbeat, 7d vs 28d)
   const sportEfActs28 = recent28Acts.filter(
@@ -893,13 +926,10 @@ export function evaluateRollingTrainingProductivity(params: {
   let verdict: TrainingProductivityVerdict = 'PRODUCTIVE';
   let headlineWhy = '';
 
-  const hasAnyHistory =
-    filteredActivities.length > 0 || wellnessUpToDate.some((w) => w.ctl > 0 || w.dailyLoad > 0);
-
   if (!hasAnyHistory) {
     verdict = 'CALIBRATING';
     headlineWhy =
-      'Connect Garmin Connect, Strava, or upload FIT files to calibrate your 7-day load corridor and energy-system focus.';
+      'Sync recent workouts from Strava (or optionally connect Garmin Connect / Intervals.icu or upload .FIT files) to calibrate your 7-day load corridor and energy-system focus.';
   } else if (
     acwr > 1.35 ||
     ctlRamp7d > 7.0 ||

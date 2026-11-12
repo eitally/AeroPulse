@@ -5,13 +5,21 @@ import {
   Copy,
   Database,
   ExternalLink,
+  Lock,
   Map as MapIcon,
   RefreshCw,
+  Shield,
   Sliders,
   Upload,
   X,
 } from './icons/PhosphorIcons';
-import { ConnectionStatus, MapTileProvider, UnifiedActivity } from '../types';
+import {
+  ConnectionStatus,
+  MapTileProvider,
+  StravaSyncPolicy,
+  StravaSyncWindow,
+  UnifiedActivity,
+} from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
   importWorkoutFilesOrArchive,
@@ -24,6 +32,12 @@ interface DataSourcesModalProps {
   status: ConnectionStatus;
   onConnectIntervals: (athleteId: string, apiKey: string) => Promise<void>;
   onDisconnectIntervals: () => Promise<void>;
+  onDisconnectGarmin?: () => Promise<void>;
+  onDisconnectStrava?: () => void;
+  onUpdateStravaSyncPolicy?: (
+    windowChoice: StravaSyncWindow,
+    importProfileAndGear?: boolean
+  ) => Promise<StravaSyncPolicy | null>;
   onSaveStravaCredentials: (clientId: string, clientSecret: string) => Promise<void>;
   onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
   onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
@@ -31,7 +45,7 @@ interface DataSourcesModalProps {
   onSaveMapTileConfig: (provider: MapTileProvider, apiKey: string) => Promise<void>;
   onExportBundle: () => Promise<{ bundle: string; envText: string } | null>;
   onImportBundle: (bundleOrEnv: string) => Promise<void>;
-  onSyncNow: (fullHistory?: boolean) => Promise<void>;
+  onSyncNow: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
   isSyncing: boolean;
   errorMessage: string | null;
   idbSavedAt?: string | null;
@@ -41,12 +55,22 @@ interface DataSourcesModalProps {
   onImportBatchActivities?: (activities: UnifiedActivity[]) => void;
 }
 
+const SYNC_WINDOW_OPTIONS: Array<{ id: StravaSyncWindow; label: string; hint: string }> = [
+  { id: '90d', label: 'Last 90 Days', hint: 'Fastest · Recommended' },
+  { id: '180d', label: 'Last 6 Months', hint: 'Full season build' },
+  { id: 'all', label: 'All-Time Archive', hint: 'Career PRs & gear' },
+  { id: 'none', label: 'Identity Only', hint: 'Pause workout sync' },
+];
+
 export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   isOpen,
   onClose,
   status,
   onConnectIntervals,
   onDisconnectIntervals,
+  onDisconnectGarmin,
+  onDisconnectStrava,
+  onUpdateStravaSyncPolicy,
   onSaveStravaCredentials,
   onLaunchStravaOAuth,
   onExchangeStravaCode,
@@ -66,16 +90,30 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [archiveProgress, setArchiveProgress] = useState<ArchiveImportProgress | null>(null);
   const [isImportingArchive, setIsImportingArchive] = useState(false);
 
+  // Strava Sync Policy controls
+  const [selectedSyncWindow, setSelectedSyncWindow] = useState<StravaSyncWindow>(
+    status.stravaSyncPolicy?.window || '90d'
+  );
+  const [includeGearAndProfile, setIncludeGearAndProfile] = useState<boolean>(
+    status.stravaSyncPolicy?.importProfileAndGear !== false
+  );
+  const [isSavingPolicy, setIsSavingPolicy] = useState(false);
+
   // Intervals.icu
   const [athleteId, setAthleteId] = useState(status.intervalsAthleteId || '0');
   const [intervalsKey, setIntervalsKey] = useState('');
 
-  // Strava custom keys / token fallback
+  // Strava custom keys / token fallback (only shown when server Strava OAuth is unconfigured)
   const [stravaClientId, setStravaClientId] = useState(status.stravaClientId || '');
   const [stravaClientSecret, setStravaClientSecret] = useState('');
   const [stravaFallbackInput, setStravaFallbackInput] = useState('');
 
-  // Garmin Connect Personal API
+  // Garmin Connect (Credentials + Advanced Personal API Token)
+  const [garminMode, setGarminMode] = useState<'CREDENTIALS' | 'PERSONAL_KEY'>('CREDENTIALS');
+  const [garminEmail, setGarminEmail] = useState('');
+  const [garminPassword, setGarminPassword] = useState('');
+  const [garminMfaCode, setGarminMfaCode] = useState('');
+  const [garminNeedsMfa, setGarminNeedsMfa] = useState(false);
   const [garminPersonalApiKey, setGarminPersonalApiKey] = useState<string>(() => {
     try {
       return localStorage.getItem('aeropulse_garmin_personal_api_key') || '';
@@ -93,6 +131,15 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [bundleInput, setBundleInput] = useState('');
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status.stravaSyncPolicy?.window) {
+      setSelectedSyncWindow(status.stravaSyncPolicy.window);
+    }
+    if (typeof status.stravaSyncPolicy?.importProfileAndGear === 'boolean') {
+      setIncludeGearAndProfile(status.stravaSyncPolicy.importProfileAndGear);
+    }
+  }, [status.stravaSyncPolicy?.window, status.stravaSyncPolicy?.importProfileAndGear]);
 
   useEffect(() => {
     if (status.stravaClientId && !stravaClientId) {
@@ -129,12 +176,65 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
       localStorage.getItem('aeropulse_garmin_bearer_token')
   );
 
+  const stravaServerUnconfigured = status.stravaConfigured === false;
+  const missingActivityScope =
+    Boolean(status.stravaGrantedScope) &&
+    !String(status.stravaGrantedScope).includes('activity:read');
+
   const totalWorkouts = persistedWorkoutCount || status.totalActivitiesCount || 0;
+
+  const buildAuthHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const sessionTok = localStorage.getItem('aeropulse_session_token') || '';
+      if (sessionTok) headers['x-session-token'] = sessionTok;
+    } catch {
+      // ignore
+    }
+    return headers;
+  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopiedLabel(label);
     window.setTimeout(() => setCopiedLabel(null), 2000);
+  };
+
+  const handleSaveSyncPolicy = async (
+    nextWindow: StravaSyncWindow,
+    nextIncludeGear: boolean
+  ) => {
+    setSelectedSyncWindow(nextWindow);
+    setIncludeGearAndProfile(nextIncludeGear);
+    setIsSavingPolicy(true);
+    setLocalStatusMsg(null);
+    try {
+      if (onUpdateStravaSyncPolicy) {
+        await onUpdateStravaSyncPolicy(nextWindow, nextIncludeGear);
+      } else {
+        await fetch('/api/strava/sync-policy', {
+          method: 'POST',
+          credentials: 'include',
+          headers: buildAuthHeaders(),
+          body: JSON.stringify({
+            window: nextWindow,
+            includeGearAndProfile: nextIncludeGear,
+          }),
+        });
+        if (nextWindow !== 'none') {
+          void onSyncNow(nextWindow === 'all', nextWindow);
+        }
+      }
+      setLocalStatusMsg(
+        nextWindow === 'none'
+          ? 'Strava set to Identity Only — workout syncing paused.'
+          : `Strava sync window updated (${
+              SYNC_WINDOW_OPTIONS.find((o) => o.id === nextWindow)?.label || nextWindow
+            }).`
+      );
+    } finally {
+      setIsSavingPolicy(false);
+    }
   };
 
   const handleStravaKeysAndLaunch = async (e: React.FormEvent) => {
@@ -154,7 +254,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     if (stravaClientId.trim() && stravaClientSecret.trim()) {
       void onSaveStravaCredentials(stravaClientId.trim(), stravaClientSecret.trim());
     }
-    setLocalStatusMsg('Strava API keys saved. Opening Strava authorization popup...');
+    setLocalStatusMsg('Strava API keys saved. Opening Strava authorization...');
     await launchPromise;
   };
 
@@ -169,10 +269,64 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
       await onSaveStravaDirectToken(raw);
     }
     setStravaFallbackInput('');
-    setLocalStatusMsg('Strava connected! Syncing your workout history...');
+    setLocalStatusMsg('Strava connected!');
   };
 
-  const handleGarminSubmit = async (e: React.FormEvent) => {
+  const handleGarminCredentialsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!garminEmail.trim() || !garminPassword.trim()) return;
+    setIsConnectingGarmin(true);
+    setLocalStatusMsg(null);
+    try {
+      const resp = await fetch('/api/garmin/connect-credentials', {
+        method: 'POST',
+        credentials: 'include',
+        headers: buildAuthHeaders(),
+        body: JSON.stringify({
+          email: garminEmail.trim(),
+          password: garminPassword,
+          mfaCode: garminMfaCode.trim() || undefined,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (data?.requiresMfa) {
+        setGarminNeedsMfa(true);
+        setLocalStatusMsg('Enter the 6-digit Garmin security code sent to your email or phone.');
+      } else if (!resp.ok) {
+        setLocalStatusMsg(data.error || 'Could not sign in to Garmin Connect.');
+      } else {
+        if (data.garminTokens?.oauth2AccessToken) {
+          localStorage.setItem('aeropulse_garmin_bearer_token', data.garminTokens.oauth2AccessToken);
+        }
+        if (data.garminTokens?.oauth1Token) {
+          localStorage.setItem('aeropulse_garmin_oauth1_token', data.garminTokens.oauth1Token);
+        }
+        if (data.garminTokens?.oauth1TokenSecret) {
+          localStorage.setItem(
+            'aeropulse_garmin_oauth1_secret',
+            data.garminTokens.oauth1TokenSecret
+          );
+        }
+        if (data.garminAthleteName || data.athleteName) {
+          localStorage.setItem(
+            'aeropulse_garmin_athlete_name',
+            data.garminAthleteName || data.athleteName
+          );
+        }
+        setGarminPassword('');
+        setGarminMfaCode('');
+        setGarminNeedsMfa(false);
+        setLocalStatusMsg(
+          `Garmin Connect linked (${data.garminAthleteName || data.athleteName || 'Active'})! Syncing sleep & HRV...`
+        );
+        await onSyncNow(false);
+      }
+    } finally {
+      setIsConnectingGarmin(false);
+    }
+  };
+
+  const handleGarminTokenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!garminPersonalApiKey.trim()) return;
     setIsConnectingGarmin(true);
@@ -180,17 +334,15 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     try {
       const resp = await fetch('/api/config/garmin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-auth-session': 'active',
-        },
+        credentials: 'include',
+        headers: buildAuthHeaders(),
         body: JSON.stringify({
           personalApiKey: garminPersonalApiKey.trim(),
         }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        setLocalStatusMsg(data.error || 'Could not connect Garmin Connect.');
+        setLocalStatusMsg(data.error || 'Could not verify Garmin token.');
       } else {
         if (data.garminTokens?.personalApiKey || garminPersonalApiKey.trim()) {
           localStorage.setItem(
@@ -202,15 +354,6 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
           localStorage.setItem(
             'aeropulse_garmin_bearer_token',
             data.garminTokens.oauth2AccessToken
-          );
-        }
-        if (data.garminTokens?.oauth1Token) {
-          localStorage.setItem('aeropulse_garmin_oauth1_token', data.garminTokens.oauth1Token);
-        }
-        if (data.garminTokens?.oauth1TokenSecret) {
-          localStorage.setItem(
-            'aeropulse_garmin_oauth1_secret',
-            data.garminTokens.oauth1TokenSecret
           );
         }
         if (data.garminAthleteName) {
@@ -226,67 +369,79 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     }
   };
 
-  const handleDisconnectGarmin = async () => {
-    const tok = localStorage.getItem('aeropulse_session_token') || '';
-    await fetch('/api/config/garmin', {
-      method: 'DELETE',
-      credentials: 'same-origin',
-      headers: tok ? { 'x-session-token': tok } : undefined,
-    }).catch(() => null);
-    localStorage.removeItem('aeropulse_garmin_personal_api_key');
-    localStorage.removeItem('aeropulse_garmin_bearer_token');
-    localStorage.removeItem('aeropulse_garmin_oauth1_token');
-    localStorage.removeItem('aeropulse_garmin_oauth1_secret');
-    localStorage.removeItem('aeropulse_garmin_athlete_name');
+  const handleDisconnectGarminClick = async () => {
+    if (onDisconnectGarmin) {
+      await onDisconnectGarmin();
+    } else {
+      await fetch('/api/garmin/disconnect', {
+        method: 'POST',
+        credentials: 'include',
+        headers: buildAuthHeaders(),
+      }).catch(() => null);
+      localStorage.removeItem('aeropulse_garmin_personal_api_key');
+      localStorage.removeItem('aeropulse_garmin_bearer_token');
+      localStorage.removeItem('aeropulse_garmin_oauth1_token');
+      localStorage.removeItem('aeropulse_garmin_oauth1_secret');
+      localStorage.removeItem('aeropulse_garmin_athlete_name');
+    }
     setGarminPersonalApiKey('');
-    setLocalStatusMsg('Garmin Connect disconnected.');
+    setLocalStatusMsg('Garmin Connect disconnected (Strava sign-in remains active).');
   };
 
   const handleIntervalsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalStatusMsg(null);
-    await onConnectIntervals(athleteId.trim() || '0', intervalsKey.trim());
-    setIntervalsKey('');
-    setLocalStatusMsg('Intervals.icu connected!');
+    try {
+      await onConnectIntervals(athleteId.trim() || '0', intervalsKey.trim());
+      setIntervalsKey('');
+      setLocalStatusMsg('Intervals.icu connected! Syncing wellness & structured plans...');
+    } catch {
+      // error surfaced via errorMessage
+    }
   };
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Connected Apps & Workout Import"
+      aria-label="Connected Apps & Sync Preferences"
       onClick={onClose}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-2xl ap-content-stage overflow-hidden my-auto"
       >
         {/* Clean Header */}
-        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#121815]/90">
+        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-[#28573B]/25 dark:border-[#25573A] bg-white/90 dark:bg-[#0F1B14]/95">
           <div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Connected Apps &amp; Workout Import
+              Identity, Sync Window &amp; Optional Add-Ons
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {totalWorkouts > 0
                 ? `${totalWorkouts.toLocaleString()} workouts synced${
                     status.lastSyncedAt
-                      ? ` · Last updated ${new Date(status.lastSyncedAt).toLocaleTimeString([], {
+                      ? ` · Updated ${new Date(status.lastSyncedAt).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
                         })}`
                       : ''
                   }`
-                : 'Link Strava, Garmin, or Intervals.icu—or drop workout files below'}
+                : 'Strava powers your THRESH identity · Garmin & Intervals.icu are optional add-ons'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => onSyncNow(true)}
+              onClick={() =>
+                onSyncNow(
+                  selectedSyncWindow === 'all',
+                  selectedSyncWindow === 'none' ? '90d' : selectedSyncWindow
+                )
+              }
               disabled={isSyncing}
-              className="ap-btn-primary !min-h-[38px] !px-3.5 !py-1.5 text-xs cursor-pointer disabled:opacity-50"
+              className="ap-btn-primary !min-h-[40px] !px-3.5 !py-1.5 text-xs cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
@@ -294,7 +449,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
               aria-label="Close modal"
             >
               <X className="w-4 h-4" />
@@ -311,124 +466,228 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             <div className="ap-status-prime rounded-xl px-4 py-3 text-xs">{localStatusMsg}</div>
           )}
 
-          {/* 1. STRAVA */}
-          <section className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* 1. STRAVA — IDENTITY & PRIMARY WORKOUT SYNC */}
+          <section className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-4 border border-[#FC4C02]/30">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">Strava</h3>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-[#FC4C02]/15 text-[#FC4C02] border border-[#FC4C02]/35">
+                    Primary Identity
+                  </span>
                   {status.stravaConnected ? (
                     <span className="ap-status-prime px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold">
                       Connected{status.stravaAthleteName ? ` · ${status.stravaAthleteName}` : ''}
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                      Not Connected
+                      Not Signed In
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Imports runs, rides, GPS routes, gear mileage, and segment PRs automatically.
+                  Secures your THRESH account across devices and syncs your chosen run &amp; ride history.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => onLaunchStravaOAuth('cloud')}
-                disabled={isSyncing}
-                className="min-h-[40px] inline-flex items-center gap-2 rounded-xl bg-[#FC4C02] hover:bg-[#e34402] px-4 py-2 text-xs font-bold text-white transition-colors cursor-pointer shrink-0"
-              >
-                <Activity className="w-4 h-4" />
-                <span>{status.stravaConnected ? 'Reconnect Strava' : 'Connect with Strava'}</span>
-              </button>
-            </div>
-
-            <details className="pt-2 border-t border-slate-200/80 dark:border-white/10 text-xs">
-              <summary className="cursor-pointer font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 select-none py-1">
-                Use your own Strava API keys or paste a token manually
-              </summary>
-              <div className="mt-3 space-y-3 rounded-xl liquid-glass-subtle p-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                  <span className="text-slate-600 dark:text-slate-300">
-                    In{' '}
-                    <a
-                      href="https://www.strava.com/settings/api"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline font-semibold ap-text-brand"
-                    >
-                      strava.com/settings/api
-                    </a>
-                    , set Callback Domain to{' '}
-                    <code className="font-mono font-bold text-slate-900 dark:text-white">
-                      {activeDomainOnly}
-                    </code>
-                  </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onLaunchStravaOAuth('cloud')}
+                  disabled={isSyncing}
+                  className="min-h-[40px] inline-flex items-center gap-1.5 rounded-xl bg-[#FC4C02] hover:bg-[#e34402] px-3.5 py-2 text-xs font-bold text-white transition-colors cursor-pointer"
+                >
+                  <Activity className="w-4 h-4" />
+                  <span>{status.stravaConnected ? 'Switch / Re-Auth' : 'Sign In with Strava'}</span>
+                </button>
+                {status.stravaConnected && onDisconnectStrava && (
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(activeDomainOnly, 'domain')}
-                    className="inline-flex items-center gap-1 font-semibold ap-text-brand cursor-pointer"
+                    onClick={() => {
+                      onClose();
+                      onDisconnectStrava();
+                    }}
+                    className="min-h-[40px] px-3 py-2 rounded-xl liquid-glass-subtle text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                   >
-                    {copiedLabel === 'domain' ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Domain</span>
-                      </>
-                    )}
+                    Sign Out
                   </button>
+                )}
+              </div>
+            </div>
+
+            {status.stravaConnected && missingActivityScope && (
+              <div className="rounded-xl ap-status-caution p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span>
+                  Strava activity permission was unchecked during sign-in. Re-authorize to sync workouts.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onLaunchStravaOAuth('cloud')}
+                  className="px-3 py-1.5 rounded-lg bg-[#FC4C02] text-white font-semibold text-xs cursor-pointer"
+                >
+                  Grant Activity Read Access
+                </button>
+              </div>
+            )}
+
+            {status.stravaConnected && (
+              <div className="space-y-2.5 pt-2 border-t border-slate-200/80 dark:border-white/10">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Strava Workout Sync Window
+                  </span>
+                  {isSavingPolicy && (
+                    <span className="text-[11px] font-mono ap-text-brand">Saving…</span>
+                  )}
                 </div>
 
-                <form onSubmit={handleStravaKeysAndLaunch} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                  <input
-                    type="text"
-                    value={stravaClientId}
-                    onChange={(e) => setStravaClientId(e.target.value)}
-                    placeholder="Client ID"
-                    className="sm:col-span-4 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                  />
-                  <input
-                    type="password"
-                    value={stravaClientSecret}
-                    onChange={(e) => setStravaClientSecret(e.target.value)}
-                    placeholder={status.stravaClientId ? 'Client Secret (saved)' : 'Client Secret'}
-                    className="sm:col-span-5 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                  />
-                  <button
-                    type="submit"
-                    className="sm:col-span-3 min-h-[38px] rounded-lg bg-[#FC4C02] hover:bg-[#e34402] text-white font-semibold text-xs px-3 cursor-pointer"
-                  >
-                    Save &amp; Connect
-                  </button>
-                </form>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {SYNC_WINDOW_OPTIONS.map((opt) => {
+                    const active = selectedSyncWindow === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={isSavingPolicy || isSyncing}
+                        onClick={() => handleSaveSyncPolicy(opt.id, includeGearAndProfile)}
+                        className={`text-left rounded-xl p-2.5 border transition-all cursor-pointer ${
+                          active
+                            ? 'border-[#28573B] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#193524]'
+                            : 'border-slate-200 dark:border-white/10 hover:border-[#28573B]/60'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-slate-900 dark:text-white">
+                          {opt.label}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                          {opt.hint}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                <form onSubmit={handleStravaFallbackSubmit} className="flex gap-2 pt-2 border-t border-slate-200/70 dark:border-white/10">
+                <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
                   <input
-                    type="password"
-                    value={stravaFallbackInput}
-                    onChange={(e) => setStravaFallbackInput(e.target.value)}
-                    placeholder="Or paste Strava Refresh Token / redirect URL..."
-                    className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    type="checkbox"
+                    checked={includeGearAndProfile}
+                    onChange={(e) =>
+                      handleSaveSyncPolicy(selectedSyncWindow, e.target.checked)
+                    }
+                    className="rounded border-slate-400 accent-[#28573B]"
                   />
-                  <button
-                    type="submit"
-                    disabled={!stravaFallbackInput.trim()}
-                    className="ap-btn-secondary !min-h-[36px] text-xs cursor-pointer disabled:opacity-50"
-                  >
-                    Verify Token
-                  </button>
-                </form>
+                  <span>Sync Strava shoe/bike mileage &amp; profile FTP / weight</span>
+                </label>
               </div>
-            </details>
+            )}
+
+            <div className="rounded-xl bg-emerald-950/5 dark:bg-[#0C1D14]/80 border border-[#28573B]/20 dark:border-[#25573A] px-3 py-2 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+              <Lock className="w-3.5 h-3.5 ap-text-brand shrink-0" />
+              <span>
+                <strong>Read-Only Pledge:</strong> THRESH never posts to your Strava feed, edits activity titles, or sends kudos without you clicking it.
+              </span>
+            </div>
+
+            {stravaServerUnconfigured && (
+              <details
+                open
+                className="pt-2 border-t border-slate-200/80 dark:border-white/10 text-xs"
+              >
+                <summary className="cursor-pointer font-semibold text-amber-700 dark:text-amber-300 select-none py-1">
+                  Self-Hosted Setup: Configure Strava Client ID &amp; Secret
+                </summary>
+                <div className="mt-3 space-y-3 rounded-xl liquid-glass-subtle p-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      In{' '}
+                      <a
+                        href="https://www.strava.com/settings/api"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline font-semibold ap-text-brand"
+                      >
+                        strava.com/settings/api
+                      </a>
+                      , set Callback Domain to{' '}
+                      <code className="font-mono font-bold text-slate-900 dark:text-white">
+                        {activeDomainOnly}
+                      </code>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(activeDomainOnly, 'domain')}
+                      className="inline-flex items-center gap-1 font-semibold ap-text-brand cursor-pointer"
+                    >
+                      {copiedLabel === 'domain' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Domain</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <form
+                    onSubmit={handleStravaKeysAndLaunch}
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={stravaClientId}
+                      onChange={(e) => setStravaClientId(e.target.value)}
+                      placeholder="Client ID"
+                      className="sm:col-span-4 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                    <input
+                      type="password"
+                      value={stravaClientSecret}
+                      onChange={(e) => setStravaClientSecret(e.target.value)}
+                      placeholder="Client Secret"
+                      className="sm:col-span-5 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="submit"
+                      className="sm:col-span-3 min-h-[38px] rounded-lg bg-[#FC4C02] hover:bg-[#e34402] text-white font-semibold text-xs px-3 cursor-pointer"
+                    >
+                      Save &amp; Connect
+                    </button>
+                  </form>
+
+                  <form
+                    onSubmit={handleStravaFallbackSubmit}
+                    className="flex gap-2 pt-2 border-t border-slate-200/70 dark:border-white/10"
+                  >
+                    <input
+                      type="password"
+                      value={stravaFallbackInput}
+                      onChange={(e) => setStravaFallbackInput(e.target.value)}
+                      placeholder="Or paste Strava Refresh Token / redirect URL..."
+                      className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!stravaFallbackInput.trim()}
+                      className="ap-btn-secondary !min-h-[36px] text-xs cursor-pointer disabled:opacity-50"
+                    >
+                      Verify Token
+                    </button>
+                  </form>
+                </div>
+              </details>
+            )}
           </section>
 
-          {/* 2. GARMIN CONNECT */}
-          <section className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* 2. GARMIN CONNECT (OPTIONAL SECONDARY BIOMETRICS) */}
+          <details
+            open={isGarminConnected}
+            className="liquid-glass rounded-2xl p-4 sm:p-5 group"
+          >
+            <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-3 select-none">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -441,56 +700,132 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                      Optional
+                      Optional Add-On
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Syncs overnight Sleep, HRV, Resting HR, Weight, and Garmin activities directly.
+                  Adds overnight Sleep Score, HRV (rMSSD), Resting HR, and watch readiness. Never required.
                 </p>
               </div>
-              <a
-                href="https://connect.garmin.com/app/settings/personalApiToken"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-semibold ap-text-brand hover:underline whitespace-nowrap"
-              >
-                <span>Get Garmin Key</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
+              <span className="text-xs font-semibold ap-text-brand">
+                {isGarminConnected ? 'Manage' : '+ Connect'}
+              </span>
+            </summary>
 
-            <form onSubmit={handleGarminSubmit} className="flex flex-wrap sm:flex-nowrap gap-2">
-              <input
-                type="password"
-                autoComplete="off"
-                value={garminPersonalApiKey}
-                onChange={(e) => setGarminPersonalApiKey(e.target.value)}
-                placeholder="Paste Garmin Personal API Key (GCDC_...)"
-                className="flex-1 min-w-[200px] min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-              />
-              <button
-                type="submit"
-                disabled={isConnectingGarmin || !garminPersonalApiKey.trim()}
-                className="ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
-              >
-                {isConnectingGarmin ? 'Verifying...' : 'Connect Garmin'}
-              </button>
-              {isGarminConnected && (
-                <button
-                  type="button"
-                  onClick={handleDisconnectGarmin}
-                  className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer"
+            <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <div className="inline-flex rounded-lg liquid-capsule-track p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setGarminMode('CREDENTIALS')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                      garminMode === 'CREDENTIALS'
+                        ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    Garmin Sign-In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGarminMode('PERSONAL_KEY')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                      garminMode === 'PERSONAL_KEY'
+                        ? 'liquid-capsule-active text-slate-900 dark:text-white'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    Personal API Token
+                  </button>
+                </div>
+
+                {isGarminConnected && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGarminClick}
+                    className="ap-btn-secondary !min-h-[34px] text-xs cursor-pointer"
+                  >
+                    Disconnect Garmin
+                  </button>
+                )}
+              </div>
+
+              {garminMode === 'CREDENTIALS' ? (
+                <form
+                  onSubmit={handleGarminCredentialsSubmit}
+                  className="grid grid-cols-1 sm:grid-cols-12 gap-2"
                 >
-                  Disconnect
-                </button>
+                  <input
+                    type="email"
+                    autoComplete="username"
+                    value={garminEmail}
+                    onChange={(e) => setGarminEmail(e.target.value)}
+                    placeholder="Garmin Connect Email"
+                    className="sm:col-span-5 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={garminPassword}
+                    onChange={(e) => setGarminPassword(e.target.value)}
+                    placeholder="Garmin Password"
+                    className="sm:col-span-4 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  />
+                  {garminNeedsMfa && (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={garminMfaCode}
+                      onChange={(e) => setGarminMfaCode(e.target.value)}
+                      placeholder="6-digit 2FA Code"
+                      className="sm:col-span-12 min-h-[40px] rounded-xl border border-amber-500 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  )}
+                  <button
+                    type="submit"
+                    disabled={
+                      isConnectingGarmin || !garminEmail.trim() || !garminPassword.trim()
+                    }
+                    className="sm:col-span-3 ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isConnectingGarmin ? 'Linking...' : 'Link Garmin'}
+                  </button>
+                  <p className="sm:col-span-12 text-[11px] text-slate-500 dark:text-slate-400">
+                    Your password is exchanged once for an OAuth token and never stored by THRESH.
+                  </p>
+                </form>
+              ) : (
+                <form
+                  onSubmit={handleGarminTokenSubmit}
+                  className="flex flex-wrap sm:flex-nowrap gap-2"
+                >
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={garminPersonalApiKey}
+                    onChange={(e) => setGarminPersonalApiKey(e.target.value)}
+                    placeholder="Paste Garmin Personal API Token (GCDC_...)"
+                    className="flex-1 min-w-[200px] min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isConnectingGarmin || !garminPersonalApiKey.trim()}
+                    className="ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isConnectingGarmin ? 'Verifying...' : 'Verify Token'}
+                  </button>
+                </form>
               )}
-            </form>
-          </section>
+            </div>
+          </details>
 
-          {/* 3. INTERVALS.ICU */}
-          <section className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* 3. INTERVALS.ICU (OPTIONAL SECONDARY STRUCTURED WORKOUTS & WELLNESS) */}
+          <details
+            open={status.intervalsConnected}
+            className="liquid-glass rounded-2xl p-4 sm:p-5 group"
+          >
+            <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-3 select-none">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -499,68 +834,90 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   {status.intervalsConnected ? (
                     <span className="ap-status-prime px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold">
                       Connected
-                      {status.intervalsAthleteName
-                        ? ` · ${status.intervalsAthleteName}`
-                        : ''}
+                      {status.intervalsAthleteName ? ` · ${status.intervalsAthleteName}` : ''}
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                      Optional
+                      Optional Add-On
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Syncs structured workouts, training load curves, and wellness logs from Intervals.icu.
+                  Syncs structured workout calendars, Apple Watch / Oura / Whoop wellness, and eFTP curves.
                 </p>
               </div>
-              <a
-                href="https://intervals.icu/settings"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-semibold ap-text-brand hover:underline whitespace-nowrap"
-              >
-                <span>Get API Key</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
+              <span className="text-xs font-semibold ap-text-brand">
+                {status.intervalsConnected ? 'Manage' : '+ Connect'}
+              </span>
+            </summary>
 
-            <form onSubmit={handleIntervalsSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-              <input
-                type="text"
-                value={athleteId}
-                onChange={(e) => setAthleteId(e.target.value)}
-                placeholder="Athlete ID (0 for self)"
-                className="sm:col-span-3 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-              />
-              <input
-                type="password"
-                value={intervalsKey}
-                onChange={(e) => setIntervalsKey(e.target.value)}
-                placeholder={
-                  status.intervalsConnected ? 'API Key Connected (paste to update)' : 'Paste Intervals.icu API Key'
-                }
-                className="sm:col-span-6 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-              />
-              <div className="sm:col-span-3 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={!intervalsKey.trim()}
-                  className="flex-1 ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+            <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Find your Developer API Key at intervals.icu/settings
+                </span>
+                <a
+                  href="https://intervals.icu/settings"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold ap-text-brand hover:underline whitespace-nowrap"
                 >
-                  {status.intervalsConnected ? 'Update' : 'Connect'}
-                </button>
-                {status.intervalsConnected && (
-                  <button
-                    type="button"
-                    onClick={onDisconnectIntervals}
-                    className="ap-btn-secondary !min-h-[40px] !px-2.5 text-xs cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
+                  <span>Get API Key</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
-            </form>
-          </section>
+
+              <form
+                onSubmit={handleIntervalsSubmit}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-2"
+              >
+                <input
+                  type="text"
+                  value={athleteId}
+                  onChange={(e) => setAthleteId(e.target.value)}
+                  placeholder="Athlete ID (0 for self)"
+                  className="sm:col-span-3 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+                <input
+                  type="password"
+                  value={intervalsKey}
+                  onChange={(e) => setIntervalsKey(e.target.value)}
+                  placeholder={
+                    status.intervalsConnected
+                      ? 'API Key Connected (paste to update)'
+                      : 'Paste Intervals.icu API Key'
+                  }
+                  className="sm:col-span-6 min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                />
+                <div className="sm:col-span-3 flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={!intervalsKey.trim()}
+                    className="flex-1 ap-btn-primary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {status.intervalsConnected ? 'Update' : 'Connect'}
+                  </button>
+                  {status.intervalsConnected && (
+                    <button
+                      type="button"
+                      onClick={onDisconnectIntervals}
+                      className="ap-btn-secondary !min-h-[40px] !px-2.5 text-xs cursor-pointer"
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          </details>
+
+          {/* SMART DEDUPLICATION ASSURANCE */}
+          <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 flex items-center gap-2.5 text-[11px] text-slate-600 dark:text-slate-300">
+            <Shield className="w-4 h-4 ap-text-brand shrink-0" />
+            <span>
+              <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin or Intervals.icu alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
+            </span>
+          </div>
 
           {/* 4. DIRECT FILE UPLOAD (.FIT / .GPX / .TCX / .ZIP) */}
           {onImportBatchActivities && (
@@ -571,7 +928,8 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     Upload Workout Files (.FIT, .GPX, .TCX, or .ZIP)
                   </h3>
                   <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                    Import single workout files or a full Garmin / Strava export <code className="font-mono">.zip</code> directly in your browser.
+                    Import single workout files or a full Garmin / Strava export{' '}
+                    <code className="font-mono">.zip</code> directly in your browser.
                   </p>
                 </div>
                 <label className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer whitespace-nowrap">
@@ -706,7 +1064,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
                     <Database className="w-3.5 h-3.5 ap-text-brand" />
-                    <span>Transfer Connections to Another Browser</span>
+                    <span>Transfer Optional Keys to Another Browser</span>
                   </div>
                   <button
                     type="button"
@@ -743,7 +1101,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     type="text"
                     value={bundleInput}
                     onChange={(e) => setBundleInput(e.target.value)}
-                    placeholder="Paste Connection Bundle here to restore accounts..."
+                    placeholder="Paste Connection Bundle here to restore optional keys..."
                     className="flex-1 min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button

@@ -1,6 +1,28 @@
 # THRESH v2.3 — High School & Collegiate Team Pack Guide
 
-This guide documents the scholastic and NCAA collegiate capabilities built into **THRESH v2.3** (`src/physiology/scholasticEngine.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, and result trackers with one unified workspace.
+This guide documents the scholastic, NCAA collegiate, and club team capabilities built into **THRESH v2.3** (`src/physiology/teamOnboardingEngine.ts`, `src/physiology/scholasticEngine.ts`, `src/components/TeamManagementPanel.tsx`, and `server/teamService.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, and result trackers with one unified workspace.
+
+---
+
+## 0. Team Onboarding, Locker-Room QR Posters, CSV Auto-Match & Athlete Sharing Tiers
+
+### Creating or Joining a Team (`+ Team` & `/join/<slug>`)
+1. **Strava Handles Identity**: Coaches and athletes sign in with **Continue With Strava**—no separate school passwords or manual API keys required.
+2. **2-Card Team Hub (`TeamManagementPanel.tsx`)**:
+   - **Athletes & Assistant Coaches**: Enter a 6-character Team Join Code (e.g., `PAXC-26`), tap a personalized magic link, or scan the coach's printable **Locker-Room QR Sheet** (`/join/<slug>`).
+   - **Head Coaches & Club Directors**: Launch the **Team Branding & Safeguarding Studio** to configure school/club colors (automatically WCAG 2.1 AA contrast-clamped), upload a crest, and generate a Join Code + QR poster in under 60 seconds.
+3. **Bulk `.CSV` Roster Importer & Automatic Strava Claim Matching**:
+   - Paste spreadsheet rows or upload a `.CSV` with `Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark`.
+   - When an invited athlete signs in with Strava and claims the team code or magic link, THRESH automatically matches their pending roster slot (by invite token, Strava ID, email, or normalized name), assigns their squad (`Varsity`, `Junior Varsity`, etc.), and pre-calibrates their threshold zones from `SeedMark` (including bare HS `3200m` marks like `10:15`, `800m` marks, `5K` times, or `280W 20m` cycling power).
+4. **Youth Safeguarding vs. Collegiate Adult Defaults**:
+   - `HIGH_SCHOOL` rosters default **Safe-Sport Weight Shield (`isMinorU18`)** and **Parent/Guardian CC** `ON`.
+   - `COLLEGIATE` rosters treat standard college graduation years as legal adults (`isMinorU18: false`) unless an explicit incoming high-school recruit year is specified.
+5. **Athlete Coach-Sharing Tiers (`CoachDataSharingTier`)**:
+   - During Step 2 of onboarding, athletes joining a team explicitly choose what coaches see:
+     - **`SUMMARY_ONLY` (Recommended)**: Shares morning readiness, `CTL/ATL/TSB`, 7-day load, and rolling 7-day NCAA CARA hours without exposing raw GPS tracks.
+     - **`FULL_STREAMS`**: Shares full workouts, streams, and enables coach calendar workout pushes.
+     - **`LOAD_ONLY`**: Shares aggregate training load metrics only.
+   - Peer teammates never receive another athlete's raw Strava activities.
 
 ---
 

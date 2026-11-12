@@ -1,6 +1,23 @@
-# AeroPulse — Exercise Physiology & Mathematical Telemetry Reference
+# THRESH — Exercise Physiology & Mathematical Telemetry Reference
 
-This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, and algorithmic classifiers implemented across AeroPulse's client and Web Worker engines (`src/components/charts/EChartsPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
+This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, seed-mark calibration models, and algorithmic classifiers implemented across THRESH's client, server, and Web Worker engines (`src/physiology/`, `src/components/charts/EChartsPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
+
+---
+
+## 0. Day-1 Calibration, Seed-Mark Threshold Solver & Two-Pass Strava `rTSS`
+
+### 0.1 Honest Day-1 `CALIBRATING` State
+When a newly onboarded athlete has zero synced workouts (for example, choosing `Identity Only` in Step 2 of Strava onboarding before uploading `.FIT` files), THRESH starts the Banister impulse-response integrator at $\text{CTL}_0 = 0, \text{ATL}_0 = 0$ and reports `verdict = 'CALIBRATING'` (`readinessScore = 0`, `EF = —`)—never fabricating synthetic fitness, resting heart rate, or cardiac drift numbers.
+
+### 0.2 Seed-Mark Threshold Calibration (`calibrateThresholdsFromSeedMark`)
+During onboarding or CSV roster import, athletes or coaches can supply an optional seed mark:
+- **Running Marks** (`800m`, `1500m`, `1600m`, `Mile`, `3200m`, `5K`, `10K`, `Half Marathon`, `Marathon`): Solves Jack Daniels' $\text{VO}_2$ / fractional-utilization equation for `VDOT` (applying a $0.975$ middle-distance anaerobic conservatism factor on `< 2000m` track marks so an `800m` specialist isn't over-prescribed on `5K` threshold reps) and derives Lactate Threshold Pace ($\approx 88\%\text{ vVO}_2\max$), Easy Z2 Pace, and Interval Pace.
+- **Cycling Power Marks** (`280W 20m`, `20m 280W`, or direct FTP watts): Applies Coggan's $0.95 \times P_{20\text{m}}$ multiplier for 20-minute tests or maps direct FTP watts into 7-zone Coggan boundaries.
+
+### 0.3 Two-Pass Strava Running `rTSS` & Grade-Adjusted `EF`
+Strava's API often omits power (`weighted_average_watts`) and `suffer_score` for GPS runs recorded without running power pods. During `GET /api/strava/sync`:
+1. **Pass 1** scans the athlete's synced running archive (`1,200m–25,000m` efforts) using Riegel scaling ($D_2/D_1)^{1.06}$ to infer the athlete's empirical Threshold Pace (`s/km`) if no custom seed mark is set.
+2. **Pass 2** computes Minetti elevation-adjusted Grade-Adjusted Speed (`m/s`), Intensity Factor ($\text{IF}_{\text{run}} = v_{\text{GAP}} / v_{\text{LT}}$), running Training Stress Score ($\text{rTSS} = \frac{t}{3600} \cdot \text{IF}_{\text{run}}^2 \cdot 100$), and running Efficiency Factor ($\text{EF}_{\text{run}} = \frac{v_{\text{GAP}} \cdot 60}{\text{HR}_{\text{avg}}}$ in $\text{m/min/bpm}$).
 
 ---
 

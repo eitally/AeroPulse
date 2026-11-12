@@ -7,11 +7,24 @@ import type { NextFunction, Request, Response } from 'express';
 const SESSION_SECRET_FILE = '/tmp/thresh-session-secret.key';
 const SESSION_COOKIE_NAME = 'thresh_session';
 const LEGACY_SESSION_COOKIE_NAME = 'aeropulse_session';
+const OAUTH_STATE_COOKIE_NAME = 'thresh_oauth_state';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const OAUTH_STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 export interface VerifiedSessionClaims {
   sid: string;
   sub: string;
+  exp: number;
+}
+
+export interface OAuthStateClaims {
+  nonce: string;
+  sid?: string;
+  flow?: 'popup' | 'redirect';
+  mode?: string;
+  joinCode?: string;
+  slug?: string;
+  inviteToken?: string;
   exp: number;
 }
 
@@ -21,6 +34,8 @@ function getSessionSecret(): string {
   if (cachedSecret) return cachedSecret;
   const envSecret = (
     process.env.SESSION_SECRET ||
+    process.env.TOKEN_VAULT_KEY ||
+    process.env.OAUTH_ENCRYPTION_KEY ||
     process.env.STRAVA_CLIENT_SECRET ||
     process.env.CRON_SECRET ||
     ''
@@ -45,6 +60,128 @@ function getSessionSecret(): string {
     cachedSecret = crypto.randomBytes(32).toString('hex');
     return cachedSecret;
   }
+}
+
+/**
+ * Derives a deterministic, non-reversible 32-char hex session ID from a verified Strava Athlete ID.
+ * Guarantees that signing in with Strava on any device (laptop, phone, PWA) restores the exact same
+ * THRESH server vault and team memberships without requiring a secondary email OTP login.
+ */
+export function deriveStravaSessionSid(stravaAthleteId: string | number): string {
+  const cleanId = String(stravaAthleteId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
+  if (!cleanId) {
+    return crypto.randomBytes(16).toString('hex');
+  }
+  return crypto
+    .createHmac('sha256', getSessionSecret())
+    .update(`thresh_strava_sid_v1:${cleanId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+export function appendSetCookieHeader(res: Response, cookieValue: string): void {
+  const existing = res.getHeader('Set-Cookie');
+  if (!existing) {
+    res.setHeader('Set-Cookie', [cookieValue]);
+    return;
+  }
+  if (Array.isArray(existing)) {
+    const cookieName = cookieValue.split('=')[0]?.trim();
+    const filtered = cookieName
+      ? existing.filter((c) => !String(c).startsWith(`${cookieName}=`))
+      : existing;
+    res.setHeader('Set-Cookie', [...filtered.map(String), cookieValue]);
+    return;
+  }
+  const prevStr = String(existing);
+  const cookieName = cookieValue.split('=')[0]?.trim();
+  if (cookieName && prevStr.startsWith(`${cookieName}=`)) {
+    res.setHeader('Set-Cookie', [cookieValue]);
+  } else {
+    res.setHeader('Set-Cookie', [prevStr, cookieValue]);
+  }
+}
+
+export function issueOAuthStateToken(
+  input: Omit<OAuthStateClaims, 'exp' | 'nonce'> & { nonce?: string }
+): { stateToken: string; nonce: string } {
+  const nonce =
+    input.nonce && /^[a-f0-9_-]{12,64}$/i.test(input.nonce)
+      ? input.nonce
+      : crypto.randomBytes(16).toString('hex');
+  const claims: OAuthStateClaims = {
+    nonce,
+    sid: input.sid,
+    flow: input.flow || 'redirect',
+    mode: input.mode,
+    joinCode: input.joinCode,
+    slug: input.slug,
+    inviteToken: input.inviteToken,
+    exp: Date.now() + OAUTH_STATE_TTL_MS,
+  };
+  const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getSessionSecret())
+    .update(`oauth_state:${payload}`)
+    .digest('base64url');
+  return { stateToken: `${payload}.${sig}`, nonce };
+}
+
+export function verifyOAuthStateToken(token?: string | null): OAuthStateClaims | null {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.trim().split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  if (!payload || !sig) return null;
+
+  const expectedSig = crypto
+    .createHmac('sha256', getSessionSecret())
+    .update(`oauth_state:${payload}`)
+    .digest('base64url');
+
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
+
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(payload, 'base64url').toString('utf8')
+    ) as OAuthStateClaims;
+    if (!decoded.exp || Date.now() > decoded.exp || !decoded.nonce) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+export function setOAuthStateCookie(req: Request, res: Response, nonce: string): void {
+  const isSecure =
+    req.secure ||
+    String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';
+  const parts = [
+    `${OAUTH_STATE_COOKIE_NAME}=${encodeURIComponent(nonce)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(OAUTH_STATE_TTL_MS / 1000)}`,
+  ];
+  if (isSecure) parts.push('Secure');
+  appendSetCookieHeader(res, parts.join('; '));
+}
+
+export function getOAuthStateCookieNonce(req?: Request): string | null {
+  if (!req) return null;
+  const cookies = parseCookies(req.headers.cookie);
+  return cookies[OAUTH_STATE_COOKIE_NAME] || null;
+}
+
+export function clearOAuthStateCookie(res: Response): void {
+  appendSetCookieHeader(
+    res,
+    `${OAUTH_STATE_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  );
 }
 
 export function issueSessionToken(subject = 'authenticated', existingSid?: string): string {
@@ -159,15 +296,20 @@ export function setSessionCookie(
     `Max-Age=${maxAgeSecs}`,
   ];
   if (isSecure) cookieParts.push('Secure');
-  res.setHeader('Set-Cookie', cookieParts.join('; '));
+  appendSetCookieHeader(res, cookieParts.join('; '));
   return token;
 }
 
 export function clearSessionCookie(res: Response): void {
-  res.setHeader('Set-Cookie', [
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-    `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-  ]);
+  appendSetCookieHeader(
+    res,
+    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  );
+  appendSetCookieHeader(
+    res,
+    `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  );
+  clearOAuthStateCookie(res);
 }
 
 export function hasValidSessionToken(req?: Request): boolean {

@@ -317,18 +317,29 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             <button
               type="button"
               onClick={onOpenAthleteProfileModal}
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-sky-300 transition-colors cursor-pointer"
-              title="Inspect or update synced Garmin / Intervals thresholds & HR zones"
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-[#166534] dark:hover:text-[#C8FF00] transition-colors cursor-pointer"
+              title="Inspect or update Strava / Garmin / Intervals thresholds & HR zones"
             >
-              <span>FTP {athleteProfile.ftp}W</span>
-              <span className="opacity-40">·</span>
-              <span>LTHR {athleteProfile.lthr} bpm</span>
-              {athleteProfile.runLthr > 0 && (
+              {athleteProfile.thresholdPaceSecsPerKm > 0 && (
                 <>
+                  <span>
+                    LT{' '}
+                    {Math.floor(athleteProfile.thresholdPaceSecsPerKm / 60)}:
+                    {String(Math.round(athleteProfile.thresholdPaceSecsPerKm % 60)).padStart(
+                      2,
+                      '0'
+                    )}
+                    /km
+                  </span>
                   <span className="opacity-40">·</span>
-                  <span>Run LTHR {athleteProfile.runLthr}</span>
                 </>
               )}
+              <span>FTP {athleteProfile.ftp}W</span>
+              <span className="opacity-40">·</span>
+              <span>
+                LTHR {athleteProfile.runLthr > 0 ? athleteProfile.runLthr : athleteProfile.lthr}{' '}
+                bpm
+              </span>
             </button>
           )}
         </div>
@@ -546,25 +557,33 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 </div>
                 <div className="mt-0.5 flex items-baseline gap-2 font-mono tabular-nums">
                   <span className="text-2xl font-extrabold text-slate-900 dark:text-white">
-                    {productivity.readinessScore}
+                    {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                      ? '—'
+                      : productivity.readinessScore}
                   </span>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    / 100
+                    {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                      ? 'Calibrating'
+                      : '/ 100'}
                   </span>
                 </div>
               </div>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10.5px] font-mono font-bold uppercase ${
-                  productivity.autonomicState === 'PRIME'
-                    ? 'ap-status-prime'
-                    : productivity.autonomicState === 'BALANCED'
-                      ? 'ap-status-info'
-                      : productivity.autonomicState === 'CAUTION'
-                        ? 'ap-status-caution'
-                        : 'ap-status-strained'
+                  productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                    ? 'ap-status-info'
+                    : productivity.autonomicState === 'PRIME'
+                      ? 'ap-status-prime'
+                      : productivity.autonomicState === 'BALANCED'
+                        ? 'ap-status-info'
+                        : productivity.autonomicState === 'CAUTION'
+                          ? 'ap-status-caution'
+                          : 'ap-status-strained'
                 }`}
               >
-                {productivity.autonomicState}
+                {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                  ? 'AWAITING SYNC'
+                  : productivity.autonomicState}
               </span>
             </div>
 
@@ -614,9 +633,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
                   <span>Resting HR</span>
                   <span>
-                    {productivity.rhrDeltaBpm === 0
-                      ? 'On baseline'
-                      : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} vs base`}
+                    {productivity.rhrLatestBpm === 0
+                      ? 'Optional wearable'
+                      : productivity.rhrDeltaBpm === 0
+                        ? 'On baseline'
+                        : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} vs base`}
                   </span>
                 </div>
                 <div className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">

@@ -16,7 +16,10 @@ function getVaultEncryptionKey(): Buffer {
 
   const rawSecret = (
     process.env.TOKEN_VAULT_KEY ||
+    process.env.OAUTH_ENCRYPTION_KEY ||
     process.env.SESSION_SECRET ||
+    process.env.STRAVA_CLIENT_SECRET ||
+    process.env.CRON_SECRET ||
     ''
   ).trim();
 
@@ -244,6 +247,93 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
     }
   }
   return loadTenantVaultSync(safeId, fallback);
+}
+
+/**
+ * Awaited cloud-first write: encrypts tenant credentials/state with AES-256-GCM, writes to `/tmp`,
+ * and awaits the Postgres upsert when `DATABASE_URL` is set so Vercel Serverless functions never
+ * freeze before the transaction commits.
+ */
+export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promise<void> {
+  const safeId = sanitizeTenantId(tenantId);
+  memoryVaultCache.set(safeId, { value: structuredClone(data), updatedAtMs: Date.now() });
+  const envelope = encryptJsonForVault(data);
+
+  try {
+    const encPath = getEncryptedVaultFilePath(safeId);
+    fs.writeFileSync(encPath, envelope, { encoding: 'utf8', mode: 0o600 });
+  } catch {
+    // ignore ephemeral FS write errors
+  }
+
+  const pool = getPostgresPool();
+  if (pool) {
+    try {
+      await ensurePostgresVaultSchema(pool);
+      await pool.query(
+        `INSERT INTO thresh_tenant_vault (tenant_id, encrypted_envelope, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (tenant_id)
+         DO UPDATE SET encrypted_envelope = EXCLUDED.encrypted_envelope, updated_at = NOW();`,
+        [safeId, envelope]
+      );
+    } catch {
+      // non-fatal DB failure (local cache/file still holds encrypted envelope)
+    }
+  }
+}
+
+export const VAULT_COOKIE_NAME = 'thresh_vault';
+const VAULT_COOKIE_TTL_SECS = 30 * 24 * 60 * 60; // 30 days
+
+export interface CompactCookieVaultPayload {
+  sid: string;
+  stravaAccessToken?: string;
+  stravaRefreshToken?: string;
+  stravaExpiresAt?: number;
+  stravaAthleteId?: string;
+  stravaAthleteName?: string;
+  stravaClientId?: string;
+  stravaMeasurementPreference?: 'mi' | 'km';
+  stravaGrantedScope?: string;
+  stravaSyncPolicy?: {
+    window: '90d' | '180d' | '365d' | 'all' | 'none';
+    importProfileAndGear: boolean;
+    confirmedAt: string;
+    grantedScope?: string;
+  };
+  intervalsApiKey?: string;
+  intervalsAthleteId?: string;
+  intervalsAthleteName?: string;
+  garminPersonalApiKey?: string;
+}
+
+/**
+ * Encrypts a compact credential bundle (< 3KB) into an HttpOnly AES-256-GCM cookie so
+ * stateless Vercel Serverless deployments without `DATABASE_URL` still preserve tokens across Lambdas.
+ */
+export function buildEncryptedVaultCookieHeader(
+  payload: CompactCookieVaultPayload,
+  isSecure: boolean
+): string | null {
+  const envelope = encryptJsonForVault(payload);
+  const encoded = encodeURIComponent(envelope);
+  if (encoded.length > 3700) {
+    return null;
+  }
+  const parts = [
+    `${VAULT_COOKIE_NAME}=${encoded}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${VAULT_COOKIE_TTL_SECS}`,
+  ];
+  if (isSecure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+export function buildClearVaultCookieHeader(): string {
+  return `${VAULT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
 /**

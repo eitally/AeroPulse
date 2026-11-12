@@ -26,8 +26,8 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
         onClick={install}
         className={
           variant === 'full'
-            ? 'w-full min-h-[44px] flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 transition-colors whitespace-nowrap shrink-0'
-            : 'min-h-[40px] flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0'
+            ? 'w-full ap-btn-primary text-sm whitespace-nowrap shrink-0 cursor-pointer'
+            : 'ap-btn-secondary !min-h-[40px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
         }
       >
         <Download className="w-3.5 h-3.5" />
@@ -43,8 +43,8 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
         onClick={() => setShowGuideModal(true)}
         className={
           variant === 'full'
-            ? 'w-full min-h-[44px] flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0'
-            : 'min-h-[40px] flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0'
+            ? 'w-full ap-btn-secondary text-sm whitespace-nowrap shrink-0 cursor-pointer'
+            : 'ap-btn-secondary !min-h-[40px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
         }
       >
         <Smartphone className="w-3.5 h-3.5" />
@@ -63,15 +63,15 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
               aria-modal="true"
               aria-label="Install THRESH as a Standalone App"
               onClick={(e) => e.stopPropagation()}
-              className="ap-modal-sheet max-w-md liquid-glass border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-2xl"
+              className="ap-modal-sheet max-w-md ap-content-stage p-5 sm:p-6 shadow-2xl"
             >
-              <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center justify-between gap-2 border-b border-emerald-900/15 dark:border-[#254431] pb-3">
                 <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
                   Install THRESH as a Standalone App
                 </h3>
                 <button
                   onClick={() => setShowGuideModal(false)}
-                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 shrink-0"
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 shrink-0 cursor-pointer"
                   aria-label="Close install guide"
                 >
                   <X className="w-4 h-4" />
@@ -81,7 +81,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
                 <p>
                   THRESH includes a Web App Manifest and offline Service Worker so you can launch it directly from your phone or desktop home screen:
                 </p>
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2">
+                <div className="rounded-lg liquid-glass-subtle p-3.5 space-y-2">
                   <p className="font-medium text-slate-900 dark:text-slate-100">On iPhone / iPad (Safari):</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
                     <li>Open the app URL directly in Safari.</li>
@@ -89,7 +89,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
                     <li>Select <strong>Add to Home Screen</strong>.</li>
                   </ol>
                 </div>
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2">
+                <div className="rounded-lg liquid-glass-subtle p-3.5 space-y-2">
                   <p className="font-medium text-slate-900 dark:text-slate-100">On Android / Desktop (Chrome or Edge):</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
                     <li>Open the app in a top-level browser tab.</li>
@@ -99,7 +99,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
               </div>
               <button
                 onClick={() => setShowGuideModal(false)}
-                className="mt-5 w-full min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                className="mt-5 w-full ap-btn-primary text-sm cursor-pointer"
               >
                 Done
               </button>

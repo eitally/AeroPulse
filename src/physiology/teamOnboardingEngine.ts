@@ -585,7 +585,7 @@ export function parseBulkRosterCsvOrText(
     const isMinorU18 =
       orgType === 'HIGH_SCHOOL' ||
       Boolean(parentGuardianEmail) ||
-      Boolean(graduationYear && graduationYear >= currentYear);
+      Boolean(graduationYear && orgType !== 'COLLEGIATE' && graduationYear >= currentYear + 1);
 
     rows.push({
       invitedName: invitedName || 'Team Athlete',
@@ -606,6 +606,8 @@ export interface CalibratedSeedThresholds {
   cyclingFtpWatts: number;
   thresholdPaceSecsPerKm: number;
   thresholdPaceInputDisplay: string;
+  easyPaceInputDisplay?: string;
+  intervalPaceInputDisplay?: string;
   vdotEstimate?: number;
   summaryNote: string;
 }
@@ -630,7 +632,7 @@ function formatPaceDisplay(secsPerKm: number, unit: DistanceUnit): string {
 
 /**
  * Converts a coach or athlete's natural-language race PR or power figure
- * (e.g., "17:45 5K", "5:12 1600m", "280W", "20m 300W") into calibrated
+ * (e.g., "17:45 5K", "5:12 1600m", "280W", "20m 300W", "280W 20m") into calibrated
  * Lactate Threshold Pace & FTP so newcomers never face intimidating lab jargon.
  */
 export function calibrateThresholdsFromSeedMark(
@@ -647,25 +649,30 @@ export function calibrateThresholdsFromSeedMark(
       cyclingFtpWatts: defaultFtp,
       thresholdPaceSecsPerKm: defaultPaceSecsKm,
       thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-      summaryNote: 'Default starter zones (auto-refines on first Garmin / FIT sync)',
+      easyPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 1.24), distanceUnit),
+      intervalPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 0.91), distanceUnit),
+      summaryNote: 'Default starter zones (auto-refines on first Strava / Garmin / FIT sync)',
     };
   }
 
-  // Check for Wattage input (e.g. "285W", "20m 300w", or bare 3-digit watts for cyclists)
-  const twentyMinMatch = raw.match(/20\s*m(?:in)?\s*[:@]?\s*(\d{2,3})\s*w?/i);
+  // Check for 20-minute power test input in either word order ("20m 300W" OR "300W 20m" / "300W (20 min)")
+  const twentyMinMatch =
+    raw.match(/20\s*m(?:in(?:ute)?s?)?\s*[:@-]?\s*(\d{2,3})\s*w?/i) ||
+    raw.match(/(\d{2,3})\s*w(?:atts)?\s*(?:for\s*|@\s*|\(\s*|-)?\s*20\s*m(?:in)?/i);
   if (twentyMinMatch) {
-    const ftp = Math.max(90, Math.min(550, Math.round(Number(twentyMinMatch[1]) * 0.95)));
+    const rawWatts = Number(twentyMinMatch[1]);
+    const ftp = Math.max(90, Math.min(550, Math.round(rawWatts * 0.95)));
     return {
       cyclingFtpWatts: ftp,
       thresholdPaceSecsPerKm: defaultPaceSecsKm,
       thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-      summaryNote: `Estimated ${ftp}W FTP from 20-minute power (${twentyMinMatch[1]}W × 0.95)`,
+      summaryNote: `Estimated ${ftp}W FTP from 20-minute power (${rawWatts}W × 0.95)`,
     };
   }
 
   const wattsMatch =
     raw.match(/(\d{2,3})\s*w(?:atts)?\b/i) ||
-    (primarySport === 'Cycling' && /^\d{2,3}$/.test(raw) ? [raw, raw] : null);
+    (primarySport !== 'Running' && /^\d{2,3}$/.test(raw) ? [raw, raw] : null);
   if (wattsMatch) {
     const ftp = Math.max(85, Math.min(550, Math.round(Number(wattsMatch[1]))));
     return {
@@ -676,23 +683,28 @@ export function calibrateThresholdsFromSeedMark(
     };
   }
 
-  // Parse Race Clock Time (e.g. "17:45 5K", "5:10 1600m", "4:55 mile", "11:10 3200m", "18:30")
+  // Parse Race Clock Time (e.g. "17:45 5K", "5:10 1600m", "4:55 mile", "10:15 3200m", "18:30")
   const clockMatch = raw.match(/(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)/);
   if (clockMatch) {
     const totalSecs = parseClockSecs(clockMatch[1]);
-    if (totalSecs && totalSecs >= 100) {
+    if (totalSecs && totalSecs >= 90) {
       let distMeters = 5000;
       const lower = raw.toLowerCase();
-      if (lower.includes('800')) distMeters = 800;
-      else if (lower.includes('1500')) distMeters = 1500;
-      else if (lower.includes('1600')) distMeters = 1600;
-      else if (lower.includes('mile') || /\b1\s*mi\b/.test(lower)) distMeters = 1609.34;
-      else if (lower.includes('3000') || lower.includes('3k')) distMeters = 3000;
-      else if (lower.includes('3200') || lower.includes('2 mile')) distMeters = 3200;
-      else if (lower.includes('10k') || lower.includes('10000')) distMeters = 10000;
-      else if (lower.includes('half') || lower.includes('hm')) distMeters = 21097.5;
-      else if (totalSecs < 570) distMeters = 1600; // < 9:30 bare time -> 1600m
-      else distMeters = 5000; // 9:30+ bare time -> 5K
+      if (/\b800\s*m?\b/.test(lower)) distMeters = 800;
+      else if (/\b1500\s*m?\b/.test(lower)) distMeters = 1500;
+      else if (/\b1600\s*m?\b/.test(lower)) distMeters = 1600;
+      else if (lower.includes('mile') && !lower.includes('2 mile') && !lower.includes('two mile')) {
+        distMeters = 1609.34;
+      } else if (/\b3000\s*m?\b|\b3k\b/.test(lower)) distMeters = 3000;
+      else if (/\b3200\s*m?\b|2\s*mile|two\s*mile/.test(lower)) distMeters = 3200;
+      else if (/\b5k\b|\b5000\s*m?\b/.test(lower)) distMeters = 5000;
+      else if (/\b10k\b|\b10000\s*m?\b/.test(lower)) distMeters = 10000;
+      else if (lower.includes('half') || /\bhm\b/.test(lower)) distMeters = 21097.5;
+      else if (lower.includes('marathon')) distMeters = 42195;
+      else if (totalSecs < 165) distMeters = 800; // < 2:45 bare time -> 800m
+      else if (totalSecs < 450) distMeters = 1600; // 2:45..7:29 bare time -> 1600m
+      else if (totalSecs < 810) distMeters = 3200; // 7:30..13:29 bare time -> 3200m (never 5K WR!)
+      else distMeters = 5000; // 13:30+ bare time -> 5K
 
       // Daniels VDOT estimation
       const tMins = totalSecs / 60;
@@ -703,26 +715,43 @@ export function calibrateThresholdsFromSeedMark(
         0.8 +
         0.1894393 * Math.exp(-0.012778 * tMins) +
         0.2989558 * Math.exp(-0.1932605 * tMins);
-      const vdot = Math.max(28, Math.min(86, Number((vo2 / pctMax).toFixed(1))));
+      const rawVdot = vo2 / pctMax;
+      // Middle-distance anaerobic contribution conservatism (2.5% for 800m-1609m)
+      const effectiveVdot = distMeters <= 1610 ? rawVdot * 0.975 : rawVdot;
+      const vdot = Math.max(28, Math.min(86, Number(effectiveVdot.toFixed(1))));
 
-      // Threshold intensity is ~88% of VDOT velocity
-      const tVo2 = vdot * 0.88;
-      const a = 0.000104;
-      const b = 0.182258;
-      const c = -4.6 - tVo2;
-      const tVelMpm = (-b + Math.sqrt(Math.max(0.01, b * b - 4 * a * c))) / (2 * a);
-      const ltSecsPerKm = Math.max(
-        155,
-        Math.min(460, Math.round((1000 / Math.max(120, tVelMpm)) * 60))
-      );
+      const solvePaceSecsPerKmForPctVo2 = (pctVo2: number) => {
+        const targetVo2 = vdot * pctVo2;
+        const a = 0.000104;
+        const b = 0.182258;
+        const c = -4.6 - targetVo2;
+        const velMpm = (-b + Math.sqrt(Math.max(0.01, b * b - 4 * a * c))) / (2 * a);
+        return Math.max(145, Math.min(520, Math.round((1000 / Math.max(110, velMpm)) * 60)));
+      };
+
+      const ltSecsPerKm = solvePaceSecsPerKmForPctVo2(0.88);
+      const easySecsPerKm = solvePaceSecsPerKmForPctVo2(0.70);
+      const intervalSecsPerKm = solvePaceSecsPerKmForPctVo2(0.98);
 
       const disp = formatPaceDisplay(ltSecsPerKm, distanceUnit);
+      const easyDisp = formatPaceDisplay(easySecsPerKm, distanceUnit);
+      const intDisp = formatPaceDisplay(intervalSecsPerKm, distanceUnit);
+      const eventLabel =
+        distMeters === 1609.34
+          ? 'Mile'
+          : distMeters === 21097.5
+            ? 'Half Marathon'
+            : distMeters === 42195
+              ? 'Marathon'
+              : `${Math.round(distMeters)}m`;
       return {
         cyclingFtpWatts: defaultFtp,
         thresholdPaceSecsPerKm: ltSecsPerKm,
         thresholdPaceInputDisplay: disp,
+        easyPaceInputDisplay: easyDisp,
+        intervalPaceInputDisplay: intDisp,
         vdotEstimate: vdot,
-        summaryNote: `VDOT ${vdot} · Threshold Pace ${disp}/${distanceUnit} (from ${clockMatch[1]} ${Math.round(distMeters)}m)`,
+        summaryNote: `VDOT ${vdot} · Easy ${easyDisp}/${distanceUnit} · Threshold ${disp}/${distanceUnit} · VO2 ${intDisp}/${distanceUnit} (from ${clockMatch[1]} ${eventLabel})`,
       };
     }
   }

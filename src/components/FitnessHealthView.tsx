@@ -245,7 +245,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     hrvNormalBandLow: 0,
     hrvNormalBandHigh: 0,
     hrvStatus: 'Balanced' as const,
-    restingHR: athleteProfile?.restingHr || 0,
+    restingHR: 0,
     sleepSecs: 0,
     sleepScore: 0,
     sleepQuality: 0,
@@ -257,9 +257,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     rideWPrime: athleteProfile?.wPrime || 0,
     ridePMax: athleteProfile?.pMax || 0,
     runEftp: athleteProfile?.runEFtp || 0,
-    garminTrainingStatus: 'Productive' as const,
+    garminTrainingStatus: activities.length > 0 ? ('Productive' as const) : undefined,
     trainingStatusReason:
-      'Connect Garmin Connect, Intervals.icu, or upload FIT/GPX files to calibrate your Banister load curve.',
+      'Sync recent workouts from Strava (or optionally connect Garmin Connect / Intervals.icu) to calibrate your Banister load curve.',
     readinessStatus: 'Optimal' as const,
     dailyLoad: 0,
   };
@@ -658,12 +658,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     const avgEf28 =
       ef28List.length > 0
         ? Number((ef28List.reduce((s, v) => s + v, 0) / ef28List.length).toFixed(2))
-        : 1.78;
+        : 0;
     const avgEf90 =
       ef90List.length > 0
         ? Number((ef90List.reduce((s, v) => s + v, 0) / ef90List.length).toFixed(2))
-        : 1.73;
-    const efPctDelta = Number((((avgEf28 - avgEf90) / Math.max(0.1, avgEf90)) * 100).toFixed(1));
+        : avgEf28;
+    const efPctDelta =
+      avgEf28 > 0 && avgEf90 > 0
+        ? Number((((avgEf28 - avgEf90) / Math.max(0.1, avgEf90)) * 100).toFixed(1))
+        : 0;
 
     const enduranceActs = activities
       .filter(
@@ -675,6 +678,19 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       )
       .slice(0, 24);
 
+    const sampleCount = Math.max(enduranceActs.length, ef28List.length);
+    if (sampleCount === 0) {
+      return {
+        avgEf28: 0,
+        avgEf90: 0,
+        efPctDelta: 0,
+        avgDecoupling: 0,
+        durabilityState: 'optimal' as const,
+        durabilityLabel: 'Awaiting Endurance Sync',
+        sampleCount: 0,
+      };
+    }
+
     const avgDecoupling =
       enduranceActs.length > 0
         ? Number(
@@ -683,16 +699,22 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               enduranceActs.length
             ).toFixed(1)
           )
-        : 2.9;
+        : 0;
 
     const durabilityState: 'optimal' | 'caution' | 'warning' =
-      avgDecoupling <= 3.5 ? 'optimal' : avgDecoupling <= 5.0 ? 'caution' : 'warning';
-    const durabilityLabel =
-      avgDecoupling <= 3.5
-        ? 'High Aerobic Durability (<3.5%)'
+      enduranceActs.length === 0 || avgDecoupling <= 3.5
+        ? 'optimal'
         : avgDecoupling <= 5.0
-          ? 'Moderate Drift (3.5–5.0%)'
-          : 'Elevated Cardiac Drift (>5.0%)';
+          ? 'caution'
+          : 'warning';
+    const durabilityLabel =
+      enduranceActs.length === 0
+        ? 'EF Calibrated · Awaiting ≥45m Drift Sample'
+        : avgDecoupling <= 3.5
+          ? 'High Aerobic Durability (<3.5%)'
+          : avgDecoupling <= 5.0
+            ? 'Moderate Drift (3.5–5.0%)'
+            : 'Elevated Cardiac Drift (>5.0%)';
 
     return {
       avgEf28,
@@ -701,7 +723,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
       avgDecoupling,
       durabilityState,
       durabilityLabel,
-      sampleCount: Math.max(enduranceActs.length, ef28List.length),
+      sampleCount,
     };
   }, [activities]);
 
@@ -3625,7 +3647,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 14-Day Readiness Ledger &amp; Key Biometrics
               </span>
               <span className="text-xs font-mono text-emerald-500">
-                HRV {latestWithHrv.hrvRMSSD}ms · EF {aerobicDurabilityStats.avgEf28}
+                HRV {latestWithHrv.hrvRMSSD > 0 ? `${latestWithHrv.hrvRMSSD}ms` : '—'} · EF{' '}
+                {aerobicDurabilityStats.avgEf28 > 0 ? aerobicDurabilityStats.avgEf28 : '—'}
               </span>
             </div>
             <button
@@ -3954,31 +3977,37 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <div className="px-3 py-1.5 rounded-xl liquid-glass-subtle flex items-center gap-2">
               <span className="text-slate-500 font-sans">EF (28d):</span>
               <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-                {aerobicDurabilityStats.avgEf28}
+                {aerobicDurabilityStats.avgEf28 > 0 ? aerobicDurabilityStats.avgEf28 : '—'}
               </span>
-              <span
-                className={`text-[11px] font-bold ${
-                  aerobicDurabilityStats.efPctDelta >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              >
-                ({aerobicDurabilityStats.efPctDelta >= 0 ? `+${aerobicDurabilityStats.efPctDelta}%` : `${aerobicDurabilityStats.efPctDelta}%`})
-              </span>
+              {aerobicDurabilityStats.avgEf28 > 0 && (
+                <span
+                  className={`text-[11px] font-bold ${
+                    aerobicDurabilityStats.efPctDelta >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  ({aerobicDurabilityStats.efPctDelta >= 0 ? `+${aerobicDurabilityStats.efPctDelta}%` : `${aerobicDurabilityStats.efPctDelta}%`})
+                </span>
+              )}
             </div>
 
             <div className="px-3 py-1.5 rounded-xl liquid-glass-subtle flex items-center gap-2">
               <span className="text-slate-500 font-sans">Drift (Pa:Hr):</span>
               <span
                 className={`text-sm font-extrabold ${
-                  aerobicDurabilityStats.avgDecoupling <= 3.5
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : aerobicDurabilityStats.avgDecoupling <= 5.0
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-rose-600 dark:text-rose-400'
+                  aerobicDurabilityStats.sampleCount === 0
+                    ? 'text-slate-500 dark:text-slate-400'
+                    : aerobicDurabilityStats.avgDecoupling <= 3.5
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : aerobicDurabilityStats.avgDecoupling <= 5.0
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
-                {aerobicDurabilityStats.avgDecoupling}%
+                {aerobicDurabilityStats.sampleCount > 0
+                  ? `${aerobicDurabilityStats.avgDecoupling}%`
+                  : '—'}
               </span>
             </div>
 
