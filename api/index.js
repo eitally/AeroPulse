@@ -1,11 +1,11 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express4 from "express";
+import express5 from "express";
 
 // server/apiRouter.ts
-import express3 from "express";
+import express4 from "express";
 import { AsyncLocalStorage } from "async_hooks";
-import crypto5 from "crypto";
+import crypto7 from "crypto";
 import fs4 from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -4849,8 +4849,569 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
   }
 });
 
+// server/routers/authRouter.ts
+import express3 from "express";
+import crypto6 from "crypto";
+
+// server/authService.ts
+import crypto5 from "crypto";
+function hashKey(val) {
+  return crypto5.createHash("sha256").update(val.toLowerCase().trim()).digest("hex").slice(0, 32);
+}
+async function saveUser(user) {
+  user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTenantVaultAsync(`user_${user.id}`, user);
+  if (user.email) {
+    await saveTenantVaultAsync(`auth_email_${hashKey(user.email)}`, { userId: user.id });
+  }
+  for (const p of user.authProviders) {
+    const provKey = `auth_prov_${p.provider}_${hashKey(p.providerId)}`;
+    await saveTenantVaultAsync(provKey, { userId: user.id });
+  }
+}
+async function getUserById(userId) {
+  if (!userId) return null;
+  const cleanId = String(userId).trim();
+  const user = await loadTenantVaultAsync(`user_${cleanId}`, null);
+  return user;
+}
+async function getUserByEmail(email) {
+  if (!email) return null;
+  const indexDoc = await loadTenantVaultAsync(
+    `auth_email_${hashKey(email)}`,
+    null
+  );
+  if (!indexDoc?.userId) return null;
+  return getUserById(indexDoc.userId);
+}
+async function getUserByProvider(provider, providerId) {
+  if (!provider || !providerId) return null;
+  const provKey = `auth_prov_${provider}_${hashKey(providerId)}`;
+  const indexDoc = await loadTenantVaultAsync(provKey, null);
+  if (!indexDoc?.userId) return null;
+  return getUserById(indexDoc.userId);
+}
+async function findOrCreateUser(provider, providerId, profile) {
+  let user = await getUserByProvider(provider, providerId);
+  if (user) {
+    let changed = false;
+    if (profile.name && (!user.name || user.name === "THRESH Athlete")) {
+      user.name = profile.name;
+      changed = true;
+    }
+    if (profile.picture && !user.picture) {
+      user.picture = profile.picture;
+      changed = true;
+    }
+    if (profile.email && !user.email) {
+      user.email = profile.email.toLowerCase().trim();
+      changed = true;
+    }
+    if (changed) {
+      await saveUser(user);
+    }
+    return user;
+  }
+  const cleanEmail = (profile.email || "").toLowerCase().trim();
+  if (cleanEmail) {
+    user = await getUserByEmail(cleanEmail);
+    if (user) {
+      const exists = user.authProviders.some(
+        (p) => p.provider === provider && p.providerId === providerId
+      );
+      if (!exists) {
+        user.authProviders.push({
+          provider,
+          providerId,
+          email: cleanEmail,
+          name: profile.name,
+          linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      if (profile.picture && !user.picture) user.picture = profile.picture;
+      await saveUser(user);
+      return user;
+    }
+  }
+  const newUserId = `usr_${crypto5.randomBytes(8).toString("hex")}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const newUser = {
+    id: newUserId,
+    email: cleanEmail,
+    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split("@")[0] : "THRESH Athlete"),
+    picture: profile.picture,
+    role: "athlete",
+    createdAt: now,
+    updatedAt: now,
+    authProviders: [
+      {
+        provider,
+        providerId,
+        email: cleanEmail || void 0,
+        name: profile.name,
+        linkedAt: now
+      }
+    ],
+    passkeys: [],
+    connectedServices: []
+  };
+  if (provider === "strava") {
+    newUser.connectedServices.push({
+      service: "strava",
+      connectedAt: now,
+      status: "CONNECTED",
+      athleteId: providerId,
+      athleteName: profile.name
+    });
+  }
+  await saveUser(newUser);
+  return newUser;
+}
+async function unlinkProviderFromUser(userId, provider) {
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: "User not found" };
+  if (user.authProviders.length <= 1) {
+    return {
+      ok: false,
+      error: "Cannot remove your last remaining login method."
+    };
+  }
+  user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
+  await saveUser(user);
+  return { ok: true };
+}
+var MAGIC_LINK_TTL_MS = 15 * 60 * 1e3;
+async function createMagicLinkToken(email) {
+  const cleanEmail = email.toLowerCase().trim();
+  const rawToken = crypto5.randomBytes(32).toString("hex");
+  const tokenHash = crypto5.createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = Date.now() + MAGIC_LINK_TTL_MS;
+  await saveTenantVaultAsync(`magic_link_${tokenHash}`, {
+    email: cleanEmail,
+    expiresAt
+  });
+  return { token: rawToken, expiresAt };
+}
+async function verifyMagicLinkToken(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") return null;
+  const tokenHash = crypto5.createHash("sha256").update(rawToken.trim()).digest("hex");
+  const record = await loadTenantVaultAsync(`magic_link_${tokenHash}`, null);
+  if (!record || !record.email || !record.expiresAt) {
+    return null;
+  }
+  if (Date.now() > record.expiresAt) {
+    await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
+    return null;
+  }
+  await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
+  return record.email;
+}
+async function sendMagicLinkEmail(email, verifyUrl) {
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  if (resendApiKey) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.run>",
+          to: [email],
+          subject: "Sign in to THRESH",
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
+              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to THRESH</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your THRESH endurance training cockpit. This link expires in 15 minutes.</p>
+              <div style="margin: 24px 0;">
+                <a href="${verifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to THRESH</a>
+              </div>
+              <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
+            </div>
+          `
+        })
+      });
+      if (res.ok) {
+        return { sent: true };
+      }
+      console.warn("[THRESH Auth] Resend email send failed:", await res.text());
+    } catch (err) {
+      console.error("[THRESH Auth] Failed sending email via Resend:", err);
+    }
+  }
+  return {
+    sent: true,
+    devMode: true,
+    previewUrl: verifyUrl
+  };
+}
+var PASSPORT_STATE_SECRET = "thresh-passkey-state-v1";
+function issuePasskeyChallengeToken(payload) {
+  const data = JSON.stringify({
+    ...payload,
+    exp: Date.now() + 5 * 60 * 1e3
+    // 5 min TTL
+  });
+  const b64 = Buffer.from(data, "utf8").toString("base64url");
+  const sig = crypto5.createHmac("sha256", PASSPORT_STATE_SECRET).update(b64).digest("base64url");
+  return `${b64}.${sig}`;
+}
+function verifyPasskeyChallengeToken(token) {
+  if (!token) return null;
+  const [b64, sig] = token.split(".");
+  if (!b64 || !sig) return null;
+  const expectedSig = crypto5.createHmac("sha256", PASSPORT_STATE_SECRET).update(b64).digest("base64url");
+  if (sig !== expectedSig) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(b64, "base64url").toString("utf8"));
+    if (!claims.exp || Date.now() > claims.exp) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+// server/routers/authRouter.ts
+var authRouter = express3.Router();
+function getRpId(req) {
+  const host = req.get("host") || "localhost:3000";
+  return host.split(":")[0];
+}
+function getAppBaseUrl(req) {
+  const isHttps = req.secure || String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https";
+  const proto = isHttps ? "https" : "http";
+  const host = req.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
+}
+authRouter.get("/api/auth/me", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims) {
+      return res.json({ authenticated: false, user: null });
+    }
+    let user = null;
+    if (claims.sub.startsWith("usr_")) {
+      user = await getUserById(claims.sub);
+    } else {
+      user = await getUserByProvider("strava", claims.sub);
+    }
+    if (!user) {
+      return res.json({
+        authenticated: true,
+        legacySession: true,
+        sessionSub: claims.sub,
+        user: null
+      });
+    }
+    return res.json({
+      authenticated: true,
+      user
+    });
+  } catch (err) {
+    console.error("[THRESH Auth] /api/auth/me error:", err);
+    return res.status(500).json({ error: "Failed retrieving session state." });
+  }
+});
+authRouter.get("/api/auth/google/url", (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const baseUrl = getAppBaseUrl(req);
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  if (!clientId) {
+    return res.json({
+      configured: false,
+      devMode: true,
+      message: "GOOGLE_CLIENT_ID not configured; dev mock login available.",
+      devMockUrl: "/api/auth/mock-login?provider=google"
+    });
+  }
+  const { stateToken, nonce } = issueOAuthStateToken({
+    flow: req.query.flow || "redirect"
+  });
+  setOAuthStateCookie(req, res, nonce);
+  const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  googleAuthUrl.searchParams.set("client_id", clientId);
+  googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
+  googleAuthUrl.searchParams.set("response_type", "code");
+  googleAuthUrl.searchParams.set("scope", "openid email profile");
+  googleAuthUrl.searchParams.set("state", stateToken);
+  googleAuthUrl.searchParams.set("access_type", "offline");
+  googleAuthUrl.searchParams.set("prompt", "select_account");
+  return res.json({
+    configured: true,
+    url: googleAuthUrl.toString()
+  });
+});
+authRouter.get("/api/auth/google/callback", async (req, res) => {
+  const code = String(req.query.code || "").trim();
+  const state = String(req.query.state || "").trim();
+  const error = String(req.query.error || "").trim();
+  if (error || !code) {
+    return res.redirect(`/?auth_error=${encodeURIComponent(error || "missing_code")}`);
+  }
+  const stateClaims = verifyOAuthStateToken(state);
+  const cookieNonce = getOAuthStateCookieNonce(req);
+  clearOAuthStateCookie(res);
+  if (!stateClaims || cookieNonce && stateClaims.nonce !== cookieNonce) {
+    return res.redirect("/?auth_error=invalid_state_csrf");
+  }
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const baseUrl = getAppBaseUrl(req);
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  if (!clientId || !clientSecret) {
+    return res.redirect("/?auth_error=google_not_configured");
+  }
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code"
+      })
+    });
+    if (!tokenRes.ok) {
+      console.error("[THRESH Auth] Google token exchange failed:", await tokenRes.text());
+      return res.redirect("/?auth_error=google_token_exchange_failed");
+    }
+    const tokenData = await tokenRes.json();
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    if (!userRes.ok) {
+      return res.redirect("/?auth_error=google_userinfo_failed");
+    }
+    const googleUser = await userRes.json();
+    const user = await findOrCreateUser("google", googleUser.sub, {
+      email: googleUser.email,
+      name: googleUser.name,
+      picture: googleUser.picture
+    });
+    setSessionCookie(req, res, user.id);
+    return res.redirect("/");
+  } catch (err) {
+    console.error("[THRESH Auth] Google callback processing error:", err);
+    return res.redirect("/?auth_error=internal_error");
+  }
+});
+authRouter.post("/api/auth/magic-link/send", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email || !email.includes("@") || email.length < 5) {
+    return res.status(400).json({ error: "Please enter a valid email address." });
+  }
+  try {
+    const { token } = await createMagicLinkToken(email);
+    const baseUrl = getAppBaseUrl(req);
+    const verifyUrl = `${baseUrl}/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`;
+    const result = await sendMagicLinkEmail(email, verifyUrl);
+    return res.json({
+      ok: true,
+      message: "A secure sign-in link has been sent to your email.",
+      devMode: result.devMode || false,
+      previewUrl: result.devMode ? result.previewUrl : void 0
+    });
+  } catch (err) {
+    console.error("[THRESH Auth] Failed generating magic link:", err);
+    return res.status(500).json({ error: "Unable to dispatch sign-in email. Please try again." });
+  }
+});
+authRouter.get("/api/auth/magic-link/verify", async (req, res) => {
+  const token = String(req.query.token || "").trim();
+  if (!token) {
+    return res.redirect("/?auth_error=missing_magic_token");
+  }
+  try {
+    const email = await verifyMagicLinkToken(token);
+    if (!email) {
+      return res.redirect("/?auth_error=expired_or_invalid_magic_token");
+    }
+    const user = await findOrCreateUser("magic_link", email, {
+      email,
+      name: email.split("@")[0]
+    });
+    setSessionCookie(req, res, user.id);
+    return res.redirect("/");
+  } catch (err) {
+    console.error("[THRESH Auth] Magic link verification error:", err);
+    return res.redirect("/?auth_error=magic_link_verification_failed");
+  }
+});
+authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
+  const rpId = getRpId(req);
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
+  const challenge = crypto6.randomBytes(32).toString("base64url");
+  const userId = crypto6.randomBytes(16).toString("base64url");
+  const challengeToken = issuePasskeyChallengeToken({
+    challenge,
+    purpose: "register",
+    userId
+  });
+  const options = {
+    challenge,
+    rp: {
+      name: "THRESH",
+      id: rpId
+    },
+    user: {
+      id: userId,
+      name: email || "athlete@thresh.local",
+      displayName: name
+    },
+    pubKeyCredParams: [
+      { alg: -7, type: "public-key" },
+      // ES256
+      { alg: -257, type: "public-key" }
+      // RS256
+    ],
+    timeout: 6e4,
+    attestation: "none",
+    authenticatorSelection: {
+      residentKey: "preferred",
+      userVerification: "preferred"
+    }
+  };
+  return res.json({ options, challengeToken });
+});
+authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
+  const { credential, challengeToken, email, name } = req.body || {};
+  if (!credential || !challengeToken) {
+    return res.status(400).json({ error: "Missing credential response or challenge token." });
+  }
+  const tokenClaims = verifyPasskeyChallengeToken(challengeToken);
+  if (!tokenClaims || tokenClaims.purpose !== "register") {
+    return res.status(400).json({ error: "Invalid or expired passkey registration challenge." });
+  }
+  try {
+    const credId = String(credential.id || credential.rawId || "").trim();
+    if (!credId) {
+      return res.status(400).json({ error: "Invalid credential ID received." });
+    }
+    const pubKeySpki = String(credential.publicKey || credential.response?.publicKey || credId);
+    const user = await findOrCreateUser("passkey", credId, {
+      email: email ? String(email).trim().toLowerCase() : void 0,
+      name: name ? String(name).trim() : "Passkey Athlete"
+    });
+    if (!user.passkeys) user.passkeys = [];
+    const existingIdx = user.passkeys.findIndex((p) => p.id === credId);
+    const passkeyObj = {
+      id: credId,
+      publicKeySpkiBase64: pubKeySpki,
+      counter: 0,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (existingIdx >= 0) {
+      user.passkeys[existingIdx] = passkeyObj;
+    } else {
+      user.passkeys.push(passkeyObj);
+    }
+    await saveUser(user);
+    setSessionCookie(req, res, user.id);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("[THRESH Auth] Passkey registration verification error:", err);
+    return res.status(500).json({ error: "Failed completing passkey registration." });
+  }
+});
+authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
+  const rpId = getRpId(req);
+  const challenge = crypto6.randomBytes(32).toString("base64url");
+  const challengeToken = issuePasskeyChallengeToken({
+    challenge,
+    purpose: "auth"
+  });
+  const options = {
+    challenge,
+    rpId,
+    timeout: 6e4,
+    userVerification: "preferred"
+  };
+  return res.json({ options, challengeToken });
+});
+authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
+  const { credential, challengeToken } = req.body || {};
+  if (!credential || !challengeToken) {
+    return res.status(400).json({ error: "Missing credential response or challenge token." });
+  }
+  const tokenClaims = verifyPasskeyChallengeToken(challengeToken);
+  if (!tokenClaims || tokenClaims.purpose !== "auth") {
+    return res.status(400).json({ error: "Invalid or expired passkey auth challenge." });
+  }
+  try {
+    const credId = String(credential.id || credential.rawId || "").trim();
+    if (!credId) {
+      return res.status(400).json({ error: "Invalid credential ID received." });
+    }
+    const user = await getUserByProvider("passkey", credId);
+    if (!user) {
+      return res.status(404).json({ error: "No THRESH account associated with this passkey." });
+    }
+    const passkey = user.passkeys?.find((p) => p.id === credId);
+    if (passkey) {
+      passkey.counter += 1;
+      await saveUser(user);
+    }
+    setSessionCookie(req, res, user.id);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("[THRESH Auth] Passkey auth verification error:", err);
+    return res.status(500).json({ error: "Failed verifying passkey." });
+  }
+});
+authRouter.post("/api/auth/mock-login", async (req, res) => {
+  const email = String(req.body?.email || req.query.email || "runner@thresh.local").trim().toLowerCase();
+  const name = String(req.body?.name || req.query.name || "Sample Runner").trim();
+  const provider = String(req.body?.provider || req.query.provider || "dev_mock");
+  try {
+    const user = await findOrCreateUser(provider, email, {
+      email,
+      name
+    });
+    setSessionCookie(req, res, user.id);
+    if (req.method === "GET" || req.query.redirect) {
+      return res.redirect("/");
+    }
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("[THRESH Auth] Mock login failed:", err);
+    return res.status(500).json({ error: "Failed logging in with mock credentials." });
+  }
+});
+authRouter.get("/api/auth/mock-login", async (req, res) => {
+  const email = String(req.query.email || "runner@thresh.local").trim().toLowerCase();
+  const name = String(req.query.name || "Sample Runner").trim();
+  const provider = String(req.query.provider || "dev_mock");
+  try {
+    const user = await findOrCreateUser(provider, email, { email, name });
+    setSessionCookie(req, res, user.id);
+    return res.redirect("/");
+  } catch (err) {
+    console.error("[THRESH Auth] Dev mock link failed:", err);
+    return res.redirect("/?auth_error=dev_mock_failed");
+  }
+});
+authRouter.post("/api/auth/unlink-provider", async (req, res) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+  const provider = String(req.body?.provider || "").trim();
+  if (!provider) {
+    return res.status(400).json({ error: "Missing provider to unlink." });
+  }
+  const result = await unlinkProviderFromUser(claims.sub, provider);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json({ ok: true });
+});
+
 // server/apiRouter.ts
-var apiRouter = express3.Router();
+var apiRouter = express4.Router();
 var requestContext = new AsyncLocalStorage();
 var explicitScopeKeyByReq = /* @__PURE__ */ new WeakMap();
 apiRouter.use(securityHeadersMiddleware);
@@ -4870,6 +5431,7 @@ apiRouter.use((req, _res, next) => {
 apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(authRouter);
 var SEGMENTS_BY_ACTIVITY_CACHE_FILE = "/tmp/thresh-segments-by-activity.json";
 var ROUTES_BY_ACTIVITY_CACHE_FILE = "/tmp/thresh-routes-by-activity.json";
 var STRAVA_KUDOS_CACHE_FILE = "/tmp/thresh-strava-kudos.json";
@@ -4914,7 +5476,7 @@ function resolveSessionScopeKey(req) {
   }
   const rawCredential = (String(activeReq.headers["x-garmin-personal-api-key"] || "").trim() || String(activeReq.headers["x-strava-refresh-token"] || "").trim() || String(activeReq.headers["x-strava-access-token"] || "").trim() || String(activeReq.headers["x-intervals-api-key"] || "").trim()).trim();
   if (!rawCredential) return null;
-  return crypto5.createHash("sha256").update(rawCredential).digest("hex").slice(0, 24);
+  return crypto7.createHash("sha256").update(rawCredential).digest("hex").slice(0, 24);
 }
 function getGarminScopeKey(req) {
   return resolveSessionScopeKey(req) || "unauthenticated";
@@ -4959,7 +5521,7 @@ function getActiveGarminSession(req) {
   return null;
 }
 function getScopedPlannedEventsFile(req, explicitApiKey) {
-  const scopeKey = explicitApiKey ? crypto5.createHash("sha256").update(explicitApiKey.trim()).digest("hex").slice(0, 24) : resolveSessionScopeKey(req);
+  const scopeKey = explicitApiKey ? crypto7.createHash("sha256").update(explicitApiKey.trim()).digest("hex").slice(0, 24) : resolveSessionScopeKey(req);
   if (!scopeKey) return null;
   return `/tmp/thresh-planned-events-${scopeKey}.json`;
 }
@@ -7783,7 +8345,7 @@ function ensureRequestSessionSid(req, res, fallbackSubject = "thresh-athlete") {
     bindRequestScopeKey(req, verified.sid);
     return verified.sid;
   }
-  const sid = crypto5.randomBytes(16).toString("hex");
+  const sid = crypto7.randomBytes(16).toString("hex");
   setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return sid;
@@ -7791,7 +8353,7 @@ function ensureRequestSessionSid(req, res, fallbackSubject = "thresh-athlete") {
 async function activateStravaCanonicalScope(req, res, opts) {
   const prevClaims = getVerifiedSessionClaims(req);
   const prevStore = getScopedRuntimeStore(req);
-  const canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || crypto5.randomBytes(16).toString("hex");
+  const canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || crypto7.randomBytes(16).toString("hex");
   if (opts.athleteId && prevClaims?.sid && prevClaims.sid !== canonicalSid) {
     await migrateAnonymousTeamsToStravaSid({
       oldSid: prevClaims.sid,
@@ -8090,6 +8652,15 @@ apiRouter.post("/api/strava/exchange-code", async (req, res) => {
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+    if (athleteId) {
+      try {
+        await findOrCreateUser("strava", athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : void 0
+        });
+      } catch (err) {
+        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+      }
+    }
     await saveSessionCacheAsync(req, res, canonicalSid);
     res.json({
       connected: true,
@@ -8204,6 +8775,15 @@ apiRouter.post("/api/strava/token", async (req, res) => {
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+    if (athleteId) {
+      try {
+        await findOrCreateUser("strava", athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : void 0
+        });
+      } catch (err) {
+        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+      }
+    }
     await saveSessionCacheAsync(req, res, canonicalSid);
     res.json({
       connected: true,
@@ -8440,6 +9020,15 @@ var stravaCallbackHandler = async (req, res) => {
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+    if (athleteId) {
+      try {
+        await findOrCreateUser("strava", athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : void 0
+        });
+      } catch (err) {
+        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+      }
+    }
     await saveSessionCacheAsync(req, res, canonicalSid);
     clearOAuthStateCookie(res);
     if (verifiedState?.nonce) {
@@ -10108,10 +10697,10 @@ apiRouter.post("/api/auth/logout", async (req, res) => {
 });
 
 // server/vercelApp.ts
-var app = express4();
+var app = express5();
 app.disable("x-powered-by");
 app.use(securityHeadersMiddleware);
-app.use(express4.json({ limit: "2mb" }));
+app.use(express5.json({ limit: "2mb" }));
 app.use(apiRouter);
 var vercelApp_default = app;
 export {
