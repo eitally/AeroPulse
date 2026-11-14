@@ -4729,6 +4729,8 @@ export default function App() {
                     </select>
                     <button
                       type="button"
+                      data-testid="open-roster-modal"
+                      aria-label="Manage Team Roster"
                       onClick={() => {
                         setRosterInitialTab('TEAMS_BRANDING');
                         setIsRosterModalOpen(true);
@@ -4742,6 +4744,8 @@ export default function App() {
                 ) : (
                   <button
                     type="button"
+                    data-testid="open-roster-modal"
+                    aria-label="Open Team Roster Modal"
                     onClick={() => {
                       setRosterInitialTab('TEAMS_BRANDING');
                       setIsRosterModalOpen(true);

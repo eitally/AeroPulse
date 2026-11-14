@@ -82,8 +82,8 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await enterSampleDemoMode(page);
 
-      // Open Roster modal via "+ Team" or Manage button
-      const teamBtn = page.getByRole('button', { name: /\+ Team|Manage/i }).first();
+      // Open Roster modal via explicit data-testid
+      const teamBtn = page.locator('[data-testid="open-roster-modal"]').first();
       await expect(teamBtn).toBeVisible({ timeout: 10000 });
       await teamBtn.click();
 
