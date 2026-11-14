@@ -7,14 +7,17 @@ import { test, expect, Page } from '@playwright/test';
 async function enterSampleDemoMode(page: Page) {
   await page.goto('/');
 
-  // If Auth Gate is shown, click "Explore Sample Cockpit"
+  // If Auth Gate is shown, wait and click "Explore Sample Cockpit"
   const sampleDemoBtn = page.getByRole('button', { name: /Explore Sample Cockpit/i });
-  if (await sampleDemoBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  try {
+    await sampleDemoBtn.waitFor({ state: 'visible', timeout: 5000 });
     await sampleDemoBtn.click();
+  } catch {
+    // Already in Cockpit session
   }
 
-  // Wait for the main cockpit to load (Today / Fitness view)
-  await expect(page.locator('header')).toBeVisible({ timeout: 15000 });
+  // Wait for the main cockpit to load (#main-content is only rendered in Cockpit)
+  await expect(page.locator('#main-content')).toBeVisible({ timeout: 15000 });
 }
 
 test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
@@ -22,7 +25,6 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
     test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
     test('1. Today Screen — Light and Dark Mode', async ({ page }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
       await enterSampleDemoMode(page);
 
       // Verify Today screen elements
@@ -50,7 +52,6 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
     });
 
     test('2. Plan Screen — Light and Dark Mode', async ({ page }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
       await enterSampleDemoMode(page);
 
       // Switch to Plan tab
@@ -79,7 +80,6 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
     });
 
     test('3. Athlete Roster Modal — Light and Dark Mode', async ({ page }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
       await enterSampleDemoMode(page);
 
       // Open Roster modal via explicit data-testid
