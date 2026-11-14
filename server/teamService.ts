@@ -250,6 +250,74 @@ function buildTeamInviteEmailContent(params: {
   return { subject, html, text };
 }
 
+export function buildParentConsentEmailContent(params: {
+  brand: TeamBrandConfig;
+  athleteName: string;
+  parentConsentUrl: string;
+}): { subject: string; html: string; text: string } {
+  const { brand, athleteName, parentConsentUrl } = params;
+  const subject = `Notice: ${athleteName} joined ${brand.name} on THRESH (Scholastic Safeguards Active)`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
+  <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">THRESH SCHOLASTIC SAFEGUARDING</div>
+      <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
+      <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} · Coach ${escapeHtml(brand.coachDisplayName)}</div>
+    </div>
+    <div style="padding:24px;">
+      <p style="font-size:15px;margin:0 0 16px;">Hello,</p>
+      <p style="font-size:14px;color:#374151;margin:0 0 16px;">
+        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on THRESH for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
+      </p>
+
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#0F172A;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Active Safeguards & Youth Privacy (COPPA & Safe Sport)</div>
+        <ul style="font-size:13px;color:#475569;margin:0;padding-left:18px;line-height:1.6;">
+          <li><strong>Safe-Sport Weight Shield Active:</strong> Body weight and power-to-weight ratios are strictly hidden to prevent disordered eating and RED-S syndrome.</li>
+          <li><strong>Clean-Room Data Firewall:</strong> Training logs (distance, pace, heart rate) are shared only with certified team coaches. Zero advertising, zero tracking, and zero data sales to third parties.</li>
+          <li><strong>Scholastic Retention:</strong> Roster participation data is maintained strictly for school athletic training and may be reviewed or deleted at any time upon parental request.</li>
+        </ul>
+      </div>
+
+      <div style="text-align:center;margin:24px 0 16px;">
+        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
+          Acknowledge & Confirm Roster Enrollment
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
+        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const text = [
+    `THRESH SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
+    ``,
+    `Hello,`,
+    `${athleteName} has joined ${brand.name} on THRESH for athletic training under Coach ${brand.coachDisplayName}.`,
+    ``,
+    `Active Safeguards:`,
+    `- Safe-Sport Weight Shield: Body weight is hidden to prevent RED-S and disordered eating.`,
+    `- Clean-Room Firewall: Activity data is private to team coaches; zero ad tracking, zero data sales.`,
+    ``,
+    `Please acknowledge your athlete's enrollment here:`,
+    parentConsentUrl,
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 // ============================================================================
 // Cross-Device 6-Digit Email OTP Sign-In (Resend)
 // ============================================================================
@@ -686,13 +754,17 @@ function projectTeamSummaryForCaller(
     const base: TeamMembershipRecord = {
       membershipId: m.membershipId,
       teamId: m.teamId,
+      userSid: isCoach || isSelf ? m.userSid : undefined,
       stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : undefined,
       sharingTier: m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
+      birthYear: isCoach || isSelf ? m.birthYear : undefined,
       isMinorU18: m.isMinorU18,
+      parentConsentStatus: isCoach || isSelf ? m.parentConsentStatus : undefined,
+      parentConsentAt: isCoach || isSelf ? m.parentConsentAt : undefined,
       seedMarkOrFtp: m.seedMarkOrFtp,
       status: m.status,
       emailDeliveryStatus: m.emailDeliveryStatus,
@@ -705,6 +777,7 @@ function projectTeamSummaryForCaller(
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
+      base.parentConsentToken = m.parentConsentToken;
       const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : '';
       if (m.rawInviteToken) {
         base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ''}`;
@@ -1245,9 +1318,12 @@ export async function previewTeamJoinInvite(
           membershipId: matchedMem.membershipId,
           invitedName: matchedMem.invitedName,
           invitedEmail: matchedMem.invitedEmail,
+          parentGuardianEmail: matchedMem.parentGuardianEmail,
           squadGroup: matchedMem.squadGroup,
           role: matchedMem.role,
           isMinorU18: matchedMem.isMinorU18,
+          birthYear: matchedMem.birthYear,
+          parentConsentStatus: matchedMem.parentConsentStatus,
           seedMarkOrFtp: matchedMem.seedMarkOrFtp,
         }
       : undefined,
@@ -1266,6 +1342,8 @@ export async function claimTeamJoinInvite(params: {
   seedMarkOrFtp?: string;
   distanceUnit?: DistanceUnit;
   sharingTier?: CoachDataSharingTier;
+  birthYear?: number;
+  parentGuardianEmail?: string;
 }): Promise<{
   ok: boolean;
   summary?: TeamSummaryWithRole;
@@ -1366,6 +1444,49 @@ export async function claimTeamJoinInvite(params: {
     if (!mem.joinedAt) mem.joinedAt = nowIso;
   }
 
+  const currentYear = new Date().getFullYear();
+  const isMinorFromBirthYear =
+    typeof params.birthYear === 'number' && params.birthYear > 1900
+      ? currentYear - params.birthYear < 18
+      : false;
+  const isMinor = Boolean(
+    doc.brand.orgType === 'HIGH_SCHOOL' || mem.isMinorU18 || isMinorFromBirthYear
+  );
+  mem.isMinorU18 = isMinor;
+  if (typeof params.birthYear === 'number' && params.birthYear > 1900) {
+    mem.birthYear = params.birthYear;
+  }
+  if (params.parentGuardianEmail) {
+    mem.parentGuardianEmail = params.parentGuardianEmail.trim().toLowerCase();
+  }
+
+  // If athlete is minor and has a parent/guardian email, trigger parent consent notification
+  if (mem.isMinorU18 && mem.parentGuardianEmail) {
+    if (!mem.parentConsentToken) {
+      mem.parentConsentToken = crypto.randomBytes(16).toString('base64url');
+    }
+    if (!mem.parentConsentStatus) {
+      mem.parentConsentStatus = 'PENDING';
+    }
+
+    const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+    const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${mem.parentConsentToken}`;
+    const emailContent = buildParentConsentEmailContent({
+      brand: doc.brand,
+      athleteName: mem.invitedName,
+      parentConsentUrl: consentUrl,
+    });
+
+    void sendEmailViaResend({
+      to: mem.parentGuardianEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
+    });
+  } else if (!mem.parentConsentStatus) {
+    mem.parentConsentStatus = mem.isMinorU18 ? 'PENDING' : 'NOT_REQUIRED';
+  }
+
   const safeSportShieldEnforced = Boolean(
     doc.brand.defaultSafeSportShield || mem.isMinorU18
   );
@@ -1417,6 +1538,57 @@ export async function claimTeamJoinInvite(params: {
     calibrated,
     safeSportShieldEnforced,
   };
+}
+
+export async function acknowledgeParentConsent(token: string): Promise<{
+  ok: boolean;
+  athleteName?: string;
+  teamName?: string;
+  coachName?: string;
+  sport?: string;
+  parentEmail?: string;
+  acknowledgedAt?: string;
+  alreadyAcknowledged?: boolean;
+  error?: string;
+}> {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) {
+    return { ok: false, error: 'Invalid or missing parent consent token.' };
+  }
+
+  const dir = await loadDirectory();
+  for (const teamId of dir.allTeamIds) {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+
+    const mem = doc.memberships.find(
+      (m) => m.parentConsentToken === cleanToken && m.status !== 'REVOKED'
+    );
+    if (mem) {
+      const wasAcknowledged = mem.parentConsentStatus === 'ACKNOWLEDGED';
+      if (!wasAcknowledged) {
+        mem.parentConsentStatus = 'ACKNOWLEDGED';
+        mem.parentConsentAt = new Date().toISOString();
+        doc.updatedAt = mem.parentConsentAt;
+        await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      }
+      return {
+        ok: true,
+        athleteName: mem.invitedName,
+        teamName: doc.brand.name,
+        coachName: doc.brand.coachDisplayName,
+        sport: doc.brand.primarySport,
+        parentEmail: mem.parentGuardianEmail,
+        acknowledgedAt: mem.parentConsentAt,
+        alreadyAcknowledged: wasAcknowledged,
+      };
+    }
+  }
+
+  return { ok: false, error: 'Invalid or expired parent consent link.' };
 }
 
 export async function broadcastWorkoutToTeamSquad(params: {

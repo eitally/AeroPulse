@@ -7,6 +7,7 @@ import {
 } from '../securityUtils.ts';
 import { getUserById } from '../authService.ts';
 import {
+  acknowledgeParentConsent,
   autoLinkPendingTeamInvitesByEmail,
   broadcastWorkoutToTeamSquad,
   bulkCreateAndSendInvites,
@@ -366,6 +367,15 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : undefined,
       distanceUnit,
       sharingTier,
+      birthYear:
+        typeof req.body?.birthYear === 'number'
+          ? req.body.birthYear
+          : req.body?.birthYear
+            ? Number(req.body.birthYear)
+            : undefined,
+      parentGuardianEmail: req.body?.parentGuardianEmail
+        ? String(req.body.parentGuardianEmail).trim()
+        : undefined,
     });
 
     if (!claimed.ok || !claimed.summary) {
@@ -452,6 +462,70 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to broadcast workout.',
+    });
+  }
+});
+
+// 12. Parent/Guardian Consent Acknowledgment (COPPA & Safe Sport Youth Safeguards)
+teamRouter.get('/api/teams/parent-consent', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.query.token || req.query.t || '').trim();
+    const result = await acknowledgeParentConsent(token);
+    if (!result.ok) {
+      res.status(400).send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Parent Acknowledgment Error · THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px 16px;max-width:480px;margin:0 auto;text-align:center;color:#1F2937;">
+  <h2 style="color:#DC2626;">Invalid or Expired Link</h2>
+  <p>${result.error || 'This consent link could not be verified.'}</p>
+  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to THRESH</a>
+</body>
+</html>`);
+      return;
+    }
+
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Parent Acknowledgment Confirmed · THRESH</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F4F6F3;padding:40px 16px;margin:0;color:#111318;">
+  <div style="max-width:500px;margin:0 auto;background:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;padding:32px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="width:48px;height:48px;border-radius:24px;background:#DCFCE7;color:#15803D;font-size:24px;line-height:48px;margin:0 auto 16px;">✓</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#15803D;text-transform:uppercase;">SAFEGUARDING ACKNOWLEDGED</div>
+    <h2 style="margin:8px 0 12px;font-size:22px;color:#111318;">Enrollment Confirmed</h2>
+    <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 20px;">
+      Thank you. Your parent acknowledgment for <strong>${result.athleteName || 'Athlete'}</strong> on <strong>${result.teamName || 'Team'}</strong> has been recorded.
+    </p>
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;text-align:left;font-size:13px;color:#334155;margin-bottom:24px;">
+      <div><strong>Team:</strong> ${result.teamName || ''}</div>
+      <div><strong>Coach:</strong> ${result.coachName || ''}</div>
+      <div><strong>Safeguards:</strong> Safe-Sport RED-S weight shield is active.</div>
+    </div>
+    <a href="/" style="display:inline-block;background:#14532D;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;">Visit THRESH</a>
+  </div>
+</body>
+</html>`);
+  } catch {
+    res.status(500).send('An error occurred while confirming consent.');
+  }
+});
+
+teamRouter.post('/api/teams/parent-consent', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.body?.token || req.query.token || '').trim();
+    const result = await acknowledgeParentConsent(token);
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ...result });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed confirming consent.',
     });
   }
 });

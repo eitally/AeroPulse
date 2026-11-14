@@ -2403,6 +2403,66 @@ function buildTeamInviteEmailContent(params) {
   ].filter(Boolean).join("\n");
   return { subject, html, text };
 }
+function buildParentConsentEmailContent(params) {
+  const { brand, athleteName, parentConsentUrl } = params;
+  const subject = `Notice: ${athleteName} joined ${brand.name} on THRESH (Scholastic Safeguards Active)`;
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
+  <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">THRESH SCHOLASTIC SAFEGUARDING</div>
+      <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
+      <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} \xB7 Coach ${escapeHtml(brand.coachDisplayName)}</div>
+    </div>
+    <div style="padding:24px;">
+      <p style="font-size:15px;margin:0 0 16px;">Hello,</p>
+      <p style="font-size:14px;color:#374151;margin:0 0 16px;">
+        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on THRESH for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
+      </p>
+
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#0F172A;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Active Safeguards & Youth Privacy (COPPA & Safe Sport)</div>
+        <ul style="font-size:13px;color:#475569;margin:0;padding-left:18px;line-height:1.6;">
+          <li><strong>Safe-Sport Weight Shield Active:</strong> Body weight and power-to-weight ratios are strictly hidden to prevent disordered eating and RED-S syndrome.</li>
+          <li><strong>Clean-Room Data Firewall:</strong> Training logs (distance, pace, heart rate) are shared only with certified team coaches. Zero advertising, zero tracking, and zero data sales to third parties.</li>
+          <li><strong>Scholastic Retention:</strong> Roster participation data is maintained strictly for school athletic training and may be reviewed or deleted at any time upon parental request.</li>
+        </ul>
+      </div>
+
+      <div style="text-align:center;margin:24px 0 16px;">
+        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
+          Acknowledge & Confirm Roster Enrollment
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
+        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+  const text = [
+    `THRESH SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
+    ``,
+    `Hello,`,
+    `${athleteName} has joined ${brand.name} on THRESH for athletic training under Coach ${brand.coachDisplayName}.`,
+    ``,
+    `Active Safeguards:`,
+    `- Safe-Sport Weight Shield: Body weight is hidden to prevent RED-S and disordered eating.`,
+    `- Clean-Room Firewall: Activity data is private to team coaches; zero ad tracking, zero data sales.`,
+    ``,
+    `Please acknowledge your athlete's enrollment here:`,
+    parentConsentUrl
+  ].join("\n");
+  return { subject, html, text };
+}
 async function requestEmailOtpCode(rawEmail) {
   const email = String(rawEmail || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -2722,13 +2782,17 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     const base = {
       membershipId: m.membershipId,
       teamId: m.teamId,
+      userSid: isCoach || isSelf ? m.userSid : void 0,
       stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : void 0,
       sharingTier: m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
+      birthYear: isCoach || isSelf ? m.birthYear : void 0,
       isMinorU18: m.isMinorU18,
+      parentConsentStatus: isCoach || isSelf ? m.parentConsentStatus : void 0,
+      parentConsentAt: isCoach || isSelf ? m.parentConsentAt : void 0,
       seedMarkOrFtp: m.seedMarkOrFtp,
       status: m.status,
       emailDeliveryStatus: m.emailDeliveryStatus,
@@ -2741,6 +2805,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
+      base.parentConsentToken = m.parentConsentToken;
       const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : "";
       if (m.rawInviteToken) {
         base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ""}`;
@@ -3102,9 +3167,12 @@ async function previewTeamJoinInvite(codeOrSlug, inviteToken, athleteEmail) {
       membershipId: matchedMem.membershipId,
       invitedName: matchedMem.invitedName,
       invitedEmail: matchedMem.invitedEmail,
+      parentGuardianEmail: matchedMem.parentGuardianEmail,
       squadGroup: matchedMem.squadGroup,
       role: matchedMem.role,
       isMinorU18: matchedMem.isMinorU18,
+      birthYear: matchedMem.birthYear,
+      parentConsentStatus: matchedMem.parentConsentStatus,
       seedMarkOrFtp: matchedMem.seedMarkOrFtp
     } : void 0
   };
@@ -3190,6 +3258,41 @@ async function claimTeamJoinInvite(params) {
     if (!mem.openedAt) mem.openedAt = nowIso;
     if (!mem.joinedAt) mem.joinedAt = nowIso;
   }
+  const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+  const isMinorFromBirthYear = typeof params.birthYear === "number" && params.birthYear > 1900 ? currentYear - params.birthYear < 18 : false;
+  const isMinor = Boolean(
+    doc.brand.orgType === "HIGH_SCHOOL" || mem.isMinorU18 || isMinorFromBirthYear
+  );
+  mem.isMinorU18 = isMinor;
+  if (typeof params.birthYear === "number" && params.birthYear > 1900) {
+    mem.birthYear = params.birthYear;
+  }
+  if (params.parentGuardianEmail) {
+    mem.parentGuardianEmail = params.parentGuardianEmail.trim().toLowerCase();
+  }
+  if (mem.isMinorU18 && mem.parentGuardianEmail) {
+    if (!mem.parentConsentToken) {
+      mem.parentConsentToken = crypto4.randomBytes(16).toString("base64url");
+    }
+    if (!mem.parentConsentStatus) {
+      mem.parentConsentStatus = "PENDING";
+    }
+    const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+    const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${mem.parentConsentToken}`;
+    const emailContent = buildParentConsentEmailContent({
+      brand: doc.brand,
+      athleteName: mem.invitedName,
+      parentConsentUrl: consentUrl
+    });
+    void sendEmailViaResend({
+      to: mem.parentGuardianEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text
+    });
+  } else if (!mem.parentConsentStatus) {
+    mem.parentConsentStatus = mem.isMinorU18 ? "PENDING" : "NOT_REQUIRED";
+  }
   const safeSportShieldEnforced = Boolean(
     doc.brand.defaultSafeSportShield || mem.isMinorU18
   );
@@ -3238,6 +3341,43 @@ async function claimTeamJoinInvite(params) {
     calibrated,
     safeSportShieldEnforced
   };
+}
+async function acknowledgeParentConsent(token) {
+  const cleanToken = String(token || "").trim();
+  if (!cleanToken) {
+    return { ok: false, error: "Invalid or missing parent consent token." };
+  }
+  const dir = await loadDirectory();
+  for (const teamId of dir.allTeamIds) {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+    const mem = doc.memberships.find(
+      (m) => m.parentConsentToken === cleanToken && m.status !== "REVOKED"
+    );
+    if (mem) {
+      const wasAcknowledged = mem.parentConsentStatus === "ACKNOWLEDGED";
+      if (!wasAcknowledged) {
+        mem.parentConsentStatus = "ACKNOWLEDGED";
+        mem.parentConsentAt = (/* @__PURE__ */ new Date()).toISOString();
+        doc.updatedAt = mem.parentConsentAt;
+        await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      }
+      return {
+        ok: true,
+        athleteName: mem.invitedName,
+        teamName: doc.brand.name,
+        coachName: doc.brand.coachDisplayName,
+        sport: doc.brand.primarySport,
+        parentEmail: mem.parentGuardianEmail,
+        acknowledgedAt: mem.parentConsentAt,
+        alreadyAcknowledged: wasAcknowledged
+      };
+    }
+  }
+  return { ok: false, error: "Invalid or expired parent consent link." };
 }
 async function broadcastWorkoutToTeamSquad(params) {
   const doc = await loadTenantVaultAsync(
@@ -5130,7 +5270,9 @@ teamRouter.post("/api/teams/join-claim", async (req, res) => {
       squadGroup: req.body?.squadGroup ? String(req.body.squadGroup) : void 0,
       seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : void 0,
       distanceUnit,
-      sharingTier
+      sharingTier,
+      birthYear: typeof req.body?.birthYear === "number" ? req.body.birthYear : req.body?.birthYear ? Number(req.body.birthYear) : void 0,
+      parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0
     });
     if (!claimed.ok || !claimed.summary) {
       res.status(404).json({
@@ -5209,6 +5351,66 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed to broadcast workout."
+    });
+  }
+});
+teamRouter.get("/api/teams/parent-consent", async (req, res) => {
+  try {
+    const token = String(req.query.token || req.query.t || "").trim();
+    const result = await acknowledgeParentConsent(token);
+    if (!result.ok) {
+      res.status(400).send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Parent Acknowledgment Error \xB7 THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px 16px;max-width:480px;margin:0 auto;text-align:center;color:#1F2937;">
+  <h2 style="color:#DC2626;">Invalid or Expired Link</h2>
+  <p>${result.error || "This consent link could not be verified."}</p>
+  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to THRESH</a>
+</body>
+</html>`);
+      return;
+    }
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Parent Acknowledgment Confirmed \xB7 THRESH</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F4F6F3;padding:40px 16px;margin:0;color:#111318;">
+  <div style="max-width:500px;margin:0 auto;background:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;padding:32px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="width:48px;height:48px;border-radius:24px;background:#DCFCE7;color:#15803D;font-size:24px;line-height:48px;margin:0 auto 16px;">\u2713</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#15803D;text-transform:uppercase;">SAFEGUARDING ACKNOWLEDGED</div>
+    <h2 style="margin:8px 0 12px;font-size:22px;color:#111318;">Enrollment Confirmed</h2>
+    <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 20px;">
+      Thank you. Your parent acknowledgment for <strong>${result.athleteName || "Athlete"}</strong> on <strong>${result.teamName || "Team"}</strong> has been recorded.
+    </p>
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;text-align:left;font-size:13px;color:#334155;margin-bottom:24px;">
+      <div><strong>Team:</strong> ${result.teamName || ""}</div>
+      <div><strong>Coach:</strong> ${result.coachName || ""}</div>
+      <div><strong>Safeguards:</strong> Safe-Sport RED-S weight shield is active.</div>
+    </div>
+    <a href="/" style="display:inline-block;background:#14532D;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;">Visit THRESH</a>
+  </div>
+</body>
+</html>`);
+  } catch {
+    res.status(500).send("An error occurred while confirming consent.");
+  }
+});
+teamRouter.post("/api/teams/parent-consent", async (req, res) => {
+  try {
+    const token = String(req.body?.token || req.query.token || "").trim();
+    const result = await acknowledgeParentConsent(token);
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ...result });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed confirming consent."
     });
   }
 });

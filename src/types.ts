@@ -1047,6 +1047,8 @@ export interface TeamAthleteLiveSnapshot {
   activities?: UnifiedActivity[];
 }
 
+export type ParentConsentStatus = 'PENDING' | 'ACKNOWLEDGED' | 'NOT_REQUIRED';
+
 export interface TeamMembershipRecord {
   membershipId: string;
   teamId: string;
@@ -1060,7 +1062,11 @@ export interface TeamMembershipRecord {
   invitedPhone?: string;
   parentGuardianEmail?: string;
   graduationYear?: number;
+  birthYear?: number;
   isMinorU18: boolean;
+  parentConsentStatus?: ParentConsentStatus;
+  parentConsentToken?: string;
+  parentConsentAt?: string;
   seedMarkOrFtp?: string;
   status: TeamInviteStatus;
   emailDeliveryStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
@@ -1107,9 +1113,12 @@ export interface TeamInvitePreviewPayload {
     membershipId: string;
     invitedName: string;
     invitedEmail?: string;
+    parentGuardianEmail?: string;
     squadGroup: string;
     role: TeamMemberRole;
     isMinorU18: boolean;
+    birthYear?: number;
+    parentConsentStatus?: ParentConsentStatus;
     seedMarkOrFtp?: string;
   };
 }

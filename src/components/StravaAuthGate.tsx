@@ -232,6 +232,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   );
   const [athleteName, setAthleteName] = useState(status.stravaAthleteName || '');
   const [athleteEmail, setAthleteEmail] = useState(initialJoin.email || '');
+  const [birthYear, setBirthYear] = useState<string>('');
+  const [parentGuardianEmail, setParentGuardianEmail] = useState<string>('');
   const [primarySport, setPrimarySport] = useState<'Cycling' | 'Running' | 'Hybrid'>('Running');
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(
     status.stravaMeasurementPreference || propDistanceUnit || 'mi'
@@ -290,6 +292,22 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [invitePreview, setInvitePreview] = useState<TeamInvitePreviewPayload | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const parsedBirthYear = parseInt(birthYear, 10);
+  const isMinorByBirthYear =
+    !isNaN(parsedBirthYear) && parsedBirthYear > 1900 && currentYear - parsedBirthYear < 18;
+  const isMinorAthlete = Boolean(
+    invitePreview?.brand?.orgType === 'HIGH_SCHOOL' ||
+      invitePreview?.membership?.isMinorU18 ||
+      isMinorByBirthYear
+  );
+
+  useEffect(() => {
+    if (isMinorAthlete) {
+      setSafeSportHideWeight(true);
+    }
+  }, [isMinorAthlete]);
 
   const currentHostname =
     typeof window !== 'undefined' ? window.location.hostname : 'thresh.app';
@@ -438,6 +456,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           }
           if (data.membership.invitedEmail) setAthleteEmail(data.membership.invitedEmail);
           if (data.membership.seedMarkOrFtp) setRawSeedValue(data.membership.seedMarkOrFtp);
+          if (data.membership.parentGuardianEmail) {
+            setParentGuardianEmail(data.membership.parentGuardianEmail);
+          }
+          if (data.membership.birthYear) {
+            setBirthYear(String(data.membership.birthYear));
+          }
         }
         try {
           sessionStorage.setItem(
@@ -705,6 +729,26 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       }
       setConfirmedPolicy(savedPolicy);
 
+      // Youth Protection Gate (COPPA & Scholastic Safe-Sport)
+      if (isMinorAthlete && !activeBrand && !joinCodeInput.trim()) {
+        setJoinError(
+          'Scholastic Youth Protection: Athletes under 18 must join through a school or club athletic team. Please enter your team join code.'
+        );
+        setShowTeamCodeDrawer(true);
+        return;
+      }
+
+      if (
+        isMinorAthlete &&
+        !parentGuardianEmail.trim() &&
+        !invitePreview?.membership?.parentGuardianEmail
+      ) {
+        setJoinError(
+          'Parent or guardian email is required for athletes under 18 to complete registration.'
+        );
+        return;
+      }
+
       // If athlete is joining a team, claim their roster spot now with their verified Strava identity!
       if (activeBrand && joinCodeInput.trim()) {
         const claimResp = await fetch('/api/teams/join-claim', {
@@ -722,6 +766,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             distanceUnit,
             sharingTier,
             stravaAthleteId: status.stravaAthleteId || undefined,
+            birthYear:
+              !isNaN(parsedBirthYear) && parsedBirthYear > 1900 ? parsedBirthYear : undefined,
+            parentGuardianEmail: parentGuardianEmail.trim() || undefined,
           }),
         });
         const claimData = await claimResp.json().catch(() => ({}));
@@ -850,9 +897,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             ? claimedTeamsState?.calibratedPace ||
               liveSeedCalibration.thresholdPaceInputDisplay
             : undefined,
-          safeSportHideWeight: Boolean(
-            claimedTeamsState?.safeSportEnforced || safeSportHideWeight
-          ),
+          safeSportHideWeight: isMinorAthlete
+            ? true
+            : Boolean(claimedTeamsState?.safeSportEnforced || safeSportHideWeight),
           stravaSyncPolicy: confirmedPolicy,
           claimedTeams: claimedTeamsState?.teams,
           activeTeamId: claimedTeamsState?.activeTeamId,
@@ -1749,6 +1796,105 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </>
               )}
 
+              {/* Athlete Profile & Youth Protection */}
+              <div className="liquid-glass rounded-2xl p-4 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                    Athlete Profile &amp; Eligibility
+                  </h2>
+                  {isMinorAthlete && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Safe-Sport Minor Protection</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label
+                      htmlFor={`${formId}-profile-name`}
+                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Athlete Display Name
+                    </label>
+                    <input
+                      id={`${formId}-profile-name`}
+                      type="text"
+                      value={athleteName}
+                      onChange={(e) => setAthleteName(e.target.value)}
+                      placeholder="e.g. Maya Lin"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor={`${formId}-birth-year`}
+                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Birth Year <span className="text-slate-400 font-normal">(Age verification)</span>
+                    </label>
+                    <input
+                      id={`${formId}-birth-year`}
+                      type="number"
+                      min={1920}
+                      max={currentYear}
+                      value={birthYear}
+                      onChange={(e) => setBirthYear(e.target.value)}
+                      placeholder={`e.g. ${currentYear - 17}`}
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                {/* Minor Youth Protection Gate: If under 18 and not yet attached to a team */}
+                {isMinorAthlete && !activeBrand && (
+                  <div className="ap-status-caution rounded-xl p-3.5 space-y-2 text-xs">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
+                      <span>Scholastic Youth Protection Gate</span>
+                    </div>
+                    <p className="text-slate-300 text-2xs leading-relaxed">
+                      Under COPPA and our youth privacy rules, athletes under 18 must join through an authorized school or club athletic team roster. Standalone public registration by minors without a team wrapper is restricted.
+                    </p>
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowTeamCodeDrawer(true)}
+                        className="ap-btn-primary !min-h-[36px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Enter Coach / Team Join Code</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Parent / Guardian Email Requirement for Minor Athletes */}
+                {isMinorAthlete && (
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/80 dark:border-white/10">
+                    <label
+                      htmlFor={`${formId}-parent-email`}
+                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300"
+                    >
+                      Parent or Guardian Email <span className="text-amber-400 font-bold">*Required for Athletes Under 18</span>
+                    </label>
+                    <input
+                      id={`${formId}-parent-email`}
+                      type="email"
+                      value={parentGuardianEmail}
+                      onChange={(e) => setParentGuardianEmail(e.target.value)}
+                      placeholder="parent.guardian@example.com"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                    <p className="text-2xs text-slate-500 dark:text-slate-400">
+                      We will dispatch an automated parent notification with full transparency on data safeguards and a 1-click consent link.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* 2. Primary Sport & Units + Optional Day-1 Seed Mark */}
               <div className="liquid-glass rounded-2xl p-4 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1967,19 +2113,43 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </div>
                   </div>
 
-                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <label
+                    className={`flex items-start gap-2.5 text-xs select-none ${
+                      isMinorAthlete ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
+                    } text-slate-700 dark:text-slate-300`}
+                  >
                     <input
                       type="checkbox"
-                      checked={safeSportHideWeight}
-                      onChange={(e) => setSafeSportHideWeight(e.target.checked)}
-                      className="w-4 h-4 rounded accent-emerald-600"
+                      checked={isMinorAthlete ? true : safeSportHideWeight}
+                      disabled={isMinorAthlete}
+                      onChange={(e) => !isMinorAthlete && setSafeSportHideWeight(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
                     />
-                    <span>
-                      <strong>Safe-Sport Privacy Mode:</strong> Hide body weight &amp; W/kg on team views
-                    </span>
+                    <div>
+                      <span>
+                        <strong>Safe-Sport Privacy Mode:</strong> Hide body weight &amp; W/kg on team views
+                      </span>
+                      {isMinorAthlete && (
+                        <span className="block text-2xs text-emerald-400 font-medium mt-0.5">
+                          Enforced &amp; locked ON for minor athletes to prevent RED-S &amp; weight-sensitive eating disorder risks.
+                        </span>
+                      )}
+                    </div>
                   </label>
                 </div>
               )}
+
+              <div className="text-center text-2xs text-slate-500 dark:text-slate-400 pt-1">
+                <a
+                  href="/docs/index.html#sec-safesport"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-emerald-400 inline-flex items-center gap-1"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 inline" />
+                  <span>Youth Athlete Privacy, COPPA, &amp; Scholastic Compliance Policy</span>
+                </a>
+              </div>
 
               <div className="pt-1 flex items-center justify-between gap-3">
                 <button
