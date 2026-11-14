@@ -1041,7 +1041,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       max={100000}
                       value={rawGpsDistanceInput}
                       onChange={(e) => setRawGpsDistanceInput(e.target.value)}
-                      className="w-24 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                      className="w-24 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="button"
@@ -1051,7 +1051,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         setCopiedPassport(true);
                         window.setTimeout(() => setCopiedPassport(false), 2500);
                       }}
-                      className="min-h-[40px] px-3 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold transition-colors whitespace-nowrap"
+                      className="min-h-[44px] sm:min-h-[40px] px-3 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold transition-colors whitespace-nowrap"
                     >
                       {copiedPassport ? '✓ Copied Passport' : 'Copy Shareable Passport'}
                     </button>
@@ -1213,7 +1213,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveQuickFatRace}
-                  className="min-h-[40px] px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#080A09] text-xs font-bold transition-colors flex items-center gap-2"
+                  className="min-h-[44px] sm:min-h-[40px] px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#080A09] text-xs font-bold transition-colors flex items-center gap-2"
                 >
                   <Trophy className="w-4 h-4" />
                   <span>

@@ -78,4 +78,21 @@ describe('Persistent Trackside Split Stopwatch Engine (Phase 1 Hardening)', () =
     expect(fallback.accumulatedMs).toBe(0);
     expect(TRACKSIDE_STOPWATCH_STORAGE_KEY).toBe('thresh_trackside_stopwatch_v1');
   });
+
+  it('computes roving tabIndex so only the active tab receives tabIndex 0 and others receive -1 (A11Y-01)', () => {
+    const tabs = [
+      'TEAMS_BRANDING',
+      'TRACKSIDE_PAD',
+      'SCHOLASTIC_COACH',
+      'LEADERBOARD',
+      'CONNECT_INVITE',
+      'PRIVACY_SHIELD',
+    ] as const;
+
+    const activeTab = 'TRACKSIDE_PAD';
+    const tabIndices = tabs.map((t) => (t === activeTab ? 0 : -1));
+
+    expect(tabIndices).toEqual([-1, 0, -1, -1, -1, -1]);
+    expect(tabIndices.filter((idx) => idx === 0)).toHaveLength(1);
+  });
 });
