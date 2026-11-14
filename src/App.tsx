@@ -4750,7 +4750,7 @@ export default function App() {
                       setRosterInitialTab('TEAMS_BRANDING');
                       setIsRosterModalOpen(true);
                     }}
-                    className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
+                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
                     title="Create or Join a High School, Collegiate, or Club Team"
                   >
                     <Users className="w-3 h-3 ap-text-brand" />

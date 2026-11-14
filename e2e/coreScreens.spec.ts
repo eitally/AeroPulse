@@ -81,6 +81,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
 
     test('3. Athlete Roster Modal — Light and Dark Mode', async ({ page }) => {
       await enterSampleDemoMode(page);
+      await page.waitForTimeout(500);
 
       // Open Roster modal via explicit data-testid
       const teamBtn = page.locator('[data-testid="open-roster-modal"]').first();
