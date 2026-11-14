@@ -4625,6 +4625,39 @@ export default function App() {
             setIsSampleDemoMode(true);
             setActiveTab('fitness');
           }}
+          onImportBatchActivities={handleImportMultipleParsedActivities}
+          existingActivities={activities}
+          distanceUnit={distanceUnit}
+          onBypassToLocalSession={async () => {
+            try {
+              localStorage.removeItem('aeropulse_logged_out');
+              const res = await fetch('/api/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ athleteName: athleteProfile.name || 'Athlete' }),
+              });
+              if (res.ok) {
+                const data = (await res.json()) as { sessionToken?: string };
+                if (data.sessionToken) {
+                  localStorage.setItem('aeropulse_session_token', data.sessionToken);
+                }
+              } else if (!localStorage.getItem('aeropulse_session_token')) {
+                localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
+              }
+            } catch {
+              if (!localStorage.getItem('aeropulse_session_token')) {
+                localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
+              }
+            }
+            setHasEnteredWorkspace(true);
+            hasEnteredWorkspaceRef.current = true;
+            setIsSessionLoggedOut(false);
+            setConnectionStatus((prev) => ({
+              ...prev,
+              stravaConnected: true,
+              stravaAthleteName: prev.stravaAthleteName || athleteProfile.name || 'Local Athlete',
+            }));
+          }}
         />
       </IconContext.Provider>
     );
