@@ -83,15 +83,13 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await enterSampleDemoMode(page);
 
       // Open Roster modal via "+ Team" or Manage button
-      const teamBtn = page
-        .locator('button:has-text("+ Team"), button:has-text("Manage"), button[title*="Team"]')
-        .first();
-      await expect(teamBtn).toBeVisible({ timeout: 5000 });
+      const teamBtn = page.getByRole('button', { name: /\+ Team|Manage/i }).first();
+      await expect(teamBtn).toBeVisible({ timeout: 10000 });
       await teamBtn.click();
 
-      // Verify dialog is visible
+      // Verify dialog is visible (allows time for lazy chunk to download and mount)
       const dialog = page.locator('div[role="dialog"]');
-      await expect(dialog).toBeVisible({ timeout: 5000 });
+      await expect(dialog).toBeVisible({ timeout: 15000 });
 
       // Light mode capture
       await page.screenshot({
