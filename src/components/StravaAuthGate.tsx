@@ -100,6 +100,7 @@ interface StoredPendingJoin {
   codeOrSlug: string;
   slug?: string;
   token: string;
+  email?: string;
 }
 
 function detectInitialJoinParams(): StoredPendingJoin {
@@ -108,10 +109,11 @@ function detectInitialJoinParams(): StoredPendingJoin {
   const params = new URLSearchParams(window.location.search);
   const queryJoin = (params.get('join') || params.get('team') || '').trim();
   const token = (params.get('t') || params.get('token') || '').trim();
+  const queryEmail = (params.get('email') || params.get('e') || '').trim().toLowerCase();
   const slug = pathMatch ? decodeURIComponent(pathMatch[1]).trim() : '';
   const codeOrSlug = slug || queryJoin;
   if (codeOrSlug) {
-    return { codeOrSlug, slug: slug || undefined, token };
+    return { codeOrSlug, slug: slug || undefined, token, email: queryEmail || undefined };
   }
   try {
     const saved = sessionStorage.getItem(PENDING_TEAM_JOIN_STORAGE_KEY);
@@ -122,7 +124,7 @@ function detectInitialJoinParams(): StoredPendingJoin {
   } catch {
     // ignore storage errors
   }
-  return { codeOrSlug: '', token: '' };
+  return { codeOrSlug: '', token: '', email: queryEmail || undefined };
 }
 
 function detectEmbeddedWebView(): boolean {
@@ -203,13 +205,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [localUser, setLocalUser] = useState<ThreshUser | null>(
     currentUser || status.currentUser || null
   );
-  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkEmail, setMagicLinkEmail] = useState(initialJoin.email || '');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [magicLinkDevUrl, setMagicLinkDevUrl] = useState<string | null>(null);
   const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
   const [isPasskeyAuthenticating, setIsPasskeyAuthenticating] = useState(false);
   const [showPasskeyRegister, setShowPasskeyRegister] = useState(false);
-  const [passkeyRegEmail, setPasskeyRegEmail] = useState('');
+  const [passkeyRegEmail, setPasskeyRegEmail] = useState(initialJoin.email || '');
   const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
@@ -229,7 +231,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     status.stravaSyncPolicy?.importProfileAndGear ?? true
   );
   const [athleteName, setAthleteName] = useState(status.stravaAthleteName || '');
-  const [athleteEmail, setAthleteEmail] = useState('');
+  const [athleteEmail, setAthleteEmail] = useState(initialJoin.email || '');
   const [primarySport, setPrimarySport] = useState<'Cycling' | 'Running' | 'Hybrid'>('Running');
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(
     status.stravaMeasurementPreference || propDistanceUnit || 'mi'
@@ -390,7 +392,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     [composedSeedMark, primarySport, distanceUnit]
   );
 
-  const lookupTeamPreview = async (codeOrSlug: string, token?: string, explicitSlug?: string) => {
+  const lookupTeamPreview = async (
+    codeOrSlug: string,
+    token?: string,
+    explicitSlug?: string,
+    overrideEmail?: string
+  ) => {
     const clean = codeOrSlug.trim();
     if (!clean) {
       setInvitePreview(null);
@@ -407,6 +414,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     try {
       const qs = new URLSearchParams({ codeOrSlug: clean });
       if (token) qs.set('t', token);
+      const emailToLookup = overrideEmail || athleteEmail.trim() || initialJoin.email || '';
+      if (emailToLookup) qs.set('email', emailToLookup);
       const resp = await fetch(`/api/teams/join-preview?${qs.toString()}`, {
         credentials: 'include',
       });
@@ -437,6 +446,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               codeOrSlug: clean,
               slug: explicitSlug || data.brand.slug,
               token: token || '',
+              email: emailToLookup || undefined,
             })
           );
         } catch {
@@ -455,9 +465,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   useEffect(() => {
     if (initialJoin.codeOrSlug) {
-      void lookupTeamPreview(initialJoin.codeOrSlug, initialJoin.token, initialJoin.slug);
+      void lookupTeamPreview(
+        initialJoin.codeOrSlug,
+        initialJoin.token,
+        initialJoin.slug,
+        initialJoin.email
+      );
     }
-  }, [initialJoin.codeOrSlug, initialJoin.token, initialJoin.slug]);
+  }, [initialJoin.codeOrSlug, initialJoin.token, initialJoin.slug, initialJoin.email]);
 
   const activeBrand = invitePreview?.found ? invitePreview.brand : null;
 

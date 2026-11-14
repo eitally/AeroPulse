@@ -1421,6 +1421,13 @@ function deriveStravaSessionSid(stravaAthleteId) {
   }
   return crypto3.createHmac("sha256", getSessionSecret()).update(`thresh_strava_sid_v1:${cleanId}`).digest("hex").slice(0, 32);
 }
+function deriveUserSessionSid(userId) {
+  const cleanId = String(userId || "").trim().replace(/[^0-9a-zA-Z_-]/g, "");
+  if (!cleanId) {
+    return crypto3.randomBytes(16).toString("hex");
+  }
+  return crypto3.createHmac("sha256", getSessionSecret()).update(`thresh_user_sid_v1:${cleanId}`).digest("hex").slice(0, 32);
+}
 function appendSetCookieHeader(res, cookieValue) {
   const existing = res.getHeader("Set-Cookie");
   if (!existing) {
@@ -2545,9 +2552,9 @@ async function addTeamToUserIndex(sid, teamId, displayName, email) {
   idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
 }
-async function migrateAnonymousTeamsToStravaSid(params) {
-  const { oldSid, stravaSid, athleteName, stravaAthleteId } = params;
-  if (!oldSid || !stravaSid || oldSid === stravaSid) return;
+async function migrateAnonymousTeamsToSid(params) {
+  const { oldSid, newSid, athleteName, stravaAthleteId, email } = params;
+  if (!oldSid || !newSid || oldSid === newSid) return;
   const oldIdx = await loadTenantVaultAsync(userTeamsVaultKey(oldSid), {
     teamIds: [],
     updatedAt: ""
@@ -2562,9 +2569,10 @@ async function migrateAnonymousTeamsToStravaSid(params) {
     let changed = false;
     for (const m of doc.memberships) {
       if (m.userSid === oldSid && m.status !== "REVOKED") {
-        m.userSid = stravaSid;
+        m.userSid = newSid;
         if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
-        if (athleteName && (!m.invitedName || m.invitedName === "Team Athlete")) {
+        if (email && !m.invitedEmail) m.invitedEmail = email;
+        if (athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.toLowerCase().startsWith("anonymous"))) {
           m.invitedName = athleteName.slice(0, 64);
         }
         changed = true;
@@ -2573,9 +2581,102 @@ async function migrateAnonymousTeamsToStravaSid(params) {
     if (changed) {
       doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
       await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-      await addTeamToUserIndex(stravaSid, teamId, athleteName || oldIdx.displayName, oldIdx.email);
+      await addTeamToUserIndex(newSid, teamId, athleteName || oldIdx.displayName, email || oldIdx.email);
     }
   }
+}
+async function migrateAnonymousTeamsToStravaSid(params) {
+  return migrateAnonymousTeamsToSid({
+    oldSid: params.oldSid,
+    newSid: params.stravaSid,
+    athleteName: params.athleteName,
+    stravaAthleteId: params.stravaAthleteId
+  });
+}
+async function autoLinkPendingTeamInvitesByEmail(params) {
+  const cleanEmail = params.email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@") || !params.userSid) return [];
+  const dir = await loadDirectory();
+  const linkedTeamIds = [];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const teamId of dir.allTeamIds) {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+    let modified = false;
+    for (const m of doc.memberships) {
+      if (m.status === "REVOKED") continue;
+      if (m.invitedEmail && m.invitedEmail.trim().toLowerCase() === cleanEmail) {
+        if (m.userSid !== params.userSid) {
+          m.userSid = params.userSid;
+          modified = true;
+        }
+        if (m.status === "INVITED" || m.status === "OPENED") {
+          m.status = "ACTIVE";
+          if (!m.openedAt) m.openedAt = nowIso;
+          if (!m.joinedAt) m.joinedAt = nowIso;
+          modified = true;
+        }
+        if (params.stravaAthleteId && !m.stravaAthleteId) {
+          m.stravaAthleteId = params.stravaAthleteId;
+          modified = true;
+        }
+        if (params.athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.trim().length === 0)) {
+          m.invitedName = params.athleteName.trim().slice(0, 64);
+          modified = true;
+        }
+        if (!m.sharingTier) {
+          m.sharingTier = "SUMMARY_ONLY";
+          modified = true;
+        }
+        if (!m.liveSnapshot) {
+          const safeSportShieldEnforced = Boolean(
+            doc.brand.defaultSafeSportShield || m.isMinorU18
+          );
+          const calibrated = calibrateThresholdsFromSeedMark(
+            m.seedMarkOrFtp || "",
+            doc.brand.primarySport,
+            "mi"
+          );
+          m.liveSnapshot = {
+            updatedAt: nowIso,
+            hasConnectedWatch: Boolean(m.stravaAthleteId),
+            verdictLabel: "Auto-Matched \xB7 Email Verified",
+            readinessScore: 0,
+            ctl: 0,
+            atl: 0,
+            tsb: 0,
+            acuteLoad7d: 0,
+            lowAerobicPct: 0,
+            highAerobicPct: 0,
+            neuromuscularPct: 0,
+            caraHours7d: 0,
+            ftpWatts: calibrated.cyclingFtpWatts,
+            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
+            safeSportHideWeight: safeSportShieldEnforced,
+            sharingTier: m.sharingTier
+          };
+          modified = true;
+        }
+        await addTeamToUserIndex(
+          params.userSid,
+          teamId,
+          m.invitedName,
+          cleanEmail
+        );
+        if (!linkedTeamIds.includes(teamId)) {
+          linkedTeamIds.push(teamId);
+        }
+      }
+    }
+    if (modified) {
+      doc.updatedAt = nowIso;
+      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+    }
+  }
+  return linkedTeamIds;
 }
 function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const myMembership = doc.memberships.find(
@@ -2640,10 +2741,11 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
+      const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : "";
       if (m.rawInviteToken) {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}`;
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ""}`;
       } else {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}`;
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}${emailParam ? `?${emailParam}` : ""}`;
       }
     }
     return base;
@@ -2845,7 +2947,8 @@ async function bulkCreateAndSendInvites(params) {
     }
     const rawToken = crypto4.randomBytes(12).toString("base64url");
     const membershipId = `mem_${crypto4.randomBytes(6).toString("hex")}`;
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawToken}`;
+    const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
+    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawToken}${emailParam}`;
     const parentCc = doc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
     let emailDeliveryStatus = "READY_MANUAL_LINK";
     if (cleanEmail && params.sendEmailsNow !== false) {
@@ -2923,7 +3026,8 @@ async function resendPendingTeamInvites(params) {
       m.rawInviteToken = crypto4.randomBytes(12).toString("base64url");
       m.inviteTokenHash = hashToken(m.rawInviteToken);
     }
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}`;
+    const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
+    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
     const ccEmail = doc.brand.enableParentGuardianCc && m.parentGuardianEmail ? m.parentGuardianEmail : void 0;
     const emailContent = buildTeamInviteEmailContent({
       brand: doc.brand,
@@ -2959,10 +3063,11 @@ async function findTeamDocumentByCodeOrSlug(rawCodeOrSlug) {
   if (!teamId) return null;
   return loadTenantVaultAsync(teamDocVaultKey(teamId), null);
 }
-async function previewTeamJoinInvite(codeOrSlug, inviteToken) {
+async function previewTeamJoinInvite(codeOrSlug, inviteToken, athleteEmail) {
   const doc = await findTeamDocumentByCodeOrSlug(codeOrSlug);
   if (!doc) return { found: false };
   let matchedMem;
+  const cleanEmail = athleteEmail?.trim().toLowerCase();
   if (inviteToken) {
     const targetHash = hashToken(inviteToken);
     matchedMem = doc.memberships.find(
@@ -2974,7 +3079,19 @@ async function previewTeamJoinInvite(codeOrSlug, inviteToken) {
       doc.updatedAt = matchedMem.openedAt;
       await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
     }
-  } else {
+  }
+  if (!matchedMem && cleanEmail) {
+    matchedMem = doc.memberships.find(
+      (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== "REVOKED"
+    );
+    if (matchedMem && matchedMem.status === "INVITED") {
+      matchedMem.status = "OPENED";
+      matchedMem.openedAt = (/* @__PURE__ */ new Date()).toISOString();
+      doc.updatedAt = matchedMem.openedAt;
+      await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
+    }
+  }
+  if (!matchedMem) {
     doc.anonymousLinkOpens = (doc.anonymousLinkOpens || 0) + 1;
     await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
   }
@@ -3011,6 +3128,11 @@ async function claimTeamJoinInvite(params) {
       (m) => m.inviteTokenHash === targetHash && m.status !== "REVOKED"
     );
   }
+  if (!mem && cleanEmail) {
+    mem = doc.memberships.find(
+      (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== "REVOKED"
+    );
+  }
   if (!mem) {
     mem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
@@ -3019,11 +3141,6 @@ async function claimTeamJoinInvite(params) {
   if (!mem && cleanStravaId) {
     mem = doc.memberships.find(
       (m) => m.stravaAthleteId === cleanStravaId && m.status !== "REVOKED"
-    );
-  }
-  if (!mem && cleanEmail) {
-    mem = doc.memberships.find(
-      (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== "REVOKED"
     );
   }
   if (!mem && cleanNameLower && cleanNameLower !== "team athlete" && cleanNameLower !== "athlete") {
@@ -4489,369 +4606,6 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 
 // server/routers/teamRouter.ts
 import express2 from "express";
-var teamRouter = express2.Router();
-function resolveRequestOrigin(req) {
-  const explicit = resolveSafeOrigin(
-    String(req.body?.origin || req.query?.origin || "")
-  );
-  if (explicit) return explicit;
-  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
-  const proto = forwardedProto === "https" || req.secure ? "https" : "http";
-  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").trim();
-  if (host) {
-    const candidate = resolveSafeOrigin(`${proto}://${host}`);
-    if (candidate) return candidate;
-  }
-  return "https://thresh.app";
-}
-function ensureSessionSid(req, res, subjectHint = "thresh-athlete") {
-  const existing = getVerifiedSessionClaims(req);
-  if (existing?.sid) {
-    return { sid: existing.sid };
-  }
-  const sessionToken = setSessionCookie(req, res, subjectHint);
-  const decoded = decodeAndVerifyToken(sessionToken);
-  return {
-    sid: decoded?.sid || "000000000000000000000000",
-    sessionToken
-  };
-}
-teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim();
-    const result = await requestEmailOtpCode(email);
-    if (!result.ok) {
-      res.status(400).json({ ok: false, error: result.error || "Unable to send OTP." });
-      return;
-    }
-    res.json({
-      ok: true,
-      deliveryStatus: result.deliveryStatus,
-      resendConfigured: isResendConfigured(),
-      ...result.devPreviewCode ? { devPreviewCode: result.devPreviewCode } : {}
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to send verification code."
-    });
-  }
-});
-teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim();
-    const code = String(req.body?.code || "").trim();
-    const currentClaims = getVerifiedSessionClaims(req);
-    const result = await verifyEmailOtpCode(email, code, currentClaims?.sid);
-    if (!result.ok || !result.sid) {
-      res.status(400).json({ ok: false, error: result.error || "Invalid code." });
-      return;
-    }
-    const sessionToken = setSessionCookie(
-      req,
-      res,
-      result.displayName || result.email || "thresh-athlete",
-      result.sid
-    );
-    const originUrl = resolveRequestOrigin(req);
-    const teams = await listTeamsForUser(result.sid, originUrl);
-    res.json({
-      ok: true,
-      sessionToken,
-      email: result.email,
-      displayName: result.displayName,
-      teams
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Verification failed."
-    });
-  }
-});
-teamRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.json({
-        ok: true,
-        resendConfigured: isResendConfigured(),
-        teams: []
-      });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({
-      ok: true,
-      resendConfigured: isResendConfigured(),
-      teams
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to load teams."
-    });
-  }
-});
-teamRouter.post("/api/teams", async (req, res) => {
-  try {
-    const { sid, sessionToken } = ensureSessionSid(
-      req,
-      res,
-      String(req.body?.coachDisplayName || "thresh-coach")
-    );
-    const originUrl = resolveRequestOrigin(req);
-    const team = await createTeamForCoach({
-      callerSid: sid,
-      originUrl,
-      name: String(req.body?.name || ""),
-      shortName: req.body?.shortName ? String(req.body.shortName) : void 0,
-      mascotOrMotto: req.body?.mascotOrMotto ? String(req.body.mascotOrMotto) : void 0,
-      orgType: req.body?.orgType || "HIGH_SCHOOL",
-      primarySport: req.body?.primarySport,
-      primaryHex: req.body?.primaryHex,
-      secondaryHex: req.body?.secondaryHex,
-      logoDataUrl: req.body?.logoDataUrl,
-      defaultSafeSportShield: req.body?.defaultSafeSportShield,
-      enableParentGuardianCc: req.body?.enableParentGuardianCc,
-      coachDisplayName: req.body?.coachDisplayName,
-      coachEmail: req.body?.coachEmail
-    });
-    res.json({
-      ok: true,
-      ...sessionToken ? { sessionToken } : {},
-      resendConfigured: isResendConfigured(),
-      team
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to create team."
-    });
-  }
-});
-teamRouter.put("/api/teams/:teamId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await updateTeamBranding({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      updates: req.body || {}
-    });
-    if (!updated) {
-      res.status(403).json({
-        ok: false,
-        error: "Only team coaches can modify team branding and safeguarding settings."
-      });
-      return;
-    }
-    res.json({ ok: true, team: updated });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to update team."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/invites/bulk", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await bulkCreateAndSendInvites({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      rawCsvOrText: req.body?.rawCsvOrText,
-      rows: Array.isArray(req.body?.rows) ? req.body.rows : void 0,
-      sendEmailsNow: req.body?.sendEmailsNow !== false
-    });
-    if (!result.summary) {
-      res.status(403).json({
-        ok: false,
-        error: "Coach permissions required to invite athletes to this team."
-      });
-      return;
-    }
-    res.json({
-      ok: true,
-      team: result.summary,
-      addedCount: result.addedCount,
-      emailedCount: result.emailedCount,
-      manualLinkCount: result.manualLinkCount,
-      resendConfigured: result.resendConfigured
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to process bulk invites."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/invites/resend", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await resendPendingTeamInvites({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      membershipId: req.body?.membershipId ? String(req.body.membershipId) : "ALL_PENDING"
-    });
-    if (!result.summary) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    res.json({
-      ok: true,
-      team: result.summary,
-      emailedCount: result.emailedCount,
-      resendConfigured: result.resendConfigured
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to resend invites."
-    });
-  }
-});
-teamRouter.get("/api/teams/join-preview", async (req, res) => {
-  try {
-    const codeOrSlug = String(req.query.codeOrSlug || "").trim();
-    const token = req.query.t ? String(req.query.t).trim() : void 0;
-    const preview = await previewTeamJoinInvite(codeOrSlug, token);
-    res.json(preview);
-  } catch (err) {
-    res.status(400).json({
-      found: false,
-      error: err instanceof Error ? err.message : "Failed to preview invite."
-    });
-  }
-});
-teamRouter.post("/api/teams/join-claim", async (req, res) => {
-  try {
-    const athleteName = String(req.body?.athleteName || "").trim();
-    const { sid, sessionToken } = ensureSessionSid(
-      req,
-      res,
-      athleteName || "thresh-athlete"
-    );
-    const originUrl = resolveRequestOrigin(req);
-    const rawUnit = String(req.body?.distanceUnit || "").toLowerCase();
-    const distanceUnit = rawUnit === "km" ? "km" : "mi";
-    const rawTier = String(req.body?.sharingTier || "").toUpperCase();
-    const sharingTier = rawTier === "FULL_STREAMS" || rawTier === "LOAD_ONLY" ? rawTier : "SUMMARY_ONLY";
-    const claimed = await claimTeamJoinInvite({
-      callerSid: sid,
-      originUrl,
-      codeOrSlug: String(req.body?.codeOrSlug || "").trim(),
-      inviteToken: req.body?.inviteToken ? String(req.body.inviteToken).trim() : void 0,
-      athleteName: athleteName || void 0,
-      athleteEmail: req.body?.athleteEmail ? String(req.body.athleteEmail) : void 0,
-      stravaAthleteId: req.body?.stravaAthleteId ? String(req.body.stravaAthleteId).trim() : void 0,
-      squadGroup: req.body?.squadGroup ? String(req.body.squadGroup) : void 0,
-      seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : void 0,
-      distanceUnit,
-      sharingTier
-    });
-    if (!claimed.ok || !claimed.summary) {
-      res.status(404).json({
-        ok: false,
-        error: claimed.error || "Team invite could not be claimed."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(sid, originUrl);
-    res.json({
-      ok: true,
-      ...sessionToken ? { sessionToken } : {},
-      team: claimed.summary,
-      teams,
-      calibrated: claimed.calibrated,
-      safeSportShieldEnforced: claimed.safeSportShieldEnforced
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to join team."
-    });
-  }
-});
-teamRouter.post("/api/teams/sync-snapshot", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.json({ ok: true, teams: [] });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const teams = await syncAthleteSnapshotAcrossTeams({
-      callerSid: claims.sid,
-      originUrl,
-      athleteName: req.body?.athleteName ? String(req.body.athleteName) : void 0,
-      snapshot: req.body?.snapshot || {}
-    });
-    res.json({ ok: true, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to sync team snapshot."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const updated = await broadcastWorkoutToTeamSquad({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
-      targetMembershipIds,
-      date: String(req.body?.date || ""),
-      name: String(req.body?.name || ""),
-      sportCategory: req.body?.sportCategory || "Running",
-      plannedDurationSecs: Number(req.body?.plannedDurationSecs || 3600),
-      plannedLoad: Number(req.body?.plannedLoad || 65),
-      workoutSyntax: String(req.body?.workoutSyntax || ""),
-      description: String(req.body?.description || "")
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    res.json({ ok: true, team: updated });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to broadcast workout."
-    });
-  }
-});
-
-// server/routers/authRouter.ts
-import express3 from "express";
-import crypto6 from "crypto";
 
 // server/authService.ts
 import crypto5 from "crypto";
@@ -5072,7 +4826,396 @@ function verifyPasskeyChallengeToken(token) {
   }
 }
 
+// server/routers/teamRouter.ts
+var teamRouter = express2.Router();
+function resolveRequestOrigin(req) {
+  const explicit = resolveSafeOrigin(
+    String(req.body?.origin || req.query?.origin || "")
+  );
+  if (explicit) return explicit;
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwardedProto === "https" || req.secure ? "https" : "http";
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").trim();
+  if (host) {
+    const candidate = resolveSafeOrigin(`${proto}://${host}`);
+    if (candidate) return candidate;
+  }
+  return "https://thresh.app";
+}
+function ensureSessionSid(req, res, subjectHint = "thresh-athlete") {
+  const existing = getVerifiedSessionClaims(req);
+  if (existing?.sid) {
+    return { sid: existing.sid };
+  }
+  const sessionToken = setSessionCookie(req, res, subjectHint);
+  const decoded = decodeAndVerifyToken(sessionToken);
+  return {
+    sid: decoded?.sid || "000000000000000000000000",
+    sessionToken
+  };
+}
+teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim();
+    const result = await requestEmailOtpCode(email);
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error || "Unable to send OTP." });
+      return;
+    }
+    res.json({
+      ok: true,
+      deliveryStatus: result.deliveryStatus,
+      resendConfigured: isResendConfigured(),
+      ...result.devPreviewCode ? { devPreviewCode: result.devPreviewCode } : {}
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to send verification code."
+    });
+  }
+});
+teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim();
+    const code = String(req.body?.code || "").trim();
+    const currentClaims = getVerifiedSessionClaims(req);
+    const result = await verifyEmailOtpCode(email, code, currentClaims?.sid);
+    if (!result.ok || !result.sid) {
+      res.status(400).json({ ok: false, error: result.error || "Invalid code." });
+      return;
+    }
+    const sessionToken = setSessionCookie(
+      req,
+      res,
+      result.displayName || result.email || "thresh-athlete",
+      result.sid
+    );
+    const originUrl = resolveRequestOrigin(req);
+    const teams = await listTeamsForUser(result.sid, originUrl);
+    res.json({
+      ok: true,
+      sessionToken,
+      email: result.email,
+      displayName: result.displayName,
+      teams
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Verification failed."
+    });
+  }
+});
+teamRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.json({
+        ok: true,
+        resendConfigured: isResendConfigured(),
+        teams: []
+      });
+      return;
+    }
+    if (claims.sub?.startsWith("usr_")) {
+      const u = await getUserById(claims.sub);
+      if (u?.email) {
+        await autoLinkPendingTeamInvitesByEmail({
+          email: u.email,
+          userSid: claims.sid,
+          athleteName: u.name
+        });
+      }
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      resendConfigured: isResendConfigured(),
+      teams
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to load teams."
+    });
+  }
+});
+teamRouter.post("/api/teams", async (req, res) => {
+  try {
+    const { sid, sessionToken } = ensureSessionSid(
+      req,
+      res,
+      String(req.body?.coachDisplayName || "thresh-coach")
+    );
+    const originUrl = resolveRequestOrigin(req);
+    const team = await createTeamForCoach({
+      callerSid: sid,
+      originUrl,
+      name: String(req.body?.name || ""),
+      shortName: req.body?.shortName ? String(req.body.shortName) : void 0,
+      mascotOrMotto: req.body?.mascotOrMotto ? String(req.body.mascotOrMotto) : void 0,
+      orgType: req.body?.orgType || "HIGH_SCHOOL",
+      primarySport: req.body?.primarySport,
+      primaryHex: req.body?.primaryHex,
+      secondaryHex: req.body?.secondaryHex,
+      logoDataUrl: req.body?.logoDataUrl,
+      defaultSafeSportShield: req.body?.defaultSafeSportShield,
+      enableParentGuardianCc: req.body?.enableParentGuardianCc,
+      coachDisplayName: req.body?.coachDisplayName,
+      coachEmail: req.body?.coachEmail
+    });
+    res.json({
+      ok: true,
+      ...sessionToken ? { sessionToken } : {},
+      resendConfigured: isResendConfigured(),
+      team
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to create team."
+    });
+  }
+});
+teamRouter.put("/api/teams/:teamId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await updateTeamBranding({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      updates: req.body || {}
+    });
+    if (!updated) {
+      res.status(403).json({
+        ok: false,
+        error: "Only team coaches can modify team branding and safeguarding settings."
+      });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to update team."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/invites/bulk", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await bulkCreateAndSendInvites({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      rawCsvOrText: req.body?.rawCsvOrText,
+      rows: Array.isArray(req.body?.rows) ? req.body.rows : void 0,
+      sendEmailsNow: req.body?.sendEmailsNow !== false
+    });
+    if (!result.summary) {
+      res.status(403).json({
+        ok: false,
+        error: "Coach permissions required to invite athletes to this team."
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      team: result.summary,
+      addedCount: result.addedCount,
+      emailedCount: result.emailedCount,
+      manualLinkCount: result.manualLinkCount,
+      resendConfigured: result.resendConfigured
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to process bulk invites."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/invites/resend", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await resendPendingTeamInvites({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      membershipId: req.body?.membershipId ? String(req.body.membershipId) : "ALL_PENDING"
+    });
+    if (!result.summary) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    res.json({
+      ok: true,
+      team: result.summary,
+      emailedCount: result.emailedCount,
+      resendConfigured: result.resendConfigured
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to resend invites."
+    });
+  }
+});
+teamRouter.get("/api/teams/join-preview", async (req, res) => {
+  try {
+    const codeOrSlug = String(req.query.codeOrSlug || "").trim();
+    const token = req.query.t ? String(req.query.t).trim() : void 0;
+    let email = req.query.email ? String(req.query.email).trim().toLowerCase() : void 0;
+    if (!email) {
+      const claims = getVerifiedSessionClaims(req);
+      if (claims?.sub?.startsWith("usr_")) {
+        const u = await getUserById(claims.sub);
+        if (u?.email) email = u.email;
+      }
+    }
+    const preview = await previewTeamJoinInvite(codeOrSlug, token, email);
+    res.json(preview);
+  } catch (err) {
+    res.status(400).json({
+      found: false,
+      error: err instanceof Error ? err.message : "Failed to preview invite."
+    });
+  }
+});
+teamRouter.post("/api/teams/join-claim", async (req, res) => {
+  try {
+    const athleteName = String(req.body?.athleteName || "").trim();
+    const { sid, sessionToken } = ensureSessionSid(
+      req,
+      res,
+      athleteName || "thresh-athlete"
+    );
+    const originUrl = resolveRequestOrigin(req);
+    const rawUnit = String(req.body?.distanceUnit || "").toLowerCase();
+    const distanceUnit = rawUnit === "km" ? "km" : "mi";
+    const rawTier = String(req.body?.sharingTier || "").toUpperCase();
+    const sharingTier = rawTier === "FULL_STREAMS" || rawTier === "LOAD_ONLY" ? rawTier : "SUMMARY_ONLY";
+    let athleteEmail = req.body?.athleteEmail ? String(req.body.athleteEmail).trim().toLowerCase() : void 0;
+    if (!athleteEmail) {
+      const claims = getVerifiedSessionClaims(req);
+      if (claims?.sub?.startsWith("usr_")) {
+        const u = await getUserById(claims.sub);
+        if (u?.email) athleteEmail = u.email;
+      }
+    }
+    const claimed = await claimTeamJoinInvite({
+      callerSid: sid,
+      originUrl,
+      codeOrSlug: String(req.body?.codeOrSlug || "").trim(),
+      inviteToken: req.body?.inviteToken ? String(req.body.inviteToken).trim() : void 0,
+      athleteName: athleteName || void 0,
+      athleteEmail,
+      stravaAthleteId: req.body?.stravaAthleteId ? String(req.body.stravaAthleteId).trim() : void 0,
+      squadGroup: req.body?.squadGroup ? String(req.body.squadGroup) : void 0,
+      seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : void 0,
+      distanceUnit,
+      sharingTier
+    });
+    if (!claimed.ok || !claimed.summary) {
+      res.status(404).json({
+        ok: false,
+        error: claimed.error || "Team invite could not be claimed."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(sid, originUrl);
+    res.json({
+      ok: true,
+      ...sessionToken ? { sessionToken } : {},
+      team: claimed.summary,
+      teams,
+      calibrated: claimed.calibrated,
+      safeSportShieldEnforced: claimed.safeSportShieldEnforced
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to join team."
+    });
+  }
+});
+teamRouter.post("/api/teams/sync-snapshot", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.json({ ok: true, teams: [] });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const teams = await syncAthleteSnapshotAcrossTeams({
+      callerSid: claims.sid,
+      originUrl,
+      athleteName: req.body?.athleteName ? String(req.body.athleteName) : void 0,
+      snapshot: req.body?.snapshot || {}
+    });
+    res.json({ ok: true, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to sync team snapshot."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
+    const updated = await broadcastWorkoutToTeamSquad({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
+      targetMembershipIds,
+      date: String(req.body?.date || ""),
+      name: String(req.body?.name || ""),
+      sportCategory: req.body?.sportCategory || "Running",
+      plannedDurationSecs: Number(req.body?.plannedDurationSecs || 3600),
+      plannedLoad: Number(req.body?.plannedLoad || 65),
+      workoutSyntax: String(req.body?.workoutSyntax || ""),
+      description: String(req.body?.description || "")
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to broadcast workout."
+    });
+  }
+});
+
 // server/routers/authRouter.ts
+import express3 from "express";
+import crypto6 from "crypto";
 var authRouter = express3.Router();
 function getRpId(req) {
   const host = req.get("host") || "localhost:3000";
@@ -5083,6 +5226,35 @@ function getAppBaseUrl(req) {
   const proto = isHttps ? "https" : "http";
   const host = req.get("host") || "localhost:3000";
   return `${proto}://${host}`;
+}
+async function finalizeUserAuthentication(req, res, user) {
+  const userSid = deriveUserSessionSid(user.id);
+  const prevClaims = getVerifiedSessionClaims(req);
+  setSessionCookie(req, res, user.id, userSid);
+  if (prevClaims?.sid && prevClaims.sid !== userSid) {
+    try {
+      await migrateAnonymousTeamsToSid({
+        oldSid: prevClaims.sid,
+        newSid: userSid,
+        athleteName: user.name,
+        email: user.email
+      });
+    } catch (err) {
+      console.warn("[THRESH Auth] Anonymous teams migration warning:", err);
+    }
+  }
+  if (user.email) {
+    try {
+      await autoLinkPendingTeamInvitesByEmail({
+        email: user.email,
+        userSid,
+        athleteName: user.name
+      });
+    } catch (err) {
+      console.warn("[THRESH Auth] Auto-link pending team invites warning:", err);
+    }
+  }
+  return userSid;
 }
 authRouter.get("/api/auth/me", async (req, res) => {
   try {
@@ -5191,7 +5363,7 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
       name: googleUser.name,
       picture: googleUser.picture
     });
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.redirect("/");
   } catch (err) {
     console.error("[THRESH Auth] Google callback processing error:", err);
@@ -5233,7 +5405,7 @@ authRouter.get("/api/auth/magic-link/verify", async (req, res) => {
       email,
       name: email.split("@")[0]
     });
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.redirect("/");
   } catch (err) {
     console.error("[THRESH Auth] Magic link verification error:", err);
@@ -5310,7 +5482,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
       user.passkeys.push(passkeyObj);
     }
     await saveUser(user);
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("[THRESH Auth] Passkey registration verification error:", err);
@@ -5355,7 +5527,7 @@ authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
       passkey.counter += 1;
       await saveUser(user);
     }
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("[THRESH Auth] Passkey auth verification error:", err);
@@ -5371,7 +5543,7 @@ authRouter.post("/api/auth/mock-login", async (req, res) => {
       email,
       name
     });
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     if (req.method === "GET" || req.query.redirect) {
       return res.redirect("/");
     }
@@ -5387,7 +5559,7 @@ authRouter.get("/api/auth/mock-login", async (req, res) => {
   const provider = String(req.query.provider || "dev_mock");
   try {
     const user = await findOrCreateUser(provider, email, { email, name });
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.redirect("/");
   } catch (err) {
     console.error("[THRESH Auth] Dev mock link failed:", err);

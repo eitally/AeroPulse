@@ -2,6 +2,7 @@ import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import {
   SESSION_COOKIE_NAME,
+  deriveUserSessionSid,
   issueOAuthStateToken,
   verifyOAuthStateToken,
   setOAuthStateCookie,
@@ -14,6 +15,10 @@ import {
   issueSessionToken,
   appendSetCookieHeader,
 } from '../securityUtils.ts';
+import {
+  autoLinkPendingTeamInvitesByEmail,
+  migrateAnonymousTeamsToSid,
+} from '../teamService.ts';
 import {
   findOrCreateUser,
   getUserById,
@@ -45,6 +50,43 @@ function getAppBaseUrl(req: Request): string {
   const proto = isHttps ? 'https' : 'http';
   const host = req.get('host') || 'localhost:3000';
   return `${proto}://${host}`;
+}
+
+async function finalizeUserAuthentication(
+  req: Request,
+  res: Response,
+  user: ThreshUser
+): Promise<string> {
+  const userSid = deriveUserSessionSid(user.id);
+  const prevClaims = getVerifiedSessionClaims(req);
+  setSessionCookie(req, res, user.id, userSid);
+
+  if (prevClaims?.sid && prevClaims.sid !== userSid) {
+    try {
+      await migrateAnonymousTeamsToSid({
+        oldSid: prevClaims.sid,
+        newSid: userSid,
+        athleteName: user.name,
+        email: user.email,
+      });
+    } catch (err) {
+      console.warn('[THRESH Auth] Anonymous teams migration warning:', err);
+    }
+  }
+
+  if (user.email) {
+    try {
+      await autoLinkPendingTeamInvitesByEmail({
+        email: user.email,
+        userSid,
+        athleteName: user.name,
+      });
+    } catch (err) {
+      console.warn('[THRESH Auth] Auto-link pending team invites warning:', err);
+    }
+  }
+
+  return userSid;
 }
 
 /**
@@ -199,8 +241,8 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
       picture: googleUser.picture,
     });
 
-    // 4. Set HttpOnly session cookie
-    setSessionCookie(req, res, user.id);
+    // 4. Set HttpOnly session cookie & auto-link team rosters by email
+    await finalizeUserAuthentication(req, res, user);
 
     return res.redirect('/');
   } catch (err) {
@@ -259,7 +301,7 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
       name: email.split('@')[0],
     });
 
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.redirect('/');
   } catch (err) {
     console.error('[THRESH Auth] Magic link verification error:', err);
@@ -355,7 +397,7 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
     }
 
     await saveUser(user);
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
 
     return res.json({ ok: true, user });
   } catch (err) {
@@ -419,7 +461,7 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
       await saveUser(user);
     }
 
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error('[THRESH Auth] Passkey auth verification error:', err);
@@ -442,7 +484,7 @@ authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
       name,
     });
 
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
 
     // Support redirect when accessed as a GET / URL link
     if (req.method === 'GET' || req.query.redirect) {
@@ -467,7 +509,7 @@ authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
 
   try {
     const user = await findOrCreateUser(provider, email, { email, name });
-    setSessionCookie(req, res, user.id);
+    await finalizeUserAuthentication(req, res, user);
     return res.redirect('/');
   } catch (err) {
     console.error('[THRESH Auth] Dev mock link failed:', err);

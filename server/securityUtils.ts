@@ -79,6 +79,23 @@ export function deriveStravaSessionSid(stravaAthleteId: string | number): string
     .slice(0, 32);
 }
 
+/**
+ * Derives a deterministic, non-reversible 32-char hex session ID from a verified THRESH User ID (usr_...).
+ * Guarantees that signing in via Google, Magic Link, or Passkey restores the exact same
+ * THRESH server vault and team memberships across browsers, devices, and PWAs.
+ */
+export function deriveUserSessionSid(userId: string): string {
+  const cleanId = String(userId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
+  if (!cleanId) {
+    return crypto.randomBytes(16).toString('hex');
+  }
+  return crypto
+    .createHmac('sha256', getSessionSecret())
+    .update(`thresh_user_sid_v1:${cleanId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 export function appendSetCookieHeader(res: Response, cookieValue: string): void {
   const existing = res.getHeader('Set-Cookie');
   if (!existing) {

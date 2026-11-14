@@ -457,16 +457,17 @@ async function addTeamToUserIndex(
 
 /**
  * Seamlessly migrates any teams created or joined under a temporary pre-OAuth browser `sid`
- * onto the deterministic Strava identity `sid` when the user completes Strava OAuth.
+ * onto a persistent identity `sid` when the user authenticates.
  */
-export async function migrateAnonymousTeamsToStravaSid(params: {
+export async function migrateAnonymousTeamsToSid(params: {
   oldSid?: string | null;
-  stravaSid: string;
+  newSid: string;
   athleteName?: string;
   stravaAthleteId?: string;
+  email?: string;
 }): Promise<void> {
-  const { oldSid, stravaSid, athleteName, stravaAthleteId } = params;
-  if (!oldSid || !stravaSid || oldSid === stravaSid) return;
+  const { oldSid, newSid, athleteName, stravaAthleteId, email } = params;
+  if (!oldSid || !newSid || oldSid === newSid) return;
 
   const oldIdx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(oldSid), {
     teamIds: [],
@@ -483,9 +484,15 @@ export async function migrateAnonymousTeamsToStravaSid(params: {
     let changed = false;
     for (const m of doc.memberships) {
       if (m.userSid === oldSid && m.status !== 'REVOKED') {
-        m.userSid = stravaSid;
+        m.userSid = newSid;
         if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
-        if (athleteName && (!m.invitedName || m.invitedName === 'Team Athlete')) {
+        if (email && !m.invitedEmail) m.invitedEmail = email;
+        if (
+          athleteName &&
+          (!m.invitedName ||
+            m.invitedName === 'Team Athlete' ||
+            m.invitedName.toLowerCase().startsWith('anonymous'))
+        ) {
           m.invitedName = athleteName.slice(0, 64);
         }
         changed = true;
@@ -494,9 +501,132 @@ export async function migrateAnonymousTeamsToStravaSid(params: {
     if (changed) {
       doc.updatedAt = new Date().toISOString();
       await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-      await addTeamToUserIndex(stravaSid, teamId, athleteName || oldIdx.displayName, oldIdx.email);
+      await addTeamToUserIndex(newSid, teamId, athleteName || oldIdx.displayName, email || oldIdx.email);
     }
   }
+}
+
+/**
+ * Seamlessly migrates any teams created or joined under a temporary pre-OAuth browser `sid`
+ * onto the deterministic Strava identity `sid` when the user completes Strava OAuth.
+ */
+export async function migrateAnonymousTeamsToStravaSid(params: {
+  oldSid?: string | null;
+  stravaSid: string;
+  athleteName?: string;
+  stravaAthleteId?: string;
+}): Promise<void> {
+  return migrateAnonymousTeamsToSid({
+    oldSid: params.oldSid,
+    newSid: params.stravaSid,
+    athleteName: params.athleteName,
+    stravaAthleteId: params.stravaAthleteId,
+  });
+}
+
+/**
+ * Scans team rosters and automatically links pending invites (status INVITED or OPENED)
+ * to a verified user session when their email matches the invited email address.
+ */
+export async function autoLinkPendingTeamInvitesByEmail(params: {
+  email: string;
+  userSid: string;
+  athleteName?: string;
+  stravaAthleteId?: string;
+}): Promise<string[]> {
+  const cleanEmail = params.email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@') || !params.userSid) return [];
+
+  const dir = await loadDirectory();
+  const linkedTeamIds: string[] = [];
+  const nowIso = new Date().toISOString();
+
+  for (const teamId of dir.allTeamIds) {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+
+    let modified = false;
+    for (const m of doc.memberships) {
+      if (m.status === 'REVOKED') continue;
+      if (m.invitedEmail && m.invitedEmail.trim().toLowerCase() === cleanEmail) {
+        if (m.userSid !== params.userSid) {
+          m.userSid = params.userSid;
+          modified = true;
+        }
+        if (m.status === 'INVITED' || m.status === 'OPENED') {
+          m.status = 'ACTIVE';
+          if (!m.openedAt) m.openedAt = nowIso;
+          if (!m.joinedAt) m.joinedAt = nowIso;
+          modified = true;
+        }
+        if (params.stravaAthleteId && !m.stravaAthleteId) {
+          m.stravaAthleteId = params.stravaAthleteId;
+          modified = true;
+        }
+        if (
+          params.athleteName &&
+          (!m.invitedName || m.invitedName === 'Team Athlete' || m.invitedName.trim().length === 0)
+        ) {
+          m.invitedName = params.athleteName.trim().slice(0, 64);
+          modified = true;
+        }
+        if (!m.sharingTier) {
+          m.sharingTier = 'SUMMARY_ONLY';
+          modified = true;
+        }
+        if (!m.liveSnapshot) {
+          const safeSportShieldEnforced = Boolean(
+            doc.brand.defaultSafeSportShield || m.isMinorU18
+          );
+          const calibrated = calibrateThresholdsFromSeedMark(
+            m.seedMarkOrFtp || '',
+            doc.brand.primarySport,
+            'mi'
+          );
+          m.liveSnapshot = {
+            updatedAt: nowIso,
+            hasConnectedWatch: Boolean(m.stravaAthleteId),
+            verdictLabel: 'Auto-Matched · Email Verified',
+            readinessScore: 0,
+            ctl: 0,
+            atl: 0,
+            tsb: 0,
+            acuteLoad7d: 0,
+            lowAerobicPct: 0,
+            highAerobicPct: 0,
+            neuromuscularPct: 0,
+            caraHours7d: 0,
+            ftpWatts: calibrated.cyclingFtpWatts,
+            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
+            safeSportHideWeight: safeSportShieldEnforced,
+            sharingTier: m.sharingTier,
+          };
+          modified = true;
+        }
+
+        await addTeamToUserIndex(
+          params.userSid,
+          teamId,
+          m.invitedName,
+          cleanEmail
+        );
+
+        if (!linkedTeamIds.includes(teamId)) {
+          linkedTeamIds.push(teamId);
+        }
+      }
+    }
+
+    if (modified) {
+      doc.updatedAt = nowIso;
+      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+    }
+  }
+
+  return linkedTeamIds;
 }
 
 function projectTeamSummaryForCaller(
@@ -575,10 +705,11 @@ function projectTeamSummaryForCaller(
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
+      const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : '';
       if (m.rawInviteToken) {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}`;
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ''}`;
       } else {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}`;
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}${emailParam ? `?${emailParam}` : ''}`;
       }
     }
     return base;
@@ -901,7 +1032,8 @@ export async function bulkCreateAndSendInvites(params: {
 
     const rawToken = crypto.randomBytes(12).toString('base64url');
     const membershipId = `mem_${crypto.randomBytes(6).toString('hex')}`;
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawToken}`;
+    const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : '';
+    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawToken}${emailParam}`;
 
     const parentCc =
       doc.brand.enableParentGuardianCc && row.parentGuardianEmail
@@ -1013,7 +1145,8 @@ export async function resendPendingTeamInvites(params: {
       m.inviteTokenHash = hashToken(m.rawInviteToken);
     }
 
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}`;
+    const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : '';
+    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
     const ccEmail =
       doc.brand.enableParentGuardianCc && m.parentGuardianEmail
         ? m.parentGuardianEmail
@@ -1064,12 +1197,15 @@ async function findTeamDocumentByCodeOrSlug(
 
 export async function previewTeamJoinInvite(
   codeOrSlug: string,
-  inviteToken?: string
+  inviteToken?: string,
+  athleteEmail?: string
 ): Promise<TeamInvitePreviewPayload> {
   const doc = await findTeamDocumentByCodeOrSlug(codeOrSlug);
   if (!doc) return { found: false };
 
   let matchedMem: StoredMembershipInternal | undefined;
+  const cleanEmail = athleteEmail?.trim().toLowerCase();
+
   if (inviteToken) {
     const targetHash = hashToken(inviteToken);
     matchedMem = doc.memberships.find(
@@ -1081,7 +1217,22 @@ export async function previewTeamJoinInvite(
       doc.updatedAt = matchedMem.openedAt;
       await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
     }
-  } else {
+  }
+
+  // Primary CSV matching by athlete email if token didn't match or wasn't provided
+  if (!matchedMem && cleanEmail) {
+    matchedMem = doc.memberships.find(
+      (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== 'REVOKED'
+    );
+    if (matchedMem && matchedMem.status === 'INVITED') {
+      matchedMem.status = 'OPENED';
+      matchedMem.openedAt = new Date().toISOString();
+      doc.updatedAt = matchedMem.openedAt;
+      await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
+    }
+  }
+
+  if (!matchedMem) {
     doc.anonymousLinkOpens = (doc.anonymousLinkOpens || 0) + 1;
     await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
   }
@@ -1142,22 +1293,25 @@ export async function claimTeamJoinInvite(params: {
       (m) => m.inviteTokenHash === targetHash && m.status !== 'REVOKED'
     );
   }
-  if (!mem) {
-    mem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-    );
-  }
-  if (!mem && cleanStravaId) {
-    mem = doc.memberships.find(
-      (m) => m.stravaAthleteId === cleanStravaId && m.status !== 'REVOKED'
-    );
-  }
+  // 1. Primary CSV match: athlete email address
   if (!mem && cleanEmail) {
     mem = doc.memberships.find(
       (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== 'REVOKED'
     );
   }
-  // Match against CSV-imported INVITED / OPENED roster row by full name when joining via universal team link
+  // 2. Caller SID match (reconnecting or updating settings)
+  if (!mem) {
+    mem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+  }
+  // 3. Secondary fallback: Strava athlete ID
+  if (!mem && cleanStravaId) {
+    mem = doc.memberships.find(
+      (m) => m.stravaAthleteId === cleanStravaId && m.status !== 'REVOKED'
+    );
+  }
+  // 4. Tertiary fallback: athlete full name (for roster entries without email)
   if (!mem && cleanNameLower && cleanNameLower !== 'team athlete' && cleanNameLower !== 'athlete') {
     mem = doc.memberships.find(
       (m) =>
