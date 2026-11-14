@@ -54,6 +54,8 @@ import { migrateAnonymousTeamsToStravaSid } from './teamService.ts';
 import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
 import { teamRouter } from './routers/teamRouter.ts';
+import { authRouter } from './routers/authRouter.ts';
+import { findOrCreateUser } from './authService.ts';
 
 export const apiRouter = express.Router();
 const requestContext = new AsyncLocalStorage<Request>();
@@ -78,6 +80,7 @@ apiRouter.use((req: Request, _res: Response, next: NextFunction) => {
 apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(authRouter);
 
 const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-segments-by-activity.json';
 const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-routes-by-activity.json';
@@ -4662,6 +4665,17 @@ apiRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) 
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
+    if (athleteId) {
+      try {
+        await findOrCreateUser('strava', athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : undefined,
+        });
+      } catch (err) {
+        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+      }
+    }
     await saveSessionCacheAsync(req, res, canonicalSid);
 
     res.json({
@@ -4806,6 +4820,17 @@ apiRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
+    if (athleteId) {
+      try {
+        await findOrCreateUser('strava', athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : undefined,
+        });
+      } catch (err) {
+        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+      }
+    }
     await saveSessionCacheAsync(req, res, canonicalSid);
 
     res.json({
@@ -5115,6 +5140,17 @@ const stravaCallbackHandler = async (req: Request, res: Response) => {
     if (clientId) store.stravaClientId = clientId;
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
+
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
+    if (athleteId) {
+      try {
+        await findOrCreateUser('strava', athleteId, {
+          name: !isGenericName(athleteName) ? athleteName : undefined,
+        });
+      } catch (err) {
+        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+      }
+    }
 
     await saveSessionCacheAsync(req, res, canonicalSid);
     clearOAuthStateCookie(res);

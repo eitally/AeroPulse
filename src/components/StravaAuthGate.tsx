@@ -8,10 +8,12 @@ import {
   ChevronUp,
   Copy,
   ExternalLink,
+  KeyRound,
   Lock,
   LogOut,
   Moon,
   RefreshCw,
+  Send,
   ShieldCheck,
   Sun,
   UploadSimple,
@@ -26,6 +28,7 @@ import {
   StravaSyncWindow,
   TeamInvitePreviewPayload,
   TeamSummaryWithRole,
+  ThreshUser,
   UnifiedActivity,
 } from '../types';
 import {
@@ -33,6 +36,11 @@ import {
   computeAccessibleTeamPalette,
 } from '../physiology/teamOnboardingEngine';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
+import {
+  authenticateWithPasskey,
+  isPasskeySupported,
+  registerPasskey,
+} from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
 
 export interface FirstRunCalibrationPayload {
@@ -59,6 +67,8 @@ export interface StravaOAuthJoinContext {
 
 interface StravaAuthGateProps {
   status: ConnectionStatus;
+  currentUser?: ThreshUser | null;
+  onAuthenticatedUser?: (user: ThreshUser) => void;
   onLaunchStravaOAuth: (
     mode?: 'cloud' | 'localhost',
     joinContext?: StravaOAuthJoinContext,
@@ -127,6 +137,27 @@ const StravaChevronMark: React.FC<{ className?: string }> = ({ className = 'w-4 
   </svg>
 );
 
+const GoogleGIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+    <path
+      fill="#4285F4"
+      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3h3.88c2.27-2.09 3.665-5.17 3.665-9.09z"
+    />
+    <path
+      fill="#34A853"
+      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.09C3.26 21.36 7.33 24 12 24z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M5.28 14.32c-.25-.72-.38-1.49-.38-2.32s.13-1.6.38-2.32V6.59H1.26C.46 8.19 0 9.99 0 12s.46 3.81 1.26 5.41l4.02-3.09z"
+    />
+    <path
+      fill="#EA4335"
+      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.26 6.59l4.02 3.09c.95-2.83 3.6-4.93 6.72-4.93z"
+    />
+  </svg>
+);
+
 const SEED_EVENT_PILLS: Array<{
   id: string;
   label: string;
@@ -144,6 +175,8 @@ const SEED_EVENT_PILLS: Array<{
 
 export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   status,
+  currentUser,
+  onAuthenticatedUser,
   onLaunchStravaOAuth,
   onSaveStravaCredentials,
   onSaveStravaDirectToken,
@@ -166,7 +199,26 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const initialJoin = useMemo(() => detectInitialJoinParams(), []);
   const isEmbeddedWebView = useMemo(() => detectEmbeddedWebView(), []);
 
-  const [step, setStep] = useState<WizardStep>(() => (status.stravaConnected ? 2 : 1));
+  // THRESH User Identity State (Self-Hosted Auth: Google, Passkey, Magic Link, Strava)
+  const [localUser, setLocalUser] = useState<ThreshUser | null>(
+    currentUser || status.currentUser || null
+  );
+  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkDevUrl, setMagicLinkDevUrl] = useState<string | null>(null);
+  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
+  const [isPasskeyAuthenticating, setIsPasskeyAuthenticating] = useState(false);
+  const [showPasskeyRegister, setShowPasskeyRegister] = useState(false);
+  const [passkeyRegEmail, setPasskeyRegEmail] = useState('');
+  const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
+  const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
+
+  const isUserAuthenticated = Boolean(status.stravaConnected || localUser || currentUser);
+  const [step, setStep] = useState<WizardStep>(() =>
+    status.stravaConnected || currentUser || status.currentUser ? 2 : 1
+  );
   const [showArchiveWizard, setShowArchiveWizard] = useState(false);
 
   // Athlete Sync & Calibration State (Step 2)
@@ -246,12 +298,43 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       !status.stravaGrantedScope.includes('activity:read')
   );
 
-  // Automatically advance from Step 1 -> Step 2 once Strava OAuth completes!
+  // Sync parent user when updated
   useEffect(() => {
-    if (status.stravaConnected && step === 1) {
+    if (currentUser) {
+      setLocalUser(currentUser);
+      if (currentUser.name && !athleteName) setAthleteName(currentUser.name);
+      if (currentUser.email && !athleteEmail) setAthleteEmail(currentUser.email);
+    }
+  }, [currentUser, athleteName, athleteEmail]);
+
+  // Check WebAuthn passkey availability
+  useEffect(() => {
+    void isPasskeySupported().then(setPasskeySupported);
+  }, []);
+
+  // Hydrate session if already signed in via THRESH session cookie
+  useEffect(() => {
+    if (!localUser && !currentUser && !status.stravaConnected) {
+      fetch('/api/auth/me', { credentials: 'include' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.authenticated && data?.user) {
+            setLocalUser(data.user);
+            onAuthenticatedUser?.(data.user);
+            if (data.user.name && !athleteName) setAthleteName(data.user.name);
+            if (data.user.email && !athleteEmail) setAthleteEmail(data.user.email);
+          }
+        })
+        .catch(() => null);
+    }
+  }, [localUser, currentUser, status.stravaConnected, athleteName, athleteEmail, onAuthenticatedUser]);
+
+  // Automatically advance from Step 1 -> Step 2 once Strava OAuth completes or user authenticates!
+  useEffect(() => {
+    if ((status.stravaConnected || localUser) && step === 1) {
       setStep(2);
     }
-  }, [status.stravaConnected, step]);
+  }, [status.stravaConnected, localUser, step]);
 
   // Pre-fill athlete name & measurement preference from Strava profile
   useEffect(() => {
@@ -388,6 +471,115 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     };
   }, [joinCodeInput, joinSlug, inviteToken, activeBrand]);
 
+  const handleGoogleSignIn = async () => {
+    setIsGoogleRedirecting(true);
+    setStepNotice(null);
+    setJoinError(null);
+    try {
+      const res = await fetch('/api/auth/google/url', { credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (data.configured && data.authUrl) {
+        window.location.href = data.authUrl;
+      } else if (data.devMockLoginUrl) {
+        window.location.href = data.devMockLoginUrl;
+      } else {
+        setJoinError('Google sign-in is not configured on this server.');
+      }
+    } catch {
+      setJoinError('Failed to initialize Google sign-in.');
+    } finally {
+      setIsGoogleRedirecting(false);
+    }
+  };
+
+  const handlePasskeySignIn = async () => {
+    setIsPasskeyAuthenticating(true);
+    setPasskeyError(null);
+    setJoinError(null);
+    try {
+      const result = await authenticateWithPasskey();
+      if (result.ok && result.user) {
+        setLocalUser(result.user);
+        if (result.user.name && !athleteName) setAthleteName(result.user.name);
+        if (result.user.email && !athleteEmail) setAthleteEmail(result.user.email);
+        onAuthenticatedUser?.(result.user);
+        setStepNotice(`Signed in with Passkey (${result.user.name || result.user.email})!`);
+        setStep(2);
+      } else {
+        setPasskeyError(result.error || 'Passkey authentication failed.');
+        setShowPasskeyRegister(true);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPasskeyError(msg);
+      setShowPasskeyRegister(true);
+    } finally {
+      setIsPasskeyAuthenticating(false);
+    }
+  };
+
+  const handlePasskeyRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passkeyRegEmail.trim()) return;
+    setIsPasskeyRegistering(true);
+    setPasskeyError(null);
+    try {
+      const result = await registerPasskey(
+        passkeyRegEmail.trim(),
+        athleteName.trim() || undefined
+      );
+      if (result.ok && result.user) {
+        setLocalUser(result.user);
+        if (result.user.name && !athleteName) setAthleteName(result.user.name);
+        if (result.user.email && !athleteEmail) setAthleteEmail(result.user.email);
+        onAuthenticatedUser?.(result.user);
+        setShowPasskeyRegister(false);
+        setStepNotice('Passkey registered and signed in!');
+        setStep(2);
+      } else {
+        setPasskeyError(result.error || 'Passkey registration failed.');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPasskeyError(msg);
+    } finally {
+      setIsPasskeyRegistering(false);
+    }
+  };
+
+  const handleSendMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = magicLinkEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setJoinError('Please enter a valid email address.');
+      return;
+    }
+    setIsSendingMagicLink(true);
+    setJoinError(null);
+    setMagicLinkDevUrl(null);
+    try {
+      const res = await fetch('/api/auth/magic-link/send', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setMagicLinkSent(true);
+        if (data.devMode && data.previewUrl) {
+          setMagicLinkDevUrl(data.previewUrl);
+        }
+      } else {
+        setJoinError(data.error || 'Could not send sign-in link.');
+      }
+    } catch {
+      setJoinError('Failed sending sign-in link. Please check your connection.');
+    } finally {
+      setIsSendingMagicLink(false);
+    }
+  };
+
   const handleStravaLaunchClick = async (
     oauthMode: 'cloud' | 'localhost' = 'cloud',
     forcePrompt = false
@@ -446,6 +638,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   const handleSwitchStravaAccount = async () => {
     setStepNotice(null);
+    setLocalUser(null);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // ignore
+    }
     if (onDisconnectCredentials) {
       await onDisconnectCredentials();
     }
@@ -473,19 +671,21 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         ...(sessionTokenHeader ? { 'x-session-token': sessionTokenHeader } : {}),
       };
 
-      const policyResp = await fetch('/api/strava/sync-policy', {
-        method: 'POST',
-        credentials: 'include',
-        headers: authHeaders,
-        body: JSON.stringify({
-          window: syncWindow,
-          importProfileAndGear,
-        }),
-      });
-      if (policyResp.ok) {
-        const pData = await policyResp.json().catch(() => ({}));
-        if (pData?.stravaSyncPolicy) {
-          savedPolicy = pData.stravaSyncPolicy;
+      if (status.stravaConnected) {
+        const policyResp = await fetch('/api/strava/sync-policy', {
+          method: 'POST',
+          credentials: 'include',
+          headers: authHeaders,
+          body: JSON.stringify({
+            window: syncWindow,
+            importProfileAndGear,
+          }),
+        });
+        if (policyResp.ok) {
+          const pData = await policyResp.json().catch(() => ({}));
+          if (pData?.stravaSyncPolicy) {
+            savedPolicy = pData.stravaSyncPolicy;
+          }
         }
       }
       setConfirmedPolicy(savedPolicy);
@@ -535,7 +735,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       }
 
       // Kick off consented Strava sync non-blockingly in the background while user views Step 3!
-      if (syncWindow !== 'none' && onSyncNow) {
+      if (status.stravaConnected && syncWindow !== 'none' && onSyncNow) {
         void onSyncNow(syncWindow === 'all', syncWindow);
       }
 
@@ -664,7 +864,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     isSavingStep2 ||
     isEntering ||
     isConnectingGarmin ||
-    isConnectingIntervals;
+    isConnectingIntervals ||
+    isGoogleRedirecting ||
+    isPasskeyAuthenticating ||
+    isPasskeyRegistering ||
+    isSendingMagicLink;
 
   const secondaryConnected = Boolean(isGarminConnected || status.intervalsConnected);
   const showByoStravaSection = Boolean(
@@ -739,7 +943,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               [
                 {
                   id: 1 as const,
-                  label: '1. Strava Sign-In',
+                  label: '1. THRESH Sign-In',
                   mobileLabel: '1. Sign In',
                   locked: false,
                 },
@@ -747,13 +951,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   id: 2 as const,
                   label: '2. Sync Choice',
                   mobileLabel: '2. Sync',
-                  locked: !status.stravaConnected,
+                  locked: !isUserAuthenticated,
                 },
                 {
                   id: 3 as const,
                   label: '3. Optional Add-Ons',
                   mobileLabel: '3. Add-Ons',
-                  locked: !status.stravaConnected,
+                  locked: !isUserAuthenticated,
                 },
               ] as const
             ).map((s) => (
@@ -766,7 +970,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   if (!s.locked) setStep(s.id);
                 }}
                 title={
-                  s.locked ? 'Sign in with Strava in Step 1 first' : s.label
+                  s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label
                 }
                 className={`min-h-[44px] sm:min-h-[38px] min-w-0 px-1.5 sm:px-2.5 py-1 transition-all ap-track-tab ${
                   step === s.id
@@ -809,7 +1013,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           )}
 
           {/* ==============================================================
-              STEP 1: STRAVA IDENTITY (PRIMARY AUTH FOR INDIVIDUALS & TEAMS)
+              STEP 1: THRESH IDENTITY (GOOGLE, PASSKEYS, MAGIC LINK & STRAVA)
              ============================================================== */}
           {step === 1 && (
             <div className="space-y-5 relative z-10">
@@ -830,8 +1034,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 )}
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                   {activeBrand
-                    ? `Sign in with Strava to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll choose exactly what workout data syncs on the next screen.`
-                    : 'THRESH turns your running and cycling training into a daily readiness check, calibrated threshold zones, and adaptive workout plan.'}
+                    ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll choose your sync choices on the next screen.`
+                    : 'Create your free THRESH athlete account with Google, Passkey, Magic Link, or Strava.'}
                 </p>
               </div>
 
@@ -931,17 +1135,162 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               {/* Embedded In-App Browser Warning (GroupMe / Instagram / Snapchat) */}
               {isEmbeddedWebView && (
                 <div className="ap-status-caution rounded-xl p-3 text-xs leading-relaxed">
-                  <strong>Tip for mobile team links:</strong> If Strava sign-in is blocked inside this messaging app, tap <strong>⋯ → Open in Safari / Chrome</strong>.
+                  <strong>Tip for mobile team links:</strong> If external sign-in is blocked inside this messaging app, tap <strong>⋯ → Open in Safari / Chrome</strong>.
                 </div>
               )}
 
-              {/* Primary Strava Sign-In Card */}
+              {/* Primary THRESH Sign-In Card (Google, Passkeys, Magic Link & Strava) */}
               <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-4">
+                {/* 1. Continue with Google */}
+                <button
+                  type="button"
+                  onClick={() => void handleGoogleSignIn()}
+                  disabled={busy || isGoogleRedirecting}
+                  className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-[#15231B] text-slate-800 dark:text-white font-bold text-sm flex items-center justify-center gap-3 shadow-xs hover:bg-slate-50 dark:hover:bg-[#1B3024] cursor-pointer transition-colors"
+                >
+                  {isGoogleRedirecting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                  ) : (
+                    <GoogleGIcon className="w-4 h-4" />
+                  )}
+                  <span>{isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}</span>
+                </button>
+
+                {/* 2. Biometric Passkey (Touch ID / Face ID / WebAuthn) */}
+                {passkeySupported && (
+                  <button
+                    type="button"
+                    onClick={() => void handlePasskeySignIn()}
+                    disabled={busy || isPasskeyAuthenticating}
+                    className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-emerald-600/30 dark:border-emerald-400/20 bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold text-sm flex items-center justify-center gap-2.5 hover:bg-emerald-500/20 cursor-pointer transition-colors"
+                  >
+                    {isPasskeyAuthenticating ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4" />
+                    )}
+                    <span>
+                      {isPasskeyAuthenticating
+                        ? 'Authenticating with Touch ID / Face ID…'
+                        : 'Sign in with Passkey (Biometrics)'}
+                    </span>
+                  </button>
+                )}
+
+                {/* Passkey registration dialog / fallback */}
+                {showPasskeyRegister && (
+                  <form
+                    onSubmit={handlePasskeyRegister}
+                    className="rounded-xl border border-emerald-600/40 p-3 space-y-2.5 bg-emerald-500/5 text-xs"
+                  >
+                    <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
+                      <span>Register Passkey for this device</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPasskeyRegister(false)}
+                        className="text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {passkeyError && (
+                      <p className="text-2xs text-rose-500 dark:text-rose-400">{passkeyError}</p>
+                    )}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="email"
+                        required
+                        value={passkeyRegEmail}
+                        onChange={(e) => setPasskeyRegEmail(e.target.value)}
+                        placeholder="Enter your email to link passkey"
+                        className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 text-xs text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
+                        className="ap-btn-primary !min-h-[40px] px-3 text-xs shrink-0 cursor-pointer"
+                      >
+                        {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Divider: or email magic link */}
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
+                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
+                    or email magic link
+                  </span>
+                </div>
+
+                {/* 3. Email Magic Link Form */}
+                <form onSubmit={handleSendMagicLink} className="space-y-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={magicLinkEmail}
+                      onChange={(e) => {
+                        setMagicLinkEmail(e.target.value);
+                        setMagicLinkSent(false);
+                      }}
+                      placeholder="athlete@domain.com"
+                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
+                      className="ap-btn-secondary !min-h-[44px] px-4 text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      {isSendingMagicLink ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 ap-text-brand" />
+                      )}
+                      <span>{isSendingMagicLink ? 'Sending…' : 'Send Sign-In Link'}</span>
+                    </button>
+                  </div>
+                  {magicLinkSent && (
+                    <div className="ap-status-prime rounded-xl p-3 text-xs space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <span>Check your inbox for a secure sign-in link!</span>
+                      </div>
+                      <p className="text-2xs opacity-90">
+                        We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
+                      </p>
+                      {magicLinkDevUrl && (
+                        <div className="pt-1.5 border-t border-emerald-500/20">
+                          <span className="font-mono text-2xs uppercase tracking-wider opacity-75 mr-2">
+                            Dev Link:
+                          </span>
+                          <a
+                            href={magicLinkDevUrl}
+                            className="text-2xs font-bold underline ap-text-brand hover:opacity-80"
+                          >
+                            Complete Sign-In Now →
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </form>
+
+                {/* Divider: or connect with Strava */}
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
+                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
+                    or strava connector
+                  </span>
+                </div>
+
+                {/* 4. Connect with Strava */}
                 <button
                   type="button"
                   onClick={() => void handleStravaLaunchClick('cloud', false)}
                   disabled={busy}
-                  className="ap-btn-strava w-full !min-h-[50px] py-3 px-5 rounded-xl disabled:opacity-60 font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md cursor-pointer"
+                  className="ap-btn-strava w-full !min-h-[48px] py-2.5 px-4 rounded-xl disabled:opacity-60 font-bold text-sm flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
                 >
                   {isRedirecting ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -957,8 +1306,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </span>
                 </button>
 
-                <p className="text-xs text-center text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Strava handles your THRESH identity across devices. <strong>Nothing syncs until you choose your sync window in Step 2.</strong>
+                <p className="text-2xs text-center text-slate-500 dark:text-slate-400 leading-relaxed">
+                  THRESH secures your identity across devices. <strong>Nothing syncs until you choose your sync window in Step 2.</strong>
                 </p>
 
                 {/* 4-Point Read-Only Privacy Pledge */}
@@ -967,10 +1316,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     <ShieldCheck className="w-4 h-4 ap-text-brand shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold text-slate-900 dark:text-white">
-                        100% Read-Only Strava Access
+                        100% Read-Only Access
                       </div>
                       <div className="text-2xs text-slate-600 dark:text-slate-400">
-                        Never posts to your feed, edits titles, or modifies workouts.
+                        Never posts to feeds, edits titles, or alters workouts.
                       </div>
                     </div>
                   </div>
@@ -981,7 +1330,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         You Choose What Syncs
                       </div>
                       <div className="text-2xs text-slate-600 dark:text-slate-400">
-                        Pick Last 90 Days, Full Archive, or Identity-Only after sign-in.
+                        Pick Last 90 Days, Full Archive, or Identity-Only in Step 2.
                       </div>
                     </div>
                   </div>
@@ -1214,17 +1563,20 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
              ============================================================== */}
           {step === 2 && (
             <div className="space-y-5 relative z-10">
-              {/* Verified Strava Identity Badge */}
+              {/* Verified Identity Badge */}
               <div className="rounded-2xl ap-status-prime p-3.5 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <CheckCircle2 className="w-5 h-5 shrink-0" />
                   <div className="min-w-0">
                     <div className="text-xs sm:text-sm font-bold truncate">
-                      Signed in with Strava
-                      {status.stravaAthleteName ? ` · ${status.stravaAthleteName}` : ''}
+                      {status.stravaConnected
+                        ? `Signed in with Strava${status.stravaAthleteName ? ` · ${status.stravaAthleteName}` : ''}`
+                        : `Signed in as ${localUser?.name || localUser?.email || 'Athlete'}${localUser?.email && localUser?.name ? ` (${localUser.email})` : ''}`}
                     </div>
                     <div className="text-2xs opacity-90">
-                      Identity verified. Choose what Strava data you want to sync to THRESH.
+                      {status.stravaConnected
+                        ? 'Identity verified. Choose what Strava data you want to sync to THRESH.'
+                        : 'THRESH account active. Configure your telemetry sync and sport calibration below.'}
                     </div>
                   </div>
                 </div>
@@ -1237,113 +1589,150 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </button>
               </div>
 
-              {lacksActivityScope && (
-                <div className="ap-status-caution rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="space-y-0.5 flex-1 min-w-[220px]">
-                    <div className="font-bold">Activity permission was unchecked on Strava</div>
-                    <div className="opacity-90">
-                      THRESH is set to Identity Only. Re-authorize with activity read access if you want automatic workout sync.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleStravaLaunchClick('cloud', true)}
-                    className="ap-btn-strava !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer shrink-0"
-                  >
-                    Re-Authorize Activities
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  Choose What Syncs From Strava
-                </h1>
-              </div>
-
-              {/* 1. Sync Window Radio Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {(
-                  [
-                    {
-                      id: '90d' as const,
-                      title: 'Last 90 Days',
-                      badge: 'Recommended · Fast',
-                      desc: 'Loads your 42-day Fitness (CTL), Fatigue (ATL), and recent PRs in ~2 seconds.',
-                      disabled: lacksActivityScope,
-                    },
-                    {
-                      id: '180d' as const,
-                      title: 'Last 6 Months',
-                      badge: 'Season Block',
-                      desc: 'Includes your full prior training block, base mileage, and threshold trends.',
-                      disabled: lacksActivityScope,
-                    },
-                    {
-                      id: 'all' as const,
-                      title: 'Complete Strava Archive',
-                      badge: 'All-Time',
-                      desc: 'Paginates your multi-year run & ride history in the background.',
-                      disabled: lacksActivityScope,
-                    },
-                    {
-                      id: 'none' as const,
-                      title: 'Identity Only (No Sync Yet)',
-                      badge: 'Zero Import',
-                      desc: 'Use Strava strictly for sign-in; enable sync or upload .FIT files anytime later.',
-                      disabled: false,
-                    },
-                  ] as const
-                ).map((opt) => {
-                  const selected = syncWindow === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={opt.disabled}
-                      aria-pressed={selected}
-                      onClick={() => setSyncWindow(opt.id)}
-                      className={`text-left rounded-xl p-3.5 border-2 transition-all ${
-                        opt.disabled
-                          ? 'opacity-45 cursor-not-allowed border-slate-300/50 dark:border-white/10'
-                          : selected
-                            ? 'border-[#1E6B38] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#C8FF00]/10 cursor-pointer'
-                            : 'liquid-glass hover:border-[#28573B] dark:hover:border-[#2E6B47] cursor-pointer'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                          {opt.title}
-                        </span>
-                        <span
-                          className={`text-2xs font-mono px-2 py-0.5 rounded-md font-bold ${
-                            selected
-                              ? 'ap-badge-volt'
-                              : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
-                          {opt.badge}
+              {!status.stravaConnected ? (
+                <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-orange-500/25">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <StravaChevronMark className="w-4 h-4 text-[#FC4C02]" />
+                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Link Strava Workouts (Optional)
+                        </h2>
+                        <span className="px-2 py-0.5 rounded text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
+                          Optional
                         </span>
                       </div>
-                      <p className="text-2xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                        {opt.desc}
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        Automatically pull your workouts, GPS routes, and gear mileage into THRESH.
                       </p>
-                    </button>
-                  );
-                })}
-              </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => void handleStravaLaunchClick('cloud', false)}
+                        disabled={busy}
+                        className="ap-btn-strava !min-h-[40px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <StravaChevronMark className="w-3.5 h-3.5" />
+                        <span>Connect Strava</span>
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-2xs text-slate-500 dark:text-slate-400">
+                    Not using Strava? No problem. You can link Garmin Connect or Intervals.icu in Step 3, or import .FIT/.ZIP files anytime.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {lacksActivityScope && (
+                    <div className="ap-status-caution rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="space-y-0.5 flex-1 min-w-[220px]">
+                        <div className="font-bold">Activity permission was unchecked on Strava</div>
+                        <div className="opacity-90">
+                          THRESH is set to Identity Only. Re-authorize with activity read access if you want automatic workout sync.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleStravaLaunchClick('cloud', true)}
+                        className="ap-btn-strava !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer shrink-0"
+                      >
+                        Re-Authorize Activities
+                      </button>
+                    </div>
+                  )}
 
-              <label className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none px-1">
-                <input
-                  type="checkbox"
-                  checked={importProfileAndGear}
-                  onChange={(e) => setImportProfileAndGear(e.target.checked)}
-                  className="w-4 h-4 rounded accent-[#FC4C02]"
-                />
-                <span>
-                  Import Strava athlete baseline (FTP / weight if set) &amp; shoe/bike gear mileage
-                </span>
-              </label>
+                  <div className="space-y-1">
+                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+                      Choose What Syncs From Strava
+                    </h1>
+                  </div>
+
+                  {/* 1. Sync Window Radio Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {(
+                      [
+                        {
+                          id: '90d' as const,
+                          title: 'Last 90 Days',
+                          badge: 'Recommended · Fast',
+                          desc: 'Loads your 42-day Fitness (CTL), Fatigue (ATL), and recent PRs in ~2 seconds.',
+                          disabled: lacksActivityScope,
+                        },
+                        {
+                          id: '180d' as const,
+                          title: 'Last 6 Months',
+                          badge: 'Season Block',
+                          desc: 'Includes your full prior training block, base mileage, and threshold trends.',
+                          disabled: lacksActivityScope,
+                        },
+                        {
+                          id: 'all' as const,
+                          title: 'Complete Strava Archive',
+                          badge: 'All-Time',
+                          desc: 'Paginates your multi-year run & ride history in the background.',
+                          disabled: lacksActivityScope,
+                        },
+                        {
+                          id: 'none' as const,
+                          title: 'Identity Only (No Sync Yet)',
+                          badge: 'Zero Import',
+                          desc: 'Use Strava strictly for sign-in; enable sync or upload .FIT files anytime later.',
+                          disabled: false,
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const selected = syncWindow === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={opt.disabled}
+                          aria-pressed={selected}
+                          onClick={() => setSyncWindow(opt.id)}
+                          className={`text-left rounded-xl p-3.5 border-2 transition-all ${
+                            opt.disabled
+                              ? 'opacity-45 cursor-not-allowed border-slate-300/50 dark:border-white/10'
+                              : selected
+                                ? 'border-[#1E6B38] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#C8FF00]/10 cursor-pointer'
+                                : 'liquid-glass hover:border-[#28573B] dark:hover:border-[#2E6B47] cursor-pointer'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                              {opt.title}
+                            </span>
+                            <span
+                              className={`text-2xs font-mono px-2 py-0.5 rounded-md font-bold ${
+                                selected
+                                  ? 'ap-badge-volt'
+                                  : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {opt.badge}
+                            </span>
+                          </div>
+                          <p className="text-2xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                            {opt.desc}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <label className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none px-1">
+                    <input
+                      type="checkbox"
+                      checked={importProfileAndGear}
+                      onChange={(e) => setImportProfileAndGear(e.target.checked)}
+                      className="w-4 h-4 rounded accent-[#FC4C02]"
+                    />
+                    <span>
+                      Import Strava athlete baseline (FTP / weight if set) &amp; shoe/bike gear mileage
+                    </span>
+                  </label>
+                </>
+              )}
 
               {/* 2. Primary Sport & Units + Optional Day-1 Seed Mark */}
               <div className="liquid-glass rounded-2xl p-4 space-y-4">
@@ -1600,7 +1989,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <span>
                     {activeBrand
                       ? `Join ${activeBrand.shortName} & Continue`
-                      : 'Confirm Strava Sync & Continue'}
+                      : status.stravaConnected
+                        ? 'Confirm Strava Sync & Continue'
+                        : 'Confirm & Continue'}
                   </span>
                 </button>
               </div>
@@ -1831,7 +2222,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             </div>
           )}
 
-          {status.stravaConnected && onDisconnectCredentials && (
+          {(status.stravaConnected || localUser) && onDisconnectCredentials && (
             <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 flex justify-end relative z-10">
               <button
                 type="button"

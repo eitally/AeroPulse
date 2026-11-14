@@ -478,11 +478,47 @@ export interface StravaSyncPolicy {
   grantedScope?: string;
 }
 
+export interface ThreshUserAuthProvider {
+  provider: 'google' | 'magic_link' | 'passkey' | 'strava' | 'dev_mock';
+  providerId: string;
+  email?: string;
+  name?: string;
+  linkedAt: string;
+}
+
+export interface ThreshPasskeySummary {
+  id: string;
+  createdAt: string;
+  counter: number;
+}
+
+export interface ThreshConnectedService {
+  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar';
+  connectedAt: string;
+  status: 'CONNECTED' | 'DISCONNECTED';
+  athleteId?: string;
+  athleteName?: string;
+}
+
+export interface ThreshUser {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+  role: 'athlete' | 'coach' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+  authProviders: ThreshUserAuthProvider[];
+  passkeys?: ThreshPasskeySummary[];
+  connectedServices: ThreshConnectedService[];
+}
+
 export type CoachDataSharingTier = 'SUMMARY_ONLY' | 'FULL_STREAMS' | 'LOAD_ONLY';
 
 export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   vaultStorageBackend?: 'POSTGRES' | 'ENCRYPTED_FILE';
+  currentUser?: ThreshUser | null;
   garminConnected?: boolean;
   garminAthleteName?: string;
   intervalsConnected: boolean;

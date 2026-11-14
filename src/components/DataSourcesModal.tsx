@@ -441,7 +441,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         })}`
                       : ''
                   }`
-                : 'Strava powers your THRESH identity · Garmin & Intervals.icu are optional add-ons'}
+                : 'THRESH account active · Strava, Garmin & Intervals.icu are optional data connectors'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -494,7 +494,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">Strava</h3>
                   <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider bg-[#C23800]/12 dark:bg-[#FC4C02]/15 ap-text-strava border border-[#C23800]/30 dark:border-[#FC4C02]/35">
-                    Primary Identity
+                    Data Connector
                   </span>
                   {status.stravaConnected ? (
                     <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
@@ -502,12 +502,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md text-2xs font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                      Not Signed In
+                      Not Connected
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Secures your THRESH account across devices and syncs your chosen run &amp; ride history.
+                  Optional external telemetry connector. Automatically syncs your run &amp; ride GPS activities and workouts.
                 </p>
               </div>
 

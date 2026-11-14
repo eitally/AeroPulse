@@ -43,6 +43,7 @@ import {
   StravaSyncWindow,
   TargetGoal,
   TeamSummaryWithRole,
+  ThreshUser,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from './types';
@@ -465,6 +466,7 @@ export default function App() {
         ? `${window.location.origin}/api/strava/callback`
         : `${DEV_APP_URL}/api/strava/callback`,
   });
+  const [currentUser, setCurrentUser] = useState<ThreshUser | null>(null);
 
   // Automatically persist telemetry state changes (workouts, planned events, calibrated profile) to IndexedDB
   useEffect(() => {
@@ -731,6 +733,23 @@ export default function App() {
           }
           if (data.mapTileProvider && !localStorage.getItem('aeropulse_map_tile_provider')) {
             localStorage.setItem('aeropulse_map_tile_provider', data.mapTileProvider);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (notLoggedOut) {
+        try {
+          const authMeResp = await fetch('/api/auth/me', { credentials: 'include' });
+          if (authMeResp.ok) {
+            const authMeData = await authMeResp.json();
+            if (authMeData?.authenticated && authMeData?.user) {
+              setCurrentUser(authMeData.user);
+              if (authMeData.user.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
+                setAthleteProfile((prev) => ({ ...prev, name: authMeData.user.name }));
+              }
+            }
           }
         } catch {
           // ignore
@@ -3969,6 +3988,7 @@ export default function App() {
     setMyTeams([]);
     setActiveTeamId(null);
     setActiveViewedAthleteId('SELF');
+    setCurrentUser(null);
     const defaultProf = buildCompleteAthleteProfile(null);
     setAthleteProfile(defaultProf);
     athleteProfileRef.current = defaultProf;
@@ -3977,6 +3997,7 @@ export default function App() {
     setConnectionStatus((prev) => ({
       ...prev,
       mode: 'SANDBOX_CALIBRATION',
+      currentUser: null,
       stravaConnected: false,
       stravaAthleteId: undefined,
       stravaAthleteName: undefined,
@@ -4611,12 +4632,19 @@ export default function App() {
 
   if (
     !isSampleDemoMode &&
-    (isSessionLoggedOut || !hasEnteredWorkspace || !hasLocalClientCredentials())
+    (isSessionLoggedOut || !hasEnteredWorkspace || (!hasLocalClientCredentials() && !currentUser))
   ) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <StravaAuthGate
           status={connectionStatus}
+          currentUser={currentUser}
+          onAuthenticatedUser={(user) => {
+            setCurrentUser(user);
+            if (user.name && isGenericAthleteName(athleteProfile.name)) {
+              setAthleteProfile((prev) => ({ ...prev, name: user.name }));
+            }
+          }}
           onLaunchStravaOAuth={async (mode = 'cloud', joinContext, forcePrompt) => {
             await handleLaunchStravaOAuth(mode, joinContext, forcePrompt);
           }}
@@ -4985,11 +5013,19 @@ export default function App() {
                     aria-haspopup="menu"
                     title="Account, Profile Zones, Data Sources, Guide & Log Out"
                   >
-                    <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
-                      {primaryAthleteInitials}
-                    </span>
+                    {currentUser?.picture ? (
+                      <img
+                        src={currentUser.picture}
+                        alt=""
+                        className="w-6 h-6 rounded-lg object-cover border border-[#28573B] shrink-0"
+                      />
+                    ) : (
+                      <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
+                        {primaryAthleteInitials}
+                      </span>
+                    )}
                     <span className="hidden xl:inline max-w-[90px] truncate">
-                      {primaryAthleteDisplayName}
+                      {currentUser?.name || primaryAthleteDisplayName}
                     </span>
                     <ChevronDown
                       className={`w-3.5 h-3.5 text-slate-600 dark:text-slate-400 transition-transform ${
@@ -5007,13 +5043,26 @@ export default function App() {
                       {/* Account Identity & Connection Summary */}
                       <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
-                            {primaryAthleteInitials}
-                          </div>
+                          {currentUser?.picture ? (
+                            <img
+                              src={currentUser.picture}
+                              alt=""
+                              className="w-9 h-9 rounded-xl object-cover border border-[#28573B] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                              {primaryAthleteInitials}
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 dark:text-white truncate">
-                              {primaryAthleteDisplayName}
+                              {currentUser?.name || primaryAthleteDisplayName}
                             </div>
+                            {currentUser?.email && (
+                              <div className="text-2xs text-slate-500 dark:text-slate-400 truncate">
+                                {currentUser.email}
+                              </div>
+                            )}
                             <div className="text-2xs font-mono text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span className="truncate">
