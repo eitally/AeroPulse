@@ -782,6 +782,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'TEAMS_BRANDING' ? 0 : -1}
               aria-selected={activeTab === 'TEAMS_BRANDING'}
               onClick={() => setActiveTab('TEAMS_BRANDING')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -797,6 +798,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'TRACKSIDE_PAD' ? 0 : -1}
               aria-selected={activeTab === 'TRACKSIDE_PAD'}
               onClick={() => setActiveTab('TRACKSIDE_PAD')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -817,6 +819,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'SCHOLASTIC_COACH' ? 0 : -1}
               aria-selected={activeTab === 'SCHOLASTIC_COACH'}
               onClick={() => setActiveTab('SCHOLASTIC_COACH')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -832,6 +835,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'LEADERBOARD' ? 0 : -1}
               aria-selected={activeTab === 'LEADERBOARD'}
               onClick={() => setActiveTab('LEADERBOARD')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -847,6 +851,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'CONNECT_INVITE' ? 0 : -1}
               aria-selected={activeTab === 'CONNECT_INVITE'}
               onClick={() => setActiveTab('CONNECT_INVITE')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -867,6 +872,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             <button
               type="button"
               role="tab"
+              tabIndex={activeTab === 'PRIVACY_SHIELD' ? 0 : -1}
               aria-selected={activeTab === 'PRIVACY_SHIELD'}
               onClick={() => setActiveTab('PRIVACY_SHIELD')}
               className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${

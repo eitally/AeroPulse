@@ -528,7 +528,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       onClose();
                       onDisconnectStrava();
                     }}
-                    className="min-h-[40px] px-3 py-2 rounded-xl liquid-glass-subtle text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-xl liquid-glass-subtle text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                   >
                     Sign Out
                   </button>
@@ -663,7 +663,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaClientId}
                       onChange={(e) => setStravaClientId(e.target.value)}
                       placeholder="Client ID"
-                      className="sm:col-span-4 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <input
                       type="password"
@@ -671,11 +671,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaClientSecret}
                       onChange={(e) => setStravaClientSecret(e.target.value)}
                       placeholder="Client Secret"
-                      className="sm:col-span-5 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
-                      className="sm:col-span-3 min-h-[40px] rounded-lg bg-[#080A09] hover:bg-[#15231B] border border-[#FC4C02]/60 text-white font-semibold text-xs px-3 cursor-pointer"
+                      className="sm:col-span-3 min-h-[44px] sm:min-h-[40px] rounded-lg bg-[#080A09] hover:bg-[#15231B] border border-[#FC4C02]/60 text-white font-semibold text-xs px-3 cursor-pointer"
                     >
                       Save &amp; Connect
                     </button>
@@ -691,12 +691,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaFallbackInput}
                       onChange={(e) => setStravaFallbackInput(e.target.value)}
                       placeholder="Or paste Strava Refresh Token / redirect URL..."
-                      className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
                       disabled={!stravaFallbackInput.trim()}
-                      className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
                     >
                       Verify Token
                     </button>
@@ -962,7 +962,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <code className="font-mono">.zip</code> directly in your browser.
                   </p>
                 </div>
-                <label className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer whitespace-nowrap">
+                <label className="ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer whitespace-nowrap">
                   <Upload className="w-3.5 h-3.5 ap-text-brand" />
                   <span>{isImportingArchive ? 'Importing...' : 'Choose Files'}</span>
                   <input
@@ -1064,7 +1064,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     aria-label="Activity map tile provider"
                     value={mapTileProvider}
                     onChange={(e) => setMapTileProvider(e.target.value as MapTileProvider)}
-                    className="sm:col-span-4 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="OSM_KEYLESS">OpenStreetMap (Free / No Key)</option>
                     <option value="MAPBOX">Mapbox High-DPI</option>
@@ -1080,11 +1080,11 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       if (val.trim().startsWith('pk.')) setMapTileProvider('MAPBOX');
                     }}
                     placeholder="Optional Mapbox (pk.ey...) or Thunderforest key"
-                    className="sm:col-span-5 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
-                    className="sm:col-span-3 ap-btn-secondary !min-h-[40px] text-xs cursor-pointer"
+                    className="sm:col-span-3 ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer"
                   >
                     Save Map Style
                   </button>
@@ -1107,7 +1107,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         setLocalStatusMsg('Copied Connection Bundle to clipboard.');
                       }
                     }}
-                    className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer"
+                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer"
                   >
                     {copiedLabel === 'bundle' ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -1135,12 +1135,12 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     value={bundleInput}
                     onChange={(e) => setBundleInput(e.target.value)}
                     placeholder="Paste Connection Bundle here to restore optional keys..."
-                    className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
                     disabled={isSyncing || !bundleInput.trim()}
-                    className="ap-btn-secondary !min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
+                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer disabled:opacity-50"
                   >
                     Restore
                   </button>
