@@ -14,8 +14,10 @@ import {
   RefreshCw,
   ShieldCheck,
   Sun,
+  UploadSimple,
   Users,
 } from './icons/PhosphorIcons';
+import { ArchiveOnboardingWizard } from './ArchiveOnboardingWizard';
 import {
   CoachDataSharingTier,
   ConnectionStatus,
@@ -24,6 +26,7 @@ import {
   StravaSyncWindow,
   TeamInvitePreviewPayload,
   TeamSummaryWithRole,
+  UnifiedActivity,
 } from '../types';
 import {
   calibrateThresholdsFromSeedMark,
@@ -73,6 +76,10 @@ interface StravaAuthGateProps {
   isDark?: boolean;
   onToggleDark?: () => void;
   onEnterSampleDemo?: () => void;
+  onImportBatchActivities?: (activities: UnifiedActivity[]) => void;
+  onBypassToLocalSession?: () => Promise<void>;
+  existingActivities?: UnifiedActivity[];
+  distanceUnit?: DistanceUnit;
 }
 
 type WizardStep = 1 | 2 | 3;
@@ -150,12 +157,17 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   isDark = false,
   onToggleDark,
   onEnterSampleDemo,
+  onImportBatchActivities,
+  onBypassToLocalSession,
+  existingActivities = [],
+  distanceUnit: propDistanceUnit,
 }) => {
   const formId = useId();
   const initialJoin = useMemo(() => detectInitialJoinParams(), []);
   const isEmbeddedWebView = useMemo(() => detectEmbeddedWebView(), []);
 
   const [step, setStep] = useState<WizardStep>(() => (status.stravaConnected ? 2 : 1));
+  const [showArchiveWizard, setShowArchiveWizard] = useState(false);
 
   // Athlete Sync & Calibration State (Step 2)
   const [syncWindow, setSyncWindow] = useState<StravaSyncWindow>(
@@ -168,7 +180,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [athleteEmail, setAthleteEmail] = useState('');
   const [primarySport, setPrimarySport] = useState<'Cycling' | 'Running' | 'Hybrid'>('Running');
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(
-    status.stravaMeasurementPreference || 'mi'
+    status.stravaMeasurementPreference || propDistanceUnit || 'mi'
   );
   const [hasEditedUnits, setHasEditedUnits] = useState(false);
 
@@ -999,6 +1011,29 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </div>
                 )}
 
+                {/* 100% Offline Multi-Source Archive Importer Entry */}
+                <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono uppercase bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                        100% Offline
+                      </span>
+                      <span>No Strava Account? Import Training Archive</span>
+                    </div>
+                    <p className="text-2xs text-slate-600 dark:text-slate-400">
+                      Drag &amp; drop Garmin or Strava bulk export ZIPs, FIT, or GPX files. All telemetry is unpacked client-side in your browser. Zero API permissions required.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowArchiveWizard(true)}
+                    className="ap-btn-secondary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <UploadSimple className="w-3.5 h-3.5 ap-text-brand" />
+                    <span>Import Archive (.zip/.fit)</span>
+                  </button>
+                </div>
+
                 {!showTeamCodeDrawer && (
                   <div className="pt-1 text-center">
                     <button
@@ -1810,6 +1845,23 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           )}
         </main>
       </div>
+
+      <ArchiveOnboardingWizard
+        isOpen={showArchiveWizard}
+        onClose={() => setShowArchiveWizard(false)}
+        existingActivities={existingActivities}
+        distanceUnit={distanceUnit}
+        onImportBatch={(acts) => {
+          onImportBatchActivities?.(acts);
+        }}
+        onCompleteOnboarding={async () => {
+          setShowArchiveWizard(false);
+          if (onBypassToLocalSession) {
+            await onBypassToLocalSession();
+          }
+          setStep(3);
+        }}
+      />
     </div>
   );
 };
