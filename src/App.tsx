@@ -5519,7 +5519,7 @@ export default function App() {
                   onClick={() => handleLaunchStravaOAuth('cloud')}
                   className="ap-btn-strava !min-h-[44px] sm:!min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
                 >
-                  Connect Strava
+                  Connect with Strava
                 </button>
                 <button
                   type="button"
@@ -5575,7 +5575,7 @@ export default function App() {
                 }}
                 className="ap-btn-strava !min-h-[44px] sm:!min-h-[32px] px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
               >
-                Connect Strava
+                Connect with Strava
               </button>
               <button
                 type="button"
@@ -5607,7 +5607,7 @@ export default function App() {
                   onClick={() => handleLaunchStravaOAuth('cloud')}
                   className="ap-btn-strava !min-h-[44px] sm:!min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
                 >
-                  Connect Strava
+                  Connect with Strava
                 </button>
                 <button
                   type="button"

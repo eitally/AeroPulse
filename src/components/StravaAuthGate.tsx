@@ -940,8 +940,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     {isRedirecting
                       ? 'Opening Strava Sign-In…'
                       : activeBrand
-                        ? `Continue with Strava to Join ${activeBrand.shortName}`
-                        : 'Continue with Strava'}
+                        ? `Connect with Strava to Join ${activeBrand.shortName}`
+                        : 'Connect with Strava'}
                   </span>
                 </button>
 

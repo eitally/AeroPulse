@@ -1356,10 +1356,11 @@ function buildConsentedCoachActivities(
     const includeGps = sharingTier === 'FULL_STREAMS' && allowGpsRoutes && isFirstParty;
     const sanitized: UnifiedActivity = {
       ...act,
-      // Always strip Strava social/segment payloads from cross-user coach snapshots
+      // Always strip Strava social/segment/gear payloads from cross-user coach snapshots (Strava Nov 2024 Developer Agreement Sec 5.3)
       kudoers: undefined,
       comments: undefined,
       segmentEfforts: [],
+      gearName: isFirstParty ? act.gearName : undefined,
       summaryPolyline: includeGps ? act.summaryPolyline : undefined,
       routeLatLngs: includeGps ? act.routeLatLngs : undefined,
       startLatLng: includeGps ? act.startLatLng : undefined,
