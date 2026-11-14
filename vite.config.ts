@@ -171,9 +171,6 @@ export default defineConfig(() => {
             if (id.includes('node_modules/uplot')) {
               return 'vendor-uplot';
             }
-            if (id.includes('node_modules/motion') || id.includes('node_modules/framer-motion')) {
-              return 'vendor-motion';
-            }
             if (id.includes('node_modules/dexie')) {
               return 'vendor-dexie';
             }

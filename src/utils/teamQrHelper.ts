@@ -293,14 +293,14 @@ export function openPrintableTeamPosterWindow(
   <meta charset="utf-8" />
   <title>${escapeTextForSafeAttr(brand.name)} — THRESH Join Poster</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #F4F7F2; color: #101411; margin: 0; padding: 32px; }
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: #F4F7F2; color: #101411; margin: 0; padding: 32px; }
     .sheet { max-width: 720px; margin: 0 auto; background: #FFFFFF; border-radius: 24px; overflow: hidden; border: 2px solid #B8CBBF; box-shadow: 0 12px 32px rgba(16,20,17,0.08); }
     .banner { background: linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%); color: #FFFFFF; padding: 32px 36px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .banner-left { display: flex; align-items: center; gap: 20px; }
     .thresh-pill { background: #FFFFFF; padding: 8px 14px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); flex-shrink: 0; }
     .content { padding: 36px; text-align: center; }
     .qr-box { display: inline-block; padding: 16px; border-radius: 20px; border: 2px solid #C2D5C9; background: #FFFFFF; margin: 16px 0; }
-    .code-pill { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 36px; font-weight: 800; letter-spacing: 0.08em; padding: 12px 28px; border-radius: 16px; background: #ECFDF3; border: 2px dashed ${palette.primaryOnLight}; color: #101411; margin: 10px 0; }
+    .code-pill { display: inline-block; font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace; font-size: 36px; font-weight: 800; letter-spacing: 0.08em; padding: 12px 28px; border-radius: 16px; background: #ECFDF3; border: 2px dashed ${palette.primaryOnLight}; color: #101411; margin: 10px 0; }
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; text-align: left; margin-top: 28px; }
     .step { padding: 14px; border-radius: 14px; background: #F4F7F4; border: 1px solid #C2D5C9; font-size: 13px; line-height: 1.45; }
     .step strong { display: block; color: ${palette.primaryOnLight}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }

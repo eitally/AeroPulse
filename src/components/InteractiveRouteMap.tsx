@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Compass, KeyRound, Layers, Maximize2, Navigation, Sparkles } from "./icons/PhosphorIcons";
 import { DistanceUnit, MapTileProvider, StravaSegmentEffort, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
@@ -194,7 +195,7 @@ interface MultiActivityMapProps {
 
 export type InteractiveRouteMapProps = SingleActivityMapProps | MultiActivityMapProps;
 
-export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) => {
+const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -480,7 +481,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
           segLine.bindTooltip(
             `<strong>${eff.name}</strong><br/>${formatStopwatch(eff.elapsedTimeSecs)}${
               eff.avgWatts ? ` · ${eff.avgWatts}W` : ''
-            }${eff.prRank === 1 ? ' · 🏆 PR #1' : ''}`,
+            }${eff.prRank === 1 ? ' · PR #1' : ''}`,
             { sticky: true }
           );
 
@@ -602,8 +603,8 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
           `<div><strong>${act.name}</strong><br/>${act.startDateLocal.slice(0, 10)} · ${
             act.sportCategory
           } · ${formatDistance(act.distanceMeters, props.distanceUnit, 1)}${
-            act.stravaPrCount > 0 ? ` · 🏆 ${act.stravaPrCount} PRs` : ''
-          }${act.kudosCount ? ` · 👍 ${act.kudosCount} Kudos` : ''}</div>`,
+            act.stravaPrCount > 0 ? ` · ${act.stravaPrCount} PRs` : ''
+          }${act.kudosCount ? ` · ${act.kudosCount} Kudos` : ''}</div>`,
           { sticky: true }
         );
 
@@ -730,7 +731,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
       {/* Top Map Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827]">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101B15]">
         <div className="flex items-center gap-2">
           <Compass className="w-4 h-4 text-[#FC4C02]" />
           <div>
@@ -739,7 +740,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
                 ? `Interactive GPS Route & Telemetry Map — ${props.activity.name}`
                 : 'Interactive Multi-Activity GPS Route Explorer'}
             </h3>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-2xs text-slate-500">
               {props.mode === 'SINGLE'
                 ? 'Synchronized with Power/Pace & Heart Rate chart cursor, zoomed intervals, and Strava segments'
                 : 'Click any GPS route or start pin on the map to inspect workout streams, segments, and Strava kudos'}
@@ -750,7 +751,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
         <div className="flex flex-wrap items-center gap-2">
           {/* Route Color-Coding Mode (SINGLE mode) */}
           {props.mode === 'SINGLE' && (
-            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]">
+            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-2xs">
               {(
                 [
                   { id: 'STRAVA', label: 'Strava Orange' },
@@ -765,7 +766,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
                   onClick={() => setColorMode(cm.id)}
                   className={`min-h-[24px] px-2 py-0.5 rounded font-semibold transition-colors ${
                     colorMode === cm.id
-                      ? 'bg-[#FC4C02] text-white'
+                      ? 'bg-[#C23800] text-white'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
@@ -780,7 +781,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
             <button
               type="button"
               onClick={() => setAutoFitZoomWindow((prev) => !prev)}
-              className={`min-h-[26px] inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border text-[11px] font-semibold transition-colors ${
+              className={`min-h-[26px] inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border text-2xs font-semibold transition-colors ${
                 autoFitZoomWindow
                   ? 'border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400'
                   : 'border-slate-300 dark:border-slate-700 text-slate-500'
@@ -792,8 +793,8 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
           )}
 
           {/* Map Tile Switcher */}
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]">
-            <Layers className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-0.5" />
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-2xs">
+            <Layers className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 ml-1.5 mr-0.5" />
             {(Object.keys(tileConfigs) as MapTileStyle[]).map((styleKey) => (
               <button
                 key={styleKey}
@@ -810,7 +811,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
             ))}
             <span
               title="Active Map Tile Provider (Configure Mapbox or OpenStreetMap API key in Data Sources)"
-              className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-semibold mr-1"
+              className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-2xs font-semibold mr-1"
             >
               {tileConfigs[tileStyle].providerBadge}
             </span>
@@ -820,7 +821,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
             type="button"
             onClick={handleRecenter}
             title="Recenter GPS Route Bounds"
-            className="min-h-[26px] inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300 transition-colors"
+            className="min-h-[26px] inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-2xs font-semibold text-slate-700 dark:text-slate-300 transition-colors"
           >
             <Maximize2 className="w-3 h-3" />
             <span>Fit Route</span>
@@ -836,7 +837,7 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
         />
 
         {/* Legend Overlay Pill in Bottom-Left */}
-        <div className="pointer-events-none absolute bottom-3 left-3 z-[15] flex flex-wrap items-center gap-2.5 rounded-lg bg-slate-950/85 backdrop-blur-xs border border-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-200 shadow-lg">
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[15] flex flex-wrap items-center gap-2.5 rounded-lg bg-slate-950/85 backdrop-blur-xs border border-slate-800 px-3 py-1.5 text-2xs font-mono text-slate-200 shadow-lg">
           {props.mode === 'SINGLE' ? (
             <>
               <span className="inline-flex items-center gap-1.5">
@@ -849,12 +850,12 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
               </span>
               {colorMode !== 'STRAVA' && (
                 <span className="inline-flex items-center gap-1">
-                  <span className="text-slate-400">Low</span>
+                  <span className="text-slate-600 dark:text-slate-400">Low</span>
                   <span className="w-2 h-2 rounded-xs bg-blue-500 inline-block" />
                   <span className="w-2 h-2 rounded-xs bg-emerald-500 inline-block" />
                   <span className="w-2 h-2 rounded-xs bg-amber-500 inline-block" />
                   <span className="w-2 h-2 rounded-xs bg-red-500 inline-block" />
-                  <span className="text-slate-400">Peak</span>
+                  <span className="text-slate-600 dark:text-slate-400">Peak</span>
                 </span>
               )}
               {props.activity.segmentEfforts?.length > 0 && (
@@ -885,3 +886,6 @@ export const InteractiveRouteMap: React.FC<InteractiveRouteMapProps> = (props) =
     </div>
   );
 };
+
+export const InteractiveRouteMap = React.memo(InteractiveRouteMapInner);
+export default InteractiveRouteMap;

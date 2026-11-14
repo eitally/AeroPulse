@@ -43,7 +43,7 @@ export function getIntervalsFormZone(tsb: number): FormZoneMeta {
       label: 'High Risk',
       hex: '#EF4444',
       cellClasses:
-        'bg-rose-500/12 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-l-2 border-l-rose-500 font-semibold',
+        'bg-rose-500/12 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-l border-l-rose-500 font-semibold',
       badgeClasses:
         'bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30',
     };
@@ -54,7 +54,7 @@ export function getIntervalsFormZone(tsb: number): FormZoneMeta {
       label: 'Optimal',
       hex: '#10B981',
       cellClasses:
-        'bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-l-2 border-l-emerald-500 font-semibold',
+        'bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-l border-l-emerald-500 font-semibold',
       badgeClasses:
         'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30',
     };
@@ -65,7 +65,7 @@ export function getIntervalsFormZone(tsb: number): FormZoneMeta {
       label: 'Grey Zone',
       hex: '#94A3B8',
       cellClasses:
-        'bg-slate-200/60 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border-l-2 border-l-slate-400 font-semibold',
+        'bg-slate-200/60 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border-l border-l-slate-400 font-semibold',
       badgeClasses:
         'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-400/30',
     };
@@ -76,7 +76,7 @@ export function getIntervalsFormZone(tsb: number): FormZoneMeta {
       label: 'Fresh',
       hex: '#0EA5E9',
       cellClasses:
-        'bg-sky-500/12 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300 border-l-2 border-l-sky-500 font-semibold',
+        'bg-sky-500/12 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300 border-l border-l-sky-500 font-semibold',
       badgeClasses:
         'bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30',
     };
@@ -86,7 +86,7 @@ export function getIntervalsFormZone(tsb: number): FormZoneMeta {
     label: 'Transition',
     hex: '#F59E0B',
     cellClasses:
-      'bg-amber-500/12 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-l-2 border-l-amber-500 font-semibold',
+      'bg-amber-500/12 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-l border-l-amber-500 font-semibold',
     badgeClasses:
       'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30',
   };
@@ -140,12 +140,12 @@ function evaluateVs14dMeanBand(value: number, mean: number): CellMeanEvaluation 
 function getMeanCellClasses(status: MeanBandStatus): string {
   switch (status) {
     case 'WITHIN_25_GREEN':
-      return 'bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-l-2 border-l-emerald-500 font-semibold';
+      return 'bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-l border-l-emerald-500 font-semibold';
     case 'BELOW_25_RED':
-      return 'bg-rose-500/12 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-l-2 border-l-rose-500 font-semibold';
+      return 'bg-rose-500/12 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-l border-l-rose-500 font-semibold';
     case 'ABOVE_25_GRAY':
     default:
-      return 'bg-slate-200/65 dark:bg-slate-800/75 text-slate-600 dark:text-slate-300 border-l-2 border-l-slate-400 font-semibold';
+      return 'bg-slate-200/65 dark:bg-slate-800/75 text-slate-600 dark:text-slate-300 border-l border-l-slate-400 font-semibold';
   }
 }
 
@@ -167,7 +167,7 @@ function formatSignedPct(pct: number): string {
   return `${rounded}%`;
 }
 
-export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProps> = ({
+const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps> = ({
   wellnessDays,
 }) => {
   const chronological14 = useMemo(() => wellnessDays.slice(-14), [wellnessDays]);
@@ -237,20 +237,17 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
 
   return (
     <section className="rounded-2xl liquid-glass px-4 py-3.5 sm:px-5 space-y-3">
-      <div
-        className="flex flex-wrap items-center justify-between gap-3 cursor-pointer"
-        onClick={() => setIsExpanded((prev) => !prev)}
-      >
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
             14-Day Readiness Ledger
           </h2>
           <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-            14d Mean: <strong className="text-sky-600 dark:text-sky-400">CTL {means.ctl.toFixed(1)}</strong> ·{' '}
-            <strong className="text-emerald-600 dark:text-emerald-400">HRV {means.hrvRMSSD.toFixed(0)}ms</strong> ·{' '}
+            14d Mean: <strong className="text-[#0F766E] dark:text-[#2DD4BF]">CTL {means.ctl.toFixed(1)}</strong> ·{' '}
+            <strong className="text-emerald-700 dark:text-emerald-400">HRV {means.hrvRMSSD.toFixed(0)}ms</strong> ·{' '}
             <strong className="text-slate-700 dark:text-slate-200">{means.dailyLoad.toFixed(0)} TSS/d</strong>
           </span>
-          <div onClick={(e) => e.stopPropagation()}>
+          <div>
             <ChartInfoTooltip
               title="14-Day Readiness & Vertical CTL/ATL Trend Ledger"
               subtitle="Acute-vs-Baseline Homeostasis & Vertical 14-Day Trajectory"
@@ -266,39 +263,41 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                       : 'neutral',
                 interpretation: `Your 14-day average daily load is ${means.dailyLoad.toFixed(0)} TSS (green consistency band: ${Math.round(means.dailyLoad * 0.75)}–${Math.round(means.dailyLoad * 1.25)} TSS) with a mean HRV of ${means.hrvRMSSD.toFixed(1)}ms.`,
               }}
-              coachingAction="Watch the vertical CTL (cyan) and ATL (purple) trajectories alongside HRV: when ATL curves sharply right (rising fatigue) and triggers 2+ Red HRV cells, schedule an active recovery day."
+              coachingAction="Watch the vertical CTL (teal) and ATL (rose) trajectories alongside HRV: when ATL curves sharply right (rising fatigue) and triggers 2+ Red HRV cells, schedule an active recovery day."
             />
           </div>
         </div>
 
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsExpanded((prev) => !prev);
-          }}
-          className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-500/40 transition-colors"
+          aria-expanded={isExpanded}
+          aria-controls="thresh-14d-readiness-table"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-glass-subtle text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-700/40 dark:hover:border-emerald-400/40 transition-colors"
         >
           <span>{isExpanded ? 'Hide 14-Day Table' : 'Show 14-Day Table'}</span>
-          <span className="text-[10px] font-mono">{isExpanded ? '▴' : '▾'}</span>
+          <span className="text-2xs font-mono" aria-hidden="true">{isExpanded ? '▴' : '▾'}</span>
         </button>
       </div>
 
       {/* 14-Day Table */}
       {isExpanded && (
-      <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-slate-950/30">
+      <div
+        id="thresh-14d-readiness-table"
+        className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-slate-950/30"
+      >
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>
-            <tr className="bg-slate-100/70 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider">
+            <tr className="bg-slate-100/70 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400 text-2xs uppercase tracking-wider">
               <th className="py-2.5 px-3 font-semibold">Date</th>
               <th className="py-2.5 px-3 font-semibold">Readiness</th>
               <th className="py-2.5 px-3 text-right font-semibold">HRV</th>
               <th className="py-2.5 px-3 text-right font-semibold">RHR</th>
               <th className="py-2.5 px-3 text-right font-semibold">Sleep</th>
-              <th className="py-2.5 px-3 text-right font-semibold text-[#0EA5E9]">
+              <th className="py-2.5 px-3 text-right font-semibold text-[#0F766E] dark:text-[#2DD4BF]">
                 CTL (14d)
               </th>
-              <th className="py-2.5 px-3 text-right font-semibold text-[#A855F7]">
+              <th className="py-2.5 px-3 text-right font-semibold text-[#BE123C] dark:text-[#FB7185]">
                 ATL (14d)
               </th>
               <th className="py-2.5 px-3 text-right font-semibold">
@@ -310,8 +309,8 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
             </tr>
 
             {/* Pinned 14-Day Mean Baseline Row */}
-            <tr className="bg-blue-500/8 dark:bg-blue-500/12 border-b-2 border-blue-500/30 font-mono text-xs text-slate-900 dark:text-slate-100">
-              <td className="py-2 px-3 font-sans font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
+            <tr className="bg-emerald-950/6 dark:bg-emerald-400/10 border-b-2 border-emerald-700/25 dark:border-emerald-400/25 font-mono text-xs text-emerald-950 dark:text-emerald-50">
+              <td className="py-2 px-3 font-sans font-bold text-[#1C5436] dark:text-[#C8FF00] whitespace-nowrap">
                 14d Mean
               </td>
               <td className="py-2 px-3 font-bold">
@@ -326,17 +325,27 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
               <td className="py-2 px-3 text-right font-bold">
                 {means.sleepScore > 0 ? `${means.sleepScore.toFixed(1)}/100` : '—'}
               </td>
-              <td className="py-2 px-3 text-right font-bold text-[#0EA5E9] whitespace-nowrap">
+              <td className="py-2 px-3 text-right font-bold text-[#0F766E] dark:text-[#2DD4BF] whitespace-nowrap">
                 {means.ctl.toFixed(1)}
               </td>
-              <td className="py-2 px-3 text-right font-bold text-[#A855F7] whitespace-nowrap">
+              <td className="py-2 px-3 text-right font-bold text-[#BE123C] dark:text-[#FB7185] whitespace-nowrap">
                 {means.atl.toFixed(1)}
               </td>
               <td className="py-2 px-3 text-right font-bold">
                 {(() => {
                   const meanForm = getIntervalsFormZone(means.tsb);
+                  const meanTextClass =
+                    meanForm.zone === 'HIGH_RISK'
+                      ? 'text-rose-700 dark:text-rose-300'
+                      : meanForm.zone === 'OPTIMAL'
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : meanForm.zone === 'FRESH'
+                          ? 'text-sky-700 dark:text-sky-300'
+                          : meanForm.zone === 'TRANSITION'
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-slate-700 dark:text-slate-300';
                   return (
-                    <span style={{ color: meanForm.hex }}>
+                    <span className={meanTextClass}>
                       {means.tsb > 0 ? `+${means.tsb.toFixed(1)}` : means.tsb.toFixed(1)}
                     </span>
                   );
@@ -414,10 +423,10 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <span className="font-sans font-semibold">{w.readinessStatus}</span>{' '}
-                        <span className="text-[11px] opacity-80">({w.readinessScore})</span>
+                        <span className="text-2xs opacity-80">({w.readinessScore})</span>
                       </div>
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] ${getMeanDeltaPillClasses(
+                        className={`px-1.5 py-0.5 rounded text-2xs ${getMeanDeltaPillClasses(
                           readinessEval.status
                         )}`}
                       >
@@ -429,18 +438,18 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                   {/* HRV (rMSSD) */}
                   <td
                     className={`py-2.5 px-3 text-right whitespace-nowrap ${
-                      hrvEval ? getMeanCellClasses(hrvEval.status) : 'text-slate-400'
+                      hrvEval ? getMeanCellClasses(hrvEval.status) : 'text-slate-600 dark:text-slate-400'
                     }`}
                   >
                     {w.hrvRMSSD > 0 ? (
                       <div className="inline-flex items-center justify-end gap-1.5">
                         <span>
                           {w.hrvRMSSD} ms{' '}
-                          <span className="text-[10px] opacity-70">({w.hrvBaseline7d})</span>
+                          <span className="text-2xs opacity-70">({w.hrvBaseline7d})</span>
                         </span>
                         {hrvEval && (
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${getMeanDeltaPillClasses(
+                            className={`px-1.5 py-0.5 rounded text-2xs ${getMeanDeltaPillClasses(
                               hrvEval.status
                             )}`}
                           >
@@ -456,7 +465,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                   {/* Resting HR */}
                   <td
                     className={`py-2.5 px-3 text-right whitespace-nowrap ${
-                      rhrEval ? getMeanCellClasses(rhrEval.status) : 'text-slate-400'
+                      rhrEval ? getMeanCellClasses(rhrEval.status) : 'text-slate-600 dark:text-slate-400'
                     }`}
                   >
                     {w.restingHR > 0 ? (
@@ -464,7 +473,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                         <span>{w.restingHR} bpm</span>
                         {rhrEval && (
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${getMeanDeltaPillClasses(
+                            className={`px-1.5 py-0.5 rounded text-2xs ${getMeanDeltaPillClasses(
                               rhrEval.status
                             )}`}
                           >
@@ -480,7 +489,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                   {/* Sleep Score */}
                   <td
                     className={`py-2.5 px-3 text-right whitespace-nowrap ${
-                      sleepEval ? getMeanCellClasses(sleepEval.status) : 'text-slate-400'
+                      sleepEval ? getMeanCellClasses(sleepEval.status) : 'text-slate-600 dark:text-slate-400'
                     }`}
                   >
                     {w.sleepScore > 0 ? (
@@ -488,7 +497,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                         <span>{w.sleepScore}/100</span>
                         {sleepEval && (
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${getMeanDeltaPillClasses(
+                            className={`px-1.5 py-0.5 rounded text-2xs ${getMeanDeltaPillClasses(
                               sleepEval.status
                             )}`}
                           >
@@ -503,12 +512,12 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
 
                   {/* CTL (Fitness) — Continuous Vertical 14-Day Trend Track + Value + d/d Delta */}
                   <td
-                    className="py-0 px-3 text-right whitespace-nowrap bg-sky-500/8 dark:bg-sky-500/12 border-l-2 border-l-[#0EA5E9]"
+                    className="py-0 px-3 text-right whitespace-nowrap bg-teal-500/8 dark:bg-teal-500/12 border-l border-l-[#0D9488]"
                     title={`CTL Fitness on ${w.date}: ${w.ctl.toFixed(1)} (${ctlDayDelta >= 0 ? '+' : ''}${ctlDayDelta.toFixed(1)} vs prior day · 14d Mean: ${means.ctl.toFixed(1)})`}
                   >
                     <div className="flex items-center justify-end gap-2.5 h-11">
                       {/* Continuous Vertical Trend Segment (connects seamlessly across all 14 rows) */}
-                      <div className="relative w-14 h-full shrink-0 bg-slate-900/5 dark:bg-slate-950/45 border-x border-sky-500/15">
+                      <div className="relative w-14 h-full shrink-0 bg-emerald-950/5 dark:bg-[#0B120E]/60 border-x border-teal-500/15">
                         <svg
                           viewBox="0 0 56 44"
                           preserveAspectRatio="none"
@@ -517,7 +526,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                           {/* Shaded area under the vertical curve */}
                           <polygon
                             points={`0,${newerRow ? 0 : 22} ${ctlXTop},${newerRow ? 0 : 22} ${ctlXCurr},22 ${ctlXBot},${olderRow ? 44 : 22} 0,${olderRow ? 44 : 22}`}
-                            fill="rgba(14, 165, 233, 0.18)"
+                            fill="rgba(13, 148, 136, 0.2)"
                           />
                           {/* Dashed vertical 14-Day Mean reference line */}
                           <line
@@ -525,14 +534,14 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                             y1={0}
                             x2={ctlMeanX}
                             y2={44}
-                            stroke="rgba(14, 165, 233, 0.45)"
+                            stroke="rgba(13, 148, 136, 0.45)"
                             strokeWidth="1"
                             strokeDasharray="2 2"
                           />
                           {/* Continuous vertical trend polyline */}
                           <polyline
                             fill="none"
-                            stroke="#0EA5E9"
+                            stroke="#0D9488"
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -541,23 +550,23 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                         </svg>
                         {/* Non-distorted circular node at current day's exact coordinate */}
                         <span
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#0EA5E9] ring-2 ring-white dark:ring-slate-950 shadow-xs pointer-events-none"
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#0D9488] dark:bg-[#2DD4BF] ring-2 ring-white dark:ring-[#101B15] shadow-xs pointer-events-none"
                           style={{ left: `${(ctlXCurr / 56) * 100}%` }}
                         />
                       </div>
 
                       {/* Actual Value + Day-over-Day Delta */}
                       <div className="min-w-[54px] text-right leading-tight">
-                        <div className="font-bold text-sky-700 dark:text-sky-300">
+                        <div className="font-bold text-[#0F766E] dark:text-[#2DD4BF]">
                           {w.ctl.toFixed(1)}
                         </div>
                         <div
-                          className={`text-[10px] font-semibold ${
+                          className={`text-2xs font-semibold ${
                             ctlDayDelta > 0
-                              ? 'text-emerald-600 dark:text-emerald-400'
+                              ? 'text-emerald-700 dark:text-emerald-400'
                               : ctlDayDelta < 0
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-slate-400'
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : 'text-slate-500 dark:text-slate-400'
                           }`}
                         >
                           {olderRow
@@ -570,12 +579,12 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
 
                   {/* ATL (Fatigue) — Continuous Vertical 14-Day Trend Track + Value + d/d Delta */}
                   <td
-                    className="py-0 px-3 text-right whitespace-nowrap bg-purple-500/8 dark:bg-purple-500/12 border-l-2 border-l-[#A855F7]"
+                    className="py-0 px-3 text-right whitespace-nowrap bg-rose-500/8 dark:bg-rose-500/12 border-l border-l-[#E11D48]"
                     title={`ATL Fatigue on ${w.date}: ${w.atl.toFixed(1)} (${atlDayDelta >= 0 ? '+' : ''}${atlDayDelta.toFixed(1)} vs prior day · 14d Mean: ${means.atl.toFixed(1)})`}
                   >
                     <div className="flex items-center justify-end gap-2.5 h-11">
                       {/* Continuous Vertical Trend Segment (connects seamlessly across all 14 rows) */}
-                      <div className="relative w-14 h-full shrink-0 bg-slate-900/5 dark:bg-slate-950/45 border-x border-purple-500/15">
+                      <div className="relative w-14 h-full shrink-0 bg-emerald-950/5 dark:bg-[#0B120E]/60 border-x border-rose-500/15">
                         <svg
                           viewBox="0 0 56 44"
                           preserveAspectRatio="none"
@@ -584,7 +593,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                           {/* Shaded area under the vertical curve */}
                           <polygon
                             points={`0,${newerRow ? 0 : 22} ${atlXTop},${newerRow ? 0 : 22} ${atlXCurr},22 ${atlXBot},${olderRow ? 44 : 22} 0,${olderRow ? 44 : 22}`}
-                            fill="rgba(168, 85, 247, 0.18)"
+                            fill="rgba(225, 29, 72, 0.18)"
                           />
                           {/* Dashed vertical 14-Day Mean reference line */}
                           <line
@@ -592,14 +601,14 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                             y1={0}
                             x2={atlMeanX}
                             y2={44}
-                            stroke="rgba(168, 85, 247, 0.45)"
+                            stroke="rgba(225, 29, 72, 0.45)"
                             strokeWidth="1"
                             strokeDasharray="2 2"
                           />
                           {/* Continuous vertical trend polyline */}
                           <polyline
                             fill="none"
-                            stroke="#A855F7"
+                            stroke="#E11D48"
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -608,23 +617,23 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                         </svg>
                         {/* Non-distorted circular node at current day's exact coordinate */}
                         <span
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#A855F7] ring-2 ring-white dark:ring-slate-950 shadow-xs pointer-events-none"
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#E11D48] dark:bg-[#FB7185] ring-2 ring-white dark:ring-[#101B15] shadow-xs pointer-events-none"
                           style={{ left: `${(atlXCurr / 56) * 100}%` }}
                         />
                       </div>
 
                       {/* Actual Value + Day-over-Day Delta */}
                       <div className="min-w-[54px] text-right leading-tight">
-                        <div className="font-bold text-purple-700 dark:text-purple-300">
+                        <div className="font-bold text-[#BE123C] dark:text-[#FB7185]">
                           {w.atl.toFixed(1)}
                         </div>
                         <div
-                          className={`text-[10px] font-semibold ${
+                          className={`text-2xs font-semibold ${
                             atlDayDelta > 5
-                              ? 'text-rose-500 dark:text-rose-400'
+                              ? 'text-rose-600 dark:text-rose-400'
                               : atlDayDelta < 0
-                                ? 'text-sky-600 dark:text-sky-400'
-                                : 'text-slate-400'
+                                ? 'text-teal-700 dark:text-teal-400'
+                                : 'text-slate-500 dark:text-slate-400'
                           }`}
                         >
                           {olderRow
@@ -642,7 +651,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                         {w.tsb > 0 ? `+${w.tsb.toFixed(1)}` : w.tsb.toFixed(1)}
                       </span>
                       <span
-                        className={`px-1.5 py-0.5 rounded font-sans text-[10px] font-semibold ${formMeta.badgeClasses}`}
+                        className={`px-1.5 py-0.5 rounded font-sans text-2xs font-semibold ${formMeta.badgeClasses}`}
                       >
                         {formMeta.label}
                       </span>
@@ -658,7 +667,7 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
                     <div className="inline-flex items-center justify-end gap-1.5">
                       <span>{w.dailyLoad} TSS</span>
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] ${getMeanDeltaPillClasses(
+                        className={`px-1.5 py-0.5 rounded text-2xs ${getMeanDeltaPillClasses(
                           loadEval.status
                         )}`}
                       >
@@ -676,3 +685,5 @@ export const FourteenDayReadinessLedger: React.FC<FourteenDayReadinessLedgerProp
     </section>
   );
 };
+
+export const FourteenDayReadinessLedger = React.memo(FourteenDayReadinessLedgerInner);

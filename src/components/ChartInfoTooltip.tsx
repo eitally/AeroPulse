@@ -72,6 +72,8 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         setIsOpen(false);
       }
     };
@@ -149,6 +151,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
         createPortal(
           <div
             ref={popoverRef}
+            data-thresh-popover-open="true"
             role="dialog"
             aria-modal="false"
             aria-label={title}
@@ -176,13 +179,13 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
                   </span>
                 </div>
                 {subtitle && (
-                  <p className="text-[11px] font-mono text-[#525866] dark:text-slate-400 mt-0.5 pl-5">
+                  <p className="text-2xs font-mono text-[#525866] dark:text-slate-400 mt-0.5 pl-5">
                     {subtitle}
                   </p>
                 )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[11px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded ap-status-info">
+                <span className="text-2xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded ap-status-info">
                   Guide
                 </span>
                 <button
@@ -213,7 +216,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
                     )}
                     <span>Live Status</span>
                   </span>
-                  <span className="font-mono text-[11px]">{liveStatus.label}</span>
+                  <span className="font-mono text-2xs">{liveStatus.label}</span>
                 </div>
                 {resolvedDescription && (
                   <p className="text-xs font-sans leading-relaxed">{resolvedDescription}</p>
@@ -222,25 +225,25 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
             )}
 
             <div className="space-y-1">
-              <div className="ap-eyebrow">1. Physiological Mechanism</div>
+              <h4 className="ap-telemetry-label">Physiological Mechanism</h4>
               <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                 {whatItMeasures}
               </p>
             </div>
 
             <div className="space-y-1">
-              <div className="ap-eyebrow">2. Reference Benchmarks</div>
+              <h4 className="ap-telemetry-label">Reference Benchmarks</h4>
               <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-mono ap-card-inset rounded-lg px-2.5 py-1.5">
                 {benchmarks}
               </p>
             </div>
 
             <div className="space-y-1 pt-0.5">
-              <div className="text-[11px] font-mono uppercase tracking-wider ap-text-brand font-semibold flex items-center gap-1">
+              <h4 className="ap-telemetry-label flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>3. Coaching Action</span>
-              </div>
-              <p className="text-xs text-[#111318] dark:text-slate-200 leading-relaxed font-medium">
+                <span>Coaching Action</span>
+              </h4>
+              <p className="text-xs text-[#101411] dark:text-slate-200 leading-relaxed font-medium">
                 {coachingAction}
               </p>
             </div>

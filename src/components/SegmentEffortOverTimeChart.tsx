@@ -199,7 +199,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             type="button"
             onClick={onScanMoreSegments}
             disabled={isScanningSegments}
-            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs font-semibold text-white transition-colors"
+            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-[#080A09] transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isScanningSegments ? 'animate-spin' : ''}`} />
             <span>
@@ -236,12 +236,12 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
   const activeHoveredIndex = efforts.indexOf(activeHoveredEffort);
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-4 sm:p-5 space-y-4">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101B15] p-4 sm:p-5 space-y-4">
       {/* Header Row & Controls */}
       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-mono font-bold uppercase tracking-wider">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-2xs font-mono font-bold uppercase tracking-wider">
               <TrendingDown className="w-3.5 h-3.5" />
               Effort Over Time
             </span>
@@ -268,7 +268,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#FC4C02] hover:underline"
+                  className="inline-flex items-center gap-1 text-xs font-semibold ap-text-strava hover:underline"
                 >
                   <span>Strava Segment</span>
                   <ExternalLink className="w-3 h-3" />
@@ -288,7 +288,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
 
         <div className="flex flex-wrap items-center gap-2">
           {/* X-Axis Spacing Toggle */}
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-2xs">
             <button
               type="button"
               onClick={() => setXSpacingMode('DATE_SCALE')}
@@ -317,7 +317,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
           <button
             type="button"
             onClick={() => setInvertYForFasterUp((prev) => !prev)}
-            className="min-h-[28px] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="min-h-[28px] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-2xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             title="Toggle whether lower seconds (faster times) are at the bottom or top of the Y-axis"
           >
             {invertYForFasterUp ? 'Y-Axis: Faster ↑ (Inverted)' : 'Y-Axis: Duration (s) ↑'}
@@ -327,7 +327,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
           <button
             type="button"
             onClick={() => setShowOverlayMetric((prev) => !prev)}
-            className={`min-h-[28px] px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors ${
+            className={`min-h-[28px] px-2.5 py-1 rounded-lg border text-2xs font-semibold transition-colors ${
               showOverlayMetric
                 ? 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400'
                 : 'border-slate-200 dark:border-slate-800 text-slate-500'
@@ -341,7 +341,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               type="button"
               onClick={onScanMoreSegments}
               disabled={isScanningSegments}
-              className="min-h-[28px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-50 text-[11px] font-semibold text-blue-600 dark:text-blue-400 transition-colors whitespace-nowrap"
+              className="min-h-[28px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-50 text-2xs font-semibold text-blue-600 dark:text-blue-400 transition-colors whitespace-nowrap"
             >
               <RefreshCw className={`w-3 h-3 ${isScanningSegments ? 'animate-spin' : ''}`} />
               <span>{isScanningSegments ? 'Scanning...' : 'Scan +30 Workouts'}</span>
@@ -376,13 +376,14 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               </div>
 
               <div className="relative w-full sm:w-60">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
+                  aria-label="Filter repeated segments"
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter repeated segments..."
-                  className="w-full min-h-[30px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-8 pr-2.5 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-8 pr-2.5 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -401,13 +402,13 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                   }}
                   className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
                     isSelected
-                      ? 'bg-blue-600 border-blue-600 text-white shadow-2xs'
+                      ? 'bg-[#1C5436] border-[#1C5436] text-white dark:bg-[#C8FF00] dark:border-[#C8FF00] dark:text-[#080A09] shadow-2xs'
                       : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   <span>{seg.name}</span>
                   <span
-                    className={`font-mono text-[11px] ml-1.5 font-bold ${
+                    className={`font-mono text-2xs ml-1.5 font-bold ${
                       isSelected ? 'text-blue-100' : 'text-emerald-600 dark:text-emerald-400'
                     }`}
                   >
@@ -423,7 +424,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
       {/* 4 Summary KPI Cards (All showing exact seconds + mm:ss) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono tabular-nums">
         <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3">
-          <div className="text-[11px] font-sans text-slate-500 flex items-center gap-1">
+          <div className="text-2xs font-sans text-slate-500 flex items-center gap-1">
             <Trophy className="w-3.5 h-3.5 text-amber-500" />
             <span>Personal Record (PR #1)</span>
           </div>
@@ -433,14 +434,14 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               ({formatStopwatch(prEffort.elapsedTimeSecs)})
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
+          <div className="text-2xs text-slate-500 mt-0.5">
             Set on {prEffort.date}
             {prEffort.avgWatts ? ` · ${prEffort.avgWatts}W` : ''}
           </div>
         </div>
 
         <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3">
-          <div className="text-[11px] font-sans text-slate-500 flex items-center gap-1">
+          <div className="text-2xs font-sans text-slate-500 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-blue-500" />
             <span>First vs. Latest Attempt</span>
           </div>
@@ -448,7 +449,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             {firstEffort.elapsedTimeSecs}s → {latestEffort.elapsedTimeSecs}s
           </div>
           <div
-            className={`text-[11px] font-semibold mt-0.5 ${
+            className={`text-2xs font-semibold mt-0.5 ${
               netChangeFirstToLatestSecs <= 0
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-amber-600 dark:text-amber-400'
@@ -461,7 +462,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
         </div>
 
         <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3">
-          <div className="text-[11px] font-sans text-slate-500 flex items-center gap-1">
+          <div className="text-2xs font-sans text-slate-500 flex items-center gap-1">
             <ArrowDownRight className="w-3.5 h-3.5 text-emerald-500" />
             <span>Peak Progression Gain</span>
           </div>
@@ -477,14 +478,14 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               )
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
+          <div className="text-2xs text-slate-500 mt-0.5">
             1st ({firstEffort.elapsedTimeSecs}s) → PR ({prEffort.elapsedTimeSecs}s)
           </div>
         </div>
 
         <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3">
-          <div className="text-[11px] font-sans text-slate-500 flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
+          <div className="text-2xs font-sans text-slate-500 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
             <span>Average Across {len} Attempts</span>
           </div>
           <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
@@ -493,7 +494,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               ({formatStopwatch(avgDurationSecs)})
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
+          <div className="text-2xs text-slate-500 mt-0.5">
             Range: {prEffort.elapsedTimeSecs}s – {Math.max(...efforts.map((e) => e.elapsedTimeSecs))}
             s
           </div>
@@ -515,17 +516,22 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               {formatStopwatch(activeHoveredEffort.elapsedTimeSecs)})
             </span>
             <span
-              className={`font-semibold ${
+              className={`font-semibold inline-flex items-center gap-1 ${
                 activeHoveredEffort.elapsedTimeSecs - activeSegment.prElapsedTimeSecs <= 0
                   ? 'text-amber-600 dark:text-amber-400 font-bold'
                   : 'text-slate-500'
               }`}
             >
-              {activeHoveredEffort.elapsedTimeSecs - activeSegment.prElapsedTimeSecs <= 0
-                ? '👑 All-Time PR #1'
-                : `+${
-                    activeHoveredEffort.elapsedTimeSecs - activeSegment.prElapsedTimeSecs
-                  }s vs PR`}
+              {activeHoveredEffort.elapsedTimeSecs - activeSegment.prElapsedTimeSecs <= 0 ? (
+                <>
+                  <Trophy className="w-3.5 h-3.5 shrink-0" />
+                  <span>All-Time PR #1</span>
+                </>
+              ) : (
+                `+${
+                  activeHoveredEffort.elapsedTimeSecs - activeSegment.prElapsedTimeSecs
+                }s vs PR`
+              )}
             </span>
             {activeHoveredEffort.avgWatts && (
               <span className="text-blue-600 dark:text-blue-400 font-bold">
@@ -557,7 +563,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                       (activeHoveredEffort.endTimeSecs || 0) + 10
                     )
                   }
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-sans font-semibold transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-sans font-semibold transition-colors"
                 >
                   <ZoomIn className="w-3 h-3" />
                   <span>Zoom Segment on Stream &amp; Map</span>
@@ -567,7 +573,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
               <button
                 type="button"
                 onClick={() => onSelectActivity(activeHoveredEffort.activityId)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[11px] font-sans font-semibold transition-colors"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-2xs font-sans font-semibold transition-colors"
               >
                 <span>Inspect Workout</span>
               </button>
@@ -698,7 +704,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                   y={112}
                   transform="rotate(-90 18 112)"
                   textAnchor="middle"
-                  className="fill-emerald-600 dark:fill-emerald-400 text-[11px] font-sans font-bold"
+                  className="fill-emerald-600 dark:fill-emerald-400 text-2xs font-sans font-bold"
                 >
                   Duration in Seconds (s · mm:ss)
                 </text>
@@ -710,7 +716,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                     y={112}
                     transform="rotate(90 884 112)"
                     textAnchor="middle"
-                    className={`text-[11px] font-sans font-bold ${
+                    className={`text-2xs font-sans font-bold ${
                       useWatts ? 'fill-blue-500' : 'fill-rose-500'
                     }`}
                   >
@@ -740,7 +746,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                         x={chartLeft - 8}
                         y={y + 4}
                         textAnchor="end"
-                        className="fill-emerald-600 dark:fill-emerald-400 text-[10px] font-mono font-semibold"
+                        className="fill-emerald-600 dark:fill-emerald-400 text-2xs font-mono font-semibold"
                       >
                         {tSecs}s ({formatStopwatch(tSecs)})
                       </text>
@@ -750,7 +756,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                           y={y + 4}
                           className={`${
                             useWatts ? 'fill-blue-500' : 'fill-rose-500'
-                          } text-[10px] font-mono`}
+                          } text-2xs font-mono`}
                         >
                           {useWatts ? `${secVal}W` : `${secVal}bpm`}
                         </text>
@@ -777,7 +783,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                   x={chartRight - 4}
                   y={Math.max(14, prY - 5)}
                   textAnchor="end"
-                  className="fill-amber-500 text-[10px] font-mono font-bold"
+                  className="fill-amber-500 text-2xs font-mono font-bold"
                 >
                   PR #1: {activeSegment.prElapsedTimeSecs}s (
                   {formatStopwatch(activeSegment.prElapsedTimeSecs)})
@@ -882,7 +888,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                           x={x}
                           y={Math.max(13, y - 9)}
                           textAnchor="middle"
-                          className={`text-[10px] font-mono font-bold ${
+                          className={`text-2xs font-mono font-bold ${
                             isPr
                               ? 'fill-amber-500'
                               : isCurrentAct
@@ -900,7 +906,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                           x={x}
                           y={220}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                         >
                           {e.date}
                         </text>
@@ -978,6 +984,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                 return (
                   <tr
                     key={`${eff.effortId}-${revIdx}`}
+                    tabIndex={0}
                     onMouseEnter={() => setHoverIdx(chronologicalIdx)}
                     onClick={() => {
                       if (
@@ -994,20 +1001,39 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                         onSelectActivity(eff.activityId);
                       }
                     }}
-                    className={`cursor-pointer transition-colors ${
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (
+                          isCurrent &&
+                          onZoomToSegmentWindow &&
+                          eff.startTimeSecs !== undefined &&
+                          eff.endTimeSecs !== undefined
+                        ) {
+                          onZoomToSegmentWindow(
+                            Math.max(0, eff.startTimeSecs - 10),
+                            eff.endTimeSecs + 10
+                          );
+                        } else if (onSelectActivity) {
+                          onSelectActivity(eff.activityId);
+                        }
+                      }
+                    }}
+                    className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#84CC16] ${
                       isCurrent
                         ? 'bg-blue-500/10 dark:bg-blue-500/15 font-semibold'
                         : 'hover:bg-slate-50 dark:hover:bg-slate-900/60'
                     }`}
                   >
                     <td className="py-2 pr-3 text-slate-900 dark:text-slate-100">
-                      <span className="text-slate-400 mr-1.5">#{chronologicalIdx + 1}</span>
+                      <span className="text-slate-600 dark:text-slate-400 mr-1.5">#{chronologicalIdx + 1}</span>
                       <span className="font-bold">{eff.date}</span>
                     </td>
                     <td className="py-2 px-3 font-sans text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
                       {eff.activityName}
                       {isCurrent && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-blue-600 text-white text-[10px] font-bold">
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] text-2xs font-bold">
                           Current
                         </span>
                       )}
@@ -1030,8 +1056,9 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                     </td>
                     <td className="py-2 pl-3 text-right">
                       {eff.prRank === 1 || deltaPr <= 0 ? (
-                        <span className="inline-block px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold">
-                          👑 PR #1 ({deltaFirst <= 0 ? `${deltaFirst}s` : `+${deltaFirst}s`} vs #1)
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold">
+                          <Trophy className="w-3 h-3 shrink-0" />
+                          <span>PR #1 ({deltaFirst <= 0 ? `${deltaFirst}s` : `+${deltaFirst}s`} vs #1)</span>
                         </span>
                       ) : (
                         <span className="text-slate-500">
@@ -1040,7 +1067,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                             className={
                               deltaFirst <= 0
                                 ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                                : 'text-slate-400'
+                                : 'text-slate-600 dark:text-slate-400'
                             }
                           >
                             {deltaFirst <= 0 ? `${deltaFirst}s` : `+${deltaFirst}s`} vs 1st

@@ -1,20 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Smartphone, WifiOff, X } from "./icons/PhosphorIcons";
+import { useModalDialog } from '../hooks/useModalDialog';
 import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 
 export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ variant = 'compact' }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!showGuideModal) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowGuideModal(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showGuideModal]);
+  useModalDialog({
+    isOpen: showGuideModal,
+    onClose: () => setShowGuideModal(false),
+    dialogRef,
+  });
 
   if (isInstalled) {
     return null;
@@ -23,11 +22,12 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
   if (isInstallable) {
     return (
       <button
+        type="button"
         onClick={install}
         className={
           variant === 'full'
             ? 'w-full ap-btn-primary text-sm whitespace-nowrap shrink-0 cursor-pointer'
-            : 'ap-btn-secondary !min-h-[40px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
+            : 'ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
         }
       >
         <Download className="w-3.5 h-3.5" />
@@ -40,11 +40,12 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
   return (
     <>
       <button
+        type="button"
         onClick={() => setShowGuideModal(true)}
         className={
           variant === 'full'
             ? 'w-full ap-btn-secondary text-sm whitespace-nowrap shrink-0 cursor-pointer'
-            : 'ap-btn-secondary !min-h-[40px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
+            : 'ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs whitespace-nowrap shrink-0 cursor-pointer'
         }
       >
         <Smartphone className="w-3.5 h-3.5" />
@@ -59,14 +60,18 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
             className="ap-modal-backdrop z-[90]"
           >
             <div
+              ref={dialogRef}
               role="dialog"
               aria-modal="true"
-              aria-label="Install THRESH as a Standalone App"
+              aria-labelledby="thresh-pwa-install-title"
               onClick={(e) => e.stopPropagation()}
               className="ap-modal-sheet max-w-md ap-content-stage p-5 sm:p-6 shadow-2xl"
             >
               <div className="flex items-center justify-between gap-2 border-b border-emerald-900/15 dark:border-[#254431] pb-3">
-                <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                <h3
+                  id="thresh-pwa-install-title"
+                  className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100"
+                >
                   Install THRESH as a Standalone App
                 </h3>
                 <button
@@ -116,7 +121,7 @@ export const OfflineIndicator: React.FC = () => {
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-medium text-white shadow-lg">
+    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-400 border border-amber-600/40 px-3.5 py-2 text-xs font-semibold text-[#080A09] shadow-lg">
       <WifiOff className="w-3.5 h-3.5 shrink-0" />
       <span className="truncate">Offline Mode · Viewing cached workout telemetry</span>
     </div>

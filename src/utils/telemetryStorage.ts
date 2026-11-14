@@ -560,9 +560,23 @@ export function buildCompleteAthleteProfile(
             ? storedIntervalsName
             : 'Athlete';
 
+  const storedPrimarySportRaw =
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('thresh_primary_sport')?.trim()
+      : undefined;
+  const storedPrimarySport: AthleteProfile['primarySport'] =
+    storedPrimarySportRaw === 'Running' ||
+    storedPrimarySportRaw === 'Cycling' ||
+    storedPrimarySportRaw === 'Hybrid'
+      ? storedPrimarySportRaw
+      : undefined;
+  const resolvedPrimarySport: AthleteProfile['primarySport'] =
+    partial?.primarySport || storedPrimarySport;
+
   return {
     athleteId: partial?.athleteId || '0',
     name: resolvedName,
+    ...(resolvedPrimarySport ? { primarySport: resolvedPrimarySport } : {}),
     weightKg: Number(weightKg.toFixed(1)),
     restingHr: Math.round(restingHr),
     vo2MaxCycling: Math.round(vo2MaxCycling),

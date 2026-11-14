@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Bike,
   CalendarCheck,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -45,6 +46,8 @@ interface CircadianFirstTouchHeroProps {
   todayCompliance?: PlannedWorkoutCompliance | null;
   isWorkbenchExpanded: boolean;
   onToggleWorkbench: () => void;
+  rxSport?: 'Cycling' | 'Running';
+  onRxSportChange?: (sport: 'Cycling' | 'Running') => void;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSyncMorphedToCalendar?: (eventInput: {
     date: string;
@@ -81,7 +84,7 @@ const LoadFocusGaugeRow: React.FC<{ bucket: LoadFocusBucketSummary }> = ({
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2 text-[11px]">
+      <div className="flex items-center justify-between gap-2 text-2xs">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className="w-2 h-2 rounded-full shrink-0"
@@ -90,7 +93,7 @@ const LoadFocusGaugeRow: React.FC<{ bucket: LoadFocusBucketSummary }> = ({
           <span className="font-semibold text-slate-800 dark:text-slate-100 truncate">
             {bucket.label}
           </span>
-          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden sm:inline">
+          <span className="text-2xs font-mono text-slate-600 dark:text-slate-400 hidden sm:inline">
             {bucket.zoneSubtitle}
           </span>
         </div>
@@ -99,19 +102,20 @@ const LoadFocusGaugeRow: React.FC<{ bucket: LoadFocusBucketSummary }> = ({
           <span className="font-bold text-slate-900 dark:text-white">
             {bucket.loadPts}
           </span>
-          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+          <span className="text-2xs text-[#43584B] dark:text-[#93A39A]">
             ({bucket.sharePct}%)
           </span>
           {bucket.status === 'OPTIMAL' ? (
-            <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-              ✓ Target
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-2xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+              <Check className="w-3 h-3 shrink-0" weight="bold" />
+              <span>Target</span>
             </span>
           ) : bucket.status === 'SHORTFALL' ? (
-            <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
+            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
               {bucket.deltaPtsToTarget} pts
             </span>
           ) : (
-            <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-orange-500/15 text-orange-700 dark:text-orange-300">
+            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-orange-500/15 text-orange-700 dark:text-orange-300">
               +{bucket.deltaPtsToTarget} pts
             </span>
           )}
@@ -150,6 +154,8 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   todayCompliance,
   isWorkbenchExpanded,
   onToggleWorkbench,
+  rxSport: controlledRxSport,
+  onRxSportChange,
   onSelectActivity,
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -181,8 +187,9 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
         wellnessDays,
         athleteProfile,
         asOfDateIso: todayIso,
+        distanceUnit,
       }),
-    [activities, wellnessDays, athleteProfile, todayIso]
+    [activities, wellnessDays, athleteProfile, todayIso, distanceUnit]
   );
 
   const sessionReceipt = useMemo(
@@ -197,9 +204,40 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
     [activities, wellnessDays, athleteProfile, todayIso, distanceUnit]
   );
 
-  const [rxSport, setRxSport] = useState<'Cycling' | 'Running'>(() =>
-    productivity.efPrimarySport === 'Running' ? 'Running' : 'Cycling'
+  const inferredDefaultSport = useMemo<'Cycling' | 'Running'>(() => {
+    const todayPlanned = plannedEvents.find(
+      (ev) =>
+        (ev.date || '').slice(0, 10) === todayIso &&
+        (ev.sportCategory === 'Running' || ev.sportCategory === 'Cycling')
+    );
+    if (todayPlanned?.sportCategory === 'Running' || todayPlanned?.sportCategory === 'Cycling') {
+      return todayPlanned.sportCategory;
+    }
+    if (athleteProfile?.primarySport === 'Running') return 'Running';
+    if (athleteProfile?.primarySport === 'Cycling') return 'Cycling';
+    return productivity.efPrimarySport === 'Running' ? 'Running' : 'Cycling';
+  }, [plannedEvents, todayIso, athleteProfile?.primarySport, productivity.efPrimarySport]);
+
+  const [internalRxSport, setInternalRxSport] = useState<'Cycling' | 'Running'>(
+    inferredDefaultSport
   );
+  const [hasManualSportOverride, setHasManualSportOverride] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!hasManualSportOverride && controlledRxSport === undefined) {
+      setInternalRxSport(inferredDefaultSport);
+    }
+  }, [inferredDefaultSport, hasManualSportOverride, controlledRxSport]);
+
+  const rxSport = controlledRxSport ?? internalRxSport;
+  const handleSelectRxSport = (nextSport: 'Cycling' | 'Running') => {
+    setHasManualSportOverride(true);
+    if (onRxSportChange) {
+      onRxSportChange(nextSport);
+    } else {
+      setInternalRxSport(nextSport);
+    }
+  };
   const [isSavingRx, setIsSavingRx] = useState<boolean>(false);
   const [rxToast, setRxToast] = useState<string | null>(null);
 
@@ -285,16 +323,19 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
       {/* Top Circadian Header Bar */}
       <div className="relative px-4 sm:px-5 py-3 border-b border-emerald-900/15 dark:border-[#254431] bg-[#EDF4EF]/85 dark:bg-[#0D1711]/90 flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
+            {mode === 'MORNING' ? 'Today’s Readiness & Prescription' : 'Today’s Session Receipt'}
+          </h1>
           {mode === 'MORNING' ? (
             <span className="ap-lane-badge">
               <span className="ap-lane-badge-inner">
                 <Sun className="w-3.5 h-3.5" />
-                <span>Lane 1 · Morning Check-In · 7d Rolling</span>
+                <span>7d Rolling</span>
               </span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-status-prime text-[11px] font-mono font-bold uppercase tracking-wide">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-status-prime text-2xs font-mono font-bold uppercase tracking-wide">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>
                 {sessionReceipt?.isTodaySession
@@ -308,70 +349,85 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             sessionReceipt?.isTodaySession &&
             todayCompliance &&
             todayCompliance.matchedActivityId && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold ap-status-info">
+              <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold ap-status-info">
                 {todayCompliance.summaryLabel}
               </span>
             )}
 
-          {athleteProfile && onOpenAthleteProfileModal && (
-            <button
-              type="button"
-              onClick={onOpenAthleteProfileModal}
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg liquid-capsule-track text-[11px] font-mono text-slate-600 dark:text-slate-300 hover:text-[#166534] dark:hover:text-[#C8FF00] transition-colors cursor-pointer"
-              title="Inspect or update Strava / Garmin / Intervals thresholds & HR zones"
-            >
-              {athleteProfile.thresholdPaceSecsPerKm > 0 && (
-                <>
-                  <span>
-                    LT{' '}
-                    {Math.floor(athleteProfile.thresholdPaceSecsPerKm / 60)}:
-                    {String(Math.round(athleteProfile.thresholdPaceSecsPerKm % 60)).padStart(
-                      2,
-                      '0'
+          {athleteProfile && onOpenAthleteProfileModal && (() => {
+            const pacePerUnitSecs =
+              athleteProfile.thresholdPaceSecsPerKm > 0
+                ? distanceUnit === 'mi'
+                  ? athleteProfile.thresholdPaceSecsPerKm * 1.609344
+                  : athleteProfile.thresholdPaceSecsPerKm
+                : 0;
+            const paceWholeSecs = Math.round(pacePerUnitSecs);
+            const paceFormatted =
+              paceWholeSecs > 0
+                ? `${Math.floor(paceWholeSecs / 60)}:${String(paceWholeSecs % 60).padStart(2, '0')}/${distanceUnit}`
+                : null;
+            return (
+              <button
+                type="button"
+                onClick={onOpenAthleteProfileModal}
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg liquid-capsule-track text-2xs font-mono tabular-nums text-slate-600 dark:text-slate-300 hover:text-[#166534] dark:hover:text-[#C8FF00] transition-colors cursor-pointer"
+                title="Inspect or update Strava / Garmin / Intervals thresholds & HR zones"
+              >
+                {rxSport === 'Running' ? (
+                  <>
+                    {paceFormatted && (
+                      <>
+                        <span>LT2 {paceFormatted}</span>
+                        <span className="opacity-40">·</span>
+                      </>
                     )}
-                    /km
-                  </span>
-                  <span className="opacity-40">·</span>
-                </>
-              )}
-              <span>FTP {athleteProfile.ftp}W</span>
-              <span className="opacity-40">·</span>
-              <span>
-                LTHR {athleteProfile.runLthr > 0 ? athleteProfile.runLthr : athleteProfile.lthr}{' '}
-                bpm
-              </span>
-            </button>
-          )}
+                    <span>
+                      LTHR {athleteProfile.runLthr > 0 ? athleteProfile.runLthr : athleteProfile.lthr}{' '}
+                      bpm
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>FTP {athleteProfile.ftp}W</span>
+                    <span className="opacity-40">·</span>
+                    <span>LTHR {athleteProfile.lthr} bpm</span>
+                  </>
+                )}
+              </button>
+            );
+          })()}
         </div>
 
         {/* Bi-Modal Switcher: Morning Brief <-> Post-Session Receipt */}
         <div className="flex items-center gap-2">
-          <div className="p-0.5 rounded-xl liquid-capsule-track inline-flex items-center text-xs">
+          <div className="p-1 rounded-xl liquid-capsule-track inline-flex items-center text-xs">
             <button
               type="button"
+              aria-pressed={mode === 'MORNING'}
               onClick={() => setMode('MORNING')}
-              className={`min-h-[28px] px-2.5 py-0.5 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all cursor-pointer ${
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all cursor-pointer ${
                 mode === 'MORNING'
-                  ? 'liquid-capsule-active text-[#0B4F9E] dark:text-sky-300'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE]'
+                  : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
               }`}
             >
-              <Sun className="w-3.5 h-3.5" />
+              <Sun className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
               <span>Morning Brief</span>
             </button>
             <button
               type="button"
+              aria-pressed={mode === 'POST_SESSION'}
               onClick={() => setMode('POST_SESSION')}
               disabled={!sessionReceipt}
-              className={`min-h-[28px] px-2.5 py-0.5 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all ${
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all ${
                 !sessionReceipt
-                  ? 'opacity-40 cursor-not-allowed text-slate-400'
+                  ? 'opacity-40 cursor-not-allowed text-[#43584B] dark:text-[#93A39A]'
                   : mode === 'POST_SESSION'
-                    ? 'liquid-capsule-active text-[#0D9488] dark:text-teal-300 cursor-pointer'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer'
+                    ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE] cursor-pointer'
+                    : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white cursor-pointer'
               }`}
             >
-              <Zap className="w-3.5 h-3.5" />
+              <Zap className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
               <span>Post-Session</span>
               {hasCompletedToday && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -418,7 +474,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                <div className="flex items-center gap-1.5 font-mono text-2xs tabular-nums">
                   <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
                     {productivity.ctlRamp7d >= 0
                       ? `+${productivity.ctlRamp7d}`
@@ -449,7 +505,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
               {/* 7-Day Acute Load Tunnel Bar */}
               <div className="pt-0.5 space-y-1">
-                <div className="flex items-center justify-between text-[10.5px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                <div className="flex items-center justify-between text-2xs font-mono tabular-nums text-[#43584B] dark:text-[#93A39A]">
                   <span>
                     7d Acute Load:{' '}
                     <strong className="text-slate-900 dark:text-white">
@@ -479,8 +535,8 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
 
             {/* 3-System Load Focus Bars with Dashed Target Boxes */}
-            <div className="space-y-2.5 pt-1 border-t border-slate-200/70 dark:border-white/10">
-              <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="space-y-2.5 pt-1 border-t border-[#1C5436]/12 dark:border-white/10">
+              <div className="flex items-center justify-between text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
                 <span>7-Day Load Focus Mix</span>
                 <span>Dashed Box = Optimal Target</span>
               </div>
@@ -490,7 +546,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
 
             {/* Mini 7-Day Daily Stacked Bar Strip */}
-            <div className="pt-2 border-t border-slate-200/70 dark:border-white/10">
+            <div className="pt-2 border-t border-[#1C5436]/12 dark:border-white/10">
               <div className="grid grid-cols-7 gap-1.5 items-end h-11">
                 {productivity.dailyWindow.map((day) => {
                   const lowH = Math.round(
@@ -533,10 +589,10 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         )}
                       </div>
                       <span
-                        className={`text-[9.5px] font-mono leading-none ${
+                        className={`text-2xs font-mono leading-none ${
                           day.dayShort === 'Today'
-                            ? 'font-bold text-[#0B4F9E] dark:text-sky-300'
-                            : 'text-slate-500 dark:text-slate-400'
+                            ? 'font-bold text-[#1C5436] dark:text-[#C8FF00]'
+                            : 'text-[#43584B] dark:text-[#93A39A]'
                         }`}
                       >
                         {day.dayShort}
@@ -548,50 +604,43 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
           </div>
 
-          {/* CARD 2 (3 Cols): Overnight Autonomic & Strain Readiness */}
+          {/* CARD 2 (3 Cols): Overnight Autonomic & Strain Readiness — Single Recessed Well + Hairline Rows */}
           <div className="lg:col-span-3 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Morning Readiness
-                </div>
-                <div className="mt-0.5 flex items-baseline gap-2 font-mono tabular-nums">
-                  <span className="text-2xl font-extrabold text-slate-900 dark:text-white">
-                    {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
-                      ? '—'
-                      : productivity.readinessScore}
-                  </span>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
-                      ? 'Calibrating'
-                      : '/ 100'}
-                  </span>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#1C5436]/12 dark:border-white/10">
+              <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white leading-snug">
+                Morning Readiness
+              </h2>
+              <div className="inline-flex items-center gap-1.5 font-mono tabular-nums">
+                <span className="ap-kpi-value text-base sm:text-lg text-[#101411] dark:text-white">
+                  {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                    ? '—'
+                    : `${productivity.readinessScore}/100`}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-2xs font-mono font-bold uppercase ${
+                    productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                      ? 'ap-status-info'
+                      : productivity.autonomicState === 'PRIME'
+                        ? 'ap-status-prime'
+                        : productivity.autonomicState === 'BALANCED'
+                          ? 'ap-status-info'
+                          : productivity.autonomicState === 'CAUTION'
+                            ? 'ap-status-caution'
+                            : 'ap-status-strained'
+                  }`}
+                >
+                  {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
+                    ? 'Calibrating'
+                    : productivity.autonomicState}
+                </span>
               </div>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10.5px] font-mono font-bold uppercase ${
-                  productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
-                    ? 'ap-status-info'
-                    : productivity.autonomicState === 'PRIME'
-                      ? 'ap-status-prime'
-                      : productivity.autonomicState === 'BALANCED'
-                        ? 'ap-status-info'
-                        : productivity.autonomicState === 'CAUTION'
-                          ? 'ap-status-caution'
-                          : 'ap-status-strained'
-                }`}
-              >
-                {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
-                  ? 'AWAITING SYNC'
-                  : productivity.autonomicState}
-              </span>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 font-mono tabular-nums">
-              <div className="rounded-lg bg-white/60 dark:bg-slate-950/55 border border-slate-200/70 dark:border-white/10 px-3 py-2">
-                <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
-                  <span className="inline-flex items-center gap-1">
-                    <HeartPulse className="w-3 h-3 text-emerald-500" />
+            <div className="divide-y divide-[#1C5436]/12 dark:divide-white/10 font-mono tabular-nums flex-1 flex flex-col justify-between">
+              <div className="py-2 first:pt-0">
+                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                     HRV (rMSSD)
                   </span>
                   <span>
@@ -601,17 +650,17 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       : '—'}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.hrvLatestMs > 0
                     ? `${productivity.hrvLatestMs} ms`
                     : '— ms'}
                 </div>
               </div>
 
-              <div className="rounded-lg bg-white/60 dark:bg-slate-950/55 border border-slate-200/70 dark:border-white/10 px-3 py-2">
-                <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
-                  <span className="inline-flex items-center gap-1">
-                    <Moon className="w-3 h-3 text-indigo-500" />
+              <div className="py-2">
+                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                     Overnight Sleep
                   </span>
                   <span>
@@ -620,7 +669,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       : '—'}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.sleepScoreLatest > 0
                     ? `Score ${productivity.sleepScoreLatest}`
                     : productivity.sleepHoursLatest > 0
@@ -629,9 +678,9 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 </div>
               </div>
 
-              <div className="rounded-lg bg-white/60 dark:bg-slate-950/55 border border-slate-200/70 dark:border-white/10 px-3 py-2">
-                <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
-                  <span>Resting HR</span>
+              <div className="py-2">
+                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                  <span className="font-medium">Resting HR</span>
                   <span>
                     {productivity.rhrLatestBpm === 0
                       ? 'Optional wearable'
@@ -640,22 +689,22 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} vs base`}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.rhrLatestBpm > 0
                     ? `${productivity.rhrLatestBpm} bpm`
                     : '— bpm'}
                 </div>
               </div>
 
-              <div className="rounded-lg bg-white/60 dark:bg-slate-950/55 border border-slate-200/70 dark:border-white/10 px-3 py-2">
-                <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
-                  <span>Form (TSB)</span>
+              <div className="pt-2">
+                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                  <span className="font-medium">Form (TSB)</span>
                   <span>
                     CTL {productivity.ctl.toFixed(0)} · ATL{' '}
                     {productivity.atl.toFixed(0)}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.tsb > 0
                     ? `+${productivity.tsb.toFixed(0)}`
                     : productivity.tsb.toFixed(0)}
@@ -664,88 +713,96 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
           </div>
 
-          {/* CARD 3 (4 Cols): Prepare for Today — Gap-Filling Workout Prescription */}
+          {/* CARD 3 (4 Cols): Prepare for Today — Coherent Scheduled or Gap-Filling Prescription */}
           <div className="lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="px-2 py-0.5 rounded-md text-[10.5px] font-mono ap-badge-volt">
-                  {productivity.gapPrescription.focusBadge}
-                </span>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white leading-snug">
+                  {todayScheduled ? todayScheduled.name : activeRxTitle}
+                </h2>
 
-                <div className="p-0.5 rounded-lg liquid-capsule-track inline-flex items-center text-[11px]">
+                <div
+                  role="group"
+                  aria-label="Target workout sport"
+                  className="p-0.5 rounded-lg liquid-capsule-track inline-flex items-center text-2xs shrink-0"
+                >
                   <button
                     type="button"
-                    onClick={() => setRxSport('Cycling')}
-                    className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 font-semibold cursor-pointer ${
+                    aria-pressed={rxSport === 'Cycling'}
+                    onClick={() => handleSelectRxSport('Cycling')}
+                    className={`min-h-[44px] sm:min-h-[30px] px-3 sm:px-2 py-0.5 rounded-md inline-flex items-center gap-1 font-semibold cursor-pointer ${
                       rxSport === 'Cycling'
-                        ? 'liquid-capsule-active text-[#0B4F9E] dark:text-sky-300'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE]'
+                        : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
                     }`}
                   >
-                    <Bike className="w-3 h-3" />
+                    <Bike className="w-3 h-3 text-[#1C5436] dark:text-[#C8FF00]" />
                     <span>Bike</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRxSport('Running')}
-                    className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 font-semibold cursor-pointer ${
+                    aria-pressed={rxSport === 'Running'}
+                    onClick={() => handleSelectRxSport('Running')}
+                    className={`min-h-[44px] sm:min-h-[30px] px-3 sm:px-2 py-0.5 rounded-md inline-flex items-center gap-1 font-semibold cursor-pointer ${
                       rxSport === 'Running'
-                        ? 'liquid-capsule-active text-[#0D9488] dark:text-teal-300'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE]'
+                        : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
                     }`}
                   >
-                    <Footprints className="w-3 h-3" />
+                    <Footprints className="w-3 h-3 text-[#1C5436] dark:text-[#C8FF00]" />
                     <span>Run</span>
                   </button>
                 </div>
               </div>
 
-              <div>
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-1.5 text-2xs font-mono tabular-nums text-[#35463B] dark:text-[#C5D1CA]">
+                <span className="px-2 py-0.5 rounded-md ap-status-info font-bold">
+                  {todayScheduled ? 'Scheduled Today' : 'Recommended'}
+                </span>
+                <span>
                   {todayScheduled
-                    ? 'On Calendar Today + 7d Focus Guidance'
-                    : "Today's Gap-Filling Prescription"}
-                </div>
-                <h3 className="mt-0.5 text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
-                  {todayScheduled ? todayScheduled.name : activeRxTitle}
-                </h3>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300">
-                  <span>
-                    {todayScheduled
-                      ? `${Math.round((todayScheduled.plannedDurationSecs || 3600) / 60)} min`
-                      : `${productivity.gapPrescription.recommendedDurationMins} min`}
-                  </span>
-                  <span>·</span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {todayScheduled
-                      ? `${todayScheduled.plannedLoad} TSS`
-                      : `~${productivity.gapPrescription.recommendedTss} TSS`}
-                  </span>
-                  {athleteProfile && (
-                    <>
-                      <span>·</span>
-                      <span>
-                        {rxSport === 'Running'
-                          ? `LTHR ${athleteProfile.runLthr || athleteProfile.lthr} bpm`
-                          : `FTP ${athleteProfile.ftp}W`}
-                      </span>
-                    </>
-                  )}
-                </div>
+                    ? `${Math.round((todayScheduled.plannedDurationSecs || 3600) / 60)} min`
+                    : `${productivity.gapPrescription.recommendedDurationMins} min`}
+                </span>
+                <span>·</span>
+                <span className="font-bold text-[#101411] dark:text-white">
+                  {todayScheduled
+                    ? `${todayScheduled.plannedLoad} TSS`
+                    : `~${productivity.gapPrescription.recommendedTss} TSS`}
+                </span>
+                {athleteProfile && (
+                  <>
+                    <span>·</span>
+                    <span>
+                      {rxSport === 'Running'
+                        ? `LTHR ${athleteProfile.runLthr || athleteProfile.lthr} bpm`
+                        : `FTP ${athleteProfile.ftp}W`}
+                    </span>
+                  </>
+                )}
               </div>
 
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {productivity.gapPrescription.rationale}
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-mono ap-status-caution">
+                <Zap className="w-3 h-3 shrink-0" weight="fill" />
+                <span>{productivity.gapPrescription.focusBadge}</span>
+              </div>
+
+              <p className="text-xs text-[#35463B] dark:text-[#C5D1CA] leading-relaxed">
+                {todayScheduled
+                  ? todayScheduled.description ||
+                    `Scheduled ${todayScheduled.sportCategory.toLowerCase()} session on your training calendar. Open Customize & Export to inspect or modulate intervals.`
+                  : productivity.gapPrescription.rationale}
               </p>
 
-              {/* Compact Step Preview */}
-              <div className="rounded-lg bg-white/60 dark:bg-slate-950/55 border border-slate-200/70 dark:border-white/10 px-3 py-2 space-y-1 font-mono text-[11px] text-slate-700 dark:text-slate-200">
-                {activeRxSyntax
+              {/* Hairline-Divided Step Preview (Zero Nested Sub-Cards) */}
+              <div className="pt-2 border-t border-[#1C5436]/12 dark:border-white/10 divide-y divide-[#1C5436]/10 dark:divide-white/10 font-mono text-2xs text-[#101411] dark:text-[#ECF2EE]">
+                {(todayScheduled?.workoutSyntax || activeRxSyntax)
                   .split('\n')
+                  .filter((line) => line.trim().length > 0)
                   .slice(0, 4)
                   .map((stepLine, idx) => (
-                    <div key={idx} className="truncate">
-                      {stepLine.replace(/^-\s*/, '• ')}
+                    <div key={idx} className="py-1 first:pt-0 last:pb-0 truncate">
+                      {stepLine.replace(/^-\s*/, '· ')}
                     </div>
                   ))}
               </div>
@@ -753,44 +810,83 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
             <div className="space-y-2 pt-1">
               <div className="flex flex-wrap items-center gap-2">
-                {onSyncMorphedToCalendar && (
-                  <button
-                    type="button"
-                    disabled={isSavingRx}
-                    onClick={handleCommitGapRx}
-                    className="ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer"
-                  >
-                    <CalendarCheck className="w-3.5 h-3.5" />
-                    <span>
-                      {isSavingRx ? 'Scheduling…' : 'Schedule Gap-Filler RX'}
-                    </span>
-                  </button>
-                )}
+                {todayScheduled ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-expanded={isWorkbenchExpanded}
+                      onClick={onToggleWorkbench}
+                      className="ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer"
+                      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>Customize &amp; Export</span>
+                      {isWorkbenchExpanded ? (
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={onToggleWorkbench}
-                  className="ap-btn-secondary px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                  title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                  <span>Garmin / .FIT</span>
-                  {isWorkbenchExpanded ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </button>
+                    {onSyncMorphedToCalendar && (
+                      <button
+                        type="button"
+                        disabled={isSavingRx}
+                        onClick={handleCommitGapRx}
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        title={`Replace today's scheduled workout with ${activeRxTitle} (${productivity.gapPrescription.recommendedDurationMins}m · ~${productivity.gapPrescription.recommendedTss} TSS)`}
+                      >
+                        <CalendarCheck className="w-3.5 h-3.5" />
+                        <span>
+                          {isSavingRx ? 'Swapping…' : 'Swap to Gap-Filler'}
+                        </span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {onSyncMorphedToCalendar && (
+                      <button
+                        type="button"
+                        disabled={isSavingRx}
+                        onClick={handleCommitGapRx}
+                        className="ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer"
+                      >
+                        <CalendarCheck className="w-3.5 h-3.5" />
+                        <span>
+                          {isSavingRx ? 'Scheduling…' : 'Schedule Gap-Filler RX'}
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      aria-expanded={isWorkbenchExpanded}
+                      onClick={onToggleWorkbench}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>Customize &amp; Export</span>
+                      {isWorkbenchExpanded ? (
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </>
+                )}
 
                 {onOpenCoachWithPrompt && (
                   <button
                     type="button"
+                    aria-label="Ask AI Coach about your 7-day productivity and load focus"
                     onClick={() =>
                       onOpenCoachWithPrompt(
                         `My 7-day rolling training status is ${productivity.verdictLabel} (${productivity.acuteLoad7d} TSS; Low Aerobic ${productivity.buckets[0].sharePct}%, High Aerobic ${productivity.buckets[1].sharePct}%, Neuromuscular ${productivity.buckets[2].sharePct}%; Readiness ${productivity.readinessScore}/100). How should I approach today and the next 3 days?`
                       )
                     }
-                    className="min-h-[34px] px-2.5 rounded-xl border border-slate-300/80 dark:border-white/15 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 inline-flex items-center justify-center cursor-pointer"
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] px-2.5 rounded-xl border border-slate-300/80 dark:border-white/15 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 inline-flex items-center justify-center cursor-pointer"
                     title="Ask AI Coach about your 7-day productivity & load focus"
                   >
                     <Sparkles className="w-3.5 h-3.5 ap-text-brand" />
@@ -799,7 +895,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
 
               {rxToast && (
-                <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-[11px] font-medium">
+                <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-2xs font-medium">
                   {rxToast}
                 </div>
               )}
@@ -815,14 +911,14 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           <div className="lg:col-span-6 rounded-xl liquid-glass-subtle p-4 flex flex-col justify-between space-y-3.5">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  1. 7-Day Rolling Needle Impact
-                </span>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  {sessionReceipt.needleHeadline}
+                </h3>
                 <div className="inline-flex items-center gap-1.5 font-mono text-xs font-bold">
                   <span className="px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                     {sessionReceipt.verdictBeforeLabel}
                   </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                   <span
                     className={`px-2.5 py-0.5 rounded-md ${toneBadgeClass(
                       productivity.verdictTone
@@ -832,10 +928,6 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </span>
                 </div>
               </div>
-
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                {sessionReceipt.needleHeadline}
-              </h3>
 
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300">
                 <span>
@@ -853,18 +945,18 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
             </div>
 
-            {/* Session Energy-System Contribution Pills */}
-            <div className="space-y-2 pt-2 border-t border-slate-200/70 dark:border-white/10">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {/* Session Energy-System Contribution Rows */}
+            <div className="space-y-2 pt-2 border-t border-[#1C5436]/12 dark:border-white/10">
+              <div className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
                 Energy-System Strain Added &amp; 7d Mix Shift
               </div>
-              <div className="grid grid-cols-3 gap-2 font-mono tabular-nums">
-                {sessionReceipt.bucketShiftHighlights.map((b) => (
+              <div className="grid grid-cols-3 divide-x divide-[#1C5436]/12 dark:divide-white/10 font-mono tabular-nums">
+                {sessionReceipt.bucketShiftHighlights.map((b, idx) => (
                   <div
                     key={b.key}
-                    className="rounded-lg bg-white/65 dark:bg-slate-950/55 border border-slate-200/75 dark:border-white/10 p-2.5 space-y-1"
+                    className={`py-1 space-y-1 ${idx === 0 ? 'pr-2.5' : idx === 1 ? 'px-2.5' : 'pl-2.5'}`}
                   >
-                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                    <div className="flex items-center justify-between gap-1 text-2xs">
                       <span
                         className="font-bold truncate"
                         style={{ color: b.colorHex }}
@@ -872,24 +964,25 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         {b.shortLabel}
                       </span>
                       {b.closedDeficit ? (
-                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                          ✓ Closed
+                        <span className="inline-flex items-center gap-0.5 text-2xs font-bold text-emerald-700 dark:text-emerald-400">
+                          <Check className="w-3 h-3 shrink-0" weight="bold" />
+                          <span>Closed</span>
                         </span>
                       ) : b.insideTargetNow ? (
-                        <span className="text-[9px] text-emerald-600 dark:text-emerald-400">
-                          ✓
+                        <span className="inline-flex items-center text-2xs text-emerald-700 dark:text-emerald-400">
+                          <Check className="w-3 h-3 shrink-0" weight="bold" />
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    <div className="text-sm font-extrabold text-[#101411] dark:text-white">
                       +{b.addedPts}{' '}
-                      <span className="text-[10px] font-normal text-slate-500">
+                      <span className="text-2xs font-normal text-[#43584B] dark:text-[#93A39A]">
                         pts
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    <div className="text-2xs text-[#43584B] dark:text-[#93A39A]">
                       {b.shareBeforePct}% →{' '}
-                      <strong className="text-slate-800 dark:text-slate-200">
+                      <strong className="text-[#101411] dark:text-slate-200">
                         {b.shareAfterPct}%
                       </strong>
                     </div>
@@ -899,12 +992,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
 
             {/* Recovery Window & Tomorrow Preview */}
-            <div className="rounded-xl bg-slate-900/[0.04] dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/10 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="inline-flex items-center gap-1.5 font-mono font-semibold text-slate-800 dark:text-slate-100">
+            <div className="pt-2.5 border-t border-[#1C5436]/12 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="inline-flex items-center gap-1.5 font-mono font-semibold text-[#101411] dark:text-slate-100">
                 <Clock className="w-3.5 h-3.5 text-[#0D9488]" />
                 <span>Est. Recovery: ~{sessionReceipt.recoveryHours}h</span>
               </div>
-              <span className="text-slate-600 dark:text-slate-300 font-medium">
+              <span className="text-[#35463B] dark:text-[#C5D1CA] font-medium">
                 {sessionReceipt.tomorrowHeadline}
               </span>
             </div>
@@ -914,49 +1007,45 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           <div className="lg:col-span-6 rounded-xl liquid-glass-subtle p-4 flex flex-col justify-between space-y-3.5">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  2. Performance Receipt vs 28d Baseline
-                </span>
-                <span className="px-2 py-0.5 rounded-md liquid-capsule-track font-mono text-[11px] font-bold text-slate-800 dark:text-slate-100">
+                <h3 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white truncate">
+                  {sessionReceipt.combinedTitle}
+                </h3>
+                <span className="px-2 py-0.5 rounded-md liquid-capsule-track font-mono text-2xs font-bold text-[#101411] dark:text-slate-100 shrink-0">
                   {sessionReceipt.totalDurationMins}m ·{' '}
                   {sessionReceipt.totalLoad} TSS
                 </span>
               </div>
 
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
-                {sessionReceipt.combinedTitle}
-              </h3>
-
-              {/* 3-Column Session KPI Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono tabular-nums pt-0.5">
-                <div className="rounded-lg bg-white/65 dark:bg-slate-950/55 border border-slate-200/75 dark:border-white/10 p-2.5">
-                  <div className="text-[10px] font-sans text-slate-500 dark:text-slate-400">
+              {/* 3-Column Session KPI Grid (Hairline Divided) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#1C5436]/12 dark:divide-white/10 font-mono tabular-nums pt-1">
+                <div className="py-1.5 sm:py-0 sm:pr-3">
+                  <div className="text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     {sessionReceipt.primaryOutputLabel}
                   </div>
-                  <div className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  <div className="mt-0.5 text-sm font-extrabold text-[#101411] dark:text-white">
                     {sessionReceipt.primaryOutputValue}
                   </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                  <div className="text-2xs text-[#43584B] dark:text-[#93A39A] truncate">
                     {sessionReceipt.secondaryOutputValue}
                   </div>
                 </div>
 
-                <div className="rounded-lg bg-white/65 dark:bg-slate-950/55 border border-slate-200/75 dark:border-white/10 p-2.5">
-                  <div className="flex items-center justify-between text-[10px] font-sans text-slate-500 dark:text-slate-400">
+                <div className="py-1.5 sm:py-0 sm:px-3">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span>Efficiency (EF)</span>
-                    <TrendingUp className="w-3 h-3 text-emerald-500" />
+                    <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  <div className="mt-0.5 text-sm font-extrabold text-[#101411] dark:text-white">
                     {sessionReceipt.efValue !== null
                       ? sessionReceipt.efValue.toFixed(2)
                       : '—'}
                   </div>
                   <div
-                    className={`text-[10px] font-semibold ${
+                    className={`text-2xs font-semibold ${
                       sessionReceipt.efDeltaPct !== null &&
                       sessionReceipt.efDeltaPct >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-[#43584B] dark:text-[#93A39A]'
                     }`}
                   >
                     {sessionReceipt.efDeltaPct !== null
@@ -965,11 +1054,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </div>
                 </div>
 
-                <div className="rounded-lg bg-white/65 dark:bg-slate-950/55 border border-slate-200/75 dark:border-white/10 p-2.5">
-                  <div className="text-[10px] font-sans text-slate-500 dark:text-slate-400">
+                <div className="py-1.5 sm:py-0 sm:pl-3">
+                  <div className="text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     Aerobic Drift
                   </div>
-                  <div className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  <div className="mt-0.5 text-sm font-extrabold text-[#101411] dark:text-white">
                     {sessionReceipt.decouplingPct !== null
                       ? `${sessionReceipt.decouplingPct}%`
                       : sessionReceipt.debriefReport?.wPrimeMinPct !== null &&
@@ -978,12 +1067,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         : 'Coupled'}
                   </div>
                   <div
-                    className={`text-[10px] truncate ${
+                    className={`text-2xs truncate ${
                       sessionReceipt.decouplingTone === 'prime'
-                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
                         : sessionReceipt.decouplingTone === 'strained'
-                          ? 'text-rose-600 dark:text-rose-400 font-semibold'
-                          : 'text-slate-500 dark:text-slate-400'
+                          ? 'text-rose-700 dark:text-rose-400 font-semibold'
+                          : 'text-[#43584B] dark:text-[#93A39A]'
                     }`}
                   >
                     {sessionReceipt.decouplingVerdict}
@@ -995,10 +1084,10 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             {/* Garmin 5-Zone HR (or 7-Zone Power) Time-in-Zone Pill Strip */}
             {(sessionReceipt.powerZones7.length > 0 ||
               sessionReceipt.hrZones5.length > 0) && (
-              <div className="space-y-1.5 pt-1 border-t border-slate-200/70 dark:border-white/10">
+              <div className="space-y-1.5 pt-1 border-t border-[#1C5436]/12 dark:border-white/10">
                 {sessionReceipt.hrZones5.length > 0 && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center justify-between text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                       <span>Garmin 5-Zone HR Distribution</span>
                       <span>
                         {sessionReceipt.hrZones5
@@ -1026,7 +1115,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
                 {sessionReceipt.powerZones7.length > 0 && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center justify-between text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                       <span>7-Zone Power Distribution</span>
                       <span>
                         {sessionReceipt.powerZones7
@@ -1054,22 +1143,33 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
             )}
 
-            {/* Deep-Link CTA to Full 1Hz Telemetry */}
+            {/* Deep-Link CTA to Full 1Hz Telemetry & Skyline Workbench */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="text-2xs text-[#43584B] dark:text-[#93A39A]">
                 {sessionReceipt.debriefReport
                   ? sessionReceipt.debriefReport.headline
                   : 'Open 1Hz streams for Skiba W’ match-burn, HRR60 & lap splits'}
               </span>
-              {onSelectActivity && (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onSelectActivity(sessionReceipt.primaryActivity)}
-                  className="ap-btn-primary px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                  aria-expanded={isWorkbenchExpanded}
+                  onClick={onToggleWorkbench}
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <span>Inspect 1Hz Telemetry →</span>
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Customize &amp; Export</span>
                 </button>
-              )}
+                {onSelectActivity && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectActivity(sessionReceipt.primaryActivity)}
+                    className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Inspect 1Hz Telemetry →</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

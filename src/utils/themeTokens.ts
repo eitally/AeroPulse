@@ -1,7 +1,10 @@
 /**
- * THRESH "Track Volt & Obsidian" v3.0 Design System Tokens for JS/Canvas/SVG Charts
- * Synchronizes Stadium Chalk (#F4F5F0) Light Mode and Carbon-Pine (#121715) Dark Mode
- * with Track Volt (#C8FF00 / #558B00) brand chrome and the locked 6-zone effort spectrum.
+ * THRESH "#1 Stadium Track — Track Volt & Obsidian" v3.0 Design System Tokens for JS/Canvas/SVG Charts
+ * Synchronized 1:1 with `src/index.css`:
+ * - Light Mode: Stadium Chalk (#F4F7F2) Canvas, Crisp Paper (#FFFFFF) Cards, Chalk Inset (#E9EFE9)
+ * - Dark Mode: Obsidian-Pine (#0B120E) Canvas, Carbon-Pine (#101B15) Cards, Deep Turf Inset (#15231B)
+ * - Signature Brand Chrome: Track Volt (#C8FF00 Dark / #1C5436 & #558B00 Light)
+ * - Locked 6-Zone Physiological Effort Spectrum & Banister PMC Encodings
  */
 
 export interface AeroPulseThemePalette {
@@ -39,19 +42,19 @@ export type ThreshThemePalette = AeroPulseThemePalette;
 export function getAeroPulseThemePalette(isDark: boolean): AeroPulseThemePalette {
   return {
     isDark,
-    canvasBg: isDark ? '#080A09' : '#F4F5F0',
-    cardBg: isDark ? '#121715' : '#FFFFFF',
-    insetBg: isDark ? '#171E1B' : '#ECEEE6',
-    borderSubtle: isDark ? 'rgba(200, 255, 0, 0.12)' : 'rgba(16, 20, 17, 0.09)',
+    canvasBg: isDark ? '#0B120E' : '#F4F7F2',
+    cardBg: isDark ? '#101B15' : '#FFFFFF',
+    insetBg: isDark ? '#15231B' : '#E9EFE9',
+    borderSubtle: isDark ? 'rgba(57, 150, 99, 0.36)' : 'rgba(38, 88, 58, 0.19)',
     textPrimary: isDark ? '#F4F7F4' : '#101411',
-    textSecondary: isDark ? '#D1D8D3' : '#334155',
-    textMuted: isDark ? '#94A39B' : '#525866',
-    axisLine: isDark ? '#2A3630' : '#CBD5E1',
-    splitLine: isDark ? 'rgba(200, 255, 0, 0.08)' : 'rgba(16, 20, 17, 0.06)',
-    tooltipBg: isDark ? 'rgba(14, 18, 16, 0.96)' : 'rgba(255, 255, 255, 0.98)',
-    tooltipBorder: isDark ? 'rgba(200, 255, 0, 0.18)' : 'rgba(16, 20, 17, 0.12)',
+    textSecondary: isDark ? '#C8D8CE' : '#1F3528',
+    textMuted: isDark ? '#93A39A' : '#43584B',
+    axisLine: isDark ? '#254331' : '#B7C9BC',
+    splitLine: isDark ? 'rgba(57, 150, 99, 0.14)' : 'rgba(38, 88, 58, 0.08)',
+    tooltipBg: isDark ? 'rgba(16, 27, 21, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+    tooltipBorder: isDark ? 'rgba(57, 150, 99, 0.38)' : 'rgba(38, 88, 58, 0.22)',
     tooltipText: isDark ? '#F4F7F4' : '#101411',
-    brandCobalt: isDark ? '#C8FF00' : '#3F6212',
+    brandCobalt: isDark ? '#C8FF00' : '#1C5436',
     brandSignalOrange: isDark ? '#C8FF00' : '#558B00',
     ctlCyan: isDark ? '#2DD4BF' : '#0D9488',
     atlRose: isDark ? '#FB7185' : '#E11D48',

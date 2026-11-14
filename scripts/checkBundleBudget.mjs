@@ -68,7 +68,7 @@ try {
   const srv = jsMod.default.listen(0);
   const port = srv.address().port;
   const probe = await fetch(
-    `http://127.0.0.1:${port}/api/strava/auth/url?origin=https%3A%2F%2Faeropulse.vercel.app&mode=cloud&state=smoketest1234`,
+    `http://127.0.0.1:${port}/api/strava/auth/url?origin=https%3A%2F%2Fthresh.vercel.app&mode=cloud&state=smoketest1234`,
     { headers: { 'x-strava-client-id': '10001', 'x-strava-client-secret': 'smoke_secret' } }
   );
   srv.close();

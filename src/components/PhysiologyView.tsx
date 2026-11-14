@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   ActivityStreamSet,
   AthleteProfile,
   BenchmarkSegmentHistory,
+  ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
   PowerPaceCurvePoint,
@@ -12,10 +13,16 @@ import {
 import { formatPace, formatStopwatch } from '../utils/formatters';
 import { buildRepeatedSegmentsFromActivities } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
-import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 import { loadAllActivityStreamsMapFromDexie } from '../db/workoutStore';
 import { buildEmpiricalMmpSummary } from '../physiology/mmpCurves';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
+
+const AthletePerformanceRadar = lazy(() =>
+  import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar }))
+);
+
+const EMPTY_CONNECTED_ATHLETES: ConnectedAthleteRecord[] = [];
+const NOOP_COACH_PROMPT = (_prompt: string) => {};
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -32,7 +39,7 @@ interface PhysiologyViewProps {
   onOpenActivitiesSegments?: () => void;
 }
 
-export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
+const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
   curves,
   activities,
   wellnessDays,
@@ -269,7 +276,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
               <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                 Peak Power &amp; Pace Duration Curves
               </h1>
-              <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/25 text-[11px] font-mono font-semibold text-blue-600 dark:text-sky-300">
+              <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/25 text-2xs font-mono font-semibold text-blue-600 dark:text-sky-300">
                 CP · W&apos; · Pmax
               </span>
               <ChartInfoTooltip
@@ -320,7 +327,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         {/* Fitted Critical Power / Critical Speed Bioenergetic KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+            <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
               1Hz Streams Scanned
             </div>
             <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
@@ -331,7 +338,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+            <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
               {curveDiscipline === 'Cycling' ? 'Critical Power (CP)' : 'Critical Speed (CS)'}
             </div>
             <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-blue-600 dark:text-sky-400">
@@ -352,7 +359,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+            <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
               {curveDiscipline === 'Cycling' ? "Anaerobic Work (W')" : "Anaerobic Reserve (D')"}
             </div>
             <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-amber-600 dark:text-amber-400">
@@ -367,7 +374,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-3.5 py-2.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+            <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
               {curveDiscipline === 'Cycling' ? 'Neuromuscular Pmax' : '15s Sprint GAP Peak'}
             </div>
             <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
@@ -464,7 +471,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                       y={108}
                       transform="rotate(-90 16 108)"
                       textAnchor="middle"
-                      className="fill-blue-500 text-[11px] font-sans font-bold"
+                      className="fill-blue-500 text-2xs font-sans font-bold"
                     >
                       Power Output (Watts)
                     </text>
@@ -486,7 +493,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                             x={60}
                             y={y + 4}
                             textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                           >
                             {Math.round(f * maxW)}W
                           </text>
@@ -514,7 +521,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                             x={x}
                             y={210}
                             textAnchor="middle"
-                            className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono font-semibold"
+                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono font-semibold"
                           >
                             {c.durationLabel}
                           </text>
@@ -566,7 +573,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                     y={108}
                     transform="rotate(-90 16 108)"
                     textAnchor="middle"
-                    className="fill-orange-500 text-[11px] font-sans font-bold"
+                    className="fill-orange-500 text-2xs font-sans font-bold"
                   >
                     Running Pace (/{distanceUnit})
                   </text>
@@ -589,7 +596,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                           x={62}
                           y={y + 4}
                           textAnchor="end"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                         >
                           {formatPace(secs, distanceUnit).replace(`/${distanceUnit}`, '')}
                         </text>
@@ -627,7 +634,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                           x={x}
                           y={210}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono font-semibold"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono font-semibold"
                         >
                           {c.durationLabel}
                         </text>
@@ -746,7 +753,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                   Exact sliding-window bests scanned from local 1Hz telemetry streams and synced workouts. Click any source workout to inspect its stream.
                 </p>
               </div>
-              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold">
+              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-2xs font-mono font-semibold">
                 1s – 2h Prefix-Sum MMP
               </span>
             </div>
@@ -823,7 +830,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                               >
                                 <span className="truncate max-w-[220px]">{srcName}</span>
                                 {srcDate && (
-                                  <span className="text-[11px] font-mono text-slate-400">
+                                  <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">
                                     ({srcDate}) →
                                   </span>
                                 )}
@@ -833,7 +840,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                                 {srcName} {srcDate ? `(${srcDate})` : ''}
                               </span>
                             ) : (
-                              <span className="text-slate-400">Modeled baseline</span>
+                              <span className="text-slate-600 dark:text-slate-400">Modeled baseline</span>
                             )}
                           </td>
                         </tr>
@@ -846,13 +853,13 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         )}
       </section>
 
-      {/* 1B. 10x #2 — Fatigue-Sliced Physiological Durability Engine (kJ/kg & kcal Threshold Retention) */}
+      {/* 1B. Fatigue-Sliced Physiological Durability Engine (kJ/kg & kcal Threshold Retention) */}
       <section className="rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold">
-                10x #2 · Fatigue-Sliced Durability
+              <span className="ap-status-info px-2.5 py-0.5 rounded-full text-2xs font-mono font-semibold">
+                Fatigue-Sliced Durability
               </span>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                 {curveDiscipline === 'Cycling'
@@ -901,7 +908,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                 key={b.bucketIndex}
                 className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/60 p-3 space-y-2 font-mono tabular-nums"
               >
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between text-2xs">
                   <span className="font-bold text-slate-900 dark:text-slate-100">
                     {b.fatigueLabel}
                   </span>
@@ -915,7 +922,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
                     style={{ width: `${Math.max(25, Math.min(100, b.retentionPct))}%` }}
                   />
                 </div>
-                <div className="space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                <div className="space-y-0.5 text-2xs text-slate-600 dark:text-slate-300">
                   <div className="flex justify-between">
                     <span>20m Hold:</span>
                     <strong className="text-slate-900 dark:text-white">
@@ -945,7 +952,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
         {/* Limiter Attribution & Fueling Prescription */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           <div className="rounded-xl liquid-glass-subtle p-3.5 space-y-1">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+            <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 font-bold">
               Primary Late-Race Limiter · {durabilityReport.primaryLimiter.replace(/_/g, ' ')}
             </div>
             <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
@@ -953,7 +960,7 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
             </p>
           </div>
           <div className="rounded-xl liquid-glass-subtle p-3.5 space-y-1">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-bold">
+            <div className="text-2xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-bold">
               Exogenous Carbohydrate &amp; Durability Prescription
             </div>
             <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
@@ -965,14 +972,22 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
 
       {/* 2. Coggan Power Profile & WMA Age-Graded Percentile Radars */}
       {athleteProfile && (
-        <AthletePerformanceRadar
-          selfName={athleteProfile.name || 'Athlete'}
-          selfProfile={athleteProfile}
-          selfWellnessDays={wellnessDays}
-          selfActivities={activities}
-          connectedAthletes={[]}
-          onOpenCoachWithPrompt={() => {}}
-        />
+        <Suspense
+          fallback={
+            <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+              Loading Performance Radar…
+            </div>
+          }
+        >
+          <AthletePerformanceRadar
+            selfName={athleteProfile.name || 'Athlete'}
+            selfProfile={athleteProfile}
+            selfWellnessDays={wellnessDays}
+            selfActivities={activities}
+            connectedAthletes={EMPTY_CONNECTED_ATHLETES}
+            onOpenCoachWithPrompt={NOOP_COACH_PROMPT}
+          />
+        </Suspense>
       )}
 
       {/* Canonical Segment Analytics Pointer (Deduplicated from PhysiologyView) */}
@@ -997,3 +1012,5 @@ export const PhysiologyView: React.FC<PhysiologyViewProps> = ({
     </div>
   );
 };
+
+export const PhysiologyView = React.memo(PhysiologyViewComponent);

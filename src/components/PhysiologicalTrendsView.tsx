@@ -570,8 +570,8 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
             </div>
 
             {/* Quick Physiologist Presets */}
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className="text-slate-400 font-mono uppercase">Quick Combos:</span>
+            <div className="flex flex-wrap items-center gap-1.5 text-2xs">
+              <span className="text-slate-600 dark:text-slate-400 font-mono uppercase">Quick Combos:</span>
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['vo2Max', 'rideEftp'])}
@@ -636,10 +636,10 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       <span className="truncate">{meta.shortLabel}</span>
                     </span>
                     <span
-                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+                      className={`text-2xs font-mono px-1.5 py-0.2 rounded ${
                         isSelected
                           ? 'bg-slate-900/10 dark:bg-white/10 text-slate-800 dark:text-slate-200 font-semibold'
-                          : 'text-slate-400'
+                          : 'text-slate-600 dark:text-slate-400'
                       }`}
                     >
                       {isSelected ? 'ON' : 'OFF'}
@@ -654,7 +654,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       {formatMetricDisplay(activePoint, meta)}
                     </span>
                     <span
-                      className={`text-[10px] font-semibold ${
+                      className={`text-2xs font-semibold ${
                         meta.key === 'restingHR'
                           ? delta <= 0
                             ? 'text-emerald-600 dark:text-emerald-400'
@@ -681,7 +681,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               Inspected Date:
             </span>
             <span className="font-bold text-slate-900 dark:text-white">{activePoint.date}</span>
-            <span className="text-slate-400">|</span>
+            <span className="text-slate-600 dark:text-slate-400">|</span>
             <span className="text-slate-500">
               Fitness CTL: <strong className="text-sky-500">{activePoint.ctl}</strong>
             </span>
@@ -706,7 +706,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   <strong className="text-slate-900 dark:text-white">
                     {formatMetricDisplay(activePoint, meta)}
                   </strong>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-2xs text-slate-500">
                     ({pct >= 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`})
                   </span>
                 </div>
@@ -789,7 +789,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       x={plotLeft - 8}
                       y={y + 4}
                       textAnchor="end"
-                      className="text-[11px] font-mono"
+                      className="text-2xs font-mono"
                       fill={
                         scaleMode === 'PCT_CHANGE'
                           ? '#64748B'
@@ -804,7 +804,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       x={plotRight + 8}
                       y={y + 4}
                       textAnchor="start"
-                      className="text-[11px] font-mono"
+                      className="text-2xs font-mono"
                       fill={
                         scaleMode === 'PCT_CHANGE'
                           ? '#64748B'
@@ -845,7 +845,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                 y={plotTop + plotH / 2}
                 transform={`rotate(-90 16 ${plotTop + plotH / 2})`}
                 textAnchor="middle"
-                className="text-[11px] font-sans font-bold"
+                className="text-2xs font-sans font-bold"
                 fill={scaleMode === 'PCT_CHANGE' ? '#64748B' : primaryLeftMeta.color}
               >
                 {scaleMode === 'PCT_CHANGE'
@@ -861,7 +861,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   y={plotTop + plotH / 2}
                   transform={`rotate(90 ${svgW - 14} ${plotTop + plotH / 2})`}
                   textAnchor="middle"
-                  className="text-[11px] font-sans font-bold"
+                  className="text-2xs font-sans font-bold"
                   fill={secondaryRightMeta.color}
                 >
                   {secondaryRightMeta.label} ({secondaryRightMeta.unit})
@@ -934,7 +934,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   x={xFor(i)}
                   y={plotBottom + 22}
                   textAnchor="middle"
-                  className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                  className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                 >
                   {pt.date}
                 </text>
@@ -1041,7 +1041,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                         <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
                           {yr.virtualCyclingSessions} Virtual
                         </span>
-                        <span className="text-slate-400"> · </span>
+                        <span className="text-slate-600 dark:text-slate-400"> · </span>
                         <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                           {outdoorBikes} Outdoor
                         </span>

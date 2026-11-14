@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { Plus, Trash2 } from "./icons/PhosphorIcons";
 import {
   ChartMetricKey,
@@ -140,6 +140,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
   const [customStartDate, setCustomStartDate] = useState('2024-01-01');
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const formId = useId();
 
   const metricDefinitions = useMemo(
     () =>
@@ -206,9 +207,12 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
     }
   };
 
+  const [pendingDeleteChartId, setPendingDeleteChartId] = useState<string | null>(null);
+
   const handleDeleteSavedChart = (id: string) => {
     const updated = savedCharts.filter((c) => c.id !== id);
     setSavedCharts(updated);
+    setPendingDeleteChartId(null);
     try {
       localStorage.setItem('aeropulse_custom_charts', JSON.stringify(updated));
     } catch {
@@ -563,8 +567,9 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
             </p>
           </div>
           <button
+            type="button"
             onClick={handleSaveCurrentChart}
-            className="min-h-[38px] px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-sm font-semibold flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>Save Current Chart View</span>
@@ -575,23 +580,44 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
           {savedCharts.map((cfg) => (
             <div
               key={cfg.id}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs"
+              className="flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1 text-xs"
             >
               <button
+                type="button"
                 onClick={() => loadPresetChart(cfg)}
-                className="font-medium text-slate-800 dark:text-slate-200 hover:text-blue-500 transition-colors text-left"
+                className="min-h-[44px] sm:min-h-[32px] font-medium text-slate-800 dark:text-slate-200 hover:text-blue-500 transition-colors text-left"
               >
                 {cfg.title}
               </button>
-              {!cfg.id.startsWith('preset-') && (
-                <button
-                  onClick={() => handleDeleteSavedChart(cfg.id)}
-                  className="text-slate-400 hover:text-red-500 ml-1"
-                  title="Delete saved chart"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
+              {!cfg.id.startsWith('preset-') &&
+                (pendingDeleteChartId === cfg.id ? (
+                  <div className="inline-flex items-center gap-1 ml-1">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSavedChart(cfg.id)}
+                      className="min-h-[44px] sm:min-h-[28px] px-2 py-0.5 rounded bg-rose-600 text-white text-2xs font-bold"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteChartId(null)}
+                      className="min-h-[44px] sm:min-h-[28px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-2xs"
+                    >
+                      Keep
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteChartId(cfg.id)}
+                    aria-label={`Delete saved chart ${cfg.title}`}
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-[28px] inline-flex items-center justify-center rounded text-slate-600 dark:text-slate-400 hover:text-red-500 ml-1"
+                    title="Delete saved chart"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                ))}
             </div>
           ))}
         </div>
@@ -602,13 +628,17 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
           {/* 1. Chart Type */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-chart-mode`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               Chart Mode
             </label>
             <select
+              id={`${formId}-chart-mode`}
               value={chartType}
               onChange={(e) => setChartType(e.target.value as 'TIME_SERIES' | 'SCATTER')}
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               <option value="TIME_SERIES">Multi-Axis Time-Series</option>
               <option value="SCATTER">Scatter / Correlation (X vs Y)</option>
@@ -617,13 +647,17 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
           {/* 2. Primary Metric (Left Y or X-Axis) */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-primary-metric`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               {chartType === 'SCATTER' ? 'X-Axis Metric' : 'Primary Metric (Left Axis)'}
             </label>
             <select
+              id={`${formId}-primary-metric`}
               value={primaryMetric}
               onChange={(e) => setPrimaryMetric(e.target.value as ChartMetricKey)}
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               {metricDefinitions.map((m) => (
                 <option key={m.key} value={m.key}>
@@ -635,15 +669,19 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
           {/* 3. Secondary Metric (Right Y or Y-Axis) */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-secondary-metric`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               {chartType === 'SCATTER' ? 'Y-Axis Metric' : 'Secondary Metric (Right Axis)'}
             </label>
             <select
+              id={`${formId}-secondary-metric`}
               value={secondaryMetric}
               onChange={(e) =>
                 setSecondaryMetric(e.target.value as ChartMetricKey | 'NONE')
               }
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               {chartType === 'TIME_SERIES' && <option value="NONE">None (Single Metric)</option>}
               {metricDefinitions.map((m) => (
@@ -656,15 +694,19 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
           {/* 4. Aggregation Bucket */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-time-aggregation`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               Time Aggregation
             </label>
             <select
+              id={`${formId}-time-aggregation`}
               value={aggregation}
               onChange={(e) =>
                 setAggregation(e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY')
               }
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               <option value="DAILY">Daily Data Points</option>
               <option value="WEEKLY">Weekly Aggregated</option>
@@ -674,16 +716,20 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
           {/* 5. Rolling Average Smoothing */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-rolling-smoothing`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               Rolling Smoothing
             </label>
             <select
+              id={`${formId}-rolling-smoothing`}
               value={rollingWindowDays}
               onChange={(e) =>
                 setRollingWindowDays(Number(e.target.value) as 1 | 7 | 14 | 28 | 42 | 90)
               }
               disabled={chartType === 'SCATTER' || aggregation !== 'DAILY'}
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium disabled:opacity-50"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium disabled:opacity-50"
             >
               <option value={1}>Raw (1-Day)</option>
               <option value={7}>7-Day Rolling Avg</option>
@@ -696,13 +742,17 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
           {/* 6. Sport Filter */}
           <div>
-            <label className="block font-medium text-slate-500 dark:text-slate-400 mb-1">
+            <label
+              htmlFor={`${formId}-sport-filter`}
+              className="block font-medium text-slate-500 dark:text-slate-400 mb-1"
+            >
               Sport Filter
             </label>
             <select
+              id={`${formId}-sport-filter`}
               value={sportFilter}
               onChange={(e) => setSportFilter(e.target.value as SportCategory | 'ALL')}
-              className="w-full min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 font-medium"
             >
               <option value="ALL">All Sports</option>
               <option value="Cycling">Cycling Only</option>
@@ -717,7 +767,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-slate-500 font-medium">Time Period:</span>
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono">
+            <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono">
               {(
                 [
                   { id: '30D', label: '30d' },
@@ -731,10 +781,12 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
               ).map((p) => (
                 <button
                   key={p.id}
+                  type="button"
+                  aria-pressed={dateRangePreset === p.id}
                   onClick={() => setDateRangePreset(p.id)}
-                  className={`min-h-[30px] px-2.5 py-1 rounded-md transition-colors ${
+                  className={`min-h-[38px] px-2.5 py-1 rounded-md transition-colors ${
                     dateRangePreset === p.id
-                      ? 'bg-blue-600 text-white font-semibold'
+                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] font-semibold'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
@@ -744,19 +796,21 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
             </div>
 
             {dateRangePreset === 'CUSTOM' && (
-              <div className="flex items-center gap-1.5 font-mono">
+              <div className="flex flex-wrap items-center gap-1.5 font-mono">
                 <input
                   type="date"
                   value={customStartDate}
+                  aria-label="Custom chart start date"
                   onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
+                  className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
                 />
                 <span>to</span>
                 <input
                   type="date"
                   value={customEndDate}
+                  aria-label="Custom chart end date"
                   onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
+                  className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
                 />
               </div>
             )}
@@ -872,7 +926,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                       transform="rotate(-90 15 128)"
                       textAnchor="middle"
                       fill={primaryDef.color}
-                      className="text-[11px] font-sans font-bold"
+                      className="text-2xs font-sans font-bold"
                     >
                       {primaryDef.label} ({primaryDef.unit})
                     </text>
@@ -885,7 +939,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                         transform="rotate(90 926 128)"
                         textAnchor="middle"
                         fill={secondaryDef.color}
-                        className="text-[11px] font-sans font-bold"
+                        className="text-2xs font-sans font-bold"
                       >
                         {secondaryDef.label} ({secondaryDef.unit})
                       </text>
@@ -911,7 +965,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                             y={y + 4}
                             textAnchor="end"
                             fill={primaryDef.color}
-                            className="text-[11px] font-mono font-semibold"
+                            className="text-2xs font-mono font-semibold"
                           >
                             {valLeft}
                           </text>
@@ -920,7 +974,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                               x={866}
                               y={y + 4}
                               fill={secondaryDef.color}
-                              className="text-[11px] font-mono font-semibold"
+                              className="text-2xs font-mono font-semibold"
                             >
                               {valRight}
                             </text>
@@ -980,7 +1034,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                           x={x}
                           y={258}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                         >
                           {pt.date}
                         </text>
@@ -1072,7 +1126,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                       transform="rotate(-90 16 135)"
                       textAnchor="middle"
                       fill={secondaryDef?.color || '#3B82F6'}
-                      className="text-[11px] font-sans font-bold"
+                      className="text-2xs font-sans font-bold"
                     >
                       {secondaryDef?.label || 'Y Metric'} ({secondaryDef?.unit || ''})
                     </text>
@@ -1095,7 +1149,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                             x={60}
                             y={y + 4}
                             textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                           >
                             {(minY + f * spanY).toFixed(spanY < 10 ? 1 : 0)}
                           </text>
@@ -1103,7 +1157,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                             x={x}
                             y={256}
                             textAnchor="middle"
-                            className="fill-slate-500 dark:fill-slate-400 text-[11px] font-mono"
+                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                           >
                             {(minX + f * spanX).toFixed(spanX < 10 ? 1 : 0)}
                           </text>
@@ -1166,7 +1220,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                 `Analyze the relationship between ${primaryDef.label} (${primaryDef.unit}) and ${secondaryDef?.label || 'training load'} over ${startBound} to ${endBound} (Pearson r = ${regressionStats.r}). What actionable training takeaways do you see?`
               )
             }
-            className="min-h-[38px] px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
+            className="min-h-[38px] px-4 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-sm font-semibold transition-colors"
           >
             Ask AI Coach to Interpret This Chart
           </button>

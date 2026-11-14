@@ -432,6 +432,7 @@ export interface ThresholdHistoryEntry {
 export interface AthleteProfile {
   athleteId: string;
   name: string;
+  primarySport?: 'Running' | 'Cycling' | 'Hybrid';
   weightKg: number;
   restingHr: number;
   vo2MaxCycling: number;

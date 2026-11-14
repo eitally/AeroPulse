@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Calendar,
@@ -28,15 +28,22 @@ import {
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { CircadianFirstTouchHero } from './CircadianFirstTouchHero';
-import { DualAthleteComparator } from './DualAthleteComparator';
-import { AthletePerformanceRadar } from './AthletePerformanceRadar';
 import {
   buildDayLoadSegments,
   classifyActivityGarminLoad,
   classifyGarminLoadType,
-  EChartsPMCDashboard,
-  PMCDayPoint,
-} from './charts/EChartsPMCDashboard';
+  type PMCDayPoint,
+} from '../physiology/garminLoadFocus';
+
+const EChartsPMCDashboard = lazy(() =>
+  import('./charts/EChartsPMCDashboard').then((m) => ({ default: m.EChartsPMCDashboard }))
+);
+const DualAthleteComparator = lazy(() =>
+  import('./DualAthleteComparator').then((m) => ({ default: m.DualAthleteComparator }))
+);
+const AthletePerformanceRadar = lazy(() =>
+  import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar }))
+);
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 import {
   computeCrossTrainingEquivalence,
@@ -137,7 +144,7 @@ function formatGutterDate(dateStr: string): { top: string; bottom: string } {
   };
 }
 
-export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
+const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   wellnessDays,
   plannedEvents,
   activities = [],
@@ -265,6 +272,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   };
 
   // Index activities by YYYY-MM-DD so we can plot Max HR spikes, Workout/PR dots, and click-through
+  const formId = useId();
   const activitiesByDate = useMemo(() => {
     const map = new Map<string, UnifiedActivity[]>();
     for (const act of activities) {
@@ -627,6 +635,20 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
     }));
   }, [enrichedSeries, athleteProfile?.ftp]);
 
+  const handleEChartsSelectDate = useCallback(
+    (dateStr: string) => {
+      const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
+      if (foundIdx >= 0) setHoverIdx(foundIdx);
+    },
+    [enrichedSeries]
+  );
+
+  const handleEChartsSelectDateRange = useCallback((startStr: string, endStr: string) => {
+    setCustomStart(startStr);
+    setCustomEnd(endStr);
+    setRangePreset('CUSTOM');
+  }, []);
+
   const activeIdx =
     hoverIdx !== null && enrichedSeries[hoverIdx]
       ? hoverIdx
@@ -819,6 +841,35 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
   );
 
   const [isPrescriptionExpanded, setIsPrescriptionExpanded] = useState<boolean>(false);
+  const inferredRxSport = useMemo<'Cycling' | 'Running'>(() => {
+    const todayPlanned = plannedEvents.find(
+      (ev) =>
+        (ev.date || '').slice(0, 10) === todayIso &&
+        (ev.sportCategory === 'Running' || ev.sportCategory === 'Cycling')
+    );
+    if (todayPlanned?.sportCategory === 'Running' || todayPlanned?.sportCategory === 'Cycling') {
+      return todayPlanned.sportCategory;
+    }
+    if (athleteProfile?.primarySport === 'Running') return 'Running';
+    if (athleteProfile?.primarySport === 'Cycling') return 'Cycling';
+    const runCount = activities.filter((a) => a.sportCategory === 'Running').length;
+    const bikeCount = activities.filter((a) => a.sportCategory === 'Cycling').length;
+    return runCount > bikeCount ? 'Running' : 'Cycling';
+  }, [plannedEvents, todayIso, athleteProfile?.primarySport, activities]);
+
+  const [sharedRxSport, setSharedRxSport] = useState<'Cycling' | 'Running'>(inferredRxSport);
+  const [hasManualRxSport, setHasManualRxSport] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!hasManualRxSport) {
+      setSharedRxSport(inferredRxSport);
+    }
+  }, [inferredRxSport, hasManualRxSport]);
+
+  const handleSharedRxSportChange = (nextSport: 'Cycling' | 'Running') => {
+    setHasManualRxSport(true);
+    setSharedRxSport(nextSport);
+  };
   const [isOrthoDrawerOpen, setIsOrthoDrawerOpen] = useState<boolean>(false);
   const [showGuardrailsBar, setShowGuardrailsBar] = useState<boolean>(false);
 
@@ -893,6 +944,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
         todayCompliance={todayCompliance}
         isWorkbenchExpanded={isPrescriptionExpanded}
         onToggleWorkbench={() => setIsPrescriptionExpanded((prev) => !prev)}
+        rxSport={sharedRxSport}
+        onRxSportChange={handleSharedRxSportChange}
         onSelectActivity={onSelectActivity}
         onSyncMorphedToCalendar={onSyncMorphedToCalendar}
         onOpenAthleteProfileModal={onOpenAthleteProfileModal}
@@ -914,10 +967,12 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             distanceUnit={distanceUnit}
             isExpanded={isPrescriptionExpanded}
             onToggleExpand={() => setIsPrescriptionExpanded((prev) => !prev)}
+            sportMode={sharedRxSport}
+            onSportModeChange={handleSharedRxSportChange}
             placementLabel={
               todayCompletedActivities.length > 0
                 ? 'Skyline Workbench · Session Completed'
-                : 'Skyline Workbench · Garmin & .FIT Export'
+                : 'Skyline Workbench · Customize & Export'
             }
             onSyncMorphedToCalendar={onSyncMorphedToCalendar}
             onOpenAthleteProfileModal={onOpenAthleteProfileModal}
@@ -933,7 +988,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               <span
-                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase ${
+                className={`px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase ${
                   orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
                   studentGuardrail.status === 'BONE_STRESS_STOP'
                     ? 'ap-status-strained'
@@ -952,18 +1007,23 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     : 'All Clear'}
               </span>
               <span className="text-xs font-bold text-slate-900 dark:text-white">
-                Injury Guardrails, Cross-Training &amp; Schedule Adjuster
+                Injury Guardrails, Cross-Training &amp; Plan vs. Actual Ledger
               </span>
               {dualSportLatest && (
-                <span className="hidden lg:inline text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                <span className="hidden lg:inline text-2xs font-mono text-slate-500 dark:text-slate-400">
                   · Run {dualSportLatest.runningCtl.toFixed(0)} / Bike {dualSportLatest.cyclingCtl.toFixed(0)} CTL
                 </span>
               )}
             </div>
             <button
               type="button"
+              aria-expanded={
+                showGuardrailsBar ||
+                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+              }
               onClick={() => setShowGuardrailsBar((prev) => !prev)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 hover:opacity-90 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-3 sm:px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 hover:opacity-90 cursor-pointer"
             >
               <span>
                 {showGuardrailsBar ||
@@ -975,9 +1035,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               {showGuardrailsBar ||
               orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
               studentGuardrail.status !== 'CLEARED_FULL_WORKOUT' ? (
-                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
               )}
             </button>
           </div>
@@ -1003,7 +1063,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                      className={`px-1.5 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
                         orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
                           ? 'ap-status-strained'
                           : orthopedicSummary.riskTier === 'ELEVATED_IMPACT'
@@ -1021,20 +1081,20 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       Impact &amp; Run/Bike Load
                     </span>
                   </div>
-                  <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                  <div className="mt-0.5 text-2xs font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
                     {dualSportLatest
                       ? `Bike ${dualSportLatest.cyclingCtl.toFixed(0)} · Run ${dualSportLatest.runningCtl.toFixed(0)} CTL · Impact ${orthopedicSummary.impactAcwr.toFixed(2)}x`
                       : `Impact Ratio ${orthopedicSummary.impactAcwr.toFixed(2)}x · Torque ${orthopedicSummary.torqueAcwr.toFixed(2)}x`}
                   </div>
                 </div>
                 {isOrthoDrawerOpen ? (
-                  <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                 )}
               </button>
 
-              {/* Pill 2: Weekly Schedule Adjuster */}
+              {/* Pill 2: Plan vs. Actual Ledger */}
               {weeklyGitDiffProposal && (
                 <button
                   type="button"
@@ -1047,14 +1107,14 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="ap-status-info px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase">
+                      <span className="ap-status-info px-1.5 py-0.5 rounded text-2xs font-mono font-bold uppercase">
                         7-Day Plan
                       </span>
                       <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        Weekly Schedule Adjuster
+                        Plan vs. Actual Ledger
                       </span>
                     </div>
-                    <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                    <div className="mt-0.5 text-2xs font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
                       Load{' '}
                       {weeklyGitDiffProposal.netTssDelta >= 0
                         ? `+${weeklyGitDiffProposal.netTssDelta}`
@@ -1066,9 +1126,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </div>
                   </div>
                   {isGitDiffOpen ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -1087,7 +1147,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase ${
+                      className={`px-1.5 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
                         studentGuardrail.status === 'BONE_STRESS_STOP'
                           ? 'ap-status-strained'
                           : studentGuardrail.status === 'CLEARED_FULL_WORKOUT'
@@ -1105,14 +1165,14 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       Soreness &amp; Cross-Training
                     </span>
                   </div>
-                  <div className="mt-0.5 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                  <div className="mt-0.5 text-2xs font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
                     {studentGuardrail.headline}
                   </div>
                 </div>
                 {isStudentCheckInOpen ? (
-                  <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                 )}
               </button>
             </div>
@@ -1127,7 +1187,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   {orthopedicSummary.guardrailHeadline}
                 </h3>
                 {dualSportLatest && (
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono tabular-nums">
+                  <div className="flex flex-wrap items-center gap-1.5 text-2xs font-mono tabular-nums">
                     <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
                       Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
                     </span>
@@ -1143,7 +1203,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     1. Central Cardiorespiratory (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1157,7 +1217,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 </div>
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     2. Eccentric Run Impact (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1179,7 +1239,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 </div>
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     3. Concentric Bike Torque (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1242,7 +1302,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             </div>
           )}
 
-          {/* Expandable Drawer 2: Weekly Training Git-Diff */}
+          {/* Expandable Drawer 2: Plan vs. Actual Ledger */}
           {weeklyGitDiffProposal && isGitDiffOpen && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-2.5 text-xs">
@@ -1268,7 +1328,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                             {dayChange.dayLabel}
                           </span>
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            className={`px-1.5 py-0.5 rounded text-2xs font-bold uppercase ${
                               dayChange.changeType === 'MODIFIED'
                                 ? 'ap-status-caution'
                                 : dayChange.changeType === 'SWAPPED'
@@ -1280,7 +1340,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           </span>
                         </div>
                         {isChanged ? (
-                          <div className="mt-1 space-y-0.5 text-[11px]">
+                          <div className="mt-1 space-y-0.5 text-2xs">
                             <div className="text-rose-600 dark:text-rose-400 line-through">
                               - {dayChange.originalTitle} ({dayChange.originalSport} ·{' '}
                               {dayChange.originalDurationMins}m · {dayChange.originalTss} TSS)
@@ -1294,7 +1354,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <div className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                          <div className="mt-0.5 text-2xs text-slate-600 dark:text-slate-300">
                             = {dayChange.proposedTitle} ({dayChange.proposedSport} ·{' '}
                             {dayChange.proposedDurationMins}m · {dayChange.proposedTss} TSS)
                           </div>
@@ -1306,7 +1366,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
                 {onSyncMorphedToCalendar && (
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <span className="text-[11px] text-slate-500">
+                    <span className="text-2xs text-slate-500">
                       Commits modified/swapped sessions directly to your Training Plan calendar.
                     </span>
                     <button
@@ -1368,22 +1428,26 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     <span className="font-bold text-slate-900 dark:text-white">
                       5-Second Student-Athlete Check-In (Academic + Bone Stress)
                     </span>
-                    <span className="font-mono text-[11px] text-blue-600 dark:text-sky-300 font-bold">
+                    <span className="font-mono text-2xs text-blue-600 dark:text-sky-300 font-bold">
                       Intensity Cap: {studentGuardrail.intensityScalePct}%
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-academic-stress`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Academic / Exam Stress
                       </label>
                       <select
+                        id={`${formId}-academic-stress`}
                         value={academicStress}
                         onChange={(e) =>
                           setAcademicStress(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
                         }
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       >
                         <option value={1}>1 — Normal Classes</option>
                         <option value={2}>2 — Light Papers</option>
@@ -1394,15 +1458,19 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-shin-pain`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Shin / Foot Bone Pain
                       </label>
                       <select
+                        id={`${formId}-shin-pain`}
                         value={shinBoneSoreness}
                         onChange={(e) =>
                           setShinBoneSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Zero Pain</option>
                         <option value={1}>1 — Mild Diffuse Tightness</option>
@@ -1412,15 +1480,19 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-achilles-soreness`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Achilles / Calf Tendon
                       </label>
                       <select
+                        id={`${formId}-achilles-soreness`}
                         value={achillesSoreness}
                         onChange={(e) =>
                           setAchillesSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Springy / Clear</option>
                         <option value={1}>1 — Morning Stiffness</option>
@@ -1430,7 +1502,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
                     {studentGuardrail.recommendation}
                   </p>
                 </div>
@@ -1441,7 +1513,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     <span className="font-bold text-slate-900 dark:text-white">
                       Training Room Cross-Training → Virtual Miles
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[11px] font-bold tabular-nums">
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-2xs font-bold tabular-nums">
                       ≈{' '}
                       {distanceUnit === 'km'
                         ? `${crossTrainEquiv.equivalentRunKm} virtual km`
@@ -1450,17 +1522,21 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-crosstrain-modality`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Modality
                       </label>
                       <select
+                        id={`${formId}-crosstrain-modality`}
                         value={crossTrainModality}
                         onChange={(e) =>
                           setCrossTrainModality(e.target.value as CrossTrainingModality)
                         }
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       >
                         <option value="AQUA_JOGGING">Aqua Jogging</option>
                         <option value="ALTER_G">AlterG (75% BW)</option>
@@ -1471,25 +1547,33 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-crosstrain-mins`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Duration (min)
                       </label>
                       <input
+                        id={`${formId}-crosstrain-mins`}
                         type="number"
                         min={10}
                         max={240}
                         step={5}
                         value={crossTrainMins}
                         onChange={(e) => setCrossTrainMins(Math.max(10, Number(e.target.value) || 30))}
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-crosstrain-rpe`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
                         Effort RPE (1–10)
                       </label>
                       <input
+                        id={`${formId}-crosstrain-rpe`}
                         type="number"
                         min={1}
                         max={10}
@@ -1497,13 +1581,13 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setCrossTrainRpe(Math.max(1, Math.min(10, Number(e.target.value) || 6)))
                         }
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
                       />
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] text-slate-500 flex-1 min-w-[180px]">
+                    <span className="text-2xs text-slate-500 flex-1 min-w-[180px]">
                       {crossTrainEquiv.coachingNote} ({crossTrainEquiv.caraCountableHours}h NCAA CARA)
                     </span>
                     {onSyncMorphedToCalendar && (
@@ -1530,7 +1614,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           );
                           window.setTimeout(() => setCrossTrainToast(null), 4000);
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs whitespace-nowrap"
+                        className="px-3 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold text-xs whitespace-nowrap"
                       >
                         Schedule Cross-Training Swap
                       </button>
@@ -1538,7 +1622,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   </div>
 
                   {crossTrainToast && (
-                    <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-[11px] font-medium">
+                    <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-2xs font-medium">
                       {crossTrainToast}
                     </div>
                   )}
@@ -1565,20 +1649,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
-                <button
-                  type="button"
-                  onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
-                  className="ap-btn-primary !min-h-[30px] !px-2.5 !py-1 !rounded-xl text-[11px] uppercase tracking-wide"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Daily Workout Prescription</span>
-                </button>
-              )}
               <button
                 type="button"
+                aria-expanded={false}
                 onClick={() => toggleSection('pmc')}
-                className="px-3 py-1 rounded-xl ap-badge-volt text-xs font-mono flex items-center gap-1"
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-badge-volt text-xs font-mono flex items-center gap-1"
               >
                 <span>Expand Chart</span>
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -1612,14 +1687,15 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         : 'neutral',
                   interpretation: `Your Form is currently in the ${getIntervalsFormZone(latestDay.tsb).label} zone with a 7-day HRV baseline of ${latestWithHrv.hrvBaseline7d}ms.`,
                 }}
-                coachingAction="Maintain purple Fatigue (ATL) above cyan Fitness (CTL) during build blocks to keep Form in the green Optimal zone (-10 to -30), then shed ATL 10–14 days before A-races so Form rises into the blue Fresh zone (+5 to +20)."
+                coachingAction="Maintain rose Fatigue (ATL) above teal Fitness (CTL) during build blocks to keep Form in the green Optimal zone (-10 to -30), then shed ATL 10–14 days before A-races so Form rises into the blue Fresh zone (+5 to +20)."
               />
             </div>
             <div className="relative">
               <button
                 type="button"
+                aria-expanded={isDatePickerOpen}
                 onClick={() => setIsDatePickerOpen((prev) => !prev)}
-                className="min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/50 text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100 transition-all"
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/50 text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100 transition-all"
               >
                 <span className="font-mono">
                   {formatIntervalsRangeLabel(startDateStr, endDateStr)}
@@ -1634,31 +1710,39 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   </div>
                   <div className="grid grid-cols-2 gap-2 font-mono">
                     <div>
-                      <label className="block text-[10px] font-sans text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-pmc-start`}
+                        className="block text-2xs font-sans text-slate-500 mb-1"
+                      >
                         Start Date
                       </label>
                       <input
+                        id={`${formId}-pmc-start`}
                         type="date"
                         value={customStart}
                         onChange={(e) => {
                           setCustomStart(e.target.value);
                           setRangePreset('CUSTOM');
                         }}
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-sans text-slate-500 mb-1">
+                      <label
+                        htmlFor={`${formId}-pmc-end`}
+                        className="block text-2xs font-sans text-slate-500 mb-1"
+                      >
                         End Date
                       </label>
                       <input
+                        id={`${formId}-pmc-end`}
                         type="date"
                         value={customEnd}
                         onChange={(e) => {
                           setCustomEnd(e.target.value);
                           setRangePreset('CUSTOM');
                         }}
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
                       />
                     </div>
                   </div>
@@ -1666,7 +1750,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsDatePickerOpen(false)}
-                      className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold transition-colors"
                     >
                       Apply Range
                     </button>
@@ -1679,7 +1763,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               <button
                 type="button"
                 onClick={() => setRangePreset('1Y')}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-colors"
+                className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-colors"
               >
                 <RotateCcw className="w-3 h-3" />
                 <span>Reset Zoom (1y)</span>
@@ -1687,25 +1771,22 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             )}
           </div>
 
-          {/* Center: Recessed macOS Capsule Switcher for Quick Date Presets */}
+          {/* Center: Distilled 4-Preset Date Switcher + Custom Trigger */}
           <div className="ap-toolbar-scroll p-1 rounded-xl liquid-capsule-track max-w-full">
             {(
               [
-                { id: '7D', label: '7d' },
-                { id: '1M', label: '1m' },
                 { id: '42D', label: '42d' },
-                { id: '3M', label: '3m' },
-                { id: '6M', label: '6m' },
+                { id: '3M', label: '90d' },
                 { id: '1Y', label: '1y' },
-                { id: '2Y', label: '2y' },
                 { id: 'ALL', label: 'All' },
               ] as const
             ).map((p) => (
               <button
                 key={p.id}
                 type="button"
+                aria-pressed={rangePreset === p.id}
                 onClick={() => setRangePreset(p.id)}
-                className={`min-h-[28px] px-2.5 py-0.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                className={`min-h-[44px] sm:min-h-[30px] px-3 sm:px-2.5 py-0.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
                   rangePreset === p.id
                     ? 'ap-nav-volt-active'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
@@ -1714,37 +1795,33 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 {p.label}
               </button>
             ))}
+            <button
+              type="button"
+              aria-expanded={isDatePickerOpen}
+              onClick={() => setIsDatePickerOpen((prev) => !prev)}
+              className={`min-h-[44px] sm:min-h-[30px] px-3 sm:px-2.5 py-0.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
+                rangePreset === 'CUSTOM' ||
+                rangePreset === '7D' ||
+                rangePreset === '1M' ||
+                rangePreset === '6M' ||
+                rangePreset === '2Y'
+                  ? 'ap-nav-volt-active'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              Custom…
+            </button>
           </div>
 
-          {/* Right: Inline Daily Workout Prescription Trigger + Forward Projection + Customize Chart Popover */}
+          {/* Right: Forward Projection + Customize Chart Popover */}
           <div className="flex flex-wrap items-center gap-2 relative min-w-0">
-            {athleteProfile && onSyncMorphedToCalendar && onOpenAthleteProfileModal && (
-              <button
-                type="button"
-                onClick={() => setIsPrescriptionExpanded((prev) => !prev)}
-                className={`min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold tracking-wide uppercase shadow-2xs transition-all cursor-pointer ${
-                  isPrescriptionExpanded
-                    ? 'ap-badge-volt'
-                    : 'ap-btn-primary !min-h-[32px] !py-1 !px-3'
-                }`}
-                title="Open or collapse today's readiness-calibrated Daily Workout Prescription"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Daily Workout Prescription</span>
-                {isPrescriptionExpanded ? (
-                  <ChevronUp className="w-3.5 h-3.5 opacity-80" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 opacity-80" />
-                )}
-              </button>
-            )}
-
             <select
               value={forwardDays}
+              aria-label="Project future CTL, ATL and Form"
               onChange={(e) =>
                 setForwardDays(Number(e.target.value) as 0 | 14 | 28 | 42)
               }
-              className="min-h-[32px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200"
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200"
               title="Project future CTL, ATL & Form"
             >
               <option value={0}>Projection: Off</option>
@@ -1756,7 +1833,8 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <button
               type="button"
               onClick={() => setIsCustomizeOpen((prev) => !prev)}
-              className="min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-blue-500/35 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-sky-300 text-xs font-bold tracking-wide transition-colors"
+              aria-expanded={isCustomizeOpen}
+              className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-blue-500/35 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-sky-300 text-xs font-bold tracking-wide transition-colors"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Customize Chart ▾</span>
@@ -1765,8 +1843,10 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             <button
               type="button"
               onClick={() => toggleSection('pmc')}
+              aria-expanded={true}
+              aria-label="Collapse PMC Chart"
               title="Collapse PMC Chart"
-              className="min-h-[32px] px-2 py-1 rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] flex items-center justify-center px-2 py-1 rounded-xl liquid-glass-subtle text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
               <ChevronUp className="w-3.5 h-3.5" />
             </button>
@@ -1778,7 +1858,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsCustomizeOpen(false)}
-                    className="text-[11px] font-mono text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                    className="text-2xs font-mono text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white"
                   >
                     Done
                   </button>
@@ -1830,13 +1910,14 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 ))}
                 {forwardDays > 0 && (
                   <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-1">
-                    <div className="flex justify-between font-mono text-[11px]">
-                      <span>Simulated TSS/day:</span>
+                    <div className="flex justify-between font-mono text-2xs">
+                      <label htmlFor={`${formId}-sim-daily-tss`}>Simulated TSS/day:</label>
                       <span className="font-bold text-blue-500">
                         {simulatedDailyTss} TSS
                       </span>
                     </div>
                     <input
+                      id={`${formId}-sim-daily-tss`}
                       type="range"
                       min={0}
                       max={150}
@@ -1852,10 +1933,10 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
                 {/* Chart Layout & Local Cache Diagnostics */}
                 <div className="pt-2.5 border-t border-slate-200/70 dark:border-white/10 space-y-2">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Chart Layout
                   </div>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl liquid-capsule-track text-[11px] font-mono">
+                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl liquid-capsule-track text-2xs font-mono">
                     {(
                       [
                         { id: 'SVG', label: 'Multi-Pane' },
@@ -1877,7 +1958,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       </button>
                     ))}
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono text-emerald-600 dark:text-emerald-400 pt-1">
+                  <div className="flex items-center justify-between text-2xs font-mono text-emerald-600 dark:text-emerald-400 pt-1">
                     <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                       Local Cache
@@ -1901,7 +1982,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             {activePoint.dailyLoad > 0 &&
               (activePoint.activitySegments && activePoint.activitySegments.length > 1 ? (
                 <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border border-slate-300/70 dark:border-white/15 bg-slate-900/5 dark:bg-white/5 text-slate-700 dark:text-slate-200 shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs font-bold border border-slate-300/70 dark:border-white/15 bg-slate-900/5 dark:bg-white/5 text-slate-700 dark:text-slate-200 shrink-0"
                   title={`Stacked Daily Load (${activePoint.dailyLoad} TSS): ${activePoint.activitySegments
                     .map((s) => `${s.activityName} (${s.load} TSS · ${s.focus.shortLabel})`)
                     .join(' + ')}`}
@@ -1921,7 +2002,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                 </span>
               ) : (
                 <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs font-bold border shrink-0"
                   style={{
                     backgroundColor: activePoint.garminFocus.badgeBg,
                     borderColor: `${activePoint.garminFocus.solidColor}55`,
@@ -1938,7 +2019,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   </span>
                 </span>
               ))}
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/5 font-mono text-[10.5px] text-slate-600 dark:text-slate-300 shrink-0">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/5 font-mono text-2xs text-slate-600 dark:text-slate-300 shrink-0">
               <span>Ramp:</span>
               <span
                 className={`font-bold ${
@@ -1963,7 +2044,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   key={`ms-pill-${mIdx}`}
                   type="button"
                   onClick={() => ms.activity && onSelectActivity && onSelectActivity(ms.activity)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-mono text-[11px] font-bold border shadow-2xs transition-transform hover:scale-[1.01] shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold border shadow-2xs transition-transform hover:scale-[1.01] shrink-0"
                   style={{
                     backgroundColor: `${ms.colorHex}1F`,
                     borderColor: `${ms.colorHex}66`,
@@ -2010,7 +2091,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     <span className="truncate max-w-[155px] text-slate-900 dark:text-slate-100">
                       {act.name}
                     </span>
-                    <span className="font-mono text-[10.5px] font-bold shrink-0">
+                    <span className="font-mono text-2xs font-bold shrink-0">
                       ({actLoad} TSS · {actFocus.shortLabel})
                     </span>
                   </button>
@@ -2020,7 +2101,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               <span className="inline-flex items-center gap-2 py-0.5 text-slate-500 dark:text-slate-400">
                 <span>Rest / Recovery Day ({activePoint.dailyLoad} TSS)</span>
                 <span className="text-slate-300 dark:text-slate-700">·</span>
-                <span className="font-mono text-[11px]">
+                <span className="font-mono text-2xs">
                   CTL {activePoint.ctl.toFixed(1)} · ATL {activePoint.atl.toFixed(1)} · Form{' '}
                   {activePoint.tsb > 0 ? `+${activePoint.tsb.toFixed(1)}` : activePoint.tsb.toFixed(1)}
                 </span>
@@ -2034,20 +2115,24 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
            ========================================================================== */}
         {(pmcEngine === 'ECHARTS' || pmcEngine === 'BOTH') && (
           <div className="px-3 sm:px-5 pt-3 pb-1">
-            <EChartsPMCDashboard
-              timeline={echartsTimeline}
-              onSelectActivity={(act) => onSelectActivity && onSelectActivity(act)}
-              onSelectDate={(dateStr) => {
-                const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
-                if (foundIdx >= 0) setHoverIdx(foundIdx);
-              }}
-              onSelectDateRange={(startStr, endStr) => {
-                setCustomStart(startStr);
-                setCustomEnd(endStr);
-                setRangePreset('CUSTOM');
-              }}
-              height={isCompactMobile ? 380 : 530}
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
+                  style={{ height: `${isCompactMobile ? 380 : 530}px` }}
+                >
+                  Loading Performance Management Chart…
+                </div>
+              }
+            >
+              <EChartsPMCDashboard
+                timeline={echartsTimeline}
+                onSelectActivity={onSelectActivity}
+                onSelectDate={handleEChartsSelectDate}
+                onSelectDateRange={handleEChartsSelectDateRange}
+                height={isCompactMobile ? 380 : 530}
+              />
+            </Suspense>
           </div>
         )}
 
@@ -2280,7 +2365,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   y={p1Top + p1Height / 2}
                   transform={`rotate(-90 15 ${p1Top + p1Height / 2})`}
                   textAnchor="middle"
-                  className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                  className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                 >
                   Training load per day
                 </text>
@@ -2303,7 +2388,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         x={plotLeft - 6}
                         y={y + 3.5}
                         textAnchor="end"
-                        className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
+                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                       >
                         {t}
                       </text>
@@ -2535,7 +2620,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={boxX + 18}
                           y={boxY + 14.5}
-                          className="fill-white text-[10.5px] font-mono font-semibold"
+                          className="fill-white text-2xs font-mono font-semibold"
                         >
                           {ms.detailLabel.slice(0, 50)}
                         </text>
@@ -2567,7 +2652,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={0}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     {activeGutterDate.top}
                   </text>
@@ -2575,7 +2660,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={13}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     {activeGutterDate.bottom}
                   </text>
@@ -2584,7 +2669,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={44}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     Fitness
                   </text>
@@ -2592,7 +2677,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={62}
                     textAnchor="middle"
-                    className="fill-[#0284C7] dark:fill-[#38BDF8] text-[15px] font-sans font-bold"
+                    className="fill-[#0284C7] dark:fill-[#38BDF8] text-sm font-sans font-bold"
                   >
                     {Math.round(activePoint.ctl)}
                   </text>
@@ -2601,7 +2686,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={88}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     Fatigue
                   </text>
@@ -2609,7 +2694,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={106}
                     textAnchor="middle"
-                    className="fill-[#7C3AED] dark:fill-[#A855F7] text-[15px] font-sans font-bold"
+                    className="fill-[#7C3AED] dark:fill-[#A855F7] text-sm font-sans font-bold"
                   >
                     {Math.round(activePoint.atl)}
                   </text>
@@ -2618,7 +2703,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={132}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     Form
                   </text>
@@ -2627,7 +2712,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     y={150}
                     textAnchor="middle"
                     fill={activeFormZone.hex}
-                    className="text-[15px] font-sans font-bold"
+                    className="text-sm font-sans font-bold"
                   >
                     {Math.round(activePoint.tsb)}
                   </text>
@@ -2636,7 +2721,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     x={0}
                     y={174}
                     textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-[10.5px] font-sans"
+                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                   >
                     {activeFormZone.label === 'Grey Zone'
                       ? 'Grey Zone'
@@ -2654,7 +2739,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       y={p2Top + p2Height / 2}
                       transform={`rotate(-90 15 ${p2Top + p2Height / 2})`}
                       textAnchor="middle"
-                      className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                      className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                     >
                       Form
                     </text>
@@ -2730,7 +2815,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                             x={plotLeft - 6}
                             y={y + 3.5}
                             textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-[10px] font-mono"
+                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                           >
                             {v}
                           </text>
@@ -2771,7 +2856,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     />
 
                     {/* Right-Margin Zone Labels Aligned to Band Heights */}
-                    <g className="text-[11px] font-sans">
+                    <g className="text-2xs font-sans">
                       <line
                         x1={gutterLeft - 4}
                         y1={yTsb(tsbMax) + 2}
@@ -2916,7 +3001,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           y={pRampTop + pRampHeight / 2}
                           transform={`rotate(-90 15 ${pRampTop + pRampHeight / 2})`}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Ramp (/wk)
                         </text>
@@ -2942,7 +3027,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                               x={plotLeft - 6}
                               y={yRamp(v) + 3}
                               textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
                               {v > 0 ? `+${v}` : v}
                             </text>
@@ -2981,7 +3066,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={pRampTop + pRampHeight / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Ramp{' '}
                           <tspan
@@ -3005,7 +3090,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={pRampTop + pRampHeight / 2 + 12}
-                          className="fill-slate-400 dark:fill-slate-500 text-[10px] font-sans"
+                          className="fill-slate-400 dark:fill-slate-500 text-2xs font-sans"
                         >
                           {activePoint.rampRate > 7
                             ? 'High Risk (>+7)'
@@ -3050,7 +3135,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           y={p3Top + p3Height / 2}
                           transform={`rotate(-90 15 ${p3Top + p3Height / 2})`}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Max HR
                         </text>
@@ -3068,7 +3153,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                               x={plotLeft - 6}
                               y={yHr(v) + 3}
                               textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
                               {v}
                             </text>
@@ -3095,7 +3180,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p3Top + p3Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Max HR{' '}
                           <tspan className="fill-[#EF4444] font-bold">
@@ -3157,7 +3242,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           y={p4Top + p4Height / 2}
                           transform={`rotate(-90 15 ${p4Top + p4Height / 2})`}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Ride / Run FTP
                         </text>
@@ -3176,7 +3261,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                                 x={plotLeft - 6}
                                 y={yFtp(v) + 3}
                                 textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                               >
                                 {v}
                               </text>
@@ -3198,7 +3283,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p4Top + p4Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Run{' '}
                           <tspan className="fill-[#8B5CF6] font-bold">
@@ -3208,7 +3293,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p4Top + p4Height / 2 + 12}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           eFTP{' '}
                           <tspan className="fill-[#F97316] font-bold">
@@ -3257,7 +3342,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           y={p5Top + p5Height / 2}
                           transform={`rotate(-90 15 ${p5Top + p5Height / 2})`}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Work / Wk
                         </text>
@@ -3276,7 +3361,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                                 x={plotLeft - 6}
                                 y={yWk(v) + 3}
                                 textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                               >
                                 {v}
                               </text>
@@ -3331,7 +3416,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p5Top + p5Height / 2 + 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           Week{' '}
                           <tspan className="fill-[#38BDF8] font-bold">
@@ -3399,7 +3484,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                           y={p6Top + p6Height / 2}
                           transform={`rotate(-90 15 ${p6Top + p6Height / 2})`}
                           textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           HRV / RHR
                         </text>
@@ -3417,7 +3502,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                               x={plotLeft - 6}
                               y={yHrv(v) + 3}
                               textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-[9.5px] font-mono"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
                               {v}
                             </text>
@@ -3443,7 +3528,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p6Top + p6Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           HRV{' '}
                           <tspan className="fill-[#10B981] font-bold">
@@ -3453,7 +3538,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                         <text
                           x={gutterLeft + 4}
                           y={p6Top + p6Height / 2 + 12}
-                          className="fill-slate-500 dark:fill-slate-400 text-[11px] font-sans"
+                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
                         >
                           RHR{' '}
                           <tspan className="fill-[#F43F5E] font-bold">
@@ -3475,7 +3560,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       x={x}
                       y={bottomAxisY}
                       textAnchor={idx === 0 ? 'start' : 'middle'}
-                      className={`text-[11px] font-sans ${
+                      className={`text-2xs font-sans ${
                         t.isYear
                           ? 'fill-slate-900 dark:fill-slate-100 font-bold'
                           : 'fill-slate-500 dark:fill-slate-400'
@@ -3534,16 +3619,16 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           const totalMilestones = eftpCount + raceCount + powerCount;
 
           return (
-            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-2.5 text-2xs">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono uppercase tracking-wider text-[10px] font-bold text-slate-500 dark:text-slate-400 mr-1">
+                <span className="font-mono uppercase tracking-wider text-2xs font-bold text-slate-500 dark:text-slate-400 mr-1">
                   Milestones ({totalMilestones}):
                 </span>
 
                 <button
                   type="button"
                   onClick={() => setActiveMilestoneFilter('ALL')}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
                     activeMilestoneFilter === 'ALL'
                       ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-bold'
                       : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -3559,7 +3644,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'EFTP_BREAKTHROUGH' ? 'ALL' : 'EFTP_BREAKTHROUGH'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
                     activeMilestoneFilter === 'EFTP_BREAKTHROUGH'
                       ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-orange-500/40'
@@ -3577,7 +3662,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'RACE_OR_DISTANCE_PR' ? 'ALL' : 'RACE_OR_DISTANCE_PR'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
                     activeMilestoneFilter === 'RACE_OR_DISTANCE_PR'
                       ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-amber-500/40'
@@ -3595,7 +3680,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       prev === 'POWER_OR_BENCHMARK_PR' ? 'ALL' : 'POWER_OR_BENCHMARK_PR'
                     )
                   }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] transition-all border ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
                     activeMilestoneFilter === 'POWER_OR_BENCHMARK_PR'
                       ? 'bg-pink-500/20 text-pink-600 dark:text-pink-300 border-pink-500/50 font-bold'
                       : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-pink-500/40'
@@ -3611,7 +3696,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   onClick={() =>
                     setActiveMilestoneFilter((prev) => (prev === 'NONE' ? 'ALL' : 'NONE'))
                   }
-                  className="px-2 py-0.5 rounded-md text-[10px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
+                  className="px-2 py-0.5 rounded-md text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
                 >
                   {activeMilestoneFilter === 'NONE' ? 'Show' : 'Hide'}
                 </button>
@@ -3653,8 +3738,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
             </div>
             <button
               type="button"
+              aria-expanded={false}
               onClick={() => toggleSection('ledger')}
-              className="px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-500 text-xs font-mono font-semibold flex items-center gap-1"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-xs font-mono font-semibold flex items-center gap-1"
             >
               <span>Expand Ledger &amp; KPIs</span>
               <ChevronDown className="w-3.5 h-3.5" />
@@ -3695,7 +3781,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs font-bold text-[#0B4F9E] dark:text-sky-400">
                     ACWR {acwr.toFixed(2)}x
                   </span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-2xs text-slate-500">
                     Ramp {latestDay.rampRate && latestDay.rampRate > 0 ? `+${latestDay.rampRate}` : latestDay.rampRate || 0}/wk
                   </span>
                 </div>
@@ -3719,7 +3805,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     style={{ left: `${acwrMarkerPct}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                <div className="flex justify-between text-2xs font-mono text-slate-600 dark:text-slate-400">
                   <span>0.5x</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Optimal 0.8–1.3x</span>
                   <span>1.6x</span>
@@ -3751,7 +3837,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                     Overnight Sleep
                   </span>
-                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                  <span className="text-2xs font-mono text-slate-500 dark:text-slate-400">
                     {hasSleep ? `${((latestWithSleep.sleepDebt7dSecs || 0) / 3600).toFixed(1)}h debt` : 'Unsynced'}
                   </span>
                 </div>
@@ -3768,7 +3854,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                       style={{ width: `${targetPct}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                  <div className="flex justify-between text-2xs font-mono text-slate-500 dark:text-slate-400">
                     <span>{hasSleep ? `${targetPct}% of 8.0h target` : 'Connect Garmin / Intervals'}</span>
                     <span>{score > 0 ? `Score ${score}` : ''}</span>
                   </div>
@@ -3846,7 +3932,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs font-bold text-[#0F766E] dark:text-[#2DD4BF]">
                     7d: {latestWithHrv.hrvBaseline7d > 0 ? `${latestWithHrv.hrvBaseline7d} ms` : '—'}
                   </span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-2xs text-slate-500">
                     RHR {latestDay.restingHR > 0 ? `${latestDay.restingHR} bpm` : '—'}
                   </span>
                 </div>
@@ -3866,7 +3952,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     </>
                   )}
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                <div className="flex justify-between text-2xs font-mono text-slate-500 dark:text-slate-400">
                   <span>{hasHrv ? `Floor ${low}ms` : 'Sync nocturnal HRV'}</span>
                   <span>{hasHrv ? `Ceiling ${high}ms` : ''}</span>
                 </div>
@@ -3890,9 +3976,11 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   THRESH · eFTP
                 </span>
                 <span className="text-xs font-mono text-[#D9480F] dark:text-[#FB6514] font-bold">
-                  {bikeEftp > 0
-                    ? `${(bikeEftp / (latestDay.weightKg || athleteProfile?.weightKg || 70)).toFixed(2)} W/kg`
-                    : '— W/kg'}
+                  {athleteProfile?.safeSportHideWeight
+                    ? 'Safe-Sport Shield'
+                    : bikeEftp > 0
+                      ? `${(bikeEftp / (latestDay.weightKg || athleteProfile?.weightKg || 70)).toFixed(2)} W/kg`
+                      : '— W/kg'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between font-mono tabular-nums">
@@ -3906,7 +3994,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs font-bold text-[#1D4ED8] dark:text-[#60A5FA]">
                     Run {runEftp > 0 ? `${runEftp}W` : '—'}
                   </span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-2xs text-slate-500">
                     W&apos; {wPrimeKj > 0 ? `${wPrimeKj} kJ` : '—'} · Pmax {pMaxVal > 0 ? `${pMaxVal}W` : '—'}
                   </span>
                 </div>
@@ -3918,7 +4006,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
                     style={{ width: `${wPrimePct}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                <div className="flex justify-between text-2xs font-mono text-slate-500 dark:text-slate-400">
                   <span>Anaerobic Reserve (W&apos;)</span>
                   <span className="text-[#D9480F] dark:text-[#FB6514] font-semibold">
                     {wPrimeKj > 0 ? `${wPrimeKj} kJ` : hasWellnessTelemetry ? '—' : 'Calibrate FTP'}
@@ -3981,7 +4069,7 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
               </span>
               {aerobicDurabilityStats.avgEf28 > 0 && (
                 <span
-                  className={`text-[11px] font-bold ${
+                  className={`text-2xs font-bold ${
                     aerobicDurabilityStats.efPctDelta >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-amber-600 dark:text-amber-400'
@@ -4047,8 +4135,10 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              aria-expanded={!collapsedSections.comparator}
+              aria-controls="fitness-sec-comparator"
               onClick={() => toggleSection('comparator')}
-              className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
                 !collapsedSections.comparator
                   ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/40'
                   : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/25'
@@ -4064,8 +4154,9 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
             <button
               type="button"
+              aria-expanded={!collapsedSections.radars}
               onClick={() => toggleSection('radars')}
-              className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
                 !collapsedSections.radars
                   ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300 border-purple-500/40'
                   : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/25'
@@ -4083,37 +4174,55 @@ export const FitnessHealthView: React.FC<FitnessHealthViewProps> = ({
 
         {!collapsedSections.comparator && (
           <div id="fitness-sec-comparator" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
-            <DualAthleteComparator
-              selfName={selfName}
-              selfProfile={selfProfile || athleteProfile}
-              selfWellnessDays={
-                selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+            <Suspense
+              fallback={
+                <div className="h-48 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Dual-Athlete Comparator…
+                </div>
               }
-              selfActivities={activities}
-              connectedAthletes={connectedAthletes}
-              onOpenRosterModal={onOpenRosterModal}
-              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-            />
+            >
+              <DualAthleteComparator
+                selfName={selfName}
+                selfProfile={selfProfile || athleteProfile}
+                selfWellnessDays={
+                  selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+                }
+                selfActivities={activities}
+                connectedAthletes={connectedAthletes}
+                onOpenRosterModal={onOpenRosterModal}
+                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+              />
+            </Suspense>
           </div>
         )}
 
         {!collapsedSections.radars && (
           <div id="fitness-sec-radars" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
-            <AthletePerformanceRadar
-              selfName={selfName}
-              selfProfile={selfProfile || athleteProfile}
-              selfWellnessDays={
-                selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+            <Suspense
+              fallback={
+                <div className="h-48 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Percentile Radars…
+                </div>
               }
-              selfActivities={activities}
-              selfPlannedEvents={plannedEvents}
-              connectedAthletes={connectedAthletes}
-              onOpenRosterModal={onOpenRosterModal}
-              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-            />
+            >
+              <AthletePerformanceRadar
+                selfName={selfName}
+                selfProfile={selfProfile || athleteProfile}
+                selfWellnessDays={
+                  selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
+                }
+                selfActivities={activities}
+                selfPlannedEvents={plannedEvents}
+                connectedAthletes={connectedAthletes}
+                onOpenRosterModal={onOpenRosterModal}
+                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+              />
+            </Suspense>
           </div>
         )}
       </div>
     </div>
   );
 };
+
+export const FitnessHealthView = React.memo(FitnessHealthViewInner);

@@ -60,7 +60,7 @@ export interface UPlotStreamChartProps {
   } | null;
 }
 
-export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
+const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
   streams,
   sportCategory,
   distanceUnit,
@@ -341,20 +341,20 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
                 const altVal = u.data[4][idx];
                 const rawVel = streams.velocitySmooth?.[idx];
 
-                const parts: string[] = [`⏱ ${formatStopwatch(tSec)}`];
+                const parts: string[] = [`T ${formatStopwatch(tSec)}`];
                 if (pVal != null) {
                   if (preparedData.hasWatts) {
                     const wkg = (pVal / Math.max(40, athleteWeightKg)).toFixed(2);
-                    parts.push(`⚡ ${Math.round(pVal)}W (${wkg} W/kg)`);
+                    parts.push(`PWR ${Math.round(pVal)}W (${wkg} W/kg)`);
                   } else if (rawVel && rawVel > 0.4) {
-                    parts.push(`🏃 ${formatPace(Math.round(1000 / rawVel), distanceUnit)}`);
+                    parts.push(`PACE ${formatPace(Math.round(1000 / rawVel), distanceUnit)}`);
                   } else {
-                    parts.push(`⚡ ${pVal}`);
+                    parts.push(`PWR ${pVal}`);
                   }
                 }
-                if (hrVal != null) parts.push(`♥ ${Math.round(hrVal)} bpm`);
-                if (cadVal != null) parts.push(`↻ ${Math.round(cadVal)} rpm`);
-                if (altVal != null) parts.push(`▲ ${Math.round(altVal)}m`);
+                if (hrVal != null) parts.push(`HR ${Math.round(hrVal)} bpm`);
+                if (cadVal != null) parts.push(`CAD ${Math.round(cadVal)} rpm`);
+                if (altVal != null) parts.push(`ELEV ${Math.round(altVal)}m`);
                 readoutRef.current.textContent = parts.join('   ·   ');
               } else {
                 readoutRef.current.textContent =
@@ -588,7 +588,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
       {/* Top Header: 1Hz Telemetry Badge, Smoothing, Series Toggles & Recalculate Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 text-2xs font-mono font-bold uppercase tracking-wider">
             <Maximize2 className="w-3 h-3" />
             1Hz Telemetry Stream ({totalSamples.toLocaleString()} pts)
           </span>
@@ -599,7 +599,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
 
         <div className="flex flex-wrap items-center gap-1.5">
           {/* Rolling Smoothing Window Selector */}
-          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-[11px] font-mono">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-mono">
             {([1, 3, 10, 30] as const).map((w) => (
               <button
                 key={w}
@@ -621,10 +621,10 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             <button
               type="button"
               onClick={() => setShowCadence((p) => !p)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-mono font-semibold border transition-colors ${
+              className={`px-2 py-1 rounded-lg text-2xs font-mono font-semibold border transition-colors ${
                 showCadence
                   ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-400'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
               Cadence
@@ -635,10 +635,10 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             <button
               type="button"
               onClick={() => setShowAltitude((p) => !p)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-mono font-semibold border transition-colors ${
+              className={`px-2 py-1 rounded-lg text-2xs font-mono font-semibold border transition-colors ${
                 showAltitude
                   ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/35'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-400'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
               Elevation
@@ -648,7 +648,8 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
           <button
             type="button"
             onClick={() => handleStepZoom(0.55)}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+            aria-label="Zoom in stream chart"
+            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 p-1.5 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
             title="Zoom In"
           >
             <ZoomIn className="w-3.5 h-3.5 text-blue-500" />
@@ -657,7 +658,8 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             type="button"
             onClick={() => handleStepZoom(1.6)}
             disabled={!isZoomed}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-300"
+            aria-label="Zoom out stream chart"
+            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 p-1.5 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-300"
             title="Zoom Out"
           >
             <ZoomOut className="w-3.5 h-3.5" />
@@ -666,7 +668,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
             <button
               type="button"
               onClick={handleResetZoom}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold transition-colors"
             >
               <RotateCcw className="w-3 h-3" />
               <span>Reset 100%</span>
@@ -690,7 +692,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
 
       {/* Computed NP / TSS / TRIMP Telemetry Strip */}
       {workerMetrics && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-indigo-500/8 dark:bg-indigo-500/12 border border-indigo-500/25 px-3 py-1.5 text-[11px] font-mono">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-indigo-500/8 dark:bg-indigo-500/12 border border-indigo-500/25 px-3 py-1.5 text-2xs font-mono">
           <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300 font-bold">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Stream Summary:</span>
@@ -738,13 +740,13 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
       {/* Quick Peak Duration & Interval Zoom Pills */}
       {(peakWindows.length > 0 || intervals.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-[11px] font-mono text-slate-500 mr-1">Peak &amp; Lap Zoom:</span>
+          <span className="text-2xs font-mono text-slate-500 mr-1">Peak &amp; Lap Zoom:</span>
           <button
             type="button"
             onClick={handleResetZoom}
-            className={`px-2 py-0.5 rounded-md font-mono text-[11px] border transition-colors ${
+            className={`px-2 py-0.5 rounded-md font-mono text-2xs border transition-colors ${
               !isZoomed
-                ? 'bg-blue-600 border-blue-600 text-white font-semibold'
+                ? 'bg-[#1C5436] border-[#1C5436] text-white dark:bg-[#C8FF00] dark:border-[#C8FF00] dark:text-[#080A09] font-semibold'
                 : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
             }`}
           >
@@ -757,7 +759,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
               onClick={() =>
                 onZoomRangeChange && onZoomRangeChange([pk.startIndex, pk.endIndex])
               }
-              className="px-2 py-0.5 rounded-md font-mono text-[11px] border border-blue-500/30 bg-blue-500/8 text-blue-600 dark:text-sky-300 hover:bg-blue-500/20 transition-colors"
+              className="px-2 py-0.5 rounded-md font-mono text-2xs border border-blue-500/30 bg-blue-500/8 text-blue-600 dark:text-sky-300 hover:bg-blue-500/20 transition-colors"
             >
               {pk.label}
               {pk.peakWatts ? ` (${pk.peakWatts}W)` : ''}
@@ -779,7 +781,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
                     });
                   }
                 }}
-                className="px-2 py-0.5 rounded-md font-mono text-[11px] border border-emerald-500/30 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                className="px-2 py-0.5 rounded-md font-mono text-2xs border border-emerald-500/30 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors"
               >
                 Work #{idx + 1} ({formatStopwatch(iv.durationSecs)})
               </button>
@@ -841,7 +843,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
           <button
             type="button"
             onClick={handleResetZoom}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-sans font-semibold transition-colors shrink-0"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-sans font-semibold transition-colors shrink-0"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Reset Full Stream ×</span>
@@ -857,7 +859,7 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
         >
           Hover or drag across 1Hz canvas to inspect telemetry &amp; zoom
         </div>
-        <div className="flex items-center gap-3 text-[11px] shrink-0">
+        <div className="flex items-center gap-3 text-2xs shrink-0">
           <span className="inline-flex items-center gap-1 text-blue-500 font-semibold">
             <span className="w-2.5 h-0.5 bg-blue-500 inline-block" />
             {preparedData.hasWatts ? 'Watts' : 'Speed'}
@@ -886,3 +888,6 @@ export const UPlotStreamChart: React.FC<UPlotStreamChartProps> = ({
     </div>
   );
 };
+
+export const UPlotStreamChart = React.memo(UPlotStreamChartInner);
+export default UPlotStreamChart;

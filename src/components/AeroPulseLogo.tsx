@@ -371,10 +371,10 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 
   const crestBoxClass =
     size === 'sm'
-      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-[10px]'
+      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-2xs'
       : size === 'lg'
         ? 'w-10 h-10 sm:w-11 sm:h-11 rounded-xl text-xs'
-        : 'w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-[11px]';
+        : 'w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-2xs';
 
   const teamTitleClass =
     size === 'sm'
@@ -443,7 +443,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
             >
               {teamBrand.shortName || teamBrand.name}
             </span>
-            <span className="text-slate-400 dark:text-slate-500 font-normal text-xs shrink-0">
+            <span className="text-slate-600 dark:text-slate-400 font-normal text-xs shrink-0">
               ×
             </span>
             <ThreshFullVectorLockup
@@ -463,7 +463,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 
         {badgeText && (
           <span
-            className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold uppercase tracking-wider border shrink-0 ${badgeToneClasses}`}
+            className={`px-1.5 py-0.5 rounded text-2xs font-mono font-semibold uppercase tracking-wider border shrink-0 ${badgeToneClasses}`}
           >
             {badgeText}
           </span>
@@ -471,7 +471,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
       </div>
 
       {showTagline && (
-        <span className="block text-[11px] font-mono text-[#3F6212] dark:text-[#C8FF00] font-semibold mt-1 tracking-wider uppercase truncate">
+        <span className="block text-2xs font-mono text-[#3F6212] dark:text-[#C8FF00] font-semibold mt-1 tracking-wider uppercase truncate">
           {teamBrand?.mascotOrMotto ? teamBrand.mascotOrMotto : 'RUN & RIDE READINESS'}
         </span>
       )}
@@ -491,7 +491,7 @@ export const ThreshBrandWatermark: React.FC<{ className?: string }> = ({
     viewBox="0 0 260 220"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className={`pointer-events-none select-none opacity-[0.13] dark:opacity-[0.22] ${className}`}
+    className={`pointer-events-none select-none opacity-[0.045] dark:opacity-[0.065] ${className}`}
     aria-hidden="true"
   >
     <path

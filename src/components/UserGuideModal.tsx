@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalDialog } from '../hooks/useModalDialog';
 import {
   Activity,
   ArrowRight,
@@ -134,8 +135,8 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
     name: 'Low Aerobic / High Aerobic / Anaerobic Stack',
     category: 'Garmin Load Focus',
     formula: 'Chronological Per-Activity Load Stack (Z1-Z2 vs Z3-Z4 vs Z5-Z7)',
-    benchmark: 'Low Aerobic (#38bdf8) · High Aerobic (#f97316) · Anaerobic (#d946ef)',
-    colorHex: '#38bdf8',
+    benchmark: 'Low Aerobic (#0D9488) · High Aerobic (#EA580C) · Anaerobic (#7C3AED)',
+    colorHex: '#0D9488',
     explanation:
       'Each workout is classified into Garmin Training Load Focus categories using time-in-zone, Intensity Factor (IF), Variability Index (VI), and title semantics. Multi-workout days stack chronologically.',
   },
@@ -191,7 +192,7 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
   },
   {
     code: 'kJ/kg & kcal Durability',
-    name: 'Fatigue-Sliced Physiological Durability (10x #2)',
+    name: 'Fatigue-Sliced Physiological Durability',
     category: 'Power & Pace',
     formula: 'Retention(%) = MMP_{20m}(@ 30 kJ/kg or 1,500 kcal) / MMP_{20m}(Fresh) × 100%',
     benchmark: '>= 95% Pro-Tour Resilient · 90–94% Well-Conditioned · < 88% Glycogen Fragile',
@@ -201,7 +202,7 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
   },
   {
     code: '3-Channel Ortho ACWR',
-    name: 'Central, Eccentric Impact & Concentric Torque Load (10x #1)',
+    name: 'Central, Eccentric Impact & Concentric Torque Load',
     category: 'Autonomic & Recovery',
     formula: 'Impact_ACWR = Impact_{7d} / Impact_{28d}  |  Guardrail >= 1.28x',
     benchmark: '< 1.18x Optimal · 1.18–1.28x Elevated · > 1.28x Zero-Impact Bike/Pool Swap',
@@ -249,16 +250,13 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
     step3: false,
   });
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = React.useRef<HTMLDivElement | null>(null);
+
+  useModalDialog({
+    isOpen,
+    onClose,
+    dialogRef,
+  });
 
   const triggerAndClose = (callback: () => void) => {
     onClose();
@@ -502,9 +500,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         summary:
           'Every daily load bar on the PMC is segmented by workout and color-coded by its physiological stimulus—even when you perform two or three workouts on the same day.',
         bullets: [
-          'Low Aerobic (#38bdf8 Cyan): Z1–Z2 Recovery, Endurance Base, Warmups, and Cooldowns.',
-          'High Aerobic (#f97316 Orange): Z3–Z4 Tempo, Sweet Spot, Lactate Threshold, and Marathon Pace.',
-          'Anaerobic (#d946ef Magenta): Z5–Z7 VO2max repeats, Track 200m–800m intervals, Sprints, and Crit/Zwift Races.',
+          'Low Aerobic (#0D9488 Aerobic Teal): Z1–Z2 Recovery, Endurance Base, Warmups, and Cooldowns.',
+          'High Aerobic (#EA580C Vermilion): Z3–Z4 Tempo, Sweet Spot, Lactate Threshold, and Marathon Pace.',
+          'Anaerobic (#7C3AED Deep Violet): Z5–Z6 VO2max repeats, Track 200m–800m intervals, Sprints, and Crit/Zwift Races.',
           'Multi-Activity Stacking: Morning, afternoon, and evening sessions stack chronologically from bottom to top; hover any day to inspect each individual workout’s load and focus badge.',
         ],
         formulaOrSyntax: 'Stack(day) = ∑_{i=1..k} Segment(Activity_i, FocusColor_i, Load_i)',
@@ -726,7 +724,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         bullets: [
           'Supports Men’s and Women’s standards across 800m, 1500m, 1600m, Mile, 3000m, 3200m, 5000m, and 10000m.',
           'Displays exact seconds-to-qualify and progress bars for HS State, HS Nationals, NCAA D3, NCAA D2, NCAA D1 Walk-On, and NCAA D1 Scholarship.',
-          'Includes 10x #6 GPS-to-Official Chip/FAT Rubber-Banding and shareable THV-... Verified Race Passports.',
+          'Includes GPS-to-Official Chip/FAT Rubber-Banding and shareable THV-... Verified Race Passports.',
         ],
         ctaLabel: 'Try It Live: Open NCAA Converter & Race Logger →',
         onAction: () => triggerAndClose(() => onOpenOfficialRaceModal()),
@@ -801,18 +799,19 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/75 backdrop-blur-md p-0 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/75 p-0 sm:p-4 overflow-y-auto"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="thresh-user-guide-title"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="thresh-user-guide-title"
         className="liquid-glass w-full max-w-6xl rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/90 shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88vh] text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Modal Header + Search Bar */}
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl flex flex-col gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-[#101B15] flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-2xl bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] flex items-center justify-center shadow-md shrink-0">
@@ -820,10 +819,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-full ap-status-info font-semibold">
-                    Interactive Manual & Physiology Reference
+                  <span className="text-2xs font-mono uppercase tracking-widest px-2 py-0.5 rounded-full ap-status-info font-semibold">
+                    Interactive Manual &amp; Physiology Reference
                   </span>
-                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 hidden sm:inline">
+                  <span className="text-2xs font-mono text-slate-600 dark:text-slate-300 hidden sm:inline">
                     Press ESC to close
                   </span>
                 </div>
@@ -839,7 +838,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800/70 transition-colors shrink-0"
+              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-xl text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800/70 transition-colors shrink-0 cursor-pointer"
               aria-label="Close User Guide"
             >
               <X className="w-5 h-5" />
@@ -849,19 +848,20 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           {/* Real-Time Search Input + Quick Jump Actions */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
+                aria-label="Search user guide metrics, workflows, and formulas"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search any metric, workflow, or formula (e.g., Garmin Load Focus, CTL, Pa:Hr, W', Strava, Block Builder)..."
-                className="w-full pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-slate-950/80 border border-slate-300/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+                placeholder="Search any metric, workflow, or formula (e.g., CTL, Pa:Hr, W', Strava, Block Builder)..."
+                className="w-full min-h-[44px] pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-[#15231B] border border-slate-300/80 dark:border-[#2B543B] text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-[#C8FF00]"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-2xs font-mono px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700"
                 >
                   Clear
                 </button>
@@ -873,7 +873,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 href="/docs/index.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-semibold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
               >
                 Open Online Docs (/docs) ↗
               </a>
@@ -883,7 +883,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   setSearchQuery('');
                   setActiveChapter('ch8-scholastic');
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 whitespace-nowrap transition-colors"
               >
                 HS &amp; College Pack
               </button>
@@ -893,7 +893,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   setSearchQuery('');
                   setActiveChapter('ch3-pmc');
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/25 whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/25 whitespace-nowrap transition-colors"
               >
                 Garmin Load Stack
               </button>
@@ -903,7 +903,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   setSearchQuery('');
                   setActiveChapter('glossary');
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/25 whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-medium bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/25 whitespace-nowrap transition-colors"
               >
                 Formulas &amp; Glossary ({GLOSSARY_ENTRIES.length})
               </button>
@@ -923,9 +923,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     setSearchQuery('');
                     setActiveChapter(ch.id);
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap border transition-all ${
+                  className={`min-h-[40px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap border transition-all ${
                     isSelected
-                      ? 'bg-sky-500 text-white border-sky-400 shadow-sm'
+                      ? 'ap-nav-volt-active shadow-sm'
                       : 'bg-slate-100/80 dark:bg-slate-900/70 text-slate-600 dark:text-slate-400 border-slate-200/70 dark:border-slate-800'
                   }`}
                 >
@@ -944,7 +944,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           {/* Desktop Sidebar Navigation */}
           <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/45 flex-col justify-between p-3 overflow-y-auto">
             <div className="space-y-1">
-              <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
+              <div className="px-2.5 py-1.5 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                 9 Chapters &amp; Physiology Reference
               </div>
               {chapters.map((ch) => {
@@ -960,7 +960,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     }}
                     className={`w-full text-left px-3 py-2.5 rounded-xl transition-all flex items-start gap-2.5 border ${
                       isSelected
-                        ? 'liquid-capsule-active border-sky-500/40 dark:border-sky-500/40 text-slate-900 dark:text-white shadow-sm'
+                        ? 'liquid-capsule-active text-slate-900 dark:text-white shadow-sm'
                         : 'border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/40 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
@@ -971,10 +971,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <span className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                           CH {ch.number}
                         </span>
-                        {isSelected && <ChevronRight className="w-3.5 h-3.5 text-sky-500" />}
+                        {isSelected && <ChevronRight className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />}
                       </div>
                       <div className="text-xs font-semibold truncate">{ch.shortTitle}</div>
                     </div>
@@ -989,35 +989,35 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 <Zap className="w-4 h-4 text-amber-500" />
                 <span>Instant Live Shortcuts</span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-2xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 Jump straight from this guide to any modal or workspace:
               </p>
               <div className="grid grid-cols-2 gap-1.5 pt-1">
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenDataSources())}
-                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200/70 dark:bg-slate-800/80 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
                 >
                   Data Sync
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenProfileModal())}
-                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200/70 dark:bg-slate-800/80 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
                 >
-                  FTP & Zones
+                  FTP &amp; Zones
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenRosterModal())}
-                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200/70 dark:bg-slate-800/80 hover:bg-sky-500/20 text-slate-700 dark:text-slate-200 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
                 >
                   Coach Roster
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenAICoach())}
-                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 truncate text-center transition-colors"
+                  className="px-2 py-1.5 rounded-lg text-2xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 truncate text-center transition-colors"
                 >
                   AI Coach
                 </button>
@@ -1055,14 +1055,14 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         >
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <span
-                              className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-semibold ${card.badgeColor}`}
+                              className={`text-2xs font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-semibold ${card.badgeColor}`}
                             >
                               {card.badge}
                             </span>
                             <button
                               type="button"
                               onClick={card.onAction}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-white shadow-sm transition-colors"
+                              className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 text-xs cursor-pointer"
                             >
                               <span>{card.ctaLabel}</span>
                             </button>
@@ -1111,20 +1111,20 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                 {entry.code}
                               </span>
                             </div>
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            <span className="text-2xs font-mono px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                               {entry.category}
                             </span>
                           </div>
                           <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                             {entry.name}
                           </div>
-                          <div className="px-2.5 py-1.5 rounded-lg bg-slate-900 text-sky-300 font-mono text-[11px] overflow-x-auto">
+                          <div className="px-2.5 py-1.5 rounded-lg bg-slate-900 text-sky-300 font-mono text-2xs overflow-x-auto">
                             {entry.formula}
                           </div>
                           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             {entry.explanation}
                           </p>
-                          <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                          <div className="text-2xs font-mono text-emerald-600 dark:text-emerald-400">
                             Target: {entry.benchmark}
                           </div>
                         </div>
@@ -1141,7 +1141,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="mt-3 px-4 py-1.5 rounded-xl text-xs font-semibold bg-sky-500 text-white"
+                      className="mt-3 ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-4 py-1.5 text-xs cursor-pointer"
                     >
                       Reset Search
                     </button>
@@ -1154,7 +1154,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 <div className="p-4 sm:p-5 rounded-2xl liquid-glass-subtle border border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
+                      <span className="text-2xs font-mono uppercase tracking-widest px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
                         Chapter {activeChapterMeta.number} of 09
                       </span>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -1180,7 +1180,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           Interactive 3-Step Quick Start Checklist
                         </h4>
                       </div>
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                      <span className="text-2xs font-mono text-slate-500 dark:text-slate-400">
                         {Object.values(completedChecklist).filter(Boolean).length} / 3 Completed
                       </span>
                     </div>
@@ -1189,7 +1189,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-mono font-bold uppercase text-orange-500">
+                            <span className="text-2xs font-mono font-bold uppercase text-orange-500">
                               Step 1 · Data Ingest
                             </span>
                             <input
@@ -1208,7 +1208,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
                             Choose Strava Sync Window or Add Optional Sleep
                           </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             Pick 90d / 6mo / Full Strava history, optionally connect Garmin or Intervals.icu, or drop .FIT files.
                           </p>
                         </div>
@@ -1225,7 +1225,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-mono font-bold uppercase text-sky-500">
+                            <span className="text-2xs font-mono font-bold uppercase text-sky-500">
                               Step 2 · Thresholds
                             </span>
                             <input
@@ -1244,7 +1244,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
                             Verify Outdoor/Indoor FTP & LTHR Zones
                           </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             Calibrate Cycling FTP, Smart-Trainer FTP, W&apos;, and Running Threshold Pace.
                           </p>
                         </div>
@@ -1261,7 +1261,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-mono font-bold uppercase text-emerald-500">
+                            <span className="text-2xs font-mono font-bold uppercase text-emerald-500">
                               Step 3 · Daily Morphing
                             </span>
                             <input
@@ -1280,7 +1280,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
                             Inspect PMC & Morph Today&apos;s Workout
                           </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             Review your 14-day HRV readiness ledger and sync today&apos;s adapted session.
                           </p>
                         </div>
@@ -1304,23 +1304,23 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <h4 className="text-xs font-mono uppercase tracking-wider font-bold text-slate-700 dark:text-slate-200">
                         Visual Color Legend · Garmin Load Focus Stacked Bars & Form (TSB) Zones
                       </h4>
-                      <span className="text-[11px] font-mono text-slate-500">
+                      <span className="text-2xs font-mono text-slate-500">
                         Multi-workout days stack chronologically (AM → PM)
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3 rounded-xl border border-sky-500/30 bg-sky-500/10 space-y-1">
+                      <div className="p-3 rounded-xl border border-teal-500/30 bg-teal-500/10 space-y-1">
                         <div className="flex items-center gap-2">
                           <span
                             className="w-3.5 h-3.5 rounded-sm shrink-0"
-                            style={{ backgroundColor: '#38bdf8' }}
+                            style={{ backgroundColor: '#0D9488' }}
                           />
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">
-                            Low Aerobic · #38bdf8
+                          <span className="text-xs font-bold text-teal-950 dark:text-teal-50">
+                            Low Aerobic · #0D9488
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                        <p className="text-2xs text-teal-950/85 dark:text-teal-100/85">
                           Z1–Z2 Recovery, Endurance Base, Easy Shakeouts, Warmups, and Cooldowns (IF &lt; 0.80).
                         </p>
                       </div>
@@ -1329,29 +1329,29 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         <div className="flex items-center gap-2">
                           <span
                             className="w-3.5 h-3.5 rounded-sm shrink-0"
-                            style={{ backgroundColor: '#f97316' }}
+                            style={{ backgroundColor: '#EA580C' }}
                           />
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">
-                            High Aerobic · #f97316
+                          <span className="text-xs font-bold text-orange-950 dark:text-orange-50">
+                            High Aerobic · #EA580C
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                        <p className="text-2xs text-orange-950/85 dark:text-orange-100/85">
                           Z3–Z4 Tempo, Sweet Spot (88–94% FTP), Lactate Threshold, and Cruise Intervals.
                         </p>
                       </div>
 
-                      <div className="p-3 rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/10 space-y-1">
+                      <div className="p-3 rounded-xl border border-purple-500/30 bg-purple-500/10 space-y-1">
                         <div className="flex items-center gap-2">
                           <span
                             className="w-3.5 h-3.5 rounded-sm shrink-0"
-                            style={{ backgroundColor: '#d946ef' }}
+                            style={{ backgroundColor: '#7C3AED' }}
                           />
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">
-                            Anaerobic · #d946ef
+                          <span className="text-xs font-bold text-purple-950 dark:text-purple-50">
+                            Anaerobic · #7C3AED
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                          Z5–Z7 VO2max Repeats, Track 200m–800m Intervals, Sprints, and Crit/Zwift Races.
+                        <p className="text-2xs text-purple-950/85 dark:text-purple-100/85">
+                          Z5–Z6 VO2max Repeats, Track 200m–800m Intervals, Sprints, and Crit/Zwift Races.
                         </p>
                       </div>
                     </div>
@@ -1368,14 +1368,14 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       >
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span
-                            className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-semibold ${card.badgeColor}`}
+                            className={`text-2xs font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-semibold ${card.badgeColor}`}
                           >
                             {card.badge}
                           </span>
                           <button
                             type="button"
                             onClick={card.onAction}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-white shadow-sm transition-colors cursor-pointer"
+                            className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs cursor-pointer"
                           >
                             <span>{card.ctaLabel}</span>
                           </button>
@@ -1391,7 +1391,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         </div>
 
                         {card.formulaOrSyntax && (
-                          <pre className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-sky-300 font-mono text-[11px] sm:text-xs overflow-x-auto border border-slate-800">
+                          <pre className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-sky-300 font-mono text-2xs sm:text-xs overflow-x-auto border border-slate-800">
                             {card.formulaOrSyntax}
                           </pre>
                         )}
@@ -1432,21 +1432,21 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                   {entry.code}
                                 </span>
                               </div>
-                              <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              <span className="text-2xs font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                                 {entry.category}
                               </span>
                             </div>
                             <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                               {entry.name}
                             </div>
-                            <div className="px-3 py-1.5 rounded-lg bg-slate-900 text-sky-300 font-mono text-[11px] overflow-x-auto border border-slate-800">
+                            <div className="px-3 py-1.5 rounded-lg bg-slate-900 text-sky-300 font-mono text-2xs overflow-x-auto border border-slate-800">
                               {entry.formula}
                             </div>
                             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                               {entry.explanation}
                             </p>
                           </div>
-                          <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                          <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-2xs font-mono text-emerald-600 dark:text-emerald-400">
                             Benchmark: {entry.benchmark}
                           </div>
                         </div>
@@ -1460,8 +1460,8 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         </div>
 
         {/* Bottom Footer with Chapter Prev/Next Controls */}
-        <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl flex items-center justify-between gap-3 shrink-0">
-          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+        <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-[#244331] bg-white dark:bg-[#101B15] flex items-center justify-between gap-3 shrink-0">
+          <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate">
             Docs Suite: <code className="text-sky-600 dark:text-sky-400">docs/USER_GUIDE.md</code> ·{' '}
             <code className="text-sky-600 dark:text-sky-400">docs/PHYSIOLOGY_AND_METRICS.md</code> ·{' '}
             <code className="text-sky-600 dark:text-sky-400">docs/DESIGN_SYSTEM.md</code>
@@ -1483,7 +1483,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-white shadow-sm transition-colors"
+              className="ap-btn-primary min-h-[40px] px-4 py-1.5 text-xs cursor-pointer"
             >
               Done
             </button>
