@@ -5,9 +5,9 @@ import net from 'net';
 import type { NextFunction, Request, Response } from 'express';
 
 const SESSION_SECRET_FILE = '/tmp/thresh-session-secret.key';
-const SESSION_COOKIE_NAME = 'thresh_session';
-const LEGACY_SESSION_COOKIE_NAME = 'aeropulse_session';
-const OAUTH_STATE_COOKIE_NAME = 'thresh_oauth_state';
+export const SESSION_COOKIE_NAME = 'thresh_session';
+export const LEGACY_SESSION_COOKIE_NAME = 'aeropulse_session';
+export const OAUTH_STATE_COOKIE_NAME = 'thresh_oauth_state';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 

@@ -5017,10 +5017,7 @@ var initialEnvMapKey = (process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPB
 var initialEnvGeminiKey = [
   process.env.GEMINI_API_KEY,
   process.env.GOOGLE_API_KEY,
-  process.env.VITE_GEMINI_API_KEY,
-  process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-  process.env.NEXT_PUBLIC_GEMINI_API_KEY,
-  process.env.API_KEY
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY
 ].map(
   (k) => (k || "").trim().replace(/^["']+|["']+$/g, "").trim()
 ).find((k) => k && k !== "MY_GEMINI_API_KEY" && k !== "YOUR_GEMINI_API_KEY") || "";
@@ -5052,7 +5049,7 @@ function createDefaultRuntimeSessionStore(seed = {}) {
     athleteLthr: seed.athleteLthr || 165,
     athleteMaxHr: seed.athleteMaxHr || 185,
     athleteProfile: seed.athleteProfile || void 0,
-    geminiApiKey: seed.geminiApiKey || initialEnvGeminiKey,
+    geminiApiKey: seed.geminiApiKey || "",
     mapTileApiKey: seed.mapTileApiKey || initialEnvMapKey,
     mapTileProvider: seed.mapTileProvider || (initialEnvMapKey.startsWith("pk.") ? "MAPBOX" : initialEnvMapKey ? "THUNDERFOREST" : "OSM_KEYLESS"),
     gearItems: seed.gearItems || []
@@ -5556,21 +5553,97 @@ function userOwnedSecretOnly(value) {
   const clean = normalizeSecretValue(value);
   return clean && !isServerOwnedSecret(clean) ? clean : "";
 }
+function hasClientByoGeminiKey(req) {
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return false;
+  const headerKey = activeReq.headers["x-gemini-api-key"]?.trim();
+  const bodyKey = typeof activeReq.body?.geminiApiKey === "string" ? activeReq.body.geminiApiKey.trim() : "";
+  for (const c of [headerKey, bodyKey]) {
+    const clean = (c || "").trim().replace(/^["']+|["']+$/g, "").trim();
+    if (clean && clean !== "MY_GEMINI_API_KEY" && clean !== "YOUR_GEMINI_API_KEY") {
+      return true;
+    }
+  }
+  return false;
+}
+function isAuthorizedForServerAi(req) {
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return false;
+  if (hasValidSessionToken(activeReq) || Boolean(getVerifiedSessionClaims(activeReq)) || Boolean(readCompactVaultFromCookie(activeReq))) {
+    return true;
+  }
+  if (process.env.ALLOW_DEV_ENV_CREDENTIALS === "true") {
+    return true;
+  }
+  return false;
+}
+function isAuthorizedForAi(req) {
+  return hasClientByoGeminiKey(req) || isAuthorizedForServerAi(req);
+}
+var aiRateLimitStore = /* @__PURE__ */ new Map();
+function checkAiRateLimit(key, limit = 20, windowMs = 6e4) {
+  const now = Date.now();
+  if (aiRateLimitStore.size > 2e3) {
+    for (const [k, rec] of aiRateLimitStore.entries()) {
+      if (rec.resetAt <= now) {
+        aiRateLimitStore.delete(k);
+      }
+    }
+  }
+  const record = aiRateLimitStore.get(key);
+  if (!record || record.resetAt <= now) {
+    aiRateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, retryAfterSecs: 0 };
+  }
+  if (record.count >= limit) {
+    return {
+      allowed: false,
+      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1e3))
+    };
+  }
+  record.count += 1;
+  return { allowed: true, retryAfterSecs: 0 };
+}
+function getClientAiRateLimitKey(req) {
+  const scopeKey = resolveSessionScopeKey(req);
+  if (scopeKey && scopeKey !== "unauthenticated") {
+    return `session:${scopeKey}`;
+  }
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  return `ip:${ip}`;
+}
 function getEffectiveGeminiApiKey(req) {
-  const headerKey = req?.headers["x-gemini-api-key"]?.trim();
-  const bodyKey = typeof req?.body?.geminiApiKey === "string" ? req.body.geminiApiKey.trim() : "";
-  const candidates = [
-    headerKey,
-    bodyKey,
-    runtimeStore.geminiApiKey,
+  const activeReq = req ?? requestContext.getStore();
+  const headerKey = activeReq?.headers["x-gemini-api-key"]?.trim();
+  const bodyKey = typeof activeReq?.body?.geminiApiKey === "string" ? activeReq.body.geminiApiKey.trim() : "";
+  for (const c of [headerKey, bodyKey]) {
+    const clean = (c || "").trim().replace(/^["']+|["']+$/g, "").trim();
+    if (clean && clean !== "MY_GEMINI_API_KEY" && clean !== "YOUR_GEMINI_API_KEY") {
+      return clean;
+    }
+  }
+  if (activeReq) {
+    try {
+      const currentScopeStore = getScopedRuntimeStore(activeReq);
+      const storedKey = (currentScopeStore?.geminiApiKey || "").trim();
+      if (storedKey && !isServerOwnedSecret(storedKey)) {
+        const clean = storedKey.replace(/^["']+|["']+$/g, "").trim();
+        if (clean && clean !== "MY_GEMINI_API_KEY" && clean !== "YOUR_GEMINI_API_KEY") {
+          return clean;
+        }
+      }
+    } catch {
+    }
+  }
+  if (!isAuthorizedForServerAi(activeReq)) {
+    return "";
+  }
+  const serverCandidates = [
     process.env.GEMINI_API_KEY,
     process.env.GOOGLE_API_KEY,
-    process.env.VITE_GEMINI_API_KEY,
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
-    process.env.API_KEY
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY
   ];
-  for (const c of candidates) {
+  for (const c of serverCandidates) {
     const clean = (c || "").trim().replace(/^["']+|["']+$/g, "").trim();
     if (clean && clean !== "MY_GEMINI_API_KEY" && clean !== "YOUR_GEMINI_API_KEY") {
       return clean;
@@ -9653,6 +9726,14 @@ I have generated **${proposedWorkouts.length} structured workouts** below tailor
   };
 }
 apiRouter.post("/api/coach/options", async (req, res) => {
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: "AI request limit reached. Please wait a moment before requesting another workout option.",
+      retryAfterSecs: rateCheck.retryAfterSecs
+    });
+    return;
+  }
   const {
     sportPreference = "Cycling",
     environmentPreference = "INDOOR",
@@ -9741,6 +9822,20 @@ Include workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") fo
   }
 });
 apiRouter.post("/api/coach/chat", async (req, res) => {
+  if (!isAuthorizedForAi(req)) {
+    res.status(401).json({
+      error: "Valid authenticated session or x-gemini-api-key required."
+    });
+    return;
+  }
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: "AI request limit reached. Please wait a moment before sending another message.",
+      retryAfterSecs: rateCheck.retryAfterSecs
+    });
+    return;
+  }
   const { message, history = [], telemetrySummary } = req.body || {};
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "Message is required." });
@@ -9852,6 +9947,14 @@ ${message}
   }
 });
 apiRouter.post(["/api/races/parse", "/races/parse"], async (req, res) => {
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: "Race parser rate limit reached. Please wait a moment.",
+      retryAfterSecs: rateCheck.retryAfterSecs
+    });
+    return;
+  }
   try {
     const { url, rawText } = req.body;
     let fetchedTextSnippet = "";
