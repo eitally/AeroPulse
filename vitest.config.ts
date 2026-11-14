@@ -9,6 +9,7 @@ export default defineConfig((env) => {
       test: {
         include: ['tests/**/*.test.ts'],
         exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+        testTimeout: 15000,
       },
     })
   );

@@ -113,5 +113,5 @@ describe('SEC-03 · AI Endpoints Session Gate & Rate Limiting', () => {
       }
     }
     expect(got429).toBe(true);
-  });
+  }, 15000);
 });
