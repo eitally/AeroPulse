@@ -332,7 +332,20 @@ export default function App() {
     }
   });
   const [dismissedQuickConnectBanner, setDismissedQuickConnectBanner] = useState<boolean>(false);
-  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(false);
+  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const search = window.location.search;
+        if (search.includes('demo=1') || search.includes('sample=true')) {
+          return true;
+        }
+        return localStorage.getItem('thresh_sample_demo_active') === 'true';
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  });
   const sampleDemoDataset = useMemo(() => buildSampleDemoDataset(), []);
   const [sampleDemoPlannedEvents, setSampleDemoPlannedEvents] = useState<PlannedWorkoutEvent[]>(
     () => sampleDemoDataset.plannedEvents

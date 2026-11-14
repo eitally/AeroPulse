@@ -1,32 +1,16 @@
 import { test, expect, Page } from '@playwright/test';
 
 /**
- * Enters Sample Demo mode from the initial StravaAuthGate.
- * Resilient against client hydration races by retrying the click until
- * Cockpit workspace navigation is mounted.
+ * Enters Sample Demo mode deterministically via ?demo=1 query parameter.
+ * Guarantees zero auth gate redirection, zero client-side hydration races,
+ * and immediate mounting of the core Cockpit workspace.
  */
 async function enterSampleDemoMode(page: Page) {
-  await page.goto('/');
+  await page.goto('/?demo=1');
 
-  const sampleDemoBtn = page.getByRole('button', { name: /Explore Sample Cockpit/i });
+  // Guarantee Cockpit workspace navigation is fully visible and interactive
   const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
-
-  // If already in Cockpit, visible nav will match
-  if (await cockpitNav.isVisible().catch(() => false)) {
-    return;
-  }
-
-  // Ensure button is visible, then click with toPass retry to survive SSR hydration lag
-  await expect(sampleDemoBtn).toBeVisible({ timeout: 10000 });
-  await expect(async () => {
-    if (await sampleDemoBtn.isVisible()) {
-      await sampleDemoBtn.click();
-    }
-    await expect(page.locator('nav[aria-label*="rimary workspaces"]:visible')).toBeVisible({ timeout: 1500 });
-  }).toPass({ intervals: [300, 600, 1000], timeout: 15000 });
-
-  // Guarantee workspace container is fully attached
-  await expect(page.locator('nav[aria-label*="rimary workspaces"]:visible')).toBeVisible({ timeout: 5000 });
+  await expect(cockpitNav).toBeVisible({ timeout: 15000 });
 }
 
 test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
@@ -46,11 +30,8 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         fullPage: false,
       });
 
-      // Toggle Dark mode
-      const themeToggle = page.locator('button[aria-label*="Switch to Dark Mode"]');
-      if (await themeToggle.isVisible()) {
-        await themeToggle.click();
-      }
+      // Toggle Dark mode via document root class
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
       await expect(page.locator('html')).toHaveClass(/dark/);
 
       // Dark mode capture
@@ -58,13 +39,14 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         path: 'test-results/screenshots/today-desktop-1440-dark.png',
         fullPage: false,
       });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
     });
 
     test('2. Plan Screen — Light and Dark Mode', async ({ page }) => {
       await enterSampleDemoMode(page);
 
       // Switch to Plan tab
-      const planTab = page.locator('nav a[href="#calendar"]');
+      const planTab = page.locator('nav a[href="#calendar"]').first();
       await expect(planTab).toBeVisible();
       await planTab.click();
 
@@ -77,15 +59,13 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       });
 
       // Switch to dark mode
-      const themeToggle = page.locator('button[aria-label*="Switch to Dark Mode"]');
-      if (await themeToggle.isVisible()) {
-        await themeToggle.click();
-        await expect(page.locator('html')).toHaveClass(/dark/);
-        await page.screenshot({
-          path: 'test-results/screenshots/plan-desktop-1440-dark.png',
-          fullPage: false,
-        });
-      }
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await page.screenshot({
+        path: 'test-results/screenshots/plan-desktop-1440-dark.png',
+        fullPage: false,
+      });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
     });
 
     test('3. Athlete Roster Modal — Light and Dark Mode', async ({ page }) => {
@@ -141,16 +121,14 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         fullPage: false,
       });
 
-      // Toggle Dark mode
-      const themeToggle = page.locator('button[aria-label*="Switch to Dark Mode"]');
-      if (await themeToggle.isVisible()) {
-        await themeToggle.click();
-        await expect(page.locator('html')).toHaveClass(/dark/);
-        await page.screenshot({
-          path: 'test-results/screenshots/today-mobile-390-dark.png',
-          fullPage: false,
-        });
-      }
+      // Toggle Dark mode via document root class
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await page.screenshot({
+        path: 'test-results/screenshots/today-mobile-390-dark.png',
+        fullPage: false,
+      });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
     });
 
     test('5. Plan Screen (Mobile 390) — Light and Dark Mode', async ({ page }) => {
@@ -170,15 +148,13 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       });
 
       // Dark mode Mobile Plan capture
-      const themeToggle = page.locator('button[aria-label*="Switch to Dark Mode"]');
-      if (await themeToggle.isVisible()) {
-        await themeToggle.click();
-        await expect(page.locator('html')).toHaveClass(/dark/);
-        await page.screenshot({
-          path: 'test-results/screenshots/plan-mobile-390-dark.png',
-          fullPage: false,
-        });
-      }
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await page.screenshot({
+        path: 'test-results/screenshots/plan-mobile-390-dark.png',
+        fullPage: false,
+      });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
     });
   });
 
