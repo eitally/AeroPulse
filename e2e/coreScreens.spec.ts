@@ -2,22 +2,31 @@ import { test, expect, Page } from '@playwright/test';
 
 /**
  * Enters Sample Demo mode from the initial StravaAuthGate.
- * Sets local storage flags to avoid repeated onboarding gates.
+ * Resilient against client hydration races by retrying the click until
+ * Cockpit workspace navigation is mounted.
  */
 async function enterSampleDemoMode(page: Page) {
   await page.goto('/');
 
-  // If Auth Gate is shown, wait and click "Explore Sample Cockpit"
   const sampleDemoBtn = page.getByRole('button', { name: /Explore Sample Cockpit/i });
-  try {
-    await sampleDemoBtn.waitFor({ state: 'visible', timeout: 5000 });
-    await sampleDemoBtn.click();
-  } catch {
-    // Already in Cockpit session
+  const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
+
+  // If already in Cockpit, visible nav will match
+  if (await cockpitNav.isVisible().catch(() => false)) {
+    return;
   }
 
-  // Wait for the main cockpit to load (#main-content is only rendered in Cockpit)
-  await expect(page.locator('#main-content')).toBeVisible({ timeout: 15000 });
+  // Ensure button is visible, then click with toPass retry to survive SSR hydration lag
+  await expect(sampleDemoBtn).toBeVisible({ timeout: 10000 });
+  await expect(async () => {
+    if (await sampleDemoBtn.isVisible()) {
+      await sampleDemoBtn.click();
+    }
+    await expect(page.locator('nav[aria-label*="rimary workspaces"]:visible')).toBeVisible({ timeout: 1500 });
+  }).toPass({ intervals: [300, 600, 1000], timeout: 15000 });
+
+  // Guarantee workspace container is fully attached
+  await expect(page.locator('nav[aria-label*="rimary workspaces"]:visible')).toBeVisible({ timeout: 5000 });
 }
 
 test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
