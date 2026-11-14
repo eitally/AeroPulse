@@ -51,7 +51,7 @@ describe('[AUTH-02] Coach-invited, parent-acknowledged sign-up for minor athlete
       callerSid: coachSid,
       originUrl: origin,
       name: 'Cascadia Youth Distance Club',
-      orgType: 'CLUB',
+      orgType: 'RUNNING_CLUB',
       primarySport: 'Running',
     });
 
