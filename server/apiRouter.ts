@@ -329,10 +329,7 @@ const initialEnvMapKey = (
 const initialEnvGeminiKey = [
   process.env.GEMINI_API_KEY,
   process.env.GOOGLE_API_KEY,
-  process.env.VITE_GEMINI_API_KEY,
   process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-  process.env.NEXT_PUBLIC_GEMINI_API_KEY,
-  process.env.API_KEY,
 ]
   .map((k) =>
     (k || '')
@@ -371,7 +368,7 @@ function createDefaultRuntimeSessionStore(seed: Partial<RuntimeSessionStore> = {
     athleteLthr: seed.athleteLthr || 165,
     athleteMaxHr: seed.athleteMaxHr || 185,
     athleteProfile: seed.athleteProfile || undefined,
-    geminiApiKey: seed.geminiApiKey || initialEnvGeminiKey,
+    geminiApiKey: seed.geminiApiKey || '',
     mapTileApiKey: seed.mapTileApiKey || initialEnvMapKey,
     mapTileProvider:
       seed.mapTileProvider ||
@@ -1191,30 +1188,154 @@ function userOwnedSecretOnly(value: unknown): string {
   return clean && !isServerOwnedSecret(clean) ? clean : '';
 }
 
-function getEffectiveGeminiApiKey(req?: Request): string {
-  const headerKey = (req?.headers['x-gemini-api-key'] as string | undefined)?.trim();
+/**
+ * Returns true if request caller provided their own explicit Gemini API key via
+ * request header ('x-gemini-api-key') or request body ('geminiApiKey').
+ */
+export function hasClientByoGeminiKey(req?: Request): boolean {
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return false;
+  const headerKey = (activeReq.headers['x-gemini-api-key'] as string | undefined)?.trim();
   const bodyKey =
-    typeof req?.body?.geminiApiKey === 'string' ? req.body.geminiApiKey.trim() : '';
-  const candidates = [
-    headerKey,
-    bodyKey,
-    runtimeStore.geminiApiKey,
-    process.env.GEMINI_API_KEY,
-    process.env.GOOGLE_API_KEY,
-    process.env.VITE_GEMINI_API_KEY,
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
-    process.env.API_KEY,
-  ];
-  for (const c of candidates) {
-    const clean = (c || '')
-      .trim()
-      .replace(/^["']+|["']+$/g, '')
-      .trim();
+    typeof activeReq.body?.geminiApiKey === 'string' ? activeReq.body.geminiApiKey.trim() : '';
+  for (const c of [headerKey, bodyKey]) {
+    const clean = (c || '').trim().replace(/^["']+|["']+$/g, '').trim();
+    if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Verifies that the caller has a legitimate authenticated session (valid HMAC session cookie,
+ * valid session claims, or valid decrypted tenant vault cookie) authorized to consume
+ * server-side Gemini quota.
+ */
+export function isAuthorizedForServerAi(req?: Request): boolean {
+  const activeReq = req ?? requestContext.getStore();
+  if (!activeReq) return false;
+  if (
+    hasValidSessionToken(activeReq) ||
+    Boolean(getVerifiedSessionClaims(activeReq)) ||
+    Boolean(readCompactVaultFromCookie(activeReq))
+  ) {
+    return true;
+  }
+  if (process.env.ALLOW_DEV_ENV_CREDENTIALS === 'true') {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Returns true if the request is authorized for AI invocation: either via a client-supplied
+ * BYO key (consuming the user's own quota) or via a verified authenticated session.
+ */
+export function isAuthorizedForAi(req?: Request): boolean {
+  return hasClientByoGeminiKey(req) || isAuthorizedForServerAi(req);
+}
+
+// In-memory sliding-window rate limiter per session / IP for AI endpoints
+interface AiRateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+const aiRateLimitStore = new Map<string, AiRateLimitRecord>();
+
+export function checkAiRateLimit(
+  key: string,
+  limit = 20,
+  windowMs = 60_000
+): { allowed: boolean; retryAfterSecs: number } {
+  const now = Date.now();
+  if (aiRateLimitStore.size > 2000) {
+    for (const [k, rec] of aiRateLimitStore.entries()) {
+      if (rec.resetAt <= now) {
+        aiRateLimitStore.delete(k);
+      }
+    }
+  }
+  const record = aiRateLimitStore.get(key);
+  if (!record || record.resetAt <= now) {
+    aiRateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, retryAfterSecs: 0 };
+  }
+  if (record.count >= limit) {
+    return {
+      allowed: false,
+      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1000)),
+    };
+  }
+  record.count += 1;
+  return { allowed: true, retryAfterSecs: 0 };
+}
+
+export function getClientAiRateLimitKey(req: Request): string {
+  const scopeKey = resolveSessionScopeKey(req);
+  if (scopeKey && scopeKey !== 'unauthenticated') {
+    return `session:${scopeKey}`;
+  }
+  const ip =
+    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ||
+    req.socket.remoteAddress ||
+    'unknown';
+  return `ip:${ip}`;
+}
+
+export function resetAiRateLimitsForTesting(): void {
+  aiRateLimitStore.clear();
+}
+
+function getEffectiveGeminiApiKey(req?: Request): string {
+  const activeReq = req ?? requestContext.getStore();
+  const headerKey = (activeReq?.headers['x-gemini-api-key'] as string | undefined)?.trim();
+  const bodyKey =
+    typeof activeReq?.body?.geminiApiKey === 'string' ? activeReq.body.geminiApiKey.trim() : '';
+
+  // 1. Explicit client BYO key takes precedence
+  for (const c of [headerKey, bodyKey]) {
+    const clean = (c || '').trim().replace(/^["']+|["']+$/g, '').trim();
     if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
       return clean;
     }
   }
+
+  // 2. User-stored BYO key in tenant vault / session store (if athlete previously saved a custom key)
+  if (activeReq) {
+    try {
+      const currentScopeStore = getScopedRuntimeStore(activeReq);
+      const storedKey = (currentScopeStore?.geminiApiKey || '').trim();
+      if (storedKey && !isServerOwnedSecret(storedKey)) {
+        const clean = storedKey.replace(/^["']+|["']+$/g, '').trim();
+        if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
+          return clean;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. Server-owned key fallbacks require a verified session
+  if (!isAuthorizedForServerAi(activeReq)) {
+    return '';
+  }
+
+  // SEC-02: Only canonical server-side env vars; omit client-prefixed VITE_/NEXT_PUBLIC_ and generic API_KEY
+  const serverCandidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  ];
+
+  for (const c of serverCandidates) {
+    const clean = (c || '').trim().replace(/^["']+|["']+$/g, '').trim();
+    if (clean && clean !== 'MY_GEMINI_API_KEY' && clean !== 'YOUR_GEMINI_API_KEY') {
+      return clean;
+    }
+  }
+
   return '';
 }
 
@@ -6645,6 +6766,15 @@ function buildDeterministicCoachChatResponse(
 }
 
 apiRouter.post('/api/coach/options', async (req: Request, res: Response) => {
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: 'AI request limit reached. Please wait a moment before requesting another workout option.',
+      retryAfterSecs: rateCheck.retryAfterSecs,
+    });
+    return;
+  }
+
   const {
     sportPreference = 'Cycling',
     environmentPreference = 'INDOOR',
@@ -6739,6 +6869,22 @@ Include workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") fo
 });
 
 apiRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
+  if (!isAuthorizedForAi(req)) {
+    res.status(401).json({
+      error: 'Valid authenticated session or x-gemini-api-key required.',
+    });
+    return;
+  }
+
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: 'AI request limit reached. Please wait a moment before sending another message.',
+      retryAfterSecs: rateCheck.retryAfterSecs,
+    });
+    return;
+  }
+
   const { message, history = [], telemetrySummary } = req.body || {};
   if (!message || typeof message !== 'string') {
     res.status(400).json({ error: 'Message is required.' });
@@ -6873,6 +7019,15 @@ ${message}
 
 // Parse Official Race Results from Athletic.net, TFRRS, MileSplit, or RunSignup URL / Raw Text
 apiRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res: Response) => {
+  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: 'Race parser rate limit reached. Please wait a moment.',
+      retryAfterSecs: rateCheck.retryAfterSecs,
+    });
+    return;
+  }
+
   try {
     const { url, rawText } = req.body as { url?: string; rawText?: string };
     let fetchedTextSnippet = '';
