@@ -519,7 +519,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   className="ap-btn-strava !min-h-[44px] sm:!min-h-[40px] rounded-xl px-3.5 py-2 text-xs font-bold cursor-pointer"
                 >
                   <Activity className="w-4 h-4" />
-                  <span>{status.stravaConnected ? 'Switch / Re-Auth' : 'Sign In with Strava'}</span>
+                  <span>{status.stravaConnected ? 'Switch / Re-Auth' : 'Connect with Strava'}</span>
                 </button>
                 {status.stravaConnected && onDisconnectStrava && (
                   <button
