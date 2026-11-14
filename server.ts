@@ -17,6 +17,9 @@ async function startServer() {
   app.use(express.json({ limit: '2mb' }));
   app.use(apiRouter);
 
+  const publicPath = path.resolve(__dirname, 'public');
+  app.use(express.static(publicPath));
+
   app.get('/manifest.webmanifest', (_req, res, next) => {
     const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');
     res.type('application/manifest+json');

@@ -332,7 +332,20 @@ export default function App() {
     }
   });
   const [dismissedQuickConnectBanner, setDismissedQuickConnectBanner] = useState<boolean>(false);
-  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(false);
+  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const search = window.location.search;
+        if (search.includes('demo=1') || search.includes('sample=true')) {
+          return true;
+        }
+        return localStorage.getItem('thresh_sample_demo_active') === 'true';
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  });
   const sampleDemoDataset = useMemo(() => buildSampleDemoDataset(), []);
   const [sampleDemoPlannedEvents, setSampleDemoPlannedEvents] = useState<PlannedWorkoutEvent[]>(
     () => sampleDemoDataset.plannedEvents
@@ -4729,6 +4742,8 @@ export default function App() {
                     </select>
                     <button
                       type="button"
+                      data-testid="open-roster-modal"
+                      aria-label="Manage Team Roster"
                       onClick={() => {
                         setRosterInitialTab('TEAMS_BRANDING');
                         setIsRosterModalOpen(true);
@@ -4742,11 +4757,13 @@ export default function App() {
                 ) : (
                   <button
                     type="button"
+                    data-testid="open-roster-modal"
+                    aria-label="Open Team Roster Modal"
                     onClick={() => {
                       setRosterInitialTab('TEAMS_BRANDING');
                       setIsRosterModalOpen(true);
                     }}
-                    className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
+                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
                     title="Create or Join a High School, Collegiate, or Club Team"
                   >
                     <Users className="w-3 h-3 ap-text-brand" />
