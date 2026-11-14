@@ -5,7 +5,9 @@ import {
   resolveSafeOrigin,
   setSessionCookie,
 } from '../securityUtils.ts';
+import { getUserById } from '../authService.ts';
 import {
+  autoLinkPendingTeamInvitesByEmail,
   broadcastWorkoutToTeamSquad,
   bulkCreateAndSendInvites,
   claimTeamJoinInvite,
@@ -129,6 +131,19 @@ teamRouter.get(['/api/teams/mine', '/api/teams'], async (req: Request, res: Resp
       });
       return;
     }
+
+    // Auto-link pending team invites if session belongs to verified user with email
+    if (claims.sub?.startsWith('usr_')) {
+      const u = await getUserById(claims.sub);
+      if (u?.email) {
+        await autoLinkPendingTeamInvitesByEmail({
+          email: u.email,
+          userSid: claims.sid,
+          athleteName: u.name,
+        });
+      }
+    }
+
     const originUrl = resolveRequestOrigin(req);
     const teams = await listTeamsForUser(claims.sid, originUrl);
     res.json({
@@ -292,7 +307,15 @@ teamRouter.get('/api/teams/join-preview', async (req: Request, res: Response) =>
   try {
     const codeOrSlug = String(req.query.codeOrSlug || '').trim();
     const token = req.query.t ? String(req.query.t).trim() : undefined;
-    const preview = await previewTeamJoinInvite(codeOrSlug, token);
+    let email = req.query.email ? String(req.query.email).trim().toLowerCase() : undefined;
+    if (!email) {
+      const claims = getVerifiedSessionClaims(req);
+      if (claims?.sub?.startsWith('usr_')) {
+        const u = await getUserById(claims.sub);
+        if (u?.email) email = u.email;
+      }
+    }
+    const preview = await previewTeamJoinInvite(codeOrSlug, token, email);
     res.json(preview);
   } catch (err) {
     res.status(400).json({
@@ -319,13 +342,23 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       rawTier === 'FULL_STREAMS' || rawTier === 'LOAD_ONLY'
         ? rawTier
         : 'SUMMARY_ONLY';
+
+    let athleteEmail = req.body?.athleteEmail ? String(req.body.athleteEmail).trim().toLowerCase() : undefined;
+    if (!athleteEmail) {
+      const claims = getVerifiedSessionClaims(req);
+      if (claims?.sub?.startsWith('usr_')) {
+        const u = await getUserById(claims.sub);
+        if (u?.email) athleteEmail = u.email;
+      }
+    }
+
     const claimed = await claimTeamJoinInvite({
       callerSid: sid,
       originUrl,
       codeOrSlug: String(req.body?.codeOrSlug || '').trim(),
       inviteToken: req.body?.inviteToken ? String(req.body.inviteToken).trim() : undefined,
       athleteName: athleteName || undefined,
-      athleteEmail: req.body?.athleteEmail ? String(req.body.athleteEmail) : undefined,
+      athleteEmail,
       stravaAthleteId: req.body?.stravaAthleteId
         ? String(req.body.stravaAthleteId).trim()
         : undefined,
