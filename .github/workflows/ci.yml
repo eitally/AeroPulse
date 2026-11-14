@@ -33,3 +33,12 @@ jobs:
 
       - name: Enforce <220 KB gzip entry bundle & clean dist gate
         run: npm run check:bundle
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E visual regression suite (QA-01)
+        run: npm run test:e2e
+        env:
+          NODE_ENV: production
+          CI: 'true'
