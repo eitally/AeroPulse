@@ -98,6 +98,24 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
 
       // Verify Plan calendar is loaded
       await page.waitForTimeout(600); // Allow calendar transitions to settle
+
+      // DES-03: Verify consolidated toolbar has <= 4 control groups and exactly one solid Volt CTA (+ Schedule)
+      const scheduleBtn = page.getByRole('button', { name: 'Schedule', exact: true });
+      await expect(scheduleBtn).toBeVisible();
+      await expect(scheduleBtn).toHaveClass(/ap-btn-primary/);
+
+      const actionsBtn = page.getByRole('button', { name: 'Actions', exact: true });
+      await expect(actionsBtn).toBeVisible();
+
+      // Open Actions dropdown to verify secondary actions (AI Review & Log Race)
+      await actionsBtn.click();
+      const aiReviewItem = page.getByRole('menuitem', { name: /AI Calendar Review/ });
+      await expect(aiReviewItem).toBeVisible();
+      await actionsBtn.click(); // Close Actions dropdown
+
+      const viewBtn = page.getByRole('button', { name: 'View', exact: true });
+      await expect(viewBtn).toBeVisible();
+
       await expect(page.locator('html')).not.toHaveClass(/dark/);
       await page.screenshot({
         path: 'test-results/screenshots/plan-desktop-1440-light.png',

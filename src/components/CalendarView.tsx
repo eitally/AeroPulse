@@ -739,6 +739,8 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
   const viewOptionsRef = useRef<HTMLDivElement>(null);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePlannedId, setPendingDeletePlannedId] = useState<string | null>(null);
   const builderDialogRef = useRef<HTMLDivElement>(null);
   const builderFormId = useId();
@@ -749,15 +751,19 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   });
 
   useEffect(() => {
-    if (!isViewOptionsOpen) return;
+    if (!isViewOptionsOpen && !isActionsOpen) return;
     const handleOutside = (e: MouseEvent) => {
-      if (viewOptionsRef.current && !viewOptionsRef.current.contains(e.target as Node)) {
+      if (isViewOptionsOpen && viewOptionsRef.current && !viewOptionsRef.current.contains(e.target as Node)) {
         setIsViewOptionsOpen(false);
+      }
+      if (isActionsOpen && actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
+        setIsActionsOpen(false);
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsViewOptionsOpen(false);
+        setIsActionsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleOutside);
@@ -766,7 +772,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isViewOptionsOpen]);
+  }, [isViewOptionsOpen, isActionsOpen]);
 
   const [builderDate, setBuilderDate] = useState<string>(() =>
     new Date().toISOString().slice(0, 10)
@@ -1321,59 +1327,129 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
               </button>
             </div>
 
-            {onOpenOfficialRaceModal && (
-              <button
-                type="button"
-                onClick={onOpenOfficialRaceModal}
-                className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
-                title="Log official track or road race results"
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                <span>Log Race</span>
-              </button>
-            )}
+            {/* Group 3: Secondary Tools & Views (Actions & View Popover) */}
+            <div className="flex items-center gap-0.5 rounded-xl liquid-capsule-track p-1">
+              {/* Actions Dropdown (AI Review & Log Race) */}
+              <div ref={actionsRef} className="relative">
+                <button
+                  type="button"
+                  aria-expanded={isActionsOpen}
+                  aria-haspopup="menu"
+                  onClick={() => {
+                    setIsActionsOpen((v) => !v);
+                    setIsViewOptionsOpen(false);
+                  }}
+                  className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
+                    isActionsOpen
+                      ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE] font-semibold'
+                      : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                  }`}
+                  title="Secondary calendar actions (AI Review, Log Race)"
+                >
+                  <Sparkles className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>Actions</span>
+                  {isActionsOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 opacity-75" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 opacity-75" />
+                  )}
+                </button>
 
-            <button
-              type="button"
-              onClick={() => handleOpenBuilderForDate(todayIso)}
-              className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs font-bold whitespace-nowrap cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" weight="bold" />
-              <span>Schedule</span>
-            </button>
+                {isActionsOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 sm:left-0 sm:right-auto mt-2 z-30 w-72 rounded-2xl liquid-glass p-2 space-y-1 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10"
+                  >
+                    <div className="px-2.5 py-1 text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
+                      Calendar Actions
+                    </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                onOpenCoachWithPrompt(
-                  `Review my ${MONTH_NAMES[viewMonth]} ${viewYear} training calendar, weekly load progression, and effort zone distribution. Propose 2 structured workouts for this week.`
-                )
-              }
-              className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>AI Review</span>
-            </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsActionsOpen(false);
+                        onOpenCoachWithPrompt(
+                          `Review my ${MONTH_NAMES[viewMonth]} ${viewYear} training calendar, weekly load progression, and effort zone distribution. Propose 2 structured workouts for this week.`
+                        );
+                      }}
+                      className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                    >
+                      <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                          <span>AI Calendar Review</span>
+                          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                            Coach
+                          </span>
+                        </div>
+                        <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          Audit load progression &amp; workout suggestions
+                        </div>
+                      </div>
+                    </button>
 
-            {/* View Options Popover (Density, Effort Stripes & Z1–Z6 Legend) */}
-            <div ref={viewOptionsRef} className="relative">
-              <button
-                type="button"
-                aria-expanded={isViewOptionsOpen}
-                onClick={() => setIsViewOptionsOpen((v) => !v)}
-                className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white transition-colors whitespace-nowrap cursor-pointer"
-              >
-                <Sliders className="w-3.5 h-3.5 ap-text-brand" />
-                <span>View Options</span>
-                {isViewOptionsOpen ? (
-                  <ChevronUp className="w-3.5 h-3.5 opacity-75" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 opacity-75" />
+                    {onOpenOfficialRaceModal && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setIsActionsOpen(false);
+                          onOpenOfficialRaceModal();
+                        }}
+                        className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                      >
+                        <div className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                          <Trophy className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                            <span>Log Official Race</span>
+                            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                              Results
+                            </span>
+                          </div>
+                          <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            Record track or road race results
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
 
-              {isViewOptionsOpen && (
-                <div className="absolute right-0 mt-2 z-30 w-[min(19rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3.5 text-xs shadow-2xl">
+              <div className="w-px h-4 bg-slate-300/80 dark:bg-white/15 my-auto" aria-hidden="true" />
+
+              {/* View Options Popover (Density, Effort Stripes & Z1–Z6 Legend) */}
+              <div ref={viewOptionsRef} className="relative">
+                <button
+                  type="button"
+                  aria-expanded={isViewOptionsOpen}
+                  onClick={() => {
+                    setIsViewOptionsOpen((v) => !v);
+                    setIsActionsOpen(false);
+                  }}
+                  className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
+                    isViewOptionsOpen
+                      ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE] font-semibold'
+                      : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                  }`}
+                  title="Calendar display options"
+                >
+                  <Sliders className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>View</span>
+                  {isViewOptionsOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 opacity-75" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 opacity-75" />
+                  )}
+                </button>
+
+                {isViewOptionsOpen && (
+                  <div className="absolute right-0 mt-2 z-30 w-[min(19rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3.5 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10">
                   <div className="space-y-1.5">
                     <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
                       Card Density
@@ -1448,7 +1524,18 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
               )}
             </div>
           </div>
+
+          {/* Group 4: Primary Solid Track Volt CTA */}
+          <button
+            type="button"
+            onClick={() => handleOpenBuilderForDate(todayIso)}
+            className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold whitespace-nowrap cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" weight="bold" />
+            <span>Schedule</span>
+          </button>
         </div>
+      </div>
 
         {/* Mobile / Tablet Layout Switcher (< xl only) */}
         <div className="flex xl:hidden pt-2 border-t border-slate-200/70 dark:border-slate-800/80 items-center justify-between gap-2 text-xs">
