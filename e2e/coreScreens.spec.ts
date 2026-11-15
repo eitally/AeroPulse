@@ -85,6 +85,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Dark mode cleanly
@@ -94,6 +95,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -122,6 +124,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Switch to dark mode
@@ -129,6 +132,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -150,6 +154,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/roster-modal-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Close modal before toggling theme
@@ -168,6 +173,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/roster-modal-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Close modal
@@ -200,6 +206,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-mobile-390-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Dark mode cleanly
@@ -207,6 +214,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-mobile-390-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -222,6 +230,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-mobile-390-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Dark mode Mobile Plan capture
@@ -229,6 +238,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-mobile-390-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -247,6 +257,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/docs-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Docs Theme
@@ -258,6 +269,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/docs-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
     });
   });

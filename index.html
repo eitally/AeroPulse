@@ -3,6 +3,10 @@
   <head>
     <script>
       (function () {
+        // Skip service worker caching and reload triggers in test / demo mode
+        if (typeof window !== 'undefined' && (window.location.search.includes('demo=1') || window.location.hash.includes('demo=1'))) {
+          return;
+        }
         // Purge legacy Service Worker caches so no stale or unauthenticated API responses persist
         if (typeof window !== 'undefined' && 'caches' in window) {
           ['aeropulse-ui-assets-swr', 'aeropulse-telemetry-api-swr'].forEach(function (name) {
