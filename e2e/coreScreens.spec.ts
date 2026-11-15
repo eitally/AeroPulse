@@ -51,6 +51,11 @@ async function toggleDarkMode(page: Page, enableDark: boolean) {
 }
 
 test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Prevent external Google Font network stalls from blocking headless screenshots in CI
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  });
+
   test.describe('Desktop Viewport (1440x900)', () => {
     test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
