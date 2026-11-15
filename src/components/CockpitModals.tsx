@@ -137,6 +137,7 @@ export interface CockpitModalsProps {
   rosterInitialTab: RosterTab;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
+  onOpenFullScreenStopwatch?: () => void;
 
   // User Guide Modal
   showMetricsGuide: boolean;
@@ -227,6 +228,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
   rosterInitialTab,
   onSelectActiveTeam,
   onTeamsUpdated,
+  onOpenFullScreenStopwatch,
 
   showMetricsGuide,
   onCloseMetricsGuide,
@@ -353,6 +355,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             initialTab={rosterInitialTab}
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
+            onOpenFullScreenStopwatch={onOpenFullScreenStopwatch}
           />
         </Suspense>
       )}

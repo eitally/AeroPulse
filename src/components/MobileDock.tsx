@@ -5,6 +5,7 @@ import {
   Calendar,
   Activity,
   Target,
+  Timer,
 } from './icons/PhosphorIcons';
 
 export interface MobileDockProps {
@@ -32,6 +33,12 @@ export const MobileDock: React.FC<MobileDockProps> = ({
       match: ['calendar'],
     },
     {
+      id: 'stopwatch' as const,
+      label: 'Stopwatch',
+      icon: Timer,
+      match: ['stopwatch'],
+    },
+    {
       id: 'activities' as const,
       label: 'Activities',
       icon: Activity,
@@ -48,7 +55,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
   return (
     <nav
       aria-label="Mobile primary workspaces"
-      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
+      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-5 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;

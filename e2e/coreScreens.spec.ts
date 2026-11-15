@@ -213,6 +213,98 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await expect(dialog).not.toBeVisible();
       await toggleDarkMode(page, false);
     });
+
+    test('3b. Trackside Stopwatch Workspace & Offline Airplane-Mode Resilience (FEA-01)', async ({ page, context }) => {
+      await enterSampleDemoMode(page, '#stopwatch');
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
+      await page.reload();
+
+      const heading = page.getByRole('heading', { name: 'Trackside Stopwatch' });
+      await expect(heading).toBeVisible({ timeout: 15000 });
+
+      // Add 2 walk-on athletes and record sample splits for clean Light & Dark captures
+      const walkOnInput = page.getByLabel('Walk-On Runner Name');
+      await walkOnInput.fill('Jordan Miles');
+      await page.getByRole('button', { name: 'Add Runner' }).click();
+      await walkOnInput.fill('Maya Chen');
+      await page.getByRole('button', { name: 'Add Runner' }).click();
+
+      await page.getByTestId('stopwatch-gun-btn').click();
+      await page.waitForTimeout(350);
+      await page.getByTestId('runner-card-0').click();
+      await page.waitForTimeout(150);
+      await page.getByTestId('runner-card-1').click();
+
+      await expect(page.locator('html')).not.toHaveClass(/dark/);
+      await page.screenshot({
+        path: 'test-results/screenshots/stopwatch-desktop-1440-light.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+
+      await toggleDarkMode(page, true);
+      await page.screenshot({
+        path: 'test-results/screenshots/stopwatch-desktop-1440-dark.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+      await toggleDarkMode(page, false);
+
+      // Clear state and verify Airplane-Mode workflow (Boot Today -> idle chunk warmup -> setOffline -> navigate & time)
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
+      await enterSampleDemoMode(page);
+      await page.waitForTimeout(1300);
+
+      await context.setOffline(true);
+      try {
+        await page
+          .locator('nav[aria-label="Primary workspaces"]')
+          .getByRole('link', { name: 'Stopwatch' })
+          .click();
+        await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+          timeout: 10000,
+        });
+        await expect(page.getByText(/Offline/i).first()).toBeVisible();
+
+        // Switch to RACE mode (auto-enables Chute Bar), start gun, queue 2 Chute Taps, assign #1
+        await page.getByTestId('stopwatch-mode-race').click();
+        await expect(page.getByTestId('stopwatch-mode-race')).toHaveAttribute('aria-checked', 'true');
+
+        await page.getByTestId('stopwatch-gun-btn').click();
+        await page.waitForTimeout(300);
+        await page.getByTestId('stopwatch-chute-tap').click();
+        await page.waitForTimeout(150);
+        await page.getByTestId('stopwatch-chute-tap').click();
+        await expect(page.getByTestId('chute-pill-0')).toBeVisible();
+        await expect(page.getByTestId('chute-pill-1')).toBeVisible();
+
+        await page.getByTestId('runner-card-0').click();
+        await expect(page.getByTestId('chute-pill-1')).not.toBeVisible();
+
+        // Switch to Matrix view & export CSV while STILL offline
+        await page.getByTestId('stopwatch-view-matrix').click();
+        await expect(page.getByTestId('stopwatch-matrix-table')).toBeVisible();
+
+        const [download] = await Promise.all([
+          page.waitForEvent('download'),
+          page.getByTestId('stopwatch-export-csv').click(),
+        ]);
+        expect(download.suggestedFilename()).toMatch(/^thresh-stopwatch-race-.*\.csv$/);
+      } finally {
+        await context.setOffline(false);
+      }
+
+      // Verify full persistence after reload and 1-click Save Official Race Marks into THRESH
+      await page.goto('/?demo=1#stopwatch');
+      await expect(page.getByTestId('stopwatch-mode-race')).toHaveAttribute('aria-checked', 'true', {
+        timeout: 15000,
+      });
+      await expect(page.getByTestId('stopwatch-save-thresh')).toBeEnabled();
+      await page.getByTestId('stopwatch-save-thresh').click();
+      await expect(page.getByText(/Saved .* Official Race/i)).toBeVisible();
+
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
+    });
   });
 
   test.describe('Mobile Viewport (390x844)', () => {
@@ -299,6 +391,50 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         animations: 'disabled',
       });
       await toggleDarkMode(page, false);
+    });
+
+    test('5b. Trackside Stopwatch Workspace (Mobile 390) — Light and Dark Mode', async ({ page }) => {
+      await enterSampleDemoMode(page, '#stopwatch');
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
+      await page.reload();
+
+      await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+        timeout: 15000,
+      });
+
+      // Verify 5-tab MobileDock includes Stopwatch
+      const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
+      await expect(mobileDock.getByRole('button', { name: 'Stopwatch' })).toBeVisible();
+
+      // Add walk-on athlete and record 1 split so mobile cards showcase active timing
+      await page.getByLabel('Walk-On Runner Name').fill('Jordan Miles');
+      await page.getByRole('button', { name: 'Add Runner' }).click();
+      await page.getByTestId('stopwatch-gun-btn').click();
+      await page.waitForTimeout(250);
+      await page.getByTestId('runner-card-0').click();
+
+      // Enforce large >= 72px trackside runner touch target
+      const cardBox = await page.getByTestId('runner-card-0').boundingBox();
+      expect(cardBox?.height || 0).toBeGreaterThanOrEqual(72);
+
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(150);
+
+      await page.screenshot({
+        path: 'test-results/screenshots/stopwatch-mobile-390-light.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+
+      await toggleDarkMode(page, true);
+      await page.screenshot({
+        path: 'test-results/screenshots/stopwatch-mobile-390-dark.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+      await toggleDarkMode(page, false);
+
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
     });
   });
 

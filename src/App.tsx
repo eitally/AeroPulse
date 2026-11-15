@@ -36,6 +36,7 @@ import {
 } from './components/StravaAuthGate';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
+import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
 import { applyTeamBrandToDocument } from './utils/teamBrandDom';
 import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
 import {
@@ -73,7 +74,7 @@ export default function App() {
     try {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.replace(/^#/, '');
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts'].includes(hash)) {
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch'].includes(hash)) {
           return hash as ActiveTab;
         }
       }
@@ -87,7 +88,7 @@ export default function App() {
     const handleHashChange = () => {
       try {
         const hash = window.location.hash.replace(/^#/, '');
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts'].includes(hash)) {
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch'].includes(hash)) {
           setActiveTab(hash as ActiveTab);
         }
       } catch {
@@ -1405,6 +1406,71 @@ export default function App() {
     [isSampleDemoMode]
   );
 
+  const handleSaveStopwatchActivities = useCallback(
+    (entries: SavedStopwatchEntry[]): number => {
+      if (!entries || entries.length === 0) return 0;
+      const selfActs: UnifiedActivity[] = [];
+      const rosterByRunnerId = new Map<string, UnifiedActivity[]>();
+      const rosterLookup = new Map(combinedRoster.map((a) => [a.id, a]));
+      let savedCount = 0;
+
+      for (const entry of entries) {
+        if (entry.runnerId === 'SELF') {
+          selfActs.push(entry.activity);
+          savedCount += 1;
+        } else {
+          const match = rosterLookup.get(entry.runnerId);
+          if (match && match.role === 'COACH_EDIT') {
+            const list = rosterByRunnerId.get(entry.runnerId) || [];
+            list.push(entry.activity);
+            rosterByRunnerId.set(entry.runnerId, list);
+            savedCount += 1;
+          }
+        }
+      }
+
+      if (selfActs.length > 0) {
+        if (isSampleDemoMode) {
+          setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, selfActs));
+        } else {
+          setActivities((prev) => {
+            const merged = mergeActivitiesNonDestructive(prev, selfActs);
+            activitiesRef.current = merged;
+            void savePersistedTelemetrySnapshot({
+              activities: merged,
+              wellnessDays: wellnessDaysRef.current,
+              plannedEvents: plannedEventsRef.current,
+              gearItems: gearItemsRef.current,
+              athleteProfile: athleteProfileRef.current,
+              redactedStravaCount: redactedStravaCountRef.current,
+            });
+            return merged;
+          });
+        }
+      }
+
+      if (rosterByRunnerId.size > 0) {
+        const mergeRosterActs = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) => {
+            const added = rosterByRunnerId.get(a.id);
+            if (!added || added.length === 0) return a;
+            return {
+              ...a,
+              activities: mergeActivitiesNonDestructive(a.activities, added),
+            };
+          });
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(mergeRosterActs);
+        } else {
+          setConnectedAthletes(mergeRosterActs);
+        }
+      }
+
+      return savedCount;
+    },
+    [combinedRoster, isSampleDemoMode]
+  );
+
   const handleCompleteCalibrationEntry = async (payload: FirstRunCalibrationPayload) => {
     const cleanName = payload.athleteName.trim() || athleteProfileRef.current.name || 'Athlete';
     const hasSeedOverride = Boolean(payload.hasCustomSeedMark);
@@ -1712,6 +1778,8 @@ export default function App() {
                 effectiveAthleteProfile={effectiveAthleteProfile}
                 primaryAthleteDisplayName={primaryAthleteDisplayName}
                 combinedRoster={combinedRoster}
+                myTeams={isSampleDemoMode ? [] : myTeams}
+                activeTeamId={isSampleDemoMode ? null : activeTeamId}
                 selectedActivity={selectedActivity}
                 benchmarkSegments={benchmarkSegments}
                 isScanningSegments={isScanningSegments}
@@ -1741,6 +1809,7 @@ export default function App() {
                 handleDeleteTargetGoal={handleDeleteTargetGoal}
                 handleSaveProfileOverride={handleSaveProfileOverride}
                 handleSwitchToCalendarTab={handleSwitchToCalendarTab}
+                handleSaveStopwatchActivities={handleSaveStopwatchActivities}
               />
             </main>
 
@@ -1862,6 +1931,10 @@ export default function App() {
           rosterInitialTab={rosterInitialTab}
           onSelectActiveTeam={handleSelectActiveTeam}
           onTeamsUpdated={handleTeamsUpdated}
+          onOpenFullScreenStopwatch={() => {
+            setIsRosterModalOpen(false);
+            setActiveTab('stopwatch');
+          }}
           showMetricsGuide={showMetricsGuide}
           onCloseMetricsGuide={() => setShowMetricsGuide(false)}
           onNavigateTab={(tab) => setActiveTab(tab)}
