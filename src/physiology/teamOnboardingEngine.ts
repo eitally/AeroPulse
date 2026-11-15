@@ -3,6 +3,10 @@ import type {
   TeamBrandConfig,
   TeamOrgType,
 } from '../types.ts';
+import {
+  buildTrackSpeedReserveProfile,
+  solveTrackPaceSecsPerKmForPctVdot,
+} from './trackSpeedReserveEngine.ts';
 
 export interface AccessibleTeamPalette {
   primaryHex: string;
@@ -717,32 +721,15 @@ export function calibrateThresholdsFromSeedMark(
       else if (totalSecs < 810) distMeters = 3200; // 7:30..13:29 bare time -> 3200m (never 5K WR!)
       else distMeters = 5000; // 13:30+ bare time -> 5K
 
-      // Daniels VDOT estimation
-      const tMins = totalSecs / 60;
-      const vMetersPerMin = distMeters / tMins;
-      const vo2 =
-        -4.6 + 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin * vMetersPerMin;
-      const pctMax =
-        0.8 +
-        0.1894393 * Math.exp(-0.012778 * tMins) +
-        0.2989558 * Math.exp(-0.1932605 * tMins);
-      const rawVdot = vo2 / pctMax;
-      // Middle-distance anaerobic contribution conservatism (2.5% for 800m-1609m)
-      const effectiveVdot = distMeters <= 1610 ? rawVdot * 0.975 : rawVdot;
-      const vdot = Math.max(28, Math.min(86, Number(effectiveVdot.toFixed(1))));
+      // 2-Parameter Speed-Reserve calibrated aerobic VDOT with un-clamped track paces
+      const profile = buildTrackSpeedReserveProfile({
+        marks: [{ distanceMeters: distMeters, durationSecs: totalSecs }],
+      });
+      const vdot = Math.max(24, Math.min(90, Number(profile.vdotAer.toFixed(1))));
 
-      const solvePaceSecsPerKmForPctVo2 = (pctVo2: number) => {
-        const targetVo2 = vdot * pctVo2;
-        const a = 0.000104;
-        const b = 0.182258;
-        const c = -4.6 - targetVo2;
-        const velMpm = (-b + Math.sqrt(Math.max(0.01, b * b - 4 * a * c))) / (2 * a);
-        return Math.max(145, Math.min(520, Math.round((1000 / Math.max(110, velMpm)) * 60)));
-      };
-
-      const ltSecsPerKm = solvePaceSecsPerKmForPctVo2(0.88);
-      const easySecsPerKm = solvePaceSecsPerKmForPctVo2(0.70);
-      const intervalSecsPerKm = solvePaceSecsPerKmForPctVo2(0.98);
+      const ltSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.88, [115, 520]));
+      const easySecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.70, [145, 560]));
+      const intervalSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.98, [115, 480]));
 
       const disp = formatPaceDisplay(ltSecsPerKm, distanceUnit);
       const easyDisp = formatPaceDisplay(easySecsPerKm, distanceUnit);

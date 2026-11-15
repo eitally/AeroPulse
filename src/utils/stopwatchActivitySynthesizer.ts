@@ -1,6 +1,7 @@
 import type {
   ActivityInterval,
   ActivityStreamSet,
+  TrackRepDistanceMeters,
   UnifiedActivity,
 } from '../types';
 import type {
@@ -97,7 +98,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
   maxHr?: number;
   sessionTitle?: string;
   presetLabel: string;
-  repDistanceMeters: 200 | 400 | 800 | 1000 | 1600;
+  repDistanceMeters: TrackRepDistanceMeters | number;
   restDurationSecs: number;
   lapSplitsSecs: number[];
   dateIso?: string;
@@ -117,7 +118,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
   } = params;
 
   const validSplits = lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0);
-  const safeThresholdPace = Math.max(150, Math.min(480, thresholdPaceSecsPerKm || 245));
+  const safeThresholdPace = Math.max(115, Math.min(480, thresholdPaceSecsPerKm || 245));
   const repDist = Math.max(100, repDistanceMeters);
 
   const intervals: ActivityInterval[] = [];

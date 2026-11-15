@@ -17,6 +17,7 @@ import type {
   TargetGoal,
   TeamSummaryWithRole,
   ThreshUser,
+  TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from './types';
@@ -1357,6 +1358,7 @@ export default function App() {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      trackSpec?: TrackWorkoutSpec;
       replaceExistingDate?: boolean;
     }) => {
       if (activeConnectedAthlete && activeConnectedAthlete.role === 'COACH_EDIT') {

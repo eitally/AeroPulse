@@ -284,6 +284,7 @@ export interface PlannedWorkoutEvent {
   targetZoneSummary: string;
   workoutSyntax?: string;
   structuredSteps?: StructuredWorkoutStep[];
+  trackSpec?: TrackWorkoutSpec;
   source?: 'USER' | 'AI_COACH' | 'INTERVALS_ICU';
 }
 
@@ -874,15 +875,80 @@ export type ScholasticDivision =
 export type VdotPodIntensity =
   | 'EASY'
   | 'MARATHON'
+  | 'SUB_THRESHOLD'
   | 'THRESHOLD_CV'
   | 'INTERVAL_VO2'
-  | 'REPETITION';
+  | 'RACE_3200M'
+  | 'REPETITION'
+  | 'RACE_1600M'
+  | 'RACE_800M';
+
+export type TrackRepDistanceMeters = 150 | 200 | 300 | 400 | 500 | 600 | 800 | 1000 | 1200 | 1600;
+export type SpeedReservePhenotype = 'ENDURANCE' | 'HYBRID' | 'SPEED';
+export type TrackTrainingZoneCode = 'E' | 'SUB_T' | 'T' | 'CV' | 'I' | 'R' | 'FR';
+export type TrackSeasonPhase = 'BASE' | 'STRENGTH_CV' | 'SPECIFIC' | 'PEAK_TAPER';
+export type TrackTargetEventGroup = '800M' | '1500_MILE' | '3000_3200M' | '5000M';
+
+export interface TrackSeedMarkInput {
+  distanceMeters: number;
+  durationSecs: number;
+  dateIso?: string;
+  eventLabel?: string;
+}
+
+export interface TrackZoneSplitRow {
+  code: TrackTrainingZoneCode;
+  name: string;
+  pctVdotAer: number;
+  paceSecsPerKm: number;
+  speedMps: number;
+  splitsSecs: {
+    m200: number;
+    m300: number;
+    m400: number;
+    m600: number;
+    m800: number;
+    m1000: number;
+    m1200: number;
+    m1600: number;
+  };
+}
+
+export interface TrackSpeedReserveProfile {
+  modelSource: 'MULTI_MARK_CS_DPRIME' | 'SINGLE_MARK_SCALED' | 'PROFILE_THRESHOLD_FALLBACK';
+  csMps: number;
+  criticalPaceSecsPerKm: number;
+  dPrimeMeters: number;
+  vdotAer: number;
+  vdotRawBest: number;
+  masMps: number;
+  mssMps: number;
+  asrMps: number;
+  srr: number;
+  phenotype: SpeedReservePhenotype;
+  thresholdPaceSecsPerKm: number;
+  zones: Record<TrackTrainingZoneCode, TrackZoneSplitRow>;
+}
+
+export interface TrackWorkoutSpec {
+  repCount: number;
+  repDistanceMeters: TrackRepDistanceMeters;
+  zoneCode: TrackTrainingZoneCode;
+  podIntensity: VdotPodIntensity;
+  targetSplitSecs?: number;
+  restDurationSecs: number;
+  recoveryCue?: string;
+  waveMode?: 'MASS' | 'POD_10S' | 'PURSUIT';
+  eventGroup?: TrackTargetEventGroup;
+  phase?: TrackSeasonPhase;
+}
 
 export interface VdotPodAthleteMember {
   id: string;
   name: string;
   vdot: number;
   thresholdPaceSecsPerKm: number;
+  phenotype?: SpeedReservePhenotype;
 }
 
 export interface VdotTrainingPod {
@@ -894,16 +960,23 @@ export interface VdotTrainingPod {
   athletes: VdotPodAthleteMember[];
   intensity: VdotPodIntensity;
   targetPaceSecsPerKm: number;
+  targetRepSplitSecs?: number;
+  pursuitStaggerOffsetSecs?: number;
   splitsSecs: {
     split200m: number;
+    split300m?: number;
     split400m: number;
+    split600m?: number;
     split800m: number;
     split1000m: number;
+    split1200m?: number;
     split1600m: number;
   };
   workoutPrescriptionLine: string;
   workoutSyntax: string;
 }
+
+export type VdotPacingPod = VdotTrainingPod;
 
 export type NcaaTrackFacilityType =
   | 'INDOOR_FLAT_200M'

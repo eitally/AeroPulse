@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Download,
   Dumbbell,
   FileText,
   Footprints,
@@ -16,6 +17,7 @@ import {
   Plus,
   Sliders,
   Sparkles,
+  Timer,
   Trash2,
   Trophy,
   Waves,
@@ -28,11 +30,20 @@ import {
   PlannedWorkoutEvent,
   SportCategory,
   TargetGoal,
+  TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
 import { formatDistance } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import {
+  buildFitStepsFromWorkoutSyntax,
+  downloadGarminFitWorkoutFile,
+} from '../utils/fitWorkoutEncoder';
+import {
+  inferTrackWorkoutSpecFromPlannedEvent,
+  stageWorkoutInTracksideStopwatch,
+} from '../hooks/useTracksideStopwatch';
 import {
   INTERVALS_EFFORT_ZONES,
   ParsedWorkoutStep as ParsedStep,
@@ -64,6 +75,7 @@ interface CalendarViewProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
   onDeletePlannedEvent: (id: string) => Promise<void>;
@@ -77,6 +89,7 @@ interface CalendarViewProps {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      trackSpec?: TrackWorkoutSpec;
     }[],
     clearFutureEvents?: boolean
   ) => Promise<void>;
@@ -85,6 +98,7 @@ interface CalendarViewProps {
   onOpenGoalsArchitect?: () => void;
   onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
+  onOpenTracksideStopwatch?: () => void;
 }
 
 const WEEKDAYS = [
@@ -191,6 +205,7 @@ function buildDayPlannedEffortStripe(
         stepsRaw.push({
           label: st.label,
           durationMins: mins,
+          durationSecs: st.durationSecs || mins * 60,
           intensityPct: pct,
           zone: zMeta.zone,
           zoneCode: zMeta.code,
@@ -214,6 +229,7 @@ function buildDayPlannedEffortStripe(
         {
           label: 'Warmup',
           durationMins: warmM,
+          durationSecs: warmM * 60,
           intensityPct: 54,
           zone: 1,
           zoneCode: zWarm.code,
@@ -222,6 +238,7 @@ function buildDayPlannedEffortStripe(
         {
           label: ev.name,
           durationMins: workM,
+          durationSecs: workM * 60,
           intensityPct: mainPct,
           zone: zMain.zone,
           zoneCode: zMain.code,
@@ -230,6 +247,7 @@ function buildDayPlannedEffortStripe(
         {
           label: 'Cooldown',
           durationMins: coolM,
+          durationSecs: coolM * 60,
           intensityPct: 52,
           zone: 1,
           zoneCode: zWarm.code,
@@ -239,16 +257,17 @@ function buildDayPlannedEffortStripe(
     }
   }
 
-  const totalMins = Math.max(
-    1,
+  const rawTotalMins = Math.max(
+    0.25,
     stepsRaw.reduce((acc, s) => acc + s.durationMins, 0)
   );
+  const totalMins = Math.max(1, Math.round(rawTotalMins));
   const zoneMins = [0, 0, 0, 0, 0, 0];
   for (const s of stepsRaw) {
     zoneMins[s.zone - 1] += s.durationMins;
   }
   const zoneSharesPct = zoneMins.map((m) =>
-    Math.round((m / totalMins) * 100)
+    Math.round((m / rawTotalMins) * 100)
   ) as [number, number, number, number, number, number];
 
   let domIdx = 1;
@@ -288,7 +307,7 @@ function buildDayPlannedEffortStripe(
         label: s.label,
         durationMins: s.durationMins,
         intensityPct: s.intensityPct,
-        widthPct: (s.durationMins / totalMins) * 100,
+        widthPct: (s.durationMins / rawTotalMins) * 100,
         heightPct: computeAmplitudeHeightPct(s.intensityPct, zInfo.heightPct),
         zone: s.zone,
         zoneCode: s.zoneCode,
@@ -704,6 +723,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   onOpenGoalsArchitect,
   onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
+  onOpenTracksideStopwatch,
 }) => {
   const [sportFilter, setSportFilter] = useState<SportCategory | 'ALL'>(selectedSport);
   useEffect(() => {
@@ -744,6 +764,25 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [pendingDeletePlannedId, setPendingDeletePlannedId] = useState<string | null>(null);
   const builderDialogRef = useRef<HTMLDivElement>(null);
   const builderFormId = useId();
+
+  const handleLaunchPlannedInStopwatch = (ev: PlannedWorkoutEvent) => {
+    const spec = inferTrackWorkoutSpecFromPlannedEvent(ev);
+    if (!spec) return;
+    stageWorkoutInTracksideStopwatch({ title: ev.name, spec });
+    onOpenTracksideStopwatch?.();
+  };
+
+  const handleExportPlannedFit = (ev: PlannedWorkoutEvent) => {
+    if (!ev.workoutSyntax) return;
+    const sport: 'Running' | 'Cycling' = ev.sportCategory === 'Cycling' ? 'Cycling' : 'Running';
+    const steps = buildFitStepsFromWorkoutSyntax(ev.workoutSyntax, {
+      sport,
+      ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
+      lthrBpm: athleteProfile?.lthr || 170,
+      thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 250,
+    });
+    downloadGarminFitWorkoutFile({ name: ev.name, sport, steps }, ev.date);
+  };
   useModalDialog({
     isOpen: isBuilderOpen,
     onClose: () => setIsBuilderOpen(false),
@@ -809,7 +848,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       ) / Math.max(1, totalMins);
     const estimatedTss = Math.round((totalMins / 60) * weightedIf * 100);
     return {
-      durationSecs: totalMins * 60,
+      durationSecs: Math.round(totalMins * 60),
       load: Math.max(10, estimatedTss),
     };
   }, [parsedBuilderSteps]);
@@ -1819,54 +1858,88 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                         })}
 
                         {/* Explicitly Scheduled Planned Events */}
-                        {day.dayPlanned.map((ev) => (
-                          <div
-                            key={`mob-plan-${ev.id}`}
-                            className="rounded-xl border border-dashed border-[#1C5436]/45 dark:border-[#C8FF00]/35 bg-[#1C5436]/[0.05] dark:bg-[#C8FF00]/[0.04] p-2.5 flex items-center justify-between gap-2"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                                {ev.name}
+                        {day.dayPlanned.map((ev) => {
+                          const trackSpec =
+                            ev.sportCategory === 'Running'
+                              ? inferTrackWorkoutSpecFromPlannedEvent(ev)
+                              : null;
+                          return (
+                            <div
+                              key={`mob-plan-${ev.id}`}
+                              className="rounded-xl border border-dashed border-[#1C5436]/45 dark:border-[#C8FF00]/35 bg-[#1C5436]/[0.05] dark:bg-[#C8FF00]/[0.04] p-2.5 flex flex-col gap-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                    {ev.name}
+                                  </div>
+                                  <div className="mt-0.5 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00] font-semibold">
+                                    Planned · {ev.sportCategory} ·{' '}
+                                    {formatCompactDuration(ev.plannedDurationSecs)} · ~{ev.plannedLoad}{' '}
+                                    TSS
+                                  </div>
+                                </div>
+                                {pendingDeletePlannedId === ev.id ? (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onDeletePlannedEvent(ev.id);
+                                        setPendingDeletePlannedId(null);
+                                      }}
+                                      className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-2xs font-bold"
+                                    >
+                                      Delete
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingDeletePlannedId(null)}
+                                      className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-2xs font-semibold"
+                                    >
+                                      Keep
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingDeletePlannedId(ev.id)}
+                                    aria-label={`Delete planned workout ${ev.name}`}
+                                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-rose-700/75 dark:text-rose-300/75 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/10"
+                                    title="Delete planned workout"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
-                              <div className="mt-0.5 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00] font-semibold">
-                                Planned · {ev.sportCategory} ·{' '}
-                                {formatCompactDuration(ev.plannedDurationSecs)} · ~{ev.plannedLoad}{' '}
-                                TSS
-                              </div>
+                              {(trackSpec || Boolean(ev.workoutSyntax)) && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-emerald-900/10 dark:border-white/10">
+                                  {trackSpec && (
+                                    <button
+                                      type="button"
+                                      data-testid="calendar-launch-stopwatch"
+                                      onClick={() => handleLaunchPlannedInStopwatch(ev)}
+                                      className="min-h-[44px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-mono font-bold transition-colors cursor-pointer"
+                                    >
+                                      <Timer className="w-3.5 h-3.5" weight="bold" />
+                                      <span>Time on Track</span>
+                                    </button>
+                                  )}
+                                  {ev.workoutSyntax && (
+                                    <button
+                                      type="button"
+                                      data-testid="calendar-export-fit"
+                                      onClick={() => handleExportPlannedFit(ev)}
+                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                    >
+                                      <Download className="w-3.5 h-3.5" weight="bold" />
+                                      <span>.FIT</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            {pendingDeletePlannedId === ev.id ? (
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onDeletePlannedEvent(ev.id);
-                                    setPendingDeletePlannedId(null);
-                                  }}
-                                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-2xs font-bold"
-                                >
-                                  Delete
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDeletePlannedId(null)}
-                                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-2xs font-semibold"
-                                >
-                                  Keep
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setPendingDeletePlannedId(ev.id)}
-                                aria-label={`Delete planned workout ${ev.name}`}
-                                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-rose-700/75 dark:text-rose-300/75 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/10"
-                                title="Delete planned workout"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   })}
@@ -2566,6 +2639,38 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                         <span>{formatCompactDuration(ev.plannedDurationSecs)}</span>
                                         <span>Load ~{ev.plannedLoad}</span>
                                       </div>
+
+                                      {(ev.sportCategory === 'Running' &&
+                                        Boolean(inferTrackWorkoutSpecFromPlannedEvent(ev))) ||
+                                      Boolean(ev.workoutSyntax) ? (
+                                        <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-slate-200/70 dark:border-slate-800/70">
+                                          {ev.sportCategory === 'Running' &&
+                                            inferTrackWorkoutSpecFromPlannedEvent(ev) && (
+                                              <button
+                                                type="button"
+                                                data-testid="calendar-launch-stopwatch"
+                                                onClick={() => handleLaunchPlannedInStopwatch(ev)}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-mono font-bold transition-colors cursor-pointer"
+                                                title="Stage this track session in Trackside Stopwatch"
+                                              >
+                                                <Timer className="w-3 h-3" weight="bold" />
+                                                <span>Time on Track</span>
+                                              </button>
+                                            )}
+                                          {ev.workoutSyntax && (
+                                            <button
+                                              type="button"
+                                              data-testid="calendar-export-fit"
+                                              onClick={() => handleExportPlannedFit(ev)}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                              title="Download Garmin .FIT workout file"
+                                            >
+                                              <Download className="w-3 h-3" weight="bold" />
+                                              <span>.FIT</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </div>
                                 );

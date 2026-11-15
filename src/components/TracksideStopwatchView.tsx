@@ -101,6 +101,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     viewMode,
     showChuteBar,
     workoutPresetId,
+    customWorkoutSpec,
     raceEventLabel,
     restDurationSecs,
     waveMode,
@@ -290,11 +291,26 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     [soundEnabled]
   );
 
+  const customPlanPreset = useMemo(() => {
+    if (!customWorkoutSpec) return null;
+    return {
+      id: 'custom-plan',
+      label:
+        sessionTitle ||
+        `${customWorkoutSpec.repCount} x ${customWorkoutSpec.repDistanceMeters}m · ${customWorkoutSpec.zoneCode}`,
+      repCount: customWorkoutSpec.repCount,
+      repDistanceMeters: customWorkoutSpec.repDistanceMeters,
+      intensity: customWorkoutSpec.podIntensity,
+      defaultRestSecs: customWorkoutSpec.restDurationSecs,
+    };
+  }, [customWorkoutSpec, sessionTitle]);
+
   const activeWorkoutPreset = useMemo(
     () =>
+      (workoutPresetId === 'custom-plan' && customPlanPreset ? customPlanPreset : null) ||
       WORKOUT_STOPWATCH_PRESETS.find((p) => p.id === workoutPresetId) ||
       WORKOUT_STOPWATCH_PRESETS[0],
-    [workoutPresetId]
+    [workoutPresetId, customPlanPreset]
   );
 
   const activeRacePreset = useMemo(
@@ -351,24 +367,32 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const runnerPodLookup = useMemo(() => {
     const map = new Map<string, { podKey: string; targetLapSecs: number }>();
+    const useDirectCustomTarget =
+      workoutPresetId === 'custom-plan' &&
+      typeof customWorkoutSpec?.targetSplitSecs === 'number' &&
+      customWorkoutSpec.targetSplitSecs > 0 &&
+      rosterInputs.length <= 1;
+
     for (const pod of vdotPods) {
       const podKey = pod.podName.split(' — ')[0] || pod.podName;
-      const splitSecs =
-        activeWorkoutPreset.repDistanceMeters === 200
-          ? pod.splitsSecs.split200m
-          : activeWorkoutPreset.repDistanceMeters === 400
-            ? pod.splitsSecs.split400m
-            : activeWorkoutPreset.repDistanceMeters === 800
-              ? pod.splitsSecs.split800m
-              : activeWorkoutPreset.repDistanceMeters === 1000
-                ? pod.splitsSecs.split1000m
-                : pod.splitsSecs.split1600m;
+      const splitSecs = useDirectCustomTarget
+        ? customWorkoutSpec!.targetSplitSecs!
+        : pod.targetRepSplitSecs ??
+          Number(
+            ((pod.targetPaceSecsPerKm / 1000) * activeWorkoutPreset.repDistanceMeters).toFixed(1)
+          );
       for (const athlete of pod.athletes) {
         map.set(athlete.id, { podKey, targetLapSecs: splitSecs });
       }
     }
     return map;
-  }, [vdotPods, activeWorkoutPreset.repDistanceMeters]);
+  }, [
+    vdotPods,
+    activeWorkoutPreset.repDistanceMeters,
+    workoutPresetId,
+    customWorkoutSpec,
+    rosterInputs.length,
+  ]);
 
   const activePodKeys = useMemo(() => {
     const keys: string[] = [];
@@ -798,6 +822,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   onChange={(e) => setWorkoutPresetId(e.target.value)}
                   className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
                 >
+                  {customPlanPreset && (
+                    <option
+                      value="custom-plan"
+                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
+                    >
+                      Planned: {customPlanPreset.label}
+                    </option>
+                  )}
                   {WORKOUT_STOPWATCH_PRESETS.map((p) => (
                     <option
                       key={p.id}
@@ -1072,33 +1104,81 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               )}
             </button>
 
-            <button
-              type="button"
-              data-testid="stopwatch-wave-toggle"
-              aria-pressed={waveMode === 'POD_STAGGER'}
-              onClick={() =>
-                setWaveMode(waveMode === 'POD_STAGGER' ? 'MASS' : 'POD_STAGGER')
-              }
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
-                waveMode === 'POD_STAGGER'
-                  ? 'ap-status-caution font-bold'
-                  : 'ap-card-inset text-slate-700 dark:text-slate-200'
-              }`}
+            <div
+              role="group"
+              aria-label="Start Wave Mode"
+              className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
             >
-              <Waves className="w-3.5 h-3.5" weight="bold" />
-              <span>{waveMode === 'POD_STAGGER' ? 'Pod Waves On' : 'Mass Gun'}</span>
-            </button>
+              <button
+                type="button"
+                aria-pressed={waveMode === 'MASS'}
+                onClick={() => setWaveMode('MASS')}
+                className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                  waveMode === 'MASS'
+                    ? 'liquid-capsule-active'
+                    : 'text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                Mass Gun
+              </button>
+              <button
+                type="button"
+                data-testid="stopwatch-wave-toggle"
+                aria-pressed={waveMode === 'POD_STAGGER'}
+                onClick={() => {
+                  const nextMode = waveMode === 'POD_STAGGER' ? 'MASS' : 'POD_STAGGER';
+                  setWaveMode(nextMode);
+                  if (nextMode === 'POD_STAGGER') {
+                    for (const [podKey, defOffset] of Object.entries(DEFAULT_POD_WAVE_OFFSETS)) {
+                      setPodWaveOffset(podKey, defOffset);
+                    }
+                  }
+                }}
+                className={`min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                  waveMode === 'POD_STAGGER'
+                    ? 'liquid-capsule-active ap-status-caution font-bold'
+                    : 'text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <Waves className="w-3.5 h-3.5" weight="bold" />
+                <span>Pod +10s</span>
+              </button>
+              <button
+                type="button"
+                data-testid="stopwatch-wave-pursuit"
+                aria-pressed={waveMode === 'PURSUIT'}
+                onClick={() => {
+                  setWaveMode('PURSUIT');
+                  for (const pod of vdotPods) {
+                    const podKey = pod.podName.split(' — ')[0] || pod.podName;
+                    if (typeof pod.pursuitStaggerOffsetSecs === 'number') {
+                      setPodWaveOffset(podKey, pod.pursuitStaggerOffsetSecs);
+                    }
+                  }
+                }}
+                className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                  waveMode === 'PURSUIT'
+                    ? 'liquid-capsule-active ap-status-prime font-bold'
+                    : 'text-slate-700 dark:text-slate-300'
+                }`}
+                title="Offset faster pods so all pods finish each rep together"
+              >
+                Pursuit (Finish Together)
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Staggered Pod Wave Controls Strip (when Pod Waves On) */}
-        {waveMode === 'POD_STAGGER' && (
+        {/* Staggered Pod Wave Controls Strip (when Pod Waves or Pursuit active) */}
+        {(waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT') && (
           <div className="rounded-xl ap-card-inset p-3 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-700 dark:text-slate-300">
               <span className="font-bold uppercase tracking-wider">
-                Staggered Pod Start Offsets (Automatically Subtracted From Net Splits)
+                {waveMode === 'PURSUIT'
+                  ? 'Pursuit Stagger Offsets — Finish Together (Automatically Subtracted From Net Splits)'
+                  : 'Staggered Pod Start Offsets (Automatically Subtracted From Net Splits)'}
               </span>
-              <span>Adjust offsets (-5s / +5s) or tap Release Now mid-race</span>
+              <span>Adjust offsets (-5s / +5s) or tap Go Now mid-session</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {activePodKeys.map((podKey) => {

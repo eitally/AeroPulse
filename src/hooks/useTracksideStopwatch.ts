@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VdotPodRosterInput } from '../physiology/scholasticEngine';
 import { OFFICIAL_RACE_EVENTS } from '../utils/officialRaceSynthesizer';
-import type { VdotPodIntensity } from '../types';
+import { parseStructuredTrackWorkout } from '../utils/workoutParser';
+import type {
+  PlannedWorkoutEvent,
+  TrackRepDistanceMeters,
+  TrackTrainingZoneCode,
+  TrackWorkoutSpec,
+  VdotPodIntensity,
+  VdotTrainingPod,
+} from '../types';
 
 export const TRACKSIDE_STOPWATCH_STORAGE_KEY = 'thresh_trackside_stopwatch_v1';
 const TRACKSIDE_SYNC_EVENT = 'thresh:trackside-stopwatch-sync';
 
 export type TracksideSessionType = 'WORKOUT' | 'RACE';
 export type TracksideViewMode = 'CARDS' | 'MATRIX';
-export type TracksideWaveMode = 'MASS' | 'POD_STAGGER';
+export type TracksideWaveMode = 'MASS' | 'POD_STAGGER' | 'PURSUIT';
 
 export interface WorkoutStopwatchPreset {
   id: string;
   label: string;
   repCount: number;
-  repDistanceMeters: 200 | 400 | 800 | 1000 | 1600;
+  repDistanceMeters: TrackRepDistanceMeters;
   intensity: VdotPodIntensity;
   defaultRestSecs: number;
 }
@@ -130,6 +138,7 @@ export interface PersistedTracksideStopwatchState {
   viewMode?: TracksideViewMode;
   showChuteBar?: boolean;
   workoutPresetId?: string;
+  customWorkoutSpec?: TrackWorkoutSpec | null;
   raceEventLabel?: string;
   restDurationSecs?: number;
   waveMode?: TracksideWaveMode;
@@ -152,6 +161,7 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   viewMode: 'CARDS',
   showChuteBar: false,
   workoutPresetId: '8x400',
+  customWorkoutSpec: null,
   raceEventLabel: '1600m',
   restDurationSecs: 60,
   waveMode: 'MASS',
@@ -174,6 +184,44 @@ function sanitizeNumberRecord(raw: unknown): Record<string, number> {
   return out;
 }
 
+const VALID_REP_DISTANCES: TrackRepDistanceMeters[] = [
+  150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
+];
+
+function sanitizeCustomWorkoutSpec(raw: unknown): TrackWorkoutSpec | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const candidate = raw as Partial<TrackWorkoutSpec>;
+  if (
+    typeof candidate.repCount !== 'number' ||
+    !Number.isFinite(candidate.repCount) ||
+    candidate.repCount < 1
+  ) {
+    return null;
+  }
+  const repDistNum = Number(candidate.repDistanceMeters);
+  if (!Number.isFinite(repDistNum) || repDistNum <= 0) return null;
+  const snappedDist = VALID_REP_DISTANCES.reduce((best, cur) =>
+    Math.abs(cur - repDistNum) < Math.abs(best - repDistNum) ? cur : best
+  );
+  return {
+    repCount: Math.max(1, Math.round(candidate.repCount)),
+    repDistanceMeters: snappedDist,
+    zoneCode: candidate.zoneCode || 'CV',
+    podIntensity: candidate.podIntensity || 'THRESHOLD_CV',
+    ...(typeof candidate.targetSplitSecs === 'number' && Number.isFinite(candidate.targetSplitSecs)
+      ? { targetSplitSecs: candidate.targetSplitSecs }
+      : {}),
+    restDurationSecs:
+      typeof candidate.restDurationSecs === 'number' && Number.isFinite(candidate.restDurationSecs)
+        ? Math.max(0, Math.round(candidate.restDurationSecs))
+        : 60,
+    ...(typeof candidate.recoveryCue === 'string' ? { recoveryCue: candidate.recoveryCue } : {}),
+    ...(candidate.waveMode ? { waveMode: candidate.waveMode } : {}),
+    ...(candidate.eventGroup ? { eventGroup: candidate.eventGroup } : {}),
+    ...(candidate.phase ? { phase: candidate.phase } : {}),
+  };
+}
+
 export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchState {
   if (typeof window === 'undefined') return DEFAULT_STOPWATCH_STATE;
   try {
@@ -185,8 +233,13 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
     const viewMode: TracksideViewMode =
       parsed.viewMode === 'MATRIX' ? 'MATRIX' : 'CARDS';
     const waveMode: TracksideWaveMode =
-      parsed.waveMode === 'POD_STAGGER' ? 'POD_STAGGER' : 'MASS';
+      parsed.waveMode === 'PURSUIT'
+        ? 'PURSUIT'
+        : parsed.waveMode === 'POD_STAGGER'
+          ? 'POD_STAGGER'
+          : 'MASS';
     const podOffsets = sanitizeNumberRecord(parsed.podWaveOffsetsSecs);
+    const customWorkoutSpec = sanitizeCustomWorkoutSpec(parsed.customWorkoutSpec);
     return {
       isRunning: Boolean(parsed.isRunning),
       startedAtEpochMs:
@@ -210,10 +263,13 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
           ? parsed.showChuteBar
           : sessionType === 'RACE',
       workoutPresetId:
-        typeof parsed.workoutPresetId === 'string' &&
-        WORKOUT_STOPWATCH_PRESETS.some((p) => p.id === parsed.workoutPresetId)
-          ? parsed.workoutPresetId
-          : '8x400',
+        parsed.workoutPresetId === 'custom-plan' && customWorkoutSpec
+          ? 'custom-plan'
+          : typeof parsed.workoutPresetId === 'string' &&
+              WORKOUT_STOPWATCH_PRESETS.some((p) => p.id === parsed.workoutPresetId)
+            ? parsed.workoutPresetId
+            : '8x400',
+      customWorkoutSpec,
       raceEventLabel:
         typeof parsed.raceEventLabel === 'string' &&
         RACE_STOPWATCH_PRESETS.some((p) => p.label === parsed.raceEventLabel)
@@ -467,7 +523,7 @@ export function applyTriggerPodWaveNow(
   const offsetSecs = Number(Math.max(0, computeElapsedMs(current, nowEpochMs) / 1000).toFixed(2));
   const next: PersistedTracksideStopwatchState = {
     ...current,
-    waveMode: 'POD_STAGGER',
+    waveMode: current.waveMode === 'PURSUIT' ? 'PURSUIT' : 'POD_STAGGER',
     podWaveOffsetsSecs: {
       ...(current.podWaveOffsetsSecs || DEFAULT_POD_WAVE_OFFSETS),
       [podKey]: offsetSecs,
@@ -607,7 +663,9 @@ export function computeRunnerSplitTelemetry(params: {
   } = params;
 
   const effectiveOffsetSecs =
-    waveMode === 'POD_STAGGER' ? Number(Math.max(0, waveOffsetSecs).toFixed(2)) : 0;
+    waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT'
+      ? Number(Math.max(0, waveOffsetSecs).toFixed(2))
+      : 0;
 
   const netCumulativeSecs = rawTimestampsSecs.map((raw) =>
     Number(Math.max(0.01, raw - effectiveOffsetSecs).toFixed(2))
@@ -991,6 +1049,23 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     [commitState]
   );
 
+  const setCustomWorkoutSpec = useCallback(
+    (customWorkoutSpec: TrackWorkoutSpec | null) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({
+        ...current,
+        customWorkoutSpec,
+        ...(customWorkoutSpec
+          ? {
+              workoutPresetId: 'custom-plan',
+              restDurationSecs: customWorkoutSpec.restDurationSecs,
+            }
+          : {}),
+      });
+    },
+    [commitState]
+  );
+
   return {
     stopwatchRunning: persisted.isRunning,
     stopwatchElapsedMs: elapsedMs,
@@ -1004,6 +1079,7 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     viewMode: persisted.viewMode || 'CARDS',
     showChuteBar: Boolean(persisted.showChuteBar),
     workoutPresetId: persisted.workoutPresetId || '8x400',
+    customWorkoutSpec: persisted.customWorkoutSpec || null,
     raceEventLabel: persisted.raceEventLabel || '1600m',
     restDurationSecs: persisted.restDurationSecs ?? 60,
     waveMode: persisted.waveMode || 'MASS',
@@ -1025,6 +1101,7 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     setViewMode,
     setShowChuteBar,
     setWorkoutPresetId,
+    setCustomWorkoutSpec,
     setRaceEventLabel,
     setRestDurationSecs,
     setWaveMode,
@@ -1034,4 +1111,147 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     setSoundEnabled,
     setWakeLockEnabled,
   };
+}
+
+function snapRepDistance(meters: number): TrackRepDistanceMeters {
+  return VALID_REP_DISTANCES.reduce((best, cur) =>
+    Math.abs(cur - meters) < Math.abs(best - meters) ? cur : best
+  );
+}
+
+function classifyZoneAndPodFromHints(
+  textHint: string,
+  intensityPct?: number
+): { zoneCode: TrackTrainingZoneCode; podIntensity: VdotPodIntensity } {
+  const pct = intensityPct ?? 0;
+  if (pct >= 126 || /\bFR\b|800m\s*pace|fast\s*rep/i.test(textHint)) {
+    return { zoneCode: 'FR', podIntensity: 'RACE_800M' };
+  }
+  if (pct >= 114 || /\bR\b|repetition|1500m|mile\s*pace/i.test(textHint)) {
+    return { zoneCode: 'R', podIntensity: 'REPETITION' };
+  }
+  if (pct >= 106 || /\bI\b|vo2/i.test(textHint)) {
+    return { zoneCode: 'I', podIntensity: 'INTERVAL_VO2' };
+  }
+  if (pct >= 98 || /\bCV\b|critical/i.test(textHint)) {
+    return { zoneCode: 'CV', podIntensity: 'THRESHOLD_CV' };
+  }
+  if (pct >= 92 || /sub-?t/i.test(textHint)) {
+    return { zoneCode: 'SUB_T', podIntensity: 'SUB_THRESHOLD' };
+  }
+  if (pct >= 84 || /\bT\b|thresh|tempo/i.test(textHint)) {
+    return { zoneCode: 'T', podIntensity: 'THRESHOLD_CV' };
+  }
+  return { zoneCode: 'I', podIntensity: 'INTERVAL_VO2' };
+}
+
+/**
+ * Extracts a structured TrackWorkoutSpec from an explicit PlannedWorkoutEvent (direct `trackSpec`,
+ * `workoutSyntax` repeat AST, or `name` interval signature like `6x800m`).
+ */
+export function inferTrackWorkoutSpecFromPlannedEvent(
+  ev: Pick<PlannedWorkoutEvent, 'name' | 'workoutSyntax' | 'trackSpec'>
+): TrackWorkoutSpec | null {
+  if (ev.trackSpec && ev.trackSpec.repDistanceMeters > 0) {
+    return {
+      ...ev.trackSpec,
+      repDistanceMeters: snapRepDistance(ev.trackSpec.repDistanceMeters),
+    };
+  }
+
+  const syntax = ev.workoutSyntax || '';
+  if (syntax.trim()) {
+    const ast = parseStructuredTrackWorkout(syntax);
+    for (const node of ast) {
+      if (node.type === 'repeat') {
+        const workStep = node.steps.find((s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 100);
+        if (workStep && workStep.distanceMeters) {
+          const restStep = node.steps.find((s) => s.stepKind === 'rest');
+          const { zoneCode, podIntensity } = classifyZoneAndPodFromHints(
+            `${ev.name} ${workStep.label}`,
+            workStep.intensityPct
+          );
+          return {
+            repCount: node.repeatCount,
+            repDistanceMeters: snapRepDistance(workStep.distanceMeters),
+            zoneCode,
+            podIntensity,
+            ...(workStep.targetPaceSecsPerKm
+              ? {
+                  targetSplitSecs: Number(
+                    ((workStep.targetPaceSecsPerKm * workStep.distanceMeters) / 1000).toFixed(1)
+                  ),
+                }
+              : {}),
+            restDurationSecs: Math.max(0, Math.round(restStep?.durationSecs ?? 60)),
+            waveMode: 'MASS',
+          };
+        }
+      }
+    }
+  }
+
+  const match = `${ev.name}\n${syntax}`.match(
+    /(\d{1,2})\s*[x×]\s*(150|200|300|400|500|600|800|1000|1200|1600)\s*m?\b/i
+  );
+  if (match) {
+    const repCount = Math.max(1, Number(match[1]));
+    const repDistanceMeters = snapRepDistance(Number(match[2]));
+    const { zoneCode, podIntensity } = classifyZoneAndPodFromHints(`${ev.name} ${syntax}`);
+    return {
+      repCount,
+      repDistanceMeters,
+      zoneCode,
+      podIntensity,
+      restDurationSecs: 60,
+      waveMode: 'MASS',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Stages a planned track session or squad pod sheet directly into Trackside Stopwatch storage
+ * (`Pod of 1` solo or Multi-Pod Pursuit / Staggered offsets) for 1-tap navigation to `#stopwatch`.
+ */
+export function stageWorkoutInTracksideStopwatch(params: {
+  title: string;
+  spec: TrackWorkoutSpec;
+  pods?: VdotTrainingPod[];
+}): PersistedTracksideStopwatchState {
+  const base = applyResetStopwatch(readPersistedTracksideStopwatch());
+  const nextWaveMode: TracksideWaveMode =
+    params.spec.waveMode === 'PURSUIT'
+      ? 'PURSUIT'
+      : params.spec.waveMode === 'POD_10S'
+        ? 'POD_STAGGER'
+        : 'MASS';
+
+  const podWaveOffsetsSecs: Record<string, number> = { ...DEFAULT_POD_WAVE_OFFSETS };
+  if (params.pods && params.pods.length > 0 && nextWaveMode === 'PURSUIT') {
+    for (const pod of params.pods) {
+      const podKey = pod.podName.split(' — ')[0] || pod.podName;
+      if (typeof pod.pursuitStaggerOffsetSecs === 'number') {
+        podWaveOffsetsSecs[podKey] = Number(Math.max(0, pod.pursuitStaggerOffsetSecs).toFixed(2));
+      }
+    }
+  }
+
+  const nextState: PersistedTracksideStopwatchState = {
+    ...base,
+    sessionType: 'WORKOUT',
+    sessionTitle: params.title,
+    workoutPresetId: 'custom-plan',
+    customWorkoutSpec: {
+      ...params.spec,
+      repDistanceMeters: snapRepDistance(params.spec.repDistanceMeters),
+    },
+    restDurationSecs: Math.max(0, Math.round(params.spec.restDurationSecs ?? 60)),
+    waveMode: nextWaveMode,
+    podWaveOffsetsSecs,
+  };
+
+  writePersistedTracksideStopwatch(nextState);
+  return nextState;
 }

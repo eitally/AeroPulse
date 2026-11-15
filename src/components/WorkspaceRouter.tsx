@@ -13,6 +13,7 @@ import type {
   SportCategory,
   TargetGoal,
   TeamSummaryWithRole,
+  TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -89,6 +90,7 @@ export interface WorkspaceRouterProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
   handleDeletePlannedEvent: (id: string) => Promise<void>;
@@ -108,6 +110,7 @@ export interface WorkspaceRouterProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
   handleSelectActivity: (activity: UnifiedActivity | null) => void;
@@ -212,6 +215,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenGoalsArchitect={handleOpenGoalsTab}
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
         />
       )}
 
@@ -447,6 +451,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSwitchToCalendar={handleSwitchToCalendarTab}
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
         />
       )}
 

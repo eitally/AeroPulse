@@ -2,7 +2,8 @@ import {
   computeAccessibleTeamPalette,
   getOrgTypeSafeguardingDefaults,
 } from '../physiology/teamOnboardingEngine';
-import type { TeamBrandConfig } from '../types';
+import { formatTrackMark } from '../physiology/scholasticEngine';
+import type { TeamBrandConfig, VdotTrainingPod } from '../types';
 
 export { computeAccessibleTeamPalette };
 
@@ -341,6 +342,151 @@ export function openPrintableTeamPosterWindow(
 </html>`;
 
   const popup = window.open('', '_blank', 'noopener,noreferrer,width=840,height=920');
+  if (popup) {
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+  }
+}
+
+export interface PrintablePodClipboardParams {
+  workoutTitle: string;
+  dateStr: string;
+  repDistanceMeters: number;
+  repCount: number;
+  recoveryLabel: string;
+  pods: VdotTrainingPod[];
+  teamName?: string;
+}
+
+/**
+ * Generates self-contained 4-up landscape clipboard HTML (`@page { size: landscape }`)
+ * for trackside coaches: Pod A–D split tables (`200m–1600m`), Pursuit offsets, and Rep 1..N blank boxes.
+ */
+export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardParams): string {
+  const {
+    workoutTitle,
+    dateStr,
+    repDistanceMeters,
+    repCount,
+    recoveryLabel,
+    pods,
+    teamName = 'THRESH Squad',
+  } = params;
+
+  const repCols = Math.max(1, Math.min(8, Math.round(repCount || 4)));
+  const repHeaders = Array.from({ length: repCols }, (_, i) => `<th>R${i + 1}</th>`).join('');
+  const emptyBoxes = Array.from({ length: repCols }, () => '<td class="rep-box"></td>').join('');
+
+  const podCards = (pods || []).slice(0, 4).map((pod) => {
+    const targetSplit =
+      pod.targetRepSplitSecs ??
+      Number(((pod.targetPaceSecsPerKm / 1000) * Math.max(150, repDistanceMeters)).toFixed(1));
+    const vdotSpan =
+      pod.minVdot === pod.maxVdot ? `${pod.centerVdot}` : `${pod.minVdot}–${pod.maxVdot}`;
+    const pursuitOffset =
+      typeof pod.pursuitStaggerOffsetSecs === 'number'
+        ? `+${pod.pursuitStaggerOffsetSecs.toFixed(1)}s Pursuit`
+        : 'Mass Start';
+
+    const splitCells = [
+      { lbl: '200m', val: pod.splitsSecs.split200m },
+      { lbl: '300m', val: pod.splitsSecs.split300m ?? Number((pod.splitsSecs.split200m * 1.5).toFixed(1)) },
+      { lbl: '400m', val: pod.splitsSecs.split400m },
+      { lbl: '600m', val: pod.splitsSecs.split600m ?? Number((pod.splitsSecs.split400m * 1.5).toFixed(1)) },
+      { lbl: '800m', val: pod.splitsSecs.split800m },
+      { lbl: '1000m', val: pod.splitsSecs.split1000m },
+      { lbl: '1600m', val: pod.splitsSecs.split1600m },
+    ]
+      .map(
+        (c) =>
+          `<div class="split-cell"><span class="split-lbl">${c.lbl}</span><span class="split-val">${escapeTextForSafeAttr(
+            formatTrackMark(c.val, 1)
+          )}</span></div>`
+      )
+      .join('');
+
+    const athleteRows = pod.athletes
+      .map(
+        (ath) =>
+          `<tr><td class="ath-name">${escapeTextForSafeAttr(ath.name)} <span class="ath-vdot">(${ath.vdot})</span></td>${emptyBoxes}</tr>`
+      )
+      .join('');
+
+    return `<section class="pod-card">
+      <header class="pod-head">
+        <div>
+          <div class="pod-title">${escapeTextForSafeAttr(pod.podName)}</div>
+          <div class="pod-meta">VDOT ${escapeTextForSafeAttr(vdotSpan)} · ${escapeTextForSafeAttr(pursuitOffset)}</div>
+        </div>
+        <div class="target-pill">
+          <span class="target-lbl">${repDistanceMeters}m TARGET</span>
+          <span class="target-val">${escapeTextForSafeAttr(formatTrackMark(targetSplit, 1))}</span>
+        </div>
+      </header>
+      <div class="split-grid">${splitCells}</div>
+      <table class="rep-table">
+        <thead><tr><th>Athlete</th>${repHeaders}</tr></thead>
+        <tbody>${athleteRows}</tbody>
+      </table>
+    </section>`;
+  });
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeTextForSafeAttr(teamName)} — Trackside Pod Clipboard (${escapeTextForSafeAttr(dateStr)})</title>
+  <style>
+    @page { size: landscape; margin: 0.35in; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; margin: 0; padding: 14px; background: #F7F8F5; color: #0E1712; }
+    .banner { background: #1C5436; color: #FFFFFF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .banner h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+    .banner-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; font-weight: 700; opacity: 0.95; }
+    .pod-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .pod-card { background: #FFFFFF; border: 1.5px solid #B7C9BE; border-radius: 10px; padding: 10px; break-inside: avoid; }
+    .pod-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid #DDE6E0; padding-bottom: 6px; margin-bottom: 6px; }
+    .pod-title { font-size: 13px; font-weight: 800; color: #1C5436; }
+    .pod-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 10px; color: #43574B; font-weight: 600; }
+    .target-pill { background: #1C5436; color: #FFFFFF; border-radius: 8px; padding: 4px 8px; text-align: right; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
+    .target-lbl { display: block; font-size: 9px; letter-spacing: 0.04em; opacity: 0.88; }
+    .target-val { display: block; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .split-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 7px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
+    .split-cell { background: #F1F5F2; border: 1px solid #D3E0D8; border-radius: 6px; padding: 3px 4px; text-align: center; }
+    .split-lbl { display: block; font-size: 9px; color: #43574B; font-weight: 600; }
+    .split-val { display: block; font-size: 11px; color: #0E1712; font-weight: 800; }
+    .rep-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
+    .rep-table th { text-align: center; font-size: 9px; color: #43574B; border-bottom: 1px solid #C9D7CF; padding: 2px 3px; }
+    .rep-table th:first-child { text-align: left; }
+    .rep-table td { border-bottom: 1px solid #E5EDE8; padding: 3px; }
+    .ath-name { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; color: #0E1712; white-space: nowrap; }
+    .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #43574B; font-size: 10px; }
+    .rep-box { border-left: 1px solid #C9D7CF; min-width: 28px; height: 20px; }
+    .no-print { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    @media print { body { background: #FFFFFF; padding: 0; } .no-print { display: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <span style="font-size:12px;color:#3F4742;font-weight:600;">4-Up Landscape Trackside Clipboard · Ready to Print</span>
+    <button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:none;background:#1C5436;color:#FFFFFF;font-weight:700;cursor:pointer;">Print Clipboard Sheet</button>
+  </div>
+  <div class="banner">
+    <div>
+      <h1>${escapeTextForSafeAttr(teamName)} — ${escapeTextForSafeAttr(workoutTitle)}</h1>
+    </div>
+    <div class="banner-meta">${escapeTextForSafeAttr(dateStr)} · ${repCount} × ${repDistanceMeters}m · Rest: ${escapeTextForSafeAttr(recoveryLabel)}</div>
+  </div>
+  <main class="pod-grid">${podCards.join('')}</main>
+</body>
+</html>`;
+}
+
+export function openPrintablePodClipboardWindow(params: PrintablePodClipboardParams): void {
+  if (typeof window === 'undefined') return;
+  const html = buildPrintablePodClipboardHtml(params);
+  const popup = window.open('', '_blank', 'noopener,noreferrer,width=1060,height=780');
   if (popup) {
     popup.document.open();
     popup.document.write(html);

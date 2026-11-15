@@ -3103,6 +3103,606 @@ function generateVerifiedRacePassport(input) {
   };
 }
 
+// src/utils/workoutParser.ts
+var INTERVALS_EFFORT_ZONES = [
+  {
+    zone: 1,
+    code: "Z1",
+    name: "Recovery",
+    color: "#94A3B8",
+    heightPct: 28
+  },
+  {
+    zone: 2,
+    code: "Z2",
+    name: "Endurance",
+    color: "#0D9488",
+    heightPct: 44
+  },
+  {
+    zone: 3,
+    code: "Z3",
+    name: "Tempo / Sweet Spot",
+    color: "#D97706",
+    heightPct: 62
+  },
+  {
+    zone: 4,
+    code: "Z4",
+    name: "Threshold",
+    color: "#EA580C",
+    heightPct: 78
+  },
+  {
+    zone: 5,
+    code: "Z5",
+    name: "VO2max",
+    color: "#DC2626",
+    heightPct: 92
+  },
+  {
+    zone: 6,
+    code: "Z6+",
+    name: "Anaerobic / Sprint",
+    color: "#7C3AED",
+    heightPct: 100
+  }
+];
+function getIntervalsZoneFromIntensityPct(intensityPct) {
+  if (intensityPct < 56) return INTERVALS_EFFORT_ZONES[0];
+  if (intensityPct <= 75) return INTERVALS_EFFORT_ZONES[1];
+  if (intensityPct <= 90) return INTERVALS_EFFORT_ZONES[2];
+  if (intensityPct <= 105) return INTERVALS_EFFORT_ZONES[3];
+  if (intensityPct <= 120) return INTERVALS_EFFORT_ZONES[4];
+  return INTERVALS_EFFORT_ZONES[5];
+}
+function parseClockOrSecondsToken(token) {
+  const trimmed = token.trim();
+  const minSecMatch = trimmed.match(/^(\d{1,2}):(\d{2}(?:\.\d+)?)$/);
+  if (minSecMatch) {
+    return Number(minSecMatch[1]) * 60 + Number(minSecMatch[2]);
+  }
+  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s?$/i);
+  if (secMatch) {
+    return Number(secMatch[1]);
+  }
+  return null;
+}
+function extractDistanceMeters(cleanLine) {
+  const kmMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
+  if (kmMatch) return Math.round(Number(kmMatch[1]) * 1e3);
+  const miMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
+  if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
+  const metersWordMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
+  if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
+  const mTokens = Array.from(cleanLine.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
+  for (const tok of mTokens) {
+    const val = Number(tok[1]);
+    if (val >= 100) return val;
+    if (val >= 30 && val <= 90 && /\b(sprint|stride|fly|accel|hill)\b/i.test(cleanLine)) {
+      return val;
+    }
+  }
+  return void 0;
+}
+function extractExplicitIntensityPct(cleanLine) {
+  const rangeMatch = cleanLine.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
+  if (rangeMatch) {
+    return Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
+  }
+  const pctMatch = cleanLine.match(/(\d{2,3})\s*%/);
+  if (pctMatch) {
+    return Number(pctMatch[1]);
+  }
+  return void 0;
+}
+function extractTargetPaceSecsPerKm(cleanLine, distanceMeters) {
+  const unitPaceMatch = cleanLine.match(
+    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?s?)\s*\/\s*(km|mi|400m|200m|800m)\b/i
+  );
+  if (unitPaceMatch) {
+    const secs = parseClockOrSecondsToken(unitPaceMatch[1]);
+    if (secs && secs > 5) {
+      const unit = unitPaceMatch[2].toLowerCase();
+      if (unit === "km") return { paceSecsPerKm: Number(secs.toFixed(1)) };
+      if (unit === "mi") return { paceSecsPerKm: Number((secs / 1.60934).toFixed(1)) };
+      if (unit === "400m") return { paceSecsPerKm: Number((secs * 2.5).toFixed(1)) };
+      if (unit === "200m") return { paceSecsPerKm: Number((secs * 5).toFixed(1)) };
+      if (unit === "800m") return { paceSecsPerKm: Number((secs * 1.25).toFixed(1)) };
+    }
+  }
+  const repTargetMatch = cleanLine.match(
+    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?\s*s)\b/i
+  );
+  if (repTargetMatch && distanceMeters && distanceMeters > 0) {
+    const splitSecs = parseClockOrSecondsToken(repTargetMatch[1]);
+    if (splitSecs && splitSecs > 4) {
+      const paceSecsPerKm = Number((splitSecs / distanceMeters * 1e3).toFixed(1));
+      return { paceSecsPerKm, repSplitSecs: splitSecs };
+    }
+  }
+  return {};
+}
+function inferStepKind(cleanLine, explicitKind) {
+  if (explicitKind) return explicitKind;
+  if (/\bwarm\s*-?\s*up\b/i.test(cleanLine)) return "warmup";
+  if (/\bcool\s*-?\s*down\b/i.test(cleanLine)) return "cooldown";
+  if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return "rest";
+  return "work";
+}
+function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explicitKind) {
+  const distanceMeters = extractDistanceMeters(cleanLine);
+  const explicitPct = extractExplicitIntensityPct(cleanLine);
+  const { paceSecsPerKm: parsedTargetPace, repSplitSecs } = extractTargetPaceSecsPerKm(
+    cleanLine,
+    distanceMeters
+  );
+  const stepKind = inferStepKind(cleanLine, explicitKind);
+  let intensityPct = explicitPct ?? 65;
+  if (explicitPct === void 0) {
+    if (parsedTargetPace && parsedTargetPace > 60) {
+      intensityPct = Math.round(thresholdPaceSecsPerKm / parsedTargetPace * 100);
+    } else if (/\bFR\b|fast\s*rep|800m\s*(?:race|pace|effort)/i.test(cleanLine)) {
+      intensityPct = 122;
+    } else if (/\bR\b|repetition|fast/i.test(cleanLine)) {
+      intensityPct = 114;
+    } else if (/\bsub-?t\b|sub-?threshold/i.test(cleanLine)) {
+      intensityPct = 94;
+    } else if (/\bcv\b|critical/i.test(cleanLine)) {
+      intensityPct = 102;
+    } else if (/z1|recovery|easy|warmup|cooldown|jog|float|walk/i.test(cleanLine)) {
+      intensityPct = 55;
+    } else if (/z2|endurance|aerobic/i.test(cleanLine)) {
+      intensityPct = 68;
+    } else if (/z3|tempo|sweet\s*spot/i.test(cleanLine)) {
+      intensityPct = 86;
+    } else if (/z4|threshold|ftp|\bT\b/i.test(cleanLine)) {
+      intensityPct = 98;
+    } else if (/z5|vo2|\bI\b/i.test(cleanLine)) {
+      intensityPct = 110;
+    } else if (/z6|sprint|anaerobic/i.test(cleanLine)) {
+      intensityPct = 130;
+    }
+  }
+  const effectiveTargetPace = parsedTargetPace ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
+  let durationSecs = 600;
+  const hrMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs)\b/i);
+  const secMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs)\b/i);
+  const minMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:min|mins)\b/i);
+  const bareMinMatch = !distanceMeters ? cleanLine.match(/\b(\d+(?:\.\d+)?)\s*m\b/i) : null;
+  if (hrMatch) {
+    durationSecs = Math.round(Number(hrMatch[1]) * 3600);
+  } else if (distanceMeters) {
+    if (repSplitSecs && repSplitSecs > 4) {
+      durationSecs = Number(repSplitSecs.toFixed(1));
+    } else if (effectiveTargetPace) {
+      durationSecs = Number((distanceMeters / 1e3 * effectiveTargetPace).toFixed(1));
+    }
+  } else if (minMatch) {
+    durationSecs = Math.round(Number(minMatch[1]) * 60);
+  } else if (secMatch && !/@\s*\d+(?:\.\d+)?s\b/.test(cleanLine)) {
+    durationSecs = Number(secMatch[1]);
+  } else if (bareMinMatch) {
+    durationSecs = Math.round(Number(bareMinMatch[1]) * 60);
+  }
+  const durationMins = durationSecs >= 60 && durationSecs % 60 === 0 ? durationSecs / 60 : Math.max(0.25, Number((durationSecs / 60).toFixed(2)));
+  const zoneMeta = getIntervalsZoneFromIntensityPct(intensityPct);
+  return {
+    label: cleanLine,
+    durationMins,
+    durationSecs,
+    distanceMeters,
+    intensityPct,
+    targetPaceSecsPerKm: effectiveTargetPace,
+    zone: zoneMeta.zone,
+    zoneCode: zoneMeta.code,
+    zoneColor: zoneMeta.color,
+    stepKind
+  };
+}
+function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
+  if (!syntax || !syntax.trim()) return [];
+  const rawLines = syntax.split("\n").map((l) => l.trim());
+  const nodes = [];
+  let currentRepeat = null;
+  const flushRepeat = () => {
+    if (currentRepeat && currentRepeat.steps.length > 0) {
+      nodes.push({
+        type: "repeat",
+        repeatCount: currentRepeat.repeatCount,
+        label: currentRepeat.label,
+        steps: currentRepeat.steps
+      });
+    }
+    currentRepeat = null;
+  };
+  for (const line of rawLines) {
+    if (!line) {
+      flushRepeat();
+      continue;
+    }
+    if (!line.startsWith("-")) {
+      const headerRepeatMatch = line.match(
+        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*x\b[:\s-]*(.*)$/i
+      );
+      if (headerRepeatMatch) {
+        flushRepeat();
+        const count = Math.max(2, Number(headerRepeatMatch[1]));
+        const suffix = headerRepeatMatch[2]?.trim();
+        currentRepeat = {
+          repeatCount: count,
+          label: suffix ? `${count}x ${suffix}` : `Repeat ${count}x`,
+          steps: []
+        };
+      } else {
+        flushRepeat();
+      }
+      continue;
+    }
+    const clean = line.replace(/^-+\s*/, "").trim();
+    if (!clean) continue;
+    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*x(?:\s+|(?=\d))(.+)$/i);
+    if (inlineRepeatMatch) {
+      flushRepeat();
+      const count = Math.max(2, Number(inlineRepeatMatch[1]));
+      const remainder = inlineRepeatMatch[2].trim();
+      let mainPart = remainder;
+      let restPart = null;
+      const parenRestMatch = remainder.match(
+        /\(([^)]*(?:rest|jog|rec|float|walk|standing)[^)]*)\)\s*$/i
+      );
+      const withRestMatch = remainder.match(/\bw\/\s*(.+)$/i);
+      if (parenRestMatch) {
+        restPart = parenRestMatch[1].trim();
+        mainPart = remainder.slice(0, parenRestMatch.index).trim();
+      } else if (withRestMatch) {
+        restPart = withRestMatch[1].trim();
+        mainPart = remainder.slice(0, withRestMatch.index).trim();
+      }
+      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, "work");
+      const groupSteps = [workStep];
+      if (restPart) {
+        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, "rest"));
+      }
+      nodes.push({
+        type: "repeat",
+        repeatCount: count,
+        label: `${count}x ${mainPart.slice(0, 14)}`.trim(),
+        steps: groupSteps
+      });
+      continue;
+    }
+    const step = parseSingleWorkoutLine(clean, thresholdPaceSecsPerKm);
+    if (currentRepeat) {
+      if (step.stepKind === "cooldown" || step.stepKind === "warmup") {
+        flushRepeat();
+        nodes.push({ type: "step", step });
+      } else {
+        currentRepeat.steps.push(step);
+      }
+    } else {
+      nodes.push({ type: "step", step });
+    }
+  }
+  flushRepeat();
+  return nodes;
+}
+
+// src/utils/fitWorkoutEncoder.ts
+var FIT_CRC_TABLE = [
+  0,
+  52225,
+  55297,
+  5120,
+  61441,
+  15360,
+  10240,
+  58369,
+  40961,
+  27648,
+  30720,
+  46081,
+  20480,
+  39937,
+  34817,
+  17408
+];
+function computeFitCrc(bytes, length) {
+  let crc = 0;
+  for (let i = 0; i < length; i++) {
+    const byte = bytes[i];
+    let tmp = FIT_CRC_TABLE[crc & 15];
+    crc = crc >> 4 & 4095;
+    crc = crc ^ tmp ^ FIT_CRC_TABLE[byte & 15];
+    tmp = FIT_CRC_TABLE[crc & 15];
+    crc = crc >> 4 & 4095;
+    crc = crc ^ tmp ^ FIT_CRC_TABLE[byte >> 4 & 15];
+  }
+  return crc & 65535;
+}
+function writeFixedAscii(buf, text, fixedLen) {
+  const clean = text.replace(/[^\x20-\x7E]/g, "").slice(0, fixedLen - 1);
+  for (let i = 0; i < fixedLen; i++) {
+    buf.push(i < clean.length ? clean.charCodeAt(i) : 0);
+  }
+}
+function writeUint16LE(buf, val) {
+  const v = Math.max(0, Math.min(65535, Math.round(val)));
+  buf.push(v & 255, v >> 8 & 255);
+}
+function writeUint32LE(buf, val) {
+  const v = Math.max(0, Math.round(val)) >>> 0;
+  buf.push(v & 255, v >> 8 & 255, v >> 16 & 255, v >> 24 & 255);
+}
+function encodeGarminFitWorkout(workout) {
+  const dataPayload = [];
+  const fitTimestamp = Math.max(0, Math.floor(Date.now() / 1e3) - 631065600);
+  dataPayload.push(
+    64,
+    // Definition header, local mesg 0
+    0,
+    0,
+    // Little Endian
+    0,
+    0,
+    // Global Mesg Num = 0 (file_id)
+    4,
+    // 4 fields
+    0,
+    1,
+    0,
+    // Field 0: type (enum)
+    1,
+    2,
+    132,
+    // Field 1: manufacturer (uint16)
+    2,
+    2,
+    132,
+    // Field 2: product (uint16)
+    4,
+    4,
+    134
+    // Field 4: time_created (uint32)
+  );
+  dataPayload.push(0);
+  dataPayload.push(5);
+  writeUint16LE(dataPayload, 1);
+  writeUint16LE(dataPayload, 2026);
+  writeUint32LE(dataPayload, fitTimestamp);
+  dataPayload.push(
+    65,
+    // Definition header, local mesg 1
+    0,
+    0,
+    26,
+    0,
+    // Global Mesg Num = 26 (workout)
+    3,
+    // 3 fields
+    4,
+    1,
+    0,
+    // Field 4: sport (enum)
+    6,
+    2,
+    132,
+    // Field 6: num_valid_steps (uint16)
+    8,
+    24,
+    7
+    // Field 8: wkt_name (string, 24 bytes)
+  );
+  dataPayload.push(1);
+  dataPayload.push(workout.sport === "Running" ? 1 : 2);
+  writeUint16LE(dataPayload, workout.steps.length);
+  writeFixedAscii(dataPayload, workout.name || "Thresh Workout", 24);
+  dataPayload.push(
+    66,
+    // Definition header, local mesg 2
+    0,
+    0,
+    27,
+    0,
+    // Global Mesg Num = 27 (workout_step)
+    9,
+    // 9 fields
+    254,
+    2,
+    132,
+    // Field 254: message_index (uint16)
+    0,
+    16,
+    7,
+    // Field 0: wkt_step_name (string, 16 bytes)
+    1,
+    1,
+    0,
+    // Field 1: duration_type (enum)
+    2,
+    4,
+    134,
+    // Field 2: duration_value (uint32)
+    3,
+    1,
+    0,
+    // Field 3: target_type (enum)
+    4,
+    4,
+    134,
+    // Field 4: target_value (uint32)
+    5,
+    4,
+    134,
+    // Field 5: custom_target_value_low (uint32)
+    6,
+    4,
+    134,
+    // Field 6: custom_target_value_high (uint32)
+    7,
+    1,
+    0
+    // Field 7: intensity (enum)
+  );
+  const intensityMap = {
+    active: 0,
+    rest: 1,
+    warmup: 2,
+    cooldown: 3
+  };
+  workout.steps.forEach((step, idx) => {
+    dataPayload.push(2);
+    writeUint16LE(dataPayload, idx);
+    writeFixedAscii(dataPayload, step.label || `Step ${idx + 1}`, 16);
+    const durType = step.durationType ?? (typeof step.distanceMeters === "number" && step.distanceMeters > 0 ? "distance" : "time");
+    if (durType === "repeat_until_steps_cmplt") {
+      dataPayload.push(6);
+      writeUint32LE(dataPayload, Math.max(0, Math.round(step.repeatFromStepIndex ?? 0)));
+      dataPayload.push(2);
+      writeUint32LE(dataPayload, Math.max(2, Math.round(step.repeatCount ?? 2)));
+      writeUint32LE(dataPayload, 0);
+      writeUint32LE(dataPayload, 0);
+      dataPayload.push(0);
+      return;
+    }
+    if (durType === "distance") {
+      dataPayload.push(1);
+      writeUint32LE(dataPayload, Math.max(100, Math.round((step.distanceMeters ?? 400) * 100)));
+    } else if (durType === "open") {
+      dataPayload.push(5);
+      writeUint32LE(dataPayload, 4294967295);
+    } else {
+      dataPayload.push(0);
+      writeUint32LE(dataPayload, Math.max(1e3, Math.round((step.durationSecs ?? 60) * 1e3)));
+    }
+    const useSpeedTarget = step.targetType === "speed" || step.targetType === void 0 && typeof step.targetMaxSpeedMps === "number" && step.targetMaxSpeedMps > 0;
+    const usePowerTarget = step.targetType === "power" || step.targetType === void 0 && typeof step.targetMaxWatts === "number" && step.targetMaxWatts > 0;
+    const useHrTarget = step.targetType === "heart_rate" || step.targetType === void 0 && typeof step.targetMaxHrBpm === "number" && step.targetMaxHrBpm > 0;
+    if (useSpeedTarget && step.targetMaxSpeedMps && step.targetMaxSpeedMps > 0) {
+      dataPayload.push(0);
+      writeUint32LE(dataPayload, 0);
+      const lowMmS = Math.max(500, Math.round((step.targetMinSpeedMps ?? step.targetMaxSpeedMps * 0.96) * 1e3));
+      const highMmS = Math.max(lowMmS + 50, Math.round(step.targetMaxSpeedMps * 1e3));
+      writeUint32LE(dataPayload, lowMmS);
+      writeUint32LE(dataPayload, highMmS);
+    } else if (usePowerTarget && step.targetMaxWatts && step.targetMaxWatts > 0) {
+      dataPayload.push(4);
+      writeUint32LE(dataPayload, 0);
+      const lowW = Math.max(20, Math.round(step.targetMinWatts ?? step.targetMaxWatts * 0.95));
+      const highW = Math.max(lowW + 5, Math.round(step.targetMaxWatts));
+      writeUint32LE(dataPayload, lowW + 1e3);
+      writeUint32LE(dataPayload, highW + 1e3);
+    } else if (useHrTarget && step.targetMaxHrBpm && step.targetMaxHrBpm > 0) {
+      dataPayload.push(1);
+      writeUint32LE(dataPayload, 0);
+      const lowHr = Math.max(60, Math.round(step.targetMinHrBpm ?? step.targetMaxHrBpm - 10));
+      const highHr = Math.max(lowHr + 2, Math.round(step.targetMaxHrBpm));
+      writeUint32LE(dataPayload, lowHr + 100);
+      writeUint32LE(dataPayload, highHr + 100);
+    } else {
+      dataPayload.push(2);
+      writeUint32LE(dataPayload, 0);
+      writeUint32LE(dataPayload, 0);
+      writeUint32LE(dataPayload, 0);
+    }
+    dataPayload.push(intensityMap[step.intensity || "active"] ?? 0);
+  });
+  const dataSize = dataPayload.length;
+  const header = [
+    14,
+    // Header size
+    16,
+    // Protocol version 1.0
+    8,
+    8
+    // Profile version 20.56 (LE)
+  ];
+  writeUint32LE(header, dataSize);
+  header.push(46, 70, 73, 84);
+  const headerCrc = computeFitCrc(new Uint8Array(header), 12);
+  writeUint16LE(header, headerCrc);
+  const fullWithoutCrc = new Uint8Array(14 + dataSize);
+  fullWithoutCrc.set(new Uint8Array(header), 0);
+  fullWithoutCrc.set(new Uint8Array(dataPayload), 14);
+  const fileCrc = computeFitCrc(fullWithoutCrc, fullWithoutCrc.length);
+  const finalFit = new Uint8Array(14 + dataSize + 2);
+  finalFit.set(fullWithoutCrc, 0);
+  finalFit[14 + dataSize] = fileCrc & 255;
+  finalFit[14 + dataSize + 1] = fileCrc >> 8 & 255;
+  return finalFit;
+}
+function parsedStepToFitStep(step, opts) {
+  const intensity = step.stepKind === "warmup" ? "warmup" : step.stepKind === "cooldown" ? "cooldown" : step.stepKind === "rest" ? "rest" : "active";
+  const hasDistance = typeof step.distanceMeters === "number" && step.distanceMeters > 0;
+  const durationType = hasDistance ? "distance" : "time";
+  const durationSecs = Math.max(1, Math.round(step.durationSecs || step.durationMins * 60));
+  if (opts.sport === "Running") {
+    if (intensity === "rest") {
+      return {
+        label: step.label.slice(0, 15),
+        durationSecs,
+        distanceMeters: step.distanceMeters,
+        durationType,
+        targetType: "open",
+        intensity
+      };
+    }
+    const effectivePaceSecsKm = step.targetPaceSecsPerKm ?? Math.max(95, opts.thresholdPaceSecsPerKm * 100 / Math.max(40, step.intensityPct || 75));
+    const centerSpeedMps = 1e3 / effectivePaceSecsKm;
+    return {
+      label: step.label.slice(0, 15),
+      durationSecs,
+      distanceMeters: step.distanceMeters,
+      durationType,
+      targetType: "speed",
+      targetMinSpeedMps: Number((centerSpeedMps * 0.975).toFixed(3)),
+      targetMaxSpeedMps: Number((centerSpeedMps * 1.025).toFixed(3)),
+      intensity
+    };
+  }
+  const targetW = Math.round(opts.ftpWatts * Math.max(40, step.intensityPct || 70) / 100);
+  return {
+    label: step.label.slice(0, 15),
+    durationSecs,
+    durationType: "time",
+    targetType: intensity === "rest" ? "open" : "power",
+    targetMinWatts: intensity === "rest" ? void 0 : Math.round(targetW * 0.95),
+    targetMaxWatts: intensity === "rest" ? void 0 : Math.round(targetW * 1.05),
+    intensity
+  };
+}
+function buildFitStepsFromWorkoutSyntax(workoutSyntax, opts) {
+  const safeOpts = {
+    sport: opts.sport,
+    ftpWatts: Math.max(100, opts.ftpWatts || 280),
+    lthrBpm: Math.max(110, opts.lthrBpm || 170),
+    thresholdPaceSecsPerKm: Math.max(95, opts.thresholdPaceSecsPerKm || 250)
+  };
+  const ast = parseStructuredTrackWorkout(workoutSyntax, safeOpts.thresholdPaceSecsPerKm);
+  const fitSteps = [];
+  for (const node of ast) {
+    if (node.type === "step") {
+      fitSteps.push(parsedStepToFitStep(node.step, safeOpts));
+    } else if (node.steps.length > 0) {
+      const firstChildIndex = fitSteps.length;
+      for (const child of node.steps) {
+        fitSteps.push(parsedStepToFitStep(child, safeOpts));
+      }
+      if (node.repeatCount >= 2) {
+        fitSteps.push({
+          label: node.label.slice(0, 15),
+          durationType: "repeat_until_steps_cmplt",
+          repeatFromStepIndex: firstChildIndex,
+          repeatCount: node.repeatCount,
+          targetType: "open",
+          intensity: "active"
+        });
+      }
+    }
+  }
+  return fitSteps;
+}
+
 // server/routers/webhooksAndExportRouter.ts
 var webhooksAndExportRouter = Router();
 var SUPPORTED_WEBHOOK_PROVIDERS = /* @__PURE__ */ new Set([
@@ -3179,33 +3779,141 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
   const title = String(body.name || "THRESH Prescribed Session").trim();
   const sport = body.sportCategory === "Running" ? "Running" : "Cycling";
   const ftp = Math.max(100, Number(body.ftp) || 280);
-  const thresholdPaceSecsPerKm = Math.max(150, Number(body.thresholdPaceSecsPerKm) || 245);
-  const rawSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps : [
-    { label: "Warmup", durationSecs: 600, targetPctFtp: 62 },
-    { label: "Threshold Main Set", durationSecs: 1800, targetPctFtp: 96 },
-    { label: "Cooldown", durationSecs: 600, targetPctFtp: 55 }
-  ];
-  const normalizedSteps = rawSteps.map((s, idx) => {
-    const durationSecs = Math.max(30, Number(s.durationSecs) || 300);
-    const pct = Math.max(40, Math.min(180, Number(s.targetPctFtp) || 75));
-    const targetWatts = Math.round(ftp * pct / 100);
-    const targetPaceSecsPerKm = Math.round(thresholdPaceSecsPerKm / (pct / 100));
-    return {
-      stepOrder: idx + 1,
-      label: String(s.label || `Step ${idx + 1}`),
-      durationSecs,
-      targetPctFtp: pct,
-      targetWatts,
-      targetPaceSecsPerKm
-    };
+  const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
+  const workoutSyntax = typeof body.workoutSyntax === "string" ? body.workoutSyntax.trim() : "";
+  let astNodes = null;
+  let normalizedSteps = [];
+  let fitSteps = [];
+  if (workoutSyntax) {
+    astNodes = parseStructuredTrackWorkout(workoutSyntax, thresholdPaceSecsPerKm);
+    fitSteps = buildFitStepsFromWorkoutSyntax(workoutSyntax, {
+      sport,
+      ftpWatts: ftp,
+      thresholdPaceSecsPerKm
+    });
+    let stepOrder = 0;
+    for (const node of astNodes) {
+      const expand = node.type === "step" ? [node.step] : node.steps;
+      const reps = node.type === "repeat" ? node.repeatCount : 1;
+      for (let r = 0; r < reps; r++) {
+        for (const s of expand) {
+          stepOrder += 1;
+          const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
+          const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+          normalizedSteps.push({
+            stepOrder,
+            label: s.label,
+            durationSecs: Math.max(5, Math.round(s.durationSecs || s.durationMins * 60)),
+            distanceMeters: s.distanceMeters,
+            targetPctFtp: pct,
+            targetWatts: Math.round(ftp * pct / 100),
+            targetPaceSecsPerKm: Math.round(paceSecsKm),
+            stepKind: s.stepKind || "work"
+          });
+        }
+      }
+    }
+  }
+  if (normalizedSteps.length === 0) {
+    const rawSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps : [
+      { label: "Warmup", durationSecs: 600, targetPctFtp: 62 },
+      { label: "Threshold Main Set", durationSecs: 1800, targetPctFtp: 96 },
+      { label: "Cooldown", durationSecs: 600, targetPctFtp: 55 }
+    ];
+    let orderIdx = 0;
+    for (let i = 0; i < rawSteps.length; i++) {
+      const s = rawSteps[i];
+      const pushSimpleStep = (item, kind) => {
+        orderIdx += 1;
+        const dist = typeof item.distanceMeters === "number" && item.distanceMeters > 0 ? Math.round(item.distanceMeters) : void 0;
+        const explicitPace = typeof item.targetPaceSecsPerKm === "number" && item.targetPaceSecsPerKm > 60 ? Math.round(item.targetPaceSecsPerKm) : void 0;
+        const pct = explicitPace ? Math.max(40, Math.min(180, Math.round(thresholdPaceSecsPerKm / explicitPace * 100))) : Math.max(40, Math.min(180, Number(item.targetPctFtp) || 75));
+        const targetWatts = Math.round(ftp * pct / 100);
+        const targetPaceSecsPerKm = explicitPace ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+        const durationSecs = typeof item.durationSecs === "number" && item.durationSecs > 0 ? Math.max(5, Math.round(item.durationSecs)) : dist ? Math.max(5, Math.round(dist / 1e3 * targetPaceSecsPerKm)) : 300;
+        normalizedSteps.push({
+          stepOrder: orderIdx,
+          label: String(item.label || `Step ${orderIdx}`),
+          durationSecs,
+          distanceMeters: dist,
+          targetPctFtp: pct,
+          targetWatts,
+          targetPaceSecsPerKm,
+          stepKind: kind
+        });
+        const speedMps = 1e3 / Math.max(95, targetPaceSecsPerKm);
+        fitSteps.push({
+          label: String(item.label || `Step ${orderIdx}`).slice(0, 15),
+          durationSecs,
+          distanceMeters: dist,
+          durationType: dist ? "distance" : "time",
+          targetType: sport === "Running" ? kind === "rest" ? "open" : "speed" : kind === "rest" ? "open" : "power",
+          targetMinSpeedMps: sport === "Running" && kind !== "rest" ? Number((speedMps * 0.975).toFixed(3)) : void 0,
+          targetMaxSpeedMps: sport === "Running" && kind !== "rest" ? Number((speedMps * 1.025).toFixed(3)) : void 0,
+          targetMinWatts: sport === "Cycling" && kind !== "rest" ? Math.round(targetWatts * 0.95) : void 0,
+          targetMaxWatts: sport === "Cycling" && kind !== "rest" ? Math.round(targetWatts * 1.05) : void 0,
+          intensity: kind === "work" ? "active" : kind
+        });
+      };
+      if (Array.isArray(s.steps) && s.steps.length > 0 && (s.repeatCount || 1) >= 2) {
+        const repTotal = Math.round(s.repeatCount || 2);
+        const startIdx = fitSteps.length;
+        for (let r = 0; r < repTotal; r++) {
+          for (let j = 0; j < s.steps.length; j++) {
+            if (r === 0) {
+              pushSimpleStep(s.steps[j], j % 2 === 1 ? "rest" : "work");
+            } else {
+              const child = s.steps[j];
+              const pct = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
+              const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+              const dist = child.distanceMeters ? Math.round(child.distanceMeters) : void 0;
+              const secs = child.durationSecs ? Math.max(5, Math.round(child.durationSecs)) : dist ? Math.max(5, Math.round(dist / 1e3 * pace)) : 60;
+              orderIdx += 1;
+              normalizedSteps.push({
+                stepOrder: orderIdx,
+                label: String(child.label || `Rep Step ${orderIdx}`),
+                durationSecs: secs,
+                distanceMeters: dist,
+                targetPctFtp: pct,
+                targetWatts: Math.round(ftp * pct / 100),
+                targetPaceSecsPerKm: Math.round(pace),
+                stepKind: j % 2 === 1 ? "rest" : "work"
+              });
+            }
+          }
+        }
+        fitSteps.push({
+          label: String(s.label || `Repeat ${repTotal}x`).slice(0, 15),
+          durationType: "repeat_until_steps_cmplt",
+          repeatFromStepIndex: startIdx,
+          repeatCount: repTotal,
+          targetType: "open",
+          intensity: "active"
+        });
+      } else {
+        const kind = i === 0 && rawSteps.length > 1 ? "warmup" : i === rawSteps.length - 1 && rawSteps.length > 2 ? "cooldown" : "work";
+        pushSimpleStep(s, kind);
+      }
+    }
+  }
+  const fitBytes = encodeGarminFitWorkout({
+    name: title,
+    sport,
+    steps: fitSteps
   });
+  const fitWorkoutBase64 = Buffer.from(fitBytes).toString("base64");
+  const intervalsIcuText = workoutSyntax || normalizedSteps.map((st) => {
+    const durOrDist = st.distanceMeters ? `${st.distanceMeters}m` : `${st.durationSecs}s`;
+    const cue = sport === "Running" ? "Pace" : "FTP";
+    return `- ${durOrDist} ${Math.max(45, st.targetPctFtp - 2)}%-${Math.min(180, st.targetPctFtp + 2)}% ${cue} (${st.label})`;
+  }).join("\n");
   const appleWorkoutKitJson = {
     schemaVersion: "1.0",
     activityType: sport === "Running" ? "HKWorkoutActivityTypeRunning" : "HKWorkoutActivityTypeCycling",
     displayName: title,
-    blocks: normalizedSteps.map((st) => ({
-      stepType: st.stepOrder === 1 ? "warmup" : st.stepOrder === normalizedSteps.length ? "cooldown" : "work",
-      goal: { type: "time", seconds: st.durationSecs },
+    blocks: normalizedSteps.map((st, idx) => ({
+      stepType: st.stepKind === "warmup" || idx === 0 && normalizedSteps.length > 2 ? "warmup" : st.stepKind === "cooldown" || idx === normalizedSteps.length - 1 && normalizedSteps.length > 2 ? "cooldown" : st.stepKind === "rest" ? "recovery" : "work",
+      goal: st.distanceMeters ? { type: "distance", meters: st.distanceMeters } : { type: "time", seconds: st.durationSecs },
       alert: sport === "Cycling" ? {
         type: "powerRange",
         minWatts: Math.round(st.targetWatts * 0.96),
@@ -3217,6 +3925,57 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
       }
     }))
   };
+  const toGarminExecStep = (st) => ({
+    type: "ExecutableStepDTO",
+    stepOrder: st.stepOrder,
+    stepType: {
+      stepTypeKey: st.stepKind === "warmup" ? "warmup" : st.stepKind === "cooldown" ? "cooldown" : st.stepKind === "rest" ? "rest" : "interval"
+    },
+    description: st.label,
+    endCondition: {
+      conditionTypeKey: st.distanceMeters ? "distance" : "time"
+    },
+    endConditionValue: st.distanceMeters ? st.distanceMeters : st.durationSecs,
+    targetType: {
+      workoutTargetTypeKey: st.stepKind === "rest" ? "no.target" : sport === "Cycling" ? "power.zone" : "pace.zone"
+    },
+    targetValueOne: st.stepKind === "rest" ? null : sport === "Cycling" ? Math.round(st.targetWatts * 0.96) : Math.round(1e3 / (st.targetPaceSecsPerKm * 1.02) * 100) / 100,
+    targetValueTwo: st.stepKind === "rest" ? null : sport === "Cycling" ? Math.round(st.targetWatts * 1.04) : Math.round(1e3 / (st.targetPaceSecsPerKm * 0.98) * 100) / 100
+  });
+  const garminWorkoutSteps = astNodes ? astNodes.map((node, idx) => {
+    if (node.type === "step") {
+      const pct = Math.max(40, Math.min(180, node.step.intensityPct || 75));
+      const pace = node.step.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+      return toGarminExecStep({
+        stepOrder: idx + 1,
+        label: node.step.label,
+        durationSecs: Math.max(5, Math.round(node.step.durationSecs || 60)),
+        distanceMeters: node.step.distanceMeters,
+        targetWatts: Math.round(ftp * pct / 100),
+        targetPaceSecsPerKm: Math.round(pace),
+        stepKind: node.step.stepKind
+      });
+    }
+    return {
+      type: "RepeatGroupDTO",
+      stepOrder: idx + 1,
+      numberOfIterations: node.repeatCount,
+      smartRepeat: false,
+      workoutSteps: node.steps.map((inner, innerIdx) => {
+        const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
+        const pace = inner.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+        return toGarminExecStep({
+          stepOrder: innerIdx + 1,
+          label: inner.label,
+          durationSecs: Math.max(5, Math.round(inner.durationSecs || 60)),
+          distanceMeters: inner.distanceMeters,
+          targetWatts: Math.round(ftp * pct / 100),
+          targetPaceSecsPerKm: Math.round(pace),
+          stepKind: inner.stepKind
+        });
+      })
+    };
+  }) : normalizedSteps.map((st) => toGarminExecStep(st));
   const garminTrainingApiJson = {
     workoutName: title,
     sportType: { sportTypeKey: sport === "Running" ? "running" : "cycling" },
@@ -3224,18 +3983,7 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
       {
         segmentOrder: 1,
         sportType: { sportTypeKey: sport === "Running" ? "running" : "cycling" },
-        workoutSteps: normalizedSteps.map((st) => ({
-          type: "ExecutableStepDTO",
-          stepOrder: st.stepOrder,
-          description: st.label,
-          endCondition: { conditionTypeKey: "time" },
-          endConditionValue: st.durationSecs,
-          targetType: {
-            workoutTargetTypeKey: sport === "Cycling" ? "power.zone" : "pace.zone"
-          },
-          targetValueOne: sport === "Cycling" ? Math.round(st.targetWatts * 0.96) : Math.round(1e3 / (st.targetPaceSecsPerKm * 1.02) * 100) / 100,
-          targetValueTwo: sport === "Cycling" ? Math.round(st.targetWatts * 1.04) : Math.round(1e3 / (st.targetPaceSecsPerKm * 0.98) * 100) / 100
-        }))
+        workoutSteps: garminWorkoutSteps
       }
     ]
   };
@@ -3277,6 +4025,8 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     ok: true,
     title,
     sport,
+    fitWorkoutBase64,
+    intervalsIcuText,
     appleWorkoutKitJson,
     garminTrainingApiJson,
     zwoXml: zwoLines.join("\n"),
@@ -3622,6 +4372,227 @@ function sanitizeTelemetryForCleanRoom(rawSummary) {
   return clone;
 }
 
+// src/physiology/trackSpeedReserveEngine.ts
+var clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+var round1 = (val) => Number(val.toFixed(1));
+var round2 = (val) => Number(val.toFixed(2));
+var round3 = (val) => Number(val.toFixed(3));
+function vo2AtVelocityMpm(vMpm) {
+  const safeV = Math.max(50, vMpm);
+  return -4.6 + 0.182258 * safeV + 104e-6 * safeV * safeV;
+}
+function pctVo2MaxAtDurationMins(tMins) {
+  const t = Math.max(0.5, tMins);
+  return 0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t);
+}
+function solveVelocityMpmForTargetVo2(targetVo2) {
+  const a = 104e-6;
+  const b = 0.182258;
+  const c = -(4.6 + Math.max(8, targetVo2));
+  const discriminant = Math.max(0, b * b - 4 * a * c);
+  return (-b + Math.sqrt(discriminant)) / (2 * a);
+}
+function solveTrackPaceSecsPerKmForPctVdot(vdotAer, pctVo2, clampRange = [95, 540]) {
+  const safeVdot = clamp(vdotAer || 50, 20, 92);
+  const vMpm = solveVelocityMpmForTargetVo2(safeVdot * pctVo2);
+  const rawPaceSecsPerKm = 6e4 / Math.max(80, vMpm);
+  return round1(clamp(rawPaceSecsPerKm, clampRange[0], clampRange[1]));
+}
+function computeRawMarkVdot(distanceMeters, durationSecs) {
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSecs)) return 50;
+  if (distanceMeters < 150 || durationSecs < 15) return 50;
+  const tMins = Math.max(0.75, durationSecs / 60);
+  const vMpm = distanceMeters / tMins;
+  const raw = vo2AtVelocityMpm(vMpm) / Math.max(0.55, pctVo2MaxAtDurationMins(tMins));
+  return round2(clamp(raw, 22, 92));
+}
+function buildSplitRow(code, name, pctVdotAer, paceSecsPerKm) {
+  const safePace = Math.max(95, paceSecsPerKm);
+  const speedMps = 1e3 / safePace;
+  return {
+    code,
+    name,
+    pctVdotAer: round3(pctVdotAer),
+    paceSecsPerKm: round1(safePace),
+    speedMps: round3(speedMps),
+    splitsSecs: {
+      m200: round1(safePace * 200 / 1e3),
+      m300: round1(safePace * 300 / 1e3),
+      m400: round1(safePace * 400 / 1e3),
+      m600: round1(safePace * 600 / 1e3),
+      m800: round1(safePace * 800 / 1e3),
+      m1000: round1(safePace),
+      m1200: round1(safePace * 1200 / 1e3),
+      m1600: round1(safePace * 1600 / 1e3)
+    }
+  };
+}
+function solveCriticalSpeedAndDPrimeOls(marks) {
+  const valid = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 550 && m.distanceMeters <= 1e4 && m.durationSecs >= 45
+  );
+  if (valid.length < 2) return null;
+  const bestByBucket = /* @__PURE__ */ new Map();
+  for (const m of valid) {
+    const bucket = Math.round(m.distanceMeters / 50) * 50;
+    const existing = bestByBucket.get(bucket);
+    if (!existing || m.durationSecs < existing.durationSecs) {
+      bestByBucket.set(bucket, m);
+    }
+  }
+  const allDistinct = Array.from(bestByBucket.values()).sort(
+    (a, b) => a.distanceMeters - b.distanceMeters
+  );
+  const trackSevere = allDistinct.filter(
+    (m) => m.distanceMeters >= 600 && m.distanceMeters <= 5e3
+  );
+  const pickPool = (pool, minDistSpan, minTimeSpan) => {
+    if (pool.length < 2) return false;
+    const dSpan = pool[pool.length - 1].distanceMeters - pool[0].distanceMeters;
+    const tSpan = Math.max(...pool.map((p) => p.durationSecs)) - Math.min(...pool.map((p) => p.durationSecs));
+    return dSpan >= minDistSpan && tSpan >= minTimeSpan;
+  };
+  const chosen = pickPool(trackSevere, 600, 45) ? trackSevere : pickPool(allDistinct, 500, 35) ? allDistinct : null;
+  if (!chosen) return null;
+  const n = chosen.length;
+  const meanT = chosen.reduce((acc, m) => acc + m.durationSecs, 0) / n;
+  const meanD = chosen.reduce((acc, m) => acc + m.distanceMeters, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const m of chosen) {
+    const dt = m.durationSecs - meanT;
+    const dd = m.distanceMeters - meanD;
+    num += dt * dd;
+    den += dt * dt;
+  }
+  if (den <= 1e-6) return null;
+  const rawCs = num / den;
+  const csMps = round3(clamp(rawCs, 2.5, 6.8));
+  const rawDPrime = meanD - csMps * meanT;
+  const dPrimeMeters = Math.round(clamp(rawDPrime, 110, 420));
+  return { csMps, dPrimeMeters, usedMarksCount: n };
+}
+function classifySpeedReservePhenotype(srr, dPrimeMeters, override) {
+  if (override && override !== "AUTO") return override;
+  if (srr >= 1.58 || dPrimeMeters > 235) return "SPEED";
+  if (srr < 1.48 || dPrimeMeters < 205) return "ENDURANCE";
+  return "HYBRID";
+}
+function buildTrackSpeedReserveProfile(input = {}) {
+  const {
+    marks = [],
+    thresholdPaceSecsPerKm,
+    maxSprintSpeedMps,
+    flying30mSecs,
+    phenotypeOverride = "AUTO"
+  } = input;
+  const validMarks = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 200 && m.durationSecs >= 20
+  ).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  const vdotRawBest = validMarks.length > 0 ? Math.max(...validMarks.map((m) => computeRawMarkVdot(m.distanceMeters, m.durationSecs))) : thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0 ? round2(
+    clamp(
+      vo2AtVelocityMpm(6e4 / clamp(thresholdPaceSecsPerKm, 130, 460)) / 0.88,
+      22,
+      90
+    )
+  ) : 50;
+  const ols = solveCriticalSpeedAndDPrimeOls(validMarks);
+  let modelSource = "PROFILE_THRESHOLD_FALLBACK";
+  let csMps = 3.85;
+  let dPrimeMeters = 215;
+  let vdotAer = 50;
+  if (ols) {
+    modelSource = "MULTI_MARK_CS_DPRIME";
+    csMps = ols.csMps;
+    dPrimeMeters = ols.dPrimeMeters;
+    vdotAer = round2(clamp(vo2AtVelocityMpm(csMps * 60) / 0.9215, 22, 90));
+  } else if (validMarks.length > 0) {
+    modelSource = "SINGLE_MARK_SCALED";
+    const primary = [...validMarks].reverse().find((m) => m.distanceMeters >= 600) ?? validMarks[validMarks.length - 1];
+    const rawVdot = computeRawMarkVdot(primary.distanceMeters, primary.durationSecs);
+    let alpha = 1;
+    if (primary.distanceMeters <= 900) {
+      alpha = 0.945;
+    } else if (primary.distanceMeters <= 1650) {
+      alpha = phenotypeOverride === "SPEED" ? 0.96 : phenotypeOverride === "ENDURANCE" ? 0.99 : 0.975;
+    }
+    vdotAer = round2(clamp(rawVdot * alpha, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    const dPrimePrior = phenotypeOverride === "SPEED" ? 265 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+    if (primary.distanceMeters <= 1650) {
+      const impliedD = clamp(primary.distanceMeters - csMps * primary.durationSecs, 140, 320);
+      dPrimeMeters = Math.round(0.5 * dPrimePrior + 0.5 * impliedD);
+    } else {
+      dPrimeMeters = dPrimePrior;
+    }
+  } else {
+    modelSource = "PROFILE_THRESHOLD_FALLBACK";
+    const safeThresh = clamp(thresholdPaceSecsPerKm || 255, 130, 460);
+    vdotAer = round2(clamp(vo2AtVelocityMpm(6e4 / safeThresh) / 0.88, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    dPrimeMeters = phenotypeOverride === "SPEED" ? 260 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+  }
+  const masMps = round3(solveVelocityMpmForTargetVo2(vdotAer) / 60);
+  let mssMps;
+  if (typeof maxSprintSpeedMps === "number" && maxSprintSpeedMps >= 4.5) {
+    mssMps = clamp(maxSprintSpeedMps, 4.5, 11.2);
+  } else if (typeof flying30mSecs === "number" && flying30mSecs >= 2.6 && flying30mSecs <= 8) {
+    mssMps = clamp(30 / flying30mSecs, 4.5, 11.2);
+  } else {
+    const mssFromDPrime = masMps * (1.26 + 118e-5 * dPrimeMeters);
+    const mark400 = validMarks.find(
+      (m) => m.distanceMeters >= 350 && m.distanceMeters <= 450
+    );
+    const mark800 = validMarks.find(
+      (m) => m.distanceMeters >= 750 && m.distanceMeters <= 850
+    );
+    const est400 = mark400 ? mark400.distanceMeters / mark400.durationSecs * 1.11 : 0;
+    const est800 = mark800 ? mark800.distanceMeters / mark800.durationSecs * 1.23 : 0;
+    mssMps = clamp(Math.max(mssFromDPrime, est400, est800), 4.5, 11.2);
+  }
+  mssMps = round3(mssMps);
+  const asrMps = round2(Math.max(1.2, mssMps - masMps));
+  const srr = round3(mssMps / Math.max(2, masMps));
+  const phenotype = classifySpeedReservePhenotype(srr, dPrimeMeters, phenotypeOverride);
+  const paceE = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.7, [175, 540]);
+  const paceSubT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.86, [140, 430]);
+  const paceT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.88, [140, 430]);
+  const paceCv = round1(clamp(1e3 / csMps, 135, 420));
+  const paceI = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.98, [125, 390]);
+  const t1550 = (1550 - dPrimeMeters) / csMps;
+  const pace1550Hyperbolic = Math.max(185, t1550) / 1550 * 1e3;
+  const rawPaceR = modelSource === "PROFILE_THRESHOLD_FALLBACK" ? Math.min(paceI - 15, pace1550Hyperbolic) : Math.min(paceI - 6, pace1550Hyperbolic);
+  const paceR = round1(clamp(rawPaceR, 110, 360));
+  const t800Eff = (800 - 0.8 * dPrimeMeters) / csMps;
+  const v800Eff = 800 / Math.max(92, t800Eff);
+  const vFr = Math.max(v800Eff, masMps + 0.35 * asrMps, 1e3 / Math.max(105, paceR - 10));
+  const paceFr = round1(clamp(1e3 / vFr, 95, 330));
+  const zones = {
+    E: buildSplitRow("E", "Easy / Recovery", 0.7, paceE),
+    SUB_T: buildSplitRow("SUB_T", "Norwegian Sub-Threshold", 0.86, paceSubT),
+    T: buildSplitRow("T", "Lactate Threshold", 0.88, paceT),
+    CV: buildSplitRow("CV", "Critical Velocity (CS)", 0.9215, paceCv),
+    I: buildSplitRow("I", "VO2max Interval", 0.98, paceI),
+    R: buildSplitRow("R", "Mile / 1500m Repetition", 1.07, paceR),
+    FR: buildSplitRow("FR", "800m / Fast Repetition", 1.18, paceFr)
+  };
+  return {
+    modelSource,
+    csMps,
+    criticalPaceSecsPerKm: paceCv,
+    dPrimeMeters,
+    vdotAer,
+    vdotRawBest,
+    masMps,
+    mssMps,
+    asrMps,
+    srr,
+    phenotype,
+    thresholdPaceSecsPerKm: paceT,
+    zones
+  };
+}
+
 // src/physiology/teamOnboardingEngine.ts
 function getOrgTypeSafeguardingDefaults(orgType) {
   switch (orgType) {
@@ -3686,8 +4657,8 @@ function hexToRgb(hex) {
   return [r, g, b];
 }
 function rgbToHex(r, g, b) {
-  const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
-  return `#${[clamp(r), clamp(g), clamp(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  const clamp2 = (n) => Math.max(0, Math.min(255, Math.round(n)));
+  return `#${[clamp2(r), clamp2(g), clamp2(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
 function rgbToHsl(r, g, b) {
   const rn = r / 255;
@@ -4083,24 +5054,13 @@ function calibrateThresholdsFromSeedMark(seedInput, primarySport = "Running", di
       else if (totalSecs < 450) distMeters = 1600;
       else if (totalSecs < 810) distMeters = 3200;
       else distMeters = 5e3;
-      const tMins = totalSecs / 60;
-      const vMetersPerMin = distMeters / tMins;
-      const vo2 = -4.6 + 0.182258 * vMetersPerMin + 104e-6 * vMetersPerMin * vMetersPerMin;
-      const pctMax = 0.8 + 0.1894393 * Math.exp(-0.012778 * tMins) + 0.2989558 * Math.exp(-0.1932605 * tMins);
-      const rawVdot = vo2 / pctMax;
-      const effectiveVdot = distMeters <= 1610 ? rawVdot * 0.975 : rawVdot;
-      const vdot = Math.max(28, Math.min(86, Number(effectiveVdot.toFixed(1))));
-      const solvePaceSecsPerKmForPctVo2 = (pctVo2) => {
-        const targetVo2 = vdot * pctVo2;
-        const a = 104e-6;
-        const b = 0.182258;
-        const c = -4.6 - targetVo2;
-        const velMpm = (-b + Math.sqrt(Math.max(0.01, b * b - 4 * a * c))) / (2 * a);
-        return Math.max(145, Math.min(520, Math.round(1e3 / Math.max(110, velMpm) * 60)));
-      };
-      const ltSecsPerKm = solvePaceSecsPerKmForPctVo2(0.88);
-      const easySecsPerKm = solvePaceSecsPerKmForPctVo2(0.7);
-      const intervalSecsPerKm = solvePaceSecsPerKmForPctVo2(0.98);
+      const profile = buildTrackSpeedReserveProfile({
+        marks: [{ distanceMeters: distMeters, durationSecs: totalSecs }]
+      });
+      const vdot = Math.max(24, Math.min(90, Number(profile.vdotAer.toFixed(1))));
+      const ltSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.88, [115, 520]));
+      const easySecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.7, [145, 560]));
+      const intervalSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.98, [115, 480]));
       const disp = formatPaceDisplay(ltSecsPerKm, distanceUnit);
       const easyDisp = formatPaceDisplay(easySecsPerKm, distanceUnit);
       const intDisp = formatPaceDisplay(intervalSecsPerKm, distanceUnit);
@@ -6482,7 +7442,7 @@ function buildServerAthleteProfile(rawProfile, latestWellness, activities) {
     thresholdPaceSecsPerKm = rawTp < 15 ? Math.round(1e3 / rawTp) : Math.round(rawTp);
   }
   const runFtp = Number(
-    runSetting?.ftp || rawProfile?.runFtp || latestWellness?.runEftp || obs.obsRunFtp || prev.runFtp || Math.round(weightKg * (1e3 / Math.max(160, thresholdPaceSecsPerKm)) * 0.98)
+    runSetting?.ftp || rawProfile?.runFtp || latestWellness?.runEftp || obs.obsRunFtp || prev.runFtp || Math.round(weightKg * (1e3 / Math.max(130, thresholdPaceSecsPerKm)) * 0.98)
   );
   const runEFtp = Number(
     latestWellness?.runEftp || runSetting?.eftp || rawProfile?.runEFtp || prev.runEFtp || runFtp
@@ -10145,6 +11105,7 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
       targetZoneSummary: String(body.targetZoneSummary || `${plannedLoad} TSS Planned`),
       workoutSyntax,
       structuredSteps: Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0 ? body.structuredSteps : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs),
+      ...body.trackSpec && typeof body.trackSpec === "object" ? { trackSpec: body.trackSpec } : {},
       source: body.source || "USER"
     };
     const scopedFile = getScopedPlannedEventsFile(req);
