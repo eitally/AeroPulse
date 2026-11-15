@@ -4874,6 +4874,41 @@ async function unlinkProviderFromUser(userId, provider) {
   await saveUser(user);
   return { ok: true };
 }
+async function connectServiceToUser(userId, service, serviceAthleteId, athleteName) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (existingIdx >= 0) {
+    user.connectedServices[existingIdx] = {
+      ...user.connectedServices[existingIdx],
+      status: "CONNECTED",
+      athleteId: serviceAthleteId || user.connectedServices[existingIdx].athleteId,
+      athleteName: athleteName || user.connectedServices[existingIdx].athleteName,
+      connectedAt: now
+    };
+  } else {
+    user.connectedServices.push({
+      service,
+      status: "CONNECTED",
+      athleteId: serviceAthleteId,
+      athleteName,
+      connectedAt: now
+    });
+  }
+  await saveUser(user);
+  return user;
+}
+async function disconnectServiceFromUser(userId, service) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
+  if (existingIdx >= 0) {
+    user.connectedServices[existingIdx].status = "DISCONNECTED";
+    await saveUser(user);
+  }
+  return user;
+}
 var MAGIC_LINK_TTL_MS = 15 * 60 * 1e3;
 async function createMagicLinkToken(email) {
   const cleanEmail = email.toLowerCase().trim();
@@ -5813,7 +5848,7 @@ var GARMIN_SESSION_DIR = "/tmp/thresh-garmin";
 function hasExplicitCredentialHeader(req) {
   if (!req) return false;
   return Boolean(
-    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
+    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
   );
 }
 function isAuthenticatedRequest(req) {
@@ -5961,6 +5996,8 @@ var initialEnvGeminiKey = [
 function createDefaultRuntimeSessionStore(seed = {}) {
   return {
     intervalsApiKey: seed.intervalsApiKey || "",
+    intervalsAccessToken: seed.intervalsAccessToken || "",
+    intervalsScope: seed.intervalsScope || "",
     intervalsAthleteId: seed.intervalsAthleteId || "0",
     intervalsAthleteName: seed.intervalsAthleteName || "",
     stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || "",
@@ -6034,6 +6071,8 @@ function getScopedRuntimeStore(req) {
         stravaGrantedScope: loaded.stravaGrantedScope || cookieVault.stravaGrantedScope,
         stravaSyncPolicy: loaded.stravaSyncPolicy || cookieVault.stravaSyncPolicy,
         intervalsApiKey: loaded.intervalsApiKey || cookieVault.intervalsApiKey || "",
+        intervalsAccessToken: loaded.intervalsAccessToken || cookieVault.intervalsAccessToken || "",
+        intervalsScope: loaded.intervalsScope || cookieVault.intervalsScope || "",
         intervalsAthleteId: loaded.intervalsAthleteId || cookieVault.intervalsAthleteId || "0",
         intervalsAthleteName: loaded.intervalsAthleteName || cookieVault.intervalsAthleteName || ""
       };
@@ -6432,6 +6471,8 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
     stravaGrantedScope: store.stravaGrantedScope || void 0,
     stravaSyncPolicy: store.stravaSyncPolicy || void 0,
     intervalsApiKey: store.intervalsApiKey || void 0,
+    intervalsAccessToken: store.intervalsAccessToken || void 0,
+    intervalsScope: store.intervalsScope || void 0,
     intervalsAthleteId: store.intervalsAthleteId && store.intervalsAthleteId !== "0" ? store.intervalsAthleteId : void 0,
     intervalsAthleteName: store.intervalsAthleteName || void 0,
     garminPersonalApiKey: garminSess?.personalApiKey || void 0
@@ -6622,14 +6663,60 @@ async function generateGeminiContentWithFallback(ai, params) {
 function getEffectiveIntervalsConfig(req) {
   const activeReq = req ?? requestContext.getStore();
   if (activeReq && !isAuthenticatedRequest(activeReq)) {
-    return { apiKey: "", athleteId: "0" };
+    return { apiKey: "", accessToken: "", athleteId: "0", scope: "" };
   }
   const allowEnvFallback = process.env.NODE_ENV !== "production" && !process.env.VERCEL;
   const headerKey = activeReq?.headers["x-intervals-api-key"] || "";
+  const headerToken = activeReq?.headers["x-intervals-access-token"] || "";
   const headerAthlete = activeReq?.headers["x-intervals-athlete-id"] || "";
   const apiKey = (headerKey || runtimeStore.intervalsApiKey || (allowEnvFallback ? process.env.INTERVALS_API_KEY : "") || "").trim();
+  const accessToken = (headerToken || runtimeStore.intervalsAccessToken || "").trim();
   const athleteId = (headerAthlete || runtimeStore.intervalsAthleteId || (allowEnvFallback ? process.env.INTERVALS_ATHLETE_ID : "") || "0").trim() || "0";
-  return { apiKey, athleteId };
+  const scope = runtimeStore.intervalsScope || "";
+  return { apiKey, accessToken, athleteId, scope };
+}
+function getIntervalsAuthHeader(config) {
+  if (config.accessToken) {
+    return `Bearer ${config.accessToken}`;
+  }
+  if (config.apiKey) {
+    return `Basic ${Buffer.from(`API_KEY:${config.apiKey}`).toString("base64")}`;
+  }
+  return null;
+}
+function getEffectiveIntervalsClientConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const headerClientId = activeReq?.headers["x-intervals-client-id"] || "";
+  const headerClientSecret = activeReq?.headers["x-intervals-client-secret"] || "";
+  const clientId = (headerClientId || process.env.INTERVALS_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.INTERVALS_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
+function resolveIntervalsCallbackUrl(req) {
+  const explicitRedirect = (process.env.INTERVALS_REDIRECT_URI || "").trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+    }
+  }
+  const safeOrigin = resolveSafeOrigin(req.query.origin);
+  if (safeOrigin) {
+    return `${safeOrigin}/auth/intervals/callback`;
+  }
+  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
+  if (appUrl && !appUrl.includes("MY_APP_URL")) {
+    return `${appUrl}/auth/intervals/callback`;
+  }
+  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
+  const proto = rawProto === "https" ? "https" : "http";
+  const rawHost = String(
+    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
+  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  return `${proto}://${rawHost || "localhost:3000"}/auth/intervals/callback`;
 }
 function getEffectiveStravaClientConfig(req) {
   const activeReq = req ?? requestContext.getStore();
@@ -6805,23 +6892,24 @@ async function resolveStravaAthleteIdentity(req) {
 }
 var intervalsIdentityByKey = /* @__PURE__ */ new Map();
 async function resolveIntervalsAthleteIdentity(req) {
-  const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
-  if (!apiKey) return null;
-  const cached = intervalsIdentityByKey.get(apiKey);
+  const config = getEffectiveIntervalsConfig(req);
+  const authHeader = getIntervalsAuthHeader(config);
+  if (!authHeader) return null;
+  const cacheKey = config.accessToken ? `tok_${config.accessToken.slice(-10)}` : `key_${config.apiKey}`;
+  const cached = intervalsIdentityByKey.get(cacheKey);
   if (cached && !isGenericName(cached.athleteName)) {
     return cached;
   }
   try {
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
     const resp = await fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId || "0")}`,
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(config.athleteId || "0")}`,
       {
         headers: { Authorization: authHeader, Accept: "application/json" }
       }
     );
     if (!resp.ok) return null;
     const rawProfile = await resp.json();
-    const resolvedId = String(rawProfile.id || athleteId || "0");
+    const resolvedId = String(rawProfile.id || config.athleteId || "0");
     const fullName = String(rawProfile.name || "").trim() || [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(" ").trim() || "";
     if (fullName && !isGenericName(fullName)) {
       runtimeStore.intervalsAthleteName = fullName;
@@ -6832,7 +6920,7 @@ async function resolveIntervalsAthleteIdentity(req) {
       athleteName: fullName,
       rawProfile
     };
-    intervalsIdentityByKey.set(apiKey, entry);
+    intervalsIdentityByKey.set(cacheKey, entry);
     return entry;
   } catch {
     return null;
@@ -6911,15 +6999,27 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
   const isAuthed = isAuthenticatedRequest(req);
-  const { apiKey: intervalsKey, athleteId } = getEffectiveIntervalsConfig(req);
+  const {
+    apiKey: intervalsKey,
+    accessToken: intervalsAccessToken,
+    athleteId
+  } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
     clientSecret: stravaClientSecret,
     refreshToken: stravaRefreshToken,
     accessToken: stravaAccessToken
   } = getEffectiveStravaClientConfig(req);
+  const {
+    clientId: intervalsClientId,
+    clientSecret: intervalsClientSecret
+  } = getEffectiveIntervalsClientConfig(req);
   if (intervalsKey && !runtimeStore.intervalsApiKey && !isServerOwnedSecret(intervalsKey)) {
     runtimeStore.intervalsApiKey = intervalsKey;
+    runtimeStore.intervalsAthleteId = athleteId;
+  }
+  if (intervalsAccessToken && !runtimeStore.intervalsAccessToken) {
+    runtimeStore.intervalsAccessToken = intervalsAccessToken;
     runtimeStore.intervalsAthleteId = athleteId;
   }
   if (stravaClientId && !runtimeStore.stravaClientId) {
@@ -6950,7 +7050,7 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     runtimeStore.geminiApiKey = effectiveGeminiKey;
   }
   const hasGeminiServerKey = Boolean(effectiveGeminiKey);
-  const isIntervalsConnected = Boolean(intervalsKey);
+  const isIntervalsConnected = Boolean(intervalsKey || intervalsAccessToken);
   const isStravaConnected = Boolean(stravaAccessToken || stravaRefreshToken);
   const [stravaIdentity, intervalsIdentity] = await Promise.all([
     isStravaConnected ? resolveStravaAthleteIdentity(req) : Promise.resolve(null),
@@ -6980,10 +7080,12 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     vaultStorageBackend: getVaultStorageBackend(),
     garminConnected: isGarminConnected,
     garminAthleteName: resolvedGarminName,
+    intervalsConfigured: Boolean(intervalsClientId && intervalsClientSecret),
     intervalsConnected: isIntervalsConnected,
+    intervalsAuthMethod: intervalsAccessToken ? "OAUTH" : intervalsKey ? "API_KEY" : "NONE",
     intervalsAthleteId: isIntervalsConnected ? intervalsIdentity?.athleteId || athleteId || "0" : "0",
     intervalsAthleteName: resolvedIntervalsName,
-    intervalsSource: isIntervalsConnected ? "USER_INPUT" : "NONE",
+    intervalsSource: intervalsAccessToken ? "OAUTH" : isIntervalsConnected ? "USER_INPUT" : "NONE",
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
     stravaClientId: stravaClientId || void 0,
     stravaConnected: isStravaConnected,
@@ -7252,10 +7354,12 @@ apiRouter.post("/api/garmin/workout/push", async (req, res) => {
 });
 apiRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
-    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    const config = getEffectiveIntervalsConfig(req);
+    const intervalsAuth = getIntervalsAuthHeader(config);
+    const athleteId = config.athleteId || "0";
     const stravaIdentity = await resolveStravaAthleteIdentity(req);
     const garminSession = getActiveGarminSession(req);
-    if (!apiKey) {
+    if (!intervalsAuth) {
       const [garminDirect2, validStravaToken] = await Promise.all([
         garminSession ? fetchDirectGarminProfileAndWellness(garminSession, 14).catch(() => null) : Promise.resolve(null),
         ensureValidStravaAccessToken(req, false)
@@ -7314,7 +7418,7 @@ apiRouter.post("/api/intervals/profile/sync", async (req, res) => {
       res.json({ ok: true, athleteProfile: fallbackProfile, mode: "SANDBOX" });
       return;
     }
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
+    const authHeader = intervalsAuth;
     const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const oldest60d = new Date(Date.now() - 60 * 86400 * 1e3).toISOString().slice(0, 10);
     const [profileResp, wellnessResp, actsResp, garminDirect] = await Promise.all([
@@ -7572,6 +7676,267 @@ apiRouter.post("/api/config/import-bundle", (req, res) => {
     });
   }
 });
+apiRouter.get(["/api/intervals/auth/url", "/api/auth/intervals/url"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+  if (!clientId || !clientSecret) {
+    res.status(400).json({
+      error: "Intervals.icu OAuth is not configured on this server yet. Please set INTERVALS_CLIENT_ID and INTERVALS_CLIENT_SECRET in your environment variables, or request developer credentials from david@intervals.icu."
+    });
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const mode = String(req.query.mode || "cloud").toLowerCase();
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const clientNonce = String(req.query.state || "").trim();
+  const { stateToken, nonce } = issueOAuthStateToken({
+    nonce: clientNonce || void 0,
+    sid,
+    flow,
+    mode
+  });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveIntervalsCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ",
+    state: stateToken
+  });
+  const authUrl = `https://intervals.icu/oauth/authorize?${params.toString()}`;
+  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
+});
+apiRouter.get(["/api/intervals/auth/login", "/api/auth/intervals/login"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+  if (!clientId || !clientSecret) {
+    const msg = encodeURIComponent(
+      "Intervals.icu OAuth is not configured on this server yet (missing INTERVALS_CLIENT_ID or INTERVALS_CLIENT_SECRET)."
+    );
+    res.redirect(302, `/?auth_error=${msg}`);
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const { stateToken, nonce } = issueOAuthStateToken({ sid, flow, mode: "cloud" });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveIntervalsCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ",
+    state: stateToken
+  });
+  res.redirect(302, `https://intervals.icu/oauth/authorize?${params.toString()}`);
+});
+var intervalsCallbackHandler = async (req, res) => {
+  const code = String(req.query.code || "").trim();
+  const error = String(req.query.error || "").trim();
+  const stateToken = String(req.query.state || "").trim();
+  const verifiedState = verifyOAuthStateToken(stateToken);
+  clearOAuthStateCookie(res);
+  if (error) {
+    const errMsg = error === "access_denied" ? "Access was denied by the user on Intervals.icu." : error;
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "intervals",
+      error: `Intervals.icu connection failed: ${errMsg}`
+    });
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connection Error",
+        heading: "Intervals.icu Connection Could Not Complete",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+    return;
+  }
+  if (!code) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Missing Authorization Code",
+        heading: "Intervals.icu Authorization Code Missing",
+        accentColor: "#FB7185",
+        body: "No authorization code was returned by Intervals.icu.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  if (!verifiedState) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Invalid OAuth State",
+        heading: "Security Verification Failed",
+        accentColor: "#FB7185",
+        body: "OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  try {
+    const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        "Intervals.icu OAuth client credentials (INTERVALS_CLIENT_ID / INTERVALS_CLIENT_SECRET) are not configured."
+      );
+    }
+    const tokenResp = await fetch("https://intervals.icu/api/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code
+      }).toString()
+    });
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.text();
+      throw new Error(
+        `Intervals.icu token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
+      );
+    }
+    const tokenData = await tokenResp.json();
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Intervals.icu did not return a valid access token.");
+    }
+    const athleteId = String(tokenData.id || tokenData.athlete?.id || "0").trim();
+    const athleteName = String(
+      tokenData.name || tokenData.athlete?.name || [tokenData.firstname, tokenData.lastname].filter(Boolean).join(" ") || `Athlete ${athleteId}`
+    ).trim();
+    const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
+    bindRequestScopeKey(req, sid);
+    const store = getScopedRuntimeStore(req);
+    store.intervalsAccessToken = accessToken;
+    store.intervalsScope = tokenData.scope || "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ";
+    store.intervalsAthleteId = athleteId;
+    store.intervalsAthleteName = athleteName;
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "intervals", athleteId, athleteName);
+    }
+    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    await saveSessionCacheAsync(req, res, sid);
+    const oauthPayloadJson = safeJsonForScript({
+      type: "OAUTH_AUTH_SUCCESS",
+      provider: "intervals",
+      athleteId,
+      athleteName,
+      sessionToken,
+      scope: tokenData.scope,
+      returnUrl: "/?tab=settings"
+    });
+    res.type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connected \xB7 THRESH",
+        heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
+        body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness data, and eFTP curves will sync automatically.",
+        ctaLabel: "Continue to THRESH",
+        ctaHref: "/?tab=settings",
+        scriptBody: `(function() {
+          var payload = ${oauthPayloadJson};
+          try {
+            if (payload.sessionToken) {
+              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+            }
+            if (payload.athleteId) {
+              localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
+            }
+            if (payload.athleteName) {
+              localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
+            }
+            localStorage.setItem('aeropulse_intervals_connected', '1');
+            localStorage.removeItem('aeropulse_intervals_api_key');
+            localStorage.setItem('aeropulse_oauth_just_connected', '1');
+          } catch (e) {}
+          var hasOpener = false;
+          try {
+            if (window.opener && window.opener !== window) {
+              hasOpener = true;
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+          var isPopupWindow = hasOpener || window.name === 'aeropulse_oauth_popup';
+          if (isPopupWindow) {
+            setTimeout(function() {
+              try { window.close(); } catch (e) {}
+            }, 300);
+          } else {
+            window.location.replace(payload.returnUrl || '/?tab=settings');
+          }
+        })();`
+      })
+    );
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "intervals",
+      error: `Intervals.icu connection failed: ${errMsg}`
+    });
+    res.status(500).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connection Error",
+        heading: "Intervals.icu Connection Failed",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+  }
+};
+apiRouter.get(
+  [
+    "/auth/intervals/callback",
+    "/auth/intervals/callback/",
+    "/api/intervals/callback",
+    "/api/intervals/callback/",
+    "/api/auth/intervals/callback",
+    "/api/auth/intervals/callback/"
+  ],
+  intervalsCallbackHandler
+);
 apiRouter.post("/api/intervals/connect", async (req, res) => {
   try {
     const apiKey = String(req.body?.apiKey || "").trim();
@@ -7605,6 +7970,10 @@ apiRouter.post("/api/intervals/connect", async (req, res) => {
     runtimeStore.intervalsApiKey = apiKey;
     runtimeStore.intervalsAthleteId = resolvedId;
     runtimeStore.intervalsAthleteName = resolvedName;
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "intervals", resolvedId, resolvedName);
+    }
     await saveSessionCacheAsync(req, res, createdClaims?.sid);
     res.json({
       connected: true,
@@ -7620,7 +7989,13 @@ apiRouter.post("/api/intervals/connect", async (req, res) => {
 });
 apiRouter.post("/api/intervals/disconnect", async (req, res) => {
   runtimeStore.intervalsApiKey = "";
+  runtimeStore.intervalsAccessToken = "";
+  runtimeStore.intervalsScope = "";
   runtimeStore.intervalsAthleteName = "";
+  const callerClaims = getVerifiedSessionClaims(req);
+  if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+    await disconnectServiceFromUser(callerClaims.sub, "intervals");
+  }
   await saveSessionCacheAsync(req, res);
   res.json({ connected: false });
 });
@@ -7632,8 +8007,22 @@ apiRouter.post("/api/garmin/disconnect", async (req, res) => {
   await saveSessionCacheAsync(req, res);
   res.json({ connected: false });
 });
-async function syncIntervalsAllHistory(apiKey, athleteId, oldestActivitiesDate = "2010-01-01") {
-  const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
+async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldestActivitiesDate = "2010-01-01") {
+  let authHeader;
+  let athleteId;
+  if (typeof configOrKey === "string") {
+    authHeader = "Basic " + Buffer.from(`API_KEY:${configOrKey}`).toString("base64");
+    athleteId = maybeAthleteId || "0";
+  } else {
+    const header = getIntervalsAuthHeader(configOrKey);
+    if (!header) {
+      throw new Error(
+        "Intervals.icu authentication header could not be constructed (missing API key or access token)."
+      );
+    }
+    authHeader = header;
+    athleteId = configOrKey.athleteId || maybeAthleteId || "0";
+  }
   const now = /* @__PURE__ */ new Date();
   const newest = now.toISOString().slice(0, 10);
   const futureEventsDate = new Date(now);
@@ -8122,7 +8511,8 @@ async function syncIntervalsAllHistory(apiKey, athleteId, oldestActivitiesDate =
     }
   }
   rankSegmentEffortsAcrossActivities(activities);
-  const scopedPlannedFile = getScopedPlannedEventsFile(void 0, apiKey);
+  const cacheKey = typeof configOrKey === "string" ? configOrKey : configOrKey.apiKey || configOrKey.accessToken || "default";
+  const scopedPlannedFile = getScopedPlannedEventsFile(void 0, cacheKey);
   const localPlanned = scopedPlannedFile ? loadJsonFile(scopedPlannedFile, []) : [];
   const icuPlanned = rawEvents.filter((ev) => ev && ev.start_date_local).map((ev) => {
     const dur = Number(ev.moving_time ?? 3600);
@@ -8335,13 +8725,14 @@ function rankSegmentEffortsAcrossActivities(activities) {
 }
 apiRouter.get("/api/intervals/sync", async (req, res) => {
   try {
-    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
-    if (!apiKey) {
-      res.status(401).json({ error: "Intervals.icu API Key is not configured." });
+    const config = getEffectiveIntervalsConfig(req);
+    const authHeader = getIntervalsAuthHeader(config);
+    if (!authHeader) {
+      res.status(401).json({ error: "Intervals.icu is not connected (OAuth access token or API Key required)." });
       return;
     }
     const oldestParam = String(req.query.oldest || "2010-01-01").trim();
-    const payload = await syncIntervalsAllHistory(apiKey, athleteId, oldestParam);
+    const payload = await syncIntervalsAllHistory(config, config.athleteId, oldestParam);
     res.json(payload);
   } catch (error) {
     res.status(500).json({
@@ -8351,13 +8742,13 @@ apiRouter.get("/api/intervals/sync", async (req, res) => {
 });
 apiRouter.post("/api/segments/scan-more", async (req, res) => {
   try {
-    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
-    if (!apiKey) {
-      res.status(401).json({ error: "Intervals.icu API Key is not configured." });
+    const config = getEffectiveIntervalsConfig(req);
+    const authHeader = getIntervalsAuthHeader(config);
+    if (!authHeader) {
+      res.status(401).json({ error: "Intervals.icu is not connected (OAuth access token or API Key required)." });
       return;
     }
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
-    const resolvedId = athleteId || "0";
+    const resolvedId = config.athleteId || "0";
     const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${todayStr}`;
     const actResp = await fetch(activitiesUrl, {
@@ -8453,12 +8844,12 @@ apiRouter.post("/api/segments/scan-more", async (req, res) => {
 });
 apiRouter.get("/api/intervals/activities/:id/streams", async (req, res) => {
   try {
-    const { apiKey } = getEffectiveIntervalsConfig(req);
-    if (!apiKey) {
-      res.status(401).json({ error: "Intervals.icu API Key is not configured." });
+    const config = getEffectiveIntervalsConfig(req);
+    const authHeader = getIntervalsAuthHeader(config);
+    if (!authHeader) {
+      res.status(401).json({ error: "Intervals.icu is not connected (OAuth access token or API Key required)." });
       return;
     }
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
     const activityId = req.params.id;
     const [streamsResp, detailResp, segmentsResp] = await Promise.all([
       fetch(
@@ -8632,11 +9023,13 @@ apiRouter.post("/api/calendar/events", async (req, res) => {
       updated = [newEvent, ...existing];
       saveJsonFile(scopedFile, updated);
     }
-    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
+    const intervalsConfig = getEffectiveIntervalsConfig(req);
+    const intervalsAuth = getIntervalsAuthHeader(intervalsConfig);
     let pushedToIntervals = false;
-    if (apiKey && body.syncToIntervals !== false) {
+    if (intervalsAuth && body.syncToIntervals !== false) {
       try {
-        const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
+        const authHeader = intervalsAuth;
+        const athleteId = intervalsConfig.athleteId || "0";
         const icuType = sportCategory === "Running" ? "Run" : environmentPreference === "INDOOR" ? "VirtualRide" : "Ride";
         const icuResp = await fetch(
           `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/events`,
@@ -10287,10 +10680,11 @@ apiRouter.post("/api/activities/:id/kudos", (req, res) => {
 });
 apiRouter.post("/api/activities/hydrate-routes", async (req, res) => {
   try {
-    const { apiKey, athleteId } = getEffectiveIntervalsConfig(req);
-    if (!apiKey) {
+    const intervalsConfig = getEffectiveIntervalsConfig(req);
+    const intervalsAuth = getIntervalsAuthHeader(intervalsConfig);
+    if (!intervalsAuth) {
       res.status(401).json({
-        error: "Intervals.icu API Key is required to hydrate GPS routes.",
+        error: "Intervals.icu connection (OAuth or API Key) is required to hydrate GPS routes.",
         routesByActivity: {}
       });
       return;
@@ -10299,10 +10693,10 @@ apiRouter.post("/api/activities/hydrate-routes", async (req, res) => {
       ROUTES_BY_ACTIVITY_CACHE_FILE,
       {}
     );
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
+    const authHeader = intervalsAuth;
     let activityIds = Array.isArray(req.body?.activityIds) ? req.body.activityIds.map(String).slice(0, 32) : [];
     if (activityIds.length === 0) {
-      const resolvedId = athleteId || "0";
+      const resolvedId = intervalsConfig.athleteId || "0";
       const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       const actResp = await fetch(
         `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${todayStr}`,

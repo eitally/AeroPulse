@@ -279,6 +279,24 @@ export async function connectServiceToUser(
   return user;
 }
 
+/**
+ * Disconnects a telemetry service from a user.
+ */
+export async function disconnectServiceFromUser(
+  userId: string,
+  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar'
+): Promise<ThreshUser | null> {
+  const user = await getUserById(userId);
+  if (!user) return null;
+
+  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
+  if (existingIdx >= 0) {
+    user.connectedServices[existingIdx].status = 'DISCONNECTED';
+    await saveUser(user);
+  }
+  return user;
+}
+
 /* ========================================================================== */
 /* Email Magic Link Implementation (100% Free - Resend / Dev Simulation)     */
 /* ========================================================================== */

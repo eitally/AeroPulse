@@ -9,6 +9,7 @@ import {
   Copy,
   ExternalLink,
   KeyRound,
+  Lightning,
   Lock,
   LogOut,
   Moon,
@@ -78,6 +79,7 @@ interface StravaAuthGateProps {
   onSaveStravaDirectToken?: (refreshToken: string, accessToken?: string) => Promise<void>;
   onExchangeStravaCode?: (codeOrUrl: string) => Promise<void>;
   onConnectIntervals?: (athleteId: string, apiKey: string) => Promise<void>;
+  onLaunchIntervalsOAuth?: () => Promise<void>;
   onSyncNow?: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
   onCompleteCalibrationEntry?: (payload: FirstRunCalibrationPayload) => Promise<void>;
   onDisconnectCredentials?: () => Promise<void>;
@@ -184,6 +186,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   onSaveStravaDirectToken,
   onExchangeStravaCode,
   onConnectIntervals,
+  onLaunchIntervalsOAuth,
   onSyncNow,
   onCompleteCalibrationEntry,
   onDisconnectCredentials,
@@ -2312,51 +2315,69 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </div>
 
                   {expandIntervals && (
-                    <form
-                      onSubmit={handleConnectIntervalsInline}
-                      className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">
-                          Enter Athlete ID (<code className="font-mono">0</code> for self) &amp; API Key:
-                        </span>
-                        <a
-                          href="https://intervals.icu/settings"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
-                        >
-                          <span>Intervals.icu Settings</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                        <input
-                          type="text"
-                          aria-label="Intervals.icu Athlete ID"
-                          value={intervalsAthleteId}
-                          onChange={(e) => setIntervalsAthleteId(e.target.value)}
-                          placeholder="0 or i12345"
-                          className="sm:col-span-3 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                        />
-                        <input
-                          type="password"
-                          required
-                          aria-label="Intervals.icu API Key"
-                          value={intervalsApiKey}
-                          onChange={(e) => setIntervalsApiKey(e.target.value)}
-                          placeholder="Intervals.icu API Key"
-                          className="sm:col-span-6 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                        />
+                    <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
+                      {onLaunchIntervalsOAuth && (
                         <button
-                          type="submit"
-                          disabled={busy || !intervalsApiKey.trim()}
-                          className="sm:col-span-3 ap-btn-primary !min-h-[44px] sm:!min-h-[42px] text-xs cursor-pointer"
+                          type="button"
+                          onClick={() => onLaunchIntervalsOAuth?.()}
+                          className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                         >
-                          {isConnectingIntervals ? 'Linking…' : 'Connect'}
+                          <Lightning className="w-4 h-4 text-lime-400" />
+                          <span>1-Click Connect with Intervals.icu (OAuth 2.0)</span>
                         </button>
-                      </div>
-                    </form>
+                      )}
+
+                      <details className="text-2xs text-slate-500 dark:text-slate-400 group/api">
+                        <summary className="cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none py-1">
+                          Power-User Option: Connect via Personal API Key
+                        </summary>
+                        <form
+                          onSubmit={handleConnectIntervalsInline}
+                          className="pt-2 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between text-2xs">
+                            <span className="text-slate-600 dark:text-slate-300">
+                              Enter Athlete ID (<code className="font-mono">0</code> for self) &amp; API Key:
+                            </span>
+                            <a
+                              href="https://intervals.icu/settings"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
+                            >
+                              <span>Intervals.icu Settings</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                            <input
+                              type="text"
+                              aria-label="Intervals.icu Athlete ID"
+                              value={intervalsAthleteId}
+                              onChange={(e) => setIntervalsAthleteId(e.target.value)}
+                              placeholder="0 or i12345"
+                              className="sm:col-span-3 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                            />
+                            <input
+                              type="password"
+                              required
+                              aria-label="Intervals.icu API Key"
+                              value={intervalsApiKey}
+                              onChange={(e) => setIntervalsApiKey(e.target.value)}
+                              placeholder="Intervals.icu API Key"
+                              className="sm:col-span-6 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                            />
+                            <button
+                              type="submit"
+                              disabled={busy || !intervalsApiKey.trim()}
+                              className="sm:col-span-3 ap-btn-primary !min-h-[44px] sm:!min-h-[42px] text-xs cursor-pointer"
+                            >
+                              {isConnectingIntervals ? 'Linking…' : 'Connect'}
+                            </button>
+                          </div>
+                        </form>
+                      </details>
+                    </div>
                   )}
                 </div>
               </div>

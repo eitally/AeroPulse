@@ -1825,6 +1825,20 @@ export default function App() {
     const processIncomingOAuthPayload = (payload: any) => {
       if (!payload || typeof payload !== 'object') return;
       if (payload.type === 'OAUTH_AUTH_SUCCESS') {
+        if (payload.provider === 'intervals') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
+          }
+          if (payload.sessionToken) {
+            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+          }
+          localStorage.removeItem('aeropulse_intervals_api_key');
+          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          return;
+        }
         void completeStravaAuthHandshake({
           tokens: payload.tokens,
           sessionToken: payload.sessionToken,
@@ -1897,6 +1911,37 @@ export default function App() {
       if (bc) bc.close();
     };
   }, [completeStravaAuthHandshake]);
+
+  const handleLaunchIntervalsOAuth = async (flow = 'popup') => {
+    try {
+      setSyncError(null);
+      const resp = await fetch(`/api/intervals/auth/url?flow=${flow}`, {
+        credentials: 'include',
+      });
+      const data = await safeParseResponseJson(resp);
+      if (!resp.ok || !data.url) {
+        throw new Error(data.error || 'Failed to start Intervals.icu OAuth');
+      }
+      if (flow === 'popup') {
+        const popupWidth = 600;
+        const popupHeight = 720;
+        const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
+        const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
+        const popup = window.open(
+          data.url,
+          'aeropulse_oauth_popup',
+          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+        );
+        if (!popup) {
+          window.location.href = data.url;
+        }
+      } else {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to launch Intervals.icu OAuth');
+    }
+  };
 
   const handleConnectIntervals = async (athleteId: string, apiKey: string) => {
     setSyncError(null);
@@ -4654,6 +4699,7 @@ export default function App() {
             await handleExchangeStravaCode(codeOrUrl);
           }}
           onConnectIntervals={handleConnectIntervals}
+          onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
           onSyncNow={syncLiveTelemetry}
           onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
           onDisconnectCredentials={handleLogoutAndClearData}
@@ -6094,6 +6140,7 @@ export default function App() {
             onClose={() => setIsDataSourcesOpen(false)}
             status={connectionStatus}
             onConnectIntervals={handleConnectIntervals}
+            onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
             onDisconnectIntervals={handleDisconnectIntervals}
             onDisconnectGarmin={handleDisconnectGarmin}
             onDisconnectStrava={handleLogoutSession}

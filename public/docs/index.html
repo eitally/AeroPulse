@@ -658,10 +658,15 @@
           </div>
         </div>
         <div class="card" style="margin-top:1rem;">
-          <h3>Step 3 · Optional Overnight Sleep &amp; HRV Add-Ons (Garmin Connect &amp; Intervals.icu)</h3>
-          <p style="margin-bottom:0;">
+          <h3>Step 3 · Optional Overnight Sleep &amp; HRV Add-Ons (Garmin Connect &amp; Intervals.icu OAuth 2.0)</h3>
+          <p>
             Connecting <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, and <code>Resting HR</code> autonomic readiness morphing—but is <strong>100% optional</strong>. Athletes training with Strava alone get full Banister <code>CTL/ATL/TSB</code>, two-pass calibrated running <code>rTSS</code> and Grade-Adjusted Efficiency Factor (<code>EF</code>), GPS segment PRs, VDOT pods, and structured workout planning on Day 1.
           </p>
+          <ul>
+            <li><strong>Intervals.icu 1-Click OAuth 2.0:</strong> Standard OAuth authorization code grant requesting scopes <code>ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ</code> with encrypted AES-256-GCM token storage. No copy-pasting required.</li>
+            <li><strong>Power-User Fallback:</strong> Athletes with self-managed developer setups can optionally connect directly via personal API key.</li>
+            <li><strong>Self-Hoster Credentials:</strong> Set <code>INTERVALS_CLIENT_ID</code> and <code>INTERVALS_CLIENT_SECRET</code> in your environment variables (credentials obtained from <code>david@intervals.icu</code>).</li>
+          </ul>
         </div>
       </section>
 
@@ -874,6 +879,31 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
                 <td class="mono">/api/physiology/mmp-debrief</td>
                 <td class="mono">POST</td>
                 <td>Computes 1Hz Empirical MMP/GAP curves (<code>CP/W'</code>, <code>CS/D'</code>), 3-Channel Orthopedic Load, and 30s Post-Workout Debrief.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/intervals/auth/url</td>
+                <td class="mono">GET</td>
+                <td>Generates Intervals.icu OAuth 2.0 authorization URL requesting <code>ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ</code> with HMAC state.</td>
+              </tr>
+              <tr>
+                <td class="mono">/auth/intervals/callback</td>
+                <td class="mono">GET</td>
+                <td>Exchanges OAuth authorization code for Bearer token and stores encrypted credentials in AES-256-GCM vault.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/intervals/sync</td>
+                <td class="mono">GET</td>
+                <td>Synchronizes Intervals.icu activities, overnight wellness (HRV, Sleep, Resting HR), and planned calendar workouts.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/intervals/connect</td>
+                <td class="mono">POST</td>
+                <td>Power-user fallback: connects Intervals.icu via manual Personal API Key.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/intervals/disconnect</td>
+                <td class="mono">POST</td>
+                <td>Disconnects Intervals.icu and securely purges encrypted access tokens and API keys from vault.</td>
               </tr>
               <tr>
                 <td class="mono">/api/physiology/durability</td>
