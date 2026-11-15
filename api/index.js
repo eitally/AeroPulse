@@ -4612,6 +4612,12 @@ webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
     wahooWorkoutId = payload.workout.id;
     wahooFileUrl = payload.workout.file?.url;
   }
+  let polarEvent;
+  let polarEntityId;
+  if (provider === "polar") {
+    polarEvent = payload.event;
+    polarEntityId = payload.entity_id;
+  }
   res.status(200).json({
     ok: true,
     provider: provider.toUpperCase(),
@@ -4620,6 +4626,9 @@ webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
     receivedCount: records.length,
     workoutId: wahooWorkoutId,
     fileUrl: wahooFileUrl,
+    polarEvent,
+    polarEntityId,
+    entityId: polarEntityId,
     receivedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
@@ -5879,7 +5888,7 @@ var GARMIN_SESSION_DIR = "/tmp/thresh-garmin";
 function hasExplicitCredentialHeader(req) {
   if (!req) return false;
   return Boolean(
-    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-wahoo-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
+    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-wahoo-access-token"] || "").trim() || String(req.headers["x-polar-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
   );
 }
 function isAuthenticatedRequest(req) {
@@ -6039,6 +6048,13 @@ function createDefaultRuntimeSessionStore(seed = {}) {
     wahooScope: seed.wahooScope || "",
     wahooUserId: seed.wahooUserId || "",
     wahooAthleteName: seed.wahooAthleteName || "",
+    polarClientId: seed.polarClientId || process.env.POLAR_CLIENT_ID || "",
+    polarClientSecret: seed.polarClientSecret || process.env.POLAR_CLIENT_SECRET || "",
+    polarAccessToken: seed.polarAccessToken || "",
+    polarUserId: seed.polarUserId || "",
+    polarAthleteName: seed.polarAthleteName || "",
+    polarExpiresAt: seed.polarExpiresAt || 0,
+    polarScope: seed.polarScope || "",
     stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || "",
     stravaClientSecret: seed.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || "",
     stravaAccessToken: seed.stravaAccessToken || "",
@@ -6119,7 +6135,12 @@ function getScopedRuntimeStore(req) {
         wahooExpiresAt: loaded.wahooExpiresAt || cookieVault.wahooExpiresAt || 0,
         wahooScope: loaded.wahooScope || cookieVault.wahooScope || "",
         wahooUserId: loaded.wahooUserId || cookieVault.wahooUserId || "",
-        wahooAthleteName: loaded.wahooAthleteName || cookieVault.wahooAthleteName || ""
+        wahooAthleteName: loaded.wahooAthleteName || cookieVault.wahooAthleteName || "",
+        polarAccessToken: loaded.polarAccessToken || cookieVault.polarAccessToken || "",
+        polarUserId: loaded.polarUserId || cookieVault.polarUserId || "",
+        polarAthleteName: loaded.polarAthleteName || cookieVault.polarAthleteName || "",
+        polarExpiresAt: loaded.polarExpiresAt || cookieVault.polarExpiresAt || 0,
+        polarScope: loaded.polarScope || cookieVault.polarScope || ""
       };
     }
     const hydrated = createDefaultRuntimeSessionStore(loaded);
@@ -6526,6 +6547,11 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
     wahooScope: store.wahooScope || void 0,
     wahooUserId: store.wahooUserId || void 0,
     wahooAthleteName: store.wahooAthleteName || void 0,
+    polarAccessToken: store.polarAccessToken || void 0,
+    polarUserId: store.polarUserId || void 0,
+    polarAthleteName: store.polarAthleteName || void 0,
+    polarExpiresAt: store.polarExpiresAt || void 0,
+    polarScope: store.polarScope || void 0,
     garminPersonalApiKey: garminSess?.personalApiKey || void 0
   };
   const header = buildEncryptedVaultCookieHeader(compact, isSecure);
@@ -6855,6 +6881,139 @@ async function ensureValidWahooAccessToken(req, forceRefresh = false) {
     }
   }
   return accessToken;
+}
+function getEffectivePolarClientConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const headerClientId = activeReq?.headers["x-polar-client-id"] || "";
+  const headerClientSecret = activeReq?.headers["x-polar-client-secret"] || "";
+  const clientId = (headerClientId || process.env.POLAR_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.POLAR_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
+function getEffectivePolarTokens(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const store = getScopedRuntimeStore(activeReq);
+  const headerToken = activeReq?.headers["x-polar-access-token"] || "";
+  const accessToken = (headerToken || store.polarAccessToken || "").trim();
+  const athleteId = store.polarUserId || "";
+  const athleteName = store.polarAthleteName || "";
+  const expiresAt = store.polarExpiresAt || 0;
+  const scope = store.polarScope || "";
+  return { accessToken, athleteId, athleteName, expiresAt, scope };
+}
+function resolvePolarCallbackUrl(req) {
+  const explicitRedirect = (process.env.POLAR_REDIRECT_URI || "").trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+    }
+  }
+  const safeOrigin = resolveSafeOrigin(req.query.origin);
+  if (safeOrigin) {
+    return `${safeOrigin}/auth/polar/callback`;
+  }
+  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
+  if (appUrl && !appUrl.includes("MY_APP_URL")) {
+    return `${appUrl}/auth/polar/callback`;
+  }
+  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
+  const proto = rawProto === "https" ? "https" : "http";
+  const rawHost = String(
+    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
+  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  return `${proto}://${rawHost || "localhost:3000"}/auth/polar/callback`;
+}
+function parsePolarDurationSecs(rawDuration) {
+  if (typeof rawDuration === "number") return Math.max(0, Math.round(rawDuration));
+  if (typeof rawDuration !== "string") return 0;
+  const match = rawDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?/i);
+  if (!match) {
+    const raw = Number(rawDuration);
+    return Number.isNaN(raw) ? 0 : Math.max(0, Math.round(raw));
+  }
+  const hours = Number(match[1] || 0);
+  const mins = Number(match[2] || 0);
+  const secs = Number(match[3] || 0);
+  return Math.round(hours * 3600 + mins * 60 + secs);
+}
+function normalizePolarExercise(exercise, thresholdPaceSecsPerKm = 245, lthr = 165) {
+  const durationSecs = Math.max(
+    1,
+    parsePolarDurationSecs(exercise.duration || exercise.duration_seconds || exercise.durationSecs)
+  );
+  const distanceMeters = Number(
+    exercise.distance || exercise.distance_metres || exercise.distanceMeters || 0
+  );
+  const sportStr = String(exercise.sport || exercise.detailed_sport_info || "").toUpperCase();
+  const isRun = /RUN|JOG|TRACK/i.test(sportStr);
+  const isCycle = /CYCL|BIKE|SPIN/i.test(sportStr);
+  const sportCategory = isRun ? "Running" : isCycle ? "Cycling" : "Running";
+  const isIndoor = /INDOOR|TREADMILL|STATIONARY/i.test(sportStr) || /treadmill|indoor|stationary/i.test(exercise.title || exercise.name || "");
+  const subType = isIndoor ? isRun ? "Treadmill" : "Smart Trainer" : "Road";
+  const avgHr = Number(exercise.heart_rate?.average || exercise.average_heart_rate || exercise.avgHr || 0);
+  const maxHr = Number(exercise.heart_rate?.maximum || exercise.maximum_heart_rate || exercise.maxHr || 0);
+  let trainingLoad = 0;
+  let intensityFactor;
+  if (isRun && distanceMeters > 0 && durationSecs > 0) {
+    const paceSecsPerKm = durationSecs / distanceMeters * 1e3;
+    const safeThresholdPace = Math.max(120, thresholdPaceSecsPerKm);
+    const ifVal = Number((safeThresholdPace / paceSecsPerKm).toFixed(2));
+    intensityFactor = ifVal;
+    trainingLoad = Math.max(1, Math.round(durationSecs * ifVal ** 2 * 100 / 3600));
+  } else if (avgHr > 0) {
+    const safeLthr = Math.max(100, lthr);
+    const ifVal = Number((avgHr / safeLthr).toFixed(2));
+    intensityFactor = ifVal;
+    trainingLoad = Math.max(1, Math.round(durationSecs * ifVal ** 2 * 100 / 3600));
+  } else {
+    trainingLoad = Math.max(1, Math.round(durationSecs * 60 / 3600));
+  }
+  let efficiencyFactor;
+  if (avgHr > 0 && distanceMeters > 0 && durationSecs > 0) {
+    const speedMPerMin = distanceMeters / (durationSecs / 60);
+    efficiencyFactor = Number((speedMPerMin / avgHr).toFixed(2));
+  }
+  const hrZones = [0, 0, 0, 0, 0, 0, 0];
+  const rawHrZones = Array.isArray(exercise.zones?.heart_rate) ? exercise.zones.heart_rate : Array.isArray(exercise.heart_rate?.zones) ? exercise.heart_rate.zones : [];
+  if (rawHrZones.length > 0) {
+    rawHrZones.forEach((z, i) => {
+      const rawIdx = z.index != null ? Number(z.index) : i + 1;
+      const targetIdx = rawIdx >= 1 && rawIdx <= 5 ? rawIdx : rawIdx;
+      const inZoneSecs = parsePolarDurationSecs(z.in_zone ?? z.in_zone_seconds ?? z.duration ?? 0);
+      if (targetIdx >= 0 && targetIdx < 7) {
+        hrZones[targetIdx] = inZoneSecs;
+      }
+    });
+  }
+  const avgPaceSecsPerKm = distanceMeters > 0 ? Math.round(durationSecs / distanceMeters * 1e3) : void 0;
+  return {
+    id: `polar_${exercise.id}`,
+    polarId: String(exercise.id),
+    startDateLocal: exercise.start_time || exercise.startTime || (/* @__PURE__ */ new Date()).toISOString(),
+    name: exercise.title || exercise.name || (isRun ? "Polar Run" : "Polar Ride"),
+    sportCategory,
+    environment: isIndoor ? "INDOOR" : "OUTDOOR",
+    subType,
+    movingTimeSecs: durationSecs,
+    distanceMeters,
+    elevationGainMeters: Number(exercise.ascent || exercise.elevationGainMeters || 0),
+    avgHr,
+    maxHr,
+    trainingLoad,
+    intensityFactor,
+    efficiencyFactor,
+    avgPaceSecsPerKm,
+    gapPaceSecsPerKm: avgPaceSecsPerKm,
+    calories: exercise.calories != null ? Number(exercise.calories) : void 0,
+    sourceBadges: ["Polar"],
+    deviceName: exercise.device || exercise.device_name || exercise.deviceName || "Polar Flow",
+    zoneSecs: { hr: hrZones },
+    cleanRoomEligibleForAiAndCoaching: true
+  };
 }
 function getEffectiveStravaClientConfig(req) {
   const activeReq = req ?? requestContext.getStore();
@@ -7206,13 +7365,16 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
   const { clientId: wahooClientId, clientSecret: wahooClientSecret } = getEffectiveWahooClientConfig(req);
   const { accessToken: wahooAccessToken, athleteId: wahooAthleteId, athleteName: wahooAthleteName } = getEffectiveWahooTokens(req);
   const isWahooConnected = Boolean(wahooAccessToken);
+  const { clientId: polarClientId, clientSecret: polarClientSecret } = getEffectivePolarClientConfig(req);
+  const { accessToken: polarAccessToken, athleteId: polarAthleteId, athleteName: polarAthleteName } = getEffectivePolarTokens(req);
+  const isPolarConnected = Boolean(polarAccessToken);
   let sessionToken;
-  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected)) {
+  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)) {
     const canonicalSid = resolvedStravaAthleteId ? deriveStravaSessionSid(resolvedStravaAthleteId) : void 0;
     sessionToken = setSessionCookie(
       req,
       res,
-      resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || "athlete",
+      resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || "athlete",
       canonicalSid
     );
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -7231,6 +7393,10 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     wahooConnected: isWahooConnected,
     wahooAthleteId: isWahooConnected ? wahooAthleteId : void 0,
     wahooAthleteName: isWahooConnected ? wahooAthleteName : void 0,
+    polarConfigured: Boolean(polarClientId && polarClientSecret),
+    polarConnected: isPolarConnected,
+    polarAthleteId: isPolarConnected ? polarAthleteId : void 0,
+    polarAthleteName: isPolarConnected ? polarAthleteName : void 0,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
     stravaClientId: stravaClientId || void 0,
     stravaConnected: isStravaConnected,
@@ -8563,11 +8729,379 @@ apiRouter.get("/api/wahoo/sync", async (req, res) => {
       activities,
       athleteId,
       athleteName,
-      receivedCount: activities.length
+      receivedCount: activities.length,
+      exercisesCount: activities.length
     });
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : "Failed to sync Wahoo workouts"
+    });
+  }
+});
+apiRouter.get(["/api/polar/auth/url", "/api/auth/polar/url"], (req, res) => {
+  const { clientId, clientSecret } = getEffectivePolarClientConfig(req);
+  if (!clientId || !clientSecret) {
+    res.status(400).json({
+      error: "Polar OAuth is not configured on this server yet. Please set POLAR_CLIENT_ID and POLAR_CLIENT_SECRET in your environment variables."
+    });
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const mode = String(req.query.mode || "cloud").toLowerCase();
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const clientNonce = String(req.query.state || "").trim();
+  const { stateToken, nonce } = issueOAuthStateToken({
+    nonce: clientNonce || void 0,
+    sid,
+    flow,
+    mode
+  });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolvePolarCallbackUrl(req);
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: "accesslink.read_all",
+    state: stateToken
+  });
+  const authUrl = `https://flow.polar.com/oauth2/authorization?${params.toString()}`;
+  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
+});
+apiRouter.get(["/api/polar/auth/login", "/api/auth/polar/login"], (req, res) => {
+  const { clientId, clientSecret } = getEffectivePolarClientConfig(req);
+  if (!clientId || !clientSecret) {
+    const msg = encodeURIComponent(
+      "Polar OAuth is not configured on this server yet (missing POLAR_CLIENT_ID or POLAR_CLIENT_SECRET)."
+    );
+    res.redirect(302, `/?auth_error=${msg}`);
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const { stateToken, nonce } = issueOAuthStateToken({ sid, flow, mode: "cloud" });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolvePolarCallbackUrl(req);
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: "accesslink.read_all",
+    state: stateToken
+  });
+  res.redirect(302, `https://flow.polar.com/oauth2/authorization?${params.toString()}`);
+});
+var polarCallbackHandler = async (req, res) => {
+  const code = String(req.query.code || "").trim();
+  const error = String(req.query.error || "").trim();
+  const stateToken = String(req.query.state || "").trim();
+  const verifiedState = verifyOAuthStateToken(stateToken);
+  clearOAuthStateCookie(res);
+  if (error) {
+    const errMsg = error === "access_denied" ? "Access was denied by the user on Polar." : error;
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "polar",
+      error: `Polar connection failed: ${errMsg}`
+    });
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Polar Connection Error",
+        heading: "Polar Connection Could Not Complete",
+        accentColor: "#EF4444",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+    return;
+  }
+  if (!code) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Missing Authorization Code",
+        heading: "Polar Authorization Code Missing",
+        accentColor: "#EF4444",
+        body: "No authorization code was returned by Polar.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  if (!verifiedState) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Invalid OAuth State",
+        heading: "Security Verification Failed",
+        accentColor: "#EF4444",
+        body: "OAuth state token was invalid or expired. Please re-initiate Polar connection.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  try {
+    const { clientId, clientSecret } = getEffectivePolarClientConfig(req);
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        "Polar OAuth client credentials (POLAR_CLIENT_ID / POLAR_CLIENT_SECRET) are not configured."
+      );
+    }
+    const redirectUri = resolvePolarCallbackUrl(req);
+    const basicAuth = "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const tokenResp = await fetch("https://polarremote.com/v2/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json;charset=UTF-8",
+        Authorization: basicAuth
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri
+      }).toString()
+    });
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.text();
+      throw new Error(
+        `Polar token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
+      );
+    }
+    const tokenData = await tokenResp.json();
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Polar did not return a valid access token.");
+    }
+    const athleteId = String(tokenData.x_user_id || "0").trim();
+    try {
+      await fetch("https://polarremote.com/v2/users", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({ "member-id": `thresh_${athleteId}` })
+      });
+    } catch {
+    }
+    let athleteName = `Polar Athlete ${athleteId}`;
+    try {
+      const profileResp = await fetch(`https://polarremote.com/v2/users/${encodeURIComponent(athleteId)}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+      });
+      if (profileResp.ok) {
+        const profData = await profileResp.json();
+        const fullName = [profData["first-name"], profData["last-name"]].filter(Boolean).join(" ").trim();
+        if (fullName) athleteName = fullName;
+      }
+    } catch {
+    }
+    const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
+    bindRequestScopeKey(req, sid);
+    const store = getScopedRuntimeStore(req);
+    store.polarAccessToken = accessToken;
+    store.polarUserId = athleteId;
+    store.polarAthleteName = athleteName;
+    if (tokenData.expires_in) {
+      store.polarExpiresAt = Math.floor(Date.now() / 1e3) + tokenData.expires_in;
+    }
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "polar", athleteId, athleteName);
+    }
+    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    await saveSessionCacheAsync(req, res, sid);
+    const oauthPayloadJson = safeJsonForScript({
+      type: "OAUTH_AUTH_SUCCESS",
+      provider: "polar",
+      athleteId,
+      athleteName,
+      sessionToken,
+      returnUrl: "/?tab=settings"
+    });
+    res.type("html").send(
+      renderThreshOAuthHtml({
+        title: "Polar Connected \xB7 THRESH",
+        heading: `Polar Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
+        accentColor: "#EF4444",
+        body: "Your Polar AccessLink account is now linked via OAuth 2.0. Exercises, heart rate zones, and rTSS will sync automatically with smart deduplication.",
+        ctaLabel: "Continue to THRESH",
+        ctaHref: "/?tab=settings",
+        scriptBody: `(function() {
+          var payload = ${oauthPayloadJson};
+          try {
+            if (payload.sessionToken) {
+              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+            }
+            if (payload.athleteId) {
+              localStorage.setItem('aeropulse_polar_athlete_id', String(payload.athleteId));
+            }
+            if (payload.athleteName) {
+              localStorage.setItem('aeropulse_polar_athlete_name', payload.athleteName);
+            }
+            localStorage.setItem('aeropulse_polar_connected', '1');
+            localStorage.setItem('aeropulse_oauth_just_connected', '1');
+          } catch (e) {}
+          var hasOpener = false;
+          try {
+            if (window.opener && window.opener !== window) {
+              hasOpener = true;
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+          var isPopupWindow = hasOpener || window.name === 'aeropulse_oauth_popup';
+          if (isPopupWindow) {
+            setTimeout(function() {
+              try { window.close(); } catch (e) {}
+            }, 300);
+          } else {
+            window.location.replace(payload.returnUrl || '/?tab=settings');
+          }
+        })();`
+      })
+    );
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "polar",
+      error: `Polar connection failed: ${errMsg}`
+    });
+    res.status(500).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Polar Connection Error",
+        heading: "Polar Connection Failed",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+  }
+};
+apiRouter.get(
+  [
+    "/auth/polar/callback",
+    "/auth/polar/callback/",
+    "/api/polar/callback",
+    "/api/polar/callback/",
+    "/api/auth/polar/callback",
+    "/api/auth/polar/callback/"
+  ],
+  polarCallbackHandler
+);
+apiRouter.post("/api/polar/disconnect", async (req, res) => {
+  const store = getScopedRuntimeStore(req);
+  store.polarAccessToken = "";
+  store.polarUserId = "";
+  store.polarAthleteName = "";
+  store.polarExpiresAt = 0;
+  store.polarScope = "";
+  const callerClaims = getVerifiedSessionClaims(req);
+  if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+    await disconnectServiceFromUser(callerClaims.sub, "polar");
+  }
+  await saveSessionCacheAsync(req, res);
+  res.json({ connected: false });
+});
+apiRouter.get("/api/polar/exercises", async (req, res) => {
+  try {
+    const { accessToken, athleteId } = getEffectivePolarTokens(req);
+    if (!accessToken) {
+      res.status(401).json({ error: "Polar account is not connected." });
+      return;
+    }
+    const url = athleteId ? `https://polarremote.com/v2/users/${encodeURIComponent(athleteId)}/exercises` : "https://polarremote.com/v2/exercises";
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      res.status(resp.status).json({
+        error: `Failed to fetch Polar exercises (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const data = await resp.json();
+    const rawExercises = Array.isArray(data) ? data : Array.isArray(data?.exercises) ? data.exercises : [];
+    res.json({ exercises: rawExercises });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to retrieve Polar exercises"
+    });
+  }
+});
+apiRouter.get("/api/polar/sync", async (req, res) => {
+  try {
+    const { accessToken, athleteId, athleteName } = getEffectivePolarTokens(req);
+    if (!accessToken) {
+      res.status(401).json({ error: "Polar account is not connected." });
+      return;
+    }
+    const url = athleteId ? `https://polarremote.com/v2/users/${encodeURIComponent(athleteId)}/exercises` : "https://polarremote.com/v2/exercises";
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      res.status(resp.status).json({
+        error: `Failed to fetch Polar exercises (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const data = await resp.json();
+    const rawExercises = Array.isArray(data) ? data : Array.isArray(data?.exercises) ? data.exercises : [];
+    const store = getScopedRuntimeStore(req);
+    const athleteThresholdPace = 245;
+    const athleteLthr = store.athleteLthr || 165;
+    const activities = rawExercises.map(
+      (ex) => normalizePolarExercise(ex, athleteThresholdPace, athleteLthr)
+    );
+    res.json({
+      ok: true,
+      activities,
+      athleteId,
+      athleteName,
+      receivedCount: activities.length,
+      exercisesCount: activities.length
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to sync Polar exercises"
     });
   }
 });

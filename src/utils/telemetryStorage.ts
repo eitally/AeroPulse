@@ -954,6 +954,7 @@ export function mergeActivitiesNonDestructive(
   const stravaIdToPrimaryId = new Map<string, string>();
   const intervalsIdToPrimaryId = new Map<string, string>();
   const wahooIdToPrimaryId = new Map<string, string>();
+  const polarIdToPrimaryId = new Map<string, string>();
 
   for (const rawAct of existing) {
     if (!rawAct || !rawAct.id) continue;
@@ -962,6 +963,7 @@ export function mergeActivitiesNonDestructive(
     if (act.stravaId) stravaIdToPrimaryId.set(String(act.stravaId), act.id);
     if (act.intervalsId) intervalsIdToPrimaryId.set(String(act.intervalsId), act.id);
     if (act.wahooId) wahooIdToPrimaryId.set(String(act.wahooId), act.id);
+    if (act.polarId) polarIdToPrimaryId.set(String(act.polarId), act.id);
   }
 
   for (const rawInc of incoming) {
@@ -991,6 +993,7 @@ export function mergeActivitiesNonDestructive(
       (inc.intervalsId ? intervalsIdToPrimaryId.get(String(inc.intervalsId)) : undefined) ||
       (inc.stravaId ? stravaIdToPrimaryId.get(String(inc.stravaId)) : undefined) ||
       (inc.wahooId ? wahooIdToPrimaryId.get(String(inc.wahooId)) : undefined) ||
+      (inc.polarId ? polarIdToPrimaryId.get(String(inc.polarId)) : undefined) ||
       proximityMatchKey;
 
     if (!matchedKey) {
@@ -998,6 +1001,7 @@ export function mergeActivitiesNonDestructive(
       if (inc.stravaId) stravaIdToPrimaryId.set(String(inc.stravaId), inc.id);
       if (inc.intervalsId) intervalsIdToPrimaryId.set(String(inc.intervalsId), inc.id);
       if (inc.wahooId) wahooIdToPrimaryId.set(String(inc.wahooId), inc.id);
+      if (inc.polarId) polarIdToPrimaryId.set(String(inc.polarId), inc.id);
       continue;
     }
 
@@ -1028,6 +1032,7 @@ export function mergeActivitiesNonDestructive(
       intervalsId: inc.intervalsId || prev.intervalsId,
       stravaId: inc.stravaId || prev.stravaId,
       wahooId: inc.wahooId || prev.wahooId,
+      polarId: inc.polarId || prev.polarId,
       environment: resolvedEnv,
       subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
@@ -1086,6 +1091,7 @@ export function mergeActivitiesNonDestructive(
     if (merged.stravaId) stravaIdToPrimaryId.set(String(merged.stravaId), canonicalId);
     if (merged.intervalsId) intervalsIdToPrimaryId.set(String(merged.intervalsId), canonicalId);
     if (merged.wahooId) wahooIdToPrimaryId.set(String(merged.wahooId), canonicalId);
+    if (merged.polarId) polarIdToPrimaryId.set(String(merged.polarId), canonicalId);
   }
 
   return Array.from(byId.values()).sort(

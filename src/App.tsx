@@ -1102,6 +1102,24 @@ export default function App() {
           }
         }
 
+        if (statusData.polarConnected) {
+          const polarResp = await fetch('/api/polar/sync', {
+            credentials: 'include',
+            headers: activeHeaders,
+          });
+          if (polarResp.ok) {
+            const polarData = await polarResp.json();
+            if (Array.isArray(polarData.activities) && polarData.activities.length > 0) {
+              const polarActs = polarData.activities.map((a: UnifiedActivity) =>
+                reclassifyActivityEnvironment(a)
+              );
+              mergedActivities = mergedActivities
+                ? mergeActivitiesNonDestructive(mergedActivities, polarActs)
+                : polarActs;
+            }
+          }
+        }
+
         const savedWindow = statusData.stravaSyncPolicy?.window as StravaSyncWindow | undefined;
         const targetStravaWindow: StravaSyncWindow =
           explicitStravaWindow || (fullHistory ? 'all' : savedWindow || '90d');
@@ -1871,6 +1889,20 @@ export default function App() {
           void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
           return;
         }
+        if (payload.provider === 'polar') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_polar_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_polar_athlete_name', payload.athleteName);
+          }
+          if (payload.sessionToken) {
+            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+          }
+          localStorage.setItem('aeropulse_polar_connected', '1');
+          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          return;
+        }
         void completeStravaAuthHandshake({
           tokens: payload.tokens,
           sessionToken: payload.sessionToken,
@@ -2074,6 +2106,53 @@ export default function App() {
       // ignore
     }
     await fetch('/api/wahoo/disconnect', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getSavedIntervalsHeaders(),
+    }).catch(() => null);
+    await fetchServerConfigStatus();
+  };
+
+  const handleLaunchPolarOAuth = async (flow = 'popup') => {
+    try {
+      setSyncError(null);
+      const resp = await fetch(`/api/polar/auth/url?flow=${flow}`, {
+        credentials: 'include',
+      });
+      const data = await safeParseResponseJson(resp);
+      if (!resp.ok || !data.url) {
+        throw new Error(data.error || 'Failed to start Polar OAuth');
+      }
+      if (flow === 'popup') {
+        const popupWidth = 600;
+        const popupHeight = 720;
+        const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
+        const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
+        const popup = window.open(
+          data.url,
+          'aeropulse_oauth_popup',
+          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+        );
+        if (!popup) {
+          window.location.href = data.url;
+        }
+      } else {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to launch Polar OAuth');
+    }
+  };
+
+  const handleDisconnectPolar = async () => {
+    try {
+      localStorage.removeItem('aeropulse_polar_connected');
+      localStorage.removeItem('aeropulse_polar_athlete_id');
+      localStorage.removeItem('aeropulse_polar_athlete_name');
+    } catch {
+      // ignore
+    }
+    await fetch('/api/polar/disconnect', {
       method: 'POST',
       credentials: 'include',
       headers: getSavedIntervalsHeaders(),
@@ -4780,6 +4859,7 @@ export default function App() {
           onConnectIntervals={handleConnectIntervals}
           onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
           onLaunchWahooOAuth={handleLaunchWahooOAuth}
+          onLaunchPolarOAuth={handleLaunchPolarOAuth}
           onSyncNow={syncLiveTelemetry}
           onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
           onDisconnectCredentials={handleLogoutAndClearData}
@@ -6224,6 +6304,8 @@ export default function App() {
             onDisconnectIntervals={handleDisconnectIntervals}
             onLaunchWahooOAuth={handleLaunchWahooOAuth}
             onDisconnectWahoo={handleDisconnectWahoo}
+            onLaunchPolarOAuth={handleLaunchPolarOAuth}
+            onDisconnectPolar={handleDisconnectPolar}
             onDisconnectGarmin={handleDisconnectGarmin}
             onDisconnectStrava={handleLogoutSession}
             onUpdateStravaSyncPolicy={handleUpdateStravaSyncPolicy}
