@@ -1137,6 +1137,16 @@ export interface TeamInvitePreviewPayload {
   };
 }
 
+export type ActiveTab =
+  | 'calendar'
+  | 'fitness'
+  | 'trends'
+  | 'charts'
+  | 'activities'
+  | 'curves'
+  | 'totals';
+
+
 
 
 

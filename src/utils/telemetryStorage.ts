@@ -1222,3 +1222,102 @@ export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayl
     // ignore storage quota errors
   }
 }
+
+export function getSavedIntervalsHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
+    const sessionToken = localStorage.getItem('aeropulse_session_token') || '';
+    if (sessionToken && notLoggedOut) {
+      headers['x-session-token'] = sessionToken;
+    }
+    const apiKey = localStorage.getItem('aeropulse_intervals_api_key') || '';
+    const athleteId = localStorage.getItem('aeropulse_intervals_athlete_id') || '0';
+    if (apiKey && notLoggedOut) {
+      headers['x-intervals-api-key'] = apiKey;
+      headers['x-intervals-athlete-id'] = athleteId;
+    }
+    const stravaClientId = localStorage.getItem('aeropulse_strava_client_id') || '';
+    const stravaClientSecret = localStorage.getItem('aeropulse_strava_client_secret') || '';
+    const stravaRefreshToken = localStorage.getItem('aeropulse_strava_refresh_token') || '';
+    const stravaAccessToken = localStorage.getItem('aeropulse_strava_access_token') || '';
+    const stravaExpiresAt = localStorage.getItem('aeropulse_strava_expires_at') || '';
+    const mapTileApiKey = localStorage.getItem('aeropulse_map_tile_api_key') || '';
+    const mapTileProvider = localStorage.getItem('aeropulse_map_tile_provider') || '';
+    const geminiApiKey = localStorage.getItem('aeropulse_gemini_api_key') || '';
+    if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
+    if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
+    if (stravaRefreshToken && notLoggedOut) headers['x-strava-refresh-token'] = stravaRefreshToken;
+    if (stravaAccessToken && notLoggedOut) headers['x-strava-access-token'] = stravaAccessToken;
+    if (stravaExpiresAt && notLoggedOut) headers['x-strava-expires-at'] = stravaExpiresAt;
+    if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
+    if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
+    if (geminiApiKey) headers['x-gemini-api-key'] = geminiApiKey;
+    const garminPersonalKey = localStorage.getItem('aeropulse_garmin_personal_api_key');
+    const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token');
+    const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token');
+    const garminSecret = localStorage.getItem('aeropulse_garmin_oauth1_secret');
+    if (garminPersonalKey && notLoggedOut) headers['x-garmin-personal-api-key'] = garminPersonalKey;
+    if (garminBearer && notLoggedOut) headers['x-garmin-bearer-token'] = garminBearer;
+    if (garminOauth1 && notLoggedOut) headers['x-garmin-oauth1-token'] = garminOauth1;
+    if (garminSecret && notLoggedOut) headers['x-garmin-oauth1-secret'] = garminSecret;
+  } catch {
+    // ignore
+  }
+  return headers;
+}
+
+export async function safeParseResponseJson(resp: Response): Promise<any> {
+  const text = await resp.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const isHtml = /<!doctype html/i.test(text) || /<html/i.test(text);
+    const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    return {
+      error: `Server returned non-JSON (${resp.status} ${resp.statusText})${
+        isHtml ? ' HTML error page' : ''
+      }${snippet ? `: ${snippet}` : ''}`,
+    };
+  }
+}
+
+export function reRankActivitiesSegments(list: UnifiedActivity[]): UnifiedActivity[] {
+  const bySeg = new Map<string, { actIdx: number; effIdx: number; elapsedTimeSecs: number }[]>();
+  list.forEach((act, actIdx) => {
+    if (!Array.isArray(act.segmentEfforts)) return;
+    act.segmentEfforts.forEach((eff, effIdx) => {
+      if (!eff || !eff.segmentId || !(eff.elapsedTimeSecs > 0)) return;
+      const sid = String(eff.segmentId);
+      const arr = bySeg.get(sid) || [];
+      arr.push({ actIdx, effIdx, elapsedTimeSecs: eff.elapsedTimeSecs });
+      bySeg.set(sid, arr);
+    });
+  });
+
+  const rankLookup = new Map<string, 1 | 2 | 3 | null>();
+  for (const arr of bySeg.values()) {
+    arr.sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
+    arr.forEach((item, idx) => {
+      const key = `${item.actIdx}:${item.effIdx}`;
+      rankLookup.set(key, idx === 0 ? 1 : idx === 1 ? 2 : idx === 2 ? 3 : null);
+    });
+  }
+
+  return list.map((act, actIdx) => {
+    if (!Array.isArray(act.segmentEfforts) || act.segmentEfforts.length === 0) return act;
+    const updatedEfforts = act.segmentEfforts.map((eff, effIdx) => ({
+      ...eff,
+      prRank: rankLookup.get(`${actIdx}:${effIdx}`) ?? eff.prRank ?? null,
+    }));
+    const prCount = updatedEfforts.filter((e) => e.prRank === 1).length;
+    return {
+      ...act,
+      segmentEfforts: updatedEfforts,
+      stravaPrCount: Math.max(act.stravaPrCount || 0, prCount),
+    };
+  });
+}
+
+
+
