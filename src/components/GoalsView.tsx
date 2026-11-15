@@ -1703,7 +1703,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               {activePreviewWeek.sessions.map((sess, sIdx) => (
                 <div
                   key={`${sess.date}-${sIdx}`}
-                  className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 overflow-hidden"
+                  className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200/80 dark:border-slate-800 overflow-hidden"
                 >
                   {/* Intervals.icu Effort Stripe along top of session card */}
                   <div className="h-[4px] w-full flex">
@@ -1989,7 +1989,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 </div>
 
                 {/* Visual SVG FTP Trajectory Curve */}
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/50 dark:bg-slate-950/40">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/50 dark:bg-[#15231B]/40">
                   <svg viewBox="0 0 500 120" className="w-full h-28">
                     <line
                       x1={40}
@@ -2011,7 +2011,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
                     <polyline
                       fill="none"
-                      stroke="#1D4ED8"
+                      stroke="#0284C7"
                       strokeWidth={3}
                       points="60,86 195,66 330,44 455,24"
                     />
@@ -2027,7 +2027,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       },
                     ].map((pt) => (
                       <g key={pt.wk}>
-                        <circle cx={pt.x} cy={pt.y} r={4.5} fill="#1D4ED8" />
+                        <circle cx={pt.x} cy={pt.y} r={4.5} fill="#0284C7" />
                         <text
                           x={pt.x}
                           y={pt.y - 8}
@@ -3065,7 +3065,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="e.g. Sub-20:00 5K or 350W FTP"
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               />
             </div>
             <div className="sm:col-span-2">
@@ -3076,7 +3076,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 id={`${formId}-goal-sport`}
                 value={newSport}
                 onChange={(e) => setNewSport(e.target.value as SportCategory)}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="Running">Running</option>
                 <option value="Cycling">Cycling</option>
@@ -3096,7 +3096,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 id={`${formId}-goal-priority`}
                 value={newPriority}
                 onChange={(e) => setNewPriority(e.target.value as 'A-Race' | 'B-Race' | 'Milestone')}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="A-Race">A-Race</option>
                 <option value="B-Race">B-Race</option>
@@ -3112,7 +3112,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 type="date"
                 value={newTargetDate}
                 onChange={(e) => setNewTargetDate(e.target.value)}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
               />
             </div>
             <div className="sm:col-span-2">
@@ -3125,13 +3125,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   type="number"
                   value={newTargetVal}
                   onChange={(e) => setNewTargetVal(e.target.value)}
-                  className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
                 <select
                   value={newUnit}
                   aria-label="Goal target unit"
                   onChange={(e) => setNewUnit(e.target.value)}
-                  className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 >
                   <option value="W">Watts</option>
                   <option value="CTL">CTL</option>
@@ -3149,7 +3149,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               aria-label="Optional goal notes"
               onChange={(e) => setNewNotes(e.target.value)}
               placeholder="Optional notes (e.g. target pacing strategy, nutrition, climb VAM)..."
-              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
             />
             <button
               type="submit"
@@ -3220,7 +3220,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               type="text"
               value={simRaceName}
               onChange={(e) => setSimRaceName(e.target.value)}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -3238,7 +3238,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               step={0.1}
               value={simDistKm}
               onChange={(e) => setSimDistKm(Math.max(1.5, Number(e.target.value) || 5))}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -3256,7 +3256,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               step={25}
               value={simElevM}
               onChange={(e) => setSimElevM(Math.max(0, Number(e.target.value) || 0))}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -3274,7 +3274,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               step={1}
               value={simTempC}
               onChange={(e) => setSimTempC(Number(e.target.value) || 15)}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -3292,14 +3292,14 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               step={100}
               value={simAltM}
               onChange={(e) => setSimAltM(Math.max(0, Number(e.target.value) || 0))}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
         </div>
 
         {/* Summary KPI Strip: Finish Time, Target Output, Derating Breakdown, and Hourly Fueling */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono tabular-nums">
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Predicted Finish Time
             </div>
@@ -3318,7 +3318,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Environmental &amp; Durability Derating
             </div>
@@ -3331,7 +3331,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Carbohydrate Oxidation Target
             </div>
@@ -3345,7 +3345,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-950/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Sodium &amp; Sweat Replacement
             </div>

@@ -284,7 +284,7 @@ const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps>
       {isExpanded && (
       <div
         id="thresh-14d-readiness-table"
-        className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-slate-950/30"
+        className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-[#15231B]/30"
       >
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>

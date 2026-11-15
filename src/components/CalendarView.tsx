@@ -1616,7 +1616,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     </button>
                   </div>
                   <div className="grid grid-cols-4 gap-1.5 text-2xs font-mono">
-                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-[#15231B]/60 border border-slate-200/70 dark:border-slate-800">
                       <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Time</span>
                       <strong className="text-slate-900 dark:text-white">
                         {week.totalDurationSecs > 0
@@ -1624,7 +1624,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           : '0m'}
                       </strong>
                     </div>
-                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-[#15231B]/60 border border-slate-200/70 dark:border-slate-800">
                       <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Load</span>
                       <strong className="text-slate-900 dark:text-white">{week.totalLoad}</strong>
                     </div>
@@ -1634,7 +1634,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                         {eow ? Math.round(eow.ctl) : '—'}
                       </strong>
                     </div>
-                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-[#15231B]/60 border border-slate-200/70 dark:border-slate-800">
                       <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Form</span>
                       <strong className="text-emerald-600 dark:text-emerald-400">
                         {tsbVal !== null ? (tsbVal > 0 ? `+${tsbVal}` : tsbVal) : '—'}
@@ -1665,7 +1665,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                             ? 'bg-sky-500/[0.06] dark:bg-sky-500/[0.08]'
                             : !day.isCurrentMonth
                               ? 'bg-slate-100/70 dark:bg-slate-900/60'
-                              : 'bg-white/75 dark:bg-slate-950/40'
+                              : 'bg-white/75 dark:bg-[#15231B]/40'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -1920,7 +1920,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 return (
                   <div
                     key={week.weekIndex}
-                    className="grid grid-cols-8 min-h-[210px] bg-white/60 dark:bg-slate-950/40"
+                    className="grid grid-cols-8 min-h-[210px] bg-white/60 dark:bg-[#15231B]/40"
                   >
                     {/* COLUMN 1 (LEFT): STREAMLINED WEEKLY SUMMARY COLUMN */}
                     <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-2xs">
@@ -2075,7 +2075,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           key={cell.dateStr}
                           className={`p-2 border-r last:border-r-0 border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors group ${
                             !cell.isCurrentMonth
-                              ? 'bg-slate-200/55 dark:bg-slate-950/80'
+                              ? 'bg-slate-200/55 dark:bg-[#15231B]/80'
                               : isToday
                                 ? 'bg-blue-50/40 dark:bg-blue-950/20'
                                 : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/30'
@@ -2634,7 +2634,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     required
                     value={builderName}
                     onChange={(e) => setBuilderName(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                 </div>
                 <div>
@@ -2650,7 +2650,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     required
                     value={builderDate}
                     onChange={(e) => setBuilderDate(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
@@ -2667,7 +2667,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     id={`${builderFormId}-sport`}
                     value={builderSport}
                     onChange={(e) => setBuilderSport(e.target.value as SportCategory)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="Cycling">Cycling</option>
                     <option value="Running">Running</option>
@@ -2689,7 +2689,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     onChange={(e) =>
                       setBuilderEnv(e.target.value as 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE')
                     }
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="FLEXIBLE">Flexible (Outdoor or Indoor)</option>
                     <option value="OUTDOOR">Outdoor Only</option>
@@ -2750,13 +2750,13 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                   rows={6}
                   value={builderSyntax}
                   onChange={(e) => setBuilderSyntax(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#15231B] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
               </div>
 
               {/* Live Visual Step Profile Preview */}
               {parsedBuilderSteps.length > 0 && (
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+                <div className="rounded-xl bg-slate-50 dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-3 space-y-2">
                   <div className="text-2xs font-mono text-slate-500 flex items-center justify-between">
                     <span>Live Effort Zone Skyline Preview</span>
                     <span>
@@ -2793,7 +2793,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                   type="text"
                   value={builderNotes}
                   onChange={(e) => setBuilderNotes(e.target.value)}
-                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                 />
               </div>
 

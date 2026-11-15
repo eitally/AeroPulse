@@ -584,7 +584,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
 
       {/* Main SVG 'Effort Over Time' Chart: Y = Duration (in seconds), X = Date */}
       <div
-        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-950/50 p-3 select-none"
+        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-[#15231B]/50 p-3 select-none"
         onMouseLeave={() => setHoverIdx(null)}
       >
         <svg viewBox="0 0 900 265" className="w-full h-64 overflow-visible">

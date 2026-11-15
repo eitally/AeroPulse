@@ -335,7 +335,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                           </div>
 
                           {pw.workoutSyntax && (
-                            <pre className="text-2xs font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                            <pre className="text-2xs font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-[#15231B] p-2 rounded border border-slate-200 dark:border-slate-800 overflow-x-auto">
                               {pw.workoutSyntax}
                             </pre>
                           )}

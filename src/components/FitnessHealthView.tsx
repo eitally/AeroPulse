@@ -1191,7 +1191,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
                       Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
                     </span>
-                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#1D4ED8] dark:text-sky-300 font-semibold">
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#0284C7] dark:text-sky-300 font-semibold">
                       Bike CTL {dualSportLatest.cyclingCtl.toFixed(1)}
                     </span>
                     <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#0D9488] dark:text-teal-300 font-semibold">
@@ -1210,7 +1210,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span className="text-base font-bold text-slate-900 dark:text-white">
                       {orthopedicSummary.centralAutonomicLoad7d} TSS
                     </span>
-                    <span className="text-xs text-[#1D4ED8] dark:text-sky-300">
+                    <span className="text-xs text-[#0284C7] dark:text-sky-300">
                       {orthopedicSummary.centralAcwr.toFixed(2)}x ACWR
                     </span>
                   </div>
@@ -1305,7 +1305,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           {/* Expandable Drawer 2: Plan vs. Actual Ledger */}
           {weeklyGitDiffProposal && isGitDiffOpen && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-2.5 text-xs">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-2.5 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
                   <span className="font-semibold text-slate-900 dark:text-slate-100">
                     {weeklyGitDiffProposal.triggerReason}
@@ -1423,7 +1423,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
                 {/* Left 6 Cols: 5-Second Student-Athlete Check-In (Exams, Shin/Metatarsal BSI, Ferritin) */}
-                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-3">
+                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 dark:text-white">
                       5-Second Student-Athlete Check-In (Academic + Bone Stress)
@@ -1447,7 +1447,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setAcademicStress(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={1}>1 — Normal Classes</option>
                         <option value={2}>2 — Light Papers</option>
@@ -1470,7 +1470,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setShinBoneSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Zero Pain</option>
                         <option value={1}>1 — Mild Diffuse Tightness</option>
@@ -1492,7 +1492,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setAchillesSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Springy / Clear</option>
                         <option value={1}>1 — Morning Stiffness</option>
@@ -1508,7 +1508,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 </div>
 
                 {/* Right 6 Cols: Training Room Cross-Training -> Virtual Running Miles Converter */}
-                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-3.5 space-y-3">
+                <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-bold text-slate-900 dark:text-white">
                       Training Room Cross-Training → Virtual Miles
@@ -1536,7 +1536,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setCrossTrainModality(e.target.value as CrossTrainingModality)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value="AQUA_JOGGING">Aqua Jogging</option>
                         <option value="ALTER_G">AlterG (75% BW)</option>
@@ -1561,7 +1561,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         step={5}
                         value={crossTrainMins}
                         onChange={(e) => setCrossTrainMins(Math.max(10, Number(e.target.value) || 30))}
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       />
                     </div>
 
@@ -1581,7 +1581,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setCrossTrainRpe(Math.max(1, Math.min(10, Number(e.target.value) || 6)))
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       />
                     </div>
                   </div>
@@ -1724,7 +1724,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                           setCustomStart(e.target.value);
                           setRangePreset('CUSTOM');
                         }}
-                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-[#15231B]/80 px-2 py-1 text-xs"
                       />
                     </div>
                     <div>
@@ -1742,7 +1742,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                           setCustomEnd(e.target.value);
                           setRangePreset('CUSTOM');
                         }}
-                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950/80 px-2 py-1 text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-[#15231B]/80 px-2 py-1 text-xs"
                       />
                     </div>
                   </div>
@@ -1974,7 +1974,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         </div>
 
         {/* Daily Activities Bar (responsive wrapping on mobile, static 58px height on sm+ so desktop SVG never shifts) */}
-        <div className="px-3 sm:px-5 py-1.5 bg-white/30 dark:bg-slate-950/35 border-b border-slate-200/60 dark:border-white/10 min-h-[52px] sm:h-[58px] sm:min-h-[58px] sm:max-h-[58px] overflow-hidden flex items-start justify-between gap-2 sm:gap-3 text-xs">
+        <div className="px-3 sm:px-5 py-1.5 bg-white/30 dark:bg-[#15231B]/35 border-b border-slate-200/60 dark:border-white/10 min-h-[52px] sm:h-[58px] sm:min-h-[58px] sm:max-h-[58px] overflow-hidden flex items-start justify-between gap-2 sm:gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-1.5 sm:max-h-[46px] sm:overflow-hidden flex-1">
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
@@ -3619,7 +3619,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           const totalMilestones = eftpCount + raceCount + powerCount;
 
           return (
-            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-2.5 text-2xs">
+            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-[#15231B]/50 flex flex-wrap items-center justify-between gap-2.5 text-2xs">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-mono uppercase tracking-wider text-2xs font-bold text-slate-500 dark:text-slate-400 mr-1">
                   Milestones ({totalMilestones}):
@@ -3828,7 +3828,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             : score >= 80
               ? '#0D9488'
               : score >= 68
-                ? '#1D4ED8'
+                ? '#0284C7'
                 : '#D97706';
           return (
             <div className="rounded-2xl liquid-glass p-4 flex items-center justify-between gap-3">
@@ -3850,7 +3850,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 <div className="space-y-1">
                   <div className="h-2 w-full rounded-full overflow-hidden flex bg-stone-200/80 dark:bg-slate-800">
                     <div
-                      className="bg-[#1D4ED8] dark:bg-[#60A5FA] transition-all"
+                      className="bg-[#0284C7] dark:bg-[#60A5FA] transition-all"
                       style={{ width: `${targetPct}%` }}
                     />
                   </div>
@@ -3991,7 +3991,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs text-slate-500 ml-1">Bike</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-[#1D4ED8] dark:text-[#60A5FA]">
+                  <span className="text-xs font-bold text-[#0284C7] dark:text-[#60A5FA]">
                     Run {runEftp > 0 ? `${runEftp}W` : '—'}
                   </span>
                   <span className="block text-2xs text-slate-500">

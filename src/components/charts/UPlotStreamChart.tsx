@@ -584,7 +584,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-950/60 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-[#15231B]/60 p-4 space-y-3">
       {/* Top Header: 1Hz Telemetry Badge, Smoothing, Series Toggles & Recalculate Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
