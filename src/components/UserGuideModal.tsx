@@ -377,7 +377,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           "THRESH computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
         bullets: [
           'Separate Outdoor vs. Indoor/Smart-Trainer FTP, LTHR, and 7-zone tables.',
-          'Interactive ECharts PMC with brush zoom, custom date windows (7D to ALL), and milestone pins.',
+          'High-performance interactive uPlot PMC with brush zoom, custom date windows (7D to ALL), and milestone pins.',
           '14-Day Autonomic Readiness Ledger correlating HRV rMSSD, Resting HR, and Sleep Score.',
         ],
         formulaOrSyntax: 'TSB_t = CTL_{t-1} - ATL_{t-1}  |  P(t) = CP + W′ / t',

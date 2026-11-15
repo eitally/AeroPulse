@@ -100,6 +100,38 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await toggleDarkMode(page, false);
     });
 
+    test('1b. PMC Interactive Dashboard (uPlot) — Light and Dark Mode', async ({ page }) => {
+      await enterSampleDemoMode(page);
+
+      // Verify PMC dashboard controls (Load Bars, Ramp, eFTP) are mounted
+      const loadBarsBtn = page.getByRole('button', { name: 'Load Bars', exact: true });
+      await expect(loadBarsBtn).toBeVisible({ timeout: 15000 });
+      const rampBtn = page.getByRole('button', { name: 'Ramp', exact: true });
+      await expect(rampBtn).toBeVisible();
+      const eftpBtn = page.getByRole('button', { name: 'eFTP', exact: true });
+      await expect(eftpBtn).toBeVisible();
+
+      // Verify uPlot canvas elements exist
+      const uplotCanvases = page.locator('.uplot canvas');
+      await expect(uplotCanvases.first()).toBeVisible({ timeout: 10000 });
+
+      // Light mode capture of PMC
+      await page.screenshot({
+        path: 'test-results/screenshots/pmc-desktop-1440-light.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+
+      // Toggle dark mode
+      await toggleDarkMode(page, true);
+      await page.screenshot({
+        path: 'test-results/screenshots/pmc-desktop-1440-dark.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+      await toggleDarkMode(page, false);
+    });
+
     test('2. Plan Screen — Light and Dark Mode', async ({ page }) => {
       await enterSampleDemoMode(page, '#calendar');
 
@@ -213,6 +245,32 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await toggleDarkMode(page, true);
       await page.screenshot({
         path: 'test-results/screenshots/today-mobile-390-dark.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+      await toggleDarkMode(page, false);
+    });
+
+    test('4b. PMC Interactive Dashboard (Mobile 390) — Light and Dark Mode', async ({ page }) => {
+      await enterSampleDemoMode(page);
+
+      // Verify PMC dashboard controls are mounted on mobile
+      const loadBarsBtn = page.getByRole('button', { name: 'Load Bars', exact: true });
+      await expect(loadBarsBtn).toBeVisible({ timeout: 15000 });
+      const rampBtn = page.getByRole('button', { name: 'Ramp', exact: true });
+      await expect(rampBtn).toBeVisible();
+
+      // Mobile PMC light capture
+      await page.screenshot({
+        path: 'test-results/screenshots/pmc-mobile-390-light.png',
+        fullPage: false,
+        animations: 'disabled',
+      });
+
+      // Mobile PMC dark capture
+      await toggleDarkMode(page, true);
+      await page.screenshot({
+        path: 'test-results/screenshots/pmc-mobile-390-dark.png',
         fullPage: false,
         animations: 'disabled',
       });

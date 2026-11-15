@@ -162,9 +162,6 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
-              return 'vendor-echarts';
-            }
             if (id.includes('node_modules/leaflet')) {
               return 'vendor-leaflet';
             }
