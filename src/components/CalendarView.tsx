@@ -1192,9 +1192,6 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       {/* Primary Objective & Block Phase Ribbon */}
       <section className="rounded-2xl liquid-glass px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="ap-lane-badge">
-            <span className="ap-lane-badge-inner">Goal Glance</span>
-          </span>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">

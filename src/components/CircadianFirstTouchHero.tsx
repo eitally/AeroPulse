@@ -536,9 +536,9 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
             {/* 3-System Load Focus Bars with Dashed Target Boxes */}
             <div className="space-y-2.5 pt-1 border-t border-[#1C5436]/12 dark:border-white/10">
-              <div className="flex items-center justify-between text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
                 <span>7-Day Load Focus Mix</span>
-                <span>Dashed Box = Optimal Target</span>
+                <span className="text-3xs opacity-85">Dashed Box = Optimal Target</span>
               </div>
               {productivity.buckets.map((bucket) => (
                 <LoadFocusGaugeRow key={bucket.key} bucket={bucket} />

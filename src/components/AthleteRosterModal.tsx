@@ -753,7 +753,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         )}
 
         {/* Navigation Tabs — Stadium Chalk / Carbon-Pine with Full 6-Tab Desktop Fit & Arrow-Key Roving */}
-        <div className="px-4 sm:px-6 border-b border-[#C5D4C9] dark:border-[#244230] bg-[#E9EFE9] dark:bg-[#101B15] flex items-center justify-between flex-wrap gap-2">
+        <div className="px-3 sm:px-6 border-b border-[#C5D4C9] dark:border-[#244230] bg-[#E9EFE9] dark:bg-[#101B15] overflow-x-auto scrollbar-none">
           <div
             role="tablist"
             aria-label="Teams and Coaching Hub sections"
@@ -777,7 +777,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
               buttons[nextIdx]?.focus();
             }}
-            className="flex items-center flex-wrap gap-0.5 sm:gap-1"
+            className="flex items-center gap-0.5 sm:gap-1 min-w-max sm:min-w-0"
           >
             <button
               type="button"
