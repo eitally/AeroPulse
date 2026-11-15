@@ -303,6 +303,9 @@ export interface CompactCookieVaultPayload {
     grantedScope?: string;
   };
   intervalsApiKey?: string;
+  intervalsAccessToken?: string;
+  intervalsScope?: string;
+  intervalsTokenType?: string;
   intervalsAthleteId?: string;
   intervalsAthleteName?: string;
   garminPersonalApiKey?: string;

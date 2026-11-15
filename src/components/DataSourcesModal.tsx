@@ -5,6 +5,7 @@ import {
   Copy,
   Database,
   ExternalLink,
+  Lightning,
   Lock,
   Map as MapIcon,
   RefreshCw,
@@ -32,6 +33,7 @@ interface DataSourcesModalProps {
   onClose: () => void;
   status: ConnectionStatus;
   onConnectIntervals: (athleteId: string, apiKey: string) => Promise<void>;
+  onLaunchIntervalsOAuth?: () => Promise<void>;
   onDisconnectIntervals: () => Promise<void>;
   onDisconnectGarmin?: () => Promise<void>;
   onDisconnectStrava?: () => void;
@@ -68,6 +70,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onClose,
   status,
   onConnectIntervals,
+  onLaunchIntervalsOAuth,
   onDisconnectIntervals,
   onDisconnectGarmin,
   onDisconnectStrava,
@@ -880,64 +883,97 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </summary>
 
             <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Find your Developer API Key at intervals.icu/settings
-                </span>
-                <a
-                  href="https://intervals.icu/settings"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-semibold ap-text-brand hover:underline whitespace-nowrap"
-                >
-                  <span>Get API Key</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
-              <form
-                onSubmit={handleIntervalsSubmit}
-                className="grid grid-cols-1 sm:grid-cols-12 gap-2"
-              >
-                <input
-                  type="text"
-                  aria-label="Intervals.icu Athlete ID"
-                  value={athleteId}
-                  onChange={(e) => setAthleteId(e.target.value)}
-                  placeholder="Athlete ID (0 for self)"
-                  className="sm:col-span-3 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-                <input
-                  type="password"
-                  aria-label="Intervals.icu API Key"
-                  value={intervalsKey}
-                  onChange={(e) => setIntervalsKey(e.target.value)}
-                  placeholder={
-                    status.intervalsConnected
-                      ? 'API Key Connected (paste to update)'
-                      : 'Paste Intervals.icu API Key'
-                  }
-                  className="sm:col-span-6 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-                <div className="sm:col-span-3 flex gap-2">
+              {status.intervalsConnected ? (
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-lime-500/10 border border-lime-500/20 text-xs">
+                  <div>
+                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>
+                        Connected via{' '}
+                        {status.intervalsAuthMethod === 'OAUTH'
+                          ? 'OAuth 2.0'
+                          : 'Personal API Key'}
+                      </span>
+                    </div>
+                    <p className="text-2xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Athlete ID: {status.intervalsAthleteId}
+                      {status.intervalsAthleteName
+                        ? ` · ${status.intervalsAthleteName}`
+                        : ''}
+                    </p>
+                  </div>
                   <button
-                    type="submit"
-                    disabled={!intervalsKey.trim()}
-                    className="flex-1 ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
+                    type="button"
+                    onClick={onDisconnectIntervals}
+                    className="ap-btn-secondary !min-h-[38px] !px-3 text-xs cursor-pointer text-rose-500 hover:text-rose-600"
                   >
-                    {status.intervalsConnected ? 'Update' : 'Connect'}
+                    Disconnect
                   </button>
-                  {status.intervalsConnected && (
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {onLaunchIntervalsOAuth && (
                     <button
                       type="button"
-                      onClick={onDisconnectIntervals}
-                      className="ap-btn-secondary !min-h-[44px] !px-2.5 text-xs cursor-pointer"
+                      onClick={() => onLaunchIntervalsOAuth?.()}
+                      className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                     >
-                      Disconnect
+                      <Lightning className="w-4 h-4 text-lime-400" />
+                      <span>1-Click Connect with Intervals.icu (OAuth 2.0)</span>
                     </button>
                   )}
+
+                  <details className="text-2xs text-slate-500 dark:text-slate-400 group/api">
+                    <summary className="cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none py-1">
+                      Power-User Option: Connect via Personal API Key
+                    </summary>
+                    <div className="pt-2 space-y-2">
+                      <div className="flex items-center justify-between text-2xs">
+                        <span>Find your Developer API Key at intervals.icu/settings</span>
+                        <a
+                          href="https://intervals.icu/settings"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-semibold ap-text-brand hover:underline whitespace-nowrap"
+                        >
+                          <span>Get API Key</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <form
+                        onSubmit={handleIntervalsSubmit}
+                        className="grid grid-cols-1 sm:grid-cols-12 gap-2"
+                      >
+                        <input
+                          type="text"
+                          aria-label="Intervals.icu Athlete ID"
+                          value={athleteId}
+                          onChange={(e) => setAthleteId(e.target.value)}
+                          placeholder="Athlete ID (0 for self)"
+                          className="sm:col-span-3 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        />
+                        <input
+                          type="password"
+                          aria-label="Intervals.icu API Key"
+                          value={intervalsKey}
+                          onChange={(e) => setIntervalsKey(e.target.value)}
+                          placeholder="Paste Intervals.icu API Key"
+                          className="sm:col-span-6 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        />
+                        <div className="sm:col-span-3 flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={!intervalsKey.trim()}
+                            className="flex-1 ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
+                          >
+                            Connect
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </details>
                 </div>
-              </form>
+              )}
             </div>
           </details>
 

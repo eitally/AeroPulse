@@ -521,10 +521,12 @@ export interface ConnectionStatus {
   currentUser?: ThreshUser | null;
   garminConnected?: boolean;
   garminAthleteName?: string;
+  intervalsConfigured?: boolean;
   intervalsConnected: boolean;
+  intervalsAuthMethod?: 'OAUTH' | 'API_KEY' | 'NONE';
   intervalsAthleteId: string;
   intervalsAthleteName?: string;
-  intervalsSource: 'ENV' | 'USER_INPUT' | 'NONE';
+  intervalsSource: 'ENV' | 'USER_INPUT' | 'OAUTH' | 'NONE';
   stravaConfigured?: boolean;
   stravaConnected: boolean;
   stravaClientId?: string;
