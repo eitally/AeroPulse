@@ -2219,6 +2219,61 @@ function computeHistoricalActivityLoad(activity, profile) {
 }
 
 // src/physiology/orthopedicEngine.ts
+var M_SHOE_MULTIPLIERS = {
+  DAILY_TRAINER: 1,
+  LIGHTWEIGHT_FLAT_SUPER_TRAINER: 1.1,
+  CARBON_ROAD_RACER: 1.2,
+  TRADITIONAL_TRACK_SPIKE: 1.35,
+  CARBON_SUPER_SPIKE: 1.52
+};
+function resolveActivityFootwearClass(act) {
+  const explicit = act.footwearClass ?? act.quickLog?.footwearClass;
+  if (explicit) return explicit;
+  const gear = (act.gearName ?? act.quickLog?.gearName ?? "").toLowerCase();
+  if (!gear) return "DAILY_TRAINER";
+  if (/dragonfly|victory|ambition|avanti|md-x|ld-x|metaspike|maxfly|prime sp|takumi spike|super spike|carbon spike/.test(
+    gear
+  )) {
+    return "CARBON_SUPER_SPIKE";
+  }
+  if (/spike|matumbo|mamba|rival|waffle|track spike/.test(gear)) {
+    return "TRADITIONAL_TRACK_SPIKE";
+  }
+  if (/vaporfly|alphafly|metaspeed|adios pro|endorphin pro|cielo|sc elite|cloudboom/.test(gear)) {
+    return "CARBON_ROAD_RACER";
+  }
+  if (/streakfly|takumi sen|sinister|hyperion|boston|endorphin speed|mach x|superblast/.test(gear)) {
+    return "LIGHTWEIGHT_FLAT_SUPER_TRAINER";
+  }
+  return "DAILY_TRAINER";
+}
+function resolveTrackCurveMultiplier(act) {
+  if (act.sportCategory !== "Running") return 1;
+  const facility = act.trackFacility ?? act.quickLog?.trackFacility;
+  if (facility === "INDOOR_FLAT_200M") return 1.16;
+  const isTrackLike = Boolean(facility) || act.subType === "Track" || /\b(track|oval|200m|400m)\b/i.test(act.name || "");
+  if (isTrackLike && act.environment === "INDOOR" && facility !== "INDOOR_BANKED_200M") {
+    return 1.16;
+  }
+  if (facility === "OUTDOOR_400M" || facility === "INDOOR_BANKED_200M" || act.subType === "Track") {
+    return 1.06;
+  }
+  return 1;
+}
+function resolveActivitySpikedMeters(act, footwearClass) {
+  const explicit = act.spikedDistanceMeters ?? act.quickLog?.spikedDistanceMeters;
+  if (typeof explicit === "number" && Number.isFinite(explicit)) {
+    return Math.max(0, Math.round(explicit));
+  }
+  if (footwearClass !== "TRADITIONAL_TRACK_SPIKE" && footwearClass !== "CARBON_SUPER_SPIKE") {
+    return 0;
+  }
+  if (act.intervals && act.intervals.length > 0) {
+    const workMeters = act.intervals.filter((iv) => iv.type === "WORK").reduce((acc, iv) => acc + Math.max(0, iv.distanceMeters || 0), 0);
+    if (workMeters > 0) return Math.round(workMeters);
+  }
+  return Math.round(Math.min(act.distanceMeters || 0, 5e3));
+}
 function computeActivityThreeChannelLoads(act, profile) {
   const baseLoad = computeHistoricalActivityLoad(act, profile);
   const central = baseLoad;
@@ -2228,7 +2283,13 @@ function computeActivityThreeChannelLoads(act, profile) {
     const speedKph = distKm / durHrs;
     const speedFactor = Math.max(0.75, Math.min(2.1, Math.pow(speedKph / 12, 1.35)));
     const terrainShockFactor = act.elevationGainMeters > 150 ? 1.18 : act.environment === "INDOOR" ? 0.88 : 1;
-    const eccentricImpact = distKm * 7.5 * speedFactor * terrainShockFactor;
+    const footwearClass = resolveActivityFootwearClass(act);
+    const spikedMeters = resolveActivitySpikedMeters(act, footwearClass);
+    const totalMeters = Math.max(1, act.distanceMeters || 0);
+    const spikeShare = spikedMeters > 0 ? Math.min(1, spikedMeters / totalMeters) : footwearClass === "CARBON_ROAD_RACER" || footwearClass === "LIGHTWEIGHT_FLAT_SUPER_TRAINER" ? 1 : 0;
+    const effectiveShoeFactor = 1 + (M_SHOE_MULTIPLIERS[footwearClass] - 1) * spikeShare;
+    const curveMultiplier = resolveTrackCurveMultiplier(act);
+    const eccentricImpact = distKm * 7.5 * speedFactor * terrainShockFactor * effectiveShoeFactor * curveMultiplier;
     const uphillTorque = (act.elevationGainMeters || 0) * 0.08 + baseLoad * 0.25;
     return {
       central: Math.round(central * 10) / 10,
@@ -2254,22 +2315,35 @@ function computeActivityThreeChannelLoads(act, profile) {
     concentricTorque: Math.round(baseLoad * 0.4 * 10) / 10
   };
 }
-function evaluateOrthopedicInterference(activities, profile, todayPlannedEvents = [], referenceDateIso) {
+function evaluateOrthopedicInterference(activities, profile, todayPlannedEvents = [], referenceDateIso, options) {
   const refDateStr = (referenceDateIso || (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
+  const refExactMs = referenceDateIso && referenceDateIso.includes("T") ? Date.parse(referenceDateIso) : refMs;
   const dayMs = 864e5;
+  const hourMs = 36e5;
+  const isU18Cohort = options?.isMinorU18 ?? Boolean(profile.safeSportHideWeight && !profile.academicDivision);
+  const spikedMetersWeeklyCap = isU18Cohort ? 2e3 : profile.academicDivision === "NCAA_D1" ? 4400 : 3200;
+  const superSpikeWeeklyCap = isU18Cohort ? 1600 : profile.academicDivision === "NCAA_D1" ? 3600 : 2400;
   let central7d = 0;
   let central28d = 0;
   let impact7d = 0;
   let impact28d = 0;
   let torque7d = 0;
   let torque28d = 0;
+  let spikedMeters7d = 0;
+  let superSpikeMeters7d = 0;
+  let spikedMeters72h = 0;
+  let spikeWeightedLoad7d = 0;
+  let spikeWeightedLoad28d = 0;
+  let hoursSinceLastSuperSpike = null;
   for (const act of activities) {
     const actDate = (act.startDateLocal || "").slice(0, 10);
     const actMs = Date.parse(`${actDate}T12:00:00Z`);
     if (!Number.isFinite(actMs) || actMs > refMs) continue;
     const ageDays = (refMs - actMs) / dayMs;
     if (ageDays > 28) continue;
+    const actExactMs = act.startDateLocal && act.startDateLocal.includes("T") ? Date.parse(act.startDateLocal) : actMs;
+    const hoursAgo = Number.isFinite(actExactMs) ? Math.max(0, (refExactMs - actExactMs) / hourMs) : ageDays * 24;
     const ch = computeActivityThreeChannelLoads(act, profile);
     central28d += ch.central;
     impact28d += ch.eccentricImpact;
@@ -2279,13 +2353,47 @@ function evaluateOrthopedicInterference(activities, profile, todayPlannedEvents 
       impact7d += ch.eccentricImpact;
       torque7d += ch.concentricTorque;
     }
+    if (act.sportCategory === "Running") {
+      const footwearClass = resolveActivityFootwearClass(act);
+      const curveMultiplier = resolveTrackCurveMultiplier(act);
+      const spikedMeters = resolveActivitySpikedMeters(act, footwearClass);
+      const weightedSpike = spikedMeters * M_SHOE_MULTIPLIERS[footwearClass] * curveMultiplier;
+      spikeWeightedLoad28d += weightedSpike;
+      if (ageDays <= 7) {
+        spikedMeters7d += spikedMeters;
+        spikeWeightedLoad7d += weightedSpike;
+        if (footwearClass === "CARBON_SUPER_SPIKE") {
+          superSpikeMeters7d += spikedMeters;
+        }
+      }
+      if (hoursAgo <= 72) {
+        spikedMeters72h += spikedMeters;
+      }
+      if (footwearClass === "CARBON_SUPER_SPIKE" && spikedMeters > 0) {
+        const roundedHrs = Math.round(hoursAgo * 10) / 10;
+        hoursSinceLastSuperSpike = hoursSinceLastSuperSpike === null ? roundedHrs : Math.min(hoursSinceLastSuperSpike, roundedHrs);
+      }
+    }
   }
   const chronicCentralWeekly = Math.max(80, central28d / 4);
   const chronicImpactWeekly = Math.max(45, impact28d / 4);
   const chronicTorqueWeekly = Math.max(60, torque28d / 4);
+  const chronicSpikeWeekly = Math.max(800, spikeWeightedLoad28d / 4);
   const centralAcwr = Math.round(central7d / chronicCentralWeekly * 100) / 100;
   const impactAcwr = Math.round(impact7d / chronicImpactWeekly * 100) / 100;
   const torqueAcwr = Math.round(torque7d / chronicTorqueWeekly * 100) / 100;
+  const spikeAcwr = Math.round(spikeWeightedLoad7d / chronicSpikeWeekly * 100) / 100;
+  const spikeRatio72h = Number((spikedMeters72h / Math.max(1, spikedMetersWeeklyCap)).toFixed(2));
+  const within48hWindow = hoursSinceLastSuperSpike !== null && hoursSinceLastSuperSpike < 48;
+  const sorenessTriggered = (options?.lowerLegSoreness ?? 0) >= 1;
+  const trainerOnly48hLockActive = within48hWindow || sorenessTriggered;
+  let trainerOnlyLockReason = null;
+  if (within48hWindow && hoursSinceLastSuperSpike !== null) {
+    trainerOnlyLockReason = `48h Trainers-Only Lock active (${hoursSinceLastSuperSpike.toFixed(1)}h since last carbon super-spike session).`;
+  } else if (sorenessTriggered) {
+    trainerOnlyLockReason = "48h Trainers-Only Lock triggered by shin/metatarsal or Achilles soreness >= 1.";
+  }
+  const spikeGuardrailStatus = trainerOnly48hLockActive ? "TRAINER_ONLY_48H_LOCK" : spikedMeters7d > spikedMetersWeeklyCap || superSpikeMeters7d > superSpikeWeeklyCap || spikeAcwr >= 1.35 ? "SPIKE_CAP_WARNING" : "CLEAR";
   const scheduledRun = todayPlannedEvents.find((e) => e.sportCategory === "Running");
   const baseRunMins = scheduledRun ? Math.max(30, Math.round(scheduledRun.plannedDurationSecs / 60)) : 45;
   const suggestedBikeDurationMins = Math.round(baseRunMins * 1.25 / 5) * 5;
@@ -2314,6 +2422,21 @@ Cooldown
     guardrailHeadline = "Awaiting Run & Ride Load History";
     guardrailRecommendation = "Sync or upload workouts to track separated Central Cardiorespiratory, Eccentric Running Impact, and Concentric Bike Torque loads.";
   }
+  const scheduledFootwear = scheduledRun?.footwearClass ?? scheduledRun?.trackSpec?.footwearClass;
+  const scheduledIsSpike = scheduledFootwear === "CARBON_SUPER_SPIKE" || scheduledFootwear === "TRADITIONAL_TRACK_SPIKE";
+  if (spikeGuardrailStatus === "TRAINER_ONLY_48H_LOCK" && (scheduledIsSpike || riskTier === "OPTIMAL")) {
+    if (scheduledIsSpike) {
+      riskTier = "HIGH_IMPACT_GUARDRAIL";
+    } else if (riskTier === "OPTIMAL") {
+      riskTier = "ELEVATED_IMPACT";
+    }
+    guardrailHeadline = `48h Trainers-Only Spike Lock (${Math.round(spikedMeters7d)}/${spikedMetersWeeklyCap}m 7d)`;
+    guardrailRecommendation = `${trainerOnlyLockReason || "Super-spike recovery gate active."} Keep today's track work in Cushioned Daily Trainers / Flats to protect Achilles & metatarsal remodeling.`;
+  } else if (spikeGuardrailStatus === "SPIKE_CAP_WARNING" && riskTier === "OPTIMAL") {
+    riskTier = "ELEVATED_IMPACT";
+    guardrailHeadline = `Spiked Exposure Watch (${Math.round(spikedMeters7d)}/${spikedMetersWeeklyCap}m \xB7 ${spikeAcwr.toFixed(2)}x)`;
+    guardrailRecommendation = `Weekly spiked volume reached ${Math.round(spikedMeters7d)}m (cap ${spikedMetersWeeklyCap}m; carbon super-spikes ${Math.round(superSpikeMeters7d)}/${superSpikeWeeklyCap}m). Shift remaining intervals to Trainers / Flats.`;
+  }
   return {
     centralAutonomicLoad7d: Math.round(central7d),
     eccentricImpactLoad7d: Math.round(impact7d),
@@ -2327,7 +2450,18 @@ Cooldown
     canMorphTodayRunToBike: riskTier === "HIGH_IMPACT_GUARDRAIL" || riskTier === "ELEVATED_IMPACT" && Boolean(scheduledRun),
     suggestedBikeDurationMins,
     suggestedBikeTss,
-    suggestedBikeWorkoutSyntax
+    suggestedBikeWorkoutSyntax,
+    spikedMeters7d: Math.round(spikedMeters7d),
+    superSpikeMeters7d: Math.round(superSpikeMeters7d),
+    spikedMeters72h: Math.round(spikedMeters72h),
+    spikedMetersWeeklyCap,
+    superSpikeWeeklyCap,
+    spikeRatio72h,
+    spikeAcwr,
+    hoursSinceLastSuperSpike,
+    trainerOnly48hLockActive,
+    trainerOnlyLockReason,
+    spikeGuardrailStatus
   };
 }
 
@@ -4352,9 +4486,49 @@ function isStravaOriginRecord(item) {
   if (badges.includes("strava") && !hasFirstPartyHardware) return true;
   return false;
 }
+var SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = /* @__PURE__ */ new Set([
+  "weightkg",
+  "weightlbs",
+  "weight",
+  "bmi",
+  "bodymassindex",
+  "bodyfatpct",
+  "bodyfat",
+  "leanbodymass",
+  "wattsperkg",
+  "avgwattsperkg",
+  "targetwkg",
+  "wkg",
+  "wperkg"
+]);
+function stripSafeSportWeightAndBodyCompFields(input, options) {
+  if (input === null || input === void 0 || typeof input !== "object") {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map(
+      (item) => stripSafeSportWeightAndBodyCompFields(item, options)
+    );
+  }
+  const record = input;
+  const isWellnessDayRecord = "hrvRMSSD" in record || "restingHR" in record;
+  const out = {};
+  for (const [k, v] of Object.entries(record)) {
+    const lowerKey = k.toLowerCase();
+    if (lowerKey === "weightkg" && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
+      out[k] = 0;
+      continue;
+    }
+    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
+      continue;
+    }
+    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
+  }
+  return out;
+}
 function sanitizeTelemetryForCleanRoom(rawSummary) {
   if (!rawSummary || typeof rawSummary !== "object") return {};
-  const clone = { ...rawSummary };
+  let clone = { ...rawSummary };
   let strippedCount = 0;
   for (const key of ["recentActivities", "activities", "workouts", "completedActivities"]) {
     if (Array.isArray(clone[key])) {
@@ -4367,9 +4541,277 @@ function sanitizeTelemetryForCleanRoom(rawSummary) {
   delete clone.stravaKudos;
   delete clone.stravaAthleteId;
   delete clone.segmentEfforts;
+  if (clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
+    clone = stripSafeSportWeightAndBodyCompFields(clone);
+    clone.zeroWeightEnforced = true;
+  }
   clone.cleanRoomPolicy = "FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY";
   clone.stravaRecordsFiltered = strippedCount;
   return clone;
+}
+
+// src/physiology/safeSportPatternWatchEngine.ts
+var DAY_MS = 864e5;
+var mean = (vals) => vals.length === 0 ? 0 : vals.reduce((acc, v) => acc + v, 0) / vals.length;
+function isHardSession(act) {
+  const name = (act.name || "").toLowerCase();
+  const hasWorkIntervals = Boolean(act.intervals && act.intervals.some((i) => i.type === "WORK"));
+  const highRpe = (act.quickLog?.rpe ?? 0) >= 7;
+  const highLoad = (act.trainingLoad ?? 0) >= 65;
+  return act.subType === "Track" || Boolean(act.officialRaceData) || hasWorkIntervals || highRpe || highLoad || /\b(track|intervals?|tempo|threshold|race|meets?|repeats?|vo2|fartlek|time trial|5000m|3200m|1600m|800m)\b|\d+\s*[x×]\s*\d+/i.test(
+    name
+  );
+}
+function isEasySubmaximalRun(act) {
+  if (act.sportCategory !== "Running") return false;
+  if ((act.movingTimeSecs || 0) < 1200 || (act.distanceMeters || 0) < 2e3) return false;
+  if (!(act.avgHr > 90)) return false;
+  if (isHardSession(act)) return false;
+  return true;
+}
+function extractActivityEf(act) {
+  if (act.sportCategory !== "Running") return null;
+  if ((act.movingTimeSecs || 0) < 1200 || !(act.avgHr > 90)) return null;
+  if (typeof act.efficiencyFactor === "number" && act.efficiencyFactor > 0.3) {
+    return act.efficiencyFactor;
+  }
+  if (act.distanceMeters > 1500 && act.movingTimeSecs > 0) {
+    const speedMpm = act.distanceMeters / (act.movingTimeSecs / 60);
+    return Number((speedMpm / act.avgHr).toFixed(3));
+  }
+  return null;
+}
+function extractHrr60Samples(act) {
+  const samples = [];
+  if (act.streams?.time && act.streams?.heartrate && act.intervals?.length) {
+    const times = act.streams.time;
+    const hrs = act.streams.heartrate;
+    for (const iv of act.intervals) {
+      if (iv.type !== "WORK") continue;
+      const workEnd = iv.startTimeSecs + iv.durationSecs;
+      const targetT = workEnd + 60;
+      let startHr = null;
+      let end60Hr = null;
+      for (let i = 0; i < times.length; i++) {
+        if (startHr === null && times[i] >= workEnd) {
+          startHr = hrs[i];
+        }
+        if (times[i] >= targetT) {
+          end60Hr = hrs[i];
+          break;
+        }
+      }
+      if (startHr !== null && end60Hr !== null && startHr > 110 && startHr > end60Hr) {
+        samples.push(Math.round(startHr - end60Hr));
+      }
+    }
+    if (samples.length > 0) return samples;
+  }
+  if (act.intervals && act.intervals.length >= 2) {
+    for (let i = 0; i < act.intervals.length - 1; i++) {
+      const cur = act.intervals[i];
+      const next = act.intervals[i + 1];
+      if (cur.type === "WORK" && next.type === "RECOVERY" && next.durationSecs >= 45) {
+        const peak = cur.maxHr ?? cur.avgHr;
+        if (peak && next.avgHr && peak > 120 && peak > next.avgHr) {
+          samples.push(Math.round(peak - next.avgHr));
+        }
+      }
+    }
+  }
+  return samples;
+}
+function evaluateSafeSportPatternWatch(params) {
+  const {
+    activities = [],
+    wellnessDays = [],
+    checkIn,
+    isMinorU18 = false,
+    hasParentGuardianCc = false,
+    hasAthleticTrainer = false,
+    referenceDateIso
+  } = params;
+  const refDateStr = (referenceDateIso || (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10);
+  const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
+  const datedActivities = activities.map((act) => {
+    const d = (act.startDateLocal || "").slice(0, 10);
+    const ms = Date.parse(`${d}T12:00:00Z`);
+    const ageDays = Number.isFinite(ms) ? (refMs - ms) / DAY_MS : Infinity;
+    return { act, ageDays };
+  }).filter((entry) => entry.ageDays >= 0 && entry.ageDays <= 56);
+  const has56dHistory = datedActivities.some((entry) => entry.ageDays > 28);
+  const windowBaselineDays = has56dHistory ? 56 : 28;
+  const recentActs = datedActivities.filter((e) => e.ageDays <= 14).map((e) => e.act);
+  const baselineActs = datedActivities.filter((e) => e.ageDays > 14 && e.ageDays <= 56).map((e) => e.act);
+  const signals = [];
+  const recentEasy = recentActs.filter(isEasySubmaximalRun);
+  const baselineEasy = baselineActs.filter(isEasySubmaximalRun);
+  let deltaEasyHrBpm = null;
+  if (recentEasy.length >= 1 && baselineEasy.length >= 1) {
+    const baseHr = mean(baselineEasy.map((a) => a.avgHr));
+    const recHr = mean(recentEasy.map((a) => a.avgHr));
+    deltaEasyHrBpm = Number((recHr - baseHr).toFixed(1));
+    if (deltaEasyHrBpm >= 8) {
+      signals.push({
+        signalId: "EASY_HR_DRIFT_ELEVATED",
+        severity: deltaEasyHrBpm >= 11 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Submaximal Easy-Run HR Drift",
+        metricValue: `${Math.round(recHr)} bpm`,
+        baselineValue: `${Math.round(baseHr)} bpm`,
+        deltaDisplay: `+${deltaEasyHrBpm.toFixed(1)} bpm`,
+        guidance: "Sustained upward HR drift at easy aerobic pace is a classic early cardiovascular marker of low energy availability or iron depletion."
+      });
+    }
+  }
+  const recentHard = recentActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
+  const baselineHard = baselineActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
+  const sortedWellness = [...wellnessDays].sort((a, b) => a.date.localeCompare(b.date));
+  const latestWellness = sortedWellness[sortedWellness.length - 1];
+  const highStrainContext = (latestWellness ? latestWellness.ctl - latestWellness.atl <= -10 : false) || checkIn?.energyFeel === "FLAT" || recentHard.some((a) => (a.quickLog?.rpe ?? 0) >= 7 || (a.trainingLoad ?? 0) >= 65);
+  let chronotropicBluntingDetected = false;
+  if (recentHard.length >= 1 && baselineHard.length >= 1) {
+    const baseMaxHr = mean(baselineHard.map((a) => a.maxHr));
+    const recMaxHr = mean(recentHard.map((a) => a.maxHr));
+    const dropBpm = Number((baseMaxHr - recMaxHr).toFixed(1));
+    if (dropBpm >= 6 && (highStrainContext || dropBpm >= 8)) {
+      chronotropicBluntingDetected = true;
+      signals.push({
+        signalId: "CHRONOTROPIC_BLUNTING",
+        severity: dropBpm >= 10 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Chronotropic Blunting on Quality Efforts",
+        metricValue: `${Math.round(recMaxHr)} bpm peak`,
+        baselineValue: `${Math.round(baseMaxHr)} bpm peak`,
+        deltaDisplay: `-${dropBpm.toFixed(1)} bpm`,
+        guidance: "Suppressed max HR during track or hard efforts under elevated training load warrants reduced anaerobic volume and medical review."
+      });
+    }
+  }
+  const recentEfVals = recentActs.map(extractActivityEf).filter((v) => v !== null);
+  const baseEfVals = baselineActs.map(extractActivityEf).filter((v) => v !== null);
+  let deltaEfficiencyFactorPct = null;
+  if (recentEfVals.length >= 1 && baseEfVals.length >= 1) {
+    const baseEf = mean(baseEfVals);
+    const recEf = mean(recentEfVals);
+    deltaEfficiencyFactorPct = Number(((recEf - baseEf) / Math.max(0.1, baseEf) * 100).toFixed(1));
+    if (deltaEfficiencyFactorPct <= -6) {
+      signals.push({
+        signalId: "EFFICIENCY_FACTOR_DECAY",
+        severity: deltaEfficiencyFactorPct <= -9 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Aerobic Efficiency Factor (EF) Drop",
+        metricValue: `${recEf.toFixed(2)}`,
+        baselineValue: `${baseEf.toFixed(2)}`,
+        deltaDisplay: `${deltaEfficiencyFactorPct.toFixed(1)}%`,
+        guidance: "14-day speed-to-HR efficiency fell >= 6% beneath baseline. Prioritize sleep, carbohydrate refueling around sessions, and reduced density."
+      });
+    }
+  }
+  const recentHrr60 = recentActs.flatMap(extractHrr60Samples);
+  const baseHrr60 = baselineActs.flatMap(extractHrr60Samples);
+  let deltaHrr60Bpm = null;
+  if (recentHrr60.length >= 1 && baseHrr60.length >= 1) {
+    const baseHrr = mean(baseHrr60);
+    const recHrr = mean(recentHrr60);
+    deltaHrr60Bpm = Number((recHrr - baseHrr).toFixed(1));
+    if (deltaHrr60Bpm <= -6) {
+      signals.push({
+        signalId: "HRR60_PARASYMPATHETIC_DROP",
+        severity: deltaHrr60Bpm <= -10 ? "ACTION_REQUIRED" : "WATCH",
+        title: "60s Heart-Rate Recovery (HRR60) Blunted",
+        metricValue: `${Math.round(recHrr)} bpm drop`,
+        baselineValue: `${Math.round(baseHrr)} bpm drop`,
+        deltaDisplay: `${deltaHrr60Bpm.toFixed(1)} bpm`,
+        guidance: "Post-interval 60s parasympathetic rebound slowed >= 6 bpm. Swap next spiked session for low-impact aerobic recovery."
+      });
+    }
+  }
+  let ferritinStatus = "UNKNOWN";
+  if (typeof checkIn?.ferritinNgMl === "number" && Number.isFinite(checkIn.ferritinNgMl)) {
+    const f = checkIn.ferritinNgMl;
+    if (f < 30) {
+      ferritinStatus = "DEPLETED_UNDER_30";
+      signals.push({
+        signalId: "SERUM_FERRITIN_LOW",
+        severity: "ACTION_REQUIRED",
+        title: "Serum Ferritin Depleted (< 30 ng/mL)",
+        metricValue: `${f.toFixed(0)} ng/mL`,
+        baselineValue: ">= 50 ng/mL target",
+        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
+        guidance: "Clinical iron deficiency impairs oxygen delivery and VO2max adaptations. Refer to team sports medicine / physician before iron supplementation."
+      });
+    } else if (f < 50) {
+      ferritinStatus = "SUBOPTIMAL_30_50";
+      signals.push({
+        signalId: "SERUM_FERRITIN_LOW",
+        severity: "WATCH",
+        title: "Serum Ferritin Borderline (30\u201349 ng/mL)",
+        metricValue: `${f.toFixed(0)} ng/mL`,
+        baselineValue: ">= 50 ng/mL target",
+        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
+        guidance: "Borderline iron stores for endurance runners. Discuss dietary heme-iron intake and physician lab follow-up."
+      });
+    } else {
+      ferritinStatus = "OPTIMAL";
+    }
+  }
+  const kneeScore = checkIn?.kneeGrowthPlateSoreness ?? 0;
+  const heelScore = checkIn?.heelApophysisSoreness ?? 0;
+  const maxPhvScore = Math.max(kneeScore, heelScore);
+  const phvGrowthPlateFlag = maxPhvScore >= 1;
+  if (phvGrowthPlateFlag) {
+    const site = kneeScore >= heelScore ? "Tibial Tuberosity (Knee)" : "Calcaneal Apophysis (Heel)";
+    signals.push({
+      signalId: "PHV_GROWTH_PLATE_SORENESS",
+      severity: maxPhvScore >= 2 ? "ACTION_REQUIRED" : "WATCH",
+      title: `PHV Growth-Plate Traction Watch (${site})`,
+      metricValue: `${maxPhvScore}/3`,
+      baselineValue: "0/3 pain-free",
+      deltaDisplay: `+${maxPhvScore}`,
+      guidance: maxPhvScore >= 2 ? "PROTECT GROWTH PLATE: Pause plyometrics, hurdles, and spikes immediately; route to Athletic Trainer / Aqua Jog." : "Early apophyseal traction sensitivity. Eliminate track spikes & hard downhill/bounding work this week."
+    });
+  }
+  const hasActionRequired = signals.some((s) => s.severity === "ACTION_REQUIRED");
+  const medicalWatchCluster = signals.length >= 2 && (ferritinStatus !== "UNKNOWN" && ferritinStatus !== "OPTIMAL" ? true : deltaEasyHrBpm !== null && deltaEasyHrBpm >= 8 && deltaEfficiencyFactorPct !== null && deltaEfficiencyFactorPct <= -6);
+  const trafficLight = hasActionRequired || medicalWatchCluster || maxPhvScore >= 2 || ferritinStatus === "DEPLETED_UNDER_30" ? "RED_MEDICAL_REVIEW" : signals.length >= 1 ? "AMBER_WATCH" : "GREEN_CLEAR";
+  const authorizedRecipients = ["ATHLETE_SELF"];
+  if (isMinorU18 || hasParentGuardianCc) {
+    authorizedRecipients.push("PARENT_GUARDIAN_CC");
+  }
+  if (hasAthleticTrainer || trafficLight === "RED_MEDICAL_REVIEW") {
+    authorizedRecipients.push("ATHLETIC_TRAINER_MEDICAL");
+  }
+  let headline = "Autonomic, Aerobic Efficiency & Growth-Plate Markers Clear";
+  let athleteGuidance = "14-day cardiac efficiency, recovery HR, and growth-plate status sit cleanly inside your personal baseline (zero weight tracking).";
+  let coachSafeSummaryLabel = "Clear \u2014 Normal Training Progression";
+  if (trafficLight === "RED_MEDICAL_REVIEW") {
+    headline = "Medical / AT Review Recommended \xB7 Non-Weight Biomarker Shift";
+    athleteGuidance = "Multiple non-weight endurance & tissue signals shifted beneath baseline. Pause high-density spiked work and coordinate privately with your healthcare provider / Athletic Trainer.";
+    coachSafeSummaryLabel = "AT / Medical Review & Load Modification Recommended (Zero-Weight Private Signal)";
+  } else if (trafficLight === "AMBER_WATCH") {
+    headline = "Early Non-Weight Pattern Watch \xB7 Monitor Recovery & Fueling";
+    athleteGuidance = "One early cardiac, iron, or growth-plate signal stepped outside baseline. Emphasize 8.5h+ sleep, post-run carbohydrate/protein intake, and daily trainers.";
+    coachSafeSummaryLabel = "Early Watch \u2014 Prioritize Recovery & Trainers Only (Zero-Weight Private Signal)";
+  }
+  const medicalRoutingSummary = isMinorU18 ? `Private U18 Route: Athlete Self${hasParentGuardianCc ? " + Parent/Guardian CC" : ""}${authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? " + Certified Athletic Trainer" : ""} (weight, BMI & W/kg strictly excluded).` : authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? "Private Athlete + Athletic Trainer / Medical Staff (weight, BMI & W/kg strictly excluded)." : "Private Athlete Only (solo adult \u2014 weight, BMI & W/kg strictly excluded).";
+  return {
+    evaluatedAtIso: (/* @__PURE__ */ new Date()).toISOString(),
+    windowRecentDays: 14,
+    windowBaselineDays,
+    trafficLight,
+    zeroWeightCompliant: true,
+    isMinorU18,
+    deltaEasyHrBpm,
+    chronotropicBluntingDetected,
+    deltaEfficiencyFactorPct,
+    deltaHrr60Bpm,
+    ferritinStatus,
+    phvGrowthPlateFlag,
+    signals,
+    headline,
+    athleteGuidance,
+    medicalRoutingSummary,
+    authorizedRecipients,
+    coachSafeSummaryLabel
+  };
 }
 
 // src/physiology/trackSpeedReserveEngine.ts
@@ -5577,7 +6019,12 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     );
     let projectedSnapshot;
     if (m.liveSnapshot) {
-      projectedSnapshot = {
+      const rawWatch = m.liveSnapshot.safeSportWatch;
+      const projectedSafeSportWatch = !rawWatch ? void 0 : isSelf ? rawWatch : isCoach ? {
+        trafficLight: rawWatch.trafficLight,
+        coachSafeSummaryLabel: rawWatch.coachSafeSummaryLabel
+      } : void 0;
+      const baseSnapshot = {
         ...m.liveSnapshot,
         ftpWatts: safeSportShieldEnforced && !isCoach && !isSelf ? void 0 : m.liveSnapshot.ftpWatts,
         ctl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.ctl,
@@ -5585,8 +6032,12 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
         tsb: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.tsb,
         // Never leak raw biometric wellnessDays or activity logs to fellow teammates
         wellnessDays: isSelf || isCoach && !hideWellnessFromCoach ? m.liveSnapshot.wellnessDays : void 0,
-        activities: isSelf || isCoach ? m.liveSnapshot.activities : void 0
+        activities: isSelf || isCoach ? m.liveSnapshot.activities : void 0,
+        safeSportWatch: projectedSafeSportWatch
       };
+      projectedSnapshot = safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(baseSnapshot, {
+        maskWellnessWeightKgZero: true
+      }) : baseSnapshot;
     }
     const base = {
       membershipId: m.membershipId,
@@ -6281,18 +6732,29 @@ async function syncAthleteSnapshotAcrossTeams(params) {
     );
     const priv = params.snapshot.privacySettings;
     const allowGpsRoutes = !priv || priv.shareGpsRoutes !== "PRIVATE" && !priv.stravaComplianceShield;
-    const coachActivities = buildConsentedCoachActivities(
+    const rawCoachActivities = buildConsentedCoachActivities(
       params.snapshot.activities,
       effectiveTier,
       allowGpsRoutes
     );
-    const sanitizedWellness = Array.isArray(params.snapshot.wellnessDays) ? params.snapshot.wellnessDays.slice(-28).map(
-      (w) => enforceHideWeight ? { ...w, weightKg: 0 } : w
-    ) : void 0;
+    const coachActivities = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(rawCoachActivities, {
+      maskWellnessWeightKgZero: true
+    }) : rawCoachActivities;
+    const rawSanitizedWellness = Array.isArray(params.snapshot.wellnessDays) ? params.snapshot.wellnessDays.slice(-56) : void 0;
+    const sanitizedWellness = rawSanitizedWellness && enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(rawSanitizedWellness, {
+      maskWellnessWeightKgZero: true
+    }) : rawSanitizedWellness;
+    const watchReport = evaluateSafeSportPatternWatch({
+      activities: params.snapshot.activities || [],
+      wellnessDays: rawSanitizedWellness,
+      isMinorU18: mem.isMinorU18,
+      hasParentGuardianCc: Boolean(mem.parentGuardianEmail),
+      hasAthleticTrainer: doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.orgType === "COLLEGIATE"
+    });
     if (params.athleteName?.trim() && mem.invitedName === "Team Athlete") {
       mem.invitedName = params.athleteName.trim().slice(0, 64);
     }
-    mem.liveSnapshot = {
+    const assembledSnapshot = {
       updatedAt: nowIso,
       hasConnectedWatch: Boolean(params.snapshot.hasConnectedWatch),
       verdictLabel: String(params.snapshot.verdictLabel || "Active").slice(0, 48),
@@ -6311,8 +6773,16 @@ async function syncAthleteSnapshotAcrossTeams(params) {
       sharingTier: effectiveTier,
       privacySettings: priv,
       wellnessDays: sanitizedWellness,
-      activities: coachActivities
+      activities: coachActivities,
+      safeSportWatch: {
+        trafficLight: watchReport.trafficLight,
+        coachSafeSummaryLabel: watchReport.coachSafeSummaryLabel,
+        privateAlertForSelfAndParentOnly: watchReport
+      }
     };
+    mem.liveSnapshot = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(assembledSnapshot, {
+      maskWellnessWeightKgZero: true
+    }) : assembledSnapshot;
     doc.updatedAt = nowIso;
     await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
     const proj = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);

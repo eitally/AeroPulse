@@ -12,8 +12,10 @@ import type {
   SportCategory,
   StudentAthleteCheckIn,
   StudentAthleteGuardrailResult,
+  TrackEnvironmentConditions,
   TrackRepDistanceMeters,
   TrackSeedMarkInput,
+  TrackTrainingZoneCode,
   UnifiedActivity,
   VdotPodAthleteMember,
   VdotPodIntensity,
@@ -23,6 +25,12 @@ import {
   buildTrackSpeedReserveProfile,
   solveTrackPaceSecsPerKmForPctVdot,
 } from './trackSpeedReserveEngine.ts';
+import {
+  computeTrackEnvironmentSplitAdjustment,
+  computeWorldAthleticsOvalLaneGeometry,
+} from './trackEnvironmentPhysics.ts';
+
+export { computeTrackEnvironmentSplitAdjustment, computeWorldAthleticsOvalLaneGeometry };
 
 /**
  * Formats seconds with 0.01s or 0.1s precision into Track & Field stopwatch format (`m:ss.xx` or `ss.xx`).
@@ -151,6 +159,7 @@ export function computeTeamVdotPacingPods(params: {
   repDistanceMeters: TrackRepDistanceMeters;
   recoveryLabel?: string;
   maxPods?: number;
+  environment?: TrackEnvironmentConditions;
 }): VdotTrainingPod[] {
   const {
     roster,
@@ -159,6 +168,7 @@ export function computeTeamVdotPacingPods(params: {
     repDistanceMeters,
     recoveryLabel = '60s jog',
     maxPods = 5,
+    environment,
   } = params;
 
   if (!roster || roster.length === 0) return [];
@@ -304,8 +314,46 @@ export function computeTeamVdotPacingPods(params: {
         targetPaceSecsPerKm = podProfile.zones.CV.paceSecsPerKm;
     }
 
-    const splitForMeters = (m: number) =>
+    const baseSplitForMeters = (m: number) =>
       Number(((targetPaceSecsPerKm / 1000) * m).toFixed(1));
+    const baseRepSplitSecs = baseSplitForMeters(repDistanceMeters);
+
+    const recMatch = recoveryLabel.match(/(\d+(?:\.\d+)?)\s*(m|min|s|sec)/i);
+    const parsedBaseRestSecs = recMatch
+      ? recMatch[2].toLowerCase().startsWith('m')
+        ? Math.round(Number(recMatch[1]) * 60)
+        : Math.round(Number(recMatch[1]))
+      : 60;
+
+    const mappedZoneCode: TrackTrainingZoneCode =
+      intensity === 'EASY'
+        ? 'E'
+        : intensity === 'MARATHON' || intensity === 'SUB_THRESHOLD'
+          ? 'SUB_T'
+          : intensity === 'THRESHOLD_CV'
+            ? 'CV'
+            : intensity === 'INTERVAL_VO2' || intensity === 'RACE_3200M'
+              ? 'I'
+              : 'R';
+
+    const environmentAdjustment = environment
+      ? computeTrackEnvironmentSplitAdjustment({
+          baseTargetSplitSecs: baseRepSplitSecs,
+          repDistanceMeters,
+          baseRestDurationSecs: parsedBaseRestSecs,
+          zoneCode: mappedZoneCode,
+          intensity,
+          environment,
+          isIntervalSession: true,
+        })
+      : undefined;
+
+    const envSplitMultiplier = environmentAdjustment?.combinedSplitMultiplier ?? 1;
+    const adjustedTargetPaceSecsPerKm = Number(
+      (targetPaceSecsPerKm * envSplitMultiplier).toFixed(1)
+    );
+    const splitForMeters = (m: number) =>
+      Number(((targetPaceSecsPerKm / 1000) * m * envSplitMultiplier).toFixed(1));
 
     const splitsSecs = {
       split200m: splitForMeters(200),
@@ -318,19 +366,32 @@ export function computeTeamVdotPacingPods(params: {
       split1600m: splitForMeters(1600),
     };
 
-    const targetRepSplitSecs = splitForMeters(repDistanceMeters);
+    const targetRepSplitSecs = environmentAdjustment
+      ? environmentAdjustment.adjustedTargetSplitSecs
+      : baseRepSplitSecs;
     const repDisplay = formatTrackMark(targetRepSplitSecs, 1);
     const lap400Display = formatTrackMark(splitsSecs.split400m, 1);
     const podName = POD_TIERS[idx] || `Pod ${String.fromCharCode(65 + idx)}`;
 
-    const workoutPrescriptionLine = `${repCount} x ${repDistanceMeters}m @ ${repDisplay} (${lap400Display}/400m · ${intensitySpec.label}) w/ ${recoveryLabel}`;
-    const recMatch = recoveryLabel.match(/(\d+(?:\.\d+)?)\s*(m|min|s|sec)/i);
-    const recToken = recMatch
-      ? recMatch[2].toLowerCase().startsWith('m')
-        ? `${recMatch[1]}m`
-        : `${recMatch[1]}s`
-      : '60s';
-    const workoutSyntax = `Warmup\n- 15m 65%-74% Pace Warmup\n\nMain Set ${repCount}x\n- ${repDistanceMeters}m @ ${repDisplay} (${intensitySpec.pctFtpSyntax})\n- ${recToken} 58% Pace ${recoveryLabel}\n\nCooldown\n- 10m 62%-70% Pace Cooldown`;
+    const effectiveRecoveryLabel =
+      environmentAdjustment && environmentAdjustment.altitudeRestMultiplier > 1.0
+        ? `${environmentAdjustment.adjustedRestDurationSecs}s (${environmentAdjustment.altitudeRestMultiplier.toFixed(2)}x alt rest)`
+        : recoveryLabel;
+    const lanePrefix =
+      environmentAdjustment && environmentAdjustment.lane > 1
+        ? `Lane ${environmentAdjustment.lane}: `
+        : '';
+
+    const workoutPrescriptionLine = `${lanePrefix}${repCount} x ${repDistanceMeters}m @ ${repDisplay} (${lap400Display}/400m · ${intensitySpec.label}) w/ ${effectiveRecoveryLabel}`;
+    const recToken =
+      environmentAdjustment && environmentAdjustment.altitudeRestMultiplier > 1.0
+        ? `${environmentAdjustment.adjustedRestDurationSecs}s`
+        : recMatch
+          ? recMatch[2].toLowerCase().startsWith('m')
+            ? `${recMatch[1]}m`
+            : `${recMatch[1]}s`
+          : '60s';
+    const workoutSyntax = `Warmup\n- 15m 65%-74% Pace Warmup\n\nMain Set ${repCount}x\n- ${repDistanceMeters}m @ ${repDisplay} (${intensitySpec.pctFtpSyntax})\n- ${recToken} 58% Pace ${effectiveRecoveryLabel}\n\nCooldown\n- 10m 62%-70% Pace Cooldown`;
 
     return {
       podId: `POD_${String.fromCharCode(65 + idx)}`,
@@ -340,11 +401,12 @@ export function computeTeamVdotPacingPods(params: {
       centerVdot,
       athletes: group,
       intensity,
-      targetPaceSecsPerKm,
+      targetPaceSecsPerKm: adjustedTargetPaceSecsPerKm,
       targetRepSplitSecs,
       splitsSecs,
       workoutPrescriptionLine,
       workoutSyntax,
+      ...(environmentAdjustment ? { environmentAdjustment } : {}),
     };
   });
 

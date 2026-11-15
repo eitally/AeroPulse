@@ -261,6 +261,9 @@ export interface UnifiedActivity {
   streams?: ActivityStreamSet;
   officialRaceData?: OfficialRaceMetadata;
   quickLog?: WorkoutQuickLog;
+  footwearClass?: TrackFootwearClass;
+  spikedDistanceMeters?: number;
+  trackFacility?: NcaaTrackFacilityType;
   sourceBadges: ActivitySourceBadge[];
 }
 
@@ -285,6 +288,9 @@ export interface PlannedWorkoutEvent {
   workoutSyntax?: string;
   structuredSteps?: StructuredWorkoutStep[];
   trackSpec?: TrackWorkoutSpec;
+  footwearClass?: TrackFootwearClass;
+  spikedDistanceMeters?: number;
+  trackFacility?: NcaaTrackFacilityType;
   source?: 'USER' | 'AI_COACH' | 'INTERVALS_ICU';
 }
 
@@ -650,6 +656,13 @@ export interface EmpiricalMmpModelSummary {
   criticalPaceSecsPerKm: number | null;
 }
 
+export type TrackFootwearClass =
+  | 'DAILY_TRAINER'
+  | 'LIGHTWEIGHT_FLAT_SUPER_TRAINER'
+  | 'CARBON_ROAD_RACER'
+  | 'TRADITIONAL_TRACK_SPIKE'
+  | 'CARBON_SUPER_SPIKE';
+
 export interface OrthopedicLoadSummary {
   centralAutonomicLoad7d: number;
   eccentricImpactLoad7d: number;
@@ -664,6 +677,17 @@ export interface OrthopedicLoadSummary {
   suggestedBikeDurationMins: number;
   suggestedBikeTss: number;
   suggestedBikeWorkoutSyntax: string;
+  spikedMeters7d: number;
+  superSpikeMeters7d: number;
+  spikedMeters72h: number;
+  spikedMetersWeeklyCap: number;
+  superSpikeWeeklyCap: number;
+  spikeRatio72h: number;
+  spikeAcwr: number;
+  hoursSinceLastSuperSpike: number | null;
+  trainerOnly48hLockActive: boolean;
+  trainerOnlyLockReason: string | null;
+  spikeGuardrailStatus: 'CLEAR' | 'SPIKE_CAP_WARNING' | 'TRAINER_ONLY_48H_LOCK';
 }
 
 export interface PostWorkoutDebriefInsight {
@@ -700,6 +724,9 @@ export interface WorkoutQuickLog {
   sodiumMgPerHour?: number;
   hydrationMl?: number;
   gearName?: string;
+  footwearClass?: TrackFootwearClass;
+  spikedDistanceMeters?: number;
+  trackFacility?: NcaaTrackFacilityType;
   notes?: string;
   loggedAt: string;
 }
@@ -930,6 +957,38 @@ export interface TrackSpeedReserveProfile {
   zones: Record<TrackTrainingZoneCode, TrackZoneSplitRow>;
 }
 
+export type TrackLaneNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+export interface TrackEnvironmentConditions {
+  lane?: TrackLaneNumber;
+  isStaggeredStart?: boolean;
+  facility?: NcaaTrackFacilityType;
+  airTempF?: number;
+  dewPointF?: number;
+  windSpeedMps?: number;
+  altitudeMeters?: number;
+}
+
+export interface TrackSplitEnvironmentAdjustment {
+  lane: TrackLaneNumber;
+  lapLengthMeters: number;
+  halfLapLengthMeters: number;
+  laneMultiplier: number;
+  facilityMultiplier: number;
+  hadleySumF: number | null;
+  heatSlowdownPct: number;
+  heatAbortTriggered: boolean;
+  windNetSlowdownPct: number;
+  windTolerancePlusMinusSecs: number;
+  altitudeSlowdownPct: number;
+  altitudeRestMultiplier: number;
+  combinedSplitMultiplier: number;
+  adjustedTargetSplitSecs: number;
+  adjustedRestDurationSecs: number;
+  summaryBadges: string[];
+  advisoryNote: string;
+}
+
 export interface TrackWorkoutSpec {
   repCount: number;
   repDistanceMeters: TrackRepDistanceMeters;
@@ -941,6 +1000,9 @@ export interface TrackWorkoutSpec {
   waveMode?: 'MASS' | 'POD_10S' | 'PURSUIT';
   eventGroup?: TrackTargetEventGroup;
   phase?: TrackSeasonPhase;
+  footwearClass?: TrackFootwearClass;
+  spikedDistanceMeters?: number;
+  trackFacility?: NcaaTrackFacilityType;
 }
 
 export interface VdotPodAthleteMember {
@@ -974,6 +1036,7 @@ export interface VdotTrainingPod {
   };
   workoutPrescriptionLine: string;
   workoutSyntax: string;
+  environmentAdjustment?: TrackSplitEnvironmentAdjustment;
 }
 
 export type VdotPacingPod = VdotTrainingPod;
@@ -1061,9 +1124,53 @@ export interface StudentAthleteCheckIn {
   academicStress: 1 | 2 | 3 | 4 | 5;
   shinMetatarsalSoreness: 0 | 1 | 2 | 3;
   achillesTendonSoreness: 0 | 1 | 2 | 3;
+  kneeGrowthPlateSoreness?: 0 | 1 | 2 | 3;
+  heelApophysisSoreness?: 0 | 1 | 2 | 3;
   sleepHours: number;
   ferritinNgMl?: number;
   energyFeel: 'FRESH' | 'NORMAL' | 'FLAT';
+}
+
+export type SafeSportBiomarkerAlertRecipient =
+  | 'ATHLETE_SELF'
+  | 'PARENT_GUARDIAN_CC'
+  | 'ATHLETIC_TRAINER_MEDICAL';
+
+export interface SafeSportPatternSignal {
+  signalId:
+    | 'EASY_HR_DRIFT_ELEVATED'
+    | 'CHRONOTROPIC_BLUNTING'
+    | 'EFFICIENCY_FACTOR_DECAY'
+    | 'HRR60_PARASYMPATHETIC_DROP'
+    | 'SERUM_FERRITIN_LOW'
+    | 'PHV_GROWTH_PLATE_SORENESS';
+  severity: 'WATCH' | 'ACTION_REQUIRED';
+  title: string;
+  metricValue: string;
+  baselineValue: string;
+  deltaDisplay: string;
+  guidance: string;
+}
+
+export interface SafeSportPatternWatchReport {
+  evaluatedAtIso: string;
+  windowRecentDays: 14;
+  windowBaselineDays: 28 | 56;
+  trafficLight: 'GREEN_CLEAR' | 'AMBER_WATCH' | 'RED_MEDICAL_REVIEW';
+  zeroWeightCompliant: true;
+  isMinorU18: boolean;
+  deltaEasyHrBpm: number | null;
+  chronotropicBluntingDetected: boolean;
+  deltaEfficiencyFactorPct: number | null;
+  deltaHrr60Bpm: number | null;
+  ferritinStatus: 'UNKNOWN' | 'OPTIMAL' | 'SUBOPTIMAL_30_50' | 'DEPLETED_UNDER_30';
+  phvGrowthPlateFlag: boolean;
+  signals: SafeSportPatternSignal[];
+  headline: string;
+  athleteGuidance: string;
+  medicalRoutingSummary: string;
+  authorizedRecipients: SafeSportBiomarkerAlertRecipient[];
+  coachSafeSummaryLabel: string;
 }
 
 export interface StudentAthleteGuardrailResult {
@@ -1132,6 +1239,11 @@ export interface TeamAthleteLiveSnapshot {
   privacySettings?: AthletePrivacySettings;
   wellnessDays?: UnifiedWellnessDay[];
   activities?: UnifiedActivity[];
+  safeSportWatch?: {
+    trafficLight: 'GREEN_CLEAR' | 'AMBER_WATCH' | 'RED_MEDICAL_REVIEW';
+    coachSafeSummaryLabel: string;
+    privateAlertForSelfAndParentOnly?: SafeSportPatternWatchReport;
+  };
 }
 
 export type ParentConsentStatus = 'PENDING' | 'ACKNOWLEDGED' | 'NOT_REQUIRED';

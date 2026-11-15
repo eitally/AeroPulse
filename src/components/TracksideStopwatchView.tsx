@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AthleteProfile,
   ConnectedAthleteRecord,
+  NcaaTrackFacilityType,
   TeamSummaryWithRole,
+  TrackEnvironmentConditions,
+  TrackFootwearClass,
+  TrackLaneNumber,
   UnifiedActivity,
 } from '../types';
 import {
@@ -16,6 +20,8 @@ import {
 } from '../hooks/useTracksideStopwatch';
 import {
   computeTeamVdotPacingPods,
+  computeTrackEnvironmentSplitAdjustment,
+  computeWorldAthleticsOvalLaneGeometry,
   deriveThresholdPaceFromVdot,
   estimateVdotFromThresholdPace,
   formatTrackMark,
@@ -111,6 +117,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     sessionTitle,
     soundEnabled,
     wakeLockEnabled,
+    trackLane,
+    isStaggeredStart,
+    trackFacility,
+    airTempF,
+    dewPointF,
+    windSpeedMps,
+    altitudeMeters,
+    footwearClass,
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -131,7 +145,17 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     setSessionTitle,
     setSoundEnabled,
     setWakeLockEnabled,
+    setTrackLane,
+    setIsStaggeredStart,
+    setTrackFacility,
+    setAirTempF,
+    setDewPointF,
+    setWindSpeedMps,
+    setAltitudeMeters,
+    setFootwearClass,
   } = useTracksideStopwatch(50);
+
+  const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
 
   const activeTeam = useMemo(
     () => myTeams.find((t) => t.brand.teamId === activeTeamId) || myTeams[0] || null,
@@ -353,6 +377,27 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     selfProfile.thresholdPaceSecsPerKm,
   ]);
 
+  const environmentConditions = useMemo<TrackEnvironmentConditions>(
+    () => ({
+      lane: trackLane,
+      isStaggeredStart,
+      facility: trackFacility,
+      ...(typeof airTempF === 'number' ? { airTempF } : {}),
+      ...(typeof dewPointF === 'number' ? { dewPointF } : {}),
+      windSpeedMps,
+      altitudeMeters,
+    }),
+    [
+      trackLane,
+      isStaggeredStart,
+      trackFacility,
+      airTempF,
+      dewPointF,
+      windSpeedMps,
+      altitudeMeters,
+    ]
+  );
+
   const vdotPods = useMemo(
     () =>
       computeTeamVdotPacingPods({
@@ -361,9 +406,43 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         repCount: activeWorkoutPreset.repCount,
         repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
         recoveryLabel: restDurationSecs > 0 ? `${restDurationSecs}s rest` : 'Open rest',
+        environment: environmentConditions,
       }),
-    [rosterInputs, activeWorkoutPreset, restDurationSecs]
+    [rosterInputs, activeWorkoutPreset, restDurationSecs, environmentConditions]
   );
+
+  const laneGeometry = useMemo(
+    () => computeWorldAthleticsOvalLaneGeometry(trackLane),
+    [trackLane]
+  );
+
+  const activeEnvAdjustment = useMemo(() => {
+    const primaryPod = vdotPods[0];
+    const baseSplit =
+      customWorkoutSpec?.targetSplitSecs && customWorkoutSpec.targetSplitSecs > 0
+        ? customWorkoutSpec.targetSplitSecs
+        : primaryPod?.splitsSecs
+          ? Number(
+              ((primaryPod.targetPaceSecsPerKm / (primaryPod.environmentAdjustment?.combinedSplitMultiplier || 1) / 1000) * activeWorkoutPreset.repDistanceMeters).toFixed(1)
+            )
+          : 72;
+    return computeTrackEnvironmentSplitAdjustment({
+      baseTargetSplitSecs: baseSplit,
+      repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
+      baseRestDurationSecs: restDurationSecs,
+      intensity: activeWorkoutPreset.intensity,
+      zoneCode: customWorkoutSpec?.zoneCode,
+      environment: environmentConditions,
+      isIntervalSession: sessionType === 'WORKOUT',
+    });
+  }, [
+    vdotPods,
+    customWorkoutSpec,
+    activeWorkoutPreset,
+    restDurationSecs,
+    environmentConditions,
+    sessionType,
+  ]);
 
   const runnerPodLookup = useMemo(() => {
     const map = new Map<string, { podKey: string; targetLapSecs: number }>();
@@ -376,7 +455,15 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     for (const pod of vdotPods) {
       const podKey = pod.podName.split(' — ')[0] || pod.podName;
       const splitSecs = useDirectCustomTarget
-        ? customWorkoutSpec!.targetSplitSecs!
+        ? computeTrackEnvironmentSplitAdjustment({
+            baseTargetSplitSecs: customWorkoutSpec!.targetSplitSecs!,
+            repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
+            baseRestDurationSecs: restDurationSecs,
+            zoneCode: customWorkoutSpec?.zoneCode,
+            intensity: activeWorkoutPreset.intensity,
+            environment: environmentConditions,
+            isIntervalSession: true,
+          }).adjustedTargetSplitSecs
         : pod.targetRepSplitSecs ??
           Number(
             ((pod.targetPaceSecsPerKm / 1000) * activeWorkoutPreset.repDistanceMeters).toFixed(1)
@@ -389,9 +476,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   }, [
     vdotPods,
     activeWorkoutPreset.repDistanceMeters,
+    activeWorkoutPreset.intensity,
     workoutPresetId,
     customWorkoutSpec,
     rosterInputs.length,
+    restDurationSecs,
+    environmentConditions,
   ]);
 
   const activePodKeys = useMemo(() => {
@@ -713,6 +803,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
               restDurationSecs,
               lapSplitsSecs: t.lapSplitsSecs,
+              footwearClass,
+              trackFacility,
             });
 
       return {
@@ -1166,8 +1258,223 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 Pursuit (Finish Together)
               </button>
             </div>
+
+            <button
+              type="button"
+              data-testid="stopwatch-toggle-env-physics"
+              aria-expanded={showEnvPhysicsPanel}
+              onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
+              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
+                showEnvPhysicsPanel ||
+                trackLane > 1 ||
+                trackFacility !== 'OUTDOOR_400M' ||
+                windSpeedMps >= 4 ||
+                altitudeMeters >= 1000 ||
+                activeEnvAdjustment.heatSlowdownPct > 0 ||
+                footwearClass !== 'DAILY_TRAINER'
+                  ? 'ap-status-caution font-bold'
+                  : 'ap-card-inset text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              <Waves className="w-3.5 h-3.5" weight="bold" />
+              <span>
+                {trackLane > 1
+                  ? `Lane ${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
+                  : 'Lane, Env & Spikes'}
+              </span>
+            </button>
           </div>
         </div>
+
+        {/* Heat Abort Warning Banner (Mark Hadley T_air + T_dew > 180) */}
+        {activeEnvAdjustment.heatAbortTriggered && (
+          <div
+            data-testid="stopwatch-heat-abort-banner"
+            role="alert"
+            className="rounded-xl ap-status-strained px-3.5 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2"
+          >
+            <span>{activeEnvAdjustment.advisoryNote}</span>
+            <span className="font-mono text-2xs uppercase tracking-wider px-2 py-0.5 rounded bg-black/15">
+              Hadley Index {Math.round(activeEnvAdjustment.hadleySumF ?? 0)}
+            </span>
+          </div>
+        )}
+
+        {/* Collapsible Lane (2-8), Weather, Altitude, Facility & Spike Footwear Physics Bar */}
+        {showEnvPhysicsPanel && (
+          <div
+            data-testid="stopwatch-env-physics-panel"
+            className="rounded-xl ap-card-inset p-3.5 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-2xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                  World Athletics Oval Lane, Environment & Spike Exposure Physics
+                </div>
+                <div className="text-2xs font-mono text-slate-600 dark:text-slate-300 mt-0.5">
+                  {activeEnvAdjustment.advisoryNote}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
+                  {laneGeometry.lapLengthMeters.toFixed(2)}m/lap · +
+                  {((activeEnvAdjustment.combinedSplitMultiplier - 1) * 100).toFixed(1)}%
+                </span>
+                {activeEnvAdjustment.altitudeRestMultiplier > 1 && (
+                  <span className="px-2 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold tabular-nums">
+                    Rest {activeEnvAdjustment.adjustedRestDurationSecs}s (
+                    {activeEnvAdjustment.altitudeRestMultiplier.toFixed(2)}x)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Oval Lane
+                </span>
+                <select
+                  data-testid="stopwatch-lane-select"
+                  value={trackLane}
+                  onChange={(e) => setTrackLane(Number(e.target.value) as TrackLaneNumber)}
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
+                >
+                  {([1, 2, 3, 4, 5, 6, 7, 8] as TrackLaneNumber[]).map((ln) => {
+                    const g = computeWorldAthleticsOvalLaneGeometry(ln);
+                    return (
+                      <option key={ln} value={ln}>
+                        L{ln} ({g.lapLengthMeters.toFixed(2)}m)
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Track Facility
+                </span>
+                <select
+                  data-testid="stopwatch-facility-select"
+                  value={trackFacility}
+                  onChange={(e) => setTrackFacility(e.target.value as NcaaTrackFacilityType)}
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
+                >
+                  <option value="OUTDOOR_400M">400m Outdoor</option>
+                  <option value="INDOOR_BANKED_200M">200m Banked</option>
+                  <option value="INDOOR_FLAT_200M">200m Flat (+Turn)</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Air Temp (°F)
+                </span>
+                <input
+                  data-testid="stopwatch-temp-input"
+                  type="number"
+                  min={15}
+                  max={120}
+                  placeholder="72"
+                  value={airTempF ?? ''}
+                  onChange={(e) =>
+                    setAirTempF(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Dew Point (°F)
+                </span>
+                <input
+                  data-testid="stopwatch-dew-input"
+                  type="number"
+                  min={10}
+                  max={90}
+                  placeholder="55"
+                  value={dewPointF ?? ''}
+                  onChange={(e) =>
+                    setDewPointF(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Wind (m/s)
+                </span>
+                <input
+                  data-testid="stopwatch-wind-input"
+                  type="number"
+                  min={0}
+                  max={25}
+                  step={0.5}
+                  value={windSpeedMps}
+                  onChange={(e) => setWindSpeedMps(Number(e.target.value) || 0)}
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Altitude (m)
+                </span>
+                <input
+                  data-testid="stopwatch-altitude-input"
+                  type="number"
+                  min={0}
+                  max={4000}
+                  step={50}
+                  value={altitudeMeters}
+                  onChange={(e) => setAltitudeMeters(Number(e.target.value) || 0)}
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-1 col-span-2 sm:col-span-2 lg:col-span-1">
+                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
+                  Footwear
+                </span>
+                <select
+                  data-testid="stopwatch-footwear-select"
+                  value={footwearClass}
+                  onChange={(e) => setFootwearClass(e.target.value as TrackFootwearClass)}
+                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
+                >
+                  <option value="DAILY_TRAINER">Daily Trainer (1.0x)</option>
+                  <option value="LIGHTWEIGHT_FLAT_SUPER_TRAINER">Super Trainer / Flat (1.1x)</option>
+                  <option value="CARBON_ROAD_RACER">Carbon Road Racer (1.2x)</option>
+                  <option value="TRADITIONAL_TRACK_SPIKE">Track Spike (1.35x)</option>
+                  <option value="CARBON_SUPER_SPIKE">Carbon Super-Spike (1.52x)</option>
+                </select>
+              </label>
+            </div>
+
+            {trackLane > 1 && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  data-testid="stopwatch-stagger-toggle"
+                  aria-pressed={isStaggeredStart}
+                  onClick={() => setIsStaggeredStart(!isStaggeredStart)}
+                  className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
+                    isStaggeredStart
+                      ? 'ap-status-info font-bold'
+                      : 'ap-card text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  {isStaggeredStart
+                    ? 'Staggered Starts Active (Exact 400m Mark Eq)'
+                    : 'Non-Staggered Lane Distance (Scaling Lap Split)'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Staggered Pod Wave Controls Strip (when Pod Waves or Pursuit active) */}
         {(waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT') && (
