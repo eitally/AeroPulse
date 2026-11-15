@@ -1013,7 +1013,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     onClick={() => logoFileInputRef.current?.click()}
                     className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
                   >
-                    <Upload className="w-3.5 h-3.5 text-[#1D4ED8]" />
+                    <Upload className="w-3.5 h-3.5 text-[#0284C7]" />
                     <span>{logoDataUrl ? 'Replace Crest' : 'Upload Crest / Logo'}</span>
                   </button>
                 </div>
@@ -1151,7 +1151,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     }
                     className="px-2.5 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Download className="w-3.5 h-3.5 text-[#1D4ED8]" />
+                    <Download className="w-3.5 h-3.5 text-[#0284C7]" />
                     <span>Print Locker-Room QR Sheet</span>
                   </button>
 
@@ -1372,7 +1372,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xs font-mono uppercase tracking-widest text-[#1D4ED8] dark:text-[#60A5FA] font-bold">
+                    <span className="text-2xs font-mono uppercase tracking-widest text-[#0284C7] dark:text-[#60A5FA] font-bold">
                       BULK ROSTER IMPORTER · EMAIL, MAGIC LINKS &amp; TAP-TO-TEXT
                     </span>
                     <span

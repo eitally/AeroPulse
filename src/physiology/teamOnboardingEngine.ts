@@ -52,7 +52,7 @@ export const CURATED_TEAM_PALETTE_PRESETS: TeamPalettePreset[] = [
   {
     id: 'belgian-velo',
     label: 'Classics Cobalt & Vermilion',
-    primaryHex: '#1D4ED8',
+    primaryHex: '#0284C7',
     secondaryHex: '#D9480F',
   },
   {

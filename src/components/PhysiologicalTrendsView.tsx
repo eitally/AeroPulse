@@ -716,7 +716,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         </div>
 
         {/* Large Unified SVG Multi-Metric Canvas */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-slate-950/45 p-3">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-[#15231B]/45 p-3">
           <svg
             viewBox={`0 0 ${svgW} ${svgH}`}
             className="w-full h-[380px] sm:h-[440px] select-none overflow-visible"

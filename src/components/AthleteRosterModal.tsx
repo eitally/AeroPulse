@@ -939,7 +939,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           {activeTab === 'LEADERBOARD' && (
             <div className="space-y-5">
               {/* Exception-Based Coach & Club 6:00 AM Triage Inbox */}
-              <div className="rounded-xl border border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 p-4 space-y-3">
+              <div className="rounded-xl border border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="flex items-center gap-2">

@@ -942,7 +942,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         {/* Main Body: Left Chapter Rail (Desktop) + Right Scrollable Content */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
           {/* Desktop Sidebar Navigation */}
-          <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/45 flex-col justify-between p-3 overflow-y-auto">
+          <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#15231B]/45 flex-col justify-between p-3 overflow-y-auto">
             <div className="space-y-1">
               <div className="px-2.5 py-1.5 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                 9 Chapters &amp; Physiology Reference
@@ -1026,7 +1026,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           </aside>
 
           {/* Right Scrollable Chapter Content Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-white/40 dark:bg-slate-950/20">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-white/40 dark:bg-[#15231B]/20">
             {/* Search Results Banner when searchQuery is non-empty */}
             {normalizedQuery ? (
               <div className="space-y-6">
