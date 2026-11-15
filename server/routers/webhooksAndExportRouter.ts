@@ -75,6 +75,14 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
     wahooFileUrl = payload.workout.file?.url;
   }
 
+  // Extract Polar exercise webhook info if present
+  let polarEvent: string | undefined;
+  let polarEntityId: string | undefined;
+  if (provider === 'polar') {
+    polarEvent = payload.event;
+    polarEntityId = payload.entity_id;
+  }
+
   res.status(200).json({
     ok: true,
     provider: provider.toUpperCase(),
@@ -83,6 +91,9 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
     receivedCount: records.length,
     workoutId: wahooWorkoutId,
     fileUrl: wahooFileUrl,
+    polarEvent,
+    polarEntityId,
+    entityId: polarEntityId,
     receivedAt: new Date().toISOString(),
   });
 });

@@ -81,6 +81,7 @@ interface StravaAuthGateProps {
   onConnectIntervals?: (athleteId: string, apiKey: string) => Promise<void>;
   onLaunchIntervalsOAuth?: () => Promise<void>;
   onLaunchWahooOAuth?: () => Promise<void>;
+  onLaunchPolarOAuth?: () => Promise<void>;
   onSyncNow?: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
   onCompleteCalibrationEntry?: (payload: FirstRunCalibrationPayload) => Promise<void>;
   onDisconnectCredentials?: () => Promise<void>;
@@ -189,6 +190,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   onConnectIntervals,
   onLaunchIntervalsOAuth,
   onLaunchWahooOAuth,
+  onLaunchPolarOAuth,
   onSyncNow,
   onCompleteCalibrationEntry,
   onDisconnectCredentials,
@@ -2424,9 +2426,49 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 )}
               </div>
 
+              {/* Polar Option */}
+              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-500 font-bold text-xs flex items-center justify-center">
+                      P
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>Polar AccessLink</span>
+                        {status.polarConnected ? (
+                          <span className="text-3xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                            Connected ({status.polarAthleteName || 'Polar'})
+                          </span>
+                        ) : (
+                          <span className="text-3xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                            Optional
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-2xs text-slate-500 dark:text-slate-400">
+                        Grit X, Vantage, Pacer, H10 &amp; running load telemetry.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {!status.polarConnected && onLaunchPolarOAuth && (
+                  <button
+                    type="button"
+                    onClick={() => onLaunchPolarOAuth?.()}
+                    disabled={busy}
+                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
+                  >
+                    <Lightning className="w-4 h-4 text-rose-400" />
+                    <span>1-Click Connect with Polar (OAuth 2.0)</span>
+                  </button>
+                )}
+              </div>
+
               <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 text-2xs text-slate-600 dark:text-slate-300 flex items-center justify-between flex-wrap gap-2">
                 <span>
-                  <strong>Smart Deduplication:</strong> Connecting Garmin, Intervals.icu, or Wahoo alongside Strava merges matching workouts automatically—never duplicates.
+                  <strong>Smart Deduplication:</strong> Connecting Garmin, Intervals.icu, Wahoo, or Polar alongside Strava merges matching workouts automatically—never duplicates.
                 </span>
                 {!claimedTeamsState && (
                   <button

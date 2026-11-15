@@ -314,6 +314,11 @@ export interface CompactCookieVaultPayload {
   wahooScope?: string;
   wahooUserId?: string;
   wahooAthleteName?: string;
+  polarAccessToken?: string;
+  polarUserId?: string;
+  polarAthleteName?: string;
+  polarExpiresAt?: number;
+  polarScope?: string;
   garminPersonalApiKey?: string;
 }
 
