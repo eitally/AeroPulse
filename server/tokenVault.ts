@@ -308,6 +308,12 @@ export interface CompactCookieVaultPayload {
   intervalsTokenType?: string;
   intervalsAthleteId?: string;
   intervalsAthleteName?: string;
+  wahooAccessToken?: string;
+  wahooRefreshToken?: string;
+  wahooExpiresAt?: number;
+  wahooScope?: string;
+  wahooUserId?: string;
+  wahooAthleteName?: string;
   garminPersonalApiKey?: string;
 }
 

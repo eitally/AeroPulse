@@ -1458,11 +1458,17 @@ function issueOAuthStateToken(input) {
     joinCode: input.joinCode,
     slug: input.slug,
     inviteToken: input.inviteToken,
+    codeVerifier: input.codeVerifier,
     exp: Date.now() + OAUTH_STATE_TTL_MS
   };
   const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
   const sig = crypto3.createHmac("sha256", getSessionSecret()).update(`oauth_state:${payload}`).digest("base64url");
   return { stateToken: `${payload}.${sig}`, nonce };
+}
+function generatePkcePair() {
+  const codeVerifier = crypto3.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto3.createHash("sha256").update(codeVerifier).digest("base64url");
+  return { codeVerifier, codeChallenge };
 }
 function verifyOAuthStateToken(token) {
   if (!token || typeof token !== "string") return null;
@@ -4566,6 +4572,23 @@ var SUPPORTED_WEBHOOK_PROVIDERS = /* @__PURE__ */ new Set([
   "oura",
   "apple-healthkit"
 ]);
+webhooksAndExportRouter.get("/api/webhooks/:provider", (req, res, next) => {
+  const provider = String(req.params.provider || "").trim().toLowerCase();
+  if (provider === "strava" || provider === "intervals") {
+    next();
+    return;
+  }
+  if (!SUPPORTED_WEBHOOK_PROVIDERS.has(provider)) {
+    res.status(400).json({ ok: false, error: `Unsupported provider "${provider}"` });
+    return;
+  }
+  const challenge = req.query["hub.challenge"] || req.query.challenge || req.query["webhook_challenge"];
+  if (challenge) {
+    res.status(200).type("text/plain").send(String(challenge));
+    return;
+  }
+  res.status(200).json({ ok: true, provider: provider.toUpperCase(), verified: true });
+});
 webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
   const provider = String(req.params.provider || "").trim().toLowerCase();
   if (provider === "strava" || provider === "intervals") {
@@ -4582,13 +4605,21 @@ webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
     return;
   }
   const payload = req.body && typeof req.body === "object" ? req.body : {};
-  const records = Array.isArray(payload.activities || payload.workouts || payload.records) ? payload.activities || payload.workouts || payload.records : [payload];
+  const records = Array.isArray(payload.activities || payload.workouts || payload.records) ? payload.activities || payload.workouts || payload.records : payload.workout ? [payload.workout] : [payload];
+  let wahooWorkoutId;
+  let wahooFileUrl;
+  if (provider === "wahoo" && payload.workout) {
+    wahooWorkoutId = payload.workout.id;
+    wahooFileUrl = payload.workout.file?.url;
+  }
   res.status(200).json({
     ok: true,
     provider: provider.toUpperCase(),
     ingestionSource: `${provider.toUpperCase()}_WEBHOOK_FIRST_PARTY`,
     cleanRoomEligibleForAiAndCoaching: true,
     receivedCount: records.length,
+    workoutId: wahooWorkoutId,
+    fileUrl: wahooFileUrl,
     receivedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
@@ -5848,7 +5879,7 @@ var GARMIN_SESSION_DIR = "/tmp/thresh-garmin";
 function hasExplicitCredentialHeader(req) {
   if (!req) return false;
   return Boolean(
-    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
+    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-wahoo-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
   );
 }
 function isAuthenticatedRequest(req) {
@@ -6000,6 +6031,14 @@ function createDefaultRuntimeSessionStore(seed = {}) {
     intervalsScope: seed.intervalsScope || "",
     intervalsAthleteId: seed.intervalsAthleteId || "0",
     intervalsAthleteName: seed.intervalsAthleteName || "",
+    wahooClientId: seed.wahooClientId || process.env.WAHOO_CLIENT_ID || "",
+    wahooClientSecret: seed.wahooClientSecret || process.env.WAHOO_CLIENT_SECRET || "",
+    wahooAccessToken: seed.wahooAccessToken || "",
+    wahooRefreshToken: seed.wahooRefreshToken || "",
+    wahooExpiresAt: seed.wahooExpiresAt || 0,
+    wahooScope: seed.wahooScope || "",
+    wahooUserId: seed.wahooUserId || "",
+    wahooAthleteName: seed.wahooAthleteName || "",
     stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || "",
     stravaClientSecret: seed.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || "",
     stravaAccessToken: seed.stravaAccessToken || "",
@@ -6074,7 +6113,13 @@ function getScopedRuntimeStore(req) {
         intervalsAccessToken: loaded.intervalsAccessToken || cookieVault.intervalsAccessToken || "",
         intervalsScope: loaded.intervalsScope || cookieVault.intervalsScope || "",
         intervalsAthleteId: loaded.intervalsAthleteId || cookieVault.intervalsAthleteId || "0",
-        intervalsAthleteName: loaded.intervalsAthleteName || cookieVault.intervalsAthleteName || ""
+        intervalsAthleteName: loaded.intervalsAthleteName || cookieVault.intervalsAthleteName || "",
+        wahooAccessToken: loaded.wahooAccessToken || cookieVault.wahooAccessToken || "",
+        wahooRefreshToken: loaded.wahooRefreshToken || cookieVault.wahooRefreshToken || "",
+        wahooExpiresAt: loaded.wahooExpiresAt || cookieVault.wahooExpiresAt || 0,
+        wahooScope: loaded.wahooScope || cookieVault.wahooScope || "",
+        wahooUserId: loaded.wahooUserId || cookieVault.wahooUserId || "",
+        wahooAthleteName: loaded.wahooAthleteName || cookieVault.wahooAthleteName || ""
       };
     }
     const hydrated = createDefaultRuntimeSessionStore(loaded);
@@ -6475,6 +6520,12 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
     intervalsScope: store.intervalsScope || void 0,
     intervalsAthleteId: store.intervalsAthleteId && store.intervalsAthleteId !== "0" ? store.intervalsAthleteId : void 0,
     intervalsAthleteName: store.intervalsAthleteName || void 0,
+    wahooAccessToken: store.wahooAccessToken || void 0,
+    wahooRefreshToken: store.wahooRefreshToken || void 0,
+    wahooExpiresAt: store.wahooExpiresAt || void 0,
+    wahooScope: store.wahooScope || void 0,
+    wahooUserId: store.wahooUserId || void 0,
+    wahooAthleteName: store.wahooAthleteName || void 0,
     garminPersonalApiKey: garminSess?.personalApiKey || void 0
   };
   const header = buildEncryptedVaultCookieHeader(compact, isSecure);
@@ -6717,6 +6768,93 @@ function resolveIntervalsCallbackUrl(req) {
     req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
   ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
   return `${proto}://${rawHost || "localhost:3000"}/auth/intervals/callback`;
+}
+function getEffectiveWahooClientConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const headerClientId = activeReq?.headers["x-wahoo-client-id"] || "";
+  const headerClientSecret = activeReq?.headers["x-wahoo-client-secret"] || "";
+  const clientId = (headerClientId || process.env.WAHOO_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.WAHOO_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
+function getEffectiveWahooTokens(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const store = getScopedRuntimeStore(activeReq);
+  const headerToken = activeReq?.headers["x-wahoo-access-token"] || "";
+  const accessToken = (headerToken || store.wahooAccessToken || "").trim();
+  const refreshToken = (store.wahooRefreshToken || "").trim();
+  const expiresAt = store.wahooExpiresAt || 0;
+  const athleteId = store.wahooUserId || "";
+  const athleteName = store.wahooAthleteName || "";
+  const scope = store.wahooScope || "";
+  return { accessToken, refreshToken, expiresAt, athleteId, athleteName, scope };
+}
+function resolveWahooCallbackUrl(req) {
+  const explicitRedirect = (process.env.WAHOO_REDIRECT_URI || "").trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+    }
+  }
+  const safeOrigin = resolveSafeOrigin(req.query.origin);
+  if (safeOrigin) {
+    return `${safeOrigin}/auth/wahoo/callback`;
+  }
+  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
+  if (appUrl && !appUrl.includes("MY_APP_URL")) {
+    return `${appUrl}/auth/wahoo/callback`;
+  }
+  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
+  const proto = rawProto === "https" ? "https" : "http";
+  const rawHost = String(
+    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
+  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  return `${proto}://${rawHost || "localhost:3000"}/auth/wahoo/callback`;
+}
+async function ensureValidWahooAccessToken(req, forceRefresh = false) {
+  const activeReq = req ?? requestContext.getStore();
+  const store = getScopedRuntimeStore(activeReq);
+  const { clientId, clientSecret } = getEffectiveWahooClientConfig(activeReq);
+  const { accessToken, refreshToken, expiresAt } = getEffectiveWahooTokens(activeReq);
+  if (!accessToken && !refreshToken) {
+    return "";
+  }
+  const nowSecs = Math.floor(Date.now() / 1e3);
+  const needsRefresh = forceRefresh || !accessToken || expiresAt > 0 && nowSecs >= expiresAt - 300;
+  if (needsRefresh && clientId && clientSecret && refreshToken) {
+    try {
+      const resp = await fetch("https://api.wahooligan.com/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json"
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken
+        }).toString()
+      });
+      if (resp.ok) {
+        const refreshed = await resp.json();
+        store.wahooAccessToken = refreshed.access_token;
+        if (refreshed.refresh_token) store.wahooRefreshToken = refreshed.refresh_token;
+        if (refreshed.expires_in)
+          store.wahooExpiresAt = Math.floor(Date.now() / 1e3) + refreshed.expires_in;
+        if (activeReq) {
+          activeReq.headers["x-wahoo-access-token"] = refreshed.access_token;
+        }
+        return refreshed.access_token;
+      }
+    } catch {
+    }
+  }
+  return accessToken;
 }
 function getEffectiveStravaClientConfig(req) {
   const activeReq = req ?? requestContext.getStore();
@@ -7065,13 +7203,16 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     activeGarminSession?.personalApiKey || activeGarminSession?.oauth2AccessToken || activeGarminSession?.oauth1Token
   );
   const resolvedGarminName = activeGarminSession?.fullName || activeGarminSession?.displayName || void 0;
+  const { clientId: wahooClientId, clientSecret: wahooClientSecret } = getEffectiveWahooClientConfig(req);
+  const { accessToken: wahooAccessToken, athleteId: wahooAthleteId, athleteName: wahooAthleteName } = getEffectiveWahooTokens(req);
+  const isWahooConnected = Boolean(wahooAccessToken);
   let sessionToken;
-  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected)) {
+  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected)) {
     const canonicalSid = resolvedStravaAthleteId ? deriveStravaSessionSid(resolvedStravaAthleteId) : void 0;
     sessionToken = setSessionCookie(
       req,
       res,
-      resolvedStravaName || resolvedGarminName || "athlete",
+      resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || "athlete",
       canonicalSid
     );
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -7086,6 +7227,10 @@ apiRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
     intervalsAthleteId: isIntervalsConnected ? intervalsIdentity?.athleteId || athleteId || "0" : "0",
     intervalsAthleteName: resolvedIntervalsName,
     intervalsSource: intervalsAccessToken ? "OAUTH" : isIntervalsConnected ? "USER_INPUT" : "NONE",
+    wahooConfigured: Boolean(wahooClientId && wahooClientSecret),
+    wahooConnected: isWahooConnected,
+    wahooAthleteId: isWahooConnected ? wahooAthleteId : void 0,
+    wahooAthleteName: isWahooConnected ? wahooAthleteName : void 0,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
     stravaClientId: stravaClientId || void 0,
     stravaConnected: isStravaConnected,
@@ -8006,6 +8151,425 @@ apiRouter.post("/api/garmin/disconnect", async (req, res) => {
   }
   await saveSessionCacheAsync(req, res);
   res.json({ connected: false });
+});
+apiRouter.get(["/api/wahoo/auth/url", "/api/auth/wahoo/url"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveWahooClientConfig(req);
+  if (!clientId || !clientSecret) {
+    res.status(400).json({
+      error: "Wahoo OAuth is not configured on this server yet. Please set WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET in your environment variables."
+    });
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const mode = String(req.query.mode || "cloud").toLowerCase();
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const clientNonce = String(req.query.state || "").trim();
+  const { codeVerifier, codeChallenge } = generatePkcePair();
+  const { stateToken, nonce } = issueOAuthStateToken({
+    nonce: clientNonce || void 0,
+    sid,
+    flow,
+    mode,
+    codeVerifier
+  });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveWahooCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "user_read workouts_read",
+    state: stateToken,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256"
+  });
+  const authUrl = `https://api.wahooligan.com/oauth/authorize?${params.toString()}`;
+  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
+});
+apiRouter.get(["/api/wahoo/auth/login", "/api/auth/wahoo/login"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveWahooClientConfig(req);
+  if (!clientId || !clientSecret) {
+    const msg = encodeURIComponent(
+      "Wahoo OAuth is not configured on this server yet (missing WAHOO_CLIENT_ID or WAHOO_CLIENT_SECRET)."
+    );
+    res.redirect(302, `/?auth_error=${msg}`);
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const { codeVerifier, codeChallenge } = generatePkcePair();
+  const { stateToken, nonce } = issueOAuthStateToken({ sid, flow, mode: "cloud", codeVerifier });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveWahooCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "user_read workouts_read",
+    state: stateToken,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256"
+  });
+  res.redirect(302, `https://api.wahooligan.com/oauth/authorize?${params.toString()}`);
+});
+var wahooCallbackHandler = async (req, res) => {
+  const code = String(req.query.code || "").trim();
+  const error = String(req.query.error || "").trim();
+  const stateToken = String(req.query.state || "").trim();
+  const verifiedState = verifyOAuthStateToken(stateToken);
+  clearOAuthStateCookie(res);
+  if (error) {
+    const errMsg = error === "access_denied" ? "Access was denied by the user on Wahoo." : error;
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "wahoo",
+      error: `Wahoo connection failed: ${errMsg}`
+    });
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Wahoo Connection Error",
+        heading: "Wahoo Connection Could Not Complete",
+        accentColor: "#0EA5E9",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+    return;
+  }
+  if (!code) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Missing Authorization Code",
+        heading: "Wahoo Authorization Code Missing",
+        accentColor: "#0EA5E9",
+        body: "No authorization code was returned by Wahoo.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  if (!verifiedState) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Invalid OAuth State",
+        heading: "Security Verification Failed",
+        accentColor: "#0EA5E9",
+        body: "OAuth state token was invalid or expired. Please re-initiate Wahoo connection.",
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings"
+      })
+    );
+    return;
+  }
+  try {
+    const { clientId, clientSecret } = getEffectiveWahooClientConfig(req);
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        "Wahoo OAuth client credentials (WAHOO_CLIENT_ID / WAHOO_CLIENT_SECRET) are not configured."
+      );
+    }
+    const redirectUri = resolveWahooCallbackUrl(req);
+    const bodyParams = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri
+    });
+    if (verifiedState.codeVerifier) {
+      bodyParams.set("code_verifier", verifiedState.codeVerifier);
+    }
+    const tokenResp = await fetch("https://api.wahooligan.com/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: bodyParams.toString()
+    });
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.text();
+      throw new Error(
+        `Wahoo token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
+      );
+    }
+    const tokenData = await tokenResp.json();
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Wahoo did not return a valid access token.");
+    }
+    const athleteId = String(tokenData.user?.id || "0").trim();
+    const athleteName = String(
+      [tokenData.user?.first_name, tokenData.user?.last_name].filter(Boolean).join(" ") || `Wahoo Athlete ${athleteId}`
+    ).trim();
+    const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
+    bindRequestScopeKey(req, sid);
+    const store = getScopedRuntimeStore(req);
+    store.wahooAccessToken = accessToken;
+    if (tokenData.refresh_token) store.wahooRefreshToken = tokenData.refresh_token;
+    if (tokenData.expires_in) {
+      store.wahooExpiresAt = Math.floor(Date.now() / 1e3) + tokenData.expires_in;
+    }
+    store.wahooScope = tokenData.scope || "user_read workouts_read";
+    store.wahooUserId = athleteId;
+    store.wahooAthleteName = athleteName;
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "wahoo", athleteId, athleteName);
+    }
+    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    await saveSessionCacheAsync(req, res, sid);
+    const oauthPayloadJson = safeJsonForScript({
+      type: "OAUTH_AUTH_SUCCESS",
+      provider: "wahoo",
+      athleteId,
+      athleteName,
+      sessionToken,
+      scope: tokenData.scope,
+      returnUrl: "/?tab=settings"
+    });
+    res.type("html").send(
+      renderThreshOAuthHtml({
+        title: "Wahoo Connected \xB7 THRESH",
+        heading: `Wahoo Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
+        accentColor: "#0EA5E9",
+        body: "Your Wahoo Cloud account is now linked via OAuth 2.0 / PKCE. ELEMNT rides, workouts, and FIT files will sync automatically with smart deduplication.",
+        ctaLabel: "Continue to THRESH",
+        ctaHref: "/?tab=settings",
+        scriptBody: `(function() {
+          var payload = ${oauthPayloadJson};
+          try {
+            if (payload.sessionToken) {
+              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+            }
+            if (payload.athleteId) {
+              localStorage.setItem('aeropulse_wahoo_athlete_id', String(payload.athleteId));
+            }
+            if (payload.athleteName) {
+              localStorage.setItem('aeropulse_wahoo_athlete_name', payload.athleteName);
+            }
+            localStorage.setItem('aeropulse_wahoo_connected', '1');
+            localStorage.setItem('aeropulse_oauth_just_connected', '1');
+          } catch (e) {}
+          var hasOpener = false;
+          try {
+            if (window.opener && window.opener !== window) {
+              hasOpener = true;
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+          var isPopupWindow = hasOpener || window.name === 'aeropulse_oauth_popup';
+          if (isPopupWindow) {
+            setTimeout(function() {
+              try { window.close(); } catch (e) {}
+            }, 300);
+          } else {
+            window.location.replace(payload.returnUrl || '/?tab=settings');
+          }
+        })();`
+      })
+    );
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "wahoo",
+      error: `Wahoo connection failed: ${errMsg}`
+    });
+    res.status(500).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Wahoo Connection Error",
+        heading: "Wahoo Connection Failed",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to THRESH",
+        ctaHref: "/?tab=settings",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+  }
+};
+apiRouter.get(
+  [
+    "/auth/wahoo/callback",
+    "/auth/wahoo/callback/",
+    "/api/wahoo/callback",
+    "/api/wahoo/callback/",
+    "/api/auth/wahoo/callback",
+    "/api/auth/wahoo/callback/"
+  ],
+  wahooCallbackHandler
+);
+apiRouter.post("/api/wahoo/disconnect", async (req, res) => {
+  const store = getScopedRuntimeStore(req);
+  store.wahooAccessToken = "";
+  store.wahooRefreshToken = "";
+  store.wahooExpiresAt = 0;
+  store.wahooScope = "";
+  store.wahooUserId = "";
+  store.wahooAthleteName = "";
+  const callerClaims = getVerifiedSessionClaims(req);
+  if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+    await disconnectServiceFromUser(callerClaims.sub, "wahoo");
+  }
+  await saveSessionCacheAsync(req, res);
+  res.json({ connected: false });
+});
+apiRouter.get("/api/wahoo/workouts", async (req, res) => {
+  try {
+    const token = await ensureValidWahooAccessToken(req);
+    if (!token) {
+      res.status(401).json({ error: "Wahoo account is not connected." });
+      return;
+    }
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(50, Math.max(1, Number(req.query.per_page) || 50));
+    const url = `https://api.wahooligan.com/v1/workouts?page=${page}&per_page=${perPage}&order=created_at`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      res.status(resp.status).json({
+        error: `Failed to fetch Wahoo workouts (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const data = await resp.json();
+    const rawWorkouts = Array.isArray(data) ? data : Array.isArray(data?.workouts) ? data.workouts : [];
+    res.json({ workouts: rawWorkouts });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to retrieve Wahoo workouts"
+    });
+  }
+});
+apiRouter.get("/api/wahoo/workouts/:id/file", async (req, res) => {
+  try {
+    const token = await ensureValidWahooAccessToken(req);
+    if (!token) {
+      res.status(401).json({ error: "Wahoo account is not connected." });
+      return;
+    }
+    const workoutId = encodeURIComponent(String(req.params.id || "").trim());
+    if (!workoutId) {
+      res.status(400).json({ error: "Workout ID is required" });
+      return;
+    }
+    const url = `https://api.wahooligan.com/v1/workouts/${workoutId}/file`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      res.status(resp.status).json({
+        error: `Failed to download Wahoo FIT file (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const arrayBuf = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="wahoo-workout-${workoutId}.fit"`);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to download Wahoo workout file"
+    });
+  }
+});
+apiRouter.get("/api/wahoo/sync", async (req, res) => {
+  try {
+    const token = await ensureValidWahooAccessToken(req);
+    if (!token) {
+      res.status(401).json({ error: "Wahoo account is not connected." });
+      return;
+    }
+    const resp = await fetch("https://api.wahooligan.com/v1/workouts?per_page=50&order=created_at", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      res.status(resp.status).json({
+        error: `Failed to fetch Wahoo workouts (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const data = await resp.json();
+    const rawWorkouts = Array.isArray(data) ? data : Array.isArray(data?.workouts) ? data.workouts : [];
+    const activities = rawWorkouts.map((w) => {
+      const summary = w.workout_summary || {};
+      const sport = w.workout_type_id === 2 ? "Running" : "Cycling";
+      const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
+      const isIndoor = /kickr|indoor|trainer/i.test(w.name || "");
+      return {
+        id: `wahoo_${w.id}`,
+        wahooId: String(w.id),
+        startDateLocal: w.starts || (/* @__PURE__ */ new Date()).toISOString(),
+        name: w.name || "Wahoo Workout",
+        sportCategory: sport,
+        environment: isIndoor ? "INDOOR" : "OUTDOOR",
+        subType: isIndoor ? "Smart Trainer" : "Road",
+        movingTimeSecs: duration,
+        distanceMeters: Number(summary.distance_metres || 0),
+        elevationGainMeters: Number(summary.ascent_metres || 0),
+        avgPower: summary.power_avg != null ? Number(summary.power_avg) : void 0,
+        normalizedPower: summary.power_avg != null ? Number(summary.power_avg) : void 0,
+        avgHr: Number(summary.heart_rate_avg || 0),
+        maxHr: Number(summary.heart_rate_max || 0),
+        avgCadence: summary.cadence_avg != null ? Number(summary.cadence_avg) : void 0,
+        calories: summary.calories != null ? Number(summary.calories) : void 0,
+        trainingLoad: Math.round(duration * 60 / 3600),
+        sourceBadges: ["Wahoo"],
+        deviceName: "Wahoo ELEMNT",
+        fileUrl: w.file?.url || void 0,
+        cleanRoomEligibleForAiAndCoaching: true
+      };
+    });
+    const { athleteId, athleteName } = getEffectiveWahooTokens(req);
+    res.json({
+      ok: true,
+      activities,
+      athleteId,
+      athleteName,
+      receivedCount: activities.length
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to sync Wahoo workouts"
+    });
+  }
 });
 async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldestActivitiesDate = "2010-01-01") {
   let authHeader;

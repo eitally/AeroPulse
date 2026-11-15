@@ -189,6 +189,7 @@ export type ActivitySourceBadge =
   | 'Intervals.icu'
   | 'Garmin'
   | 'Strava'
+  | 'Wahoo'
   | 'Athletic.net'
   | 'TFRRS'
   | 'MileSplit'
@@ -199,6 +200,7 @@ export interface UnifiedActivity {
   id: string;
   intervalsId?: string;
   stravaId?: string;
+  wahooId?: string;
   startDateLocal: string; // ISO string
   name: string;
   sportCategory: SportCategory;
@@ -527,6 +529,10 @@ export interface ConnectionStatus {
   intervalsAthleteId: string;
   intervalsAthleteName?: string;
   intervalsSource: 'ENV' | 'USER_INPUT' | 'OAUTH' | 'NONE';
+  wahooConfigured?: boolean;
+  wahooConnected?: boolean;
+  wahooAthleteId?: string;
+  wahooAthleteName?: string;
   stravaConfigured?: boolean;
   stravaConnected: boolean;
   stravaClientId?: string;

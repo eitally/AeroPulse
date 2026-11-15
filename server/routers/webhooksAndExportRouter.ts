@@ -16,6 +16,28 @@ const SUPPORTED_WEBHOOK_PROVIDERS = new Set([
 ]);
 
 /**
+ * Webhook Verification Handler (GET /api/webhooks/:provider)
+ * Answers webhook subscription handshake/challenges from Wahoo, Garmin, Polar, etc.
+ */
+webhooksAndExportRouter.get('/api/webhooks/:provider', (req: Request, res: Response, next: NextFunction) => {
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  if (provider === 'strava' || provider === 'intervals') {
+    next();
+    return;
+  }
+  if (!SUPPORTED_WEBHOOK_PROVIDERS.has(provider)) {
+    res.status(400).json({ ok: false, error: `Unsupported provider "${provider}"` });
+    return;
+  }
+  const challenge = req.query['hub.challenge'] || req.query.challenge || req.query['webhook_challenge'];
+  if (challenge) {
+    res.status(200).type('text/plain').send(String(challenge));
+    return;
+  }
+  res.status(200).json({ ok: true, provider: provider.toUpperCase(), verified: true });
+});
+
+/**
  * [P0.1] First-Party Hardware OAuth2 Push Webhook Receiver
  * Accepts normalized activity & overnight recovery/HRV pushes from Garmin Connect Developer Program,
  * Wahoo Cloud, COROS, Polar, WHOOP v2, Oura v2, and Apple HealthKit Companion without touching Strava API.
@@ -41,7 +63,17 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
   const payload = req.body && typeof req.body === 'object' ? req.body : {};
   const records = Array.isArray(payload.activities || payload.workouts || payload.records)
     ? payload.activities || payload.workouts || payload.records
-    : [payload];
+    : payload.workout
+      ? [payload.workout]
+      : [payload];
+
+  // Extract Wahoo workout summary & FIT file link if present
+  let wahooWorkoutId: string | number | undefined;
+  let wahooFileUrl: string | undefined;
+  if (provider === 'wahoo' && payload.workout) {
+    wahooWorkoutId = payload.workout.id;
+    wahooFileUrl = payload.workout.file?.url;
+  }
 
   res.status(200).json({
     ok: true,
@@ -49,6 +81,8 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
     ingestionSource: `${provider.toUpperCase()}_WEBHOOK_FIRST_PARTY`,
     cleanRoomEligibleForAiAndCoaching: true,
     receivedCount: records.length,
+    workoutId: wahooWorkoutId,
+    fileUrl: wahooFileUrl,
     receivedAt: new Date().toISOString(),
   });
 });
