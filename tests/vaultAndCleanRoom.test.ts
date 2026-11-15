@@ -27,8 +27,10 @@ describe('AES-256-GCM Multi-Tenant Token Vault & Strava Clean-Room Firewall', ()
     expect(decrypted).toEqual(secretPayload);
 
     // Flip 1 character in ciphertext -> GCM authTag verification must reject (return null)
-    const tampered =
-      envelope.slice(0, -2) + (envelope.endsWith('A') ? 'B' : 'A') + envelope.slice(-1);
+    const splitIndex = envelope.lastIndexOf('.') + 1;
+    const tamperedChar = envelope[splitIndex] === 'a' ? 'b' : 'a';
+    const tampered = envelope.slice(0, splitIndex) + tamperedChar + envelope.slice(splitIndex + 1);
+    expect(tampered).not.toBe(envelope);
     expect(decryptJsonFromVault(tampered)).toBeNull();
   });
 
