@@ -35,8 +35,8 @@ import {
   type PMCDayPoint,
 } from '../physiology/garminLoadFocus';
 
-const EChartsPMCDashboard = lazy(() =>
-  import('./charts/EChartsPMCDashboard').then((m) => ({ default: m.EChartsPMCDashboard }))
+const UPlotPMCDashboard = lazy(() =>
+  import('./charts/UPlotPMCDashboard').then((m) => ({ default: m.UPlotPMCDashboard }))
 );
 const DualAthleteComparator = lazy(() =>
   import('./DualAthleteComparator').then((m) => ({ default: m.DualAthleteComparator }))
@@ -2125,7 +2125,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 </div>
               }
             >
-              <EChartsPMCDashboard
+              <UPlotPMCDashboard
                 timeline={echartsTimeline}
                 onSelectActivity={onSelectActivity}
                 onSelectDate={handleEChartsSelectDate}
