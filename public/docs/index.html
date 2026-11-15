@@ -658,14 +658,15 @@
           </div>
         </div>
         <div class="card" style="margin-top:1rem;">
-          <h3>Step 3 · Optional Overnight Sleep &amp; HRV Add-Ons (Garmin Connect &amp; Intervals.icu OAuth 2.0)</h3>
+          <h3>Step 3 · Optional Hardware Connectors (Garmin, Intervals.icu &amp; Wahoo Cloud API)</h3>
           <p>
-            Connecting <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, and <code>Resting HR</code> autonomic readiness morphing—but is <strong>100% optional</strong>. Athletes training with Strava alone get full Banister <code>CTL/ATL/TSB</code>, two-pass calibrated running <code>rTSS</code> and Grade-Adjusted Efficiency Factor (<code>EF</code>), GPS segment PRs, VDOT pods, and structured workout planning on Day 1.
+            Connecting <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, or <strong>Wahoo Cloud</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, ELEMNT bike computer sync, and direct .FIT file downloads—but is <strong>100% optional</strong>. Athletes training with Strava alone get full Banister <code>CTL/ATL/TSB</code>, two-pass calibrated running <code>rTSS</code> and Grade-Adjusted Efficiency Factor (<code>EF</code>), GPS segment PRs, VDOT pods, and structured workout planning on Day 1.
           </p>
           <ul>
-            <li><strong>Intervals.icu 1-Click OAuth 2.0:</strong> Standard OAuth authorization code grant requesting scopes <code>ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ</code> with encrypted AES-256-GCM token storage. No copy-pasting required.</li>
-            <li><strong>Power-User Fallback:</strong> Athletes with self-managed developer setups can optionally connect directly via personal API key.</li>
-            <li><strong>Self-Hoster Credentials:</strong> Set <code>INTERVALS_CLIENT_ID</code> and <code>INTERVALS_CLIENT_SECRET</code> in your environment variables (credentials obtained from <code>david@intervals.icu</code>).</li>
+            <li><strong>Intervals.icu 1-Click OAuth 2.0:</strong> Standard OAuth authorization code grant requesting scopes <code>ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ</code> with encrypted AES-256-GCM token storage.</li>
+            <li><strong>Wahoo Cloud API (OAuth 2.0 / PKCE):</strong> Direct integration with <code>api.wahooligan.com</code> using RFC 7636 PKCE. Ingests ELEMNT GPS bike computer rides, KICKR smart trainer sessions, and binary .FIT files with smart ±5-minute multi-source deduplication against Strava and Garmin.</li>
+            <li><strong>Power-User Fallback:</strong> Athletes with self-managed developer setups can optionally connect Intervals.icu directly via personal API key.</li>
+            <li><strong>Self-Hoster Credentials:</strong> Set <code>INTERVALS_CLIENT_ID</code>/<code>INTERVALS_CLIENT_SECRET</code> and <code>WAHOO_CLIENT_ID</code>/<code>WAHOO_CLIENT_SECRET</code> in your environment variables.</li>
           </ul>
         </div>
       </section>
@@ -904,6 +905,36 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
                 <td class="mono">/api/intervals/disconnect</td>
                 <td class="mono">POST</td>
                 <td>Disconnects Intervals.icu and securely purges encrypted access tokens and API keys from vault.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/wahoo/auth/url</td>
+                <td class="mono">GET</td>
+                <td>Generates Wahoo Cloud OAuth 2.0 / PKCE authorization URL (scopes: <code>user_read workouts_read</code>) with HMAC state.</td>
+              </tr>
+              <tr>
+                <td class="mono">/auth/wahoo/callback</td>
+                <td class="mono">GET</td>
+                <td>Exchanges Wahoo authorization code and PKCE <code>code_verifier</code> for Bearer tokens; saves encrypted credentials in vault.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/wahoo/workouts</td>
+                <td class="mono">GET</td>
+                <td>Fetches recent Wahoo workout summaries and .FIT file download references with automatic token rotation.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/wahoo/workouts/:id/file</td>
+                <td class="mono">GET</td>
+                <td>Streams first-party binary .FIT file downloaded directly from Wahoo Cloud for Dexie 1Hz stream ingestion.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/wahoo/sync</td>
+                <td class="mono">GET</td>
+                <td>Synchronizes Wahoo workouts and automatically deduplicates against existing Strava/Garmin activities within ±5 minutes.</td>
+              </tr>
+              <tr>
+                <td class="mono">/api/wahoo/disconnect</td>
+                <td class="mono">POST</td>
+                <td>Disconnects Wahoo Cloud and securely removes tokens and athlete identifiers from vault.</td>
               </tr>
               <tr>
                 <td class="mono">/api/physiology/durability</td>

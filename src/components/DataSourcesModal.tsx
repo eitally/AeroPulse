@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  CaretDown,
   CheckCircle2,
   Copy,
   Database,
@@ -35,6 +36,8 @@ interface DataSourcesModalProps {
   onConnectIntervals: (athleteId: string, apiKey: string) => Promise<void>;
   onLaunchIntervalsOAuth?: () => Promise<void>;
   onDisconnectIntervals: () => Promise<void>;
+  onLaunchWahooOAuth?: () => Promise<void>;
+  onDisconnectWahoo?: () => Promise<void>;
   onDisconnectGarmin?: () => Promise<void>;
   onDisconnectStrava?: () => void;
   onUpdateStravaSyncPolicy?: (
@@ -72,6 +75,8 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onConnectIntervals,
   onLaunchIntervalsOAuth,
   onDisconnectIntervals,
+  onLaunchWahooOAuth,
+  onDisconnectWahoo,
   onDisconnectGarmin,
   onDisconnectStrava,
   onUpdateStravaSyncPolicy,
@@ -977,11 +982,85 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </div>
           </details>
 
+          {/* 3b. WAHOO CLOUD API (ELEMNT, KICKR & MULTI-SPORT SYNC) */}
+          <details
+            open={status.wahooConnected}
+            className="group rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-4 transition-all"
+          >
+            <summary className="flex items-center justify-between cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center font-bold text-xs">
+                  W
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      Wahoo Cloud API
+                    </h4>
+                    {status.wahooConnected ? (
+                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                        <CheckCircle2 className="w-3 h-3" /> Connected
+                      </span>
+                    ) : (
+                      <span className="text-2xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        Optional
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-2xs text-slate-500 dark:text-slate-400">
+                    Syncs ELEMNT GPS bike computer rides, KICKR trainer sessions &amp; FIT files
+                  </p>
+                </div>
+              </div>
+              <CaretDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
+            </summary>
+
+            <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-3">
+              {status.wahooConnected ? (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-sky-500/5 border border-sky-500/20 text-xs">
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {status.wahooAthleteName || 'Wahoo Athlete'}
+                    </span>
+                    {status.wahooAthleteId && (
+                      <span className="text-2xs text-slate-500 ml-2 font-mono">
+                        ID: {status.wahooAthleteId}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDisconnectWahoo?.()}
+                    className="text-xs text-rose-500 hover:text-rose-600 font-medium cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {onLaunchWahooOAuth && (
+                    <button
+                      type="button"
+                      onClick={() => onLaunchWahooOAuth?.()}
+                      className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
+                    >
+                      <Lightning className="w-4 h-4 text-sky-400" />
+                      <span>1-Click Connect with Wahoo (OAuth 2.0 / PKCE)</span>
+                    </button>
+                  )}
+                  <p className="text-2xs text-slate-500 dark:text-slate-400">
+                    Direct integration with Wahoo Cloud via OAuth 2.0 and PKCE. Automatically imports .FIT workout binaries with smart ±5-minute deduplication against Strava and Garmin.
+                  </p>
+                </div>
+              )}
+            </div>
+          </details>
+
           {/* SMART DEDUPLICATION ASSURANCE */}
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 flex items-center gap-2.5 text-2xs text-slate-600 dark:text-slate-300">
             <Shield className="w-4 h-4 ap-text-brand shrink-0" />
             <span>
-              <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin or Intervals.icu alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
+              <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin, Intervals.icu, or Wahoo alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
             </span>
           </div>
 

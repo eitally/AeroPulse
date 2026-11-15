@@ -1,4 +1,5 @@
 import {
+  ActivitySourceBadge,
   AthleteGearItem,
   AthleteHrZone,
   AthletePowerZone,
@@ -906,9 +907,37 @@ export async function clearPersistedTelemetrySnapshot(): Promise<void> {
 }
 
 /**
+ * Finds an existing activity that matches a candidate activity within a time proximity window (default ±300s / 5 min)
+ * and matching sport category to prevent duplicate ingestion across Strava, Garmin, Wahoo, and Intervals.icu.
+ */
+export function findMatchingActivityByProximity(
+  candidate: { startDateLocal?: string; sportCategory?: string },
+  existing: UnifiedActivity[],
+  windowSecs = 300
+): UnifiedActivity | undefined {
+  if (!candidate.startDateLocal) return undefined;
+  const candidateTimeMs = new Date(candidate.startDateLocal).getTime();
+  if (Number.isNaN(candidateTimeMs)) return undefined;
+
+  for (const act of existing) {
+    if (candidate.sportCategory && act.sportCategory !== candidate.sportCategory) continue;
+    const actTimeMs = new Date(act.startDateLocal).getTime();
+    if (Number.isNaN(actTimeMs)) continue;
+    const diffSecs = Math.abs(candidateTimeMs - actTimeMs) / 1000;
+    if (diffSecs <= windowSecs) {
+      return act;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Merges incoming synced activities with existing persisted activities without losing
  * previously hydrated streams, GPS route polylines, Strava segment efforts, kudos, comments,
  * or Indoor / Virtual Cycling / Smart Trainer classification.
+ *
+ * Automatically deduplicates multi-source activities (Strava, Garmin, Wahoo, Intervals.icu)
+ * recorded within ±5 minutes (300 seconds) so Training Load (TSS) is never double-counted.
  */
 export function mergeActivitiesNonDestructive(
   existing: UnifiedActivity[],
@@ -924,6 +953,7 @@ export function mergeActivitiesNonDestructive(
   const byId = new Map<string, UnifiedActivity>();
   const stravaIdToPrimaryId = new Map<string, string>();
   const intervalsIdToPrimaryId = new Map<string, string>();
+  const wahooIdToPrimaryId = new Map<string, string>();
 
   for (const rawAct of existing) {
     if (!rawAct || !rawAct.id) continue;
@@ -931,30 +961,53 @@ export function mergeActivitiesNonDestructive(
     byId.set(act.id, act);
     if (act.stravaId) stravaIdToPrimaryId.set(String(act.stravaId), act.id);
     if (act.intervalsId) intervalsIdToPrimaryId.set(String(act.intervalsId), act.id);
+    if (act.wahooId) wahooIdToPrimaryId.set(String(act.wahooId), act.id);
   }
 
   for (const rawInc of incoming) {
     if (!rawInc || !rawInc.id) continue;
     const inc = reclassifyActivityEnvironment(rawInc);
+
+    let proximityMatchKey: string | undefined;
+    if (inc.startDateLocal) {
+      const incTimeMs = new Date(inc.startDateLocal).getTime();
+      if (!Number.isNaN(incTimeMs)) {
+        for (const existingAct of byId.values()) {
+          if (existingAct.sportCategory !== inc.sportCategory) continue;
+          const existingTimeMs = new Date(existingAct.startDateLocal).getTime();
+          if (!Number.isNaN(existingTimeMs)) {
+            const diffSecs = Math.abs(incTimeMs - existingTimeMs) / 1000;
+            if (diffSecs <= 300) {
+              proximityMatchKey = existingAct.id;
+              break;
+            }
+          }
+        }
+      }
+    }
+
     const matchedKey =
       (byId.has(inc.id) ? inc.id : undefined) ||
       (inc.intervalsId ? intervalsIdToPrimaryId.get(String(inc.intervalsId)) : undefined) ||
-      (inc.stravaId ? stravaIdToPrimaryId.get(String(inc.stravaId)) : undefined);
+      (inc.stravaId ? stravaIdToPrimaryId.get(String(inc.stravaId)) : undefined) ||
+      (inc.wahooId ? wahooIdToPrimaryId.get(String(inc.wahooId)) : undefined) ||
+      proximityMatchKey;
 
     if (!matchedKey) {
       byId.set(inc.id, inc);
       if (inc.stravaId) stravaIdToPrimaryId.set(String(inc.stravaId), inc.id);
       if (inc.intervalsId) intervalsIdToPrimaryId.set(String(inc.intervalsId), inc.id);
+      if (inc.wahooId) wahooIdToPrimaryId.set(String(inc.wahooId), inc.id);
       continue;
     }
 
     const prev = byId.get(matchedKey)!;
-    // Prefer whichever record has an Intervals.icu ID as the primary ID
+    // Prefer whichever record has an Intervals.icu ID or Strava ID as primary ID
     const canonicalId = prev.intervalsId ? prev.id : inc.intervalsId ? inc.id : prev.id;
 
     const mergedBadges = Array.from(
       new Set([...(prev.sourceBadges || []), ...(inc.sourceBadges || [])])
-    ) as ('Intervals.icu' | 'Garmin' | 'Strava')[];
+    ) as ActivitySourceBadge[];
 
     // If either source classified the session as INDOOR (VirtualRide / Smart Trainer / Treadmill), promote INDOOR!
     const resolvedEnv =
@@ -974,6 +1027,7 @@ export function mergeActivitiesNonDestructive(
       id: canonicalId,
       intervalsId: inc.intervalsId || prev.intervalsId,
       stravaId: inc.stravaId || prev.stravaId,
+      wahooId: inc.wahooId || prev.wahooId,
       environment: resolvedEnv,
       subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
@@ -1031,6 +1085,7 @@ export function mergeActivitiesNonDestructive(
     byId.set(canonicalId, merged);
     if (merged.stravaId) stravaIdToPrimaryId.set(String(merged.stravaId), canonicalId);
     if (merged.intervalsId) intervalsIdToPrimaryId.set(String(merged.intervalsId), canonicalId);
+    if (merged.wahooId) wahooIdToPrimaryId.set(String(merged.wahooId), canonicalId);
   }
 
   return Array.from(byId.values()).sort(

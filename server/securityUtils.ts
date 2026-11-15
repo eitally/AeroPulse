@@ -25,6 +25,7 @@ export interface OAuthStateClaims {
   joinCode?: string;
   slug?: string;
   inviteToken?: string;
+  codeVerifier?: string;
   exp: number;
 }
 
@@ -134,6 +135,7 @@ export function issueOAuthStateToken(
     joinCode: input.joinCode,
     slug: input.slug,
     inviteToken: input.inviteToken,
+    codeVerifier: input.codeVerifier,
     exp: Date.now() + OAUTH_STATE_TTL_MS,
   };
   const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
@@ -142,6 +144,15 @@ export function issueOAuthStateToken(
     .update(`oauth_state:${payload}`)
     .digest('base64url');
   return { stateToken: `${payload}.${sig}`, nonce };
+}
+
+/**
+ * Generates an RFC 7636 PKCE code_verifier and code_challenge (S256).
+ */
+export function generatePkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+  return { codeVerifier, codeChallenge };
 }
 
 export function verifyOAuthStateToken(token?: string | null): OAuthStateClaims | null {
