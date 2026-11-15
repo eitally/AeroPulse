@@ -18,6 +18,7 @@ import {
   Timer,
   Trophy,
   Zap,
+  CornersOut,
 } from "./icons/PhosphorIcons";
 import {
   AthleteConnectionRole,
@@ -92,6 +93,7 @@ interface AthleteRosterModalProps {
   initialTab?: RosterTab;
   onSelectActiveTeam?: (teamId: string | null) => void;
   onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onOpenFullScreenStopwatch?: () => void;
 }
 
 const AVATAR_PALETTE = ['#1C5436', '#0D9488', '#0284C7', '#D97706', '#E11D48'];
@@ -122,6 +124,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   initialTab = 'TEAMS_BRANDING',
   onSelectActiveTeam,
   onTeamsUpdated,
+  onOpenFullScreenStopwatch,
 }) => {
   const [activeTab, setActiveTab] = useState<RosterTab>(initialTab);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -432,16 +435,28 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           </p>
         </div>
 
-        {!isFocusedMode && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('TRACKSIDE_PAD')}
-            className="min-h-[44px] px-3 py-2 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 flex items-center gap-1.5 cursor-pointer"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5 ap-text-brand" />
-            <span>Full-Screen Trackside Mode</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenFullScreenStopwatch && (
+            <button
+              type="button"
+              onClick={onOpenFullScreenStopwatch}
+              className="min-h-[44px] px-3 py-2 rounded-xl ap-status-info text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <CornersOut className="w-3.5 h-3.5" weight="bold" />
+              <span>Open Full-Screen Stopwatch</span>
+            </button>
+          )}
+          {!isFocusedMode && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('TRACKSIDE_PAD')}
+              className="min-h-[44px] px-3 py-2 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5 ap-text-brand" />
+              <span>Full-Screen Trackside Mode</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Primary Stopwatch Readout & >=48px Ergonomic Gun / Undo / Protected Reset Controls */}

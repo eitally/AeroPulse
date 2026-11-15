@@ -16,6 +16,7 @@ import {
   Moon,
   ChevronDown,
   Sliders,
+  Timer,
   HelpCircle,
   LogOut,
 } from './icons/PhosphorIcons';
@@ -292,7 +293,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             )}
           </div>
 
-          {/* 2. Center: 4 Primary Workspaces (Today | Plan | Activities | Progress) */}
+          {/* 2. Center: 5 Primary Workspaces (Today | Plan | Stopwatch | Activities | Progress) */}
           <nav
             aria-label="Primary workspaces"
             className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
@@ -310,6 +311,12 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   label: 'Plan',
                   icon: Calendar,
                   match: ['calendar'],
+                },
+                {
+                  id: 'stopwatch',
+                  label: 'Stopwatch',
+                  icon: Timer,
+                  match: ['stopwatch'],
                 },
                 {
                   id: 'activities',
@@ -348,7 +355,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         : item.id
                     );
                   }}
-                  className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                  className={`min-h-[38px] inline-flex items-center px-2 lg:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
                     isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                   }`}
                 >
@@ -364,14 +371,16 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             })}
           </nav>
 
-          {/* Right: Trackside Split Pad + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
+          {/* Right: Live Floating Stopwatch Pill + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-            <div className="hidden sm:inline-flex shrink-0">
-              <TracksideLiveHeaderPill
-                onOpenTracksidePad={() => onOpenRosterModalWithTab('TRACKSIDE_PAD')}
-                showIdleLauncher={myTeams.length > 0}
-              />
-            </div>
+            {activeTab !== 'stopwatch' && (
+              <div className="hidden sm:inline-flex shrink-0">
+                <TracksideLiveHeaderPill
+                  onOpenTracksidePad={() => setActiveTab('stopwatch')}
+                  showIdleLauncher={false}
+                />
+              </div>
+            )}
 
             {/* Athlete Context Switcher — shown only when part of a team or viewing a teammate */}
             {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
@@ -597,13 +606,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       type="button"
                       role="menuitem"
                       onClick={() => {
-                        onOpenRosterModalWithTab('TRACKSIDE_PAD');
+                        setActiveTab('stopwatch');
                         setIsAccountMenuOpen(false);
                       }}
                       className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-2 font-medium">
-                        <Activity className="w-4 h-4 ap-text-brand" />
+                        <Timer className="w-4 h-4 ap-text-brand" />
                         <span>Trackside Split Stopwatch (0.01s)</span>
                       </span>
                       <span className="font-mono text-2xs ap-text-brand">
@@ -755,14 +764,16 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           </div>
         </div>
 
-        {/* Mobile & Compact (< xl) Quick-Context Strip: Team, Athlete, Sources & Live Split Pad */}
+        {/* Mobile & Compact (< xl) Quick-Context Strip: Live Stopwatch Pill, Team, Athlete, Sources */}
         <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <div className="sm:hidden shrink-0">
-            <TracksideLiveHeaderPill
-              onOpenTracksidePad={() => onOpenRosterModalWithTab('TRACKSIDE_PAD')}
-              showIdleLauncher
-            />
-          </div>
+          {activeTab !== 'stopwatch' && (
+            <div className="sm:hidden shrink-0">
+              <TracksideLiveHeaderPill
+                onOpenTracksidePad={() => setActiveTab('stopwatch')}
+                showIdleLauncher={false}
+              />
+            </div>
+          )}
           {myTeams.length > 0 ? (
             <div className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
               <span

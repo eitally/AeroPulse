@@ -1144,7 +1144,8 @@ export type ActiveTab =
   | 'charts'
   | 'activities'
   | 'curves'
-  | 'totals';
+  | 'totals'
+  | 'stopwatch';
 
 
 

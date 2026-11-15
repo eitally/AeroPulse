@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { Target, BarChart3, TrendingUp, LineChart } from './icons/PhosphorIcons';
 import type {
   ActiveTab,
@@ -12,10 +12,12 @@ import type {
   PlannedWorkoutEvent,
   SportCategory,
   TargetGoal,
+  TeamSummaryWithRole,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
 import type { PlannedEventBatchItem } from './GoalsView';
+import type { SavedStopwatchEntry } from './TracksideStopwatchView';
 import { INITIAL_POWER_PACE_CURVES } from '../data/mockTelemetry';
 
 const CalendarView = lazy(() =>
@@ -38,6 +40,9 @@ const PhysiologyView = lazy(() =>
 );
 const GoalsView = lazy(() =>
   import('./GoalsView').then((m) => ({ default: m.GoalsView }))
+);
+const TracksideStopwatchView = lazy(() =>
+  import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView }))
 );
 
 export const ViewLoadingSkeleton: React.FC = () => (
@@ -66,6 +71,8 @@ export interface WorkspaceRouterProps {
   effectiveAthleteProfile: AthleteProfile;
   primaryAthleteDisplayName: string;
   combinedRoster: ConnectedAthleteRecord[];
+  myTeams: TeamSummaryWithRole[];
+  activeTeamId: string | null;
   selectedActivity: UnifiedActivity | null;
   benchmarkSegments: BenchmarkSegmentHistory[];
   isScanningSegments: boolean;
@@ -117,6 +124,7 @@ export interface WorkspaceRouterProps {
   handleDeleteTargetGoal: (id: string) => void;
   handleSaveProfileOverride: (updatedProfile: AthleteProfile) => Promise<void>;
   handleSwitchToCalendarTab: () => void;
+  handleSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
 }
 
 export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
@@ -139,6 +147,8 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   effectiveAthleteProfile,
   primaryAthleteDisplayName,
   combinedRoster,
+  myTeams,
+  activeTeamId,
   selectedActivity,
   benchmarkSegments,
   isScanningSegments,
@@ -169,7 +179,16 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   handleDeleteTargetGoal,
   handleSaveProfileOverride,
   handleSwitchToCalendarTab,
+  handleSaveStopwatchActivities,
 }) => {
+  // Warm TracksideStopwatchView lazy chunk on idle so trackside Airplane Mode navigation never hits network
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void import('./TracksideStopwatchView');
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <Suspense fallback={<ViewLoadingSkeleton />}>
       {activeTab === 'calendar' && (
@@ -428,6 +447,19 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSwitchToCalendar={handleSwitchToCalendarTab}
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+        />
+      )}
+
+      {activeTab === 'stopwatch' && (
+        <TracksideStopwatchView
+          selfName={primaryAthleteDisplayName}
+          selfProfile={effectiveAthleteProfile}
+          roster={combinedRoster}
+          myTeams={myTeams}
+          activeTeamId={activeTeamId}
+          onSaveStopwatchActivities={handleSaveStopwatchActivities}
+          onOpenActivitiesTab={handleOpenActivitiesTab}
+          onOpenRosterModal={handleOpenRosterModal}
         />
       )}
     </Suspense>
