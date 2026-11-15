@@ -95,9 +95,12 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       const planTab = page.locator('nav a[href="#calendar"]').first();
       await expect(planTab).toBeVisible();
       await planTab.click();
+      await expect(planTab).toHaveAttribute('aria-current', 'page', { timeout: 10000 });
 
-      // Verify Plan calendar is loaded
-      await page.waitForTimeout(600); // Allow calendar transitions to settle
+      // Verify Plan calendar chunk is loaded and mounted
+      const calendarHeading = page.locator('h1:has-text("2026")');
+      await expect(calendarHeading).toBeVisible({ timeout: 15000 });
+      await page.waitForTimeout(400); // Allow calendar transitions to settle
 
       // DES-03: Verify consolidated toolbar has <= 4 control groups and exactly one solid Volt CTA (+ Schedule)
       const scheduleBtn = page.getByRole('button', { name: 'Schedule', exact: true });
@@ -217,7 +220,9 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await expect(planTab).toBeVisible({ timeout: 5000 });
       await planTab.click();
 
-      await page.waitForTimeout(600);
+      // Ensure calendar is mounted
+      await expect(page.locator('h1:has-text("2026")')).toBeVisible({ timeout: 15000 });
+      await page.waitForTimeout(400);
 
       // Mobile Plan capture
       await page.screenshot({
