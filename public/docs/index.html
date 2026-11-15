@@ -240,6 +240,24 @@
       color: #080A09;
       border-color: #E2FF66;
     }
+    #themeBtn {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-hairline);
+    }
+    #themeBtn:hover {
+      border-color: var(--accent-cobalt);
+    }
+    html.dark #themeBtn {
+      background: rgba(255, 255, 255, 0.08);
+      color: #F4F7F4;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+    }
+    html.dark #themeBtn:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: #C8FF00;
+      color: #C8FF00;
+    }
     .layout {
       display: grid;
       grid-template-columns: 280px minmax(0, 1fr);
@@ -466,7 +484,6 @@
       <img src="/brand/thresh-lockup-light.svg" alt="THRESH" class="doc-logo-light" />
       <img src="/brand/thresh-lockup-dark.svg" alt="THRESH" class="doc-logo-dark" />
       <div class="brand-meta">
-        <span class="lane-pill mono"><span>Documentation &amp; Reference</span></span>
         <span class="brand-subtitle">Endurance Physiology, Adaptive Load &amp; Scholastic Team Operations</span>
       </div>
     </a>

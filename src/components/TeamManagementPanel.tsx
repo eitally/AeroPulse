@@ -714,11 +714,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           EMPTY STATE 2-CARD CHOOSER: JOIN EXISTING TEAM vs CREATE COACH HUB
          ==================================================================== */}
       {myTeams.length === 0 && !showCreateOrEditStudio && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 min-w-0">
           {/* Card 1: Athlete / Assistant Joining w/ Team Code */}
           <form
             onSubmit={handleJoinAdditionalTeam}
-            className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm"
+            className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm min-w-0"
           >
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -756,7 +756,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           </form>
 
           {/* Card 2: Head Coach / Club Captain Creating New Team */}
-          <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 flex flex-col justify-between space-y-4 shadow-sm">
+          <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm min-w-0">
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
