@@ -150,7 +150,34 @@ const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('fitness');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash.replace(/^#/, '');
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts'].includes(hash)) {
+          return hash as ActiveTab;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return 'fitness';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      try {
+        const hash = window.location.hash.replace(/^#/, '');
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts'].includes(hash)) {
+          setActiveTab(hash as ActiveTab);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   const [isDark, setIsDark] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('thresh_theme_dark');

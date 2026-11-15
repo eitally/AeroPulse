@@ -5,8 +5,8 @@ import { test, expect, Page } from '@playwright/test';
  * Guarantees zero auth gate redirection, zero client-side hydration races,
  * and immediate mounting of the core Cockpit workspace.
  */
-async function enterSampleDemoMode(page: Page) {
-  await page.goto('/?demo=1');
+async function enterSampleDemoMode(page: Page, hash = '') {
+  await page.goto(`/?demo=1${hash}`);
 
   // Guarantee Cockpit workspace navigation is fully visible and interactive
   const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
@@ -51,6 +51,16 @@ async function toggleDarkMode(page: Page, enableDark: boolean) {
 }
 
 test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Prevent external Google Font network stalls from blocking headless screenshots in CI
+    await page.route('https://fonts.googleapis.com/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/css', body: '/* mock */' })
+    );
+    await page.route('https://fonts.gstatic.com/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'font/woff2', body: '' })
+    );
+  });
+
   test.describe('Desktop Viewport (1440x900)', () => {
     test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
@@ -75,6 +85,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Dark mode cleanly
@@ -84,24 +95,36 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
 
     test('2. Plan Screen — Light and Dark Mode', async ({ page }) => {
-      await enterSampleDemoMode(page);
+      await enterSampleDemoMode(page, '#calendar');
 
-      // Switch to Plan tab
-      const planTab = page.locator('nav a[href="#calendar"]').first();
-      await expect(planTab).toBeVisible();
-      await planTab.click();
+      // DES-03: Verify consolidated toolbar has <= 4 control groups and exactly one solid Volt CTA (+ Schedule)
+      const scheduleBtn = page.getByRole('button', { name: 'Schedule', exact: true });
+      await expect(scheduleBtn).toBeVisible({ timeout: 15000 });
+      await expect(scheduleBtn).toHaveClass(/ap-btn-primary/);
 
-      // Verify Plan calendar is loaded
-      await page.waitForTimeout(600); // Allow calendar transitions to settle
+      const actionsBtn = page.getByRole('button', { name: 'Actions', exact: true });
+      await expect(actionsBtn).toBeVisible();
+
+      // Open Actions dropdown to verify secondary actions (AI Review & Log Race)
+      await actionsBtn.click();
+      const aiReviewItem = page.getByRole('menuitem', { name: /AI Calendar Review/ });
+      await expect(aiReviewItem).toBeVisible();
+      await actionsBtn.click(); // Close Actions dropdown
+
+      const viewBtn = page.getByRole('button', { name: 'View', exact: true });
+      await expect(viewBtn).toBeVisible();
+
       await expect(page.locator('html')).not.toHaveClass(/dark/);
       await page.screenshot({
         path: 'test-results/screenshots/plan-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Switch to dark mode
@@ -109,6 +132,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -130,6 +154,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/roster-modal-desktop-1440-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Close modal before toggling theme
@@ -148,6 +173,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/roster-modal-desktop-1440-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Close modal
@@ -180,6 +206,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-mobile-390-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Dark mode cleanly
@@ -187,24 +214,23 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/today-mobile-390-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
 
     test('5. Plan Screen (Mobile 390) — Light and Dark Mode', async ({ page }) => {
-      await enterSampleDemoMode(page);
+      await enterSampleDemoMode(page, '#calendar');
 
-      // Navigate to Plan tab on mobile dock
-      const planTab = page.locator('nav[aria-label="Mobile primary workspaces"] button:has-text("Plan")');
-      await expect(planTab).toBeVisible({ timeout: 5000 });
-      await planTab.click();
-
-      await page.waitForTimeout(600);
+      // Ensure calendar is mounted and schedule button is visible
+      const scheduleBtn = page.getByRole('button', { name: 'Schedule', exact: true });
+      await expect(scheduleBtn).toBeVisible({ timeout: 15000 });
 
       // Mobile Plan capture
       await page.screenshot({
         path: 'test-results/screenshots/plan-mobile-390-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Dark mode Mobile Plan capture
@@ -212,6 +238,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/plan-mobile-390-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
       await toggleDarkMode(page, false);
     });
@@ -230,6 +257,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/docs-light.png',
         fullPage: false,
+        animations: 'disabled',
       });
 
       // Toggle Docs Theme
@@ -241,6 +269,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.screenshot({
         path: 'test-results/screenshots/docs-dark.png',
         fullPage: false,
+        animations: 'disabled',
       });
     });
   });
