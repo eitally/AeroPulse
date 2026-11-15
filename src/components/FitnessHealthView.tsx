@@ -18,6 +18,7 @@ import {
   DistanceUnit,
   PlannedWorkoutEvent,
   SportCategory,
+  StudentAthleteCheckIn,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -53,6 +54,7 @@ import {
   evaluateStudentAthleteGuardrail,
   generateWeeklyTrainingGitDiff,
 } from '../physiology';
+import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 
 interface FitnessHealthViewProps {
@@ -204,6 +206,19 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const hasWellnessTelemetry = wellnessDays.length > 0;
   const [orthoSwappedToast, setOrthoSwappedToast] = useState<string | null>(null);
 
+  // Student-Athlete Check-In (Academic/Exam Stress, Shin/Metatarsal BSI, PHV Growth Plates) & Cross-Training
+  const [isStudentCheckInOpen, setIsStudentCheckInOpen] = useState<boolean>(false);
+  const [academicStress, setAcademicStress] = useState<1 | 2 | 3 | 4 | 5>(2);
+  const [shinBoneSoreness, setShinBoneSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [achillesSoreness, setAchillesSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [kneeGrowthPlateSoreness, setKneeGrowthPlateSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [heelApophysisSoreness, setHeelApophysisSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [crossTrainModality, setCrossTrainModality] =
+    useState<CrossTrainingModality>('AQUA_JOGGING');
+  const [crossTrainMins, setCrossTrainMins] = useState<number>(45);
+  const [crossTrainRpe, setCrossTrainRpe] = useState<number>(6);
+  const [crossTrainToast, setCrossTrainToast] = useState<string | null>(null);
+
   const dualSportLatest = useMemo(() => {
     if (!athleteProfile || activities.length === 0) return null;
     const series = computeDualSportPmcSeries(activities, athleteProfile, 14);
@@ -213,8 +228,13 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const orthopedicSummary = useMemo(() => {
     if (!athleteProfile) return null;
     const todayPlanned = plannedEvents.filter((p) => (p.date || '').slice(0, 10) === todayIso);
-    return evaluateOrthopedicInterference(activities, athleteProfile, todayPlanned, todayIso);
-  }, [activities, athleteProfile, plannedEvents, todayIso]);
+    return evaluateOrthopedicInterference(activities, athleteProfile, todayPlanned, todayIso, {
+      isMinorU18: Boolean(
+        athleteProfile.safeSportHideWeight || athleteProfile.academicDivision === 'HS_VARSITY'
+      ),
+      lowerLegSoreness: Math.max(shinBoneSoreness, achillesSoreness),
+    });
+  }, [activities, athleteProfile, plannedEvents, todayIso, shinBoneSoreness, achillesSoreness]);
 
   const complianceRecords = useMemo(
     () => evaluatePlannedVsCompletedCompliance(plannedEvents, activities, todayIso),
@@ -882,38 +902,53 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     radars: true,
   });
 
-  // Student-Athlete Check-In (Academic/Exam Stress, Shin/Bone Soreness, Ferritin) & Cross-Training Equivalence
-  const [isStudentCheckInOpen, setIsStudentCheckInOpen] = useState<boolean>(false);
-  const [academicStress, setAcademicStress] = useState<1 | 2 | 3 | 4 | 5>(2);
-  const [shinBoneSoreness, setShinBoneSoreness] = useState<0 | 1 | 2 | 3>(0);
-  const [achillesSoreness, setAchillesSoreness] = useState<0 | 1 | 2 | 3>(0);
-  const [crossTrainModality, setCrossTrainModality] =
-    useState<CrossTrainingModality>('AQUA_JOGGING');
-  const [crossTrainMins, setCrossTrainMins] = useState<number>(45);
-  const [crossTrainRpe, setCrossTrainRpe] = useState<number>(6);
-  const [crossTrainToast, setCrossTrainToast] = useState<string | null>(null);
-
-  const studentGuardrail = useMemo(
-    () =>
-      evaluateStudentAthleteGuardrail({
-        date: todayIso,
-        academicStress,
-        shinMetatarsalSoreness: shinBoneSoreness,
-        achillesTendonSoreness: achillesSoreness,
-        sleepHours:
-          latestWithSleep.sleepSecs > 0 ? Number((latestWithSleep.sleepSecs / 3600).toFixed(1)) : 7.4,
-        ferritinNgMl: athleteProfile?.ferritinNgMl,
-        energyFeel: latestDay.readinessStatus === 'Strain' ? 'FLAT' : 'NORMAL',
-      }),
+  const studentCheckIn = useMemo<StudentAthleteCheckIn>(
+    () => ({
+      date: todayIso,
+      academicStress,
+      shinMetatarsalSoreness: shinBoneSoreness,
+      achillesTendonSoreness: achillesSoreness,
+      kneeGrowthPlateSoreness,
+      heelApophysisSoreness,
+      sleepHours:
+        latestWithSleep.sleepSecs > 0 ? Number((latestWithSleep.sleepSecs / 3600).toFixed(1)) : 7.4,
+      ferritinNgMl: athleteProfile?.ferritinNgMl,
+      energyFeel: latestDay.readinessStatus === 'Strain' ? 'FLAT' : 'NORMAL',
+    }),
     [
       todayIso,
       academicStress,
       shinBoneSoreness,
       achillesSoreness,
+      kneeGrowthPlateSoreness,
+      heelApophysisSoreness,
       latestWithSleep.sleepSecs,
       athleteProfile?.ferritinNgMl,
       latestDay.readinessStatus,
     ]
+  );
+
+  const studentGuardrail = useMemo(
+    () => evaluateStudentAthleteGuardrail(studentCheckIn),
+    [studentCheckIn]
+  );
+
+  const safeSportWatchReport = useMemo(
+    () =>
+      evaluateSafeSportPatternWatch({
+        activities,
+        wellnessDays,
+        checkIn: studentCheckIn,
+        isMinorU18: Boolean(
+          athleteProfile?.safeSportHideWeight || athleteProfile?.academicDivision === 'HS_VARSITY'
+        ),
+        hasParentGuardianCc: Boolean(
+          athleteProfile?.safeSportHideWeight || athleteProfile?.academicDivision === 'HS_VARSITY'
+        ),
+        hasAthleticTrainer: Boolean(athleteProfile?.academicDivision),
+        referenceDateIso: todayIso,
+      }),
+    [activities, wellnessDays, studentCheckIn, athleteProfile, todayIso]
   );
 
   const crossTrainEquiv = useMemo(
@@ -965,6 +1000,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             plannedEvents={plannedEvents}
             athleteProfile={athleteProfile}
             distanceUnit={distanceUnit}
+            studentCheckIn={studentCheckIn}
+            orthopedicSummary={orthopedicSummary ?? undefined}
             isExpanded={isPrescriptionExpanded}
             onToggleExpand={() => setIsPrescriptionExpanded((prev) => !prev)}
             sportMode={sharedRxSport}
@@ -1201,7 +1238,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
                   <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     1. Central Cardiorespiratory (7d)
@@ -1248,6 +1285,33 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     </span>
                     <span className="text-xs text-slate-600 dark:text-slate-300">
                       {orthopedicSummary.torqueAcwr.toFixed(2)}x ACWR
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  data-testid="ortho-spike-budget-tile"
+                  className="rounded-xl liquid-glass-subtle px-3.5 py-2.5"
+                >
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    4. Spiked-Meter &amp; Curve Budget
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
+                    <span className="text-base font-bold text-slate-900 dark:text-white">
+                      {orthopedicSummary.spikedMeters7d}/{orthopedicSummary.spikedMetersWeeklyCap}m
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        orthopedicSummary.trainerOnly48hLockActive
+                          ? 'text-[#D9480F] dark:text-rose-400'
+                          : orthopedicSummary.spikeGuardrailStatus === 'SPIKE_CAP_WARNING'
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-[#0D9488] dark:text-teal-300'
+                      }`}
+                    >
+                      {orthopedicSummary.trainerOnly48hLockActive
+                        ? '48h Lock'
+                        : `${orthopedicSummary.spikeAcwr.toFixed(2)}x Spike`}
                     </span>
                   </div>
                 </div>
@@ -1426,9 +1490,9 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 dark:text-white">
-                      5-Second Student-Athlete Check-In (Academic + Bone Stress)
+                      5-Second Student-Athlete Check-In (Academic + Bone &amp; PHV)
                     </span>
-                    <span className="font-mono text-2xs text-blue-600 dark:text-sky-300 font-bold">
+                    <span className="px-2 py-0.5 rounded ap-status-info font-mono text-2xs font-bold">
                       Intensity Cap: {studentGuardrail.intensityScalePct}%
                     </span>
                   </div>
@@ -1447,7 +1511,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setAcademicStress(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={1}>1 — Normal Classes</option>
                         <option value={2}>2 — Light Papers</option>
@@ -1470,7 +1534,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setShinBoneSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Zero Pain</option>
                         <option value={1}>1 — Mild Diffuse Tightness</option>
@@ -1492,12 +1556,60 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         onChange={(e) =>
                           setAchillesSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
                         }
-                        className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
+                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
                         <option value={0}>0 — Springy / Clear</option>
                         <option value={1}>1 — Morning Stiffness</option>
                         <option value={2}>2 — Pinch Soreness</option>
                         <option value={3}>3 — Sharp Load Pain</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label
+                        htmlFor={`${formId}-phv-knee`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
+                        Knee Growth-Plate (PHV)
+                      </label>
+                      <select
+                        id={`${formId}-phv-knee`}
+                        data-testid="phv-knee-select"
+                        value={kneeGrowthPlateSoreness}
+                        onChange={(e) =>
+                          setKneeGrowthPlateSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
+                        }
+                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
+                      >
+                        <option value={0}>0 — Pain-Free</option>
+                        <option value={1}>1 — Post-Jump Tightness</option>
+                        <option value={2}>2 — Tender Tibial Bump</option>
+                        <option value={3}>3 — Pause Plyos &amp; Spikes</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor={`${formId}-phv-heel`}
+                        className="block text-2xs font-mono text-slate-500 mb-1"
+                      >
+                        Heel Apophysis (PHV)
+                      </label>
+                      <select
+                        id={`${formId}-phv-heel`}
+                        data-testid="phv-heel-select"
+                        value={heelApophysisSoreness}
+                        onChange={(e) =>
+                          setHeelApophysisSoreness(Number(e.target.value) as 0 | 1 | 2 | 3)
+                        }
+                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
+                      >
+                        <option value={0}>0 — Pain-Free</option>
+                        <option value={1}>1 — Warmup Soreness</option>
+                        <option value={2}>2 — Squeeze Tenderness</option>
+                        <option value={3}>3 — Avoid Impact</option>
                       </select>
                     </div>
                   </div>
@@ -1627,6 +1739,84 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Zero-Weight Longitudinal Energy, Iron & Growth-Plate Watch (TRK-12) */}
+              <div
+                data-testid="safesport-pattern-watch-card"
+                className="rounded-xl ap-card-inset p-3.5 space-y-2.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded font-mono text-2xs font-bold uppercase ${
+                        safeSportWatchReport.trafficLight === 'RED_MEDICAL_REVIEW'
+                          ? 'ap-status-strained'
+                          : safeSportWatchReport.trafficLight === 'AMBER_WATCH'
+                            ? 'ap-status-caution'
+                            : 'ap-status-prime'
+                      }`}
+                    >
+                      {safeSportWatchReport.trafficLight === 'RED_MEDICAL_REVIEW'
+                        ? 'Medical / AT Review'
+                        : safeSportWatchReport.trafficLight === 'AMBER_WATCH'
+                          ? 'Pattern Watch'
+                          : 'Zero-Weight Clear'}
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      Longitudinal Energy, Iron &amp; Growth-Plate Watch ({safeSportWatchReport.windowRecentDays}d vs{' '}
+                      {safeSportWatchReport.windowBaselineDays}d)
+                    </span>
+                  </div>
+                  <span className="font-mono text-2xs text-slate-600 dark:text-slate-300">
+                    {safeSportWatchReport.medicalRoutingSummary}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-2xs tabular-nums">
+                  <div className="rounded-lg bg-white/80 dark:bg-[#101B15]/80 px-2.5 py-2 border border-slate-200/80 dark:border-white/10">
+                    <div className="text-slate-500 dark:text-slate-400">Easy HR Drift</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {safeSportWatchReport.deltaEasyHrBpm !== null
+                        ? `${safeSportWatchReport.deltaEasyHrBpm >= 0 ? '+' : ''}${safeSportWatchReport.deltaEasyHrBpm} bpm`
+                        : 'Calibrating'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white/80 dark:bg-[#101B15]/80 px-2.5 py-2 border border-slate-200/80 dark:border-white/10">
+                    <div className="text-slate-500 dark:text-slate-400">Efficiency (EF)</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {safeSportWatchReport.deltaEfficiencyFactorPct !== null
+                        ? `${safeSportWatchReport.deltaEfficiencyFactorPct >= 0 ? '+' : ''}${safeSportWatchReport.deltaEfficiencyFactorPct}%`
+                        : 'Calibrating'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white/80 dark:bg-[#101B15]/80 px-2.5 py-2 border border-slate-200/80 dark:border-white/10">
+                    <div className="text-slate-500 dark:text-slate-400">60s HR Recovery</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {safeSportWatchReport.deltaHrr60Bpm !== null
+                        ? `${safeSportWatchReport.deltaHrr60Bpm >= 0 ? '+' : ''}${safeSportWatchReport.deltaHrr60Bpm} bpm`
+                        : 'Calibrating'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white/80 dark:bg-[#101B15]/80 px-2.5 py-2 border border-slate-200/80 dark:border-white/10">
+                    <div className="text-slate-500 dark:text-slate-400">Ferritin / PHV</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {safeSportWatchReport.phvGrowthPlateFlag
+                        ? 'PHV Protection'
+                        : safeSportWatchReport.ferritinStatus === 'DEPLETED_UNDER_30'
+                          ? 'Ferritin < 30'
+                          : safeSportWatchReport.ferritinStatus === 'SUBOPTIMAL_30_50'
+                            ? 'Ferritin 30–49'
+                            : safeSportWatchReport.ferritinStatus === 'OPTIMAL'
+                              ? 'Optimal >= 50'
+                              : 'Zero Weight Logged'}
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {safeSportWatchReport.athleteGuidance}
+                </p>
               </div>
             </div>
           )}

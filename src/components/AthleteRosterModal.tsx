@@ -40,6 +40,7 @@ import {
   summarizeNcaaCaraWeeklyHours,
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
+import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { useModalDialog } from '../hooks/useModalDialog';
 import {
   stageWorkoutInTracksideStopwatch,
@@ -1003,13 +1004,28 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       const tsb = latestW?.tsb ?? 0;
                       const hrv = latestW?.hrvRMSSD ?? 60;
                       const isStrained = tsb < -20 || hrv < 48;
+                      const teamMatch = myTeams
+                        ?.flatMap((t) => t.memberships || [])
+                        .find(
+                          (m) =>
+                            m.stravaAthleteId === ath.stravaAthleteId ||
+                            m.invitedName.toLowerCase() === ath.name.toLowerCase()
+                        );
+                      const watchTraffic =
+                        teamMatch?.liveSnapshot?.safeSportWatch?.trafficLight ??
+                        evaluateSafeSportPatternWatch({
+                          activities: ath.activities || [],
+                          wellnessDays: ath.wellnessDays || [],
+                          isMinorU18: Boolean(ath.athleteProfile.safeSportHideWeight),
+                        }).trafficLight;
+                      const isRunnerTriage = ath.primarySport === 'Running';
                       return (
                         <div
                           key={`triage-${ath.id}`}
                           className="rounded-lg border border-stone-200 dark:border-slate-800 p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
                         >
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
                                   isStrained ? 'ap-status-strained' : 'ap-status-prime'
@@ -1017,6 +1033,19 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               >
                                 {isStrained ? 'Action Needed' : 'Green Readiness'}
                               </span>
+                              {(watchTraffic === 'AMBER_WATCH' ||
+                                watchTraffic === 'RED_MEDICAL_REVIEW') && (
+                                <span
+                                  data-testid={`triage-safesport-pill-${ath.id}`}
+                                  className={`px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
+                                    watchTraffic === 'RED_MEDICAL_REVIEW'
+                                      ? 'ap-status-strained'
+                                      : 'ap-status-caution'
+                                  }`}
+                                >
+                                  AT / Load Review
+                                </span>
+                              )}
                               <span className="font-bold text-slate-900 dark:text-white">
                                 {ath.name}
                               </span>
@@ -1029,23 +1058,42 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              onPushCoachWorkout(ath.id, {
-                                date: workoutDate,
-                                name: 'Coach Approved: Autonomous Z2 Recovery Morph',
-                                sportCategory: 'Cycling',
-                                plannedDurationSecs: 45 * 60,
-                                plannedLoad: 38,
-                                workoutSyntax: '- 10m 55% FTP\n- 25m 68% FTP 92rpm\n- 10m 50% FTP',
-                                description:
-                                  '1-click Coach Triage approval: swapped high-impact session to zero-impact Z2 recovery spin.',
-                              });
-                              setPushSuccessBanner(
-                                `Approved autonomous Z2 morph for ${ath.name} (${workoutDate}).`
-                              );
+                              if (isRunnerTriage) {
+                                onPushCoachWorkout(ath.id, {
+                                  date: workoutDate,
+                                  name: 'Coach Approved: Soft-Turf Zero-Spike CV Morph',
+                                  sportCategory: 'Running',
+                                  plannedDurationSecs: 40 * 60,
+                                  plannedLoad: 42,
+                                  workoutSyntax:
+                                    'Warmup\n- 10m 64% Pace Easy Turf Warmup\n\nMain Set\n- 20m 72%-76% Pace Soft-Turf Flush\n\nCooldown\n- 10m 62% Pace Easy Cooldown',
+                                  description:
+                                    '1-click Coach Triage approval: swapped spiked track work to zero-spike cushioned daily trainers on grass/turf.',
+                                });
+                                setPushSuccessBanner(
+                                  `Approved zero-spike turf morph for ${ath.name} (${workoutDate}).`
+                                );
+                              } else {
+                                onPushCoachWorkout(ath.id, {
+                                  date: workoutDate,
+                                  name: 'Coach Approved: Autonomous Z2 Recovery Morph',
+                                  sportCategory: 'Cycling',
+                                  plannedDurationSecs: 45 * 60,
+                                  plannedLoad: 38,
+                                  workoutSyntax: '- 10m 55% FTP\n- 25m 68% FTP 92rpm\n- 10m 50% FTP',
+                                  description:
+                                    '1-click Coach Triage approval: swapped high-impact session to zero-impact Z2 recovery spin.',
+                                });
+                                setPushSuccessBanner(
+                                  `Approved autonomous Z2 morph for ${ath.name} (${workoutDate}).`
+                                );
+                              }
                             }}
                             className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold text-2xs whitespace-nowrap"
                           >
-                            1-Click Approve Z2 Morph
+                            {isRunnerTriage
+                              ? '1-Click Approve Turf Morph'
+                              : '1-Click Approve Z2 Morph'}
                           </button>
                         </div>
                       );

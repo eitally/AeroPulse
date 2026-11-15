@@ -1,6 +1,8 @@
 import type {
   ActivityInterval,
   ActivityStreamSet,
+  NcaaTrackFacilityType,
+  TrackFootwearClass,
   TrackRepDistanceMeters,
   UnifiedActivity,
 } from '../types';
@@ -102,6 +104,8 @@ export function synthesizeTracksideWorkoutActivity(params: {
   restDurationSecs: number;
   lapSplitsSecs: number[];
   dateIso?: string;
+  footwearClass?: TrackFootwearClass;
+  trackFacility?: NcaaTrackFacilityType;
 }): UnifiedActivity {
   const {
     runnerId,
@@ -115,6 +119,8 @@ export function synthesizeTracksideWorkoutActivity(params: {
     restDurationSecs,
     lapSplitsSecs,
     dateIso = new Date().toISOString().slice(0, 10),
+    footwearClass = 'DAILY_TRAINER',
+    trackFacility = 'OUTDOOR_400M',
   } = params;
 
   const validSplits = lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0);
@@ -213,13 +219,20 @@ export function synthesizeTracksideWorkoutActivity(params: {
   };
 
   const titlePrefix = sessionTitle?.trim() || `${validSplits.length}x${repDist}m Track Session`;
+  const isSpikeShoe =
+    footwearClass === 'TRADITIONAL_TRACK_SPIKE' || footwearClass === 'CARBON_SUPER_SPIKE';
+  const spikedDistanceMeters = isSpikeShoe ? Math.round(totalWorkDist) : 0;
+  const environment =
+    trackFacility === 'INDOOR_FLAT_200M' || trackFacility === 'INDOOR_BANKED_200M'
+      ? 'INDOOR'
+      : 'OUTDOOR';
 
   return {
     id: `stopwatch-workout-${runnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     startDateLocal: `${dateIso}T15:30:00`,
     name: `${titlePrefix} (${formatTrackMark(avgLapSecs, 2)} avg · ${runnerName})`,
     sportCategory: 'Running',
-    environment: 'OUTDOOR',
+    environment,
     subType: 'Track',
     movingTimeSecs: Math.round(totalWorkSecs + warmupCooldownSecs),
     distanceMeters: Math.round(distCursor + 4200),
@@ -239,6 +252,9 @@ export function synthesizeTracksideWorkoutActivity(params: {
       hr: [900, 600, 0, Math.round(totalWorkSecs * 0.35), Math.round(totalWorkSecs * 0.5), Math.round(totalWorkSecs * 0.15), 0],
       pace: [900, 600, 0, Math.round(totalWorkSecs * 0.35), Math.round(totalWorkSecs * 0.5), Math.round(totalWorkSecs * 0.15), 0],
     },
+    footwearClass,
+    spikedDistanceMeters,
+    trackFacility,
     stravaPrCount: 0,
     segmentEfforts: [],
     intervals,

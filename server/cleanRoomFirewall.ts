@@ -22,9 +22,58 @@ export function isStravaOriginRecord(item: unknown): boolean {
   return false;
 }
 
+const SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = new Set([
+  'weightkg',
+  'weightlbs',
+  'weight',
+  'bmi',
+  'bodymassindex',
+  'bodyfatpct',
+  'bodyfat',
+  'leanbodymass',
+  'wattsperkg',
+  'avgwattsperkg',
+  'targetwkg',
+  'wkg',
+  'wperkg',
+]);
+
+/**
+ * Recursively strips all body-weight, BMI, body-composition, and W/kg properties
+ * from telemetry payloads under U18 Safe-Sport / Zero-Weight enforcement.
+ */
+export function stripSafeSportWeightAndBodyCompFields<T>(
+  input: T,
+  options?: { maskWellnessWeightKgZero?: boolean }
+): T {
+  if (input === null || input === undefined || typeof input !== 'object') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) =>
+      stripSafeSportWeightAndBodyCompFields(item, options)
+    ) as unknown as T;
+  }
+  const record = input as Record<string, unknown>;
+  const isWellnessDayRecord = 'hrvRMSSD' in record || 'restingHR' in record;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    const lowerKey = k.toLowerCase();
+    if (lowerKey === 'weightkg' && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
+      out[k] = 0;
+      continue;
+    }
+    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
+      continue;
+    }
+    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
+  }
+  return out as T;
+}
+
 export function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<string, any> {
   if (!rawSummary || typeof rawSummary !== 'object') return {};
-  const clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
+  let clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
 
   let strippedCount = 0;
   for (const key of ['recentActivities', 'activities', 'workouts', 'completedActivities']) {
@@ -39,6 +88,12 @@ export function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<strin
   delete clone.stravaKudos;
   delete clone.stravaAthleteId;
   delete clone.segmentEfforts;
+
+  if (clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
+    clone = stripSafeSportWeightAndBodyCompFields(clone);
+    clone.zeroWeightEnforced = true;
+  }
+
   clone.cleanRoomPolicy = 'FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY';
   clone.stravaRecordsFiltered = strippedCount;
   return clone;

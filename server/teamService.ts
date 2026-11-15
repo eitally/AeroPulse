@@ -1,6 +1,10 @@
 import crypto from 'crypto';
-import { sanitizeTelemetryForCleanRoom } from './cleanRoomFirewall.ts';
+import {
+  sanitizeTelemetryForCleanRoom,
+  stripSafeSportWeightAndBodyCompFields,
+} from './cleanRoomFirewall.ts';
 import { escapeHtml } from './securityUtils.ts';
+import { evaluateSafeSportPatternWatch } from '../src/physiology/safeSportPatternWatchEngine.ts';
 import {
   loadTenantVaultAsync,
   saveTenantVaultAsync,
@@ -736,7 +740,19 @@ function projectTeamSummaryForCaller(
 
     let projectedSnapshot: TeamAthleteLiveSnapshot | undefined;
     if (m.liveSnapshot) {
-      projectedSnapshot = {
+      const rawWatch = m.liveSnapshot.safeSportWatch;
+      const projectedSafeSportWatch = !rawWatch
+        ? undefined
+        : isSelf
+          ? rawWatch
+          : isCoach
+            ? {
+                trafficLight: rawWatch.trafficLight,
+                coachSafeSummaryLabel: rawWatch.coachSafeSummaryLabel,
+              }
+            : undefined;
+
+      const baseSnapshot: TeamAthleteLiveSnapshot = {
         ...m.liveSnapshot,
         ftpWatts: safeSportShieldEnforced && !isCoach && !isSelf ? undefined : m.liveSnapshot.ftpWatts,
         ctl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.ctl,
@@ -748,7 +764,13 @@ function projectTeamSummaryForCaller(
             ? m.liveSnapshot.wellnessDays
             : undefined,
         activities: isSelf || isCoach ? m.liveSnapshot.activities : undefined,
+        safeSportWatch: projectedSafeSportWatch,
       };
+      projectedSnapshot = safeSportShieldEnforced
+        ? stripSafeSportWeightAndBodyCompFields(baseSnapshot, {
+            maskWellnessWeightKgZero: true,
+          })
+        : baseSnapshot;
     }
 
     const base: TeamMembershipRecord = {
@@ -1741,23 +1763,40 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
     const allowGpsRoutes =
       !priv || (priv.shareGpsRoutes !== 'PRIVATE' && !priv.stravaComplianceShield);
 
-    const coachActivities = buildConsentedCoachActivities(
+    const rawCoachActivities = buildConsentedCoachActivities(
       params.snapshot.activities,
       effectiveTier,
       allowGpsRoutes
     );
+    const coachActivities = enforceHideWeight
+      ? stripSafeSportWeightAndBodyCompFields(rawCoachActivities, {
+          maskWellnessWeightKgZero: true,
+        })
+      : rawCoachActivities;
 
-    const sanitizedWellness = Array.isArray(params.snapshot.wellnessDays)
-      ? params.snapshot.wellnessDays.slice(-28).map((w) =>
-          enforceHideWeight ? { ...w, weightKg: 0 } : w
-        )
+    const rawSanitizedWellness = Array.isArray(params.snapshot.wellnessDays)
+      ? params.snapshot.wellnessDays.slice(-56)
       : undefined;
+    const sanitizedWellness =
+      rawSanitizedWellness && enforceHideWeight
+        ? stripSafeSportWeightAndBodyCompFields(rawSanitizedWellness, {
+            maskWellnessWeightKgZero: true,
+          })
+        : rawSanitizedWellness;
+
+    const watchReport = evaluateSafeSportPatternWatch({
+      activities: params.snapshot.activities || [],
+      wellnessDays: rawSanitizedWellness,
+      isMinorU18: mem.isMinorU18,
+      hasParentGuardianCc: Boolean(mem.parentGuardianEmail),
+      hasAthleticTrainer: doc.brand.orgType === 'HIGH_SCHOOL' || doc.brand.orgType === 'COLLEGIATE',
+    });
 
     if (params.athleteName?.trim() && mem.invitedName === 'Team Athlete') {
       mem.invitedName = params.athleteName.trim().slice(0, 64);
     }
 
-    mem.liveSnapshot = {
+    const assembledSnapshot: TeamAthleteLiveSnapshot = {
       updatedAt: nowIso,
       hasConnectedWatch: Boolean(params.snapshot.hasConnectedWatch),
       verdictLabel: String(params.snapshot.verdictLabel || 'Active').slice(0, 48),
@@ -1777,7 +1816,17 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
       privacySettings: priv,
       wellnessDays: sanitizedWellness,
       activities: coachActivities,
+      safeSportWatch: {
+        trafficLight: watchReport.trafficLight,
+        coachSafeSummaryLabel: watchReport.coachSafeSummaryLabel,
+        privateAlertForSelfAndParentOnly: watchReport,
+      },
     };
+    mem.liveSnapshot = enforceHideWeight
+      ? stripSafeSportWeightAndBodyCompFields(assembledSnapshot, {
+          maskWellnessWeightKgZero: true,
+        })
+      : assembledSnapshot;
 
     doc.updatedAt = nowIso;
     await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);

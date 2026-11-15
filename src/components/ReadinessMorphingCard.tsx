@@ -15,8 +15,10 @@ import {
 import {
   AthleteProfile,
   DistanceUnit,
+  OrthopedicLoadSummary,
   PlannedWorkoutEvent,
   SportCategory,
+  StudentAthleteCheckIn,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -33,13 +35,20 @@ import {
   evaluateRollingTrainingProductivity,
   getLocalDateIso,
 } from '../physiology/trainingProductivityEngine';
+import { evaluateOrthopedicInterference } from '../physiology/orthopedicEngine';
+import { evaluateStudentAthleteGuardrail } from '../physiology/scholasticEngine';
+import {
+  buildTrackReadinessMorphedPrescription,
+  computeLnRmssdReadiness,
+} from '../physiology/trackReadinessMorphEngine';
 
 export type MorphReadinessMode =
   | 'AUTO'
   | 'SUPERCOMPENSATION'
   | 'BALANCED'
   | 'CAUTION_PIVOT'
-  | 'RECOVERY_FLUSH';
+  | 'RECOVERY_FLUSH'
+  | 'BONE_STRESS_STOP';
 
 interface ReadinessMorphingCardProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -47,6 +56,8 @@ interface ReadinessMorphingCardProps {
   plannedEvents: PlannedWorkoutEvent[];
   athleteProfile: AthleteProfile;
   distanceUnit: DistanceUnit;
+  studentCheckIn?: StudentAthleteCheckIn;
+  orthopedicSummary?: OrthopedicLoadSummary;
   defaultExpanded?: boolean;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
@@ -73,6 +84,7 @@ interface SkylineStep {
   durationMins: number;
   pctFtp: number;
   targetWatts: number;
+  targetPaceDisplay: string;
   targetWkg: string;
   hrCeilingBpm: number;
   zoneCode: EffortZoneCode;
@@ -84,11 +96,16 @@ interface SkylineStep {
 function parseStepsToSkyline(
   syntax: string,
   activeFtp: number,
-  profile: AthleteProfile
+  profile: AthleteProfile,
+  distanceUnit: DistanceUnit = 'mi'
 ): SkylineStep[] {
-  return parseWorkoutSteps(syntax).map((parsed) => {
+  const threshPace = profile.thresholdPaceSecsPerKm || 250;
+  return parseWorkoutSteps(syntax, threshPace).map((parsed) => {
     const pctFtp = parsed.intensityPct;
     const targetWatts = Math.round((pctFtp / 100) * activeFtp);
+    const derivedPaceSecsKm =
+      parsed.targetPaceSecsPerKm ?? Math.round(threshPace / Math.max(0.55, pctFtp / 100));
+    const targetPaceDisplay = formatThresholdPaceDisplay(derivedPaceSecsKm, distanceUnit);
     const targetWkg = (targetWatts / Math.max(35, profile.weightKg)).toFixed(2);
     const zInfo = classifyZoneFromPct(pctFtp, profile);
     return {
@@ -96,6 +113,7 @@ function parseStepsToSkyline(
       durationMins: parsed.durationMins,
       pctFtp,
       targetWatts,
+      targetPaceDisplay,
       targetWkg,
       hrCeilingBpm: zInfo.hrCeilingBpm,
       zoneCode: zInfo.code,
@@ -132,6 +150,8 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   plannedEvents,
   athleteProfile,
   distanceUnit,
+  studentCheckIn,
+  orthopedicSummary: providedOrthoSummary,
   defaultExpanded = true,
   isExpanded: controlledExpanded,
   onToggleExpand,
@@ -277,19 +297,51 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     return null;
   }, [lastEnduranceWorkout]);
 
-  // Evaluate 5 Explainable Physiological Triggers
+  const todayPlannedEvent = useMemo(
+    () =>
+      plannedEvents.find(
+        (ev) => (ev.date || '').slice(0, 10) === todayIso && ev.sportCategory === sportMode
+      ),
+    [plannedEvents, todayIso, sportMode]
+  );
+
+  const lnReadiness = useMemo(
+    () =>
+      computeLnRmssdReadiness(
+        wellnessDays,
+        athleteProfile.restingHr || 48,
+        studentCheckIn
+      ),
+    [wellnessDays, athleteProfile.restingHr, studentCheckIn]
+  );
+
+  const studentGuardrail = useMemo(
+    () => (studentCheckIn ? evaluateStudentAthleteGuardrail(studentCheckIn) : undefined),
+    [studentCheckIn]
+  );
+
+  const orthoSummary = useMemo(
+    () =>
+      providedOrthoSummary ??
+      evaluateOrthopedicInterference(activities, athleteProfile, plannedEvents, todayIso, {
+        lowerLegSoreness: studentCheckIn
+          ? Math.max(
+              studentCheckIn.shinMetatarsalSoreness,
+              studentCheckIn.achillesTendonSoreness
+            )
+          : undefined,
+      }),
+    [providedOrthoSummary, activities, athleteProfile, plannedEvents, todayIso, studentCheckIn]
+  );
+
+  // Evaluate Explainable Physiological & Track Spike Triggers
   const triggers = useMemo(() => {
-    const hasHrv = recentHrvDay.hrvRMSSD > 0;
-    const hrvBaseline = recentHrvDay.hrvBaseline7d || recentHrvDay.hrvRMSSD;
-    const hrvDelta = hasHrv ? recentHrvDay.hrvRMSSD - hrvBaseline : 0;
-    const hrvLowFloor = recentHrvDay.hrvNormalBandLow || Math.round(hrvBaseline * 0.86);
+    const hasHrv = recentHrvDay.hrvRMSSD > 0 || lnReadiness.hrv > 0;
     const hrvState: 'optimal' | 'caution' | 'strained' = !hasHrv
       ? 'optimal'
-      : recentHrvDay.hrvRMSSD < hrvLowFloor || hrvDelta <= -7
-        ? 'strained'
-        : hrvDelta <= -3
-          ? 'caution'
-          : 'optimal';
+      : lnReadiness.hrvState === 'missing'
+        ? 'optimal'
+        : lnReadiness.hrvState;
 
     const hasSleep = recentSleepDay.sleepScore > 0 || recentSleepDay.sleepSecs > 0;
     const sleepScore = recentSleepDay.sleepScore || 0;
@@ -332,81 +384,140 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
             ? 'caution'
             : 'optimal';
 
-    const strainedCount = [hrvState, sleepState, rhrState, tsbState, decoupleState].filter(
-      (s) => s === 'strained'
-    ).length;
-    const cautionCount = [hrvState, sleepState, rhrState, tsbState, decoupleState].filter(
-      (s) => s === 'caution'
-    ).length;
+    const spikeState: 'optimal' | 'caution' | 'strained' =
+      orthoSummary.spikeGuardrailStatus === 'TRAINER_ONLY_48H_LOCK'
+        ? 'strained'
+        : orthoSummary.spikeGuardrailStatus === 'SPIKE_CAP_WARNING' ||
+            orthoSummary.spikeRatio72h >= 0.85
+          ? 'caution'
+          : 'optimal';
+
+    const strainedCount = [
+      hrvState,
+      sleepState,
+      rhrState,
+      tsbState,
+      decoupleState,
+      ...(sportMode === 'Running' ? [spikeState] : []),
+    ].filter((s) => s === 'strained').length;
+    const cautionCount = [
+      hrvState,
+      sleepState,
+      rhrState,
+      tsbState,
+      decoupleState,
+      ...(sportMode === 'Running' ? [spikeState] : []),
+    ].filter((s) => s === 'caution').length;
 
     let autoMode: Exclude<MorphReadinessMode, 'AUTO'> = 'BALANCED';
-    if (strainedCount >= 2 || (hrvState === 'strained' && sleepState !== 'optimal')) {
+    if (sportMode === 'Running' && studentGuardrail?.status === 'BONE_STRESS_STOP') {
+      autoMode = 'BONE_STRESS_STOP';
+    } else if (
+      strainedCount >= 2 ||
+      (hrvState === 'strained' && sleepState !== 'optimal')
+    ) {
       autoMode = 'RECOVERY_FLUSH';
-    } else if (strainedCount === 1 || cautionCount >= 2) {
+    } else if (
+      strainedCount === 1 ||
+      cautionCount >= 2 ||
+      lnReadiness.parasympatheticSaturation ||
+      (sportMode === 'Running' && orthoSummary.trainerOnly48hLockActive)
+    ) {
       autoMode = 'CAUTION_PIVOT';
     } else if (
       hasHrv &&
       hasSleep &&
-      hrvDelta >= 2 &&
+      !lnReadiness.parasympatheticSaturation &&
+      lnReadiness.zScore30d >= 0.2 &&
       sleepScore >= 78 &&
       tsb >= -12 &&
-      (lastDecouplingPct === null || lastDecouplingPct <= 4.0)
+      (lastDecouplingPct === null || lastDecouplingPct <= 4.0) &&
+      (sportMode !== 'Running' || !orthoSummary.trainerOnly48hLockActive)
     ) {
       autoMode = 'SUPERCOMPENSATION';
     }
 
+    const baseItems = [
+      {
+        id: 'hrv',
+        label: 'Ln rMSSD (30d)',
+        value:
+          hasHrv && lnReadiness.lnRmssd !== null
+            ? `${lnReadiness.lnRmssd.toFixed(2)} (${lnReadiness.zScore30d >= 0 ? '+' : ''}${lnReadiness.zScore30d.toFixed(1)} SD)`
+            : '— Ln',
+        detail: hasHrv ? lnReadiness.hrvDetail : 'Awaiting Garmin / Intervals sync',
+        state: hrvState,
+      },
+      {
+        id: 'sleep',
+        label: 'Sleep Score',
+        value: hasSleep ? (sleepScore > 0 ? `Score ${sleepScore}` : `${sleepHrs.toFixed(1)}h`) : '—',
+        detail: hasSleep ? `${sleepHrs.toFixed(1)}h duration` : 'No overnight sleep synced',
+        state: sleepState,
+      },
+      {
+        id: 'rhr',
+        label: 'Resting HR vs Profile',
+        value: hasRhr ? `${recentHrvDay.restingHR} bpm` : '— bpm',
+        detail: hasRhr
+          ? `${rhrDelta >= 0 ? `+${rhrDelta}` : rhrDelta} bpm vs ${baseRhr} bpm base`
+          : 'Using profile baseline',
+        state: rhrState,
+      },
+      {
+        id: 'tsb',
+        label: 'Form (TSB) & Load Ratio',
+        value: hasLoadHistory ? `TSB ${tsb > 0 ? `+${tsb.toFixed(0)}` : tsb.toFixed(0)}` : 'TSB —',
+        detail: hasLoadHistory
+          ? `CTL ${latestWellness.ctl.toFixed(0)} · ATL ${latestWellness.atl.toFixed(0)}`
+          : 'Sync workouts to build PMC',
+        state: tsbState,
+      },
+      {
+        id: 'decouple',
+        label: 'Last Workout Decoupling',
+        value: lastDecouplingPct !== null ? `${lastDecouplingPct}% Pa:Hr` : '— Pa:Hr',
+        detail:
+          lastDecouplingPct !== null
+            ? lastDecouplingPct <= 5
+              ? '<5% Coupled'
+              : '>5% Drift Warning'
+            : 'No 20m+ stream analyzed yet',
+        state: decoupleState,
+      },
+    ];
+
+    if (sportMode === 'Running') {
+      baseItems.push({
+        id: 'spike',
+        label: orthoSummary.trainerOnly48hLockActive ? '48h Trainer Lock' : '72h Spike Load',
+        value: orthoSummary.trainerOnly48hLockActive
+          ? `${orthoSummary.spikedMeters72h}m (Trainers)`
+          : `${orthoSummary.spikedMeters72h}/${orthoSummary.spikedMetersWeeklyCap}m`,
+        detail:
+          orthoSummary.trainerOnlyLockReason ||
+          `72h SpikeRatio ${Math.round(orthoSummary.spikeRatio72h * 100)}% · 7d ${orthoSummary.spikedMeters7d}m`,
+        state: spikeState,
+      });
+    }
+
     return {
       autoMode,
-      items: [
-        {
-          id: 'hrv',
-          label: 'Overnight HRV (rMSSD)',
-          value: hasHrv ? `${recentHrvDay.hrvRMSSD} ms` : '— ms',
-          detail: hasHrv
-            ? `${hrvDelta >= 0 ? `+${hrvDelta}` : hrvDelta} ms vs ${hrvBaseline} ms 7d avg`
-            : 'Awaiting Garmin / Intervals sync',
-          state: hrvState,
-        },
-        {
-          id: 'sleep',
-          label: 'Sleep Score',
-          value: hasSleep ? (sleepScore > 0 ? `Score ${sleepScore}` : `${sleepHrs.toFixed(1)}h`) : '—',
-          detail: hasSleep ? `${sleepHrs.toFixed(1)}h duration` : 'No overnight sleep synced',
-          state: sleepState,
-        },
-        {
-          id: 'rhr',
-          label: 'Resting HR vs Profile',
-          value: hasRhr ? `${recentHrvDay.restingHR} bpm` : '— bpm',
-          detail: hasRhr
-            ? `${rhrDelta >= 0 ? `+${rhrDelta}` : rhrDelta} bpm vs ${baseRhr} bpm base`
-            : 'Using profile baseline',
-          state: rhrState,
-        },
-        {
-          id: 'tsb',
-          label: 'Form (TSB) & Load Ratio',
-          value: hasLoadHistory ? `TSB ${tsb > 0 ? `+${tsb.toFixed(0)}` : tsb.toFixed(0)}` : 'TSB —',
-          detail: hasLoadHistory
-            ? `CTL ${latestWellness.ctl.toFixed(0)} · ATL ${latestWellness.atl.toFixed(0)}`
-            : 'Sync workouts to build PMC',
-          state: tsbState,
-        },
-        {
-          id: 'decouple',
-          label: 'Last Workout Decoupling',
-          value: lastDecouplingPct !== null ? `${lastDecouplingPct}% Pa:Hr` : '— Pa:Hr',
-          detail:
-            lastDecouplingPct !== null
-              ? lastDecouplingPct <= 5
-                ? '<5% Coupled'
-                : '>5% Drift Warning'
-              : 'No 20m+ stream analyzed yet',
-          state: decoupleState,
-        },
-      ],
+      items: baseItems,
     };
-  }, [recentHrvDay, recentSleepDay, latestWellness, lastDecouplingPct, athleteProfile, wellnessDays.length, activities.length]);
+  }, [
+    recentHrvDay,
+    recentSleepDay,
+    latestWellness,
+    lastDecouplingPct,
+    athleteProfile,
+    wellnessDays.length,
+    activities.length,
+    lnReadiness,
+    orthoSummary,
+    sportMode,
+    studentGuardrail,
+  ]);
 
   const effectiveMode: Exclude<MorphReadinessMode, 'AUTO'> =
     selectedMode === 'AUTO' ? triggers.autoMode : selectedMode;
@@ -441,7 +552,8 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
       const steps = parseStepsToSkyline(
         todayPlanned.workoutSyntax,
         activeFtp,
-        athleteProfile
+        athleteProfile,
+        distanceUnit
       );
       const summary = computeSummaryFromSkyline(steps);
       return {
@@ -460,7 +572,12 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         ? gapRx.workoutSyntaxCycling
         : gapRx.workoutSyntaxRunning;
 
-    const steps = parseStepsToSkyline(defaultSyntax, activeFtp, athleteProfile);
+    const steps = parseStepsToSkyline(
+      defaultSyntax,
+      activeFtp,
+      athleteProfile,
+      distanceUnit
+    );
     const summary = computeSummaryFromSkyline(steps);
     return {
       title:
@@ -478,11 +595,75 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     sportMode,
     activeFtp,
     athleteProfile,
+    distanceUnit,
     rollingProductivity,
   ]);
 
   // Morphed Workout Prescription based on effectiveMode + synced AthleteProfile zones
   const morphedWorkout = useMemo(() => {
+    if (sportMode === 'Running') {
+      const trackRx = buildTrackReadinessMorphedPrescription({
+        mode: effectiveMode,
+        baselineTitle: baselineWorkout.title,
+        baselineSyntax: baselineWorkout.syntax,
+        plannedEvent: todayPlannedEvent,
+        athleteProfile,
+        distanceUnit,
+        orthopedicSummary: orthoSummary,
+        studentGuardrail,
+        seasonPhase: todayPlannedEvent?.trackSpec?.phase,
+      });
+      const parsedSteps = parseStepsToSkyline(
+        trackRx.workoutSyntax,
+        activeFtp,
+        athleteProfile,
+        distanceUnit
+      ).map((step) => ({
+        ...step,
+        diffBadge: trackRx.preservesFixedLapDistance
+          ? `${trackRx.repDistanceMeters}m Mark`
+          : undefined,
+      }));
+      const summary = computeSummaryFromSkyline(parsedSteps);
+      const badgeTone =
+        effectiveMode === 'BONE_STRESS_STOP' || effectiveMode === 'RECOVERY_FLUSH'
+          ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/35'
+          : effectiveMode === 'CAUTION_PIVOT'
+            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35'
+            : effectiveMode === 'SUPERCOMPENSATION'
+              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35'
+              : 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/35';
+
+      const projTomorrowTsbBaseline = Number(
+        (
+          latestWellness.ctl +
+          (baselineWorkout.tss - latestWellness.ctl) / 42 -
+          (latestWellness.atl + (baselineWorkout.tss - latestWellness.atl) / 7)
+        ).toFixed(1)
+      );
+      const projTomorrowTsbMorphed = Number(
+        (
+          latestWellness.ctl +
+          (summary.tss - latestWellness.ctl) / 42 -
+          (latestWellness.atl + (summary.tss - latestWellness.atl) / 7)
+        ).toFixed(1)
+      );
+
+      return {
+        title: trackRx.title,
+        badgeLabel: trackRx.badge,
+        badgeTone,
+        rationale: `${trackRx.rationale} Footwear: ${trackRx.footwearRecommendation}.`,
+        syntax: trackRx.workoutSyntax,
+        steps: parsedSteps,
+        ...summary,
+        tssDelta: summary.tss - baselineWorkout.tss,
+        minsDelta: summary.totalMins - baselineWorkout.totalMins,
+        projTomorrowTsbBaseline,
+        projTomorrowTsbMorphed,
+      };
+    }
+
     let morphedTitle = baselineWorkout.title;
     let rationale = '';
     let badgeLabel = '';
@@ -570,7 +751,12 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     }
 
     const syntax = morphedLines.map((m) => m.line).join('\n');
-    const parsedSteps = parseStepsToSkyline(syntax, activeFtp, athleteProfile).map(
+    const parsedSteps = parseStepsToSkyline(
+      syntax,
+      activeFtp,
+      athleteProfile,
+      distanceUnit
+    ).map(
       (step, idx) => ({
         ...step,
         diffBadge: morphedLines[idx]?.diffBadge,
@@ -610,6 +796,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
   }, [
     effectiveMode,
     baselineWorkout,
+    todayPlannedEvent,
     recentHrvDay,
     recentSleepDay,
     lastDecouplingPct,
@@ -617,8 +804,16 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     athleteProfile,
     sportMode,
     envMode,
+    distanceUnit,
+    orthoSummary,
+    studentGuardrail,
     latestWellness,
   ]);
+
+  const sportCalibrationLabel =
+    sportMode === 'Running'
+      ? `LT2 ${formatThresholdPaceDisplay(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)} · LTHR ${athleteProfile.runLthr || athleteProfile.lthr}bpm`
+      : `${envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP ${activeFtp}W · LTHR ${athleteProfile.lthr}bpm`;
 
   const handleSyncToIntervalsCalendar = async () => {
     setIsSyncingCalendar(true);
@@ -632,7 +827,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         plannedDurationSecs: morphedWorkout.totalMins * 60,
         plannedLoad: morphedWorkout.tss,
         workoutSyntax: morphedWorkout.syntax,
-        description: `${morphedWorkout.rationale} [Calibrated to ${envMode === 'INDOOR' ? 'Indoor' : 'Outdoor'} FTP ${activeFtp}W · LTHR ${athleteProfile.lthr}bpm]`,
+        description: `${morphedWorkout.rationale} [Calibrated to ${sportCalibrationLabel}]`,
         replaceExistingDate: true,
       });
       setSyncedBanner(
@@ -657,7 +852,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
 <workout_file>
   <author>Thresh Readiness Engine</author>
   <name>${morphedWorkout.title.replace(/[<>&"]/g, '')}</name>
-  <description>${morphedWorkout.rationale.replace(/[<>&"]/g, '')} (FTP ${activeFtp}W)</description>
+  <description>${morphedWorkout.rationale.replace(/[<>&"]/g, '')} (${sportCalibrationLabel})</description>
   <sportType>${sportMode === 'Cycling' ? 'bike' : 'run'}</sportType>
   <workout>
 ${xmlSteps}
@@ -752,9 +947,9 @@ ${dataLines.join('\n')}
           date: todayIso,
           name: morphedWorkout.title,
           sportCategory: sportMode,
-          ftpWatts: activeFtp,
-          lthrBpm: athleteProfile.lthr,
-          description: `${morphedWorkout.rationale} [Calibrated to ${activeFtp}W FTP · LTHR ${athleteProfile.lthr}bpm]`,
+          ftpWatts: sportMode === 'Cycling' ? activeFtp : undefined,
+          lthrBpm: sportMode === 'Running' ? athleteProfile.runLthr || athleteProfile.lthr : athleteProfile.lthr,
+          description: `${morphedWorkout.rationale} [Calibrated to ${sportCalibrationLabel}]`,
           steps: morphedWorkout.steps.map((s, idx) => ({
             label: s.label,
             durationSecs: s.durationMins * 60,
@@ -835,18 +1030,32 @@ ${dataLines.join('\n')}
           <div onClick={(e) => e.stopPropagation()}>
             <ChartInfoTooltip
               title="Adaptive Daily Workout Prescription"
-              subtitle="Closed-Loop Autonomic & Zone-Calibrated Prescription"
-              whatItMeasures="Evaluates 5 daily physiological signals (Overnight HRV vs. 7d baseline, Sleep Score, Resting HR delta, Form/TSB, and last workout Cardiac Decoupling %) against your synced Power and HR zones to dynamically adapt today's scheduled workout."
-              benchmarks="Optimal Supercompensation: HRV >= +2ms vs 7d avg & Sleep >= 78 (+3% FTP progression). Caution Pivot: HRV depressed 3–6ms or Sleep < 74 (morphs Z5/Z4 into Z3 Sweet Spot). Strain Recovery: HRV below 60d floor or decoupling > 6.5% (caps session at Z1/Z2 <65% FTP)."
+              subtitle={
+                sportMode === 'Running'
+                  ? '30d Ln rMSSD, Spike Exposure & Fixed-Oval Track Prescription'
+                  : 'Closed-Loop Autonomic & Zone-Calibrated Prescription'
+              }
+              whatItMeasures={
+                sportMode === 'Running'
+                  ? 'Evaluates 30-day natural-log rMSSD z-score (with vagal saturation guard), Sleep Score, RHR delta, Form/TSB, last workout Decoupling %, and 72h spiked-meter exposure against your track Speed Reserve zones.'
+                  : 'Evaluates daily physiological signals (30d Ln rMSSD, Sleep Score, Resting HR delta, Form/TSB, and last workout Cardiac Decoupling %) against your synced Power and HR zones to dynamically adapt today’s scheduled workout.'
+              }
+              benchmarks={
+                sportMode === 'Running'
+                  ? 'Optimal: positive Ln rMSSD z-score & clear 48h spike gate (Closing Cutdown). Caution: saturated vagal state or active 48h spike lock (CV + 60s Float or Peak Volume Trim). Strain / Bone Watch: Grass Fartlek or 0% axial Aqua Jog.'
+                  : 'Optimal Supercompensation: HRV >= +2ms vs baseline & Sleep >= 78 (+3% FTP progression). Caution Pivot: Z3 Sweet Spot interval pivot. Strain Recovery: Z1/Z2 parasympathetic flush (<= 65% FTP).'
+              }
               liveStatus={{
                 label: `${morphedWorkout.title} · ${morphedWorkout.tss} TSS (${morphedWorkout.tssDelta >= 0 ? `+${morphedWorkout.tssDelta}` : morphedWorkout.tssDelta} vs baseline)`,
                 state:
-                  effectiveMode === 'RECOVERY_FLUSH' || effectiveMode === 'CAUTION_PIVOT'
+                  effectiveMode === 'BONE_STRESS_STOP' ||
+                  effectiveMode === 'RECOVERY_FLUSH' ||
+                  effectiveMode === 'CAUTION_PIVOT'
                     ? 'warning'
                     : 'optimal',
                 interpretation: morphedWorkout.rationale,
               }}
-              coachingAction="Expand the card to compare the scheduled vs. adapted Effort Zone Skylines, save to calendar, or export a .ZWO / .ERG workout file."
+              coachingAction="Expand the card to compare the scheduled vs. adapted Effort Zone Skylines, save to calendar, or export Garmin .FIT / .ZWO workouts."
             />
           </div>
         </div>
@@ -857,7 +1066,7 @@ ${dataLines.join('\n')}
             <button
               type="button"
               onClick={onOpenAthleteProfileModal}
-              className="min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-emerald-500/50 text-2xs font-mono text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-emerald-500/50 text-2xs font-mono text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
               title="Inspect or edit Athlete Profile, Thresholds & 7-Zone Tables"
             >
               <Sliders className="w-3 h-3 ap-text-brand" />
@@ -981,6 +1190,7 @@ ${dataLines.join('\n')}
                 return (
                   <div
                     key={t.id}
+                    data-testid={t.id === 'spike' ? 'readiness-spike-trigger' : undefined}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-2xs ${pillClass}`}
                     title={`${t.label}: ${t.value} (${t.detail})`}
                   >
@@ -993,28 +1203,37 @@ ${dataLines.join('\n')}
             </div>
 
             {/* Readiness State Simulator Switcher */}
-            <div className="flex items-center gap-1 text-2xs">
+            <div className="flex flex-wrap items-center gap-1 text-2xs">
               <span className="text-2xs text-slate-600 dark:text-slate-400 font-medium hidden xl:inline">
                 Mode:
               </span>
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
-                {(
-                  [
-                    { id: 'AUTO', label: 'Auto' },
-                    { id: 'SUPERCOMPENSATION', label: 'Push (+5%)' },
-                    { id: 'BALANCED', label: '100%' },
-                    { id: 'CAUTION_PIVOT', label: 'Sweet Spot Pivot' },
-                    { id: 'RECOVERY_FLUSH', label: 'Z1/Z2 Flush' },
-                  ] as const
+              <div className="flex flex-wrap items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-2xs">
+                {(sportMode === 'Running'
+                  ? ([
+                      { id: 'AUTO', label: 'Auto' },
+                      { id: 'SUPERCOMPENSATION', label: 'Cutdown' },
+                      { id: 'BALANCED', label: '100%' },
+                      { id: 'CAUTION_PIVOT', label: 'CV Pivot' },
+                      { id: 'RECOVERY_FLUSH', label: 'Grass Flush' },
+                      { id: 'BONE_STRESS_STOP', label: 'Bone Stop' },
+                    ] as const)
+                  : ([
+                      { id: 'AUTO', label: 'Auto' },
+                      { id: 'SUPERCOMPENSATION', label: 'Push (+5%)' },
+                      { id: 'BALANCED', label: '100%' },
+                      { id: 'CAUTION_PIVOT', label: 'Sweet Spot Pivot' },
+                      { id: 'RECOVERY_FLUSH', label: 'Z1/Z2 Flush' },
+                    ] as const)
                 ).map((m) => (
                   <button
                     key={m.id}
                     type="button"
+                    data-testid={`readiness-mode-${m.id.toLowerCase()}`}
                     onClick={() => setSelectedMode(m.id)}
-                    className={`px-2 py-0.5 rounded-md transition-all whitespace-nowrap ${
+                    className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                       selectedMode === m.id
-                        ? 'liquid-capsule-active text-blue-600 dark:text-sky-300 font-semibold'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        ? 'liquid-capsule-active ap-text-brand font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     {m.label}
@@ -1072,7 +1291,11 @@ ${dataLines.join('\n')}
                           backgroundColor: s.zoneColor,
                         }}
                         className="rounded-t-[2px] opacity-85 hover:opacity-100 transition-opacity"
-                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ${s.zoneCode})`}
+                        title={
+                          sportMode === 'Running'
+                            ? `${s.label} — ${s.durationMins}m @ ${s.targetPaceDisplay} (${s.pctFtp}% Pace, ${s.zoneCode})`
+                            : `${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ${s.zoneCode})`
+                        }
                       />
                     ))}
                     <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/75" />
@@ -1099,7 +1322,8 @@ ${dataLines.join('\n')}
                         </span>
                       </div>
                       <span className="font-mono tabular-nums text-slate-500 shrink-0">
-                        {s.targetWatts}W · ≤{s.hrCeilingBpm}bpm
+                        {sportMode === 'Running' ? s.targetPaceDisplay : `${s.targetWatts}W`} · ≤
+                        {s.hrCeilingBpm}bpm
                       </span>
                     </div>
                   ))}
@@ -1165,7 +1389,11 @@ ${dataLines.join('\n')}
                           backgroundColor: s.zoneColor,
                         }}
                         className="rounded-t-[2px] transition-all"
-                        title={`${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ≤${s.hrCeilingBpm} bpm)`}
+                        title={
+                          sportMode === 'Running'
+                            ? `${s.label} — ${s.durationMins}m @ ${s.targetPaceDisplay} (${s.pctFtp}% Pace, ≤${s.hrCeilingBpm} bpm)`
+                            : `${s.label} — ${s.durationMins}m @ ${s.targetWatts}W (${s.pctFtp}% threshold, ≤${s.hrCeilingBpm} bpm)`
+                        }
                       />
                     ))}
                     <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]" />
@@ -1193,12 +1421,12 @@ ${dataLines.join('\n')}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
                         {s.diffBadge && (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-sky-300 font-semibold">
+                          <span className="text-2xs px-1.5 py-0.5 rounded ap-status-info font-semibold">
                             {s.diffBadge}
                           </span>
                         )}
-                        <span className="font-bold text-indigo-600 dark:text-indigo-300">
-                          {s.targetWatts}W
+                        <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                          {sportMode === 'Running' ? s.targetPaceDisplay : `${s.targetWatts}W`}
                         </span>
                         <span className="text-rose-600 dark:text-rose-400 text-2xs">
                           ≤{s.hrCeilingBpm}bpm
@@ -1253,7 +1481,7 @@ ${dataLines.join('\n')}
                         setIsExportMenuOpen(false);
                         handlePushDirectGarmin();
                       }}
-                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
                     >
                       <span className="inline-flex items-center gap-2">
                         <Zap className="w-3.5 h-3.5 ap-text-brand" />
@@ -1267,7 +1495,7 @@ ${dataLines.join('\n')}
                         setIsExportMenuOpen(false);
                         handleDownloadFit();
                       }}
-                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
                     >
                       <span className="inline-flex items-center gap-2">
                         <Download className="w-3.5 h-3.5 text-[#0D9488]" />
@@ -1282,7 +1510,7 @@ ${dataLines.join('\n')}
                         setIsExportMenuOpen(false);
                         handleDownloadZwo();
                       }}
-                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
                     >
                       <span className="inline-flex items-center gap-2">
                         <Download className="w-3.5 h-3.5 text-[#EA580C]" />
@@ -1290,21 +1518,23 @@ ${dataLines.join('\n')}
                       </span>
                       <span className="text-2xs font-mono text-slate-500">.ZWO</span>
                     </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setIsExportMenuOpen(false);
-                        handleDownloadErg();
-                      }}
-                      className="w-full min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <Download className="w-3.5 h-3.5 text-[#7C3AED]" />
-                        Download Smart Trainer ERG
-                      </span>
-                      <span className="text-2xs font-mono text-slate-500">{activeFtp}W</span>
-                    </button>
+                    {sportMode === 'Cycling' && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setIsExportMenuOpen(false);
+                          handleDownloadErg();
+                        }}
+                        className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <Download className="w-3.5 h-3.5 text-[#7C3AED]" />
+                          Download Smart Trainer ERG
+                        </span>
+                        <span className="text-2xs font-mono text-slate-500">{activeFtp}W</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1314,7 +1544,9 @@ ${dataLines.join('\n')}
               type="button"
               onClick={() =>
                 onOpenCoachWithPrompt(
-                  `Explain today's readiness-morphed workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my HRV (${recentHrvDay.hrvRMSSD || 'uncalibrated'} ms), Sleep Score (${recentSleepDay.sleepScore || 'uncalibrated'}), Form (TSB ${latestWellness.tsb.toFixed(1)}), and synced FTP (${activeFtp}W) / LTHR (${athleteProfile.lthr} bpm).`
+                  sportMode === 'Running'
+                    ? `Explain today's adapted track workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my 30d Ln rMSSD (${lnReadiness.hrvDetail}), 72h spiked exposure (${orthoSummary.spikedMeters72h}m / cap ${orthoSummary.spikedMetersWeeklyCap}m), Form (TSB ${latestWellness.tsb.toFixed(1)}), LT2 (${formatThresholdPaceDisplay(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)}), and LTHR (${athleteProfile.runLthr || athleteProfile.lthr} bpm).`
+                    : `Explain today's readiness-morphed workout ("${morphedWorkout.title}", ${morphedWorkout.tss} TSS) given my 30d Ln rMSSD (${lnReadiness.hrvDetail}), Sleep Score (${recentSleepDay.sleepScore || 'uncalibrated'}), Form (TSB ${latestWellness.tsb.toFixed(1)}), and synced FTP (${activeFtp}W) / LTHR (${athleteProfile.lthr} bpm).`
                 )
               }
               className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold ap-text-brand hover:underline"

@@ -2,9 +2,82 @@ import type {
   AthleteProfile,
   OrthopedicLoadSummary,
   PlannedWorkoutEvent,
+  TrackFootwearClass,
   UnifiedActivity,
 } from '../types.ts';
 import { computeHistoricalActivityLoad } from './pmc.ts';
+
+export const M_SHOE_MULTIPLIERS: Record<TrackFootwearClass, number> = {
+  DAILY_TRAINER: 1.0,
+  LIGHTWEIGHT_FLAT_SUPER_TRAINER: 1.1,
+  CARBON_ROAD_RACER: 1.2,
+  TRADITIONAL_TRACK_SPIKE: 1.35,
+  CARBON_SUPER_SPIKE: 1.52,
+};
+
+export function resolveActivityFootwearClass(act: UnifiedActivity): TrackFootwearClass {
+  const explicit = act.footwearClass ?? act.quickLog?.footwearClass;
+  if (explicit) return explicit;
+  const gear = (act.gearName ?? act.quickLog?.gearName ?? '').toLowerCase();
+  if (!gear) return 'DAILY_TRAINER';
+  if (
+    /dragonfly|victory|ambition|avanti|md-x|ld-x|metaspike|maxfly|prime sp|takumi spike|super spike|carbon spike/.test(
+      gear
+    )
+  ) {
+    return 'CARBON_SUPER_SPIKE';
+  }
+  if (/spike|matumbo|mamba|rival|waffle|track spike/.test(gear)) {
+    return 'TRADITIONAL_TRACK_SPIKE';
+  }
+  if (/vaporfly|alphafly|metaspeed|adios pro|endorphin pro|cielo|sc elite|cloudboom/.test(gear)) {
+    return 'CARBON_ROAD_RACER';
+  }
+  if (/streakfly|takumi sen|sinister|hyperion|boston|endorphin speed|mach x|superblast/.test(gear)) {
+    return 'LIGHTWEIGHT_FLAT_SUPER_TRAINER';
+  }
+  return 'DAILY_TRAINER';
+}
+
+export function resolveTrackCurveMultiplier(act: UnifiedActivity): number {
+  if (act.sportCategory !== 'Running') return 1.0;
+  const facility = act.trackFacility ?? act.quickLog?.trackFacility;
+  if (facility === 'INDOOR_FLAT_200M') return 1.16;
+  const isTrackLike =
+    Boolean(facility) ||
+    act.subType === 'Track' ||
+    /\b(track|oval|200m|400m)\b/i.test(act.name || '');
+  if (isTrackLike && act.environment === 'INDOOR' && facility !== 'INDOOR_BANKED_200M') {
+    return 1.16;
+  }
+  if (facility === 'OUTDOOR_400M' || facility === 'INDOOR_BANKED_200M' || act.subType === 'Track') {
+    return 1.06;
+  }
+  return 1.0;
+}
+
+export function resolveActivitySpikedMeters(
+  act: UnifiedActivity,
+  footwearClass: TrackFootwearClass
+): number {
+  const explicit = act.spikedDistanceMeters ?? act.quickLog?.spikedDistanceMeters;
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    return Math.max(0, Math.round(explicit));
+  }
+  if (
+    footwearClass !== 'TRADITIONAL_TRACK_SPIKE' &&
+    footwearClass !== 'CARBON_SUPER_SPIKE'
+  ) {
+    return 0;
+  }
+  if (act.intervals && act.intervals.length > 0) {
+    const workMeters = act.intervals
+      .filter((iv) => iv.type === 'WORK')
+      .reduce((acc, iv) => acc + Math.max(0, iv.distanceMeters || 0), 0);
+    if (workMeters > 0) return Math.round(workMeters);
+  }
+  return Math.round(Math.min(act.distanceMeters || 0, 5000));
+}
 
 /**
  * 10x Differentiator #1: Cross-Modal Run ↔ Bike 3-Channel Orthopedic Interference Engine
@@ -28,11 +101,24 @@ export function computeActivityThreeChannelLoads(
     const distKm = Math.max(0, (act.distanceMeters || 0) / 1000);
     const durHrs = Math.max(0.05, (act.movingTimeSecs || 1) / 3600);
     const speedKph = distKm / durHrs;
-    // Biomechanical ground reaction impulse scales non-linearly with running speed above 11 km/h
+    // Biomechanical ground reaction impulse scales non-linearly with running speed above 11 km/h,
+    // modulated by M_shoe (carbon super-spike Achilles/metatarsal load) & M_curve (track centripetal torque).
     const speedFactor = Math.max(0.75, Math.min(2.1, Math.pow(speedKph / 12.0, 1.35)));
     const terrainShockFactor =
       act.elevationGainMeters > 150 ? 1.18 : act.environment === 'INDOOR' ? 0.88 : 1.0;
-    const eccentricImpact = distKm * 7.5 * speedFactor * terrainShockFactor;
+    const footwearClass = resolveActivityFootwearClass(act);
+    const spikedMeters = resolveActivitySpikedMeters(act, footwearClass);
+    const totalMeters = Math.max(1, act.distanceMeters || 0);
+    const spikeShare =
+      spikedMeters > 0
+        ? Math.min(1, spikedMeters / totalMeters)
+        : footwearClass === 'CARBON_ROAD_RACER' || footwearClass === 'LIGHTWEIGHT_FLAT_SUPER_TRAINER'
+          ? 1
+          : 0;
+    const effectiveShoeFactor = 1 + (M_SHOE_MULTIPLIERS[footwearClass] - 1) * spikeShare;
+    const curveMultiplier = resolveTrackCurveMultiplier(act);
+    const eccentricImpact =
+      distKm * 7.5 * speedFactor * terrainShockFactor * effectiveShoeFactor * curveMultiplier;
     const uphillTorque = (act.elevationGainMeters || 0) * 0.08 + baseLoad * 0.25;
     return {
       central: Math.round(central * 10) / 10,
@@ -64,11 +150,33 @@ export function evaluateOrthopedicInterference(
   activities: UnifiedActivity[],
   profile: AthleteProfile,
   todayPlannedEvents: PlannedWorkoutEvent[] = [],
-  referenceDateIso?: string
+  referenceDateIso?: string,
+  options?: {
+    isMinorU18?: boolean;
+    lowerLegSoreness?: number;
+  }
 ): OrthopedicLoadSummary {
   const refDateStr = (referenceDateIso || new Date().toISOString()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
+  const refExactMs =
+    referenceDateIso && referenceDateIso.includes('T')
+      ? Date.parse(referenceDateIso)
+      : refMs;
   const dayMs = 86_400_000;
+  const hourMs = 3_600_000;
+
+  const isU18Cohort =
+    options?.isMinorU18 ?? Boolean(profile.safeSportHideWeight && !profile.academicDivision);
+  const spikedMetersWeeklyCap = isU18Cohort
+    ? 2000
+    : profile.academicDivision === 'NCAA_D1'
+      ? 4400
+      : 3200;
+  const superSpikeWeeklyCap = isU18Cohort
+    ? 1600
+    : profile.academicDivision === 'NCAA_D1'
+      ? 3600
+      : 2400;
 
   let central7d = 0;
   let central28d = 0;
@@ -76,6 +184,12 @@ export function evaluateOrthopedicInterference(
   let impact28d = 0;
   let torque7d = 0;
   let torque28d = 0;
+  let spikedMeters7d = 0;
+  let superSpikeMeters7d = 0;
+  let spikedMeters72h = 0;
+  let spikeWeightedLoad7d = 0;
+  let spikeWeightedLoad28d = 0;
+  let hoursSinceLastSuperSpike: number | null = null;
 
   for (const act of activities) {
     const actDate = (act.startDateLocal || '').slice(0, 10);
@@ -83,6 +197,14 @@ export function evaluateOrthopedicInterference(
     if (!Number.isFinite(actMs) || actMs > refMs) continue;
     const ageDays = (refMs - actMs) / dayMs;
     if (ageDays > 28) continue;
+
+    const actExactMs =
+      act.startDateLocal && act.startDateLocal.includes('T')
+        ? Date.parse(act.startDateLocal)
+        : actMs;
+    const hoursAgo = Number.isFinite(actExactMs)
+      ? Math.max(0, (refExactMs - actExactMs) / hourMs)
+      : ageDays * 24;
 
     const ch = computeActivityThreeChannelLoads(act, profile);
     central28d += ch.central;
@@ -94,15 +216,64 @@ export function evaluateOrthopedicInterference(
       impact7d += ch.eccentricImpact;
       torque7d += ch.concentricTorque;
     }
+
+    if (act.sportCategory === 'Running') {
+      const footwearClass = resolveActivityFootwearClass(act);
+      const curveMultiplier = resolveTrackCurveMultiplier(act);
+      const spikedMeters = resolveActivitySpikedMeters(act, footwearClass);
+      const weightedSpike = spikedMeters * M_SHOE_MULTIPLIERS[footwearClass] * curveMultiplier;
+      spikeWeightedLoad28d += weightedSpike;
+
+      if (ageDays <= 7) {
+        spikedMeters7d += spikedMeters;
+        spikeWeightedLoad7d += weightedSpike;
+        if (footwearClass === 'CARBON_SUPER_SPIKE') {
+          superSpikeMeters7d += spikedMeters;
+        }
+      }
+      if (hoursAgo <= 72) {
+        spikedMeters72h += spikedMeters;
+      }
+      if (footwearClass === 'CARBON_SUPER_SPIKE' && spikedMeters > 0) {
+        const roundedHrs = Math.round(hoursAgo * 10) / 10;
+        hoursSinceLastSuperSpike =
+          hoursSinceLastSuperSpike === null
+            ? roundedHrs
+            : Math.min(hoursSinceLastSuperSpike, roundedHrs);
+      }
+    }
   }
 
   const chronicCentralWeekly = Math.max(80, central28d / 4);
   const chronicImpactWeekly = Math.max(45, impact28d / 4);
   const chronicTorqueWeekly = Math.max(60, torque28d / 4);
+  const chronicSpikeWeekly = Math.max(800, spikeWeightedLoad28d / 4);
 
   const centralAcwr = Math.round((central7d / chronicCentralWeekly) * 100) / 100;
   const impactAcwr = Math.round((impact7d / chronicImpactWeekly) * 100) / 100;
   const torqueAcwr = Math.round((torque7d / chronicTorqueWeekly) * 100) / 100;
+  const spikeAcwr = Math.round((spikeWeightedLoad7d / chronicSpikeWeekly) * 100) / 100;
+  const spikeRatio72h = Number((spikedMeters72h / Math.max(1, spikedMetersWeeklyCap)).toFixed(2));
+
+  const within48hWindow = hoursSinceLastSuperSpike !== null && hoursSinceLastSuperSpike < 48;
+  const sorenessTriggered = (options?.lowerLegSoreness ?? 0) >= 1;
+  const trainerOnly48hLockActive = within48hWindow || sorenessTriggered;
+
+  let trainerOnlyLockReason: string | null = null;
+  if (within48hWindow && hoursSinceLastSuperSpike !== null) {
+    trainerOnlyLockReason = `48h Trainers-Only Lock active (${hoursSinceLastSuperSpike.toFixed(1)}h since last carbon super-spike session).`;
+  } else if (sorenessTriggered) {
+    trainerOnlyLockReason = '48h Trainers-Only Lock triggered by shin/metatarsal or Achilles soreness >= 1.';
+  }
+
+  const spikeGuardrailStatus: OrthopedicLoadSummary['spikeGuardrailStatus'] =
+    trainerOnly48hLockActive
+      ? 'TRAINER_ONLY_48H_LOCK'
+      : spikedMeters7d > spikedMetersWeeklyCap ||
+          superSpikeMeters7d > superSpikeWeeklyCap ||
+          spikeAcwr >= 1.35
+        ? 'SPIKE_CAP_WARNING'
+        : 'CLEAR';
 
   const scheduledRun = todayPlannedEvents.find((e) => e.sportCategory === 'Running');
   const baseRunMins = scheduledRun
@@ -138,6 +309,23 @@ export function evaluateOrthopedicInterference(
       'Sync or upload workouts to track separated Central Cardiorespiratory, Eccentric Running Impact, and Concentric Bike Torque loads.';
   }
 
+  const scheduledFootwear = scheduledRun?.footwearClass ?? scheduledRun?.trackSpec?.footwearClass;
+  const scheduledIsSpike =
+    scheduledFootwear === 'CARBON_SUPER_SPIKE' || scheduledFootwear === 'TRADITIONAL_TRACK_SPIKE';
+  if (spikeGuardrailStatus === 'TRAINER_ONLY_48H_LOCK' && (scheduledIsSpike || riskTier === 'OPTIMAL')) {
+    if (scheduledIsSpike) {
+      riskTier = 'HIGH_IMPACT_GUARDRAIL';
+    } else if (riskTier === 'OPTIMAL') {
+      riskTier = 'ELEVATED_IMPACT';
+    }
+    guardrailHeadline = `48h Trainers-Only Spike Lock (${Math.round(spikedMeters7d)}/${spikedMetersWeeklyCap}m 7d)`;
+    guardrailRecommendation = `${trainerOnlyLockReason || 'Super-spike recovery gate active.'} Keep today's track work in Cushioned Daily Trainers / Flats to protect Achilles & metatarsal remodeling.`;
+  } else if (spikeGuardrailStatus === 'SPIKE_CAP_WARNING' && riskTier === 'OPTIMAL') {
+    riskTier = 'ELEVATED_IMPACT';
+    guardrailHeadline = `Spiked Exposure Watch (${Math.round(spikedMeters7d)}/${spikedMetersWeeklyCap}m · ${spikeAcwr.toFixed(2)}x)`;
+    guardrailRecommendation = `Weekly spiked volume reached ${Math.round(spikedMeters7d)}m (cap ${spikedMetersWeeklyCap}m; carbon super-spikes ${Math.round(superSpikeMeters7d)}/${superSpikeWeeklyCap}m). Shift remaining intervals to Trainers / Flats.`;
+  }
+
   return {
     centralAutonomicLoad7d: Math.round(central7d),
     eccentricImpactLoad7d: Math.round(impact7d),
@@ -154,5 +342,16 @@ export function evaluateOrthopedicInterference(
     suggestedBikeDurationMins,
     suggestedBikeTss,
     suggestedBikeWorkoutSyntax,
+    spikedMeters7d: Math.round(spikedMeters7d),
+    superSpikeMeters7d: Math.round(superSpikeMeters7d),
+    spikedMeters72h: Math.round(spikedMeters72h),
+    spikedMetersWeeklyCap,
+    superSpikeWeeklyCap,
+    spikeRatio72h,
+    spikeAcwr,
+    hoursSinceLastSuperSpike,
+    trainerOnly48hLockActive,
+    trainerOnlyLockReason,
+    spikeGuardrailStatus,
   };
 }

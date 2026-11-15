@@ -3,7 +3,10 @@ import type { VdotPodRosterInput } from '../physiology/scholasticEngine';
 import { OFFICIAL_RACE_EVENTS } from '../utils/officialRaceSynthesizer';
 import { parseStructuredTrackWorkout } from '../utils/workoutParser';
 import type {
+  NcaaTrackFacilityType,
   PlannedWorkoutEvent,
+  TrackFootwearClass,
+  TrackLaneNumber,
   TrackRepDistanceMeters,
   TrackTrainingZoneCode,
   TrackWorkoutSpec,
@@ -148,6 +151,14 @@ export interface PersistedTracksideStopwatchState {
   sessionTitle?: string;
   soundEnabled?: boolean;
   wakeLockEnabled?: boolean;
+  trackLane?: TrackLaneNumber;
+  isStaggeredStart?: boolean;
+  trackFacility?: NcaaTrackFacilityType;
+  airTempF?: number | null;
+  dewPointF?: number | null;
+  windSpeedMps?: number;
+  altitudeMeters?: number;
+  footwearClass?: TrackFootwearClass;
 }
 
 const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
@@ -171,6 +182,14 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   sessionTitle: '',
   soundEnabled: false,
   wakeLockEnabled: true,
+  trackLane: 1,
+  isStaggeredStart: false,
+  trackFacility: 'OUTDOOR_400M',
+  airTempF: null,
+  dewPointF: null,
+  windSpeedMps: 0,
+  altitudeMeters: 0,
+  footwearClass: 'DAILY_TRAINER',
 };
 
 function sanitizeNumberRecord(raw: unknown): Record<string, number> {
@@ -296,6 +315,44 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
       soundEnabled: typeof parsed.soundEnabled === 'boolean' ? parsed.soundEnabled : false,
       wakeLockEnabled:
         typeof parsed.wakeLockEnabled === 'boolean' ? parsed.wakeLockEnabled : true,
+      trackLane:
+        typeof parsed.trackLane === 'number' &&
+        Number.isInteger(parsed.trackLane) &&
+        parsed.trackLane >= 1 &&
+        parsed.trackLane <= 8
+          ? (parsed.trackLane as TrackLaneNumber)
+          : 1,
+      isStaggeredStart: Boolean(parsed.isStaggeredStart),
+      trackFacility:
+        parsed.trackFacility === 'INDOOR_FLAT_200M' ||
+        parsed.trackFacility === 'INDOOR_BANKED_200M' ||
+        parsed.trackFacility === 'OUTDOOR_400M'
+          ? parsed.trackFacility
+          : 'OUTDOOR_400M',
+      airTempF:
+        typeof parsed.airTempF === 'number' && Number.isFinite(parsed.airTempF)
+          ? parsed.airTempF
+          : null,
+      dewPointF:
+        typeof parsed.dewPointF === 'number' && Number.isFinite(parsed.dewPointF)
+          ? parsed.dewPointF
+          : null,
+      windSpeedMps:
+        typeof parsed.windSpeedMps === 'number' && Number.isFinite(parsed.windSpeedMps)
+          ? Math.max(0, parsed.windSpeedMps)
+          : 0,
+      altitudeMeters:
+        typeof parsed.altitudeMeters === 'number' && Number.isFinite(parsed.altitudeMeters)
+          ? Math.max(0, parsed.altitudeMeters)
+          : 0,
+      footwearClass:
+        parsed.footwearClass === 'CARBON_SUPER_SPIKE' ||
+        parsed.footwearClass === 'TRADITIONAL_TRACK_SPIKE' ||
+        parsed.footwearClass === 'CARBON_ROAD_RACER' ||
+        parsed.footwearClass === 'LIGHTWEIGHT_FLAT_SUPER_TRAINER' ||
+        parsed.footwearClass === 'DAILY_TRAINER'
+          ? parsed.footwearClass
+          : 'DAILY_TRAINER',
     };
   } catch {
     return DEFAULT_STOPWATCH_STATE;
@@ -1059,9 +1116,79 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
           ? {
               workoutPresetId: 'custom-plan',
               restDurationSecs: customWorkoutSpec.restDurationSecs,
+              ...(customWorkoutSpec.trackFacility
+                ? { trackFacility: customWorkoutSpec.trackFacility }
+                : {}),
+              ...(customWorkoutSpec.footwearClass
+                ? { footwearClass: customWorkoutSpec.footwearClass }
+                : {}),
             }
           : {}),
       });
+    },
+    [commitState]
+  );
+
+  const setTrackLane = useCallback(
+    (trackLane: TrackLaneNumber) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, trackLane });
+    },
+    [commitState]
+  );
+
+  const setIsStaggeredStart = useCallback(
+    (isStaggeredStart: boolean) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, isStaggeredStart });
+    },
+    [commitState]
+  );
+
+  const setTrackFacility = useCallback(
+    (trackFacility: NcaaTrackFacilityType) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, trackFacility });
+    },
+    [commitState]
+  );
+
+  const setAirTempF = useCallback(
+    (airTempF: number | null) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, airTempF });
+    },
+    [commitState]
+  );
+
+  const setDewPointF = useCallback(
+    (dewPointF: number | null) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, dewPointF });
+    },
+    [commitState]
+  );
+
+  const setWindSpeedMps = useCallback(
+    (windSpeedMps: number) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, windSpeedMps: Math.max(0, windSpeedMps) });
+    },
+    [commitState]
+  );
+
+  const setAltitudeMeters = useCallback(
+    (altitudeMeters: number) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, altitudeMeters: Math.max(0, altitudeMeters) });
+    },
+    [commitState]
+  );
+
+  const setFootwearClass = useCallback(
+    (footwearClass: TrackFootwearClass) => {
+      const current = readPersistedTracksideStopwatch();
+      commitState({ ...current, footwearClass });
     },
     [commitState]
   );
@@ -1089,6 +1216,14 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     sessionTitle: persisted.sessionTitle || '',
     soundEnabled: Boolean(persisted.soundEnabled),
     wakeLockEnabled: persisted.wakeLockEnabled !== false,
+    trackLane: persisted.trackLane ?? 1,
+    isStaggeredStart: Boolean(persisted.isStaggeredStart),
+    trackFacility: persisted.trackFacility || 'OUTDOOR_400M',
+    airTempF: persisted.airTempF ?? null,
+    dewPointF: persisted.dewPointF ?? null,
+    windSpeedMps: persisted.windSpeedMps ?? 0,
+    altitudeMeters: persisted.altitudeMeters ?? 0,
+    footwearClass: persisted.footwearClass || 'DAILY_TRAINER',
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -1110,6 +1245,14 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     setSessionTitle,
     setSoundEnabled,
     setWakeLockEnabled,
+    setTrackLane,
+    setIsStaggeredStart,
+    setTrackFacility,
+    setAirTempF,
+    setDewPointF,
+    setWindSpeedMps,
+    setAltitudeMeters,
+    setFootwearClass,
   };
 }
 
