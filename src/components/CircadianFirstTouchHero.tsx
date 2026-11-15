@@ -443,7 +443,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       {mode === 'MORNING' || !sessionReceipt ? (
         <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-3.5">
           {/* CARD 1 (5 Cols): 7-Day Rolling Training Productivity & 3-System Load Focus */}
-          <div className="lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
+          <div className="order-2 lg:order-1 lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
@@ -605,7 +605,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           </div>
 
           {/* CARD 2 (3 Cols): Overnight Autonomic & Strain Readiness — Single Recessed Well + Hairline Rows */}
-          <div className="lg:col-span-3 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
+          <div className="order-1 lg:order-2 lg:col-span-3 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#1C5436]/12 dark:border-white/10">
               <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white leading-snug">
                 Morning Readiness
@@ -636,40 +636,39 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
             </div>
 
-            <div className="divide-y divide-[#1C5436]/12 dark:divide-white/10 font-mono tabular-nums flex-1 flex flex-col justify-between">
-              <div className="py-2 first:pt-0">
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-[#1C5436]/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
+              <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                 <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                   <span className="inline-flex items-center gap-1 font-medium">
                     <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                     HRV (rMSSD)
                   </span>
-                  <span>
-                    7d avg{' '}
+                  <span className="text-3xs sm:text-2xs opacity-85">
                     {productivity.hrv7dAvgMs > 0
                       ? `${productivity.hrv7dAvgMs}ms`
                       : '—'}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
+                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.hrvLatestMs > 0
                     ? `${productivity.hrvLatestMs} ms`
                     : '— ms'}
                 </div>
               </div>
 
-              <div className="py-2">
+              <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                 <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                   <span className="inline-flex items-center gap-1 font-medium">
                     <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                     Overnight Sleep
                   </span>
-                  <span>
+                  <span className="text-3xs sm:text-2xs opacity-85">
                     {productivity.sleepHoursLatest > 0
                       ? `${productivity.sleepHoursLatest}h`
                       : '—'}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
+                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white truncate">
                   {productivity.sleepScoreLatest > 0
                     ? `Score ${productivity.sleepScoreLatest}`
                     : productivity.sleepHoursLatest > 0
@@ -678,33 +677,32 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 </div>
               </div>
 
-              <div className="py-2">
+              <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                 <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                   <span className="font-medium">Resting HR</span>
-                  <span>
+                  <span className="text-3xs sm:text-2xs opacity-85">
                     {productivity.rhrLatestBpm === 0
-                      ? 'Optional wearable'
+                      ? 'Wearable'
                       : productivity.rhrDeltaBpm === 0
-                        ? 'On baseline'
-                        : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} vs base`}
+                        ? 'Base'
+                        : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
+                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.rhrLatestBpm > 0
                     ? `${productivity.rhrLatestBpm} bpm`
                     : '— bpm'}
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="p-2 lg:p-0 lg:py-2 lg:last:pb-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                 <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                   <span className="font-medium">Form (TSB)</span>
-                  <span>
-                    CTL {productivity.ctl.toFixed(0)} · ATL{' '}
-                    {productivity.atl.toFixed(0)}
+                  <span className="text-3xs sm:text-2xs opacity-85">
+                    CTL {productivity.ctl.toFixed(0)}
                   </span>
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-[#101411] dark:text-white">
+                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.tsb > 0
                     ? `+${productivity.tsb.toFixed(0)}`
                     : productivity.tsb.toFixed(0)}
@@ -714,7 +712,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           </div>
 
           {/* CARD 3 (4 Cols): Prepare for Today — Coherent Scheduled or Gap-Filling Prescription */}
-          <div className="lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
+          <div className="order-3 lg:order-3 lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2.5">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white leading-snug">

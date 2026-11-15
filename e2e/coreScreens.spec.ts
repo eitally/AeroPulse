@@ -60,6 +60,16 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       // Verify Today screen elements
       await expect(page.locator('#main-content')).toBeVisible();
 
+      // Verify DES-02 Desktop 3-column bento order: Load Focus (col 1-5) sits to the left of Morning Readiness (col 6-8)
+      const loadFocusTooltip = page.getByRole('button', { name: /7-Day Rolling Training Productivity/i });
+      const readinessHeading = page.getByRole('heading', { name: 'Morning Readiness' });
+      await expect(readinessHeading).toBeVisible();
+      const loadFocusBox = await loadFocusTooltip.boundingBox();
+      const readinessBox = await readinessHeading.boundingBox();
+      if (loadFocusBox && readinessBox) {
+        expect(loadFocusBox.x).toBeLessThan(readinessBox.x);
+      }
+
       // Light mode capture
       await expect(page.locator('html')).not.toHaveClass(/dark/);
       await page.screenshot({
@@ -155,6 +165,16 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
 
       // Verify mobile header & today content
       await expect(page.locator('#main-content')).toBeVisible();
+
+      // Verify DES-02 Mobile layout: Morning Readiness sits above Load Focus and is in viewport without scrolling
+      const readinessHeading = page.getByRole('heading', { name: 'Morning Readiness' });
+      await expect(readinessHeading).toBeInViewport();
+      const loadFocusTooltip = page.getByRole('button', { name: /7-Day Rolling Training Productivity/i });
+      const readinessBox = await readinessHeading.boundingBox();
+      const loadFocusBox = await loadFocusTooltip.boundingBox();
+      if (readinessBox && loadFocusBox) {
+        expect(readinessBox.y).toBeLessThan(loadFocusBox.y);
+      }
 
       // Mobile Light mode capture
       await page.screenshot({
