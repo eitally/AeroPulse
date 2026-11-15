@@ -2,6 +2,15 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine.ts';
 import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator.ts';
 import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander.ts';
+import {
+  buildFitStepsFromWorkoutSyntax,
+  encodeGarminFitWorkout,
+  type FitWorkoutStepInput,
+} from '../../src/utils/fitWorkoutEncoder.ts';
+import {
+  parseStructuredTrackWorkout,
+  type StructuredWorkoutNode,
+} from '../../src/utils/workoutParser.ts';
 
 export const webhooksAndExportRouter = Router();
 
@@ -111,40 +120,226 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
   const title = String(body.name || 'THRESH Prescribed Session').trim();
   const sport = body.sportCategory === 'Running' ? 'Running' : 'Cycling';
   const ftp = Math.max(100, Number(body.ftp) || 280);
-  const thresholdPaceSecsPerKm = Math.max(150, Number(body.thresholdPaceSecsPerKm) || 245);
+  const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
+  const workoutSyntax = typeof body.workoutSyntax === 'string' ? body.workoutSyntax.trim() : '';
 
-  const rawSteps: { label?: string; durationSecs?: number; targetPctFtp?: number }[] =
-    Array.isArray(body.steps) && body.steps.length > 0
-      ? body.steps
-      : [
-          { label: 'Warmup', durationSecs: 600, targetPctFtp: 62 },
-          { label: 'Threshold Main Set', durationSecs: 1800, targetPctFtp: 96 },
-          { label: 'Cooldown', durationSecs: 600, targetPctFtp: 55 },
-        ];
+  interface ExportStepNormalized {
+    stepOrder: number;
+    label: string;
+    durationSecs: number;
+    distanceMeters?: number;
+    targetPctFtp: number;
+    targetWatts: number;
+    targetPaceSecsPerKm: number;
+    stepKind: 'warmup' | 'work' | 'rest' | 'cooldown';
+  }
 
-  const normalizedSteps = rawSteps.map((s, idx) => {
-    const durationSecs = Math.max(30, Number(s.durationSecs) || 300);
-    const pct = Math.max(40, Math.min(180, Number(s.targetPctFtp) || 75));
-    const targetWatts = Math.round((ftp * pct) / 100);
-    const targetPaceSecsPerKm = Math.round(thresholdPaceSecsPerKm / (pct / 100));
-    return {
-      stepOrder: idx + 1,
-      label: String(s.label || `Step ${idx + 1}`),
-      durationSecs,
-      targetPctFtp: pct,
-      targetWatts,
-      targetPaceSecsPerKm,
-    };
+  let astNodes: StructuredWorkoutNode[] | null = null;
+  let normalizedSteps: ExportStepNormalized[] = [];
+  let fitSteps: FitWorkoutStepInput[] = [];
+
+  if (workoutSyntax) {
+    astNodes = parseStructuredTrackWorkout(workoutSyntax, thresholdPaceSecsPerKm);
+    fitSteps = buildFitStepsFromWorkoutSyntax(workoutSyntax, {
+      sport,
+      ftpWatts: ftp,
+      thresholdPaceSecsPerKm,
+    });
+
+    let stepOrder = 0;
+    for (const node of astNodes) {
+      const expand = node.type === 'step' ? [node.step] : node.steps;
+      const reps = node.type === 'repeat' ? node.repeatCount : 1;
+      for (let r = 0; r < reps; r++) {
+        for (const s of expand) {
+          stepOrder += 1;
+          const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
+          const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+          normalizedSteps.push({
+            stepOrder,
+            label: s.label,
+            durationSecs: Math.max(5, Math.round(s.durationSecs || s.durationMins * 60)),
+            distanceMeters: s.distanceMeters,
+            targetPctFtp: pct,
+            targetWatts: Math.round((ftp * pct) / 100),
+            targetPaceSecsPerKm: Math.round(paceSecsKm),
+            stepKind: s.stepKind || 'work',
+          });
+        }
+      }
+    }
+  }
+
+  if (normalizedSteps.length === 0) {
+    const rawSteps: Array<{
+      label?: string;
+      durationSecs?: number;
+      distanceMeters?: number;
+      targetPctFtp?: number;
+      targetPaceSecsPerKm?: number;
+      repeatCount?: number;
+      steps?: Array<{
+        label?: string;
+        durationSecs?: number;
+        distanceMeters?: number;
+        targetPctFtp?: number;
+        targetPaceSecsPerKm?: number;
+      }>;
+    }> =
+      Array.isArray(body.steps) && body.steps.length > 0
+        ? body.steps
+        : [
+            { label: 'Warmup', durationSecs: 600, targetPctFtp: 62 },
+            { label: 'Threshold Main Set', durationSecs: 1800, targetPctFtp: 96 },
+            { label: 'Cooldown', durationSecs: 600, targetPctFtp: 55 },
+          ];
+
+    let orderIdx = 0;
+    for (let i = 0; i < rawSteps.length; i++) {
+      const s = rawSteps[i];
+      const pushSimpleStep = (
+        item: {
+          label?: string;
+          durationSecs?: number;
+          distanceMeters?: number;
+          targetPctFtp?: number;
+          targetPaceSecsPerKm?: number;
+        },
+        kind: ExportStepNormalized['stepKind']
+      ) => {
+        orderIdx += 1;
+        const dist =
+          typeof item.distanceMeters === 'number' && item.distanceMeters > 0
+            ? Math.round(item.distanceMeters)
+            : undefined;
+        const explicitPace =
+          typeof item.targetPaceSecsPerKm === 'number' && item.targetPaceSecsPerKm > 60
+            ? Math.round(item.targetPaceSecsPerKm)
+            : undefined;
+        const pct = explicitPace
+          ? Math.max(40, Math.min(180, Math.round((thresholdPaceSecsPerKm / explicitPace) * 100)))
+          : Math.max(40, Math.min(180, Number(item.targetPctFtp) || 75));
+        const targetWatts = Math.round((ftp * pct) / 100);
+        const targetPaceSecsPerKm = explicitPace ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+        const durationSecs =
+          typeof item.durationSecs === 'number' && item.durationSecs > 0
+            ? Math.max(5, Math.round(item.durationSecs))
+            : dist
+              ? Math.max(5, Math.round((dist / 1000) * targetPaceSecsPerKm))
+              : 300;
+        normalizedSteps.push({
+          stepOrder: orderIdx,
+          label: String(item.label || `Step ${orderIdx}`),
+          durationSecs,
+          distanceMeters: dist,
+          targetPctFtp: pct,
+          targetWatts,
+          targetPaceSecsPerKm,
+          stepKind: kind,
+        });
+        const speedMps = 1000 / Math.max(95, targetPaceSecsPerKm);
+        fitSteps.push({
+          label: String(item.label || `Step ${orderIdx}`).slice(0, 15),
+          durationSecs,
+          distanceMeters: dist,
+          durationType: dist ? 'distance' : 'time',
+          targetType: sport === 'Running' ? (kind === 'rest' ? 'open' : 'speed') : kind === 'rest' ? 'open' : 'power',
+          targetMinSpeedMps: sport === 'Running' && kind !== 'rest' ? Number((speedMps * 0.975).toFixed(3)) : undefined,
+          targetMaxSpeedMps: sport === 'Running' && kind !== 'rest' ? Number((speedMps * 1.025).toFixed(3)) : undefined,
+          targetMinWatts: sport === 'Cycling' && kind !== 'rest' ? Math.round(targetWatts * 0.95) : undefined,
+          targetMaxWatts: sport === 'Cycling' && kind !== 'rest' ? Math.round(targetWatts * 1.05) : undefined,
+          intensity: kind === 'work' ? 'active' : kind,
+        });
+      };
+
+      if (Array.isArray(s.steps) && s.steps.length > 0 && (s.repeatCount || 1) >= 2) {
+        const repTotal = Math.round(s.repeatCount || 2);
+        const startIdx = fitSteps.length;
+        for (let r = 0; r < repTotal; r++) {
+          for (let j = 0; j < s.steps.length; j++) {
+            if (r === 0) {
+              pushSimpleStep(s.steps[j], j % 2 === 1 ? 'rest' : 'work');
+            } else {
+              // Keep unrolled normalizedSteps while emitting single FIT loop
+              const child = s.steps[j];
+              const pct = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
+              const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+              const dist = child.distanceMeters ? Math.round(child.distanceMeters) : undefined;
+              const secs = child.durationSecs
+                ? Math.max(5, Math.round(child.durationSecs))
+                : dist
+                  ? Math.max(5, Math.round((dist / 1000) * pace))
+                  : 60;
+              orderIdx += 1;
+              normalizedSteps.push({
+                stepOrder: orderIdx,
+                label: String(child.label || `Rep Step ${orderIdx}`),
+                durationSecs: secs,
+                distanceMeters: dist,
+                targetPctFtp: pct,
+                targetWatts: Math.round((ftp * pct) / 100),
+                targetPaceSecsPerKm: Math.round(pace),
+                stepKind: j % 2 === 1 ? 'rest' : 'work',
+              });
+            }
+          }
+        }
+        fitSteps.push({
+          label: String(s.label || `Repeat ${repTotal}x`).slice(0, 15),
+          durationType: 'repeat_until_steps_cmplt',
+          repeatFromStepIndex: startIdx,
+          repeatCount: repTotal,
+          targetType: 'open',
+          intensity: 'active',
+        });
+      } else {
+        const kind: ExportStepNormalized['stepKind'] =
+          i === 0 && rawSteps.length > 1
+            ? 'warmup'
+            : i === rawSteps.length - 1 && rawSteps.length > 2
+              ? 'cooldown'
+              : 'work';
+        pushSimpleStep(s, kind);
+      }
+    }
+  }
+
+  // Binary native Garmin .FIT bytes (base64)
+  const fitBytes = encodeGarminFitWorkout({
+    name: title,
+    sport,
+    steps: fitSteps,
   });
+  const fitWorkoutBase64 = Buffer.from(fitBytes).toString('base64');
 
-  // 1. Apple Watch WorkoutKit JSON schema
+  // Normalized Intervals.icu / COROS structured text
+  const intervalsIcuText =
+    workoutSyntax ||
+    normalizedSteps
+      .map((st) => {
+        const durOrDist = st.distanceMeters ? `${st.distanceMeters}m` : `${st.durationSecs}s`;
+        const cue = sport === 'Running' ? 'Pace' : 'FTP';
+        return `- ${durOrDist} ${Math.max(45, st.targetPctFtp - 2)}%-${Math.min(180, st.targetPctFtp + 2)}% ${cue} (${st.label})`;
+      })
+      .join('\n');
+
+  // 1. Apple Watch WorkoutKit JSON schema (supports both distance & time goals)
   const appleWorkoutKitJson = {
     schemaVersion: '1.0',
     activityType: sport === 'Running' ? 'HKWorkoutActivityTypeRunning' : 'HKWorkoutActivityTypeCycling',
     displayName: title,
-    blocks: normalizedSteps.map((st) => ({
-      stepType: st.stepOrder === 1 ? 'warmup' : st.stepOrder === normalizedSteps.length ? 'cooldown' : 'work',
-      goal: { type: 'time', seconds: st.durationSecs },
+    blocks: normalizedSteps.map((st, idx) => ({
+      stepType:
+        st.stepKind === 'warmup' || (idx === 0 && normalizedSteps.length > 2)
+          ? 'warmup'
+          : st.stepKind === 'cooldown' || (idx === normalizedSteps.length - 1 && normalizedSteps.length > 2)
+            ? 'cooldown'
+            : st.stepKind === 'rest'
+              ? 'recovery'
+              : 'work',
+      goal: st.distanceMeters
+        ? { type: 'distance', meters: st.distanceMeters }
+        : { type: 'time', seconds: st.durationSecs },
       alert:
         sport === 'Cycling'
           ? {
@@ -160,7 +355,96 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
     })),
   };
 
-  // 2. Garmin Connect Training API Workout JSON
+  // 2. Garmin Connect Training API Workout JSON (with RepeatGroupDTO when AST repeats exist)
+  const toGarminExecStep = (
+    st: {
+      stepOrder: number;
+      label: string;
+      durationSecs: number;
+      distanceMeters?: number;
+      targetWatts: number;
+      targetPaceSecsPerKm: number;
+      stepKind?: string;
+    }
+  ) => ({
+    type: 'ExecutableStepDTO',
+    stepOrder: st.stepOrder,
+    stepType: {
+      stepTypeKey:
+        st.stepKind === 'warmup'
+          ? 'warmup'
+          : st.stepKind === 'cooldown'
+            ? 'cooldown'
+            : st.stepKind === 'rest'
+              ? 'rest'
+              : 'interval',
+    },
+    description: st.label,
+    endCondition: {
+      conditionTypeKey: st.distanceMeters ? 'distance' : 'time',
+    },
+    endConditionValue: st.distanceMeters ? st.distanceMeters : st.durationSecs,
+    targetType: {
+      workoutTargetTypeKey:
+        st.stepKind === 'rest'
+          ? 'no.target'
+          : sport === 'Cycling'
+            ? 'power.zone'
+            : 'pace.zone',
+    },
+    targetValueOne:
+      st.stepKind === 'rest'
+        ? null
+        : sport === 'Cycling'
+          ? Math.round(st.targetWatts * 0.96)
+          : Math.round((1000 / (st.targetPaceSecsPerKm * 1.02)) * 100) / 100,
+    targetValueTwo:
+      st.stepKind === 'rest'
+        ? null
+        : sport === 'Cycling'
+          ? Math.round(st.targetWatts * 1.04)
+          : Math.round((1000 / (st.targetPaceSecsPerKm * 0.98)) * 100) / 100,
+  });
+
+  const garminWorkoutSteps = astNodes
+    ? astNodes.map((node, idx) => {
+        if (node.type === 'step') {
+          const pct = Math.max(40, Math.min(180, node.step.intensityPct || 75));
+          const pace =
+            node.step.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+          return toGarminExecStep({
+            stepOrder: idx + 1,
+            label: node.step.label,
+            durationSecs: Math.max(5, Math.round(node.step.durationSecs || 60)),
+            distanceMeters: node.step.distanceMeters,
+            targetWatts: Math.round((ftp * pct) / 100),
+            targetPaceSecsPerKm: Math.round(pace),
+            stepKind: node.step.stepKind,
+          });
+        }
+        return {
+          type: 'RepeatGroupDTO',
+          stepOrder: idx + 1,
+          numberOfIterations: node.repeatCount,
+          smartRepeat: false,
+          workoutSteps: node.steps.map((inner, innerIdx) => {
+            const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
+            const pace =
+              inner.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+            return toGarminExecStep({
+              stepOrder: innerIdx + 1,
+              label: inner.label,
+              durationSecs: Math.max(5, Math.round(inner.durationSecs || 60)),
+              distanceMeters: inner.distanceMeters,
+              targetWatts: Math.round((ftp * pct) / 100),
+              targetPaceSecsPerKm: Math.round(pace),
+              stepKind: inner.stepKind,
+            });
+          }),
+        };
+      })
+    : normalizedSteps.map((st) => toGarminExecStep(st));
+
   const garminTrainingApiJson = {
     workoutName: title,
     sportType: { sportTypeKey: sport === 'Running' ? 'running' : 'cycling' },
@@ -168,24 +452,7 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
       {
         segmentOrder: 1,
         sportType: { sportTypeKey: sport === 'Running' ? 'running' : 'cycling' },
-        workoutSteps: normalizedSteps.map((st) => ({
-          type: 'ExecutableStepDTO',
-          stepOrder: st.stepOrder,
-          description: st.label,
-          endCondition: { conditionTypeKey: 'time' },
-          endConditionValue: st.durationSecs,
-          targetType: {
-            workoutTargetTypeKey: sport === 'Cycling' ? 'power.zone' : 'pace.zone',
-          },
-          targetValueOne:
-            sport === 'Cycling'
-              ? Math.round(st.targetWatts * 0.96)
-              : Math.round((1000 / (st.targetPaceSecsPerKm * 1.02)) * 100) / 100,
-          targetValueTwo:
-            sport === 'Cycling'
-              ? Math.round(st.targetWatts * 1.04)
-              : Math.round((1000 / (st.targetPaceSecsPerKm * 0.98)) * 100) / 100,
-        })),
+        workoutSteps: garminWorkoutSteps,
       },
     ],
   };
@@ -233,6 +500,8 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
     ok: true,
     title,
     sport,
+    fitWorkoutBase64,
+    intervalsIcuText,
     appleWorkoutKitJson,
     garminTrainingApiJson,
     zwoXml: zwoLines.join('\n'),

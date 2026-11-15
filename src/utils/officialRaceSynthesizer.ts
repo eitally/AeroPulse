@@ -4,8 +4,13 @@ import {
   OfficialRaceMetadata,
   OfficialRacePlatform,
   OfficialTrackSurface,
+  SpeedReservePhenotype,
   UnifiedActivity,
 } from '../types';
+import {
+  buildTrackSpeedReserveProfile,
+  solveTrackPaceSecsPerKmForPctVdot,
+} from '../physiology/trackSpeedReserveEngine';
 
 export interface OfficialRaceEventDefinition {
   label: string;
@@ -218,22 +223,15 @@ export function computeJackDanielsVdot(distanceMeters: number, timeSecs: number)
  * Derives threshold pace (secs/km) from Jack Daniels VDOT (~88% VO2max T-pace)
  */
 export function deriveThresholdPaceSecsPerKmFromVdot(vdot: number): number {
-  const safeVdot = Math.max(35, Math.min(85, vdot));
-  const targetVo2 = safeVdot * 0.88;
-  // Invert quadratic: 0.000104 * v^2 + 0.182258 * v - (4.6 + targetVo2) = 0
-  const a = 0.000104;
-  const b = 0.182258;
-  const c = -(4.6 + targetVo2);
-  const velocityMetersPerMin = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
-  if (!Number.isFinite(velocityMetersPerMin) || velocityMetersPerMin <= 0) return 240;
-  const secsPerKm = (1000 / velocityMetersPerMin) * 60;
-  return Math.round(Math.max(165, Math.min(390, secsPerKm)));
+  const safeVdot = Math.max(22, Math.min(90, vdot));
+  const raw = solveTrackPaceSecsPerKmForPctVdot(safeVdot, 0.88, [140, 430]);
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 240;
 }
 
 /**
- * Computes Critical Speed (CS in m/s & pace secs/km) and D' (Anaerobic Distance Capacity in meters)
- * using 2+ race distances between 400m and 5000m (linear Distance-Time model: D = CS * t + D'),
- * or estimates from best official VDOT when only 1 race is available.
+ * Computes Critical Speed (CS in m/s & pace secs/km), D' (Anaerobic Distance Capacity in meters),
+ * and Sandford-Laursen Anaerobic Speed Reserve (ASR/SRR/phenotype) using multi-mark OLS regression
+ * across 400m-10,000m (preferring severe-domain track marks 600m-5000m), or scaled single-mark calibration.
  */
 export function computeCriticalSpeedAndDPrime(
   races: Array<{ distanceMeters: number; timeSecs: number }>
@@ -242,6 +240,10 @@ export function computeCriticalSpeedAndDPrime(
   criticalPaceSecsPerKm: number;
   dPrimeMeters: number;
   vdotBest: number;
+  vdotAer: number;
+  asrMps: number;
+  srr: number;
+  phenotype: SpeedReservePhenotype;
 } {
   const valid = races.filter(
     (r) => r.distanceMeters >= 400 && r.distanceMeters <= 10000 && r.timeSecs > 35
@@ -251,35 +253,20 @@ export function computeCriticalSpeedAndDPrime(
       ? Math.max(...valid.map((r) => computeJackDanielsVdot(r.distanceMeters, r.timeSecs)))
       : 58.5;
 
-  // Check if we have at least one shorter middle-distance effort (<= 1610m) and one longer effort (>= 1500m)
-  const sortedByDist = [...valid].sort((a, b) => a.distanceMeters - b.distanceMeters);
-  if (sortedByDist.length >= 2) {
-    const shortRace = sortedByDist[0];
-    const longRace = sortedByDist[sortedByDist.length - 1];
-    if (longRace.distanceMeters - shortRace.distanceMeters >= 600 && longRace.timeSecs > shortRace.timeSecs + 45) {
-      const cs =
-        (longRace.distanceMeters - shortRace.distanceMeters) /
-        (longRace.timeSecs - shortRace.timeSecs);
-      const dPrime = shortRace.distanceMeters - cs * shortRace.timeSecs;
-      const clampedCs = Math.max(3.2, Math.min(6.4, cs));
-      const clampedDPrime = Math.round(Math.max(140, Math.min(420, dPrime)));
-      return {
-        criticalSpeedMps: Number(clampedCs.toFixed(2)),
-        criticalPaceSecsPerKm: Math.round(1000 / clampedCs),
-        dPrimeMeters: clampedDPrime,
-        vdotBest,
-      };
-    }
-  }
+  const profile = buildTrackSpeedReserveProfile({
+    marks: valid.map((r) => ({ distanceMeters: r.distanceMeters, durationSecs: r.timeSecs })),
+    thresholdPaceSecsPerKm: deriveThresholdPaceSecsPerKmFromVdot(vdotBest),
+  });
 
-  const thresholdPace = deriveThresholdPaceSecsPerKmFromVdot(vdotBest);
-  const csPace = Math.round(thresholdPace * 0.975);
-  const csMps = Number((1000 / csPace).toFixed(2));
   return {
-    criticalSpeedMps: csMps,
-    criticalPaceSecsPerKm: csPace,
-    dPrimeMeters: Math.round(190 + (vdotBest - 50) * 4.2),
+    criticalSpeedMps: Number(profile.csMps.toFixed(2)),
+    criticalPaceSecsPerKm: Math.round(profile.criticalPaceSecsPerKm),
+    dPrimeMeters: profile.dPrimeMeters,
     vdotBest,
+    vdotAer: profile.vdotAer,
+    asrMps: profile.asrMps,
+    srr: profile.srr,
+    phenotype: profile.phenotype,
   };
 }
 

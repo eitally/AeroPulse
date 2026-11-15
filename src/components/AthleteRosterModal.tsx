@@ -7,6 +7,7 @@ import {
   Copy,
   Check,
   CalendarPlus,
+  ClipboardText,
   Eye,
   Lock,
   Activity,
@@ -28,6 +29,7 @@ import {
   DistanceUnit,
   PrivacyVisibilityTier,
   TeamSummaryWithRole,
+  TrackRepDistanceMeters,
   VdotPodIntensity,
 } from '../types';
 import { applyAthletePrivacyShield } from '../data/athleteRosterData';
@@ -39,7 +41,11 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { useModalDialog } from '../hooks/useModalDialog';
-import { useTracksideStopwatch } from '../hooks/useTracksideStopwatch';
+import {
+  stageWorkoutInTracksideStopwatch,
+  useTracksideStopwatch,
+} from '../hooks/useTracksideStopwatch';
+import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import { TeamManagementPanel } from './TeamManagementPanel';
 
@@ -170,7 +176,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const [podIntensity, setPodIntensity] = useState<VdotPodIntensity>('THRESHOLD_CV');
   const [podRepCount, setPodRepCount] = useState<number>(6);
-  const [podRepDistance, setPodRepDistance] = useState<200 | 400 | 800 | 1000 | 1600>(1000);
+  const [podRepDistance, setPodRepDistance] = useState<TrackRepDistanceMeters>(1000);
   const [podRecoveryLabel, setPodRecoveryLabel] = useState<string>('60s jog');
   const [guestPodName, setGuestPodName] = useState<string>('');
   const [guestPodVdot, setGuestPodVdot] = useState<string>('56.0');
@@ -1485,27 +1491,81 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sheet = formatPrintablePodSplitSheet(
-                        `${podRepCount}x${podRepDistance}m (${podIntensity})`,
-                        workoutDate,
-                        generatedVdotPods
-                      );
-                      navigator.clipboard.writeText(sheet);
-                      setCopiedSplitSheet(true);
-                      window.setTimeout(() => setCopiedSplitSheet(false), 2500);
-                    }}
-                    className="min-h-[44px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#080A09] text-xs font-bold font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>
-                      {copiedSplitSheet
-                        ? 'Copied Printable Pod Sheet!'
-                        : 'Copy Printable Clipboard Sheet'}
-                    </span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sheet = formatPrintablePodSplitSheet(
+                          `${podRepCount}x${podRepDistance}m (${podIntensity})`,
+                          workoutDate,
+                          generatedVdotPods
+                        );
+                        navigator.clipboard.writeText(sheet);
+                        setCopiedSplitSheet(true);
+                        window.setTimeout(() => setCopiedSplitSheet(false), 2500);
+                      }}
+                      className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#080A09] text-xs font-bold font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>
+                        {copiedSplitSheet
+                          ? 'Copied Printable Pod Sheet!'
+                          : 'Copy Printable Clipboard Sheet'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPrintablePodClipboardWindow({
+                          workoutTitle: `${podRepCount}x${podRepDistance}m (${podIntensity})`,
+                          dateStr: workoutDate,
+                          repDistanceMeters: podRepDistance,
+                          repCount: podRepCount,
+                          recoveryLabel: podRecoveryLabel,
+                          pods: generatedVdotPods,
+                          teamName: activeTeamObj?.brand.name || 'THRESH Squad',
+                        })
+                      }
+                      className="min-h-[44px] px-3 py-2 rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-100 hover:border-[#1C5436] text-xs font-bold font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ClipboardText className="w-3.5 h-3.5" />
+                      <span>Print 4-Up Clipboard</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stageWorkoutInTracksideStopwatch({
+                          title: `${podRepCount}x${podRepDistance}m (${podIntensity})`,
+                          spec: {
+                            repCount: podRepCount,
+                            repDistanceMeters: podRepDistance,
+                            zoneCode:
+                              podIntensity === 'SUB_THRESHOLD'
+                                ? 'SUB_T'
+                                : podIntensity === 'INTERVAL_VO2'
+                                  ? 'I'
+                                  : podIntensity === 'REPETITION' || podIntensity === 'RACE_1600M'
+                                    ? 'R'
+                                    : podIntensity === 'RACE_800M'
+                                      ? 'FR'
+                                      : 'CV',
+                            podIntensity,
+                            restDurationSecs: 60,
+                            waveMode: 'POD_10S',
+                          },
+                          pods: generatedVdotPods,
+                        });
+                        onClose();
+                        onOpenFullScreenStopwatch?.();
+                      }}
+                      className="min-h-[44px] px-3 py-2 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-bold font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Timer className="w-3.5 h-3.5" weight="bold" />
+                      <span>Launch Pods in Stopwatch</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Workout Prescription Controls + Walk-On Tryout Adder */}
@@ -1523,9 +1583,13 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       onChange={(e) => setPodIntensity(e.target.value as VdotPodIntensity)}
                       className="w-full min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
                     >
+                      <option value="SUB_THRESHOLD">Norwegian Sub-T (92–96%)</option>
                       <option value="THRESHOLD_CV">Threshold / Tinman CV (~99% LT)</option>
                       <option value="INTERVAL_VO2">VO2max Interval (3K–5K Pace)</option>
+                      <option value="RACE_3200M">3200m / 2-Mile Race Pace</option>
                       <option value="REPETITION">Mile / Speed Repetition</option>
+                      <option value="RACE_1600M">1600m / Mile Race Pace</option>
+                      <option value="RACE_800M">800m Race / Fast Rep Pace</option>
                       <option value="MARATHON">Steady State / Aerobic Tempo</option>
                       <option value="EASY">Easy / Recovery Run</option>
                     </select>
@@ -1560,15 +1624,17 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       id={`${formIdPrefix}-pod-dist`}
                       value={podRepDistance}
                       onChange={(e) =>
-                        setPodRepDistance(Number(e.target.value) as 200 | 400 | 800 | 1000 | 1600)
+                        setPodRepDistance(Number(e.target.value) as TrackRepDistanceMeters)
                       }
                       className="w-full min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
                     >
-                      <option value={200}>200m</option>
-                      <option value={400}>400m</option>
-                      <option value={800}>800m</option>
-                      <option value={1000}>1000m</option>
-                      <option value={1600}>1600m</option>
+                      {([150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600] as const).map(
+                        (dist) => (
+                          <option key={dist} value={dist}>
+                            {dist}m
+                          </option>
+                        )
+                      )}
                     </select>
                   </div>
 
@@ -1749,12 +1815,30 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           ))}
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1 font-mono tabular-nums text-center">
+                        <div className="grid grid-cols-4 gap-1.5 pt-1 font-mono tabular-nums text-center">
                           {[
                             { lbl: '200m', val: pod.splitsSecs.split200m },
+                            {
+                              lbl: '300m',
+                              val:
+                                pod.splitsSecs.split300m ??
+                                Number((pod.splitsSecs.split200m * 1.5).toFixed(1)),
+                            },
                             { lbl: '400m', val: pod.splitsSecs.split400m },
+                            {
+                              lbl: '600m',
+                              val:
+                                pod.splitsSecs.split600m ??
+                                Number((pod.splitsSecs.split400m * 1.5).toFixed(1)),
+                            },
                             { lbl: '800m', val: pod.splitsSecs.split800m },
                             { lbl: '1000m', val: pod.splitsSecs.split1000m },
+                            {
+                              lbl: '1200m',
+                              val:
+                                pod.splitsSecs.split1200m ??
+                                Number((pod.splitsSecs.split400m * 3).toFixed(1)),
+                            },
                             { lbl: '1600m', val: pod.splitsSecs.split1600m },
                           ].map((sp) => (
                             <div
@@ -1768,6 +1852,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             </div>
                           ))}
                         </div>
+                        {typeof pod.pursuitStaggerOffsetSecs === 'number' && (
+                          <div className="text-2xs font-mono text-slate-600 dark:text-slate-300 flex items-center justify-between pt-0.5">
+                            <span>Pursuit Finish-Together Offset:</span>
+                            <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                              +{pod.pursuitStaggerOffsetSecs.toFixed(1)}s
+                            </span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

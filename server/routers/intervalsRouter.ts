@@ -1767,6 +1767,7 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
         Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0
           ? body.structuredSteps
           : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs),
+      ...(body.trackSpec && typeof body.trackSpec === 'object' ? { trackSpec: body.trackSpec } : {}),
       source: body.source || 'USER',
     };
 

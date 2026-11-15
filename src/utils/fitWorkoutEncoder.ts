@@ -2,15 +2,35 @@
  * Native Binary ANT+ / Garmin .FIT Workout File Encoder
  * Generates spec-compliant binary .FIT workout files (FileType = 5)
  * compatible with Garmin Fenix, Forerunner, Epix, and Edge head units.
+ *
+ * Supports:
+ *  - Time durations (`duration_type = 0`, ms)
+ *  - Distance durations (`duration_type = 1`, cm / 0.01m)
+ *  - Open lap-button durations (`duration_type = 5`)
+ *  - Repeat loop blocks (`duration_type = 6`, `repeat_until_steps_cmplt`)
+ *  - Speed targets (`target_type = 0`, mm/s), HR targets (`target_type = 1`, +100 bpm),
+ *    Power targets (`target_type = 4`, +1000 W), and Open targets (`target_type = 2`)
  */
+
+import {
+  parseStructuredTrackWorkout,
+  type ParsedWorkoutStep,
+} from './workoutParser.ts';
 
 export interface FitWorkoutStepInput {
   label: string;
-  durationSecs: number;
+  durationSecs?: number;
+  distanceMeters?: number;
+  durationType?: 'time' | 'distance' | 'open' | 'repeat_until_steps_cmplt';
+  repeatFromStepIndex?: number;
+  repeatCount?: number;
+  targetType?: 'power' | 'heart_rate' | 'speed' | 'open';
   targetMinWatts?: number;
   targetMaxWatts?: number;
   targetMinHrBpm?: number;
   targetMaxHrBpm?: number;
+  targetMinSpeedMps?: number;
+  targetMaxSpeedMps?: number;
   intensity?: 'warmup' | 'active' | 'rest' | 'cooldown';
 }
 
@@ -58,7 +78,7 @@ function writeUint32LE(buf: number[], val: number): void {
 }
 
 /**
- * Encodes a structured workout into a binary Garmin .FIT Uint8Array
+ * Encodes a structured workout into a binary Garmin .FIT Uint8Array.
  */
 export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
   const dataPayload: number[] = [];
@@ -66,151 +86,142 @@ export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
   // FIT Epoch is 1989-12-31T00:00:00Z (631065600 unix seconds)
   const fitTimestamp = Math.max(0, Math.floor(Date.now() / 1000) - 631065600);
 
-  // ---------------------------------------------------------------------------
-  // 1. Definition Message: file_id (Global Mesg Num 0, Local Mesg 0)
-  // ---------------------------------------------------------------------------
+  // 1. Definition & Data Message: file_id (Global Mesg Num 0, Local Mesg 0)
   dataPayload.push(
     0x40, // Definition header, local mesg 0
-    0x00, // Reserved
+    0x00,
     0x00, // Little Endian
     0x00,
     0x00, // Global Mesg Num = 0 (file_id)
     0x04, // 4 fields
-    // Field 0: type (enum, 1 byte) -> 5 = workout
-    0x00,
-    0x01,
-    0x00,
-    // Field 1: manufacturer (uint16, 2 bytes) -> 1 = Garmin
-    0x01,
-    0x02,
-    0x84,
-    // Field 2: product (uint16, 2 bytes) -> 65534 = Thresh
-    0x02,
-    0x02,
-    0x84,
-    // Field 4: time_created (uint32, 4 bytes)
-    0x04,
-    0x04,
-    0x86
+    0x00, 0x01, 0x00, // Field 0: type (enum)
+    0x01, 0x02, 0x84, // Field 1: manufacturer (uint16)
+    0x02, 0x02, 0x84, // Field 2: product (uint16)
+    0x04, 0x04, 0x86 // Field 4: time_created (uint32)
   );
-
-  // Data Message: file_id (Local Mesg 0)
   dataPayload.push(0x00); // Data header, local mesg 0
   dataPayload.push(0x05); // type = 5 (workout)
   writeUint16LE(dataPayload, 1); // manufacturer = 1 (Garmin)
   writeUint16LE(dataPayload, 2026); // product = Thresh
   writeUint32LE(dataPayload, fitTimestamp);
 
-  // ---------------------------------------------------------------------------
-  // 2. Definition Message: workout (Global Mesg Num 26, Local Mesg 1)
-  // ---------------------------------------------------------------------------
+  // 2. Definition & Data Message: workout (Global Mesg Num 26, Local Mesg 1)
   dataPayload.push(
     0x41, // Definition header, local mesg 1
-    0x00, // Reserved
-    0x00, // Little Endian
+    0x00,
+    0x00,
     0x1a,
     0x00, // Global Mesg Num = 26 (workout)
     0x03, // 3 fields
-    // Field 4: sport (enum, 1 byte) -> 1 = running, 2 = cycling
-    0x04,
-    0x01,
-    0x00,
-    // Field 6: num_valid_steps (uint16, 2 bytes)
-    0x06,
-    0x02,
-    0x84,
-    // Field 8: wkt_name (string, 24 bytes)
-    0x08,
-    24,
-    0x07
+    0x04, 0x01, 0x00, // Field 4: sport (enum)
+    0x06, 0x02, 0x84, // Field 6: num_valid_steps (uint16)
+    0x08, 24, 0x07 // Field 8: wkt_name (string, 24 bytes)
   );
-
-  // Data Message: workout (Local Mesg 1)
   dataPayload.push(0x01); // Data header, local mesg 1
-  dataPayload.push(workout.sport === 'Running' ? 0x01 : 0x02); // 1=Running, 2=Cycling
+  dataPayload.push(workout.sport === 'Running' ? 0x01 : 0x02);
   writeUint16LE(dataPayload, workout.steps.length);
   writeFixedAscii(dataPayload, workout.name || 'Thresh Workout', 24);
 
-  // ---------------------------------------------------------------------------
   // 3. Definition Message: workout_step (Global Mesg Num 27, Local Mesg 2)
-  // ---------------------------------------------------------------------------
   dataPayload.push(
     0x42, // Definition header, local mesg 2
-    0x00, // Reserved
-    0x00, // Little Endian
+    0x00,
+    0x00,
     0x1b,
     0x00, // Global Mesg Num = 27 (workout_step)
-    0x08, // 8 fields
-    // Field 254: message_index (uint16, 2 bytes)
-    0xfe,
-    0x02,
-    0x84,
-    // Field 0: wkt_step_name (string, 16 bytes)
-    0x00,
-    16,
-    0x07,
-    // Field 1: duration_type (enum, 1 byte) -> 0 = time
-    0x01,
-    0x01,
-    0x00,
-    // Field 2: duration_value (uint32, 4 bytes) -> milliseconds
-    0x02,
-    0x04,
-    0x86,
-    // Field 3: target_type (enum, 1 byte) -> 4 = power, 1 = heart_rate, 2 = open
-    0x03,
-    0x01,
-    0x00,
-    // Field 4: target_value (uint32, 4 bytes) -> 0 = custom range
-    0x04,
-    0x04,
-    0x86,
-    // Field 5: custom_target_value_low (uint32, 4 bytes) -> watts + 1000 or bpm + 100
-    0x05,
-    0x04,
-    0x86,
-    // Field 6: custom_target_value_high (uint32, 4 bytes) -> watts + 1000 or bpm + 100
-    0x06,
-    0x04,
-    0x86,
-    // Field 7: intensity (enum, 1 byte) -> 0=active, 1=rest, 2=warmup, 3=cooldown
-    0x07,
-    0x01,
-    0x00
+    0x09, // 9 fields
+    0xfe, 0x02, 0x84, // Field 254: message_index (uint16)
+    0x00, 16, 0x07, // Field 0: wkt_step_name (string, 16 bytes)
+    0x01, 0x01, 0x00, // Field 1: duration_type (enum)
+    0x02, 0x04, 0x86, // Field 2: duration_value (uint32)
+    0x03, 0x01, 0x00, // Field 3: target_type (enum)
+    0x04, 0x04, 0x86, // Field 4: target_value (uint32)
+    0x05, 0x04, 0x86, // Field 5: custom_target_value_low (uint32)
+    0x06, 0x04, 0x86, // Field 6: custom_target_value_high (uint32)
+    0x07, 0x01, 0x00 // Field 7: intensity (enum)
   );
 
-  // Fix field count to 9 (254, 0, 1, 2, 3, 4, 5, 6, 7)
-  const defMesg2Start = dataPayload.length - (6 + 9 * 3);
-  dataPayload[defMesg2Start + 5] = 0x09;
+  const intensityMap: Record<string, number> = {
+    active: 0,
+    rest: 1,
+    warmup: 2,
+    cooldown: 3,
+  };
 
   // Data Messages: workout_step (Local Mesg 2)
   workout.steps.forEach((step, idx) => {
     dataPayload.push(0x02); // Data header, local mesg 2
     writeUint16LE(dataPayload, idx); // message_index
     writeFixedAscii(dataPayload, step.label || `Step ${idx + 1}`, 16);
-    dataPayload.push(0x00); // duration_type = 0 (time)
-    writeUint32LE(dataPayload, Math.max(1, step.durationSecs) * 1000); // duration in ms
 
-    if (
-      typeof step.targetMinWatts === 'number' &&
-      typeof step.targetMaxWatts === 'number' &&
-      step.targetMaxWatts > 0
-    ) {
+    const durType: NonNullable<FitWorkoutStepInput['durationType']> =
+      step.durationType ??
+      (typeof step.distanceMeters === 'number' && step.distanceMeters > 0
+        ? 'distance'
+        : 'time');
+
+    if (durType === 'repeat_until_steps_cmplt') {
+      dataPayload.push(0x06); // duration_type = 6 (repeat_until_steps_cmplt)
+      writeUint32LE(dataPayload, Math.max(0, Math.round(step.repeatFromStepIndex ?? 0)));
+      dataPayload.push(0x02); // target_type = 2 (open)
+      writeUint32LE(dataPayload, Math.max(2, Math.round(step.repeatCount ?? 2)));
+      writeUint32LE(dataPayload, 0);
+      writeUint32LE(dataPayload, 0);
+      dataPayload.push(0x00); // active loop controller
+      return;
+    }
+
+    if (durType === 'distance') {
+      dataPayload.push(0x01); // duration_type = 1 (distance in 0.01m = cm)
+      writeUint32LE(dataPayload, Math.max(100, Math.round((step.distanceMeters ?? 400) * 100)));
+    } else if (durType === 'open') {
+      dataPayload.push(0x05); // duration_type = 5 (open lap press)
+      writeUint32LE(dataPayload, 0xffffffff);
+    } else {
+      dataPayload.push(0x00); // duration_type = 0 (time in ms)
+      writeUint32LE(dataPayload, Math.max(1000, Math.round((step.durationSecs ?? 60) * 1000)));
+    }
+
+    const useSpeedTarget =
+      step.targetType === 'speed' ||
+      (step.targetType === undefined &&
+        typeof step.targetMaxSpeedMps === 'number' &&
+        step.targetMaxSpeedMps > 0);
+    const usePowerTarget =
+      step.targetType === 'power' ||
+      (step.targetType === undefined &&
+        typeof step.targetMaxWatts === 'number' &&
+        step.targetMaxWatts > 0);
+    const useHrTarget =
+      step.targetType === 'heart_rate' ||
+      (step.targetType === undefined &&
+        typeof step.targetMaxHrBpm === 'number' &&
+        step.targetMaxHrBpm > 0);
+
+    if (useSpeedTarget && step.targetMaxSpeedMps && step.targetMaxSpeedMps > 0) {
+      dataPayload.push(0x00); // target_type = 0 (speed)
+      writeUint32LE(dataPayload, 0); // target_value = 0 (custom low/high speed window)
+      const lowMmS = Math.max(500, Math.round((step.targetMinSpeedMps ?? step.targetMaxSpeedMps * 0.96) * 1000));
+      const highMmS = Math.max(lowMmS + 50, Math.round(step.targetMaxSpeedMps * 1000));
+      // FIT specification: workout_step speed uses 1000 * m/s (mm/s), NO offset
+      writeUint32LE(dataPayload, lowMmS);
+      writeUint32LE(dataPayload, highMmS);
+    } else if (usePowerTarget && step.targetMaxWatts && step.targetMaxWatts > 0) {
       dataPayload.push(0x04); // target_type = 4 (power)
-      writeUint32LE(dataPayload, 0); // target_value = 0 (use custom low/high range)
+      writeUint32LE(dataPayload, 0);
+      const lowW = Math.max(20, Math.round(step.targetMinWatts ?? step.targetMaxWatts * 0.95));
+      const highW = Math.max(lowW + 5, Math.round(step.targetMaxWatts));
       // FIT specification: absolute watts in workout_step use +1000W offset
-      writeUint32LE(dataPayload, Math.round(step.targetMinWatts) + 1000);
-      writeUint32LE(dataPayload, Math.round(step.targetMaxWatts) + 1000);
-    } else if (
-      typeof step.targetMinHrBpm === 'number' &&
-      typeof step.targetMaxHrBpm === 'number' &&
-      step.targetMaxHrBpm > 0
-    ) {
+      writeUint32LE(dataPayload, lowW + 1000);
+      writeUint32LE(dataPayload, highW + 1000);
+    } else if (useHrTarget && step.targetMaxHrBpm && step.targetMaxHrBpm > 0) {
       dataPayload.push(0x01); // target_type = 1 (heart_rate)
       writeUint32LE(dataPayload, 0);
+      const lowHr = Math.max(60, Math.round(step.targetMinHrBpm ?? step.targetMaxHrBpm - 10));
+      const highHr = Math.max(lowHr + 2, Math.round(step.targetMaxHrBpm));
       // FIT specification: absolute HR bpm uses +100 bpm offset
-      writeUint32LE(dataPayload, Math.round(step.targetMinHrBpm) + 100);
-      writeUint32LE(dataPayload, Math.round(step.targetMaxHrBpm) + 100);
+      writeUint32LE(dataPayload, lowHr + 100);
+      writeUint32LE(dataPayload, highHr + 100);
     } else {
       dataPayload.push(0x02); // target_type = 2 (open)
       writeUint32LE(dataPayload, 0);
@@ -218,29 +229,20 @@ export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
       writeUint32LE(dataPayload, 0);
     }
 
-    const intensityMap: Record<string, number> = {
-      active: 0,
-      rest: 1,
-      warmup: 2,
-      cooldown: 3,
-    };
     dataPayload.push(intensityMap[step.intensity || 'active'] ?? 0);
   });
 
-  // ---------------------------------------------------------------------------
   // Assemble 14-byte FIT Header + Data Payload + 2-byte File CRC
-  // ---------------------------------------------------------------------------
   const dataSize = dataPayload.length;
   const header: number[] = [
-    14, // Header size (14 bytes)
+    14, // Header size
     0x10, // Protocol version 1.0
     0x08,
     0x08, // Profile version 20.56 (LE)
   ];
   writeUint32LE(header, dataSize);
-  header.push(0x2e, 0x46, 0x49, 0x54); // ".FIT" ASCII magic
-  const headerBytes = new Uint8Array(header);
-  const headerCrc = computeFitCrc(headerBytes, 12);
+  header.push(0x2e, 0x46, 0x49, 0x54); // ".FIT"
+  const headerCrc = computeFitCrc(new Uint8Array(header), 12);
   writeUint16LE(header, headerCrc);
 
   const fullWithoutCrc = new Uint8Array(14 + dataSize);
@@ -256,13 +258,125 @@ export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
   return finalFit;
 }
 
+function parsedStepToFitStep(
+  step: ParsedWorkoutStep,
+  opts: {
+    sport: 'Running' | 'Cycling';
+    ftpWatts: number;
+    lthrBpm: number;
+    thresholdPaceSecsPerKm: number;
+  }
+): FitWorkoutStepInput {
+  const intensity: FitWorkoutStepInput['intensity'] =
+    step.stepKind === 'warmup'
+      ? 'warmup'
+      : step.stepKind === 'cooldown'
+        ? 'cooldown'
+        : step.stepKind === 'rest'
+          ? 'rest'
+          : 'active';
+
+  const hasDistance = typeof step.distanceMeters === 'number' && step.distanceMeters > 0;
+  const durationType: FitWorkoutStepInput['durationType'] = hasDistance ? 'distance' : 'time';
+  const durationSecs = Math.max(1, Math.round(step.durationSecs || step.durationMins * 60));
+
+  if (opts.sport === 'Running') {
+    if (intensity === 'rest') {
+      return {
+        label: step.label.slice(0, 15),
+        durationSecs,
+        distanceMeters: step.distanceMeters,
+        durationType,
+        targetType: 'open',
+        intensity,
+      };
+    }
+
+    const effectivePaceSecsKm =
+      step.targetPaceSecsPerKm ??
+      Math.max(95, (opts.thresholdPaceSecsPerKm * 100) / Math.max(40, step.intensityPct || 75));
+    const centerSpeedMps = 1000 / effectivePaceSecsKm;
+
+    return {
+      label: step.label.slice(0, 15),
+      durationSecs,
+      distanceMeters: step.distanceMeters,
+      durationType,
+      targetType: 'speed',
+      targetMinSpeedMps: Number((centerSpeedMps * 0.975).toFixed(3)),
+      targetMaxSpeedMps: Number((centerSpeedMps * 1.025).toFixed(3)),
+      intensity,
+    };
+  }
+
+  // Cycling
+  const targetW = Math.round((opts.ftpWatts * Math.max(40, step.intensityPct || 70)) / 100);
+  return {
+    label: step.label.slice(0, 15),
+    durationSecs,
+    durationType: 'time',
+    targetType: intensity === 'rest' ? 'open' : 'power',
+    targetMinWatts: intensity === 'rest' ? undefined : Math.round(targetW * 0.95),
+    targetMaxWatts: intensity === 'rest' ? undefined : Math.round(targetW * 1.05),
+    intensity,
+  };
+}
+
 /**
- * Triggers a browser download of a native Garmin .FIT workout file
+ * Converts THRESH / Intervals.icu workout syntax (including repeat blocks & track distances)
+ * into Garmin .FIT workout_step entries with native repeat_until_steps_cmplt loops.
+ */
+export function buildFitStepsFromWorkoutSyntax(
+  workoutSyntax: string,
+  opts: {
+    sport: 'Running' | 'Cycling';
+    ftpWatts?: number;
+    lthrBpm?: number;
+    thresholdPaceSecsPerKm?: number;
+  }
+): FitWorkoutStepInput[] {
+  const safeOpts = {
+    sport: opts.sport,
+    ftpWatts: Math.max(100, opts.ftpWatts || 280),
+    lthrBpm: Math.max(110, opts.lthrBpm || 170),
+    thresholdPaceSecsPerKm: Math.max(95, opts.thresholdPaceSecsPerKm || 250),
+  };
+
+  const ast = parseStructuredTrackWorkout(workoutSyntax, safeOpts.thresholdPaceSecsPerKm);
+  const fitSteps: FitWorkoutStepInput[] = [];
+
+  for (const node of ast) {
+    if (node.type === 'step') {
+      fitSteps.push(parsedStepToFitStep(node.step, safeOpts));
+    } else if (node.steps.length > 0) {
+      const firstChildIndex = fitSteps.length;
+      for (const child of node.steps) {
+        fitSteps.push(parsedStepToFitStep(child, safeOpts));
+      }
+      if (node.repeatCount >= 2) {
+        fitSteps.push({
+          label: node.label.slice(0, 15),
+          durationType: 'repeat_until_steps_cmplt',
+          repeatFromStepIndex: firstChildIndex,
+          repeatCount: node.repeatCount,
+          targetType: 'open',
+          intensity: 'active',
+        });
+      }
+    }
+  }
+
+  return fitSteps;
+}
+
+/**
+ * Triggers a browser download of a native Garmin .FIT workout file.
  */
 export function downloadGarminFitWorkoutFile(
   workout: FitWorkoutInput,
   dateIso?: string
 ): void {
+  if (typeof document === 'undefined' || typeof URL === 'undefined') return;
   const bytes = encodeGarminFitWorkout(workout);
   const blob = new Blob([bytes.buffer as ArrayBuffer], {
     type: 'application/octet-stream',

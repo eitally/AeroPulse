@@ -5,6 +5,7 @@ import {
   Calendar as CalendarIcon,
   CheckCircle2,
   ChevronRight,
+  Download,
   Flame,
   Footprints,
   Gauge,
@@ -25,11 +26,25 @@ import {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  SpeedReservePhenotype,
   SportCategory,
   TargetGoal,
+  TrackTargetEventGroup,
+  TrackTrainingZoneCode,
+  TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import {
+  buildTrackSpeedReserveProfile,
+  defaultMetersForTrackEvent,
+  parseTrackMarkClockInput,
+} from '../physiology/trackSpeedReserveEngine';
+import {
+  formatTrackSplitToken,
+  generatePeriodizedTrackPlan,
+  type TrackStartingPhaseOption,
+} from '../physiology/trackPrescriptionEngine';
 import {
   computeAnnualMileageSummary,
   convertMetersToUnit,
@@ -45,6 +60,14 @@ import {
   formatFatTime,
 } from '../utils/officialRaceSynthesizer';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
+import {
+  buildFitStepsFromWorkoutSyntax,
+  downloadGarminFitWorkoutFile,
+} from '../utils/fitWorkoutEncoder';
+import {
+  inferTrackWorkoutSpecFromPlannedEvent,
+  stageWorkoutInTracksideStopwatch,
+} from '../hooks/useTracksideStopwatch';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
 import { simulateCoursePacingAndFueling } from '../physiology/raceSimulator';
@@ -58,6 +81,7 @@ export interface PlannedEventBatchItem {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  trackSpec?: TrackWorkoutSpec;
   replaceExistingDate?: boolean;
 }
 
@@ -82,28 +106,90 @@ interface GoalsViewProps {
   onSwitchToCalendar?: () => void;
   onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt?: (prompt: string) => void;
+  onOpenTracksideStopwatch?: () => void;
 }
 
 const DEFAULT_GEAR_ITEMS: AthleteGearItem[] = [];
 
 const ALL_SPORTS_LIST: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength'];
 
-export type GoalArchetypeId = 'SUB20_5K' | 'HALF_MARATHON' | 'FTP_350W' | 'GRAN_FONDO';
+export type GoalArchetypeId =
+  | 'TRACK_800M'
+  | 'TRACK_1500_MILE'
+  | 'TRACK_3000_3200M'
+  | 'TRACK_5000M'
+  | 'SUB20_5K'
+  | 'HALF_MARATHON'
+  | 'FTP_350W'
+  | 'GRAN_FONDO';
+
+export type GoalArchetypeCategory = 'ALL' | 'TRACK' | 'ROAD' | 'CYCLING';
 
 interface GoalArchetypeTemplate {
   id: GoalArchetypeId;
+  category: Exclude<GoalArchetypeCategory, 'ALL'>;
   badge: string;
   title: string;
   subtitle: string;
   sportCategory: SportCategory;
   targetLabel: string;
   defaultWeeks: 4 | 8 | 12 | 16;
+  trackEventGroup?: TrackTargetEventGroup;
   targetProgressionLevels: [number, number, number, number, number, number]; // Z2, Z3, Z4, Z5, Z6, Sprint
 }
 
 const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   {
+    id: 'TRACK_800M',
+    category: 'TRACK',
+    badge: 'Track 800m',
+    title: '800m Track Specialization',
+    subtitle: 'Speed-Reserve Flys, Critical Velocity & Specific 300m Rhythm',
+    sportCategory: 'Running',
+    targetLabel: 'CS+D\' · ASR Peak',
+    defaultWeeks: 12,
+    trackEventGroup: '800M',
+    targetProgressionLevels: [6.8, 7.6, 8.2, 8.8, 9.2, 9.5],
+  },
+  {
+    id: 'TRACK_1500_MILE',
+    category: 'TRACK',
+    badge: 'Track 1500m / Mile',
+    title: '1500m / Mile Track Architect',
+    subtitle: 'Sub-T Cruises, Tinman CV & Un-Clamped R-Pace Quarter Repeats',
+    sportCategory: 'Running',
+    targetLabel: '400m R-Pace + CV',
+    defaultWeeks: 12,
+    trackEventGroup: '1500_MILE',
+    targetProgressionLevels: [7.4, 7.9, 8.5, 9.0, 8.8, 8.2],
+  },
+  {
+    id: 'TRACK_3000_3200M',
+    category: 'TRACK',
+    badge: 'Track 3000m / 3200m',
+    title: '3000m / 3200m Championship Build',
+    subtitle: 'Norwegian Sub-T Volume, CV Progressions & VO2max Economy',
+    sportCategory: 'Running',
+    targetLabel: 'Sub-T · CV · 3K I',
+    defaultWeeks: 12,
+    trackEventGroup: '3000_3200M',
+    targetProgressionLevels: [8.0, 8.4, 8.8, 9.1, 7.8, 6.8],
+  },
+  {
+    id: 'TRACK_5000M',
+    category: 'TRACK',
+    badge: 'Track 5000m',
+    title: '5000m Track Endurance Peak',
+    subtitle: 'Sub-T 1000m Density, 1200m CV Grinders & 5K Race Control',
+    sportCategory: 'Running',
+    targetLabel: 'High Sub-T + 5K I',
+    defaultWeeks: 16,
+    trackEventGroup: '5000M',
+    targetProgressionLevels: [8.6, 8.8, 9.0, 8.9, 7.2, 6.2],
+  },
+  {
     id: 'FTP_350W',
+    category: 'CYCLING',
     badge: 'Cycling Threshold',
     title: 'Cycling FTP Builder (+8% Peak)',
     subtitle: 'Progressive Sweet Spot, Over-Unders & VO2max Ceiling Expansion',
@@ -114,7 +200,8 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'SUB20_5K',
-    badge: '5K Speed & VO2max',
+    category: 'ROAD',
+    badge: 'Road 5K Speed',
     title: '5K Speed & VO2max Peak',
     subtitle: 'Track 400m/800m Repeats, Lactate Threshold & Aerobic Economy',
     sportCategory: 'Running',
@@ -124,6 +211,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'HALF_MARATHON',
+    category: 'ROAD',
     badge: 'Half Marathon Build',
     title: 'Half Marathon in 12 Weeks',
     subtitle: 'Progressive Long Runs, Cruise Threshold & Deload Recovery Weeks',
@@ -134,6 +222,7 @@ const GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
   },
   {
     id: 'GRAN_FONDO',
+    category: 'CYCLING',
     badge: 'Endurance & Gran Fondo',
     title: '100-Mile Gran Fondo Peak',
     subtitle: 'High-Durability Z2 Volume, Late-Ride Tempo & <3% Cardiac Drift',
@@ -183,6 +272,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   onSwitchToCalendar,
   onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
+  onOpenTracksideStopwatch,
 }) => {
   const [totalsPeriod, setTotalsPeriod] = useState<'28d' | '90d' | 'YTD' | 'ALL'>('YTD');
   const formId = useId();
@@ -190,14 +280,30 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     useState<SportCategory[]>(ALL_SPORTS_LIST);
 
   // Goal-to-Calendar Adaptive Plan Architect State
+  const [archetypeCategory, setArchetypeCategory] = useState<GoalArchetypeCategory>('ALL');
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<GoalArchetypeId>('FTP_350W');
   const [blockWeeks, setBlockWeeks] = useState<4 | 8 | 12 | 16>(12);
   const [daysPerWeek, setDaysPerWeek] = useState<4 | 5 | 6>(5);
   const [longDayPreference, setLongDayPreference] = useState<'Saturday' | 'Sunday'>('Saturday');
   const [blockEnvPref, setBlockEnvPref] = useState<'FLEXIBLE' | 'OUTDOOR' | 'INDOOR'>('FLEXIBLE');
+  const [trackStartingPhase, setTrackStartingPhase] =
+    useState<TrackStartingPhaseOption>('FULL_PROGRESSION');
+  const [trackPhenotypeOverride, setTrackPhenotypeOverride] = useState<
+    SpeedReservePhenotype | 'AUTO'
+  >('AUTO');
+  const [trackSeedInput, setTrackSeedInput] = useState<string>('');
+  const [trackGoalInput, setTrackGoalInput] = useState<string>('');
   const [selectedPreviewWeekIdx, setSelectedPreviewWeekIdx] = useState<number>(0);
   const [isPopulatingCalendar, setIsPopulatingCalendar] = useState(false);
   const [populatedSuccessMsg, setPopulatedSuccessMsg] = useState<string | null>(null);
+
+  const visibleArchetypes = useMemo(
+    () =>
+      archetypeCategory === 'ALL'
+        ? GOAL_ARCHETYPES
+        : GOAL_ARCHETYPES.filter((a) => a.category === archetypeCategory),
+    [archetypeCategory]
+  );
 
   // Pace & Power Insights Calibration State
   const [calibrationAppliedMsg, setCalibrationAppliedMsg] = useState<string | null>(null);
@@ -800,8 +906,118 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     };
   }, [activities, currentCtl, selectedArchetype, todayIso]);
 
+  // Track Speed-Reserve Profile (derived from official FAT races, manual seed mark, or synced threshold pace)
+  const trackSpeedReserveState = useMemo(() => {
+    const officialMarks = activities
+      .filter((a) => Boolean(a.officialRaceData))
+      .map((a) => ({
+        distanceMeters: a.officialRaceData!.eventDistanceMeters,
+        durationSecs: a.officialRaceData!.fatTimeSecs,
+        eventLabel: a.officialRaceData!.eventLabel,
+        dateIso: a.startDateLocal.slice(0, 10),
+      }));
+
+    const parsedManualSeed = parseTrackMarkClockInput(
+      trackSeedInput,
+      selectedArchetype.trackEventGroup
+        ? defaultMetersForTrackEvent(selectedArchetype.trackEventGroup)
+        : 1609.34
+    );
+
+    const marks = parsedManualSeed ? [parsedManualSeed] : officialMarks;
+    const isCalibratingEstimate =
+      marks.length === 0 && !(athleteProfile?.thresholdPaceSecsPerKm && athleteProfile.thresholdPaceSecsPerKm > 0);
+
+    const profile = buildTrackSpeedReserveProfile({
+      marks,
+      thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm,
+      phenotypeOverride: trackPhenotypeOverride,
+    });
+
+    const parsedGoalMark = parseTrackMarkClockInput(
+      trackGoalInput,
+      selectedArchetype.trackEventGroup
+        ? defaultMetersForTrackEvent(selectedArchetype.trackEventGroup)
+        : 1609.34
+    );
+
+    return {
+      profile,
+      parsedManualSeed,
+      goalTimeSecs: parsedGoalMark?.durationSecs,
+      officialMarkCount: officialMarks.length,
+      isCalibratingEstimate,
+    };
+  }, [
+    activities,
+    athleteProfile?.thresholdPaceSecsPerKm,
+    selectedArchetype.trackEventGroup,
+    trackGoalInput,
+    trackPhenotypeOverride,
+    trackSeedInput,
+  ]);
+
+  const trackPlanBundle = useMemo(() => {
+    if (!selectedArchetype.trackEventGroup) return null;
+    const startAnchorIso =
+      activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
+    const now = new Date();
+    const [y, m, d] = startAnchorIso.split('-').map(Number);
+    const dt = new Date(
+      Date.UTC(y || now.getUTCFullYear(), (m || now.getUTCMonth() + 1) - 1, d || now.getUTCDate())
+    );
+    const dow = dt.getUTCDay() || 7;
+    const mondayIso = addDaysIso(startAnchorIso, 1 - dow);
+
+    return generatePeriodizedTrackPlan({
+      startDateIso: mondayIso,
+      blockWeeks,
+      eventGroup: selectedArchetype.trackEventGroup,
+      dateProfile: trackSpeedReserveState.profile,
+      startingPhase: trackStartingPhase,
+      phenotypeOverride: trackPhenotypeOverride,
+      goalTimeSecs: trackSpeedReserveState.goalTimeSecs,
+    });
+  }, [
+    activities,
+    blockWeeks,
+    selectedArchetype.trackEventGroup,
+    todayIso,
+    trackPhenotypeOverride,
+    trackSpeedReserveState.goalTimeSecs,
+    trackSpeedReserveState.profile,
+    trackStartingPhase,
+  ]);
+
   // Multi-Week Goal-to-Calendar Adaptive Plan Generator (with Every-4th-Week Deloads)
   const generatedPlanWeeks = useMemo(() => {
+    if (trackPlanBundle) {
+      return trackPlanBundle.weeks.map((wk) => ({
+        weekNum: wk.weekNum,
+        startDateIso: wk.startDate,
+        phase: wk.phaseLabel,
+        isDeload: wk.isDeload,
+        isTaper: wk.isTaper,
+        targetTss: wk.targetTss,
+        targetHours: wk.targetHours.toFixed(1),
+        targetDistanceKm: wk.targetDistanceKm,
+        sessions: wk.sessions.map((s) => ({
+          date: s.date,
+          name: s.name,
+          sportCategory: s.sportCategory,
+          environmentPreference:
+            blockEnvPref === 'FLEXIBLE' ? s.environmentPreference : blockEnvPref,
+          plannedDurationSecs: s.plannedDurationSecs,
+          plannedLoad: s.plannedLoad,
+          workoutSyntax: s.workoutSyntax || '',
+          description: s.description,
+          trackSpec: s.trackSpec,
+          replaceExistingDate: true,
+        })),
+        zoneDistributionPct: wk.zoneDistributionPct,
+      }));
+    }
+
     const startAnchorIso =
       activities.length > 0 ? activities[0].startDateLocal.slice(0, 10) : todayIso;
     // Align start to the upcoming Monday (or current week's Monday)
@@ -816,16 +1032,18 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     const weeks: {
       weekNum: number;
       startDateIso: string;
-      phase: 'Aerobic Base' | 'Specific Build' | 'Deload (-30%)' | 'Peak & Taper';
+      phase: string;
       isDeload: boolean;
       isTaper: boolean;
       targetTss: number;
       targetHours: string;
+      targetDistanceKm?: number;
       sessions: PlannedEventBatchItem[];
       zoneDistributionPct: [number, number, number, number, number, number];
     }[] = [];
 
     const baseWeeklyTss = Math.max(240, Math.round(currentCtl * 5.2));
+    const dynZones = trackSpeedReserveState.profile.zones;
 
     for (let w = 0; w < blockWeeks; w++) {
       const weekNum = w + 1;
@@ -856,28 +1074,44 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       // Session 1 (Tuesday - offset 1): Key Interval Session
       const tueDate = addDaysIso(weekMondayIso, 1);
       if (selectedArchetype.id === 'SUB20_5K') {
-        const pRace = formatPace(238, distanceUnit);
-        const pTrack = formatPace(236, distanceUnit);
-        const pFast = formatPace(235, distanceUnit);
+        const pRace = formatPace(dynZones.CV.paceSecsPerKm, distanceUnit);
+        const pTrack = formatPace(dynZones.I.paceSecsPerKm, distanceUnit);
+        const split400R = formatTrackSplitToken(dynZones.R.splitsSecs.m400);
+        const split800I = formatTrackSplitToken(dynZones.I.splitsSecs.m800);
         sessions.push({
           date: tueDate,
           name: isDeload
-            ? `Wk${weekNum} Deload: 4x400m Economy Repeats`
+            ? `Wk${weekNum} Deload: 4×400m Economy @ ${split400R}`
             : isTaper
-              ? `Wk${weekNum} Taper: 3x1km Race Pace Sharpener (${pRace})`
-              : `Wk${weekNum} Key Track: 6x800m Sub-20 5K Pace (${pTrack})`,
+              ? `Wk${weekNum} Taper: 3×1km @ ${pRace}`
+              : `Wk${weekNum} Key Track: 6×800m @ ${split800I}`,
           sportCategory: 'Running',
           environmentPreference: blockEnvPref,
           plannedDurationSecs: isDeload ? 2400 : 3300,
           plannedLoad: isDeload ? 52 : 78,
           workoutSyntax: isDeload
-            ? `- 10m 62% FTP Warmup\n- 4m 102% FTP Track Repeat\n- 3m 52% FTP Jog\n- 4m 102% FTP Track Repeat\n- 3m 52% FTP Jog\n- 10m 52% FTP Cooldown`
-            : `- 12m 64% FTP Warmup\n- 3m 110% FTP 800m @ ${pTrack}\n- 2m 52% FTP Recovery\n- 3m 110% FTP 800m @ ${pTrack}\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ ${pFast}\n- 2m 52% FTP Recovery\n- 3m 112% FTP 800m @ ${pFast}\n- 10m 52% FTP Cooldown`,
-          description: `Target pace ${pTrack}–${pRace}. Maintain relaxed shoulders and >180 spm cadence.`,
+            ? `- 10m 66% Pace Warmup\nMain Set 4x\n- 400m @ ${split400R} (114% Pace) R\n- 90s 56% Pace Jog\n- 10m 64% Pace Cooldown`
+            : isTaper
+              ? `- 12m 66% Pace Warmup\nMain Set 3x\n- 1000m @ ${formatTrackSplitToken(dynZones.CV.splitsSecs.m1000)} (102% Pace) CV\n- 2m 56% Pace Jog\n- 10m 64% Pace Cooldown`
+              : `- 12m 66% Pace Warmup\nMain Set 6x\n- 800m @ ${split800I} (110% Pace) I\n- 2m 56% Pace Jog\n- 10m 64% Pace Cooldown`,
+          description: `Target pace ${pTrack}–${pRace} (${split800I}/800m). Maintain relaxed shoulders and >180 spm cadence.`,
+          trackSpec: {
+            repCount: isDeload ? 4 : isTaper ? 3 : 6,
+            repDistanceMeters: isDeload ? 400 : isTaper ? 1000 : 800,
+            zoneCode: isDeload ? 'R' : isTaper ? 'CV' : 'I',
+            podIntensity: isDeload ? 'REPETITION' : isTaper ? 'THRESHOLD_CV' : 'INTERVAL_VO2',
+            targetSplitSecs: isDeload
+              ? dynZones.R.splitsSecs.m400
+              : isTaper
+                ? dynZones.CV.splitsSecs.m1000
+                : dynZones.I.splitsSecs.m800,
+            restDurationSecs: isDeload ? 90 : 120,
+            waveMode: 'POD_10S',
+          },
           replaceExistingDate: true,
         });
       } else if (selectedArchetype.id === 'HALF_MARATHON') {
-        const pLt = formatPace(252, distanceUnit);
+        const pLt = formatPace(dynZones.T.paceSecsPerKm, distanceUnit);
         sessions.push({
           date: tueDate,
           name: isDeload
@@ -888,9 +1122,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           plannedDurationSecs: isDeload ? 2700 : 3600,
           plannedLoad: isDeload ? 56 : 82,
           workoutSyntax: isDeload
-            ? `- 10m 62% FTP Warmup\n- 6m 94% FTP Threshold\n- 3m 54% FTP Recovery\n- 6m 94% FTP Threshold\n- 3m 54% FTP Recovery\n- 6m 94% FTP Threshold\n- 10m 52% FTP Cooldown`
-            : `- 12m 64% FTP Warmup\n- 8m 96% FTP Threshold Cruise\n- 3m 54% FTP Float\n- 8m 97% FTP Threshold Cruise\n- 3m 54% FTP Float\n- 8m 98% FTP Threshold Cruise\n- 3m 54% FTP Float\n- 8m 98% FTP Threshold Cruise\n- 10m 52% FTP Cooldown`,
-          description: `Controlled lactate clearance intervals at 96–98% threshold. Keep cardiac decoupling <3.5%.`,
+            ? `- 10m 65% Pace Warmup\n- 6m 94% Pace Sub-T\n- 3m 56% Pace Recovery\n- 6m 94% Pace Sub-T\n- 3m 56% Pace Recovery\n- 6m 94% Pace Sub-T\n- 10m 62% Pace Cooldown`
+            : `- 12m 66% Pace Warmup\n- 8m 96% Pace Threshold Cruise\n- 3m 56% Pace Float\n- 8m 97% Pace Threshold Cruise\n- 3m 56% Pace Float\n- 8m 98% Pace Threshold Cruise\n- 3m 56% Pace Float\n- 8m 98% Pace Threshold Cruise\n- 10m 62% Pace Cooldown`,
+          description: `Controlled lactate clearance intervals calibrated to your ${pLt} threshold. Keep cardiac decoupling <3.5%.`,
           replaceExistingDate: true,
         });
       } else {
@@ -1017,6 +1251,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     blockEnvPref,
     currentCtl,
     selectedArchetype,
+    todayIso,
+    trackPlanBundle,
+    trackSpeedReserveState.profile.zones,
+    distanceUnit,
   ]);
 
   // Seasonal Peak Power & Best Running Efforts Trophy Matrix (strictly empirical workouts)
@@ -1368,7 +1606,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenOfficialRaceModal}
-                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors whitespace-nowrap"
               >
                 <Trophy className="w-3.5 h-3.5 text-amber-500" />
                 <span>Log Official Race</span>
@@ -1378,7 +1616,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <button
                 type="button"
                 onClick={onSwitchToCalendar}
-                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-blue-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-blue-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
               >
                 <CalendarIcon className="w-3.5 h-3.5 text-blue-500" />
                 <span>Open Training Calendar</span>
@@ -1388,7 +1626,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               type="button"
               disabled={isPopulatingCalendar}
               onClick={handlePopulatePlanToCalendar}
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-[#080A09] shadow-xs transition-colors"
+              className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-[#080A09] shadow-xs transition-colors"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>
@@ -1419,9 +1657,49 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           </div>
         )}
 
-        {/* 1. Objective Archetype Cards */}
+        {/* 1. Objective Discipline Filter & Archetype Cards */}
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              { id: 'ALL', label: 'All Goals' },
+              { id: 'TRACK', label: 'Track Oval' },
+              { id: 'ROAD', label: 'Road Run' },
+              { id: 'CYCLING', label: 'Cycling' },
+            ] as const
+          ).map((cat) => {
+            const active = archetypeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  setArchetypeCategory(cat.id);
+                  const nextList =
+                    cat.id === 'ALL'
+                      ? GOAL_ARCHETYPES
+                      : GOAL_ARCHETYPES.filter((a) => a.category === cat.id);
+                  if (!nextList.some((a) => a.id === selectedArchetypeId) && nextList[0]) {
+                    setSelectedArchetypeId(nextList[0].id);
+                    setBlockWeeks(nextList[0].defaultWeeks);
+                    setSelectedPreviewWeekIdx(0);
+                    setPopulatedSuccessMsg(null);
+                  }
+                }}
+                className={`min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] border-[#1C5436] dark:border-[#C8FF00] font-bold'
+                    : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-[#1C5436]/50'
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {GOAL_ARCHETYPES.map((arch) => {
+          {visibleArchetypes.map((arch) => {
             const active = arch.id === selectedArchetypeId;
             return (
               <button
@@ -1433,15 +1711,15 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   setSelectedPreviewWeekIdx(0);
                   setPopulatedSuccessMsg(null);
                 }}
-                className={`text-left rounded-xl p-3.5 border transition-all flex flex-col justify-between space-y-2 ${
+                className={`text-left rounded-xl p-3.5 border transition-all flex flex-col justify-between space-y-2 cursor-pointer ${
                   active
-                    ? 'border-blue-500 bg-blue-500/10 dark:bg-blue-500/15 shadow-xs'
-                    : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 hover:border-blue-400/50'
+                    ? 'border-[#1C5436] dark:border-[#C8FF00] bg-[#1C5436]/[0.07] dark:bg-[#C8FF00]/[0.08] shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-900/50 hover:border-[#1C5436]/50'
                 }`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-2xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-sky-300 font-semibold">
+                    <span className="text-2xs font-mono px-1.5 py-0.5 rounded bg-emerald-900/10 dark:bg-[#C8FF00]/15 text-[#1C5436] dark:text-[#C8FF00] font-bold">
                       {arch.badge}
                     </span>
                     <span className="text-2xs font-mono text-slate-500">
@@ -1451,13 +1729,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
                     {arch.title}
                   </div>
-                  <p className="text-2xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-snug">
+                  <p className="text-2xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug">
                     {arch.subtitle}
                   </p>
                 </div>
                 <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex items-center justify-between text-2xs font-mono">
                   <span className="text-slate-500">Target:</span>
-                  <span className="font-bold text-blue-600 dark:text-sky-400">
+                  <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
                     {arch.targetLabel}
                   </span>
                 </div>
@@ -1465,6 +1743,222 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             );
           })}
         </div>
+
+        {/* 1b. Track Speed-Reserve & 7-Zone Split Panel (shown for Track Oval archetypes) */}
+        {selectedArchetype.trackEventGroup && (
+          <div
+            data-testid="track-speed-reserve-panel"
+            className="rounded-xl border border-[#1C5436]/30 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-4 space-y-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Gauge className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00]" />
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Track Speed-Reserve &amp; Date-Pace Calibration
+                </h2>
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded-lg font-mono text-2xs font-bold ${
+                  trackSpeedReserveState.isCalibratingEstimate
+                    ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
+                }`}
+              >
+                {trackSpeedReserveState.isCalibratingEstimate
+                  ? 'CALIBRATING · Default Baseline'
+                  : trackSpeedReserveState.parsedManualSeed
+                    ? `Seeded · ${Math.round(trackSpeedReserveState.parsedManualSeed.distanceMeters)}m in ${formatTrackSplitToken(
+                        trackSpeedReserveState.parsedManualSeed.durationSecs
+                      )}`
+                    : `${trackSpeedReserveState.officialMarkCount} FAT Marks · CS + D'`}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label
+                  htmlFor={`${formId}-track-phase`}
+                  className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  Season Phase
+                </label>
+                <select
+                  id={`${formId}-track-phase`}
+                  value={trackStartingPhase}
+                  onChange={(e) => {
+                    setTrackStartingPhase(e.target.value as TrackStartingPhaseOption);
+                    setSelectedPreviewWeekIdx(0);
+                  }}
+                  className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="FULL_PROGRESSION">Full Periodized Arc</option>
+                  <option value="BASE">Base Building &amp; Sub-T</option>
+                  <option value="STRENGTH_CV">Strength &amp; Tinman CV</option>
+                  <option value="SPECIFIC">Race-Specific Track Peak</option>
+                  <option value="PEAK_TAPER">Championship Peak &amp; Taper</option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`${formId}-track-phenotype`}
+                  className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  ASR Phenotype
+                </label>
+                <select
+                  id={`${formId}-track-phenotype`}
+                  value={trackPhenotypeOverride}
+                  onChange={(e) =>
+                    setTrackPhenotypeOverride(e.target.value as SpeedReservePhenotype | 'AUTO')
+                  }
+                  className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="AUTO">Auto (From CS + D')</option>
+                  <option value="ENDURANCE">Endurance (Lower D' · Aerobic)</option>
+                  <option value="HYBRID">Hybrid (Balanced CS + ASR)</option>
+                  <option value="SPEED">Speed Type (High ASR / D')</option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`${formId}-track-seed`}
+                  className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  Recent Seed Mark
+                </label>
+                <input
+                  id={`${formId}-track-seed`}
+                  data-testid="track-seed-input"
+                  type="text"
+                  value={trackSeedInput}
+                  onChange={(e) => setTrackSeedInput(e.target.value)}
+                  placeholder="e.g. 4:05 or 1500m 3:48.5"
+                  className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                />
+                <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                  {(['4:05', '4:35', '5:15', '6:15'] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setTrackSeedInput(preset)}
+                      className={`px-2 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
+                        trackSeedInput.trim() === preset
+                          ? 'bg-[#1C5436] text-white border-[#1C5436] dark:bg-[#C8FF00] dark:text-[#080A09] font-bold'
+                          : 'bg-white dark:bg-[#15231B] text-slate-700 dark:text-slate-300 border-stone-300 dark:border-[#2B543B]'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`${formId}-track-goal`}
+                  className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  Goal Mark (Optional)
+                </label>
+                <input
+                  id={`${formId}-track-goal`}
+                  data-testid="track-goal-input"
+                  type="text"
+                  value={trackGoalInput}
+                  onChange={(e) => setTrackGoalInput(e.target.value)}
+                  placeholder="e.g. 3:59 or 5k 14:40"
+                  className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono tabular-nums text-xs">
+              <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                <div className="text-2xs text-slate-500">Aerobic VDOT</div>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  {trackSpeedReserveState.profile.vdotAer.toFixed(1)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                <div className="text-2xs text-slate-500">Critical Speed (CV)</div>
+                <div className="text-sm font-extrabold text-[#1C5436] dark:text-[#C8FF00]">
+                  {formatPace(trackSpeedReserveState.profile.criticalPaceSecsPerKm, distanceUnit)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                <div className="text-2xs text-slate-500">Anaerobic D&apos;</div>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  {Math.round(trackSpeedReserveState.profile.dPrimeMeters)} m
+                </div>
+              </div>
+              <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                <div className="text-2xs text-slate-500">Speed Reserve (ASR)</div>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  +{trackSpeedReserveState.profile.asrMps.toFixed(2)} m/s ·{' '}
+                  {trackPlanBundle?.phenotype || trackSpeedReserveState.profile.phenotype}
+                </div>
+              </div>
+            </div>
+
+            {trackPlanBundle?.ambitiousGoalWarning && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-mono">
+                Goal exceeds +{trackPlanBundle.deltaMaxPct.toFixed(1)}% 16-week physiological cap
+                ({trackPlanBundle.rawGoalGapPct.toFixed(1)}% raw gap). Weekly prescriptions clamped
+                to protect adaptation.
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono tabular-nums text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-stone-200 dark:border-[#244331] text-2xs text-slate-500">
+                    <th className="py-1.5 pr-3">Zone</th>
+                    <th className="py-1.5 px-2">Pace</th>
+                    <th className="py-1.5 px-2">200m</th>
+                    <th className="py-1.5 px-2">400m</th>
+                    <th className="py-1.5 px-2">800m</th>
+                    <th className="py-1.5 px-2">1000m</th>
+                    <th className="py-1.5 pl-2">1600m</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-200/70 dark:divide-[#244331]/70">
+                  {(['E', 'SUB_T', 'T', 'CV', 'I', 'R', 'FR'] as TrackTrainingZoneCode[]).map(
+                    (code) => {
+                      const row = trackSpeedReserveState.profile.zones[code];
+                      return (
+                        <tr key={code} data-testid={`track-zone-row-${code}`}>
+                          <td className="py-1.5 pr-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            {row.code} · <span className="font-normal text-slate-600 dark:text-slate-300">{row.name}</span>
+                          </td>
+                          <td className="py-1.5 px-2 text-[#1C5436] dark:text-[#C8FF00] font-bold">
+                            {formatPace(row.paceSecsPerKm, distanceUnit)}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
+                            {formatTrackSplitToken(row.splitsSecs.m200)}
+                          </td>
+                          <td className="py-1.5 px-2 font-bold text-slate-900 dark:text-white">
+                            {formatTrackSplitToken(row.splitsSecs.m400)}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
+                            {formatTrackSplitToken(row.splitsSecs.m800)}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
+                            {formatTrackSplitToken(row.splitsSecs.m1000)}
+                          </td>
+                          <td className="py-1.5 pl-2 text-slate-800 dark:text-slate-200">
+                            {formatTrackSplitToken(row.splitsSecs.m1600)}
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* 2. Block Configuration Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-800">
@@ -1699,45 +2193,103 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               </span>
             </div>
 
-            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {activePreviewWeek.sessions.map((sess, sIdx) => (
-                <div
-                  key={`${sess.date}-${sIdx}`}
-                  className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200/80 dark:border-slate-800 overflow-hidden"
-                >
-                  {/* Intervals.icu Effort Stripe along top of session card */}
-                  <div className="h-[4px] w-full flex">
-                    {activePreviewWeek.zoneDistributionPct.map((pct, zIdx) =>
-                      pct > 0 ? (
-                        <div
-                          key={zIdx}
-                          style={{
-                            width: `${pct}%`,
-                            backgroundColor: ZONE_COLORS[zIdx],
-                          }}
-                          className="h-full"
-                        />
-                      ) : null
-                    )}
-                  </div>
-                  <div className="p-2.5 flex items-center justify-between gap-2 text-xs">
-                    <div className="min-w-0">
-                      <div className="text-2xs font-mono text-slate-500">
-                        {sess.date} · {sess.sportCategory}
-                      </div>
-                      <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                        {sess.name}
-                      </div>
+            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+              {activePreviewWeek.sessions.map((sess, sIdx) => {
+                const trackSpec =
+                  sess.sportCategory === 'Running'
+                    ? sess.trackSpec ||
+                      inferTrackWorkoutSpecFromPlannedEvent({
+                        name: sess.name,
+                        workoutSyntax: sess.workoutSyntax,
+                      })
+                    : null;
+                return (
+                  <div
+                    key={`${sess.date}-${sIdx}`}
+                    className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200/80 dark:border-slate-800 overflow-hidden"
+                  >
+                    {/* Intervals.icu Effort Stripe along top of session card */}
+                    <div className="h-[4px] w-full flex">
+                      {activePreviewWeek.zoneDistributionPct.map((pct, zIdx) =>
+                        pct > 0 ? (
+                          <div
+                            key={zIdx}
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: ZONE_COLORS[zIdx],
+                            }}
+                            className="h-full"
+                          />
+                        ) : null
+                      )}
                     </div>
-                    <div className="text-right font-mono shrink-0">
-                      <div className="font-bold text-blue-600 dark:text-sky-400">
-                        {Math.round(sess.plannedDurationSecs / 60)}m
+                    <div className="p-2.5 space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-2xs font-mono text-slate-500">
+                            {sess.date} · {sess.sportCategory}
+                          </div>
+                          <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {sess.name}
+                          </div>
+                        </div>
+                        <div className="text-right font-mono shrink-0">
+                          <div className="font-bold text-blue-600 dark:text-sky-400">
+                            {Math.round(sess.plannedDurationSecs / 60)}m
+                          </div>
+                          <div className="text-2xs text-slate-500">~{sess.plannedLoad} TSS</div>
+                        </div>
                       </div>
-                      <div className="text-2xs text-slate-500">~{sess.plannedLoad} TSS</div>
+                      {(trackSpec || Boolean(sess.workoutSyntax)) && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200/70 dark:border-slate-800/70">
+                          {trackSpec && (
+                            <button
+                              type="button"
+                              data-testid="goals-launch-stopwatch"
+                              onClick={() => {
+                                stageWorkoutInTracksideStopwatch({
+                                  title: sess.name,
+                                  spec: trackSpec,
+                                });
+                                onOpenTracksideStopwatch?.();
+                              }}
+                              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-mono font-bold cursor-pointer"
+                            >
+                              <Timer className="w-3.5 h-3.5" weight="bold" />
+                              <span>Time on Track</span>
+                            </button>
+                          )}
+                          {sess.workoutSyntax && (
+                            <button
+                              type="button"
+                              data-testid="goals-export-fit"
+                              onClick={() => {
+                                const sport: 'Running' | 'Cycling' =
+                                  sess.sportCategory === 'Cycling' ? 'Cycling' : 'Running';
+                                const steps = buildFitStepsFromWorkoutSyntax(sess.workoutSyntax, {
+                                  sport,
+                                  ftpWatts:
+                                    athleteProfile?.ftp || raceAndFtpPredictions.currentFtp || 280,
+                                  lthrBpm: athleteProfile?.lthr || 170,
+                                  thresholdPaceSecsPerKm:
+                                    trackSpeedReserveState.profile.thresholdPaceSecsPerKm ||
+                                    athleteProfile?.thresholdPaceSecsPerKm ||
+                                    250,
+                                });
+                                downloadGarminFitWorkoutFile({ name: sess.name, sport, steps }, sess.date);
+                              }}
+                              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" weight="bold" />
+                              <span>.FIT</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

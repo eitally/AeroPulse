@@ -4,6 +4,7 @@ import type {
   PlannedWorkoutEvent,
   SportCategory,
   TeamSummaryWithRole,
+  TrackWorkoutSpec,
 } from '../types';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 
@@ -40,6 +41,7 @@ export function usePlannedEvents({
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      trackSpec?: TrackWorkoutSpec;
       replaceExistingDate?: boolean;
     }) => {
       if (activeConnectedAthlete) {
@@ -96,6 +98,7 @@ export function usePlannedEvents({
           plannedDurationSecs: eventInput.plannedDurationSecs,
           targetZoneSummary: 'Coach Prescribed Session',
           workoutSyntax: eventInput.workoutSyntax,
+          ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
           source: 'USER',
         };
         const applyCoachEvt = (prev: ConnectedAthleteRecord[]) =>
@@ -147,6 +150,7 @@ export function usePlannedEvents({
               plannedDurationSecs: eventInput.plannedDurationSecs,
               targetZoneSummary: 'Sample Planned Session',
               workoutSyntax: eventInput.workoutSyntax,
+              ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
             },
           ].sort((a, b) => a.date.localeCompare(b.date));
         });
@@ -206,6 +210,7 @@ export function usePlannedEvents({
             plannedDurationSecs: eventInput.plannedDurationSecs,
             targetZoneSummary: 'Structured Workout',
             workoutSyntax: eventInput.workoutSyntax,
+            ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
           },
         ];
       });
@@ -235,6 +240,7 @@ export function usePlannedEvents({
         plannedDurationSecs: number;
         targetZoneSummary?: string;
         workoutSyntax: string;
+        trackSpec?: TrackWorkoutSpec;
         replaceExistingDate?: boolean;
       }>
     ) => {
@@ -250,6 +256,7 @@ export function usePlannedEvents({
         plannedDurationSecs: item.plannedDurationSecs,
         targetZoneSummary: item.targetZoneSummary || 'Structured Workout',
         workoutSyntax: item.workoutSyntax,
+        ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
       }));
 
       if (activeConnectedAthlete) {

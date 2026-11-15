@@ -8,14 +8,21 @@ import type {
   NcaaTrackFacilityType,
   RecruitingStandardComparison,
   ScholasticTrackEventLabel,
+  SpeedReservePhenotype,
   SportCategory,
   StudentAthleteCheckIn,
   StudentAthleteGuardrailResult,
+  TrackRepDistanceMeters,
+  TrackSeedMarkInput,
   UnifiedActivity,
   VdotPodAthleteMember,
   VdotPodIntensity,
   VdotTrainingPod,
 } from '../types.ts';
+import {
+  buildTrackSpeedReserveProfile,
+  solveTrackPaceSecsPerKmForPctVdot,
+} from './trackSpeedReserveEngine.ts';
 
 /**
  * Formats seconds with 0.01s or 0.1s precision into Track & Field stopwatch format (`m:ss.xx` or `ss.xx`).
@@ -40,18 +47,18 @@ export function formatTrackMark(seconds: number, decimals: 1 | 2 = 2): string {
  * At T-pace (~88% VO2max): v (m/min) = 60,000 / paceSecsPerKm.
  */
 export function estimateVdotFromThresholdPace(thresholdPaceSecsPerKm: number): number {
-  const safePace = Math.max(150, Math.min(480, thresholdPaceSecsPerKm || 250));
+  const safePace = Math.max(115, Math.min(480, thresholdPaceSecsPerKm || 250));
   const vMetersPerMin = 60000 / safePace;
   const vo2AtThreshold = -4.6 + 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin * vMetersPerMin;
   const vdot = vo2AtThreshold / 0.88;
-  return Number(Math.max(28, Math.min(86, vdot)).toFixed(1));
+  return Number(Math.max(22, Math.min(90, vdot)).toFixed(1));
 }
 
 /**
  * Derives threshold pace (`s/km`) from a Jack Daniels VDOT score via Newton/quadratic inversion.
  */
 export function deriveThresholdPaceFromVdot(vdot: number): number {
-  const safeVdot = Math.max(28, Math.min(86, vdot));
+  const safeVdot = Math.max(22, Math.min(90, vdot));
   const targetVo2 = safeVdot * 0.88;
   // 0.000104 v^2 + 0.182258 v - (4.6 + targetVo2) = 0
   const a = 0.000104;
@@ -77,6 +84,11 @@ const INTENSITY_PACE_MULTIPLIERS: Record<
     label: 'Marathon / Steady State',
     pctFtpSyntax: '86%-91% Pace',
   },
+  SUB_THRESHOLD: {
+    paceMultiplierVsThreshold: 0.955,
+    label: 'Norwegian Sub-Threshold',
+    pctFtpSyntax: '92%-96% Pace',
+  },
   THRESHOLD_CV: {
     paceMultiplierVsThreshold: 0.99,
     label: 'Threshold / Tinman CV',
@@ -87,10 +99,25 @@ const INTENSITY_PACE_MULTIPLIERS: Record<
     label: 'VO2max Interval (3K–5K)',
     pctFtpSyntax: '106%-111% Pace',
   },
+  RACE_3200M: {
+    paceMultiplierVsThreshold: 0.885,
+    label: '3200m / 2-Mile Race Pace',
+    pctFtpSyntax: '109%-113% Pace',
+  },
   REPETITION: {
     paceMultiplierVsThreshold: 0.855,
     label: 'Mile / Economy Repetition',
     pctFtpSyntax: '114%-120% Pace',
+  },
+  RACE_1600M: {
+    paceMultiplierVsThreshold: 0.825,
+    label: '1600m / Mile Race Pace',
+    pctFtpSyntax: '118%-124% Pace',
+  },
+  RACE_800M: {
+    paceMultiplierVsThreshold: 0.735,
+    label: '800m Race / Fast Rep Pace',
+    pctFtpSyntax: '130%-140% Pace',
   },
 };
 
@@ -108,17 +135,20 @@ export interface VdotPodRosterInput {
   name: string;
   thresholdPaceSecsPerKm: number;
   vdotOverride?: number;
+  seedMarks?: TrackSeedMarkInput[];
+  dPrimeMeters?: number;
+  phenotype?: SpeedReservePhenotype;
 }
 
 /**
  * Clusters a High School or Collegiate roster into cohesive VDOT Pacing Pods (`±2.2 VDOT` / `~2s per 400m`)
- * and calculates exact 200m, 400m, 800m, 1000m, and 1600m track splits for one unified coach prescription.
+ * and calculates exact 200m, 300m, 400m, 600m, 800m, 1000m, 1200m, and 1600m track splits plus Pursuit wave offsets.
  */
 export function computeTeamVdotPacingPods(params: {
   roster: VdotPodRosterInput[];
   intensity: VdotPodIntensity;
   repCount: number;
-  repDistanceMeters: 200 | 400 | 800 | 1000 | 1600;
+  repDistanceMeters: TrackRepDistanceMeters;
   recoveryLabel?: string;
   maxPods?: number;
 }): VdotTrainingPod[] {
@@ -133,18 +163,43 @@ export function computeTeamVdotPacingPods(params: {
 
   if (!roster || roster.length === 0) return [];
 
+  const metaByMemberId = new Map<
+    string,
+    { dPrimeMeters?: number; phenotype?: SpeedReservePhenotype }
+  >();
+
   const members: VdotPodAthleteMember[] = roster
     .map((r) => {
+      const seedProfile =
+        r.seedMarks && r.seedMarks.length > 0
+          ? buildTrackSpeedReserveProfile({
+              marks: r.seedMarks,
+              thresholdPaceSecsPerKm: r.thresholdPaceSecsPerKm,
+              phenotypeOverride: r.phenotype,
+            })
+          : null;
+
       const vdot =
-        r.vdotOverride && r.vdotOverride > 25
+        r.vdotOverride && r.vdotOverride >= 22
           ? Number(r.vdotOverride.toFixed(1))
-          : estimateVdotFromThresholdPace(r.thresholdPaceSecsPerKm);
+          : seedProfile
+            ? Number(seedProfile.vdotAer.toFixed(1))
+            : estimateVdotFromThresholdPace(r.thresholdPaceSecsPerKm);
       const tPace = deriveThresholdPaceFromVdot(vdot);
+      const resolvedPhenotype = r.phenotype ?? seedProfile?.phenotype;
+      const resolvedDPrime = r.dPrimeMeters ?? seedProfile?.dPrimeMeters;
+
+      metaByMemberId.set(r.id, {
+        dPrimeMeters: resolvedDPrime,
+        phenotype: resolvedPhenotype,
+      });
+
       return {
         id: r.id,
         name: r.name,
         vdot,
         thresholdPaceSecsPerKm: tPace,
+        ...(resolvedPhenotype ? { phenotype: resolvedPhenotype } : {}),
       };
     })
     .sort((a, b) => b.vdot - a.vdot);
@@ -167,7 +222,7 @@ export function computeTeamVdotPacingPods(params: {
 
   const intensitySpec = INTENSITY_PACE_MULTIPLIERS[intensity];
 
-  return rawClusters.map((group, idx) => {
+  const basePods: VdotTrainingPod[] = rawClusters.map((group, idx) => {
     const vdots = group.map((g) => g.vdot);
     const maxVdot = Math.max(...vdots);
     const minVdot = Math.min(...vdots);
@@ -175,29 +230,107 @@ export function computeTeamVdotPacingPods(params: {
       (vdots.reduce((acc, v) => acc + v, 0) / Math.max(1, vdots.length)).toFixed(1)
     );
     const centerTPaceSecsPerKm = deriveThresholdPaceFromVdot(centerVdot);
-    const targetPaceSecsPerKm = Number(
-      (centerTPaceSecsPerKm * intensitySpec.paceMultiplierVsThreshold).toFixed(1)
-    );
+
+    const suppliedDPrimes = group
+      .map((m) => metaByMemberId.get(m.id)?.dPrimeMeters)
+      .filter((d): d is number => typeof d === 'number' && Number.isFinite(d) && d > 0);
+    const suppliedPhenotypes = group
+      .map((m) => metaByMemberId.get(m.id)?.phenotype)
+      .filter((p): p is SpeedReservePhenotype => Boolean(p));
+
+    const dominantPhenotype: SpeedReservePhenotype | undefined =
+      suppliedPhenotypes.length > 0 ? suppliedPhenotypes[0] : undefined;
+
+    const podProfile = buildTrackSpeedReserveProfile({
+      thresholdPaceSecsPerKm: centerTPaceSecsPerKm,
+      phenotypeOverride: dominantPhenotype,
+    });
+    const effectiveDPrime =
+      suppliedDPrimes.length > 0
+        ? suppliedDPrimes.reduce((a, b) => a + b, 0) / suppliedDPrimes.length
+        : podProfile.dPrimeMeters;
+    const csMps = podProfile.csMps;
+
+    const hyperbolicPaceForMeters = (meters: number, dScale = 1): number => {
+      const effectiveSecs = Math.max(30, (meters - effectiveDPrime * dScale) / Math.max(2.0, csMps));
+      return (effectiveSecs / meters) * 1000;
+    };
+
+    let targetPaceSecsPerKm: number;
+    switch (intensity) {
+      case 'EASY':
+        targetPaceSecsPerKm = podProfile.zones.E.paceSecsPerKm;
+        break;
+      case 'MARATHON':
+        targetPaceSecsPerKm = solveTrackPaceSecsPerKmForPctVdot(podProfile.vdotAer, 0.8, [150, 480]);
+        break;
+      case 'SUB_THRESHOLD':
+        targetPaceSecsPerKm = podProfile.zones.SUB_T.paceSecsPerKm;
+        break;
+      case 'THRESHOLD_CV':
+        targetPaceSecsPerKm = podProfile.zones.CV.paceSecsPerKm;
+        break;
+      case 'INTERVAL_VO2':
+        targetPaceSecsPerKm = podProfile.zones.I.paceSecsPerKm;
+        break;
+      case 'RACE_3200M':
+        targetPaceSecsPerKm = Number(
+          Math.min(
+            podProfile.zones.CV.paceSecsPerKm - 2,
+            Math.max(115, hyperbolicPaceForMeters(3200))
+          ).toFixed(1)
+        );
+        break;
+      case 'REPETITION':
+        targetPaceSecsPerKm = podProfile.zones.R.paceSecsPerKm;
+        break;
+      case 'RACE_1600M':
+        targetPaceSecsPerKm = Number(
+          Math.min(
+            podProfile.zones.R.paceSecsPerKm,
+            Math.max(105, hyperbolicPaceForMeters(1600))
+          ).toFixed(1)
+        );
+        break;
+      case 'RACE_800M':
+        targetPaceSecsPerKm = Number(
+          Math.min(
+            podProfile.zones.FR.paceSecsPerKm,
+            Math.max(95, hyperbolicPaceForMeters(800, 0.8))
+          ).toFixed(1)
+        );
+        break;
+      default:
+        targetPaceSecsPerKm = podProfile.zones.CV.paceSecsPerKm;
+    }
 
     const splitForMeters = (m: number) =>
       Number(((targetPaceSecsPerKm / 1000) * m).toFixed(1));
 
     const splitsSecs = {
       split200m: splitForMeters(200),
+      split300m: splitForMeters(300),
       split400m: splitForMeters(400),
+      split600m: splitForMeters(600),
       split800m: splitForMeters(800),
       split1000m: splitForMeters(1000),
+      split1200m: splitForMeters(1200),
       split1600m: splitForMeters(1600),
     };
 
-    const targetRepSecs = splitForMeters(repDistanceMeters);
-    const repDisplay = formatTrackMark(targetRepSecs, 1);
+    const targetRepSplitSecs = splitForMeters(repDistanceMeters);
+    const repDisplay = formatTrackMark(targetRepSplitSecs, 1);
     const lap400Display = formatTrackMark(splitsSecs.split400m, 1);
     const podName = POD_TIERS[idx] || `Pod ${String.fromCharCode(65 + idx)}`;
 
     const workoutPrescriptionLine = `${repCount} x ${repDistanceMeters}m @ ${repDisplay} (${lap400Display}/400m · ${intensitySpec.label}) w/ ${recoveryLabel}`;
-    const approxRepSecsRounded = Math.max(20, Math.round(targetRepSecs));
-    const workoutSyntax = `Warmup\n- 15m 65%-74% Pace\n\nMain Set ${repCount}x\n- ${approxRepSecsRounded}s ${intensitySpec.pctFtpSyntax} (${repDistanceMeters}m @ ${repDisplay})\n- 60s 60% Pace (${recoveryLabel})\n\nCooldown\n- 10m 62%-70% Pace`;
+    const recMatch = recoveryLabel.match(/(\d+(?:\.\d+)?)\s*(m|min|s|sec)/i);
+    const recToken = recMatch
+      ? recMatch[2].toLowerCase().startsWith('m')
+        ? `${recMatch[1]}m`
+        : `${recMatch[1]}s`
+      : '60s';
+    const workoutSyntax = `Warmup\n- 15m 65%-74% Pace Warmup\n\nMain Set ${repCount}x\n- ${repDistanceMeters}m @ ${repDisplay} (${intensitySpec.pctFtpSyntax})\n- ${recToken} 58% Pace ${recoveryLabel}\n\nCooldown\n- 10m 62%-70% Pace Cooldown`;
 
     return {
       podId: `POD_${String.fromCharCode(65 + idx)}`,
@@ -208,11 +341,21 @@ export function computeTeamVdotPacingPods(params: {
       athletes: group,
       intensity,
       targetPaceSecsPerKm,
+      targetRepSplitSecs,
       splitsSecs,
       workoutPrescriptionLine,
       workoutSyntax,
     };
   });
+
+  // Pursuit Stagger: slowest pod starts at 0.0s, faster pods hold so every pod finishes together.
+  const slowestRepSecs = Math.max(...basePods.map((p) => p.targetRepSplitSecs ?? 0));
+  return basePods.map((pod) => ({
+    ...pod,
+    pursuitStaggerOffsetSecs: Number(
+      Math.max(0, slowestRepSecs - (pod.targetRepSplitSecs ?? slowestRepSecs)).toFixed(1)
+    ),
+  }));
 }
 
 /**
@@ -229,17 +372,27 @@ export function formatPrintablePodSplitSheet(
 
   for (const pod of pods) {
     const names = pod.athletes.map((a) => `${a.name} (${a.vdot})`).join(', ');
+    const pursuitNote =
+      typeof pod.pursuitStaggerOffsetSecs === 'number'
+        ? ` | Pursuit Stagger: +${pod.pursuitStaggerOffsetSecs.toFixed(1)}s`
+        : '';
     lines.push(
-      `\n[${pod.podName}] VDOT ${pod.minVdot === pod.maxVdot ? pod.centerVdot : `${pod.minVdot}–${pod.maxVdot}`}`
+      `\n[${pod.podName}] VDOT ${pod.minVdot === pod.maxVdot ? pod.centerVdot : `${pod.minVdot}–${pod.maxVdot}`}${pursuitNote}`
     );
     lines.push(`  Athletes: ${names}`);
     lines.push(`  Target:   ${pod.workoutPrescriptionLine}`);
     lines.push(
-      `  Splits:   200m ${formatTrackMark(pod.splitsSecs.split200m, 1)} | 400m ${formatTrackMark(
-        pod.splitsSecs.split400m,
+      `  Splits:   200m ${formatTrackMark(pod.splitsSecs.split200m, 1)} | 300m ${formatTrackMark(
+        pod.splitsSecs.split300m ?? pod.splitsSecs.split200m * 1.5,
+        1
+      )} | 400m ${formatTrackMark(pod.splitsSecs.split400m, 1)} | 600m ${formatTrackMark(
+        pod.splitsSecs.split600m ?? pod.splitsSecs.split400m * 1.5,
         1
       )} | 800m ${formatTrackMark(pod.splitsSecs.split800m, 1)} | 1000m ${formatTrackMark(
         pod.splitsSecs.split1000m,
+        1
+      )} | 1200m ${formatTrackMark(
+        pod.splitsSecs.split1200m ?? pod.splitsSecs.split400m * 3,
         1
       )} | 1600m ${formatTrackMark(pod.splitsSecs.split1600m, 1)}`
     );

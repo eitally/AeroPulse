@@ -366,7 +366,7 @@ export function buildServerAthleteProfile(
       latestWellness?.runEftp ||
       obs.obsRunFtp ||
       prev.runFtp ||
-      Math.round(weightKg * (1000 / Math.max(160, thresholdPaceSecsPerKm)) * 0.98)
+      Math.round(weightKg * (1000 / Math.max(130, thresholdPaceSecsPerKm)) * 0.98)
   );
   const runEFtp = Number(
     latestWellness?.runEftp ||
