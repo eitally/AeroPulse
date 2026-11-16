@@ -7,6 +7,7 @@ import type {
   WeeklyGitDiffDayChange,
   WeeklyGitDiffProposal,
 } from '../types.ts';
+import { applyMeetMicroPeriodizationToGitDiff } from './trackMeetAndRelayEngine.ts';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -308,18 +309,28 @@ export function generateWeeklyTrainingGitDiff(params: {
     });
   }
 
-  const origWeekTss = dayChanges.reduce((s, d) => s + d.originalTss, 0);
-  const propWeekTss = dayChanges.reduce((s, d) => s + d.proposedTss, 0);
+  const meetAdjusted = applyMeetMicroPeriodizationToGitDiff({
+    dayChanges,
+    plannedEvents,
+    todayIso,
+  });
+  const finalDayChanges = meetAdjusted.dayChanges;
+
+  const origWeekTss = finalDayChanges.reduce((s, d) => s + d.originalTss, 0);
+  const propWeekTss = finalDayChanges.reduce((s, d) => s + d.proposedTss, 0);
   const netTssDelta = propWeekTss - origWeekTss;
   const netCtlDelta = Math.round((netTssDelta / 42) * 10) / 10;
   const netTsbDelta = Math.round((-netTssDelta / 7) * 10) / 10;
 
-  const triggerReason =
+  const baseReason =
     readinessVerdict === 'RED_GUARDRAIL'
       ? `Eccentric Running Impact ACWR (${orthopedicSummary.impactAcwr.toFixed(2)}x) crossed guardrail threshold`
       : readinessVerdict === 'AMBER_ADAPT'
         ? `Autonomic Readiness (${hrvScore}/100) & Form (TSB ${Math.round(tsb)}) call for 48h intensity shift`
         : `All 3 physiological channels green (Readiness ${hrvScore}/100 · Impact ACWR ${orthopedicSummary.impactAcwr.toFixed(2)}x)`;
+  const triggerReason = meetAdjusted.meetNote
+    ? `${baseReason} · ${meetAdjusted.meetNote}`
+    : baseReason;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -328,6 +339,6 @@ export function generateWeeklyTrainingGitDiff(params: {
     netTssDelta,
     netCtlDelta,
     netTsbDelta,
-    dayChanges,
+    dayChanges: finalDayChanges,
   };
 }

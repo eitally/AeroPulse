@@ -49,6 +49,7 @@ import {
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import { TeamManagementPanel } from './TeamManagementPanel';
+import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
 
 export type RosterTab =
   | 'TEAMS_BRANDING'
@@ -1926,11 +1927,11 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         20-Hour Weekly / 4-Hour Daily CARA Audit
                       </h3>
                       <span className="ap-status-info px-2 py-0.5 rounded font-mono text-2xs font-bold uppercase">
-                        NCAA Bylaw 17.1
+                        NCAA Bylaw 17.1 · 3.0h Flat Comp Day
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                      Rolling 7-day Countable Athletically Related Activities (CARA) across connected roster athletes.
+                      Rolling 7-day Countable Athletically Related Activities (CARA) counting any meet/competition day as a statutory flat 3.0h block.
                     </p>
                   </div>
 
@@ -1989,7 +1990,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                               />
                             </div>
                             <div className="flex justify-between font-mono text-2xs text-slate-600 dark:text-slate-300 tabular-nums">
-                              <span>7d Logged: {resolvedHours}h / 20h</span>
+                              <span>
+                                7d Logged: {resolvedHours}h / 20h
+                                {(baseAudit.competitionDaysCount ?? 0) > 0
+                                  ? ` (${baseAudit.competitionDaysCount} comp day @ 3.0h)`
+                                  : ''}
+                              </span>
                               <span>
                                 {ath.activities.length > 0
                                   ? `Peak Day: ${baseAudit.maxSingleDayHours}h / 4h`
@@ -2003,6 +2009,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Section 3: Relay Lineup Optimizer & NFHS Hand->FAT Top-Times Board */}
+              <ScholasticRelayAndTopTimesPanel
+                candidates={combinedPodRoster}
+                roster={connectedRoster}
+              />
             </div>
           )}
 

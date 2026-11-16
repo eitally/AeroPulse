@@ -171,6 +171,13 @@ export type OfficialTrackSurface =
   | 'XC_COURSE'
   | 'ROAD';
 
+export type MeetPriorityTier = 'DUAL_TRAINING_THROUGH' | 'INVITATIONAL_B' | 'CHAMPIONSHIP_A';
+export type TrackSplitTimingContext =
+  | 'OPEN_FAT'
+  | 'HAND_CONVERTED'
+  | 'RELAY_LEADOFF'
+  | 'RELAY_FLYING';
+
 export interface OfficialRaceMetadata {
   platform: OfficialRacePlatform;
   meetName: string;
@@ -185,6 +192,9 @@ export interface OfficialRaceMetadata {
   lapSplitsSecs: number[];
   vdotScore: number;
   includeWarmupCooldown: boolean;
+  meetPriorityTier?: MeetPriorityTier;
+  timingMethod?: 'FAT' | 'HAND';
+  splitContext?: TrackSplitTimingContext;
   sourceUrl?: string;
 }
 
@@ -297,6 +307,7 @@ export interface PlannedWorkoutEvent {
   footwearClass?: TrackFootwearClass;
   spikedDistanceMeters?: number;
   trackFacility?: NcaaTrackFacilityType;
+  meetPriorityTier?: MeetPriorityTier;
   source?: 'USER' | 'AI_COACH' | 'INTERVALS_ICU';
 }
 
@@ -1125,6 +1136,7 @@ export interface NcaaCaraWeeklyAudit {
   maxSingleDayHours: number;
   dailyCapHours: number;
   remainingWeeklyHours: number;
+  competitionDaysCount?: number;
   compliant: boolean;
   statusLabel: string;
 }

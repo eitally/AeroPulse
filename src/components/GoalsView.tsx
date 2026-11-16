@@ -71,6 +71,7 @@ import {
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
 import { simulateCoursePacingAndFueling } from '../physiology/raceSimulator';
+import { TrackProgressionAndCalibrationPanel } from './track/TrackProgressionAndCalibrationPanel';
 
 export interface PlannedEventBatchItem {
   date: string;
@@ -2790,6 +2791,33 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           </div>
         </section>
       </div>
+
+      {/* Track 5-Axis Progression & Bayesian Quarantine Calibrator */}
+      <TrackProgressionAndCalibrationPanel
+        activities={activities}
+        wellnessDays={wellnessDays}
+        athleteProfile={athleteProfile}
+        distanceUnit={distanceUnit}
+        onApplyPosteriorCalibration={
+          onSaveProfileOverride && athleteProfile
+            ? async (updatedPaceSecsKm, vdotAer) => {
+                const latestW =
+                  wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : undefined;
+                const updated = buildCompleteAthleteProfile(
+                  {
+                    ...athleteProfile,
+                    thresholdPaceSecsPerKm: Math.round(updatedPaceSecsKm),
+                    vo2MaxRunning: Math.round(vdotAer),
+                    source: 'CUSTOM_OVERRIDE',
+                    lastSyncedAt: new Date().toISOString(),
+                  },
+                  latestW
+                );
+                await onSaveProfileOverride(updated);
+              }
+            : undefined
+        }
+      />
 
       {/* ==========================================================================
           MODULE D: SEASONAL PEAK POWER & PACE PERSONAL RECORDS TROPHY MATRIX

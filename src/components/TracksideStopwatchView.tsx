@@ -39,6 +39,7 @@ import {
   type RunnerLiveAutoRegInput,
 } from '../physiology/trackLiveAutoRegulationEngine';
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
+import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
 import {
   ArrowCounterClockwise,
   BellRinging,
@@ -2149,6 +2150,22 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             </span>
           </button>
         </div>
+
+        {sessionType === 'RACE' && (
+          <TracksideMeetPassportPanel
+            sessionTitle={sessionTitle}
+            eventLabel={activeRacePreset.label}
+            eventDistanceMeters={activeRacePreset.distanceMeters}
+            finishers={runnerTelemetries
+              .filter((t) => t.lapCount > 0 && t.netTotalSecs !== null)
+              .map((t) => ({
+                runnerId: t.runnerId,
+                runnerName: t.runnerName,
+                netTotalSecs: t.netTotalSecs ?? 0,
+                lapSplitsSecs: t.lapSplitsSecs,
+              }))}
+          />
+        )}
 
         {saveFeedbackMsg && (
           <div

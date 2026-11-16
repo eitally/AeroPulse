@@ -2562,6 +2562,342 @@ Cooldown
   };
 }
 
+// src/physiology/trackSpeedReserveEngine.ts
+var clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+var round1 = (val) => Number(val.toFixed(1));
+var round2 = (val) => Number(val.toFixed(2));
+var round3 = (val) => Number(val.toFixed(3));
+function vo2AtVelocityMpm(vMpm) {
+  const safeV = Math.max(50, vMpm);
+  return -4.6 + 0.182258 * safeV + 104e-6 * safeV * safeV;
+}
+function pctVo2MaxAtDurationMins(tMins) {
+  const t = Math.max(0.5, tMins);
+  return 0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t);
+}
+function solveVelocityMpmForTargetVo2(targetVo2) {
+  const a = 104e-6;
+  const b = 0.182258;
+  const c = -(4.6 + Math.max(8, targetVo2));
+  const discriminant = Math.max(0, b * b - 4 * a * c);
+  return (-b + Math.sqrt(discriminant)) / (2 * a);
+}
+function solveTrackPaceSecsPerKmForPctVdot(vdotAer, pctVo2, clampRange = [95, 540]) {
+  const safeVdot = clamp(vdotAer || 50, 20, 92);
+  const vMpm = solveVelocityMpmForTargetVo2(safeVdot * pctVo2);
+  const rawPaceSecsPerKm = 6e4 / Math.max(80, vMpm);
+  return round1(clamp(rawPaceSecsPerKm, clampRange[0], clampRange[1]));
+}
+function computeRawMarkVdot(distanceMeters, durationSecs) {
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSecs)) return 50;
+  if (distanceMeters < 150 || durationSecs < 15) return 50;
+  const tMins = Math.max(0.75, durationSecs / 60);
+  const vMpm = distanceMeters / tMins;
+  const raw = vo2AtVelocityMpm(vMpm) / Math.max(0.55, pctVo2MaxAtDurationMins(tMins));
+  return round2(clamp(raw, 22, 92));
+}
+function buildSplitRow(code, name, pctVdotAer, paceSecsPerKm) {
+  const safePace = Math.max(95, paceSecsPerKm);
+  const speedMps = 1e3 / safePace;
+  return {
+    code,
+    name,
+    pctVdotAer: round3(pctVdotAer),
+    paceSecsPerKm: round1(safePace),
+    speedMps: round3(speedMps),
+    splitsSecs: {
+      m200: round1(safePace * 200 / 1e3),
+      m300: round1(safePace * 300 / 1e3),
+      m400: round1(safePace * 400 / 1e3),
+      m600: round1(safePace * 600 / 1e3),
+      m800: round1(safePace * 800 / 1e3),
+      m1000: round1(safePace),
+      m1200: round1(safePace * 1200 / 1e3),
+      m1600: round1(safePace * 1600 / 1e3)
+    }
+  };
+}
+function solveCriticalSpeedAndDPrimeOls(marks) {
+  const valid = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 550 && m.distanceMeters <= 1e4 && m.durationSecs >= 45
+  );
+  if (valid.length < 2) return null;
+  const bestByBucket = /* @__PURE__ */ new Map();
+  for (const m of valid) {
+    const bucket = Math.round(m.distanceMeters / 50) * 50;
+    const existing = bestByBucket.get(bucket);
+    if (!existing || m.durationSecs < existing.durationSecs) {
+      bestByBucket.set(bucket, m);
+    }
+  }
+  const allDistinct = Array.from(bestByBucket.values()).sort(
+    (a, b) => a.distanceMeters - b.distanceMeters
+  );
+  const trackSevere = allDistinct.filter(
+    (m) => m.distanceMeters >= 600 && m.distanceMeters <= 5e3
+  );
+  const pickPool = (pool, minDistSpan, minTimeSpan) => {
+    if (pool.length < 2) return false;
+    const dSpan = pool[pool.length - 1].distanceMeters - pool[0].distanceMeters;
+    const tSpan = Math.max(...pool.map((p) => p.durationSecs)) - Math.min(...pool.map((p) => p.durationSecs));
+    return dSpan >= minDistSpan && tSpan >= minTimeSpan;
+  };
+  const chosen = pickPool(trackSevere, 600, 45) ? trackSevere : pickPool(allDistinct, 500, 35) ? allDistinct : null;
+  if (!chosen) return null;
+  const n = chosen.length;
+  const meanT = chosen.reduce((acc, m) => acc + m.durationSecs, 0) / n;
+  const meanD = chosen.reduce((acc, m) => acc + m.distanceMeters, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const m of chosen) {
+    const dt = m.durationSecs - meanT;
+    const dd = m.distanceMeters - meanD;
+    num += dt * dd;
+    den += dt * dt;
+  }
+  if (den <= 1e-6) return null;
+  const rawCs = num / den;
+  const csMps = round3(clamp(rawCs, 2.5, 6.8));
+  const rawDPrime = meanD - csMps * meanT;
+  const dPrimeMeters = Math.round(clamp(rawDPrime, 110, 420));
+  return { csMps, dPrimeMeters, usedMarksCount: n };
+}
+function classifySpeedReservePhenotype(srr, dPrimeMeters, override) {
+  if (override && override !== "AUTO") return override;
+  if (srr >= 1.58 || dPrimeMeters > 235) return "SPEED";
+  if (srr < 1.48 || dPrimeMeters < 205) return "ENDURANCE";
+  return "HYBRID";
+}
+function buildTrackSpeedReserveProfile(input = {}) {
+  const {
+    marks = [],
+    thresholdPaceSecsPerKm,
+    maxSprintSpeedMps,
+    flying30mSecs,
+    phenotypeOverride = "AUTO"
+  } = input;
+  const validMarks = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 200 && m.durationSecs >= 20
+  ).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  const vdotRawBest = validMarks.length > 0 ? Math.max(...validMarks.map((m) => computeRawMarkVdot(m.distanceMeters, m.durationSecs))) : thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0 ? round2(
+    clamp(
+      vo2AtVelocityMpm(6e4 / clamp(thresholdPaceSecsPerKm, 130, 460)) / 0.88,
+      22,
+      90
+    )
+  ) : 50;
+  const ols = solveCriticalSpeedAndDPrimeOls(validMarks);
+  let modelSource = "PROFILE_THRESHOLD_FALLBACK";
+  let csMps = 3.85;
+  let dPrimeMeters = 215;
+  let vdotAer = 50;
+  if (ols) {
+    modelSource = "MULTI_MARK_CS_DPRIME";
+    csMps = ols.csMps;
+    dPrimeMeters = ols.dPrimeMeters;
+    vdotAer = round2(clamp(vo2AtVelocityMpm(csMps * 60) / 0.9215, 22, 90));
+  } else if (validMarks.length > 0) {
+    modelSource = "SINGLE_MARK_SCALED";
+    const primary = [...validMarks].reverse().find((m) => m.distanceMeters >= 600) ?? validMarks[validMarks.length - 1];
+    const rawVdot = computeRawMarkVdot(primary.distanceMeters, primary.durationSecs);
+    let alpha = 1;
+    if (primary.distanceMeters <= 900) {
+      alpha = 0.945;
+    } else if (primary.distanceMeters <= 1650) {
+      alpha = phenotypeOverride === "SPEED" ? 0.96 : phenotypeOverride === "ENDURANCE" ? 0.99 : 0.975;
+    }
+    vdotAer = round2(clamp(rawVdot * alpha, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    const dPrimePrior = phenotypeOverride === "SPEED" ? 265 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+    if (primary.distanceMeters <= 1650) {
+      const impliedD = clamp(primary.distanceMeters - csMps * primary.durationSecs, 140, 320);
+      dPrimeMeters = Math.round(0.5 * dPrimePrior + 0.5 * impliedD);
+    } else {
+      dPrimeMeters = dPrimePrior;
+    }
+  } else {
+    modelSource = "PROFILE_THRESHOLD_FALLBACK";
+    const safeThresh = clamp(thresholdPaceSecsPerKm || 255, 130, 460);
+    vdotAer = round2(clamp(vo2AtVelocityMpm(6e4 / safeThresh) / 0.88, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    dPrimeMeters = phenotypeOverride === "SPEED" ? 260 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+  }
+  const masMps = round3(solveVelocityMpmForTargetVo2(vdotAer) / 60);
+  let mssMps;
+  if (typeof maxSprintSpeedMps === "number" && maxSprintSpeedMps >= 4.5) {
+    mssMps = clamp(maxSprintSpeedMps, 4.5, 11.2);
+  } else if (typeof flying30mSecs === "number" && flying30mSecs >= 2.6 && flying30mSecs <= 8) {
+    mssMps = clamp(30 / flying30mSecs, 4.5, 11.2);
+  } else {
+    const mssFromDPrime = masMps * (1.26 + 118e-5 * dPrimeMeters);
+    const mark400 = validMarks.find(
+      (m) => m.distanceMeters >= 350 && m.distanceMeters <= 450
+    );
+    const mark800 = validMarks.find(
+      (m) => m.distanceMeters >= 750 && m.distanceMeters <= 850
+    );
+    const est400 = mark400 ? mark400.distanceMeters / mark400.durationSecs * 1.11 : 0;
+    const est800 = mark800 ? mark800.distanceMeters / mark800.durationSecs * 1.23 : 0;
+    mssMps = clamp(Math.max(mssFromDPrime, est400, est800), 4.5, 11.2);
+  }
+  mssMps = round3(mssMps);
+  const asrMps = round2(Math.max(1.2, mssMps - masMps));
+  const srr = round3(mssMps / Math.max(2, masMps));
+  const phenotype = classifySpeedReservePhenotype(srr, dPrimeMeters, phenotypeOverride);
+  const paceE = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.7, [175, 540]);
+  const paceSubT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.86, [140, 430]);
+  const paceT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.88, [140, 430]);
+  const paceCv = round1(clamp(1e3 / csMps, 135, 420));
+  const paceI = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.98, [125, 390]);
+  const t1550 = (1550 - dPrimeMeters) / csMps;
+  const pace1550Hyperbolic = Math.max(185, t1550) / 1550 * 1e3;
+  const rawPaceR = modelSource === "PROFILE_THRESHOLD_FALLBACK" ? Math.min(paceI - 15, pace1550Hyperbolic) : Math.min(paceI - 6, pace1550Hyperbolic);
+  const paceR = round1(clamp(rawPaceR, 110, 360));
+  const t800Eff = (800 - 0.8 * dPrimeMeters) / csMps;
+  const v800Eff = 800 / Math.max(92, t800Eff);
+  const vFr = Math.max(v800Eff, masMps + 0.35 * asrMps, 1e3 / Math.max(105, paceR - 10));
+  const paceFr = round1(clamp(1e3 / vFr, 95, 330));
+  const zones = {
+    E: buildSplitRow("E", "Easy / Recovery", 0.7, paceE),
+    SUB_T: buildSplitRow("SUB_T", "Norwegian Sub-Threshold", 0.86, paceSubT),
+    T: buildSplitRow("T", "Lactate Threshold", 0.88, paceT),
+    CV: buildSplitRow("CV", "Critical Velocity (CS)", 0.9215, paceCv),
+    I: buildSplitRow("I", "VO2max Interval", 0.98, paceI),
+    R: buildSplitRow("R", "Mile / 1500m Repetition", 1.07, paceR),
+    FR: buildSplitRow("FR", "800m / Fast Repetition", 1.18, paceFr)
+  };
+  return {
+    modelSource,
+    csMps,
+    criticalPaceSecsPerKm: paceCv,
+    dPrimeMeters,
+    vdotAer,
+    vdotRawBest,
+    masMps,
+    mssMps,
+    asrMps,
+    srr,
+    phenotype,
+    thresholdPaceSecsPerKm: paceT,
+    zones
+  };
+}
+
+// src/physiology/trackProgressionAndKalmanEngine.ts
+var clamp2 = (val, min, max) => Math.max(min, Math.min(max, val));
+var round12 = (val) => Number(val.toFixed(1));
+function computeTrackExecutionScore(input) {
+  const splits = (input.workSplitsSecs || []).filter((s) => Number.isFinite(s) && s > 0);
+  const k = splits.length;
+  const target = Math.max(10, input.targetSplitSecs || (k > 0 ? splits[0] : 60));
+  if (k === 0) {
+    return {
+      totalScore: 80,
+      paceAdherenceScore: 80,
+      splitDisciplineScore: 80,
+      restFidelityScore: 100,
+      driftRetentionScore: 80,
+      positiveSplitFadePct: 0,
+      mapePct: 0,
+      cvPct: 0,
+      meanActualRestSecs: input.plannedRestSecs || 0,
+      workoutHeroFlag: false,
+      restCheatingFlag: false,
+      verdictLabel: "Awaiting Interval Splits"
+    };
+  }
+  const mapePct = splits.reduce((acc, s) => acc + Math.abs(s - target) / target, 0) * (100 / k);
+  const paceAdherenceScore = clamp2(100 - 4.5 * mapePct, 0, 100);
+  const sliceLen = k >= 4 ? 2 : 1;
+  const openMean = splits.slice(0, sliceLen).reduce((a, b) => a + b, 0) / sliceLen;
+  const closeMean = splits.slice(k - sliceLen).reduce((a, b) => a + b, 0) / sliceLen;
+  const positiveSplitFadePct = Math.max(0, (closeMean - openMean) / target * 100);
+  const meanSplit = splits.reduce((a, b) => a + b, 0) / k;
+  const variance = splits.reduce((a, b) => a + (b - meanSplit) ** 2, 0) / k;
+  const cvPct = Math.sqrt(variance) / Math.max(1, meanSplit) * 100;
+  const workoutHeroFlag = k >= 2 && (splits[0] < target * 0.975 && splits[k - 1] > target * 1.025 || positiveSplitFadePct >= 5 && splits[0] < target * 0.985);
+  const heroPenalty = workoutHeroFlag ? 22 : 0;
+  const splitDisciplineScore = clamp2(
+    100 - 2.5 * positiveSplitFadePct - 2 * cvPct - heroPenalty,
+    0,
+    100
+  );
+  const plannedRest = Math.max(0, input.plannedRestSecs || 0);
+  const actualArr = Array.isArray(input.actualRestSecs) ? input.actualRestSecs.filter((r) => Number.isFinite(r) && r >= 0) : typeof input.actualRestSecs === "number" && Number.isFinite(input.actualRestSecs) ? [input.actualRestSecs] : [plannedRest];
+  const meanActualRestSecs = actualArr.length > 0 ? actualArr.reduce((a, b) => a + b, 0) / actualArr.length : plannedRest;
+  let restFidelityScore = 100;
+  if (plannedRest > 0) {
+    if (meanActualRestSecs > plannedRest) {
+      const excessPct = (meanActualRestSecs - plannedRest) / plannedRest * 100;
+      restFidelityScore = clamp2(100 - 1.8 * excessPct, 0, 100);
+    } else if (meanActualRestSecs < plannedRest) {
+      const shortPct = (plannedRest - meanActualRestSecs) / plannedRest * 100;
+      restFidelityScore = clamp2(100 - 0.4 * shortPct, 65, 100);
+    }
+  }
+  const restCheatingFlag = plannedRest > 0 && restFidelityScore < 70;
+  const decoupling = input.aerobicDecouplingPct ?? 2.5;
+  const strideFade = input.strideLengthFadePct ?? 0;
+  const driftRetentionScore = clamp2(
+    88 - Math.max(0, decoupling - 2.5) * 3.5 - positiveSplitFadePct * 1.5 - Math.max(0, -strideFade - 1.5) * 2.5 + (k >= 3 && decoupling <= 2.5 && positiveSplitFadePct <= 1 ? 8 : 0),
+    0,
+    100
+  );
+  const rawTotal = 0.35 * paceAdherenceScore + 0.3 * splitDisciplineScore + 0.15 * restFidelityScore + 0.2 * driftRetentionScore;
+  const totalScore = round12(clamp2(rawTotal, 0, 100));
+  const verdictLabel = restCheatingFlag ? "Rest-Cheated Session" : workoutHeroFlag ? "Workout Hero Flag" : totalScore >= 90 ? "Precision Track Execution" : totalScore >= 75 ? "Controlled Stimulus" : "High Metabolic Drift";
+  return {
+    totalScore,
+    paceAdherenceScore: round12(paceAdherenceScore),
+    splitDisciplineScore: round12(splitDisciplineScore),
+    restFidelityScore: round12(restFidelityScore),
+    driftRetentionScore: round12(driftRetentionScore),
+    positiveSplitFadePct: round12(positiveSplitFadePct),
+    mapePct: round12(mapePct),
+    cvPct: round12(cvPct),
+    meanActualRestSecs: Math.round(meanActualRestSecs),
+    workoutHeroFlag,
+    restCheatingFlag,
+    verdictLabel
+  };
+}
+function extractTrackIntervalMetricsForActivity(activity, fallbackThresholdPaceSecsPerKm = 240, plannedRestOverrideSecs) {
+  const workReps = (activity.intervals || []).filter((iv) => iv.type === "WORK");
+  if (workReps.length >= 2) {
+    const recReps = (activity.intervals || []).filter((iv) => iv.type === "RECOVERY");
+    const workSplitsSecs = workReps.map((w) => w.durationSecs);
+    const meanRepDist = workReps.reduce((s, w) => s + (w.distanceMeters || 400), 0) / workReps.length;
+    const meanSpeedMps = workReps.reduce(
+      (s, w) => s + (w.distanceMeters || meanRepDist) / Math.max(1, w.durationSecs),
+      0
+    ) / workReps.length;
+    const safeThreshMps = 1e3 / Math.max(115, fallbackThresholdPaceSecsPerKm || 240);
+    const impliedZoneMps = meanSpeedMps >= safeThreshMps * 1.12 ? safeThreshMps * 1.16 : meanSpeedMps >= safeThreshMps * 1.03 ? safeThreshMps * 1.07 : safeThreshMps;
+    const targetSplitSecs = round12(meanRepDist / Math.max(1.5, impliedZoneMps));
+    const plannedRestSecs = typeof plannedRestOverrideSecs === "number" ? plannedRestOverrideSecs : recReps.length > 0 ? recReps[0].durationSecs : 60;
+    const actualRestSecs = recReps.length > 0 ? recReps.map((r) => r.durationSecs) : [plannedRestSecs];
+    return {
+      workSplitsSecs,
+      targetSplitSecs,
+      plannedRestSecs,
+      actualRestSecs,
+      aerobicDecouplingPct: activity.aerobicDecouplingPct
+    };
+  }
+  if (activity.officialRaceData?.lapSplitsSecs && activity.officialRaceData.lapSplitsSecs.length >= 2) {
+    const splits = activity.officialRaceData.lapSplitsSecs;
+    const avgSplit = splits.reduce((a, b) => a + b, 0) / splits.length;
+    return {
+      workSplitsSecs: splits,
+      targetSplitSecs: round12(avgSplit),
+      plannedRestSecs: 0,
+      actualRestSecs: [0],
+      aerobicDecouplingPct: activity.aerobicDecouplingPct
+    };
+  }
+  return null;
+}
+
 // src/physiology/workoutDebrief.ts
 function formatClockOffset(sec) {
   const clean = Math.max(0, Math.round(sec));
@@ -2898,12 +3234,23 @@ function generatePostWorkoutDebrief(activity, streams, profile) {
     });
   }
   let executionScore = 88;
-  if (aerobicDecouplingPct !== null) {
-    if (aerobicDecouplingPct <= 3.5) executionScore += 6;
-    else if (aerobicDecouplingPct > 7.5) executionScore -= 10;
+  const trackMetrics = activity.sportCategory === "Running" && workReps.length >= 2 ? extractTrackIntervalMetricsForActivity(activity, thresholds.thresholdPaceSecsPerKm) : null;
+  if (trackMetrics) {
+    executionScore = Math.round(
+      computeTrackExecutionScore({
+        ...trackMetrics,
+        aerobicDecouplingPct,
+        strideLengthFadePct
+      }).totalScore
+    );
+  } else {
+    if (aerobicDecouplingPct !== null) {
+      if (aerobicDecouplingPct <= 3.5) executionScore += 6;
+      else if (aerobicDecouplingPct > 7.5) executionScore -= 10;
+    }
+    if (bestHrr60Bpm !== null && bestHrr60Bpm >= 25) executionScore += 4;
+    executionScore = Math.max(55, Math.min(99, executionScore));
   }
-  if (bestHrr60Bpm !== null && bestHrr60Bpm >= 25) executionScore += 4;
-  executionScore = Math.max(55, Math.min(99, executionScore));
   const headline = hasWatts ? `NP ${npWatts ?? "\u2014"}W \xB7 ${aerobicDecouplingPct !== null ? `${aerobicDecouplingPct.toFixed(1)}% Pw:Hr Drift` : `${Math.round(totalDurationSec / 60)}m 1Hz Signal Pass`}` : `GAP ${gapResult.avgGapSecsPerKm ? formatPaceMmSs(gapResult.avgGapSecsPerKm) : "\u2014"} \xB7 ${aerobicDecouplingPct !== null ? `${aerobicDecouplingPct.toFixed(1)}% Pa:Hr Drift` : `${Math.round(totalDurationSec / 60)}m 1Hz Signal Pass`}`;
   return {
     activityId: activity.id,
@@ -5032,227 +5379,6 @@ function evaluateSafeSportPatternWatch(params) {
   };
 }
 
-// src/physiology/trackSpeedReserveEngine.ts
-var clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-var round1 = (val) => Number(val.toFixed(1));
-var round2 = (val) => Number(val.toFixed(2));
-var round3 = (val) => Number(val.toFixed(3));
-function vo2AtVelocityMpm(vMpm) {
-  const safeV = Math.max(50, vMpm);
-  return -4.6 + 0.182258 * safeV + 104e-6 * safeV * safeV;
-}
-function pctVo2MaxAtDurationMins(tMins) {
-  const t = Math.max(0.5, tMins);
-  return 0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t);
-}
-function solveVelocityMpmForTargetVo2(targetVo2) {
-  const a = 104e-6;
-  const b = 0.182258;
-  const c = -(4.6 + Math.max(8, targetVo2));
-  const discriminant = Math.max(0, b * b - 4 * a * c);
-  return (-b + Math.sqrt(discriminant)) / (2 * a);
-}
-function solveTrackPaceSecsPerKmForPctVdot(vdotAer, pctVo2, clampRange = [95, 540]) {
-  const safeVdot = clamp(vdotAer || 50, 20, 92);
-  const vMpm = solveVelocityMpmForTargetVo2(safeVdot * pctVo2);
-  const rawPaceSecsPerKm = 6e4 / Math.max(80, vMpm);
-  return round1(clamp(rawPaceSecsPerKm, clampRange[0], clampRange[1]));
-}
-function computeRawMarkVdot(distanceMeters, durationSecs) {
-  if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSecs)) return 50;
-  if (distanceMeters < 150 || durationSecs < 15) return 50;
-  const tMins = Math.max(0.75, durationSecs / 60);
-  const vMpm = distanceMeters / tMins;
-  const raw = vo2AtVelocityMpm(vMpm) / Math.max(0.55, pctVo2MaxAtDurationMins(tMins));
-  return round2(clamp(raw, 22, 92));
-}
-function buildSplitRow(code, name, pctVdotAer, paceSecsPerKm) {
-  const safePace = Math.max(95, paceSecsPerKm);
-  const speedMps = 1e3 / safePace;
-  return {
-    code,
-    name,
-    pctVdotAer: round3(pctVdotAer),
-    paceSecsPerKm: round1(safePace),
-    speedMps: round3(speedMps),
-    splitsSecs: {
-      m200: round1(safePace * 200 / 1e3),
-      m300: round1(safePace * 300 / 1e3),
-      m400: round1(safePace * 400 / 1e3),
-      m600: round1(safePace * 600 / 1e3),
-      m800: round1(safePace * 800 / 1e3),
-      m1000: round1(safePace),
-      m1200: round1(safePace * 1200 / 1e3),
-      m1600: round1(safePace * 1600 / 1e3)
-    }
-  };
-}
-function solveCriticalSpeedAndDPrimeOls(marks) {
-  const valid = marks.filter(
-    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 550 && m.distanceMeters <= 1e4 && m.durationSecs >= 45
-  );
-  if (valid.length < 2) return null;
-  const bestByBucket = /* @__PURE__ */ new Map();
-  for (const m of valid) {
-    const bucket = Math.round(m.distanceMeters / 50) * 50;
-    const existing = bestByBucket.get(bucket);
-    if (!existing || m.durationSecs < existing.durationSecs) {
-      bestByBucket.set(bucket, m);
-    }
-  }
-  const allDistinct = Array.from(bestByBucket.values()).sort(
-    (a, b) => a.distanceMeters - b.distanceMeters
-  );
-  const trackSevere = allDistinct.filter(
-    (m) => m.distanceMeters >= 600 && m.distanceMeters <= 5e3
-  );
-  const pickPool = (pool, minDistSpan, minTimeSpan) => {
-    if (pool.length < 2) return false;
-    const dSpan = pool[pool.length - 1].distanceMeters - pool[0].distanceMeters;
-    const tSpan = Math.max(...pool.map((p) => p.durationSecs)) - Math.min(...pool.map((p) => p.durationSecs));
-    return dSpan >= minDistSpan && tSpan >= minTimeSpan;
-  };
-  const chosen = pickPool(trackSevere, 600, 45) ? trackSevere : pickPool(allDistinct, 500, 35) ? allDistinct : null;
-  if (!chosen) return null;
-  const n = chosen.length;
-  const meanT = chosen.reduce((acc, m) => acc + m.durationSecs, 0) / n;
-  const meanD = chosen.reduce((acc, m) => acc + m.distanceMeters, 0) / n;
-  let num = 0;
-  let den = 0;
-  for (const m of chosen) {
-    const dt = m.durationSecs - meanT;
-    const dd = m.distanceMeters - meanD;
-    num += dt * dd;
-    den += dt * dt;
-  }
-  if (den <= 1e-6) return null;
-  const rawCs = num / den;
-  const csMps = round3(clamp(rawCs, 2.5, 6.8));
-  const rawDPrime = meanD - csMps * meanT;
-  const dPrimeMeters = Math.round(clamp(rawDPrime, 110, 420));
-  return { csMps, dPrimeMeters, usedMarksCount: n };
-}
-function classifySpeedReservePhenotype(srr, dPrimeMeters, override) {
-  if (override && override !== "AUTO") return override;
-  if (srr >= 1.58 || dPrimeMeters > 235) return "SPEED";
-  if (srr < 1.48 || dPrimeMeters < 205) return "ENDURANCE";
-  return "HYBRID";
-}
-function buildTrackSpeedReserveProfile(input = {}) {
-  const {
-    marks = [],
-    thresholdPaceSecsPerKm,
-    maxSprintSpeedMps,
-    flying30mSecs,
-    phenotypeOverride = "AUTO"
-  } = input;
-  const validMarks = marks.filter(
-    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 200 && m.durationSecs >= 20
-  ).sort((a, b) => a.distanceMeters - b.distanceMeters);
-  const vdotRawBest = validMarks.length > 0 ? Math.max(...validMarks.map((m) => computeRawMarkVdot(m.distanceMeters, m.durationSecs))) : thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0 ? round2(
-    clamp(
-      vo2AtVelocityMpm(6e4 / clamp(thresholdPaceSecsPerKm, 130, 460)) / 0.88,
-      22,
-      90
-    )
-  ) : 50;
-  const ols = solveCriticalSpeedAndDPrimeOls(validMarks);
-  let modelSource = "PROFILE_THRESHOLD_FALLBACK";
-  let csMps = 3.85;
-  let dPrimeMeters = 215;
-  let vdotAer = 50;
-  if (ols) {
-    modelSource = "MULTI_MARK_CS_DPRIME";
-    csMps = ols.csMps;
-    dPrimeMeters = ols.dPrimeMeters;
-    vdotAer = round2(clamp(vo2AtVelocityMpm(csMps * 60) / 0.9215, 22, 90));
-  } else if (validMarks.length > 0) {
-    modelSource = "SINGLE_MARK_SCALED";
-    const primary = [...validMarks].reverse().find((m) => m.distanceMeters >= 600) ?? validMarks[validMarks.length - 1];
-    const rawVdot = computeRawMarkVdot(primary.distanceMeters, primary.durationSecs);
-    let alpha = 1;
-    if (primary.distanceMeters <= 900) {
-      alpha = 0.945;
-    } else if (primary.distanceMeters <= 1650) {
-      alpha = phenotypeOverride === "SPEED" ? 0.96 : phenotypeOverride === "ENDURANCE" ? 0.99 : 0.975;
-    }
-    vdotAer = round2(clamp(rawVdot * alpha, 22, 90));
-    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
-    const dPrimePrior = phenotypeOverride === "SPEED" ? 265 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
-    if (primary.distanceMeters <= 1650) {
-      const impliedD = clamp(primary.distanceMeters - csMps * primary.durationSecs, 140, 320);
-      dPrimeMeters = Math.round(0.5 * dPrimePrior + 0.5 * impliedD);
-    } else {
-      dPrimeMeters = dPrimePrior;
-    }
-  } else {
-    modelSource = "PROFILE_THRESHOLD_FALLBACK";
-    const safeThresh = clamp(thresholdPaceSecsPerKm || 255, 130, 460);
-    vdotAer = round2(clamp(vo2AtVelocityMpm(6e4 / safeThresh) / 0.88, 22, 90));
-    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
-    dPrimeMeters = phenotypeOverride === "SPEED" ? 260 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
-  }
-  const masMps = round3(solveVelocityMpmForTargetVo2(vdotAer) / 60);
-  let mssMps;
-  if (typeof maxSprintSpeedMps === "number" && maxSprintSpeedMps >= 4.5) {
-    mssMps = clamp(maxSprintSpeedMps, 4.5, 11.2);
-  } else if (typeof flying30mSecs === "number" && flying30mSecs >= 2.6 && flying30mSecs <= 8) {
-    mssMps = clamp(30 / flying30mSecs, 4.5, 11.2);
-  } else {
-    const mssFromDPrime = masMps * (1.26 + 118e-5 * dPrimeMeters);
-    const mark400 = validMarks.find(
-      (m) => m.distanceMeters >= 350 && m.distanceMeters <= 450
-    );
-    const mark800 = validMarks.find(
-      (m) => m.distanceMeters >= 750 && m.distanceMeters <= 850
-    );
-    const est400 = mark400 ? mark400.distanceMeters / mark400.durationSecs * 1.11 : 0;
-    const est800 = mark800 ? mark800.distanceMeters / mark800.durationSecs * 1.23 : 0;
-    mssMps = clamp(Math.max(mssFromDPrime, est400, est800), 4.5, 11.2);
-  }
-  mssMps = round3(mssMps);
-  const asrMps = round2(Math.max(1.2, mssMps - masMps));
-  const srr = round3(mssMps / Math.max(2, masMps));
-  const phenotype = classifySpeedReservePhenotype(srr, dPrimeMeters, phenotypeOverride);
-  const paceE = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.7, [175, 540]);
-  const paceSubT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.86, [140, 430]);
-  const paceT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.88, [140, 430]);
-  const paceCv = round1(clamp(1e3 / csMps, 135, 420));
-  const paceI = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.98, [125, 390]);
-  const t1550 = (1550 - dPrimeMeters) / csMps;
-  const pace1550Hyperbolic = Math.max(185, t1550) / 1550 * 1e3;
-  const rawPaceR = modelSource === "PROFILE_THRESHOLD_FALLBACK" ? Math.min(paceI - 15, pace1550Hyperbolic) : Math.min(paceI - 6, pace1550Hyperbolic);
-  const paceR = round1(clamp(rawPaceR, 110, 360));
-  const t800Eff = (800 - 0.8 * dPrimeMeters) / csMps;
-  const v800Eff = 800 / Math.max(92, t800Eff);
-  const vFr = Math.max(v800Eff, masMps + 0.35 * asrMps, 1e3 / Math.max(105, paceR - 10));
-  const paceFr = round1(clamp(1e3 / vFr, 95, 330));
-  const zones = {
-    E: buildSplitRow("E", "Easy / Recovery", 0.7, paceE),
-    SUB_T: buildSplitRow("SUB_T", "Norwegian Sub-Threshold", 0.86, paceSubT),
-    T: buildSplitRow("T", "Lactate Threshold", 0.88, paceT),
-    CV: buildSplitRow("CV", "Critical Velocity (CS)", 0.9215, paceCv),
-    I: buildSplitRow("I", "VO2max Interval", 0.98, paceI),
-    R: buildSplitRow("R", "Mile / 1500m Repetition", 1.07, paceR),
-    FR: buildSplitRow("FR", "800m / Fast Repetition", 1.18, paceFr)
-  };
-  return {
-    modelSource,
-    csMps,
-    criticalPaceSecsPerKm: paceCv,
-    dPrimeMeters,
-    vdotAer,
-    vdotRawBest,
-    masMps,
-    mssMps,
-    asrMps,
-    srr,
-    phenotype,
-    thresholdPaceSecsPerKm: paceT,
-    zones
-  };
-}
-
 // src/physiology/teamOnboardingEngine.ts
 function getOrgTypeSafeguardingDefaults(orgType) {
   switch (orgType) {
@@ -5317,8 +5443,8 @@ function hexToRgb(hex) {
   return [r, g, b];
 }
 function rgbToHex(r, g, b) {
-  const clamp2 = (n) => Math.max(0, Math.min(255, Math.round(n)));
-  return `#${[clamp2(r), clamp2(g), clamp2(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  const clamp3 = (n) => Math.max(0, Math.min(255, Math.round(n)));
+  return `#${[clamp3(r), clamp3(g), clamp3(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
 function rgbToHsl(r, g, b) {
   const rn = r / 255;
