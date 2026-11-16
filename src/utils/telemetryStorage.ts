@@ -15,6 +15,18 @@ import {
   hydrateUnifiedActivity,
   saveStoreMetadata,
 } from '../db/workoutStore';
+import {
+  BANISTER_ATL_DECAY,
+  BANISTER_CTL_DECAY,
+  STRAVA_LOAD_MODEL_VERSION,
+  computeStravaActivityLoadV2,
+  deriveObservedPhysiologyMetrics,
+  getLocalDateIso,
+  isEBikeActivityText,
+  shiftIsoDate,
+} from '../physiology/stravaLoadCalibration';
+
+export const CURRENT_PMC_MODEL_VERSION = STRAVA_LOAD_MODEL_VERSION;
 
 const IDB_NAME = 'aeropulse_telemetry_db';
 const IDB_VERSION = 1;
@@ -29,6 +41,8 @@ export interface PersistedTelemetrySnapshot {
   athleteProfile?: AthleteProfile;
   redactedStravaCount: number;
   earliestActivityDate?: string;
+  pmcModelVersion?: number;
+  ownerAthleteId?: string;
   savedAt: string;
 }
 
@@ -204,142 +218,124 @@ export function calibrateMetricsFromActivitiesClient(
   activities?: UnifiedActivity[] | null,
   weightKg = 70
 ) {
-  let maxBikeWatts20m = 0;
-  let maxBikePeakWatts = 0;
-  let maxBikeHr = 0;
-  let maxBikeSustainedHr = 0;
-  let maxRunHr = 0;
-  let maxRunSustainedHr = 0;
-  let maxRunSustainedWatts = 0;
-  let bestRunPaceSecsPerKm = 0;
+  return deriveObservedPhysiologyMetrics(activities, weightKg);
+}
 
-  if (Array.isArray(activities)) {
-    for (const a of activities) {
-      if (!a) continue;
-      const isBike = a.sportCategory === 'Cycling';
-      const isRun = a.sportCategory === 'Running';
-      const dur = Number(a.movingTimeSecs || 0);
-      const dist = Number(a.distanceMeters || 0);
-      const avgP = Number(a.avgPower || 0);
-      const np = Number(a.normalizedPower || avgP || 0);
-      const sustainedBikeW =
-        avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
-      const rawAny = a as Record<string, any>;
-      const p20 = Number(rawAny.max20MinPower || rawAny.maxAvgPower_1200 || 0);
-      const peakW = Number(rawAny.max_watts || rawAny.maxPower || 0);
-      const avgHr = Number(a.avgHr || 0);
-      const peakHr = Number(a.maxHr || 0);
+/**
+ * Clears falsely collapsed thresholds persisted under legacy v1 calibration when
+ * only casual / un-metered sessions were present (unless user set CUSTOM_OVERRIDE).
+ */
+export function sanitizeStaleCollapsedProfile(
+  profile?: Partial<AthleteProfile> | null
+): Partial<AthleteProfile> | undefined {
+  if (!profile) return undefined;
+  if (profile.source === 'CUSTOM_OVERRIDE') return profile;
+  const next = { ...profile };
+  if (typeof next.ftp === 'number' && next.ftp > 0 && next.ftp < 140) {
+    delete next.ftp;
+    delete next.indoorFtp;
+    delete next.eFtp;
+    delete next.wPrime;
+    delete next.pMax;
+    delete next.powerZones;
+  }
+  if (typeof next.lthr === 'number' && next.lthr > 0 && next.lthr < 145) {
+    delete next.lthr;
+    delete next.hrZones;
+  }
+  if (typeof next.runLthr === 'number' && next.runLthr > 0 && next.runLthr < 148) {
+    delete next.runLthr;
+    delete next.runHrZones;
+  }
+  if (
+    typeof next.thresholdPaceSecsPerKm === 'number' &&
+    next.thresholdPaceSecsPerKm > 430
+  ) {
+    delete next.thresholdPaceSecsPerKm;
+    delete next.runFtp;
+    delete next.runEFtp;
+  }
+  return next;
+}
 
-      if (isBike) {
-        if (p20 >= 80 && p20 <= 600) {
-          if (p20 > maxBikeWatts20m) maxBikeWatts20m = p20;
-        } else if (
-          dur >= 1200 &&
-          sustainedBikeW >= 80 &&
-          sustainedBikeW <= 600 &&
-          sustainedBikeW > maxBikeWatts20m
-        ) {
-          maxBikeWatts20m = sustainedBikeW;
-        }
-        if (peakW >= 250 && peakW <= 2500 && peakW > maxBikePeakWatts) {
-          maxBikePeakWatts = Math.round(peakW);
-        } else if (np > 0 && np * 2.3 > maxBikePeakWatts) {
-          maxBikePeakWatts = Math.round(np * 2.3);
-        }
-        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxBikeHr) {
-          maxBikeHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
-          maxBikeSustainedHr = avgHr;
-        }
-      } else if (isRun) {
-        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxRunHr) {
-          maxRunHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
-          maxRunSustainedHr = avgHr;
-        }
-        if (dur >= 1200 && np >= 120 && np <= 650 && np > maxRunSustainedWatts) {
-          maxRunSustainedWatts = np;
-        }
-        const split5k = Number(rawAny.fastestSplit_5000 || 0);
-        const paceFrom5k =
-          split5k >= 780 && split5k <= 2700 ? Math.round(split5k / 5) : 0;
-        const pace =
-          paceFrom5k ||
-          Number(a.gapPaceSecsPerKm || a.avgPaceSecsPerKm || 0) ||
-          (dist >= 3000 && dur >= 900 ? Math.round(dur / (dist / 1000)) : 0);
-        if (
-          (paceFrom5k > 0 || (dur >= 1200 && dist >= 3000)) &&
-          pace >= 165 &&
-          pace <= 600
-        ) {
-          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
-            bestRunPaceSecsPerKm = pace;
-          }
-        }
-      }
-    }
+/**
+ * Re-normalizes pure Strava activities on client boot/hydration using the v2
+ * physiological load model so cached v1 `suffer_score` spikes self-heal immediately.
+ */
+export function recalibrateStravaActivityLoadClient(
+  act: UnifiedActivity,
+  profile?: Partial<AthleteProfile> | null
+): UnifiedActivity {
+  if (!act) return act;
+  // Intervals.icu / official race / quick-log loads are authoritative
+  if (
+    act.intervalsId ||
+    act.sourceBadges?.includes('Intervals.icu') ||
+    act.officialRaceData ||
+    act.quickLog
+  ) {
+    return act;
   }
 
-  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
-  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
-  const obsBikeLthr =
-    maxBikeSustainedHr >= 130
-      ? Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
-      : obsBikeMaxHr
-        ? Math.round(obsBikeMaxHr * 0.9)
-        : 0;
-  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
-  const obsRunLthr =
-    maxRunSustainedHr >= 135
-      ? Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
-      : obsRunMaxHr
-        ? Math.round(obsRunMaxHr * 0.91)
-        : obsBikeLthr
-          ? obsBikeLthr + 4
-          : 0;
-  const obsFtp = maxBikeWatts20m >= 90 ? Math.round(maxBikeWatts20m * 0.95) : 0;
-  const obsPMax =
-    maxBikePeakWatts >= 400
-      ? Math.round(maxBikePeakWatts)
-      : obsFtp > 0
-        ? Math.round(obsFtp * 3.6)
-        : 0;
-  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
-  const obsThresholdPace =
-    bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
-  const safeW = weightKg > 30 ? weightKg : 70;
-  const obsRunFtp =
-    maxRunSustainedWatts >= 140
-      ? Math.round(maxRunSustainedWatts * 0.92)
-      : obsThresholdPace > 0
-        ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98)
-        : 0;
-  const obsVo2Bike =
-    obsFtp > 0 && safeW > 30
-      ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7)))
-      : 0;
-  const obsVo2Run =
-    obsThresholdPace > 0
-      ? Math.max(
-          32,
-          Math.min(88, Math.round((1000 / obsThresholdPace) * 60 * 0.2 + 3.5))
-        )
-      : obsVo2Bike;
+  const isStravaSourced =
+    act.id.startsWith('strava-') ||
+    Boolean(act.stravaId) ||
+    act.sourceBadges?.includes('Strava');
+  if (!isStravaSourced) return act;
+  if (act.loadModelVersion === CURRENT_PMC_MODEL_VERSION) return act;
+
+  const isEBike = isEBikeActivityText(act.rawSportType, act.name);
+  // Treat legacy v1 outdoor rides without deviceWatts metadata and identical NP/AvgP as un-metered
+  const hasLegacyEstimatedWatts =
+    act.sportCategory === 'Cycling' &&
+    act.deviceWatts === undefined &&
+    act.environment !== 'INDOOR' &&
+    (act.normalizedPower || 0) === (act.avgPower || 0);
+  const hasRealDeviceWatts =
+    !isEBike && act.deviceWatts !== false && !hasLegacyEstimatedWatts && (act.avgPower || 0) > 0;
+
+  const nextAvgPower = hasRealDeviceWatts ? act.avgPower : undefined;
+  const nextNp = hasRealDeviceWatts ? act.normalizedPower : undefined;
+
+  const safeProfile = sanitizeStaleCollapsedProfile(profile);
+  const loadResult = computeStravaActivityLoadV2({
+    sportCategory: act.sportCategory,
+    rawSportType: act.rawSportType,
+    name: act.name,
+    environment: act.environment,
+    movingTimeSecs: act.movingTimeSecs,
+    distanceMeters: act.distanceMeters,
+    elevationGainMeters: act.elevationGainMeters,
+    normalizedPower: nextNp,
+    avgPower: nextAvgPower,
+    hasRealDeviceWatts,
+    avgHr: act.avgHr,
+    maxHr: act.maxHr,
+    avgPaceSecsPerKm: act.avgPaceSecsPerKm,
+    calibratedFtp: Math.max(120, Number(safeProfile?.ftp || 250)),
+    calibratedBikeLthr: Math.max(135, Number(safeProfile?.lthr || 163)),
+    calibratedRunLthr: Math.max(140, Number(safeProfile?.runLthr || 168)),
+    calibratedThresholdPaceSecsPerKm: Math.max(
+      155,
+      Number(safeProfile?.thresholdPaceSecsPerKm || 255)
+    ),
+    restingHr: Math.max(38, Math.min(78, Number(safeProfile?.restingHr || 54))),
+  });
+
+  let nextEf = act.efficiencyFactor;
+  if (!hasRealDeviceWatts && act.sportCategory === 'Cycling') {
+    nextEf = 0;
+  }
 
   return {
-    obsFtp,
-    obsPMax,
-    obsWPrime,
-    obsBikeMaxHr,
-    obsBikeLthr,
-    obsRunMaxHr,
-    obsRunLthr,
-    obsThresholdPace,
-    obsRunFtp,
-    obsVo2Bike,
-    obsVo2Run,
+    ...act,
+    avgPower: nextAvgPower,
+    normalizedPower: nextNp,
+    deviceWatts: hasRealDeviceWatts,
+    intensityFactor: loadResult.intensityFactor,
+    trainingLoad: loadResult.trainingLoad,
+    loadModelVersion: CURRENT_PMC_MODEL_VERSION,
+    efficiencyFactor: nextEf,
   };
 }
 
@@ -785,6 +781,8 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
           athleteProfile?: AthleteProfile;
           redactedStravaCount?: number;
           earliestActivityDate?: string;
+          pmcModelVersion?: number;
+          ownerAthleteId?: string;
           savedAt?: string;
         }>('snapshot_meta'),
       ]);
@@ -795,9 +793,52 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
       const hydratedActivities = realStoredActivities.map((rec) =>
         reclassifyActivityEnvironment(hydrateUnifiedActivity(rec))
       );
+      const hasIntervals = hydratedActivities.some(
+        (a) => Boolean(a.intervalsId) || a.sourceBadges?.includes('Intervals.icu')
+      );
+      const storedVersion = Number(snapshotMeta?.pmcModelVersion || 0);
+      if (storedVersion < CURRENT_PMC_MODEL_VERSION && !hasIntervals) {
+        const sanitizedProfile = sanitizeStaleCollapsedProfile(snapshotMeta?.athleteProfile) as
+          | AthleteProfile
+          | undefined;
+        const recalibratedActs = hydratedActivities.map((act) =>
+          recalibrateStravaActivityLoadClient(act, sanitizedProfile)
+        );
+        const recomputedWellness = overlayBiometricsOntoActivityWellness(
+          computeWellnessDaysFromActivities(recalibratedActs),
+          wellnessDays
+        );
+        return {
+          activities: recalibratedActs,
+          wellnessDays: recomputedWellness,
+          plannedEvents,
+          gearItems,
+          athleteProfile: sanitizedProfile,
+          redactedStravaCount: snapshotMeta?.redactedStravaCount || 0,
+          earliestActivityDate:
+            snapshotMeta?.earliestActivityDate ||
+            recalibratedActs[recalibratedActs.length - 1]?.startDateLocal?.slice(0, 10),
+          pmcModelVersion: storedVersion || 1,
+          ownerAthleteId: snapshotMeta?.ownerAthleteId,
+          savedAt: snapshotMeta?.savedAt || new Date().toISOString(),
+        };
+      }
+      const todayIso = getLocalDateIso();
+      const lastWellnessDate =
+        wellnessDays.length > 0
+          ? String(wellnessDays[wellnessDays.length - 1]?.date || '').slice(0, 10)
+          : '';
+      const resolvedWellnessDays =
+        !hasIntervals && lastWellnessDate !== todayIso
+          ? overlayBiometricsOntoActivityWellness(
+              computeWellnessDaysFromActivities(hydratedActivities, todayIso),
+              wellnessDays,
+              todayIso
+            )
+          : wellnessDays;
       return {
         activities: hydratedActivities,
-        wellnessDays,
+        wellnessDays: resolvedWellnessDays,
         plannedEvents,
         gearItems,
         athleteProfile: snapshotMeta?.athleteProfile,
@@ -805,6 +846,8 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
         earliestActivityDate:
           snapshotMeta?.earliestActivityDate ||
           hydratedActivities[hydratedActivities.length - 1]?.startDateLocal?.slice(0, 10),
+        pmcModelVersion: storedVersion || CURRENT_PMC_MODEL_VERSION,
+        ownerAthleteId: snapshotMeta?.ownerAthleteId,
         savedAt: snapshotMeta?.savedAt || new Date().toISOString(),
       };
     }
@@ -850,8 +893,11 @@ export async function savePersistedTelemetrySnapshot(
       db.gearItems,
       db.metadata,
       async () => {
-        if (Array.isArray(snapshot.wellnessDays) && snapshot.wellnessDays.length > 0) {
-          await db.wellnessDays.bulkPut(snapshot.wellnessDays);
+        if (Array.isArray(snapshot.wellnessDays)) {
+          await db.wellnessDays.clear();
+          if (snapshot.wellnessDays.length > 0) {
+            await db.wellnessDays.bulkPut(snapshot.wellnessDays);
+          }
         }
         if (Array.isArray(snapshot.plannedEvents)) {
           await db.plannedEvents.clear();
@@ -862,10 +908,23 @@ export async function savePersistedTelemetrySnapshot(
         if (Array.isArray(snapshot.gearItems) && snapshot.gearItems.length > 0) {
           await db.gearItems.bulkPut(snapshot.gearItems);
         }
+        let ownerAthleteId = snapshot.ownerAthleteId;
+        if (!ownerAthleteId && typeof localStorage !== 'undefined') {
+          try {
+            ownerAthleteId =
+              localStorage.getItem('aeropulse_store_owner_athlete_id') ||
+              localStorage.getItem('aeropulse_strava_athlete_id') ||
+              undefined;
+          } catch {
+            ownerAthleteId = undefined;
+          }
+        }
         await saveStoreMetadata('snapshot_meta', {
           athleteProfile: snapshot.athleteProfile,
           redactedStravaCount: snapshot.redactedStravaCount || 0,
           earliestActivityDate: snapshot.earliestActivityDate,
+          pmcModelVersion: snapshot.pmcModelVersion ?? CURRENT_PMC_MODEL_VERSION,
+          ownerAthleteId,
           savedAt,
         });
       }
@@ -1025,6 +1084,15 @@ export function mergeActivitiesNonDestructive(
             ? 'Treadmill'
             : inc.subType || prev.subType;
 
+    const prevHasIntervals =
+      Boolean(prev.intervalsId) || Boolean(prev.sourceBadges?.includes('Intervals.icu'));
+    const incHasIntervals =
+      Boolean(inc.intervalsId) || Boolean(inc.sourceBadges?.includes('Intervals.icu'));
+    const keepPrevIntervalsLoad = prevHasIntervals && !incHasIntervals;
+    const isIncomingV2 = inc.loadModelVersion === CURRENT_PMC_MODEL_VERSION;
+    const clearStalePower =
+      inc.deviceWatts === false && !prevHasIntervals && !incHasIntervals;
+
     const mergedRaw: UnifiedActivity = {
       ...prev,
       ...inc,
@@ -1037,10 +1105,23 @@ export function mergeActivitiesNonDestructive(
       subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
       deviceName: inc.deviceName || prev.deviceName,
-      avgPower: inc.avgPower ?? prev.avgPower,
-      normalizedPower: inc.normalizedPower ?? prev.normalizedPower,
-      intensityFactor: inc.intensityFactor ?? prev.intensityFactor,
-      trainingLoad: inc.trainingLoad || prev.trainingLoad,
+      deviceWatts: inc.deviceWatts ?? prev.deviceWatts,
+      rawSportType: inc.rawSportType || prev.rawSportType,
+      loadModelVersion: inc.loadModelVersion ?? prev.loadModelVersion,
+      avgPower: clearStalePower ? undefined : inc.avgPower ?? prev.avgPower,
+      normalizedPower: clearStalePower ? undefined : inc.normalizedPower ?? prev.normalizedPower,
+      intensityFactor: keepPrevIntervalsLoad
+        ? prev.intensityFactor ?? inc.intensityFactor
+        : isIncomingV2
+          ? inc.intensityFactor
+          : inc.intensityFactor ?? prev.intensityFactor,
+      trainingLoad: keepPrevIntervalsLoad
+        ? prev.trainingLoad && prev.trainingLoad > 0
+          ? prev.trainingLoad
+          : inc.trainingLoad || prev.trainingLoad
+        : isIncomingV2 && typeof inc.trainingLoad === 'number'
+          ? inc.trainingLoad
+          : inc.trainingLoad || prev.trainingLoad,
       avgHr: inc.avgHr || prev.avgHr,
       maxHr: inc.maxHr || prev.maxHr,
       efficiencyFactor: inc.efficiencyFactor || prev.efficiencyFactor,
@@ -1116,43 +1197,116 @@ export function mergeWellnessDaysNonDestructive(
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * Uses activity-derived Banister CTL/ATL/TSB/dailyLoad as the authoritative spine
+ * while preserving non-zero hardware biometrics (HRV, RHR, sleep, weight, VO2)
+ * from any existing or Garmin wellness history without ever overwriting PMC load.
+ */
+export function overlayBiometricsOntoActivityWellness(
+  activityDerived: UnifiedWellnessDay[],
+  biometricSource: UnifiedWellnessDay[],
+  asOfDateIso: string = getLocalDateIso()
+): UnifiedWellnessDay[] {
+  if (!Array.isArray(activityDerived) || activityDerived.length === 0) {
+    return Array.isArray(biometricSource)
+      ? biometricSource.filter((w) => w && w.date && w.date.slice(0, 10) <= asOfDateIso)
+      : [];
+  }
+  if (!Array.isArray(biometricSource) || biometricSource.length === 0) {
+    return activityDerived;
+  }
+
+  const bioByDate = new Map<string, UnifiedWellnessDay>();
+  for (const w of biometricSource) {
+    if (!w || !w.date) continue;
+    const d = w.date.slice(0, 10);
+    if (d <= asOfDateIso) {
+      bioByDate.set(d, w);
+    }
+  }
+
+  const firstActDate = activityDerived[0].date.slice(0, 10);
+  const priorBiometricDays: UnifiedWellnessDay[] = [];
+  for (const [d, w] of bioByDate.entries()) {
+    if (d < firstActDate) {
+      priorBiometricDays.push(w);
+    }
+  }
+
+  const overlaid = activityDerived.map((actDay) => {
+    const bio = bioByDate.get(actDay.date.slice(0, 10));
+    if (!bio) return actDay;
+    return {
+      ...actDay,
+      hrvRMSSD: bio.hrvRMSSD > 0 ? bio.hrvRMSSD : actDay.hrvRMSSD,
+      hrvBaseline7d: bio.hrvBaseline7d > 0 ? bio.hrvBaseline7d : actDay.hrvBaseline7d,
+      hrvNormalBandLow:
+        bio.hrvNormalBandLow && bio.hrvNormalBandLow > 0
+          ? bio.hrvNormalBandLow
+          : actDay.hrvNormalBandLow,
+      hrvNormalBandHigh:
+        bio.hrvNormalBandHigh && bio.hrvNormalBandHigh > 0
+          ? bio.hrvNormalBandHigh
+          : actDay.hrvNormalBandHigh,
+      hrvStatus: bio.hrvStatus || actDay.hrvStatus,
+      restingHR: bio.restingHR > 0 ? bio.restingHR : actDay.restingHR,
+      sleepSecs: bio.sleepSecs > 0 ? bio.sleepSecs : actDay.sleepSecs,
+      sleepScore: bio.sleepScore > 0 ? bio.sleepScore : actDay.sleepScore,
+      sleepQuality: bio.sleepQuality ?? actDay.sleepQuality,
+      sleepDebt7dSecs: bio.sleepDebt7dSecs ?? actDay.sleepDebt7dSecs,
+      weightKg:
+        bio.weightKg > 30 && bio.weightKg !== 70 ? bio.weightKg : actDay.weightKg,
+      vo2MaxCycling: bio.vo2MaxCycling || actDay.vo2MaxCycling,
+      vo2MaxRunning: bio.vo2MaxRunning || actDay.vo2MaxRunning,
+      spO2: bio.spO2 ?? actDay.spO2,
+      respiration: bio.respiration ?? actDay.respiration,
+      steps: bio.steps ?? actDay.steps,
+      floorsClimbed: bio.floorsClimbed ?? actDay.floorsClimbed,
+      soreness: bio.soreness ?? actDay.soreness,
+    };
+  });
+
+  return [...priorBiometricDays, ...overlaid].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function computeWellnessDaysFromActivities(
-  activities: UnifiedActivity[]
+  activities: UnifiedActivity[],
+  asOfDateIso?: string
 ): UnifiedWellnessDay[] {
   if (!Array.isArray(activities) || activities.length === 0) return [];
+  const todayIso = (asOfDateIso || getLocalDateIso()).slice(0, 10);
+  const lookbackDefaultIso = shiftIsoDate(todayIso, -180);
+  const lookbackHardCapIso = shiftIsoDate(todayIso, -365);
+
   const loadByDate = new Map<string, number>();
-  let minTime = Date.now() - 180 * 86400 * 1000;
+  let earliestActIso = lookbackDefaultIso;
   for (const act of activities) {
     if (!act || !act.startDateLocal) continue;
     const d = act.startDateLocal.slice(0, 10);
-    const t = new Date(`${d}T00:00:00`).getTime();
-    if (Number.isFinite(t) && t < minTime) {
-      minTime = t;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    if (d < earliestActIso) {
+      earliestActIso = d;
     }
     loadByDate.set(d, (loadByDate.get(d) || 0) + Math.max(0, Number(act.trainingLoad || 0)));
   }
 
-  const todayMs = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00').getTime();
-  // Cap lookback to 365 days so PMC chart is fast and accurate
-  const startMs = Math.max(minTime, todayMs - 365 * 86400 * 1000);
+  // Cap lookback to 365 days so PMC warmup is fast and accurate without DST drift
+  const startIso = earliestActIso < lookbackHardCapIso ? lookbackHardCapIso : earliestActIso;
   const days: UnifiedWellnessDay[] = [];
   let ctl = 0;
   let atl = 0;
 
-  for (let ms = startMs; ms <= todayMs; ms += 86400 * 1000) {
-    const dateStr = new Date(ms).toISOString().slice(0, 10);
+  for (let dateStr = startIso; dateStr <= todayIso; dateStr = shiftIsoDate(dateStr, 1)) {
     const dailyLoad = Math.round(loadByDate.get(dateStr) || 0);
-    const prevCtl = ctl;
-    const prevAtl = atl;
-    ctl = ctl + (dailyLoad - ctl) / 42;
-    atl = atl + (dailyLoad - atl) / 7;
-    const tsb = prevCtl - prevAtl;
+    ctl = ctl * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);
+    atl = atl * BANISTER_ATL_DECAY + dailyLoad * (1 - BANISTER_ATL_DECAY);
+    const tsb = ctl - atl;
     const ctl7DaysAgo = days.length >= 7 ? days[days.length - 7].ctl : 0;
     const rampRate = Number((ctl - ctl7DaysAgo).toFixed(1));
     const loadRatio = ctl > 5 ? Number((atl / ctl).toFixed(2)) : 1.0;
 
     let garminTrainingStatus: UnifiedWellnessDay['garminTrainingStatus'] = 'Maintaining';
-    if (rampRate > 6 || tsb < -25) garminTrainingStatus = 'Overreaching';
+    if ((rampRate > 6 && atl >= 28) || tsb < -25) garminTrainingStatus = 'Overreaching';
     else if (rampRate >= 1.5 && tsb >= -22) garminTrainingStatus = 'Productive';
     else if (tsb > 10 && ctl > 35) garminTrainingStatus = 'Peaking';
     else if (rampRate < -2) garminTrainingStatus = 'Recovery';

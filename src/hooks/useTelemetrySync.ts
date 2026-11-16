@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import type {
   AthleteGearItem,
   AthleteProfile,
@@ -11,7 +11,9 @@ import type {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import { db, getStoreMetadata } from '../db/workoutStore';
 import {
+  CURRENT_PMC_MODEL_VERSION,
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
@@ -23,6 +25,7 @@ import {
   loadStravaSyncPolicyFromStorage,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
+  overlayBiometricsOntoActivityWellness,
   reclassifyActivityEnvironment,
   safeParseResponseJson,
   savePersistedTelemetrySnapshot,
@@ -124,15 +127,26 @@ export function useTelemetrySync({
   isSampleDemoMode,
   completeStravaAuthHandshakeRef,
 }: UseTelemetrySyncParams) {
+  const needsPmcModelV2SyncRef = useRef(false);
+
   const reconcileStoreOwnerAthleteId = useCallback(async (incomingAthleteId?: string | number | null) => {
     const cleanId = incomingAthleteId ? String(incomingAthleteId).trim() : '';
     if (!cleanId) return;
     try {
+      const [snapshotMeta, cachedCount] = await Promise.all([
+        getStoreMetadata<{ ownerAthleteId?: string }>('snapshot_meta'),
+        db.activities.count(),
+      ]);
+      const idbOwner = snapshotMeta?.ownerAthleteId
+        ? String(snapshotMeta.ownerAthleteId).trim()
+        : '';
       const prevOwner =
+        idbOwner ||
         localStorage.getItem('aeropulse_store_owner_athlete_id') ||
         localStorage.getItem('aeropulse_strava_athlete_id') ||
         '';
-      if (prevOwner && prevOwner !== cleanId) {
+      const isUnownedPollutedStore = !prevOwner && cachedCount > 0;
+      if ((prevOwner && prevOwner !== cleanId) || isUnownedPollutedStore) {
         await clearPersistedTelemetrySnapshot();
         setIdbSavedAt(null);
         setActivities([]);
@@ -634,7 +648,11 @@ export function useTelemetrySync({
             return Number.isFinite(t) && t > maxMs ? t : maxMs;
           }, 0);
           const useDelta =
-            !fullHistory && !explicitStravaWindow && stravaActs.length > 0 && latestStravaMs > 0;
+            !fullHistory &&
+            !explicitStravaWindow &&
+            !needsPmcModelV2SyncRef.current &&
+            stravaActs.length > 0 &&
+            latestStravaMs > 0;
           const syncQs = new URLSearchParams({ window: targetStravaWindow });
           if (useDelta) {
             // 14-day overlap buffer catches any activity edits, late uploads, or kudos without re-pulling full history
@@ -653,6 +671,7 @@ export function useTelemetrySync({
           });
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
+            needsPmcModelV2SyncRef.current = false;
             if (stravaData.missingActivityScope) {
               setConnectionStatus((prev) => ({
                 ...prev,
@@ -805,6 +824,7 @@ export function useTelemetrySync({
                   startDateLocal: sa.startDateLocal,
                   name: sa.name,
                   sportCategory: sa.sportCategory,
+                  rawSportType: sa.rawSportType,
                   environment: sa.environment,
                   subType: sa.subType || (sa.environment === 'INDOOR' ? 'Smart Trainer' : 'Road'),
                   movingTimeSecs: sa.movingTimeSecs,
@@ -812,8 +832,10 @@ export function useTelemetrySync({
                   elevationGainMeters: sa.elevationGainMeters,
                   avgPower: sa.avgPower,
                   normalizedPower: sa.normalizedPower,
+                  deviceWatts: sa.deviceWatts,
                   intensityFactor: sa.intensityFactor,
-                  trainingLoad: sa.trainingLoad || 0,
+                  trainingLoad: sa.trainingLoad ?? 0,
+                  loadModelVersion: sa.loadModelVersion,
                   avgHr: sa.avgHr || 0,
                   maxHr: sa.maxHr || 0,
                   avgCadence: sa.avgCadence,
@@ -897,19 +919,40 @@ export function useTelemetrySync({
                       /^Zwift\s+—\s+Virtual Cycling$/i.test(act.name.trim()) ||
                       /^Strava\s+Activity$/i.test(act.name.trim());
 
+                    const hasAuthoritativeIntervals =
+                      Boolean(act.intervalsId) || act.sourceBadges.includes('Intervals.icu');
+                    const clearStalePower =
+                      matched.deviceWatts === false &&
+                      !hasAuthoritativeIntervals &&
+                      !act.sourceBadges.includes('Garmin');
+
                     return reclassifyActivityEnvironment({
                       ...act,
                       name: isGenericStubName && matched.name ? matched.name : act.name,
+                      sportCategory:
+                        !hasAuthoritativeIntervals &&
+                        !act.sourceBadges.includes('Garmin') &&
+                        matched.sportCategory
+                          ? matched.sportCategory
+                          : act.sportCategory,
+                      rawSportType: matched.rawSportType || act.rawSportType,
                       environment: resolvedEnv,
                       subType: resolvedSubType,
                       stravaId: String(matched.stravaId || act.stravaId || ''),
-                      trainingLoad:
-                        act.trainingLoad && act.trainingLoad > 0
+                      deviceWatts: matched.deviceWatts ?? act.deviceWatts,
+                      loadModelVersion: matched.loadModelVersion ?? act.loadModelVersion,
+                      trainingLoad: hasAuthoritativeIntervals
+                        ? act.trainingLoad && act.trainingLoad > 0
                           ? act.trainingLoad
-                          : matched.trainingLoad || act.trainingLoad,
-                      avgPower: act.avgPower ?? matched.avgPower,
-                      normalizedPower: act.normalizedPower ?? matched.normalizedPower,
-                      intensityFactor: act.intensityFactor ?? matched.intensityFactor,
+                          : matched.trainingLoad ?? act.trainingLoad
+                        : matched.trainingLoad ?? act.trainingLoad,
+                      avgPower: clearStalePower ? undefined : act.avgPower ?? matched.avgPower,
+                      normalizedPower: clearStalePower
+                        ? undefined
+                        : act.normalizedPower ?? matched.normalizedPower,
+                      intensityFactor: hasAuthoritativeIntervals
+                        ? act.intensityFactor ?? matched.intensityFactor
+                        : matched.intensityFactor ?? act.intensityFactor,
                       variabilityIndex: act.variabilityIndex ?? matched.variabilityIndex,
                       avgHr: act.avgHr ?? matched.avgHr,
                       maxHr: act.maxHr ?? matched.maxHr,
@@ -959,6 +1002,13 @@ export function useTelemetrySync({
                     new Date(b.startDateLocal).getTime() - new Date(a.startDateLocal).getTime()
                 );
               }
+            } else if (
+              Array.isArray(stravaData.activities) &&
+              !stravaData.missingActivityScope &&
+              !stravaData.syncPaused &&
+              mergedActivities === null
+            ) {
+              mergedActivities = [];
             }
           } else {
             const errJson = await stravaResp.json().catch(() => ({}));
@@ -979,10 +1029,10 @@ export function useTelemetrySync({
 
           if (!statusData.intervalsConnected && combinedArchive.length > 0) {
             const activityDerivedWellness = computeWellnessDaysFromActivities(combinedArchive);
-            nextWellnessDays =
-              nextWellnessDays.length > 0
-                ? mergeWellnessDaysNonDestructive(activityDerivedWellness, nextWellnessDays)
-                : activityDerivedWellness;
+            nextWellnessDays = overlayBiometricsOntoActivityWellness(
+              activityDerivedWellness,
+              nextWellnessDays
+            );
             setWellnessDays(nextWellnessDays);
             wellnessDaysRef.current = nextWellnessDays;
           }
@@ -1054,6 +1104,9 @@ export function useTelemetrySync({
       if (notLoggedOutAtBoot) {
         const cached = await loadPersistedTelemetrySnapshot();
         if (mounted && cached) {
+          if ((cached.pmcModelVersion || 0) < CURRENT_PMC_MODEL_VERSION) {
+            needsPmcModelV2SyncRef.current = true;
+          }
           if (Array.isArray(cached.activities) && cached.activities.length > 0) {
             setActivities(cached.activities);
             activitiesRef.current = cached.activities;

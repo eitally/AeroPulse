@@ -56,6 +56,10 @@ import {
 } from '../physiology';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
+import {
+  BANISTER_ATL_DECAY,
+  BANISTER_CTL_DECAY,
+} from '../physiology/stravaLoadCalibration';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -366,8 +370,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           ? plannedByDate.get(dateStr)!
           : simulatedDailyTss;
 
-        curCtl = curCtl + (dayLoad - curCtl) / 42;
-        curAtl = curAtl + (dayLoad - curAtl) / 7;
+        curCtl = curCtl * BANISTER_CTL_DECAY + dayLoad * (1 - BANISTER_CTL_DECAY);
+        curAtl = curAtl * BANISTER_ATL_DECAY + dayLoad * (1 - BANISTER_ATL_DECAY);
         const curTsb = curCtl - curAtl;
 
         base.push({

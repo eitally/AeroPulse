@@ -237,9 +237,12 @@ export interface UnifiedActivity {
   elevationGainMeters: number;
   avgPower?: number;
   normalizedPower?: number;
+  deviceWatts?: boolean;
+  rawSportType?: string;
   intensityFactor?: number;
   variabilityIndex?: number;
   trainingLoad: number; // TSS / icu_training_load
+  loadModelVersion?: number;
   avgHr: number;
   maxHr: number;
   avgCadence?: number;

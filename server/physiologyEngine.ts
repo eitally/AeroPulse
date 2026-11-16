@@ -1,3 +1,8 @@
+import {
+  deriveObservedPhysiologyMetrics,
+  type ObservedPhysiologyMetrics,
+} from '../src/physiology/stravaLoadCalibration.ts';
+
 export const SERVER_ZONE_COLORS = [
   '#94A3B8', // Z1 Cool Mist
   '#0D9488', // Z2 Aerobic Teal
@@ -22,160 +27,8 @@ export function isGenericName(name?: string | null): boolean {
 export function deriveObservedPhysiologyFromActivities(
   activities?: Record<string, any>[] | null,
   weightKg = 70
-) {
-  let maxBikeWatts20m = 0;
-  let maxBikePeakWatts = 0;
-  let maxBikeHr = 0;
-  let maxBikeSustainedHr = 0;
-  let maxRunHr = 0;
-  let maxRunSustainedHr = 0;
-  let maxRunSustainedWatts = 0;
-  let bestRunPaceSecsPerKm = 0;
-
-  if (Array.isArray(activities)) {
-    for (const a of activities) {
-      if (!a) continue;
-      const sport = String(
-        a.sportCategory ||
-          a.sport_type ||
-          a.type ||
-          a.activityType?.typeKey ||
-          ''
-      );
-      const isBike = /ride|cycling|virtualride|bike|biking|zwift|peloton|spin/i.test(sport);
-      const isRun = /run|trailrun|virtualrun|running|treadmill/i.test(sport);
-      const dur = Number(
-        a.movingTimeSecs ?? a.movingDuration ?? a.moving_time ?? a.elapsed_time ?? a.duration ?? 0
-      );
-      const dist = Number(a.distanceMeters ?? a.distance ?? 0);
-      const avgP = Number(
-        a.avgPower ?? a.icu_average_watts ?? a.average_watts ?? 0
-      );
-      const np = Number(
-        a.normalizedPower ??
-          a.normPower ??
-          a.icu_weighted_avg_watts ??
-          a.weighted_average_watts ??
-          avgP
-      );
-      const sustainedBikeW =
-        avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
-      const p20 = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
-      const maxW = Number(
-        a.max_watts ?? a.maxPower ?? a.maxAvgPower_1 ?? a.pMax ?? np * 2.2
-      );
-      const avgHr = Number(a.avgHr ?? a.averageHR ?? a.average_heartrate ?? 0);
-      const peakHr = Number(a.maxHr ?? a.maxHR ?? a.max_heartrate ?? 0);
-
-      if (isBike) {
-        if (p20 >= 80 && p20 <= 600) {
-          if (p20 > maxBikeWatts20m) maxBikeWatts20m = p20;
-        } else if (
-          dur >= 1200 &&
-          sustainedBikeW >= 80 &&
-          sustainedBikeW <= 600 &&
-          sustainedBikeW > maxBikeWatts20m
-        ) {
-          maxBikeWatts20m = sustainedBikeW;
-        }
-        if (maxW >= 250 && maxW <= 2500 && maxW > maxBikePeakWatts) {
-          maxBikePeakWatts = maxW;
-        }
-        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxBikeHr) {
-          maxBikeHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
-          maxBikeSustainedHr = avgHr;
-        }
-      } else if (isRun) {
-        if (peakHr >= 130 && peakHr <= 225 && peakHr > maxRunHr) {
-          maxRunHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 120 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
-          maxRunSustainedHr = avgHr;
-        }
-        if (dur >= 1200 && np >= 120 && np <= 650 && np > maxRunSustainedWatts) {
-          maxRunSustainedWatts = np;
-        }
-        const split5k = Number(a.fastestSplit_5000 ?? 0);
-        const paceFrom5k =
-          split5k >= 780 && split5k <= 2700 ? Math.round(split5k / 5) : 0;
-        const pace =
-          paceFrom5k ||
-          Number(a.gapPaceSecsPerKm ?? a.avgPaceSecsPerKm ?? 0) ||
-          (dist >= 3000 && dur >= 900 ? Math.round(dur / (dist / 1000)) : 0);
-        if (
-          (paceFrom5k > 0 || (dur >= 1200 && dist >= 3000)) &&
-          pace >= 165 &&
-          pace <= 600
-        ) {
-          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
-            bestRunPaceSecsPerKm = pace;
-          }
-        }
-      }
-    }
-  }
-
-  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
-  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
-  const obsBikeLthr =
-    maxBikeSustainedHr >= 130
-      ? Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
-      : obsBikeMaxHr
-        ? Math.round(obsBikeMaxHr * 0.9)
-        : 0;
-  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
-  const obsRunLthr =
-    maxRunSustainedHr >= 135
-      ? Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
-      : obsRunMaxHr
-        ? Math.round(obsRunMaxHr * 0.91)
-        : obsBikeLthr
-          ? obsBikeLthr + 4
-          : 0;
-  const obsFtp = maxBikeWatts20m >= 90 ? Math.round(maxBikeWatts20m * 0.95) : 0;
-  const obsPMax =
-    maxBikePeakWatts >= 400
-      ? Math.round(maxBikePeakWatts)
-      : obsFtp > 0
-        ? Math.round(obsFtp * 3.6)
-        : 0;
-  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
-  const obsThresholdPace =
-    bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
-  const safeW = weightKg > 30 ? weightKg : 70;
-  const obsRunFtp =
-    maxRunSustainedWatts >= 140
-      ? Math.round(maxRunSustainedWatts * 0.92)
-      : obsThresholdPace > 0
-        ? Math.round(safeW * (1000 / obsThresholdPace) * 0.98)
-        : 0;
-  const obsVo2Bike =
-    obsFtp > 0 && safeW > 30
-      ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7)))
-      : 0;
-  const obsVo2Run =
-    obsThresholdPace > 0
-      ? Math.max(
-          32,
-          Math.min(88, Math.round((1000 / obsThresholdPace) * 60 * 0.2 + 3.5))
-        )
-      : obsVo2Bike;
-
-  return {
-    obsFtp,
-    obsPMax,
-    obsWPrime,
-    obsBikeMaxHr,
-    obsBikeLthr,
-    obsRunMaxHr,
-    obsRunLthr,
-    obsThresholdPace,
-    obsRunFtp,
-    obsVo2Bike,
-    obsVo2Run,
-  };
+): ObservedPhysiologyMetrics {
+  return deriveObservedPhysiologyMetrics(activities, weightKg);
 }
 
 export function buildServerAthleteProfile(
