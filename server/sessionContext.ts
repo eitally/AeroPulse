@@ -518,5 +518,6 @@ export {
 
 export {
   loadTenantVaultAsync,
+  saveTenantVaultAsync,
   deleteTenantVault,
 } from './tokenVault.ts';

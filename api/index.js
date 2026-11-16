@@ -231,6 +231,10 @@ function clearSessionCookie(res) {
     res,
     `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
   );
+  appendSetCookieHeader(
+    res,
+    "thresh_user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+  );
   clearOAuthStateCookie(res);
 }
 function hasValidSessionToken(req) {
@@ -588,6 +592,7 @@ async function saveTenantVaultAsync(tenantId, data) {
   }
 }
 var VAULT_COOKIE_NAME = "thresh_vault";
+var USER_VAULT_COOKIE_NAME = "thresh_user";
 var VAULT_COOKIE_TTL_SECS = 30 * 24 * 60 * 60;
 function buildEncryptedVaultCookieHeader(payload, isSecure) {
   const envelope = encryptJsonForVault(payload);
@@ -607,6 +612,25 @@ function buildEncryptedVaultCookieHeader(payload, isSecure) {
 }
 function buildClearVaultCookieHeader() {
   return `${VAULT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+function buildEncryptedUserCookieHeader(userPayload, isSecure) {
+  const envelope = encryptJsonForVault(userPayload);
+  const encoded = encodeURIComponent(envelope);
+  if (encoded.length > 3700) {
+    return null;
+  }
+  const parts = [
+    `${USER_VAULT_COOKIE_NAME}=${encoded}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${VAULT_COOKIE_TTL_SECS}`
+  ];
+  if (isSecure) parts.push("Secure");
+  return parts.join("; ");
+}
+function buildClearUserCookieHeader() {
+  return `${USER_VAULT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 async function deleteTenantVault(tenantId) {
   const safeId = sanitizeTenantId(tenantId);
@@ -7244,20 +7268,82 @@ teamRouter.post("/api/teams/parent-consent", async (req, res) => {
 import express3 from "express";
 import crypto7 from "crypto";
 var authRouter = express3.Router();
+function isProductionDeployment() {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+}
 function getRpId(req) {
-  const host = req.get("host") || "localhost:3000";
-  return host.split(":")[0];
+  const host = String(req.headers["x-forwarded-host"] || req.get("host") || "localhost:3000").split(",")[0].trim();
+  return host.split(":")[0] || "localhost";
 }
 function getAppBaseUrl(req) {
-  const isHttps = req.secure || String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https";
+  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "").split(",")[0].trim().toLowerCase();
+  const isHttps = req.secure || rawProto === "https";
   const proto = isHttps ? "https" : "http";
-  const host = req.get("host") || "localhost:3000";
-  return `${proto}://${host}`;
+  const host = String(req.headers["x-forwarded-host"] || req.get("host") || "localhost:3000").split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  return `${proto}://${host || "localhost:3000"}`;
+}
+function resolveGoogleCallbackUrl(req) {
+  const explicitRedirect = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+    }
+  }
+  const reqOrigin = getAppBaseUrl(req);
+  const envOrigin = resolveSafeOrigin(process.env.APP_URL || "");
+  if (envOrigin && !envOrigin.includes("MY_APP_URL") && (!envOrigin.includes("localhost") || reqOrigin.includes("localhost"))) {
+    return `${envOrigin}/api/auth/google/callback`;
+  }
+  return `${reqOrigin}/api/auth/google/callback`;
+}
+function buildAuthReturnRedirectUrl(stateClaims) {
+  const basePath = stateClaims?.slug ? `/join/${encodeURIComponent(stateClaims.slug)}` : "/";
+  const params = new URLSearchParams();
+  params.set("auth_just_signed_in", "1");
+  if (stateClaims?.joinCode && !stateClaims?.slug) {
+    params.set("join", stateClaims.joinCode);
+  }
+  if (stateClaims?.inviteToken) {
+    params.set("t", stateClaims.inviteToken);
+  }
+  return `${basePath}?${params.toString()}`;
+}
+function toCompactUserBackupPayload(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    picture: user.picture,
+    role: user.role,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    authProviders: (user.authProviders || []).slice(0, 6),
+    passkeys: (user.passkeys || []).slice(0, 4).map((pk) => ({
+      id: pk.id,
+      publicKeySpkiBase64: "",
+      counter: pk.counter,
+      createdAt: pk.createdAt
+    })),
+    connectedServices: (user.connectedServices || []).slice(0, 6)
+  };
 }
 async function finalizeUserAuthentication(req, res, user) {
   const userSid = deriveUserSessionSid(user.id);
   const prevClaims = getVerifiedSessionClaims(req);
-  setSessionCookie(req, res, user.id, userSid);
+  const sessionToken = setSessionCookie(req, res, user.id, userSid);
+  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "").split(",")[0].trim().toLowerCase();
+  const isSecure = req.secure || rawProto === "https";
+  const userCookieHeader = buildEncryptedUserCookieHeader(
+    toCompactUserBackupPayload(user),
+    isSecure
+  );
+  if (userCookieHeader) {
+    appendSetCookieHeader(res, userCookieHeader);
+  }
   if (prevClaims?.sid && prevClaims.sid !== userSid) {
     try {
       await migrateAnonymousTeamsToSid({
@@ -7281,7 +7367,7 @@ async function finalizeUserAuthentication(req, res, user) {
       console.warn("[THRESH Auth] Auto-link pending team invites warning:", err);
     }
   }
-  return userSid;
+  return { userSid, sessionToken };
 }
 authRouter.get("/api/auth/me", async (req, res) => {
   try {
@@ -7292,6 +7378,20 @@ authRouter.get("/api/auth/me", async (req, res) => {
     let user = null;
     if (claims.sub.startsWith("usr_")) {
       user = await getUserById(claims.sub);
+      if (!user) {
+        const cookies = parseCookies(req.headers.cookie);
+        const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
+        if (backupEnvelope) {
+          const restored = decryptJsonFromVault(backupEnvelope);
+          if (restored && restored.id === claims.sub) {
+            user = restored;
+            try {
+              await saveUser(restored);
+            } catch {
+            }
+          }
+        }
+      }
     } else {
       user = await getUserByProvider("strava", claims.sub);
     }
@@ -7305,7 +7405,8 @@ authRouter.get("/api/auth/me", async (req, res) => {
     }
     return res.json({
       authenticated: true,
-      user
+      user,
+      sessionToken: issueSessionToken(claims.sub, claims.sid)
     });
   } catch (err) {
     console.error("[THRESH Auth] /api/auth/me error:", err);
@@ -7314,18 +7415,31 @@ authRouter.get("/api/auth/me", async (req, res) => {
 });
 authRouter.get("/api/auth/google/url", (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const baseUrl = getAppBaseUrl(req);
-  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const redirectUri = resolveGoogleCallbackUrl(req);
   if (!clientId) {
+    if (isProductionDeployment()) {
+      return res.json({
+        configured: false,
+        devMode: false,
+        error: `Google Sign-In is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel Environment Variables (Authorized Redirect URI: ${redirectUri}).`
+      });
+    }
     return res.json({
       configured: false,
       devMode: true,
       message: "GOOGLE_CLIENT_ID not configured; dev mock login available.",
-      devMockUrl: "/api/auth/mock-login?provider=google"
+      devMockUrl: "/api/auth/mock-login?provider=google",
+      devMockLoginUrl: "/api/auth/mock-login?provider=google"
     });
   }
+  const joinCode = String(req.query.joinCode || req.query.join || "").trim().slice(0, 32) || void 0;
+  const slug = String(req.query.slug || "").trim().slice(0, 64) || void 0;
+  const inviteToken = String(req.query.inviteToken || req.query.t || "").trim().slice(0, 96) || void 0;
   const { stateToken, nonce } = issueOAuthStateToken({
-    flow: req.query.flow || "redirect"
+    flow: req.query.flow || "redirect",
+    joinCode,
+    slug,
+    inviteToken
   });
   setOAuthStateCookie(req, res, nonce);
   const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -7336,9 +7450,12 @@ authRouter.get("/api/auth/google/url", (req, res) => {
   googleAuthUrl.searchParams.set("state", stateToken);
   googleAuthUrl.searchParams.set("access_type", "offline");
   googleAuthUrl.searchParams.set("prompt", "select_account");
+  const url = googleAuthUrl.toString();
   return res.json({
     configured: true,
-    url: googleAuthUrl.toString()
+    url,
+    authUrl: url,
+    redirectUri
   });
 });
 authRouter.get("/api/auth/google/callback", async (req, res) => {
@@ -7356,8 +7473,7 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
   }
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const baseUrl = getAppBaseUrl(req);
-  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const redirectUri = resolveGoogleCallbackUrl(req);
   if (!clientId || !clientSecret) {
     return res.redirect("/?auth_error=google_not_configured");
   }
@@ -7391,7 +7507,7 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
       picture: googleUser.picture
     });
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect("/");
+    return res.redirect(buildAuthReturnRedirectUrl(stateClaims));
   } catch (err) {
     console.error("[THRESH Auth] Google callback processing error:", err);
     return res.redirect("/?auth_error=internal_error");
@@ -7433,7 +7549,7 @@ authRouter.get("/api/auth/magic-link/verify", async (req, res) => {
       name: email.split("@")[0]
     });
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect("/");
+    return res.redirect("/?auth_just_signed_in=1");
   } catch (err) {
     console.error("[THRESH Auth] Magic link verification error:", err);
     return res.redirect("/?auth_error=magic_link_verification_failed");
@@ -7562,6 +7678,9 @@ authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
   }
 });
 authRouter.post("/api/auth/mock-login", async (req, res) => {
+  if (isProductionDeployment()) {
+    return res.status(403).json({ error: "Mock login is disabled in production." });
+  }
   const email = String(req.body?.email || req.query.email || "runner@thresh.local").trim().toLowerCase();
   const name = String(req.body?.name || req.query.name || "Sample Runner").trim();
   const provider = String(req.body?.provider || req.query.provider || "dev_mock");
@@ -7572,7 +7691,7 @@ authRouter.post("/api/auth/mock-login", async (req, res) => {
     });
     await finalizeUserAuthentication(req, res, user);
     if (req.method === "GET" || req.query.redirect) {
-      return res.redirect("/");
+      return res.redirect("/?auth_just_signed_in=1");
     }
     return res.json({ ok: true, user });
   } catch (err) {
@@ -7581,13 +7700,16 @@ authRouter.post("/api/auth/mock-login", async (req, res) => {
   }
 });
 authRouter.get("/api/auth/mock-login", async (req, res) => {
+  if (isProductionDeployment()) {
+    return res.status(403).json({ error: "Mock login is disabled in production." });
+  }
   const email = String(req.query.email || "runner@thresh.local").trim().toLowerCase();
   const name = String(req.query.name || "Sample Runner").trim();
   const provider = String(req.query.provider || "dev_mock");
   try {
     const user = await findOrCreateUser(provider, email, { email, name });
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect("/");
+    return res.redirect("/?auth_just_signed_in=1");
   } catch (err) {
     console.error("[THRESH Auth] Dev mock link failed:", err);
     return res.redirect("/?auth_error=dev_mock_failed");
@@ -9505,13 +9627,18 @@ var stravaCallbackHandler = async (req, res) => {
       hasExistingSyncPolicy
     };
     pendingOAuthByState.set(verifiedState.nonce, pendingPayload);
-    await loadTenantVaultAsync(`oauth_poll_${verifiedState.nonce}`, pendingPayload);
+    if (verifiedState?.nonce) {
+      await saveTenantVaultAsync(`oauth_poll_${verifiedState.nonce}`, pendingPayload);
+    }
     clearOAuthStateCookie(res);
-    const returnUrl = buildReturnOnboardingUrl(verifiedState, {
+    const hasPendingTeamJoin = Boolean(verifiedState?.slug || verifiedState?.joinCode);
+    const onboardingUrl = buildReturnOnboardingUrl(verifiedState, {
+      oauth: "strava_connected",
       oauth_just_connected: "1",
       ...athleteId ? { strava_athlete_id: athleteId } : {},
       ...athleteName && !isGenericName(athleteName) ? { strava_athlete_name: athleteName } : {}
     });
+    const returnUrl = hasExistingSyncPolicy && !hasPendingTeamJoin ? "/#fitness" : onboardingUrl;
     const oauthSuccessPayload = safeJsonForScript({
       type: "OAUTH_AUTH_SUCCESS",
       provider: "strava",
@@ -9540,15 +9667,40 @@ var stravaCallbackHandler = async (req, res) => {
         title: "Strava Connected \xB7 THRESH",
         heading: `Strava Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
         accentColor: "#10B981",
-        body: "Your Strava account is linked. Return to THRESH to confirm your sync preferences.",
+        body: hasExistingSyncPolicy ? "Welcome back! Restoring your THRESH training workspace\u2026" : "Your Strava account is linked. Return to THRESH to confirm your sync preferences.",
         ctaLabel: "Continue to THRESH",
         ctaHref: returnUrl,
         scriptBody: `(function(){
             var payload = ${oauthSuccessPayload};
             try {
               if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-              if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
-              if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
+              if (payload.tokens) {
+                var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
+                if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
+                  localStorage.removeItem('aeropulse_strava_athlete_name');
+                  localStorage.removeItem('aeropulse_auth_gate_passed');
+                }
+                if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
+                if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
+                if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
+                if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
+                if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
+                if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
+                if (payload.tokens.weightKg) localStorage.setItem('aeropulse_strava_athlete_weight_kg', String(payload.tokens.weightKg));
+                if (payload.tokens.ftp) localStorage.setItem('aeropulse_strava_athlete_ftp', String(payload.tokens.ftp));
+                if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
+                if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
+                localStorage.removeItem('aeropulse_logged_out');
+                if (payload.hasExistingSyncPolicy) {
+                  localStorage.setItem('aeropulse_auth_gate_passed', '1');
+                } else {
+                  localStorage.removeItem('aeropulse_auth_gate_passed');
+                }
+              } else {
+                if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
+                if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
+                localStorage.removeItem('aeropulse_logged_out');
+              }
               localStorage.setItem('aeropulse_oauth_just_connected', '1');
             } catch (e) {}
             var hasOpener = false;
@@ -13566,6 +13718,7 @@ configRouter.post("/api/auth/logout", async (req, res) => {
     clearSessionCookie(res);
     clearOAuthStateCookie(res);
     appendSetCookieHeader(res, buildClearVaultCookieHeader());
+    appendSetCookieHeader(res, buildClearUserCookieHeader());
     const clearCredentials = Boolean(req.body?.clearCredentials) && wasAuthenticated;
     if (clearCredentials) {
       runtimeStore.stravaAccessToken = "";

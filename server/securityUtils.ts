@@ -337,6 +337,10 @@ export function clearSessionCookie(res: Response): void {
     res,
     `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
   );
+  appendSetCookieHeader(
+    res,
+    'thresh_user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
+  );
   clearOAuthStateCookie(res);
 }
 

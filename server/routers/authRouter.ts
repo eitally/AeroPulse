@@ -14,7 +14,14 @@ import {
   getVerifiedSessionClaims,
   issueSessionToken,
   appendSetCookieHeader,
+  parseCookies,
+  resolveSafeOrigin,
 } from '../securityUtils.ts';
+import {
+  USER_VAULT_COOKIE_NAME,
+  buildEncryptedUserCookieHeader,
+  decryptJsonFromVault,
+} from '../tokenVault.ts';
 import {
   autoLinkPendingTeamInvitesByEmail,
   migrateAnonymousTeamsToSid,
@@ -38,28 +45,111 @@ import {
 
 export const authRouter = express.Router();
 
+function isProductionDeployment(): boolean {
+  return process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+}
+
 function getRpId(req: Request): string {
-  const host = req.get('host') || 'localhost:3000';
-  return host.split(':')[0];
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
+    .split(',')[0]
+    .trim();
+  return host.split(':')[0] || 'localhost';
 }
 
 function getAppBaseUrl(req: Request): string {
-  const isHttps =
-    req.secure ||
-    String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';
+  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const isHttps = req.secure || rawProto === 'https';
   const proto = isHttps ? 'https' : 'http';
-  const host = req.get('host') || 'localhost:3000';
-  return `${proto}://${host}`;
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
+    .split(',')[0]
+    .trim()
+    .replace(/[^a-zA-Z0-9.:-]/g, '');
+  return `${proto}://${host || 'localhost:3000'}`;
+}
+
+function resolveGoogleCallbackUrl(req: Request): string {
+  const explicitRedirect = (process.env.GOOGLE_REDIRECT_URI || '').trim();
+  if (explicitRedirect) {
+    try {
+      const parsed = new URL(explicitRedirect);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+    } catch {
+      // fall through
+    }
+  }
+  const reqOrigin = getAppBaseUrl(req);
+  const envOrigin = resolveSafeOrigin(process.env.APP_URL || '');
+  if (
+    envOrigin &&
+    !envOrigin.includes('MY_APP_URL') &&
+    (!envOrigin.includes('localhost') || reqOrigin.includes('localhost'))
+  ) {
+    return `${envOrigin}/api/auth/google/callback`;
+  }
+  return `${reqOrigin}/api/auth/google/callback`;
+}
+
+function buildAuthReturnRedirectUrl(
+  stateClaims?: { joinCode?: string; slug?: string; inviteToken?: string } | null
+): string {
+  const basePath = stateClaims?.slug ? `/join/${encodeURIComponent(stateClaims.slug)}` : '/';
+  const params = new URLSearchParams();
+  params.set('auth_just_signed_in', '1');
+  if (stateClaims?.joinCode && !stateClaims?.slug) {
+    params.set('join', stateClaims.joinCode);
+  }
+  if (stateClaims?.inviteToken) {
+    params.set('t', stateClaims.inviteToken);
+  }
+  return `${basePath}?${params.toString()}`;
+}
+
+function toCompactUserBackupPayload(user: ThreshUser): ThreshUser {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    picture: user.picture,
+    role: user.role,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    authProviders: (user.authProviders || []).slice(0, 6),
+    passkeys: (user.passkeys || []).slice(0, 4).map((pk) => ({
+      id: pk.id,
+      publicKeySpkiBase64: '',
+      counter: pk.counter,
+      createdAt: pk.createdAt,
+    })),
+    connectedServices: (user.connectedServices || []).slice(0, 6),
+  };
 }
 
 async function finalizeUserAuthentication(
   req: Request,
   res: Response,
   user: ThreshUser
-): Promise<string> {
+): Promise<{ userSid: string; sessionToken: string }> {
   const userSid = deriveUserSessionSid(user.id);
   const prevClaims = getVerifiedSessionClaims(req);
-  setSessionCookie(req, res, user.id, userSid);
+  const sessionToken = setSessionCookie(req, res, user.id, userSid);
+
+  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const isSecure = req.secure || rawProto === 'https';
+  const userCookieHeader = buildEncryptedUserCookieHeader(
+    toCompactUserBackupPayload(user),
+    isSecure
+  );
+  if (userCookieHeader) {
+    appendSetCookieHeader(res, userCookieHeader);
+  }
 
   if (prevClaims?.sid && prevClaims.sid !== userSid) {
     try {
@@ -86,7 +176,7 @@ async function finalizeUserAuthentication(
     }
   }
 
-  return userSid;
+  return { userSid, sessionToken };
 }
 
 /**
@@ -104,6 +194,22 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
     let user: ThreshUser | null = null;
     if (claims.sub.startsWith('usr_')) {
       user = await getUserById(claims.sub);
+      if (!user) {
+        // Recover compact profile from encrypted cookie backup on stateless serverless cold starts
+        const cookies = parseCookies(req.headers.cookie);
+        const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
+        if (backupEnvelope) {
+          const restored = decryptJsonFromVault<ThreshUser>(backupEnvelope);
+          if (restored && restored.id === claims.sub) {
+            user = restored;
+            try {
+              await saveUser(restored);
+            } catch {
+              // ignore non-fatal local cache re-hydration error
+            }
+          }
+        }
+      }
     } else {
       // Legacy session with Strava athlete ID or generic subject
       user = await getUserByProvider('strava', claims.sub);
@@ -121,6 +227,7 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
     return res.json({
       authenticated: true,
       user,
+      sessionToken: issueSessionToken(claims.sub, claims.sid),
     });
   } catch (err) {
     console.error('[THRESH Auth] /api/auth/me error:', err);
@@ -130,24 +237,40 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
 
 /**
  * GET /api/auth/google/url
- * Returns Google OAuth URL, or dev mock fallback when credentials are not configured.
+ * Returns Google OAuth URL, or dev mock fallback when running in non-production without credentials.
  */
 authRouter.get('/api/auth/google/url', (req: Request, res: Response) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const baseUrl = getAppBaseUrl(req);
-  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const redirectUri = resolveGoogleCallbackUrl(req);
 
   if (!clientId) {
+    if (isProductionDeployment()) {
+      return res.json({
+        configured: false,
+        devMode: false,
+        error: `Google Sign-In is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel Environment Variables (Authorized Redirect URI: ${redirectUri}).`,
+      });
+    }
     return res.json({
       configured: false,
       devMode: true,
       message: 'GOOGLE_CLIENT_ID not configured; dev mock login available.',
       devMockUrl: '/api/auth/mock-login?provider=google',
+      devMockLoginUrl: '/api/auth/mock-login?provider=google',
     });
   }
 
+  const joinCode =
+    String(req.query.joinCode || req.query.join || '').trim().slice(0, 32) || undefined;
+  const slug = String(req.query.slug || '').trim().slice(0, 64) || undefined;
+  const inviteToken =
+    String(req.query.inviteToken || req.query.t || '').trim().slice(0, 96) || undefined;
+
   const { stateToken, nonce } = issueOAuthStateToken({
     flow: (req.query.flow as 'popup' | 'redirect') || 'redirect',
+    joinCode,
+    slug,
+    inviteToken,
   });
   setOAuthStateCookie(req, res, nonce);
 
@@ -160,9 +283,12 @@ authRouter.get('/api/auth/google/url', (req: Request, res: Response) => {
   googleAuthUrl.searchParams.set('access_type', 'offline');
   googleAuthUrl.searchParams.set('prompt', 'select_account');
 
+  const url = googleAuthUrl.toString();
   return res.json({
     configured: true,
-    url: googleAuthUrl.toString(),
+    url,
+    authUrl: url,
+    redirectUri,
   });
 });
 
@@ -190,8 +316,7 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
 
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const baseUrl = getAppBaseUrl(req);
-  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const redirectUri = resolveGoogleCallbackUrl(req);
 
   if (!clientId || !clientSecret) {
     return res.redirect('/?auth_error=google_not_configured');
@@ -241,10 +366,10 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
       picture: googleUser.picture,
     });
 
-    // 4. Set HttpOnly session cookie & auto-link team rosters by email
+    // 4. Set HttpOnly session & encrypted user cookies & auto-link team rosters by email
     await finalizeUserAuthentication(req, res, user);
 
-    return res.redirect('/');
+    return res.redirect(buildAuthReturnRedirectUrl(stateClaims));
   } catch (err) {
     console.error('[THRESH Auth] Google callback processing error:', err);
     return res.redirect('/?auth_error=internal_error');
@@ -302,7 +427,7 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
     });
 
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect('/');
+    return res.redirect('/?auth_just_signed_in=1');
   } catch (err) {
     console.error('[THRESH Auth] Magic link verification error:', err);
     return res.redirect('/?auth_error=magic_link_verification_failed');
@@ -474,6 +599,9 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
  * Dev-mode one-click instant authentication without external OAuth.
  */
 authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
+  if (isProductionDeployment()) {
+    return res.status(403).json({ error: 'Mock login is disabled in production.' });
+  }
   const email = String(req.body?.email || req.query.email || 'runner@thresh.local').trim().toLowerCase();
   const name = String(req.body?.name || req.query.name || 'Sample Runner').trim();
   const provider = (String(req.body?.provider || req.query.provider || 'dev_mock')) as 'dev_mock' | 'google';
@@ -488,7 +616,7 @@ authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
 
     // Support redirect when accessed as a GET / URL link
     if (req.method === 'GET' || req.query.redirect) {
-      return res.redirect('/');
+      return res.redirect('/?auth_just_signed_in=1');
     }
 
     return res.json({ ok: true, user });
@@ -503,6 +631,9 @@ authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
  * Allow dev link clicking directly in browser.
  */
 authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
+  if (isProductionDeployment()) {
+    return res.status(403).json({ error: 'Mock login is disabled in production.' });
+  }
   const email = String(req.query.email || 'runner@thresh.local').trim().toLowerCase();
   const name = String(req.query.name || 'Sample Runner').trim();
   const provider = (String(req.query.provider || 'dev_mock')) as 'dev_mock' | 'google';
@@ -510,7 +641,7 @@ authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
   try {
     const user = await findOrCreateUser(provider, email, { email, name });
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect('/');
+    return res.redirect('/?auth_just_signed_in=1');
   } catch (err) {
     console.error('[THRESH Auth] Dev mock link failed:', err);
     return res.redirect('/?auth_error=dev_mock_failed');
