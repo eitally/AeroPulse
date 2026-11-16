@@ -29,8 +29,13 @@ import {
   computeTrackEnvironmentSplitAdjustment,
   computeWorldAthleticsOvalLaneGeometry,
 } from './trackEnvironmentPhysics.ts';
+import { snapGpsStreamToStandardTrackOval } from './trackOvalGpsFusionEngine.ts';
 
-export { computeTrackEnvironmentSplitAdjustment, computeWorldAthleticsOvalLaneGeometry };
+export {
+  computeTrackEnvironmentSplitAdjustment,
+  computeWorldAthleticsOvalLaneGeometry,
+  snapGpsStreamToStandardTrackOval,
+};
 
 /**
  * Formats seconds with 0.01s or 0.1s precision into Track & Field stopwatch format (`m:ss.xx` or `ss.xx`).

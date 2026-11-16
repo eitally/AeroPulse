@@ -35,6 +35,11 @@ import {
 } from '../utils/stopwatchActivitySynthesizer';
 import { formatFatTime } from '../utils/officialRaceSynthesizer';
 import {
+  evaluateSquadLiveAutoRegulation,
+  type RunnerLiveAutoRegInput,
+} from '../physiology/trackLiveAutoRegulationEngine';
+import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
+import {
   ArrowCounterClockwise,
   BellRinging,
   Check,
@@ -125,6 +130,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     windSpeedMps,
     altitudeMeters,
     footwearClass,
+    autoRegPivotHistory,
+    endedEarlyStimulusRatio,
+    dismissedAutoRegSignatures,
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -153,6 +161,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     setWindSpeedMps,
     setAltitudeMeters,
     setFootwearClass,
+    extendWorkoutRestPlus30s,
+    convertRemainingToCv,
+    endSessionStimulusAchieved,
+    dismissAutoRegCue,
   } = useTracksideStopwatch(50);
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
@@ -545,6 +557,41 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     [filteredTelemetries]
   );
 
+  const squadAutoRegSummary = useMemo(() => {
+    if (sessionType !== 'WORKOUT') {
+      return evaluateSquadLiveAutoRegulation([], dismissedAutoRegSignatures);
+    }
+    const rosterProfileById = new Map(roster.map((r) => [r.id, r.athleteProfile]));
+    const inputs: RunnerLiveAutoRegInput[] = runnerTelemetries.map((t) => {
+      const athProf = t.runnerId === 'SELF' ? selfProfile : rosterProfileById.get(t.runnerId);
+      const podMeta = runnerPodLookup.get(t.runnerId);
+      return {
+        runnerId: t.runnerId,
+        runnerName: t.runnerName,
+        podKey: t.podKey,
+        lapSplitsSecs: t.lapSplitsSecs,
+        plannedRepCount: activeWorkoutPreset.repCount,
+        repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
+        restDurationSecs,
+        thresholdPaceSecsPerKm: athProf?.thresholdPaceSecsPerKm || selfProfile.thresholdPaceSecsPerKm || 245,
+        targetSplitSecs: podMeta?.targetLapSecs ?? null,
+        intensity: activeWorkoutPreset.intensity,
+        zoneCode: customWorkoutSpec?.zoneCode,
+      };
+    });
+    return evaluateSquadLiveAutoRegulation(inputs, dismissedAutoRegSignatures);
+  }, [
+    sessionType,
+    runnerTelemetries,
+    roster,
+    selfProfile,
+    runnerPodLookup,
+    activeWorkoutPreset,
+    restDurationSecs,
+    customWorkoutSpec?.zoneCode,
+    dismissedAutoRegSignatures,
+  ]);
+
   const handleRunnerAction = useCallback(
     (telemetry: RunnerSplitTelemetry) => {
       if (telemetry.isFinishedLocked) {
@@ -805,6 +852,11 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               lapSplitsSecs: t.lapSplitsSecs,
               footwearClass,
               trackFacility,
+              stimulusCompletionRatio: endedEarlyStimulusRatio ?? undefined,
+              autoRegPivotSummary:
+                autoRegPivotHistory.length > 0
+                  ? autoRegPivotHistory.map((p) => p.summary).join(' · ')
+                  : undefined,
             });
 
       return {
@@ -819,7 +871,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       savedCount > 0
         ? sessionType === 'RACE'
           ? `Saved ${savedCount} Official Race ${savedCount === 1 ? 'Mark' : 'Marks'} into THRESH Activities.`
-          : `Saved ${savedCount} Interval Workout ${savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into THRESH Activities.`
+          : endedEarlyStimulusRatio !== null
+            ? `Saved ${savedCount} Interval Workout ${savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into THRESH Activities.`
+            : `Saved ${savedCount} Interval Workout ${savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into THRESH Activities.`
         : 'No writable athlete logs selected.'
     );
   };
@@ -951,6 +1005,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
                     </option>
                   ))}
+                  {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
+                    <option
+                      value={restDurationSecs}
+                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
+                    >
+                      {restDurationSecs}s Recovery Timer (Auto-Reg)
+                    </option>
+                  )}
                 </select>
               </label>
             </>
@@ -1538,6 +1600,30 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             </div>
           </div>
         )}
+
+        {sessionType === 'WORKOUT' && (
+          <TracksideAutoRegBanner
+            autoRegSummary={squadAutoRegSummary}
+            pivotHistory={autoRegPivotHistory}
+            endedEarlyStimulusRatio={endedEarlyStimulusRatio}
+            onExtendRest30s={() => {
+              extendWorkoutRestPlus30s(30);
+              playFeedback('BELL');
+              setLiveAnnouncement('Extended recovery timer +30s across active workout.');
+            }}
+            onConvertRemainingToCv={() => {
+              convertRemainingToCv();
+              playFeedback('BELL');
+              setLiveAnnouncement('Converted remaining reps to Critical Velocity (CV).');
+            }}
+            onEndSession85Stimulus={(repsCap) => {
+              endSessionStimulusAchieved(repsCap);
+              playFeedback('BELL');
+              setLiveAnnouncement('Ended workout cleanly with 85% quality stimulus preserved.');
+            }}
+            onDismissCue={dismissAutoRegCue}
+          />
+        )}
       </section>
 
       {/* 3. Blind-Tap Pack / Chute Queue Bar (F1) */}
@@ -1764,21 +1850,36 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Bottom Recent Splits Trail */}
+                  {/* Bottom Recent Splits Trail & Live D'/Fade Strip */}
                   {telemetry.lapSplitsSecs.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 w-full">
-                      {telemetry.lapSplitsSecs.slice(-4).map((lapSecs, lapIdx, arr) => {
-                        const globalLapNum =
-                          telemetry.lapSplitsSecs.length - arr.length + lapIdx + 1;
-                        return (
-                          <span
-                            key={`trail-${globalLapNum}`}
-                            className="px-1.5 py-0.5 rounded ap-card-inset font-mono text-2xs tabular-nums text-slate-700 dark:text-slate-200"
-                          >
-                            L{globalLapNum} {formatTrackMark(lapSecs, 2)}
-                          </span>
-                        );
-                      })}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 w-full">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {telemetry.lapSplitsSecs.slice(-4).map((lapSecs, lapIdx, arr) => {
+                          const globalLapNum =
+                            telemetry.lapSplitsSecs.length - arr.length + lapIdx + 1;
+                          return (
+                            <span
+                              key={`trail-${globalLapNum}`}
+                              className="px-1.5 py-0.5 rounded ap-card-inset font-mono text-2xs tabular-nums text-slate-700 dark:text-slate-200"
+                            >
+                              L{globalLapNum} {formatTrackMark(lapSecs, 2)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {sessionType === 'WORKOUT' && squadAutoRegSummary.byRunnerId[telemetry.runnerId] && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold tabular-nums ${
+                            squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType === 'NEURO_STOP_RULE'
+                              ? 'ap-status-strained'
+                              : squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType !== 'NONE'
+                                ? 'ap-status-caution'
+                                : 'ap-card-inset text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          D&apos; {squadAutoRegSummary.byRunnerId[telemetry.runnerId].dPrimeBalancePct}%
+                        </span>
+                      )}
                     </div>
                   )}
                 </button>

@@ -2717,8 +2717,65 @@ function generatePostWorkoutDebrief(activity, streams, profile) {
       });
     }
   }
+  const workReps = Array.isArray(activity.intervals) ? activity.intervals.filter((iv) => iv.type === "WORK") : [];
   let bestHrr60Bpm = null;
-  if (hasHr && n >= 240) {
+  let anchoredHrr60MeanBpm = null;
+  if (hasHr && n >= 120 && workReps.length >= 1) {
+    const findNearestIdx = (targetSec) => {
+      let bestIdx = 0;
+      let bestDiff = Infinity;
+      for (let i = 0; i < n; i++) {
+        const diff = Math.abs((streams.time[i] ?? i) - targetSec);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestIdx = i;
+        }
+      }
+      return bestDiff <= 6 ? bestIdx : -1;
+    };
+    const repDrops = [];
+    for (let r = 0; r < workReps.length; r++) {
+      const rep = workReps[r];
+      const repEndSec = rep.startTimeSecs + rep.durationSecs;
+      const nextWorkStart = r + 1 < workReps.length ? workReps[r + 1].startTimeSecs : Infinity;
+      const recoverySpan = Math.min(totalDurationSec, nextWorkStart) - repEndSec;
+      if (recoverySpan < 55) continue;
+      let peakHr = 0;
+      for (let i = 0; i < n; i++) {
+        const t = streams.time[i] ?? i;
+        if (t >= repEndSec - 5 && t <= repEndSec + 4) {
+          peakHr = Math.max(peakHr, hr[i] || 0);
+        }
+      }
+      const afterIdx = findNearestIdx(Math.min(repEndSec + 60, repEndSec + recoverySpan));
+      if (peakHr > 90 && afterIdx >= 0) {
+        const drop = peakHr - (hr[afterIdx] || peakHr);
+        if (drop >= 8 && drop <= 85) {
+          repDrops.push({ repNumber: r + 1, repEndSec, peakHr, dropBpm: drop });
+        }
+      }
+    }
+    if (repDrops.length > 0) {
+      anchoredHrr60MeanBpm = Math.round(
+        repDrops.reduce((s, d) => s + d.dropBpm, 0) / repDrops.length
+      );
+      const bestRepDrop = [...repDrops].sort((a, b) => b.dropBpm - a.dropBpm)[0];
+      bestHrr60Bpm = Math.round(bestRepDrop.dropBpm);
+      const winStart = Math.max(0, Math.round(bestRepDrop.repEndSec - 15));
+      const winEnd = Math.min(totalDurationSec, Math.round(bestRepDrop.repEndSec + 75));
+      insights.push({
+        id: "hrr60-recovery",
+        badge: `Anchored HRR60 -${anchoredHrr60MeanBpm} bpm`,
+        severity: anchoredHrr60MeanBpm >= 26 ? "PRIME" : anchoredHrr60MeanBpm >= 16 ? "INFO" : "CAUTION",
+        title: `Rep-Anchored Parasympathetic Recovery (-${anchoredHrr60MeanBpm} bpm mean across ${repDrops.length} recoveries)`,
+        detail: `Peak recovery hit at Rep #${bestRepDrop.repNumber} finish (${formatClockOffset(bestRepDrop.repEndSec)}, ${Math.round(bestRepDrop.peakHr)} -> ${Math.round(bestRepDrop.peakHr - bestRepDrop.dropBpm)} bpm in 60s).`,
+        windowStartSec: winStart,
+        windowEndSec: winEnd,
+        timestampLabel: `${formatClockOffset(winStart)}\u2013${formatClockOffset(winEnd)}`
+      });
+    }
+  }
+  if (bestHrr60Bpm === null && hasHr && n >= 240) {
     const lthr = activity.sportCategory === "Running" ? thresholds.runLthr : thresholds.lthr;
     let maxDrop = 0;
     let bestDropIdx = -1;
@@ -2744,6 +2801,66 @@ function generatePostWorkoutDebrief(activity, streams, profile) {
         severity: bestHrr60Bpm >= 28 ? "PRIME" : bestHrr60Bpm >= 18 ? "INFO" : "CAUTION",
         title: `Fast Parasympathetic Rebound (-${bestHrr60Bpm} bpm in 60s)`,
         detail: `Following peak effort at ${formatClockOffset(dropTimeSec)} (${Math.round(hr[bestDropIdx])} bpm), heart rate recovered ${bestHrr60Bpm} bpm in 60 seconds.`,
+        windowStartSec: winStart,
+        windowEndSec: winEnd,
+        timestampLabel: `${formatClockOffset(winStart)}\u2013${formatClockOffset(winEnd)}`
+      });
+    }
+  }
+  let strideLengthFadePct = null;
+  let cadenceFadePct = null;
+  let fadePrimaryDriver = null;
+  if (activity.sportCategory === "Running" && workReps.length >= 3) {
+    const repBiomech = [];
+    for (const rep of workReps) {
+      const repEnd = rep.startTimeSecs + rep.durationSecs;
+      const speedMps = rep.distanceMeters > 0 && rep.durationSecs > 0 ? rep.distanceMeters / rep.durationSecs : rep.avgPaceSecsPerKm && rep.avgPaceSecsPerKm > 0 ? 1e3 / rep.avgPaceSecsPerKm : 0;
+      let cadRaw = rep.avgCadence;
+      if ((!cadRaw || cadRaw <= 0) && Array.isArray(streams.cadence) && streams.cadence.length === n) {
+        let sum = 0;
+        let cnt = 0;
+        for (let i = 0; i < n; i++) {
+          const t = streams.time[i] ?? i;
+          if (t >= rep.startTimeSecs && t <= repEnd && (streams.cadence[i] || 0) > 20) {
+            sum += streams.cadence[i];
+            cnt++;
+          }
+        }
+        if (cnt > 0) cadRaw = sum / cnt;
+      }
+      if (speedMps > 1.5 && cadRaw && cadRaw > 50) {
+        const spm = cadRaw < 120 ? cadRaw * 2 : cadRaw;
+        const strideMeters = rep.strideLengthMeters ?? speedMps * 60 / spm;
+        repBiomech.push({ strideMeters, cadenceSpm: spm });
+      }
+    }
+    if (repBiomech.length >= 3) {
+      const half = Math.max(1, Math.floor(repBiomech.length / 2));
+      const openSlice = repBiomech.slice(0, half);
+      const closeSlice = repBiomech.slice(repBiomech.length - half);
+      const mean2 = (arr, fn) => arr.reduce((s, item) => s + fn(item), 0) / arr.length;
+      const openStride = mean2(openSlice, (x) => x.strideMeters);
+      const closeStride = mean2(closeSlice, (x) => x.strideMeters);
+      const openCad = mean2(openSlice, (x) => x.cadenceSpm);
+      const closeCad = mean2(closeSlice, (x) => x.cadenceSpm);
+      strideLengthFadePct = Number(((closeStride - openStride) / Math.max(0.2, openStride) * 100).toFixed(1));
+      cadenceFadePct = Number(((closeCad - openCad) / Math.max(60, openCad) * 100).toFixed(1));
+      if (strideLengthFadePct <= -1.5 && Math.abs(strideLengthFadePct) >= Math.abs(cadenceFadePct)) {
+        fadePrimaryDriver = "STRIDE_LENGTH_LOSS";
+      } else if (cadenceFadePct <= -1.5 && Math.abs(cadenceFadePct) > Math.abs(strideLengthFadePct)) {
+        fadePrimaryDriver = "CADENCE_DROP";
+      } else {
+        fadePrimaryDriver = "EVEN_MECHANICS";
+      }
+      const lastRep = workReps[workReps.length - 1];
+      const winStart = Math.max(0, Math.round(lastRep.startTimeSecs - 15));
+      const winEnd = Math.min(totalDurationSec, Math.round(lastRep.startTimeSecs + lastRep.durationSecs + 15));
+      insights.push({
+        id: "stride-cadence-fade",
+        badge: fadePrimaryDriver === "STRIDE_LENGTH_LOSS" ? `Stride ${strideLengthFadePct.toFixed(1)}%` : fadePrimaryDriver === "CADENCE_DROP" ? `Cadence ${cadenceFadePct.toFixed(1)}%` : "Biomech Locked",
+        severity: fadePrimaryDriver === "EVEN_MECHANICS" ? "PRIME" : Math.min(strideLengthFadePct, cadenceFadePct) <= -4.5 ? "STRAINED" : "CAUTION",
+        title: fadePrimaryDriver === "STRIDE_LENGTH_LOSS" ? `Closing Fade Driven by Stride-Length Loss (${strideLengthFadePct.toFixed(1)}% vs ${cadenceFadePct.toFixed(1)}% Cadence)` : fadePrimaryDriver === "CADENCE_DROP" ? `Closing Fade Driven by Cadence Drop (${cadenceFadePct.toFixed(1)}% spm vs ${strideLengthFadePct.toFixed(1)}% Stride)` : `Consistent Closing Stride & Turnover (${strideLengthFadePct >= 0 ? "+" : ""}${strideLengthFadePct.toFixed(1)}% Stride / ${cadenceFadePct >= 0 ? "+" : ""}${cadenceFadePct.toFixed(1)}% spm)`,
+        detail: `Comparing opening vs closing ${workReps.length}-rep biomechanics: stride ${openStride.toFixed(2)}m -> ${closeStride.toFixed(2)}m; cadence ${Math.round(openCad)} -> ${Math.round(closeCad)} spm.`,
         windowStartSec: winStart,
         windowEndSec: winEnd,
         timestampLabel: `${formatClockOffset(winStart)}\u2013${formatClockOffset(winEnd)}`
@@ -2797,7 +2914,11 @@ function generatePostWorkoutDebrief(activity, streams, profile) {
     aerobicDecouplingPct,
     wPrimeMinPct,
     bestHrr60Bpm,
-    insights: insights.slice(0, 3)
+    anchoredHrr60MeanBpm,
+    strideLengthFadePct,
+    cadenceFadePct,
+    fadePrimaryDriver,
+    insights: insights.slice(0, activity.sportCategory === "Running" ? 4 : 3)
   };
 }
 

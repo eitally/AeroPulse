@@ -130,6 +130,12 @@ export interface TracksideSplitTapEntry {
   previousLastTapEpochMs?: number;
 }
 
+export interface TracksideAutoRegPivotEntry {
+  timestampEpochMs: number;
+  action: 'EXTEND_REST_30S' | 'CONVERT_REMAINING_TO_CV' | 'END_SESSION_85_STIMULUS';
+  summary: string;
+}
+
 export interface PersistedTracksideStopwatchState {
   isRunning: boolean;
   startedAtEpochMs: number | null;
@@ -159,6 +165,9 @@ export interface PersistedTracksideStopwatchState {
   windSpeedMps?: number;
   altitudeMeters?: number;
   footwearClass?: TrackFootwearClass;
+  autoRegPivotHistory?: TracksideAutoRegPivotEntry[];
+  endedEarlyStimulusRatio?: number | null;
+  dismissedAutoRegSignatures?: string[];
 }
 
 const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
@@ -187,9 +196,12 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   trackFacility: 'OUTDOOR_400M',
   airTempF: null,
   dewPointF: null,
-  windSpeedMps: 0,
+      windSpeedMps: 0,
   altitudeMeters: 0,
   footwearClass: 'DAILY_TRAINER',
+  autoRegPivotHistory: [],
+  endedEarlyStimulusRatio: null,
+  dismissedAutoRegSignatures: [],
 };
 
 function sanitizeNumberRecord(raw: unknown): Record<string, number> {
@@ -353,6 +365,20 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
         parsed.footwearClass === 'DAILY_TRAINER'
           ? parsed.footwearClass
           : 'DAILY_TRAINER',
+      autoRegPivotHistory: Array.isArray(parsed.autoRegPivotHistory)
+        ? parsed.autoRegPivotHistory.filter(
+            (e): e is TracksideAutoRegPivotEntry =>
+              Boolean(e && typeof e.summary === 'string' && typeof e.action === 'string')
+          )
+        : [],
+      endedEarlyStimulusRatio:
+        typeof parsed.endedEarlyStimulusRatio === 'number' &&
+        Number.isFinite(parsed.endedEarlyStimulusRatio)
+          ? parsed.endedEarlyStimulusRatio
+          : null,
+      dismissedAutoRegSignatures: Array.isArray(parsed.dismissedAutoRegSignatures)
+        ? parsed.dismissedAutoRegSignatures.filter((s): s is string => typeof s === 'string')
+        : [],
     };
   } catch {
     return DEFAULT_STOPWATCH_STATE;
@@ -410,6 +436,125 @@ export function applyResetStopwatch(
     extraPodAthletes: current.extraPodAthletes,
     ...(current.chuteQueueSecs !== undefined ? { chuteQueueSecs: [] } : {}),
     ...(current.runnerLastTapEpochMs !== undefined ? { runnerLastTapEpochMs: {} } : {}),
+    ...(current.autoRegPivotHistory !== undefined ? { autoRegPivotHistory: [] } : {}),
+    ...(current.endedEarlyStimulusRatio !== undefined ? { endedEarlyStimulusRatio: null } : {}),
+    ...(current.dismissedAutoRegSignatures !== undefined
+      ? { dismissedAutoRegSignatures: [] }
+      : {}),
+  };
+}
+
+export function applyExtendWorkoutRestPlus30s(
+  current: PersistedTracksideStopwatchState,
+  addSecs: number = 30,
+  nowEpochMs: number = Date.now()
+): PersistedTracksideStopwatchState {
+  const prevRest = current.restDurationSecs ?? 60;
+  const nextRest = Math.min(600, Math.max(0, Math.round(prevRest + addSecs)));
+  const entry: TracksideAutoRegPivotEntry = {
+    timestampEpochMs: nowEpochMs,
+    action: 'EXTEND_REST_30S',
+    summary: `+${addSecs}s Rest (${prevRest}s -> ${nextRest}s)`,
+  };
+  return {
+    ...current,
+    restDurationSecs: nextRest,
+    ...(current.customWorkoutSpec
+      ? {
+          customWorkoutSpec: {
+            ...current.customWorkoutSpec,
+            restDurationSecs: nextRest,
+          },
+        }
+      : {}),
+    autoRegPivotHistory: [...(current.autoRegPivotHistory || []), entry],
+  };
+}
+
+export function applyConvertRemainingToCv(
+  current: PersistedTracksideStopwatchState,
+  nowEpochMs: number = Date.now()
+): PersistedTracksideStopwatchState {
+  const fallbackPreset =
+    WORKOUT_STOPWATCH_PRESETS.find((p) => p.id === current.workoutPresetId) ||
+    WORKOUT_STOPWATCH_PRESETS[0];
+  const baseSpec: TrackWorkoutSpec = current.customWorkoutSpec
+    ? { ...current.customWorkoutSpec }
+    : {
+        repCount: fallbackPreset.repCount,
+        repDistanceMeters: fallbackPreset.repDistanceMeters,
+        zoneCode:
+          fallbackPreset.intensity === 'THRESHOLD_CV' ? 'CV' : 'I',
+        podIntensity: fallbackPreset.intensity,
+        restDurationSecs: current.restDurationSecs ?? fallbackPreset.defaultRestSecs,
+      };
+
+  const nextRest = Math.max(45, Math.min(90, Math.round(current.restDurationSecs ?? baseSpec.restDurationSecs ?? 60)));
+  const scaledSplit =
+    typeof baseSpec.targetSplitSecs === 'number' && baseSpec.targetSplitSecs > 0
+      ? Number((baseSpec.targetSplitSecs * 1.075).toFixed(1))
+      : undefined;
+
+  const convertedSpec: TrackWorkoutSpec = {
+    ...baseSpec,
+    zoneCode: 'CV',
+    podIntensity: 'THRESHOLD_CV',
+    restDurationSecs: nextRest,
+    ...(scaledSplit !== undefined ? { targetSplitSecs: scaledSplit } : {}),
+  };
+
+  const entry: TracksideAutoRegPivotEntry = {
+    timestampEpochMs: nowEpochMs,
+    action: 'CONVERT_REMAINING_TO_CV',
+    summary: `Converted remaining ${convertedSpec.repDistanceMeters}m reps to Critical Velocity (CV)`,
+  };
+
+  return {
+    ...current,
+    workoutPresetId: 'custom-plan',
+    customWorkoutSpec: convertedSpec,
+    restDurationSecs: nextRest,
+    autoRegPivotHistory: [...(current.autoRegPivotHistory || []), entry],
+  };
+}
+
+export function applyEndSessionStimulusAchieved(
+  current: PersistedTracksideStopwatchState,
+  completedRepsCap: number,
+  nowEpochMs: number = Date.now()
+): PersistedTracksideStopwatchState {
+  const pausedMs = computeElapsedMs(current, nowEpochMs);
+  const fallbackPreset =
+    WORKOUT_STOPWATCH_PRESETS.find((p) => p.id === current.workoutPresetId) ||
+    WORKOUT_STOPWATCH_PRESETS[0];
+  const baseSpec: TrackWorkoutSpec = current.customWorkoutSpec
+    ? { ...current.customWorkoutSpec }
+    : {
+        repCount: fallbackPreset.repCount,
+        repDistanceMeters: fallbackPreset.repDistanceMeters,
+        zoneCode: fallbackPreset.intensity === 'THRESHOLD_CV' ? 'CV' : 'I',
+        podIntensity: fallbackPreset.intensity,
+        restDurationSecs: current.restDurationSecs ?? fallbackPreset.defaultRestSecs,
+      };
+  const cappedReps = Math.max(1, Math.round(completedRepsCap));
+  const entry: TracksideAutoRegPivotEntry = {
+    timestampEpochMs: nowEpochMs,
+    action: 'END_SESSION_85_STIMULUS',
+    summary: `Ended cleanly at ${cappedReps} reps (85% stimulus preserved)`,
+  };
+
+  return {
+    ...current,
+    isRunning: false,
+    startedAtEpochMs: null,
+    accumulatedMs: pausedMs,
+    workoutPresetId: 'custom-plan',
+    customWorkoutSpec: {
+      ...baseSpec,
+      repCount: cappedReps,
+    },
+    endedEarlyStimulusRatio: 0.85,
+    autoRegPivotHistory: [...(current.autoRegPivotHistory || []), entry],
   };
 }
 
@@ -1193,6 +1338,43 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     [commitState]
   );
 
+  const extendWorkoutRestPlus30s = useCallback(
+    (addSecs: number = 30) => {
+      const current = readPersistedTracksideStopwatch();
+      const now = Date.now();
+      commitState(applyExtendWorkoutRestPlus30s(current, addSecs, now), now);
+    },
+    [commitState]
+  );
+
+  const convertRemainingToCv = useCallback(() => {
+    const current = readPersistedTracksideStopwatch();
+    const now = Date.now();
+    commitState(applyConvertRemainingToCv(current, now), now);
+  }, [commitState]);
+
+  const endSessionStimulusAchieved = useCallback(
+    (completedRepsCap: number) => {
+      const current = readPersistedTracksideStopwatch();
+      const now = Date.now();
+      commitState(applyEndSessionStimulusAchieved(current, completedRepsCap, now), now);
+    },
+    [commitState]
+  );
+
+  const dismissAutoRegCue = useCallback(
+    (signature: string) => {
+      const current = readPersistedTracksideStopwatch();
+      const existing = current.dismissedAutoRegSignatures || [];
+      if (existing.includes(signature)) return;
+      commitState({
+        ...current,
+        dismissedAutoRegSignatures: [...existing, signature],
+      });
+    },
+    [commitState]
+  );
+
   return {
     stopwatchRunning: persisted.isRunning,
     stopwatchElapsedMs: elapsedMs,
@@ -1224,6 +1406,9 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     windSpeedMps: persisted.windSpeedMps ?? 0,
     altitudeMeters: persisted.altitudeMeters ?? 0,
     footwearClass: persisted.footwearClass || 'DAILY_TRAINER',
+    autoRegPivotHistory: persisted.autoRegPivotHistory || [],
+    endedEarlyStimulusRatio: persisted.endedEarlyStimulusRatio ?? null,
+    dismissedAutoRegSignatures: persisted.dismissedAutoRegSignatures || [],
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -1253,6 +1438,10 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     setWindSpeedMps,
     setAltitudeMeters,
     setFootwearClass,
+    extendWorkoutRestPlus30s,
+    convertRemainingToCv,
+    endSessionStimulusAchieved,
+    dismissAutoRegCue,
   };
 }
 
