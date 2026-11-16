@@ -366,6 +366,24 @@ export function solveShortSubThresholdPaceSecsPerKm(
   return solveTrackPaceSecsPerKmForPctVdot(profile.vdotAer, 0.895, [135, 420]);
 }
 
+/**
+ * Computes 400m race / speed-reserve pace (s/km) from CS + D' and Sandford-Laursen ASR,
+ * strictly faster than the athlete's 800m (`FR`) pace.
+ */
+export function solve400mRacePaceSecsPerKm(
+  profile: TrackSpeedReserveProfile
+): number {
+  const t400Eff = Math.max(
+    43,
+    (400 - 0.62 * profile.dPrimeMeters) / Math.max(2.0, profile.csMps)
+  );
+  const v400Hyper = 400 / t400Eff;
+  const v400Asr = profile.masMps + 0.55 * profile.asrMps;
+  const vMinFasterThan800 = 1000 / Math.max(85, profile.zones.FR.paceSecsPerKm - 14);
+  const v400 = Math.max(v400Hyper, v400Asr, vMinFasterThan800);
+  return round1(clamp(1000 / v400, 95, 290));
+}
+
 export function defaultMetersForTrackEvent(eventGroup: TrackTargetEventGroup): number {
   switch (eventGroup) {
     case '800M':

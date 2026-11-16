@@ -858,6 +858,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 autoRegPivotHistory.length > 0
                   ? autoRegPivotHistory.map((p) => p.summary).join(' · ')
                   : undefined,
+              multiSetSpec: customWorkoutSpec,
             });
 
       return {
@@ -1128,6 +1129,37 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             </div>
           </div>
         </div>
+
+        {sessionType === 'WORKOUT' &&
+          customWorkoutSpec?.sets &&
+          customWorkoutSpec.sets.length > 1 && (
+            <div
+              data-testid="stopwatch-multiset-plan-strip"
+              className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-stone-200/70 dark:border-[#244331] text-2xs font-mono"
+            >
+              <span className="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mr-1">
+                Multi-Set Plan:
+              </span>
+              {customWorkoutSpec.warmupDistanceMeters && (
+                <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-slate-700 dark:text-slate-300">
+                  WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
+                </span>
+              )}
+              {customWorkoutSpec.sets.map((s, idx) => (
+                <span
+                  key={`sw-set-${idx}`}
+                  className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] font-semibold"
+                >
+                  {s.repCount}×{s.repDistanceMeters}m
+                </span>
+              ))}
+              {customWorkoutSpec.cooldownDistanceMeters && (
+                <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-slate-700 dark:text-slate-300">
+                  CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
+                </span>
+              )}
+            </div>
+          )}
       </section>
 
       {/* 2. Master Clock, Gun Controls, Wave Mode & View Switcher */}

@@ -75,7 +75,8 @@ function isSupraThresholdSession(
     intensity === 'RACE_3200M' ||
     intensity === 'REPETITION' ||
     intensity === 'RACE_1600M' ||
-    intensity === 'RACE_800M'
+    intensity === 'RACE_800M' ||
+    intensity === 'RACE_400M'
   );
 }
 

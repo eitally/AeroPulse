@@ -114,7 +114,12 @@ function resolveZoneBucket(
   if (zoneCode === 'E' || zoneCode === 'SUB_T' || zoneCode === 'T' || zoneCode === 'CV') {
     return 'AEROBIC_THRESHOLD';
   }
-  if (intensity === 'REPETITION' || intensity === 'RACE_800M' || intensity === 'RACE_1600M') {
+  if (
+    intensity === 'REPETITION' ||
+    intensity === 'RACE_400M' ||
+    intensity === 'RACE_800M' ||
+    intensity === 'RACE_1600M'
+  ) {
     return 'R_OR_FR';
   }
   if (intensity === 'INTERVAL_VO2' || intensity === 'RACE_3200M') {

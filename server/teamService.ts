@@ -21,6 +21,7 @@ import {
 } from '../src/physiology/teamOnboardingEngine.ts';
 import type {
   CoachDataSharingTier,
+  CoachEventGroup,
   DistanceUnit,
   SportCategory,
   TeamAthleteLiveSnapshot,
@@ -31,8 +32,24 @@ import type {
   TeamMembershipRecord,
   TeamOrgType,
   TeamSummaryWithRole,
+  TrackWorkoutSpec,
   UnifiedActivity,
 } from '../src/types.ts';
+
+export function inferEventGroupFromSeedMark(seed?: string): CoachEventGroup | undefined {
+  if (!seed || !seed.trim()) return undefined;
+  const s = seed.trim();
+  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
+    return 'DISTANCE';
+  }
+  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
+    return 'MID_DISTANCE';
+  }
+  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
+    return 'SPRINTS';
+  }
+  return undefined;
+}
 
 interface TeamsDirectoryIndex {
   bySlug: Record<string, string>;
@@ -781,6 +798,7 @@ function projectTeamSummaryForCaller(
       sharingTier: m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
+      ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : undefined,
@@ -820,19 +838,27 @@ function projectTeamSummaryForCaller(
 
   const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
     if (isCoach) return true;
+    if (bw.athleteOverrides && bw.athleteOverrides[myMembership.membershipId]) {
+      return true;
+    }
     if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
       return bw.targetMembershipIds.includes(myMembership.membershipId);
     }
-    return (
+    const squadMatches =
       bw.targetSquadGroup === 'ALL' ||
-      bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase()
-    );
+      bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase();
+    if (!squadMatches) return false;
+    if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+      return Boolean(myMembership.eventGroup) && bw.targetEventGroups.includes(myMembership.eventGroup!);
+    }
+    return true;
   });
 
   return {
     brand: doc.brand,
     myRole: myMembership.role,
     mySquadGroup: myMembership.squadGroup,
+    ...(myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {}),
     myMembershipId: myMembership.membershipId,
     totalInvited,
     openedCount,
@@ -1176,6 +1202,9 @@ export async function bulkCreateAndSendInvites(params: {
       teamId: doc.brand.teamId,
       role: 'ATHLETE',
       squadGroup: row.squadGroup || orgDefaults.defaultSquads[0] || 'Varsity',
+      ...(inferEventGroupFromSeedMark(row.seedMarkOrFtp)
+        ? { eventGroup: inferEventGroupFromSeedMark(row.seedMarkOrFtp) }
+        : {}),
       invitedName: String(row.invitedName || 'Team Athlete').trim().slice(0, 64),
       invitedEmail: cleanEmail,
       invitedPhone: row.invitedPhone,
@@ -1441,6 +1470,9 @@ export async function claimTeamJoinInvite(params: {
       role: 'ATHLETE',
       squadGroup:
         params.squadGroup?.trim() || orgDefaults.defaultSquads[0] || 'Varsity',
+      ...(inferEventGroupFromSeedMark(params.seedMarkOrFtp)
+        ? { eventGroup: inferEventGroupFromSeedMark(params.seedMarkOrFtp) }
+        : {}),
       invitedName:
         params.athleteName?.trim().slice(0, 64) || 'Team Athlete',
       invitedEmail: cleanEmail,
@@ -1468,6 +1500,10 @@ export async function claimTeamJoinInvite(params: {
     }
     if (params.seedMarkOrFtp?.trim()) {
       mem.seedMarkOrFtp = params.seedMarkOrFtp.trim();
+      if (!mem.eventGroup) {
+        const inferredGroup = inferEventGroupFromSeedMark(mem.seedMarkOrFtp);
+        if (inferredGroup) mem.eventGroup = inferredGroup;
+      }
     }
     mem.status = 'ACTIVE';
     if (!mem.openedAt) mem.openedAt = nowIso;
@@ -1621,11 +1657,46 @@ export async function acknowledgeParentConsent(token: string): Promise<{
   return { ok: false, error: 'Invalid or expired parent consent link.' };
 }
 
+export async function updateTeamMemberEventGroup(params: {
+  callerSid: string;
+  teamId: string;
+  originUrl: string;
+  membershipId: string;
+  eventGroup: CoachEventGroup | null;
+}): Promise<TeamSummaryWithRole | null> {
+  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+  );
+  if (
+    !callerMem ||
+    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+  ) {
+    return null;
+  }
+
+  const targetMem = doc.memberships.find(
+    (m) => m.membershipId === params.membershipId && m.status !== 'REVOKED'
+  );
+  if (!targetMem) return null;
+
+  targetMem.eventGroup = params.eventGroup || undefined;
+  doc.updatedAt = new Date().toISOString();
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
+
 export async function broadcastWorkoutToTeamSquad(params: {
   callerSid: string;
   teamId: string;
   originUrl: string;
   targetSquadGroup: string;
+  targetEventGroups?: CoachEventGroup[];
   targetMembershipIds?: string[];
   date: string;
   name: string;
@@ -1634,6 +1705,9 @@ export async function broadcastWorkoutToTeamSquad(params: {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  trackSpec?: TrackWorkoutSpec;
+  athleteOverrides?: TeamBroadcastWorkout['athleteOverrides'];
+  replaceSameDateTarget?: boolean;
 }): Promise<TeamSummaryWithRole | null> {
   const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
     teamDocVaultKey(params.teamId),
@@ -1655,23 +1729,48 @@ export async function broadcastWorkoutToTeamSquad(params: {
   const cleanTargets = Array.isArray(params.targetMembershipIds)
     ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
     : undefined;
+  const cleanEventGroups = Array.isArray(params.targetEventGroups)
+    ? params.targetEventGroups.filter(
+        (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
+      )
+    : undefined;
+  const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
+  const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
+
   const workout: TeamBroadcastWorkout = {
     broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
     teamId: doc.brand.teamId,
-    targetSquadGroup: String(params.targetSquadGroup || 'ALL').trim() || 'ALL',
+    targetSquadGroup,
+    ...(cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {}),
     ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
-    date: String(params.date || nowIso.slice(0, 10)).slice(0, 10),
+    date: dateStr,
     name: String(params.name || 'Team Prescribed Session').trim().slice(0, 100),
     sportCategory: params.sportCategory || 'Running',
     plannedDurationSecs: Math.max(300, Number(params.plannedDurationSecs) || 3600),
     plannedLoad: Math.max(5, Number(params.plannedLoad) || 65),
-    workoutSyntax: String(params.workoutSyntax || '').slice(0, 2000),
+    workoutSyntax: String(params.workoutSyntax || '').slice(0, 3000),
     description: String(params.description || '').slice(0, 1000),
+    ...(params.trackSpec ? { trackSpec: params.trackSpec } : {}),
+    ...(params.athleteOverrides && Object.keys(params.athleteOverrides).length > 0
+      ? { athleteOverrides: params.athleteOverrides }
+      : {}),
     pushedByCoachName: doc.brand.coachDisplayName,
     createdAt: nowIso,
   };
 
-  doc.broadcastWorkouts = [workout, ...(doc.broadcastWorkouts || [])].slice(0, 60);
+  const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
+  const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
+    if (params.replaceSameDateTarget === false) return true;
+    const sameDate = bw.date === dateStr;
+    const sameSquad = bw.targetSquadGroup === targetSquadGroup;
+    const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
+    const sameMembers =
+      JSON.stringify((bw.targetMembershipIds || []).slice().sort()) ===
+      JSON.stringify((cleanTargets || []).slice().sort());
+    return !(sameDate && sameSquad && sameGroups && sameMembers);
+  });
+
+  doc.broadcastWorkouts = [workout, ...existingFiltered].slice(0, 120);
   doc.updatedAt = nowIso;
   await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 

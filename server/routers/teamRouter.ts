@@ -21,8 +21,10 @@ import {
   resendPendingTeamInvites,
   syncAthleteSnapshotAcrossTeams,
   updateTeamBranding,
+  updateTeamMemberEventGroup,
   verifyEmailOtpCode,
 } from '../teamService.ts';
+import type { CoachEventGroup } from '../../src/types.ts';
 
 export const teamRouter = express.Router();
 
@@ -440,11 +442,18 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
       ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : undefined;
+    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
+      ? req.body.targetEventGroups.filter(
+          (g: unknown): g is CoachEventGroup =>
+            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
+        )
+      : undefined;
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
       originUrl,
       targetSquadGroup: String(req.body?.targetSquadGroup || 'ALL'),
+      targetEventGroups,
       targetMembershipIds,
       date: String(req.body?.date || ''),
       name: String(req.body?.name || ''),
@@ -453,6 +462,12 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
       plannedLoad: Number(req.body?.plannedLoad || 65),
       workoutSyntax: String(req.body?.workoutSyntax || ''),
       description: String(req.body?.description || ''),
+      trackSpec: req.body?.trackSpec,
+      athleteOverrides: req.body?.athleteOverrides,
+      replaceSameDateTarget:
+        typeof req.body?.replaceSameDateTarget === 'boolean'
+          ? req.body.replaceSameDateTarget
+          : true,
     });
     if (!updated) {
       res.status(403).json({ ok: false, error: 'Coach permissions required.' });
@@ -463,6 +478,40 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to broadcast workout.',
+    });
+  }
+});
+
+// 11c. Update Roster Member Event Group ('SPRINTS' | 'MID_DISTANCE' | 'DISTANCE' | null)
+teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const rawGroup = req.body?.eventGroup;
+    const eventGroup: CoachEventGroup | null =
+      rawGroup === 'SPRINTS' || rawGroup === 'MID_DISTANCE' || rawGroup === 'DISTANCE'
+        ? rawGroup
+        : null;
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await updateTeamMemberEventGroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      membershipId: String(req.params.membershipId || ''),
+      originUrl,
+      eventGroup,
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions or roster member not found.' });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to update athlete event group.',
     });
   }
 });

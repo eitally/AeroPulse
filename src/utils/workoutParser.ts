@@ -1,4 +1,8 @@
 import type { AthleteProfile } from '../types.ts';
+import {
+  buildTrackSpeedReserveProfile,
+  solve400mRacePaceSecsPerKm,
+} from '../physiology/trackSpeedReserveEngine.ts';
 
 export type EffortZoneCode = 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6+';
 
@@ -173,26 +177,81 @@ function parseClockOrSecondsToken(token: string): number | null {
 }
 
 function extractDistanceMeters(cleanLine: string): number | undefined {
+  // Strip target pace clauses ("at 1 mile pace", "@ mile pace") so race-pace names never hijack step distance
+  const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, '').trim();
+  const source = distPart.length > 0 ? distPart : cleanLine;
+
   // 1. Explicit km / miles / meters words
-  const kmMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
+  const kmMatch = source.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
   if (kmMatch) return Math.round(Number(kmMatch[1]) * 1000);
 
-  const miMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
+  const miMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
   if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
 
-  const metersWordMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
+  const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
   if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
 
-  // 2. Disambiguate `<val>m` (where 15m = 15 minutes vs 400m = 400 meters vs 60m sprint)
-  const mTokens = Array.from(cleanLine.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
+  // 2. Disambiguate `<val>m` (where 15m = 15 minutes vs 400m = 400 meters vs 60m sprint / 60m walk)
+  const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
   for (const tok of mTokens) {
     const val = Number(tok[1]);
     if (val >= 100) return val;
-    if (val >= 30 && val <= 90 && /\b(sprint|stride|fly|accel|hill)\b/i.test(cleanLine)) {
+    if (
+      val >= 30 &&
+      val <= 99 &&
+      /\b(sprint|stride|fly|accel|hill|walk|jog|float|rec|recovery)\b/i.test(cleanLine)
+    ) {
       return val;
     }
   }
   return undefined;
+}
+
+function resolveNamedTrackPaceSecsPerKm(
+  cleanLine: string,
+  thresholdPaceSecsPerKm: number
+): { paceSecsPerKm?: number; forceIntensityPct?: number } {
+  const sr = buildTrackSpeedReserveProfile({ thresholdPaceSecsPerKm });
+
+  if (/\bwarm\s*-?\s*up\b|\bcool\s*-?\s*down\b/i.test(cleanLine)) {
+    return { paceSecsPerKm: sr.zones.E.paceSecsPerKm, forceIntensityPct: 55 };
+  }
+  if (/\b(?:walk|standing|recovery)\b/i.test(cleanLine) && !/\bjog\b/i.test(cleanLine)) {
+    return { forceIntensityPct: 48 };
+  }
+  if (/\b400\s*m?\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = solve400mRacePaceSecsPerKm(sr);
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b800\s*m?\s*(?:race\s*)?(?:pace|effort)\b|\bFR\b|fast\s*rep/i.test(cleanLine)) {
+    const pace = sr.zones.FR.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:1600\s*m?|1500\s*m?|1\s*mile|mile)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.R.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:3200\s*m?|3000\s*m?|3k|2\s*mile|2\s*mi)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = Number(((sr.zones.I.paceSecsPerKm + sr.zones.R.paceSecsPerKm) / 2).toFixed(1));
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:5000\s*m?|5k)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.I.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:10k|cv|critical\s*velocity)\b/i.test(cleanLine)) {
+    const pace = sr.zones.CV.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:threshold|lt2)\b/i.test(cleanLine)) {
+    const pace = sr.zones.T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  if (/\b(?:sub-?t|sub-?threshold)\b/i.test(cleanLine)) {
+    const pace = sr.zones.SUB_T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round((thresholdPaceSecsPerKm / pace) * 100) };
+  }
+  return {};
 }
 
 function extractExplicitIntensityPct(cleanLine: string): number | undefined {
@@ -262,9 +321,13 @@ function parseSingleWorkoutLine(
     distanceMeters
   );
   const stepKind = inferStepKind(cleanLine, explicitKind);
+  const namedPace =
+    explicitPct === undefined && !parsedTargetPace
+      ? resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm)
+      : {};
 
-  let intensityPct = explicitPct ?? 65;
-  if (explicitPct === undefined) {
+  let intensityPct = explicitPct ?? namedPace.forceIntensityPct ?? 65;
+  if (explicitPct === undefined && namedPace.forceIntensityPct === undefined) {
     if (parsedTargetPace && parsedTargetPace > 60) {
       intensityPct = Math.round((thresholdPaceSecsPerKm / parsedTargetPace) * 100);
     } else if (/\bFR\b|fast\s*rep|800m\s*(?:race|pace|effort)/i.test(cleanLine)) {
@@ -275,7 +338,7 @@ function parseSingleWorkoutLine(
       intensityPct = 94;
     } else if (/\bcv\b|critical/i.test(cleanLine)) {
       intensityPct = 102;
-    } else if (/z1|recovery|easy|warmup|cooldown|jog|float|walk/i.test(cleanLine)) {
+    } else if (/z1|recovery|easy|warm\s*-?\s*up|cool\s*-?\s*down|jog|float|walk/i.test(cleanLine)) {
       intensityPct = 55;
     } else if (/z2|endurance|aerobic/i.test(cleanLine)) {
       intensityPct = 68;
@@ -292,6 +355,7 @@ function parseSingleWorkoutLine(
 
   const effectiveTargetPace =
     parsedTargetPace ??
+    namedPace.paceSecsPerKm ??
     (distanceMeters
       ? Number(((thresholdPaceSecsPerKm * 100) / Math.max(40, intensityPct)).toFixed(1))
       : undefined);
@@ -340,17 +404,72 @@ function parseSingleWorkoutLine(
   };
 }
 
+function splitTopLevelClauses(line: string): string[] {
+  const parts: string[] = [];
+  let buf = '';
+  let depth = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')' && depth > 0) depth -= 1;
+
+    if (depth === 0 && (ch === '+' || ch === ',')) {
+      const trimmed = buf.trim();
+      if (trimmed) parts.push(trimmed);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  const tail = buf.trim();
+  if (tail) parts.push(tail);
+  return parts;
+}
+
+function normalizeInputLines(syntax: string): string[] {
+  const out: string[] = [];
+  for (const raw of syntax.split('\n')) {
+    const line = raw.trim();
+    if (!line) {
+      out.push('');
+      continue;
+    }
+    if (line.startsWith('-')) {
+      out.push(line);
+      continue;
+    }
+    if (line.includes('+') || line.includes(',')) {
+      const clauses = splitTopLevelClauses(line);
+      if (
+        clauses.length > 1 &&
+        clauses.some((c) =>
+          /^(?:\d{1,2}\s*[x×]|\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)|warm\s*-?\s*up|cool\s*-?\s*down)/i.test(
+            c
+          )
+        )
+      ) {
+        for (const c of clauses) {
+          out.push(c.startsWith('-') ? c : `- ${c}`);
+        }
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 /**
  * Parses both Intervals.icu multi-line syntax (`Main Set 8x\n- 400m @ 60.5s\n- 90s jog`)
- * and inline repeat syntax (`- 6x800m @ 2:24 (2m rest)`) into a structured AST supporting
- * sub-minute steps, track meter distances, pace targets, and Garmin .FIT repeat groups.
+ * and plain coach shorthand (`2mi warm-up, 2x200m at 800m pace, 4x800m at mile pace, 2mi cooldown`)
+ * into a structured AST supporting sub-minute steps, track meter distances, pace targets, and Garmin .FIT loops.
  */
 export function parseStructuredTrackWorkout(
   syntax: string,
   thresholdPaceSecsPerKm = 250
 ): StructuredWorkoutNode[] {
   if (!syntax || !syntax.trim()) return [];
-  const rawLines = syntax.split('\n').map((l) => l.trim());
+  const rawLines = normalizeInputLines(syntax);
   const nodes: StructuredWorkoutNode[] = [];
 
   let currentRepeat: { repeatCount: number; label: string; steps: ParsedWorkoutStep[] } | null =
@@ -374,10 +493,15 @@ export function parseStructuredTrackWorkout(
       continue;
     }
 
+    const looksLikeStandaloneStep =
+      !line.startsWith('-') &&
+      (/^(\d{1,2})\s*[x×]\s*\d+/i.test(line) ||
+        /^\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)\b/i.test(line));
+
     // Block repeat header (without leading `-`), e.g. "Main Set 8x", "8x", "Repeat 6x:"
-    if (!line.startsWith('-')) {
+    if (!line.startsWith('-') && !looksLikeStandaloneStep) {
       const headerRepeatMatch = line.match(
-        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*x\b[:\s-]*(.*)$/i
+        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*[x×]\b[:\s-]*(.*)$/i
       );
       if (headerRepeatMatch) {
         flushRepeat();
@@ -397,11 +521,11 @@ export function parseStructuredTrackWorkout(
     const clean = line.replace(/^-+\s*/, '').trim();
     if (!clean) continue;
 
-    // Inline repeat line, e.g. "- 6x800m @ 2:24 (2m rest)" or "- 8 x 400m @ 60.5s w/ 90s jog"
-    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*x(?:\s+|(?=\d))(.+)$/i);
+    // Inline repeat line, e.g. "- 6x800m @ 2:24 (2m rest)" or "4x800m at mile pace"
+    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*[x×](?:\s+|(?=\d))(.+)$/i);
     if (inlineRepeatMatch) {
       flushRepeat();
-      const count = Math.max(2, Number(inlineRepeatMatch[1]));
+      const count = Math.max(1, Number(inlineRepeatMatch[1]));
       const remainder = inlineRepeatMatch[2].trim();
 
       let mainPart = remainder;
@@ -529,6 +653,21 @@ export function formatHumanReadableStepLine(
     if (Number.isFinite(pct) && pct > 20) {
       const watts = Math.round((ftpWatts * pct) / 100);
       return normalizedPrefix.replace(/(\d+(?:\.\d+)?)\s*%\s*ftp/i, `@ ${watts}W`);
+    }
+  }
+
+  if (sport === 'Running' && thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0) {
+    const repDist = extractDistanceMeters(normalizedPrefix);
+    const named = resolveNamedTrackPaceSecsPerKm(normalizedPrefix, thresholdPaceSecsPerKm);
+    if (repDist && repDist >= 100 && repDist <= 3200 && named.paceSecsPerKm && !/\d+:\d{2}/.test(normalizedPrefix)) {
+      const splitSecs = (named.paceSecsPerKm / 1000) * repDist;
+      const mins = Math.floor(splitSecs / 60);
+      const secs = splitSecs % 60;
+      const splitStr =
+        mins > 0
+          ? `${mins}:${secs.toFixed(1).padStart(4, '0')}`
+          : `${splitSecs.toFixed(1)}s`;
+      return `${normalizedPrefix} (${splitStr}/rep)`;
     }
   }
 
