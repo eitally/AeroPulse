@@ -609,10 +609,18 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     >
                       <span className="flex items-center gap-2 font-medium">
                         <Sliders className="w-4 h-4 ap-text-brand" />
-                        <span>Profile, FTP &amp; Sport Zones</span>
+                        <span>Profile, Thresholds &amp; Zones</span>
                       </span>
                       <span className="font-mono text-2xs font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
-                        {effectiveAthleteProfile.ftp}W
+                        {effectiveAthleteProfile.primarySport === 'Running'
+                          ? (() => {
+                              const secs = Math.max(
+                                150,
+                                Math.round(effectiveAthleteProfile.thresholdPaceSecsPerKm || 250)
+                              );
+                              return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}/km`;
+                            })()
+                          : `${effectiveAthleteProfile.ftp}W`}
                       </span>
                     </button>
 
@@ -634,24 +642,6 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         {myTeams.length > 0
                           ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
                           : 'Manage'}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setActiveTab('stopwatch');
-                        setIsAccountMenuOpen(false);
-                      }}
-                      className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <Timer className="w-4 h-4 ap-text-brand" />
-                        <span>Trackside Split Stopwatch (0.01s)</span>
-                      </span>
-                      <span className="font-mono text-2xs ap-text-brand">
-                        Open
                       </span>
                     </button>
 

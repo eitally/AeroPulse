@@ -22,7 +22,6 @@ const AthletePerformanceRadar = lazy(() =>
 );
 
 const EMPTY_CONNECTED_ATHLETES: ConnectedAthleteRecord[] = [];
-const NOOP_COACH_PROMPT = (_prompt: string) => {};
 
 interface PhysiologyViewProps {
   curves: PowerPaceCurvePoint[];
@@ -37,6 +36,7 @@ interface PhysiologyViewProps {
   isScanningSegments?: boolean;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onOpenActivitiesSegments?: () => void;
+  onOpenCoachWithPrompt: (prompt: string) => void;
 }
 
 const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
@@ -49,6 +49,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
   athleteProfile,
   onSelectActivity,
   onOpenActivitiesSegments,
+  onOpenCoachWithPrompt,
 }) => {
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -985,7 +986,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
             selfWellnessDays={wellnessDays}
             selfActivities={activities}
             connectedAthletes={EMPTY_CONNECTED_ATHLETES}
-            onOpenCoachWithPrompt={NOOP_COACH_PROMPT}
+            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
           />
         </Suspense>
       )}

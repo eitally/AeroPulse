@@ -478,7 +478,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       setBannerMessage({
         tone: 'success',
         text: data.emailedCount > 0
-          ? `Added ${data.addedCount} athletes and dispatched ${data.emailedCount} branded invite email(s) via Resend!`
+          ? `Added ${data.addedCount} athletes and dispatched ${data.emailedCount} branded invite email(s).`
           : `Added ${data.addedCount} athletes with personalized Magic Join Links ready to copy, text (free SMS), or email!`,
       });
     } catch {
@@ -1065,7 +1065,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       Parent / Guardian CC on Roster Invites
                     </strong>
                     <span className="block text-2xs text-slate-500 dark:text-slate-400">
-                      Automatically CCs parent emails when importing rosters &amp; sending Resend invites.
+                      Automatically CCs parent emails on youth team invites.
                     </span>
                   </span>
                 </label>
@@ -1513,7 +1513,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       )}
                       <span>
                         {resendConfigured
-                          ? `Import & Email ${parsedRosterPreview.length} Branded Invites (Resend)`
+                          ? `Import & Email ${parsedRosterPreview.length} Team Invites`
                           : `Import ${parsedRosterPreview.length} Athletes & Generate Magic Links`}
                       </span>
                     </button>
@@ -1670,7 +1670,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           </span>
                           {m.emailDeliveryStatus === 'SENT_RESEND' && (
                             <span className="ml-1.5 text-2xs font-mono text-emerald-600 dark:text-emerald-400">
-                              · Resend ✓
+                              · Emailed ✓
                             </span>
                           )}
                         </td>

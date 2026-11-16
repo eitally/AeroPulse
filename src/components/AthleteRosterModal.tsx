@@ -19,7 +19,6 @@ import {
   Timer,
   Trophy,
   Zap,
-  CornersOut,
 } from "./icons/PhosphorIcons";
 import {
   AthleteConnectionRole,
@@ -55,7 +54,6 @@ export type RosterTab =
   | 'TEAMS_BRANDING'
   | 'LEADERBOARD'
   | 'SCHOLASTIC_COACH'
-  | 'TRACKSIDE_PAD'
   | 'CONNECT_INVITE'
   | 'PRIVACY_SHIELD';
 
@@ -184,24 +182,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const [guestPodVdot, setGuestPodVdot] = useState<string>('56.0');
   const [copiedSplitSheet, setCopiedSplitSheet] = useState<boolean>(false);
 
-  // Persistent Trackside Watchless / Spikes-On Multi-Athlete Split Stopwatch (localStorage + epoch)
+  // Persistent stopwatch running guard + custom guest runners shared with Trackside Stopwatch
   const {
     stopwatchRunning,
-    stopwatchElapsedMs,
-    athleteLapTimestampsSecs,
-    tapHistory,
     extraPodAthletes,
-    totalSplitCount,
-    hasActiveSession,
-    toggleStartPause,
-    resetStopwatch,
-    tapRunnerSplit,
-    undoLastSplit,
     setExtraPodAthletes,
   } = useTracksideStopwatch(50);
-  const [copiedStopwatchCsv, setCopiedStopwatchCsv] = useState<boolean>(false);
-  const [confirmResetStopwatch, setConfirmResetStopwatch] = useState<boolean>(false);
-  const [lastSplitAnnouncement, setLastSplitAnnouncement] = useState<string>('');
   const [backdropRunningNotice, setBackdropRunningNotice] = useState<boolean>(false);
   const [confirmDeleteAthleteId, setConfirmDeleteAthleteId] = useState<string | null>(null);
 
@@ -213,7 +199,6 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
-      setConfirmResetStopwatch(false);
       setBackdropRunningNotice(false);
       setConfirmDeleteAthleteId(null);
     }
@@ -263,51 +248,6 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     extraPodAthletes,
   ]);
 
-  // Keyboard Accelerators for Trackside Split Pad: Space toggles Gun, 1–9 records runner split
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'TRACKSIDE_PAD') return;
-    const onTracksideKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.code === 'Space' && target?.tagName !== 'BUTTON') {
-        e.preventDefault();
-        toggleStartPause();
-        return;
-      }
-      if (/^[1-9]$/.test(e.key) && stopwatchRunning) {
-        const idx = Number(e.key) - 1;
-        const runner = combinedPodRoster[idx];
-        if (runner) {
-          e.preventDefault();
-          const nextLapNum = (athleteLapTimestampsSecs[runner.id]?.length ?? 0) + 1;
-          const elapsedSecs = tapRunnerSplit(runner.id, runner.name);
-          setLastSplitAnnouncement(
-            `${runner.name} split ${nextLapNum} recorded at ${elapsedSecs.toFixed(2)}s`
-          );
-        }
-      }
-    };
-    window.addEventListener('keydown', onTracksideKeyDown);
-    return () => window.removeEventListener('keydown', onTracksideKeyDown);
-  }, [
-    isOpen,
-    activeTab,
-    toggleStartPause,
-    stopwatchRunning,
-    combinedPodRoster,
-    athleteLapTimestampsSecs,
-    tapRunnerSplit,
-  ]);
-
   const generatedVdotPods = useMemo(
     () =>
       computeTeamVdotPacingPods({
@@ -334,7 +274,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     onAddFollowByInviteOrName(inviteQuery.trim(), inviteRole, inviteSpecialty);
     setFollowFeedback(
       `Connected with "${inviteQuery.trim()}" as ${
-        inviteRole === 'COACH_EDIT' ? 'Coached Athlete (Edit Calendar)' : 'Friend (View Telemetry)'
+        inviteRole === 'COACH_EDIT' ? 'Coached Athlete (Edit Calendar)' : 'Teammate (View Only)'
       }.`
     );
     setInviteQuery('');
@@ -399,287 +339,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase ap-status-info">
         <Eye className="w-3 h-3" />
-        Friend (View)
+        Teammate (View Only)
       </span>
     );
   };
-
-  const handleRecordRunnerSplit = (runner: VdotPodRosterInput) => {
-    const splitSecs = tapRunnerSplit(runner.id, runner.name);
-    const prevMarks = athleteLapTimestampsSecs[runner.id] || [];
-    const lapIndex = prevMarks.length + 1;
-    const prevCum = prevMarks.length > 0 ? prevMarks[prevMarks.length - 1] : 0;
-    const lapDelta = Number(Math.max(0.01, splitSecs - prevCum).toFixed(2));
-    setConfirmResetStopwatch(false);
-    setLastSplitAnnouncement(
-      `${runner.name} — Lap ${lapIndex}: ${formatTrackMark(lapDelta, 2)} (Total ${formatTrackMark(
-        splitSecs,
-        2
-      )})`
-    );
-  };
-
-  const renderTracksideSplitPad = (isFocusedMode: boolean) => (
-    <div
-      className={`rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-4 sm:p-5 space-y-4 ${
-        isFocusedMode ? '' : 'lg:col-span-7'
-      }`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Timer className="w-4 h-4 ap-text-brand" />
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-              Trackside &quot;Spikes-On / Watchless&quot; Multi-Athlete Split Pad
-            </h3>
-            {hasActiveSession && (
-              <span className="px-2 py-0.5 rounded ap-status-prime font-mono text-2xs font-bold">
-                Auto-Saved Locally
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-            Tap any runner&apos;s row as they cross the line to capture <span className="font-mono">0.01s</span> splits. Splits persist across modal closes and refreshes.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {onOpenFullScreenStopwatch && (
-            <button
-              type="button"
-              onClick={onOpenFullScreenStopwatch}
-              className="min-h-[44px] px-3 py-2 rounded-xl ap-status-info text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
-            >
-              <CornersOut className="w-3.5 h-3.5" weight="bold" />
-              <span>Open Full-Screen Stopwatch</span>
-            </button>
-          )}
-          {!isFocusedMode && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('TRACKSIDE_PAD')}
-              className="min-h-[44px] px-3 py-2 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 flex items-center gap-1.5 cursor-pointer"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5 ap-text-brand" />
-              <span>Full-Screen Trackside Mode</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Primary Stopwatch Readout & >=48px Ergonomic Gun / Undo / Protected Reset Controls */}
-      <div className="rounded-xl bg-stone-100/90 dark:bg-[#0D1511] border border-stone-200/90 dark:border-[#244331] p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 font-mono">
-        <div className="flex items-baseline gap-3">
-          <span className="text-2xl sm:text-3xl font-extrabold tabular-nums text-slate-900 dark:text-[#C8FF00]">
-            {formatTrackMark(stopwatchElapsedMs / 1000, 2)}
-          </span>
-          <span className="text-xs text-slate-600 dark:text-slate-300 tabular-nums">
-            {totalSplitCount} {totalSplitCount === 1 ? 'split' : 'splits'}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setConfirmResetStopwatch(false);
-              toggleStartPause();
-            }}
-            className={`min-h-[48px] px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
-              stopwatchRunning
-                ? 'bg-amber-500 hover:bg-amber-400 text-[#080A09]'
-                : 'ap-btn-primary'
-            }`}
-          >
-            {stopwatchRunning ? 'Pause Clock' : stopwatchElapsedMs > 0 ? 'Resume Clock' : 'Start Gun'}
-          </button>
-
-          {tapHistory.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                const undone = undoLastSplit();
-                if (undone) {
-                  setLastSplitAnnouncement(
-                    `Undid last split for ${undone.runnerName} (${formatTrackMark(
-                      undone.timestampSecs,
-                      2
-                    )}).`
-                  );
-                }
-              }}
-              className="min-h-[48px] px-3.5 py-2 rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] text-xs font-semibold text-slate-800 dark:text-slate-100 hover:opacity-90 cursor-pointer"
-            >
-              Undo Last
-            </button>
-          )}
-
-          {hasActiveSession &&
-            (confirmResetStopwatch ? (
-              <div className="inline-flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetStopwatch();
-                    setConfirmResetStopwatch(false);
-                    setLastSplitAnnouncement('Stopwatch and splits cleared.');
-                  }}
-                  className="min-h-[48px] px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
-                >
-                  Confirm Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetStopwatch(false)}
-                  className="min-h-[48px] px-3 py-2 rounded-xl border border-stone-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmResetStopwatch(true)}
-                className="min-h-[48px] px-3.5 py-2 rounded-xl border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-stone-200/60 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                Reset
-              </button>
-            ))}
-        </div>
-      </div>
-
-      {/* Live Polite Status Region for Screen Readers & Trackside Confirmation */}
-      <div
-        role="status"
-        aria-live="polite"
-        className={
-          lastSplitAnnouncement
-            ? 'rounded-lg px-3 py-2 ap-status-prime font-mono text-xs tabular-nums flex items-center justify-between gap-2'
-            : 'sr-only'
-        }
-      >
-        {lastSplitAnnouncement ? `Last Split: ${lastSplitAnnouncement}` : 'Trackside stopwatch ready'}
-      </div>
-
-      {/* Quick Walk-On / Unconnected Runner Adder right inside Focused Trackside Mode */}
-      {isFocusedMode && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <input
-            type="text"
-            aria-label="Walk-on or lane runner name"
-            placeholder="Add lane / walk-on runner (e.g. J. Ramirez)"
-            value={guestPodName}
-            onChange={(e) => setGuestPodName(e.target.value)}
-            className="min-h-[44px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 py-2 font-mono text-xs flex-1 min-w-[180px]"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!guestPodName.trim()) return;
-              const v = Math.max(30, Math.min(85, Number(guestPodVdot) || 55));
-              setExtraPodAthletes((prev) => [
-                ...prev,
-                {
-                  id: `guest-${Date.now()}`,
-                  name: guestPodName.trim(),
-                  thresholdPaceSecsPerKm: 250,
-                  vdotOverride: v,
-                },
-              ]);
-              setGuestPodName('');
-            }}
-            className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-secondary font-mono text-xs font-semibold cursor-pointer"
-          >
-            + Add Runner
-          </button>
-        </div>
-      )}
-
-      {/* >= 56px Full-Width One-Handed Tappable Runner Split Cards */}
-      <div
-        className={
-          isFocusedMode
-            ? 'grid grid-cols-1 md:grid-cols-2 gap-2.5'
-            : 'space-y-2.5'
-        }
-      >
-        {combinedPodRoster.map((runner) => {
-          const marks = athleteLapTimestampsSecs[runner.id] || [];
-          const lapDeltas = marks.map((cumSecs, i) =>
-            Number((i === 0 ? cumSecs : cumSecs - marks[i - 1]).toFixed(2))
-          );
-          const lastLap = lapDeltas[lapDeltas.length - 1];
-          const cumTotal = marks[marks.length - 1];
-
-          return (
-            <button
-              key={runner.id}
-              type="button"
-              onClick={() => handleRecordRunnerSplit(runner)}
-              className="w-full min-h-[56px] text-left rounded-xl border border-stone-200 dark:border-[#244331] bg-white/90 dark:bg-[#101B15] hover:border-[#28573B] dark:hover:border-[#C8FF00]/70 active:scale-[0.99] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#558B00] dark:focus-visible:ring-[#C8FF00]"
-            >
-              <div className="min-w-[140px] flex-1">
-                <div className="font-bold text-sm text-slate-900 dark:text-white">
-                  {runner.name}
-                </div>
-                <div className="font-mono text-xs text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
-                  {lapDeltas.length === 0
-                    ? 'Tap anywhere on row to record split'
-                    : `Laps (${lapDeltas.length}): ${lapDeltas
-                        .map((d) => formatTrackMark(d, 2))
-                        .join(' · ')}`}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
-                {lastLap !== undefined && (
-                  <span className="px-2.5 py-1 rounded-lg ap-status-prime font-bold text-xs">
-                    #{lapDeltas.length} {formatTrackMark(lastLap, 2)} ({formatTrackMark(cumTotal, 2)})
-                  </span>
-                )}
-                <span className="min-h-[44px] inline-flex items-center px-3.5 py-2 rounded-xl ap-btn-primary font-bold text-xs">
-                  + Tap Split
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {totalSplitCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <span className="text-xs font-mono text-slate-600 dark:text-slate-300">
-            Closing this window keeps your live clock and splits pinned in the top header.
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const csvRows = ['Athlete,LapCount,CumulativeTime,LapSplits'];
-              for (const r of combinedPodRoster) {
-                const m = athleteLapTimestampsSecs[r.id];
-                if (!m || m.length === 0) continue;
-                const deltas = m.map((c, i) =>
-                  formatTrackMark(i === 0 ? c : c - m[i - 1], 2)
-                );
-                csvRows.push(
-                  `"${r.name}",${m.length},${formatTrackMark(
-                    m[m.length - 1],
-                    2
-                  )},"${deltas.join(' | ')}"`
-                );
-              }
-              navigator.clipboard.writeText(csvRows.join('\n'));
-              setCopiedStopwatchCsv(true);
-              window.setTimeout(() => setCopiedStopwatchCsv(false), 2500);
-            }}
-            className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-secondary font-mono text-xs font-semibold cursor-pointer"
-          >
-            {copiedStopwatchCsv ? '✓ Copied Split CSV' : 'Copy All Splits (CSV)'}
-          </button>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div
@@ -718,7 +381,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300 hidden sm:block">
-                Create school/club branding, send bulk Resend email invites, switch multi-team rosters, or run trackside timing.
+                Create school/club branding, send bulk email invites, switch multi-team rosters, or inspect pace groups.
               </p>
             </div>
           </div>
@@ -785,7 +448,6 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               e.preventDefault();
               const order = [
                 'TEAMS_BRANDING',
-                'TRACKSIDE_PAD',
                 'SCHOLASTIC_COACH',
                 'LEADERBOARD',
                 'CONNECT_INVITE',
@@ -816,27 +478,6 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             >
               <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>Teams ({myTeams.length})</span>
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              tabIndex={activeTab === 'TRACKSIDE_PAD' ? 0 : -1}
-              aria-selected={activeTab === 'TRACKSIDE_PAD'}
-              onClick={() => setActiveTab('TRACKSIDE_PAD')}
-              className={`min-h-[44px] px-2.5 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'TRACKSIDE_PAD'
-                  ? 'border-[#1C5436] dark:border-[#C8FF00] text-[#101411] dark:text-white font-bold'
-                  : 'border-transparent text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
-              }`}
-            >
-              <Timer className="w-3.5 h-3.5 ap-text-brand shrink-0" />
-              <span>Split Pad</span>
-              {hasActiveSession && (
-                <span className="px-1.5 py-0.5 rounded-full ap-status-prime font-bold text-2xs tabular-nums">
-                  {stopwatchRunning ? 'LIVE' : totalSplitCount}
-                </span>
-              )}
             </button>
 
             <button
@@ -941,10 +582,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
             </div>
           )}
 
-          {/* DEDICATED FULL-FOCUS TRACKSIDE WATCHLESS SPLIT PAD */}
-          {activeTab === 'TRACKSIDE_PAD' && renderTracksideSplitPad(true)}
-
-          {/* TAB 0: MULTI-TEAM BRANDING STUDIO, BULK RESEND INVITER & ONBOARDING FUNNEL */}
+          {/* TAB 0: MULTI-TEAM BRANDING STUDIO, BULK EMAIL INVITER & ONBOARDING FUNNEL */}
           {activeTab === 'TEAMS_BRANDING' && (
             <TeamManagementPanel
               selfName={selfName}
@@ -1915,9 +1553,42 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </div>
               </div>
 
-              {/* Section 2: Trackside "Watchless / Spikes-On" Multi-Athlete Split Pad + NCAA CARA Cap */}
+              {/* Section 2: Trackside Stopwatch Launcher + NCAA CARA Cap */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                {renderTracksideSplitPad(false)}
+                <div className="lg:col-span-7 rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 flex flex-col justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Timer className="w-4 h-4 ap-text-brand" />
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                        Trackside Multi-Athlete Stopwatch
+                      </h3>
+                      {stopwatchRunning && (
+                        <span className="px-2 py-0.5 rounded ap-status-prime font-mono text-2xs font-bold">
+                          LIVE
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Run 0.01s split timing for pace groups, wave starts, and finish queues in THRESH&apos;s dedicated full-screen Trackside Stopwatch.
+                    </p>
+                  </div>
+                  {onOpenFullScreenStopwatch && (
+                    <div>
+                      <button
+                        type="button"
+                        data-testid="roster-open-stopwatch-btn"
+                        onClick={() => {
+                          onClose();
+                          onOpenFullScreenStopwatch();
+                        }}
+                        className="ap-btn-primary min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Timer className="w-4 h-4" />
+                        <span>Open Trackside Stopwatch</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* Right 5 Cols: NCAA Bylaw 17.1 (20-Hour Weekly CARA Cap) Compliance Monitor */}
                 <div className="lg:col-span-5 rounded-xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-5 space-y-3">
@@ -2083,7 +1754,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           }
                           className="w-full min-h-[44px] bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono"
                         >
-                          <option value="FRIEND_VIEW">Friend (View Telemetry)</option>
+                          <option value="FRIEND_VIEW">Teammate (View Only)</option>
                           <option value="COACH_EDIT">Coached Athlete (Edit Calendar)</option>
                         </select>
                       </div>
@@ -2325,7 +1996,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                      Control exactly which physiological streams and wellness markers your Friends (<code className="ap-text-brand">FRIEND_VIEW</code>) and Coaches (<code className="ap-text-brand">COACH_EDIT</code>) can inspect when they switch to your profile.
+                      Control which workouts, readiness, and health markers Teammates (View Only) and Coaches (Prescribe &amp; Edit) can inspect when viewing your profile.
                     </p>
                   </div>
                   <div className="px-3 py-1.5 rounded bg-[#10B981]/10 border border-[#10B981]/30 text-xs font-mono text-emerald-700 dark:text-[#10B981]">

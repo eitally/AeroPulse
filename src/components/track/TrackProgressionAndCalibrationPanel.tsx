@@ -89,7 +89,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
         <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
             <Gauge className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-            <span>5-Axis Track Progression &amp; Bayesian Calibrator</span>
+            <span>5-Axis Track Progression &amp; Pace Calibration</span>
           </h2>
           <span className="px-2 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold uppercase">
             14d Decay Onset
@@ -115,7 +115,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
         >
           <ShieldCheck className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
           <span>
-            Kalman Audit ({bayesian.acceptedCount} Ok · {bayesian.quarantinedCount} Quarantined)
+            Outlier Review ({bayesian.acceptedCount} Valid · {bayesian.quarantinedCount} Flagged)
           </span>
           {drawerOpen ? (
             <CaretUp className="w-3.5 h-3.5" weight="bold" />
@@ -125,11 +125,11 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
         </button>
       </div>
 
-      {/* Execution Score Highlight + Posterior Summary Strip */}
+      {/* Execution Score Highlight + Calibration Summary Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono tabular-nums">
         <div className="rounded-xl ap-card-inset p-3 space-y-1">
           <div className="text-2xs uppercase text-slate-600 dark:text-slate-300">
-            Work-Only 4-Pillar Execution
+            Interval Execution Score
           </div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-lg font-extrabold text-slate-900 dark:text-white">
@@ -160,28 +160,31 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
           )}
         </div>
 
-        <div className="rounded-xl ap-card-inset p-3 space-y-1">
+        <div
+          className="rounded-xl ap-card-inset p-3 space-y-1"
+          title="Robust Huber-Kalman Bayesian critical speed estimate filtering outliers"
+        >
           <div className="text-2xs uppercase text-slate-600 dark:text-slate-300">
-            Huber-Kalman Critical Speed
+            Estimated Critical Speed
           </div>
           <div className="text-lg font-extrabold text-slate-900 dark:text-white">
             {bayesian.posteriorCsMps.toFixed(2)} m/s · VDOT {bayesian.posteriorVdotAer.toFixed(1)}
           </div>
           <div className="text-2xs text-slate-600 dark:text-slate-300">
-            Prior {bayesian.priorCsMps.toFixed(2)} m/s · D&apos; {bayesian.posteriorDPrimeMeters}m
+            Baseline {bayesian.priorCsMps.toFixed(2)} m/s · Reserve {bayesian.posteriorDPrimeMeters}m
           </div>
         </div>
 
         <div className="rounded-xl ap-card-inset p-3 flex items-center justify-between gap-2">
           <div>
             <div className="text-2xs uppercase text-slate-600 dark:text-slate-300">
-              Posterior Threshold Pace
+              Recommended Threshold Pace
             </div>
             <div className="text-lg font-extrabold ap-text-brand">
               {formatPace(bayesian.posteriorThresholdPaceSecsPerKm, distanceUnit)}
             </div>
             <div className="text-2xs text-slate-600 dark:text-slate-300">
-              Quarantines &lt;180s sprints, wind &gt;2 m/s &amp; rest cheating
+              Filters out &lt;3m sprints, high wind &amp; long rests
             </div>
           </div>
           {onApplyPosteriorCalibration && (
@@ -194,12 +197,12 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
                   bayesian.posteriorVdotAer
                 );
                 setAppliedBannerMsg(
-                  `Applied Bayesian posterior threshold (${formatPace(bayesian.posteriorThresholdPaceSecsPerKm, distanceUnit)} · VDOT ${bayesian.posteriorVdotAer.toFixed(1)}).`
+                  `Updated threshold pace (${formatPace(bayesian.posteriorThresholdPaceSecsPerKm, distanceUnit)} · VDOT ${bayesian.posteriorVdotAer.toFixed(1)}).`
                 );
               }}
               className="min-h-[44px] sm:min-h-[38px] px-3 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-[#C8FF00] border border-[#2B5B3F] text-2xs font-bold cursor-pointer shrink-0"
             >
-              Apply Posterior
+              Update Pace Zones
             </button>
           )}
         </div>
@@ -281,17 +284,17 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
             <div className="flex items-center gap-2">
               <Pulse className="w-4 h-4 ap-text-brand" weight="bold" />
               <span className="text-xs font-bold text-slate-900 dark:text-white">
-                Bayesian CS / D&apos; / VDOT Calibration Quarantine Ledger
+                Pace Calibration &amp; Flagged Workouts
               </span>
             </div>
             <span className="font-mono text-2xs text-slate-600 dark:text-slate-300">
-              Confirming a quarantined mark promotes its CS contribution to the posterior
+              Approve a flagged effort to include it in your threshold pace.
             </span>
           </div>
 
           {bayesian.auditLog.length === 0 ? (
             <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
-              Log a track workout or official FAT race mark to populate the Huber-Kalman audit ledger.
+              Log a track workout or official race mark to populate this calibration ledger.
             </p>
           ) : (
             <div className="space-y-2">

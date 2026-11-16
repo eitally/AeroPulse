@@ -274,6 +274,9 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
     return map;
   }, [plannedEvents]);
   const [hrZoneHoverIdx, setHrZoneHoverIdx] = useState<number | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'SUMMARY' | 'STREAMS' | 'SPLITS_ZONES'>(
+    'SUMMARY'
+  );
   const [showAutoZoneInsight, setShowAutoZoneInsight] = useState<boolean>(true);
   const [zoneArchetypeOverride, setZoneArchetypeOverride] = useState<
     'AUTO' | 'RECOVERY' | 'ENDURANCE' | 'TEMPO_SWEETSPOT' | 'THRESHOLD' | 'VO2MAX_RACE'
@@ -770,15 +773,17 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
     }
   }, [selectedActivity?.id, selectedActivity?.segmentEfforts, segmentHistoryBySegmentId]);
 
-  // Reset stream zoom range and archetype override when switching selectedActivity
+  // Reset stream zoom range, inspector tab, and archetype override when switching selectedActivity
   useEffect(() => {
     setStreamZoomRange(null);
     setStreamHoverIndex(null);
     setZoneArchetypeOverride('AUTO');
+    setInspectorTab('SUMMARY');
   }, [selectedActivity?.id]);
 
   // Helper to zoom stream chart to a specific elapsed time window [startSecs, endSecs]
   const zoomStreamToTimeWindow = (startSecs: number, endSecs: number) => {
+    setInspectorTab('STREAMS');
     const timeArr = (liveDexieStream?.streams || selectedActivity?.streams)?.time;
     if (!timeArr || timeArr.length < 2) return;
     let sIdx = 0;
@@ -3373,6 +3378,39 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
             </div>
 
             <div className="p-4 sm:p-6 space-y-6">
+              {/* 3-Tab Segmented Navigation inside Activity Inspector (UX-06) */}
+              <div
+                data-testid="activity-inspector-tabs"
+                role="tablist"
+                aria-label="Activity Inspector Sections"
+                className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track w-fit"
+              >
+                {(
+                  [
+                    { id: 'SUMMARY', label: 'Summary' },
+                    { id: 'STREAMS', label: 'Streams & Map' },
+                    { id: 'SPLITS_ZONES', label: 'Splits & Zones' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === tab.id}
+                    onClick={() => setInspectorTab(tab.id)}
+                    className={`min-h-[40px] sm:min-h-[34px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      inspectorTab === tab.id
+                        ? 'ap-nav-volt-active shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {inspectorTab === 'SUMMARY' && (
+                <>
               {/* Top Physiological & Aerobic Decoupling Strip */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3.5">
@@ -3902,14 +3940,17 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   </form>
                 )}
               </div>
+                </>
+              )}
 
               {/* Synchronized Interactive GPS Route Map (Outdoor Workouts or Workouts with GPS Coordinates) */}
-              {(selectedActivity.environment === 'OUTDOOR' ||
-                (Array.isArray(selectedActivity.routeLatLngs) &&
-                  selectedActivity.routeLatLngs.length > 2) ||
-                Boolean(
-                  selectedActivity.streams?.latlng && selectedActivity.streams.latlng.length > 2
-                )) && (
+              {inspectorTab === 'STREAMS' &&
+                (selectedActivity.environment === 'OUTDOOR' ||
+                  (Array.isArray(selectedActivity.routeLatLngs) &&
+                    selectedActivity.routeLatLngs.length > 2) ||
+                  Boolean(
+                    selectedActivity.streams?.latlng && selectedActivity.streams.latlng.length > 2
+                  )) && (
                 <Suspense
                   fallback={
                     <div className="h-[340px] sm:h-[400px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
@@ -3932,7 +3973,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
               )}
 
               {/* 5-Second Post-Workout RPE, Fueling (g/hr Carbs & mg/hr Sodium) & Gear Quick-Log */}
-              {(() => {
+              {inspectorTab === 'SUMMARY' && (() => {
                 const curLog = quickLogsById[selectedActivity.id] ||
                   selectedActivity.quickLog || {
                     rpe: 6,
@@ -4073,7 +4114,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
               })()}
 
               {/* High-Frequency 1Hz uPlot Telemetry Canvas + Web Worker Analytics Strip */}
-              {(() => {
+              {inspectorTab === 'STREAMS' && (() => {
                 const activeStream = activeSelectedStream;
                 const hasStreamPoints = Boolean(activeStream && Array.isArray(activeStream.time) && activeStream.time.length > 1);
                 if (!hasStreamPoints) {
@@ -4228,7 +4269,9 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 );
               })()}
 
-              {/* Heart Rate Zone Distribution Summary Chart (Interactive SVG Histogram + Stacked Polarization + Zone Breakdown) */}
+              {/* Heart Rate Zone Distribution Summary Chart (Single Clean Horizontal Z1–Z6 Breakdown) */}
+              {inspectorTab === 'SPLITS_ZONES' && (
+                <>
               {(() => {
                 const rawHrZones = Array.isArray(selectedActivity.zoneSecs?.hr)
                   ? selectedActivity.zoneSecs.hr
@@ -4473,12 +4516,6 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   };
                 });
 
-                const maxZoneSecs = Math.max(
-                  60,
-                  ...zoneMeta.map((z) =>
-                    showAutoZoneInsight ? Math.max(z.secs, z.expectedSecs) : z.secs
-                  )
-                );
                 const dominantZone = [...zoneMeta].sort((a, b) => b.secs - a.secs)[0];
                 const lowAerobicSecs = zoneMeta[0].secs + zoneMeta[1].secs;
                 const thresholdSecs = zoneMeta[2].secs + zoneMeta[3].secs;
@@ -4748,248 +4785,8 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       )}
                     </div>
 
-                    {/* Interactive SVG Vertical Column Chart + Detailed Horizontal Zone Breakdown */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                      {/* Left 7 Cols: SVG Vertical Bar Distribution Chart with Coach Expected Overlay */}
-                      <div
-                        className="lg:col-span-7 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15231B]/50 p-3 select-none space-y-2"
-                        onMouseLeave={() => setHrZoneHoverIdx(null)}
-                      >
-                        {showAutoZoneInsight && (
-                          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-2xs font-mono">
-                            <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
-                              <span className="w-2.5 h-2.5 rounded-xs bg-blue-500 inline-block" />
-                              Solid Bar = Actual Time in Zone
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-semibold">
-                              <span className="w-3.5 h-0.5 border-t-2 border-dashed border-indigo-500 inline-block" />
-                              Dashed Cap &amp; Curve = Coach Expected ({expectedProfile.shortLabel})
-                            </span>
-                          </div>
-                        )}
-
-                        <svg viewBox="0 0 540 226" className="w-full h-56">
-                          {(() => {
-                            const chartLeft = 58;
-                            const chartRight = 492;
-                            const chartW = chartRight - chartLeft;
-                            const chartTop = 24;
-                            const chartBottom = 170;
-                            const chartH = chartBottom - chartTop;
-                            const colSlotW = chartW / zoneMeta.length;
-                            const barW = Math.min(44, colSlotW * 0.58);
-
-                            // Connected Coach Expected Envelope Polyline points
-                            const expectedEnvelopePoints = zoneMeta
-                              .map((z, idx) => {
-                                const cx = chartLeft + (idx + 0.5) * colSlotW;
-                                const expH = (z.expectedSecs / maxZoneSecs) * chartH;
-                                const expY = chartBottom - expH;
-                                return `${cx},${expY}`;
-                              })
-                              .join(' ');
-
-                            return (
-                              <>
-                                {/* Left Y-Axis Title */}
-                                <text
-                                  x={14}
-                                  y={96}
-                                  transform="rotate(-90 14 96)"
-                                  textAnchor="middle"
-                                  className="fill-slate-600 dark:fill-slate-300 text-2xs font-sans font-bold"
-                                >
-                                  Time in Zone (mm:ss)
-                                </text>
-
-                                {/* Right Y-Axis Title */}
-                                <text
-                                  x={528}
-                                  y={96}
-                                  transform="rotate(90 528 96)"
-                                  textAnchor="middle"
-                                  className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans font-bold"
-                                >
-                                  Share of Workout (%)
-                                </text>
-
-                                {/* Horizontal Grid Lines & Ticks */}
-                                {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                                  const y = chartBottom - f * chartH;
-                                  const tSecs = Math.round(f * maxZoneSecs);
-                                  const pctVal = Math.round(
-                                    ((f * maxZoneSecs) / totalZoneSecs) * 100
-                                  );
-                                  return (
-                                    <g key={idx}>
-                                      <line
-                                        x1={chartLeft}
-                                        y1={y}
-                                        x2={chartRight}
-                                        y2={y}
-                                        stroke="currentColor"
-                                        className="text-slate-200 dark:text-slate-800"
-                                        strokeDasharray="3 3"
-                                      />
-                                      <text
-                                        x={chartLeft - 6}
-                                        y={y + 4}
-                                        textAnchor="end"
-                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                                      >
-                                        {formatStopwatch(tSecs)}
-                                      </text>
-                                      <text
-                                        x={chartRight + 6}
-                                        y={y + 4}
-                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                                      >
-                                        {pctVal}%
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-
-                                {/* Zone Bars + Coach Expected Ghost Bars & Target Caps */}
-                                {zoneMeta.map((z, idx) => {
-                                  const centerX = chartLeft + (idx + 0.5) * colSlotW;
-                                  const barH = Math.max(
-                                    z.secs > 0 ? 4 : 1,
-                                    (z.secs / maxZoneSecs) * chartH
-                                  );
-                                  const barY = chartBottom - barH;
-                                  const expH = (z.expectedSecs / maxZoneSecs) * chartH;
-                                  const expY = chartBottom - expH;
-                                  const isHovered = hrZoneHoverIdx === idx;
-
-                                  return (
-                                    <g key={z.zone}>
-                                      {/* Coach Expected Ghost Bar (behind actual bar when Auto-Zone Insight is ON) */}
-                                      {showAutoZoneInsight && z.expectedPct > 0 && (
-                                        <rect
-                                          x={centerX - barW / 2 - 3}
-                                          y={expY}
-                                          width={barW + 6}
-                                          height={Math.max(2, expH)}
-                                          rx={5}
-                                          fill="#6366F1"
-                                          fillOpacity={0.12}
-                                          stroke="#6366F1"
-                                          strokeWidth={1.25}
-                                          strokeDasharray="3 2"
-                                        />
-                                      )}
-
-                                      {/* Actual Zone Bar */}
-                                      <rect
-                                        x={centerX - barW / 2}
-                                        y={barY}
-                                        width={barW}
-                                        height={barH}
-                                        rx={5}
-                                        fill={z.colorHex}
-                                        fillOpacity={isHovered ? 1 : 0.88}
-                                        stroke={isHovered ? '#0F172A' : 'none'}
-                                        strokeWidth={isHovered ? 1.5 : 0}
-                                      />
-
-                                      {/* Coach Expected Horizontal Cap Line & Node */}
-                                      {showAutoZoneInsight && (
-                                        <>
-                                          <line
-                                            x1={centerX - barW / 2 - 5}
-                                            y1={expY}
-                                            x2={centerX + barW / 2 + 5}
-                                            y2={expY}
-                                            stroke="#6366F1"
-                                            strokeWidth={2}
-                                          />
-                                          <circle
-                                            cx={centerX}
-                                            cy={expY}
-                                            r={3}
-                                            fill="#6366F1"
-                                            stroke="#ffffff"
-                                            strokeWidth={1.2}
-                                          />
-                                        </>
-                                      )}
-
-                                      {/* Value Label Above Bar (Actual % and Expected % when active) */}
-                                      <text
-                                        x={centerX}
-                                        y={Math.max(
-                                          12,
-                                          (showAutoZoneInsight ? Math.min(barY, expY) : barY) - 5
-                                        )}
-                                        textAnchor="middle"
-                                        className="fill-slate-800 dark:fill-slate-100 text-2xs font-mono font-bold"
-                                      >
-                                        {z.secs > 0 ? `${Math.round(z.pct)}%` : '0%'}
-                                        {showAutoZoneInsight ? ` / ${z.expectedPct}%` : ''}
-                                      </text>
-
-                                      {/* X-Axis Zone Label */}
-                                      <text
-                                        x={centerX}
-                                        y={186}
-                                        textAnchor="middle"
-                                        className="fill-slate-700 dark:fill-slate-200 text-2xs font-mono font-bold"
-                                      >
-                                        {z.zone}
-                                      </text>
-                                      <text
-                                        x={centerX}
-                                        y={199}
-                                        textAnchor="middle"
-                                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                                      >
-                                        {z.bpmRange.replace(' bpm', '')}
-                                      </text>
-                                      {/* Hit Target */}
-                                      <rect
-                                        x={centerX - colSlotW / 2}
-                                        y={0}
-                                        width={colSlotW}
-                                        height={206}
-                                        fill="transparent"
-                                        className="cursor-pointer"
-                                        onMouseEnter={() => setHrZoneHoverIdx(idx)}
-                                      />
-                                    </g>
-                                  );
-                                })}
-
-                                {/* Coach Expected Connected Envelope Curve */}
-                                {showAutoZoneInsight && (
-                                  <polyline
-                                    fill="none"
-                                    stroke="#6366F1"
-                                    strokeWidth="1.75"
-                                    strokeDasharray="4 3"
-                                    strokeOpacity="0.85"
-                                    points={expectedEnvelopePoints}
-                                    pointerEvents="none"
-                                  />
-                                )}
-
-                                {/* X-Axis Title */}
-                                <text
-                                  x={chartLeft + chartW / 2}
-                                  y={218}
-                                  textAnchor="middle"
-                                  className="fill-slate-600 dark:fill-slate-300 text-2xs font-sans font-bold"
-                                >
-                                  X-Axis: Physiological Heart Rate Zones (Z1–Z6 · Actual % vs Coach Target %)
-                                </text>
-                              </>
-                            );
-                          })()}
-                        </svg>
-                      </div>
-
-                      {/* Right 5 Cols: Detailed Zone Table with Horizontal Progress Bars, Coach Target Pins & Delta Badges */}
-                      <div className="lg:col-span-5 space-y-2">
+                    {/* Single Canonical Horizontal Zone Breakdown with Progress Bars, Coach Target Pins & Delta Badges */}
+                    <div className="space-y-2">
                         <div className="flex items-center justify-between text-2xs font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800 pb-1">
                           <span>Zone &amp; HR Threshold</span>
                           <span>
@@ -5066,7 +4863,6 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                             </div>
                           </div>
                         ))}
-                      </div>
                     </div>
                   </div>
                 );
@@ -5259,10 +5055,13 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   </div>
                 );
               })()}
+                </>
+              )}
 
               {/* Strava Segments on This Activity & Segment Performance Over Time Chart */}
-              {(selectedActivity.environment === 'OUTDOOR' ||
-                (selectedActivity.segmentEfforts && selectedActivity.segmentEfforts.length > 0)) && (
+              {inspectorTab === 'STREAMS' &&
+                (selectedActivity.environment === 'OUTDOOR' ||
+                  (selectedActivity.segmentEfforts && selectedActivity.segmentEfforts.length > 0)) && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -5460,7 +5259,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
               )}
 
               {/* Similar Historical Workouts & Repeat Comparison Table */}
-              {similarHistoricalWorkouts.length > 0 && (
+              {inspectorTab === 'SPLITS_ZONES' && similarHistoricalWorkouts.length > 0 && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
