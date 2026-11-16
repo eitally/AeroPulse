@@ -16,6 +16,7 @@ import {
   isResendConfigured,
   listTeamsForUser,
   previewTeamJoinInvite,
+  recordCoachStopwatchActivities,
   requestEmailOtpCode,
   resendPendingTeamInvites,
   syncAthleteSnapshotAcrossTeams,
@@ -462,6 +463,35 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to broadcast workout.',
+    });
+  }
+});
+
+// 11b. Record Coach Trackside Stopwatch Activities onto Team Athlete Profiles
+teamRouter.post('/api/teams/:teamId/stopwatch-activities', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await recordCoachStopwatchActivities({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      originUrl,
+      entries,
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions required.' });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to save stopwatch activities.',
     });
   }
 });

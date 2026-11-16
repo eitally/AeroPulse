@@ -7,6 +7,7 @@ import type {
   AthletePrivacySettings,
   AthleteProfile,
   BenchmarkSegmentHistory,
+  CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
   ConnectionStatus,
   DistanceUnit,
@@ -39,7 +40,10 @@ import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
 import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
 import { applyTeamBrandToDocument } from './utils/teamBrandDom';
-import { computeAnnualMileageSummary, formatDistance } from './utils/formatters';
+import {
+  partitionSavedStopwatchEntries,
+  persistCoachStopwatchActivitiesToServer,
+} from './utils/stopwatchTeamSync';
 import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
@@ -79,7 +83,7 @@ export default function App() {
     try {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.replace(/^#/, '');
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch'].includes(hash)) {
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
           return hash as ActiveTab;
         }
       }
@@ -88,12 +92,13 @@ export default function App() {
     }
     return 'fitness';
   });
+  const [coachSubTab, setCoachSubTab] = useState<CoachWorkspaceSubTab>('CLIPBOARD');
 
   useEffect(() => {
     const handleHashChange = () => {
       try {
         const hash = window.location.hash.replace(/^#/, '');
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch'].includes(hash)) {
+        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
           setActiveTab(hash as ActiveTab);
         }
       } catch {
@@ -505,6 +510,7 @@ export default function App() {
     handleAcceptJoinOffer,
     handleDismissJoinOffer,
     cloudTeamRosterAthletes,
+    myTeamRecordedActivities,
   } = useTeamRoster({
     isSampleDemoMode,
     hasEnteredWorkspace,
@@ -836,8 +842,10 @@ export default function App() {
   const effectiveActivities = useMemo(() => {
     if (shieldedConnectedTelemetry) return shieldedConnectedTelemetry.activities;
     if (isSampleDemoMode) return sampleDemoActivities;
-    return activities;
-  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoActivities, activities]);
+    return myTeamRecordedActivities.length > 0
+      ? mergeActivitiesNonDestructive(activities, myTeamRecordedActivities)
+      : activities;
+  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoActivities, activities, myTeamRecordedActivities]);
 
   const effectivePlannedEvents = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
@@ -903,101 +911,6 @@ export default function App() {
   const effectiveSelfPrivacySettings = isSampleDemoMode
     ? sampleDemoPrivacySettings
     : selfPrivacySettings;
-
-  // Build concise physiological + Garmin Sleep/HRV + mileage telemetry payload for Gemini AI Coach
-  const telemetrySummaryForGemini = useMemo(() => {
-    const today = effectiveWellnessDays[effectiveWellnessDays.length - 1];
-    const runGoal =
-      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Running')
-        ?.targetDistanceMeters || 2414016;
-    const bikeGoal =
-      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Cycling')
-        ?.targetDistanceMeters || 8046720;
-    const runSummary = computeAnnualMileageSummary(
-      'Running',
-      runGoal,
-      effectiveActivities,
-      envFilter
-    );
-    const bikeSummary = computeAnnualMileageSummary(
-      'Cycling',
-      bikeGoal,
-      effectiveActivities,
-      envFilter
-    );
-
-    return {
-      todayWellness: today,
-      garminHealthSummary: today
-        ? {
-            trainingStatus: today.garminTrainingStatus,
-            trainingStatusReason: today.trainingStatusReason,
-            sleepHours: (today.sleepSecs / 3600).toFixed(1),
-            sleepScore: today.sleepScore,
-            sleepDebtHours7d: ((today.sleepDebt7dSecs || 0) / 3600).toFixed(1),
-            hrvRMSSD: today.hrvRMSSD,
-            hrvStatus: today.hrvStatus,
-            hrvNormalCorridor: `${today.hrvNormalBandLow || 44}-${today.hrvNormalBandHigh || 62} ms`,
-            restingHR: today.restingHR,
-            rideEftp: today.rideEftp,
-            runEftp: today.runEftp,
-            ctl: today.ctl,
-            atl: today.atl,
-            tsb: today.tsb,
-          }
-        : undefined,
-      activeEnvironmentFilter: envFilter,
-      runningAnnualMileage: {
-        ytdCombined: formatDistance(runSummary.combinedTotalMeters, distanceUnit, 1),
-        ytdOutdoor: formatDistance(runSummary.outdoorMeters, distanceUnit, 1),
-        ytdIndoorTreadmill: formatDistance(runSummary.indoorMeters, distanceUnit, 1),
-        annualTarget: formatDistance(runSummary.targetMeters, distanceUnit, 0),
-        deltaVsSchedule: formatDistance(runSummary.deltaVsScheduleMeters, distanceUnit, 1),
-      },
-      cyclingAnnualMileage: {
-        ytdCombined: formatDistance(bikeSummary.combinedTotalMeters, distanceUnit, 1),
-        ytdOutdoor: formatDistance(bikeSummary.outdoorMeters, distanceUnit, 1),
-        ytdIndoorSmartTrainer: formatDistance(bikeSummary.indoorMeters, distanceUnit, 1),
-        annualTarget: formatDistance(bikeSummary.targetMeters, distanceUnit, 0),
-        deltaVsSchedule: formatDistance(bikeSummary.deltaVsScheduleMeters, distanceUnit, 1),
-      },
-      recentWorkouts: effectiveActivities.slice(0, 10).map((a) => ({
-        date: a.startDateLocal.slice(0, 10),
-        name: a.name,
-        sport: a.sportCategory,
-        environment: a.environment,
-        subType: a.subType,
-        distance: formatDistance(a.distanceMeters, distanceUnit, 1),
-        durationMins: Math.round(a.movingTimeSecs / 60),
-        load: a.trainingLoad,
-        decouplingPct: a.aerobicDecouplingPct,
-        npWatts: a.normalizedPower,
-        avgHr: a.avgHr,
-      })),
-      upcomingPlannedWorkouts: effectivePlannedEvents.slice(0, 8),
-      targetGoals: effectiveTargetGoals,
-      athleteProfile: {
-        weightKg: effectiveAthleteProfile.weightKg,
-        restingHr: effectiveAthleteProfile.restingHr,
-        ftp: effectiveAthleteProfile.ftp,
-        indoorFtp: effectiveAthleteProfile.indoorFtp,
-        lthr: effectiveAthleteProfile.lthr,
-        maxHr: effectiveAthleteProfile.maxHr,
-        runFtp: effectiveAthleteProfile.runFtp,
-        powerZones: effectiveAthleteProfile.powerZones,
-        hrZones: effectiveAthleteProfile.hrZones,
-      },
-    };
-  }, [
-    effectiveWellnessDays,
-    effectiveAnnualMileageGoals,
-    effectiveActivities,
-    envFilter,
-    distanceUnit,
-    effectivePlannedEvents,
-    effectiveTargetGoals,
-    effectiveAthleteProfile,
-  ]);
 
   const selfLatestWellness = isSampleDemoMode
     ? sampleDemoDataset.wellnessDays[sampleDemoDataset.wellnessDays.length - 1] || undefined
@@ -1281,7 +1194,12 @@ export default function App() {
     latestWellness,
     effectiveActivities,
     effectiveAthleteProfile,
-    telemetrySummaryForGemini,
+    effectiveWellnessDays,
+    effectiveAnnualMileageGoals,
+    envFilter,
+    distanceUnit,
+    effectivePlannedEvents,
+    effectiveTargetGoals,
   });
   const handleUpdateAnnualMileageGoal = useCallback(
     (sport: 'Running' | 'Cycling', targetMeters: number) => {
@@ -1428,25 +1346,8 @@ export default function App() {
   const handleSaveStopwatchActivities = useCallback(
     (entries: SavedStopwatchEntry[]): number => {
       if (!entries || entries.length === 0) return 0;
-      const selfActs: UnifiedActivity[] = [];
-      const rosterByRunnerId = new Map<string, UnifiedActivity[]>();
-      const rosterLookup = new Map(combinedRoster.map((a) => [a.id, a]));
-      let savedCount = 0;
-
-      for (const entry of entries) {
-        if (entry.runnerId === 'SELF') {
-          selfActs.push(entry.activity);
-          savedCount += 1;
-        } else {
-          const match = rosterLookup.get(entry.runnerId);
-          if (match && match.role === 'COACH_EDIT') {
-            const list = rosterByRunnerId.get(entry.runnerId) || [];
-            list.push(entry.activity);
-            rosterByRunnerId.set(entry.runnerId, list);
-            savedCount += 1;
-          }
-        }
-      }
+      const { selfActs, rosterByRunnerId, teamApiEntries, savedCount } =
+        partitionSavedStopwatchEntries(entries, combinedRoster);
 
       if (selfActs.length > 0) {
         if (isSampleDemoMode) {
@@ -1472,22 +1373,29 @@ export default function App() {
         const mergeRosterActs = (prev: ConnectedAthleteRecord[]) =>
           prev.map((a) => {
             const added = rosterByRunnerId.get(a.id);
-            if (!added || added.length === 0) return a;
-            return {
-              ...a,
-              activities: mergeActivitiesNonDestructive(a.activities, added),
-            };
+            return added && added.length > 0
+              ? { ...a, activities: mergeActivitiesNonDestructive(a.activities, added) }
+              : a;
           });
         if (isSampleDemoMode) {
           setSampleDemoConnectedAthletes(mergeRosterActs);
         } else {
           setConnectedAthletes(mergeRosterActs);
+          if (activeTeamId && teamApiEntries.length > 0) {
+            void persistCoachStopwatchActivitiesToServer(activeTeamId, teamApiEntries).then((updatedTeam) => {
+              if (updatedTeam) {
+                setMyTeams((prev) =>
+                  prev.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t))
+                );
+              }
+            });
+          }
         }
       }
 
       return savedCount;
     },
-    [combinedRoster, isSampleDemoMode]
+    [combinedRoster, isSampleDemoMode, activeTeamId, setMyTeams]
   );
 
   const handleCompleteCalibrationEntry = async (payload: FirstRunCalibrationPayload) => {
@@ -1588,6 +1496,9 @@ export default function App() {
       setIsDataSourcesOpen(true);
     } else if (payload.entryTarget === 'UPLOAD_FIT') {
       setActiveTab('activities');
+    } else if (payload.entryTarget === 'COACH_MODE') {
+      setActiveTab('coach');
+      setCoachSubTab('CLIPBOARD');
     } else if (payload.entryTarget === 'CREATE_TEAM') {
       setActiveTab('fitness');
       setRosterInitialTab('TEAMS_BRANDING');
@@ -1704,6 +1615,8 @@ export default function App() {
         <CockpitHeader
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          coachSubTab={coachSubTab}
+          onSelectCoachSubTab={setCoachSubTab}
           activeTeam={activeTeam}
           myTeams={myTeams}
           activeTeamId={activeTeamId}
@@ -1786,12 +1699,25 @@ export default function App() {
               }}
               dismissedQuickConnectBanner={dismissedQuickConnectBanner}
               onDismissQuickConnectBanner={() => setDismissedQuickConnectBanner(true)}
+              myTeamsCount={isSampleDemoMode ? 0 : myTeams.length}
+              isCoachMode={activeTab === 'coach'}
             />
 
             <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
               <WorkspaceRouter
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                coachSubTab={coachSubTab}
+                setCoachSubTab={setCoachSubTab}
+                activeTeam={isSampleDemoMode ? null : activeTeam}
+                activeViewedAthleteId={activeViewedAthleteId}
+                onSelectAthleteViewport={(id) => {
+                  setActiveViewedAthleteId(id);
+                  setSelectedActivity(null);
+                }}
+                resendConfigured={resendConfigured}
+                onSelectActiveTeam={handleSelectActiveTeam}
+                onTeamsUpdated={handleTeamsUpdated}
                 effectiveActivities={effectiveActivities}
                 effectiveWellnessDays={effectiveWellnessDays}
                 effectivePlannedEvents={effectivePlannedEvents}
@@ -1856,6 +1782,9 @@ export default function App() {
 
         <MobileDock
           activeTab={activeTab}
+          lastProgressTab={lastLabTabRef.current}
+          coachSubTab={coachSubTab}
+          onSelectCoachSubTab={setCoachSubTab}
           onSelectTab={(tab) => {
             setActiveTab(
               tab === 'totals'

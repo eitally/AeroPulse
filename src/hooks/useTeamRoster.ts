@@ -6,7 +6,11 @@ import type {
   UnifiedWellnessDay,
 } from '../types';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
-import { getSavedIntervalsHeaders, buildCompleteAthleteProfile } from '../utils/telemetryStorage';
+import {
+  getSavedIntervalsHeaders,
+  buildCompleteAthleteProfile,
+  mergeActivitiesNonDestructive,
+} from '../utils/telemetryStorage';
 
 interface UseTeamRosterParams {
   isSampleDemoMode: boolean;
@@ -296,11 +300,22 @@ export function useTeamRoster({
           },
           athleteProfile: prof,
           wellnessDays: fallbackWellness,
-          activities: snap?.activities || [],
+          activities: mergeActivitiesNonDestructive(
+            m.coachRecordedActivities || [],
+            snap?.activities || []
+          ),
           plannedEvents: squadBroadcasts,
           targetGoals: [],
         };
       });
+  }, [activeTeam]);
+
+  const myTeamRecordedActivities = useMemo(() => {
+    if (!activeTeam) return [];
+    const mine = activeTeam.memberships.find(
+      (m) => m.membershipId === activeTeam.myMembershipId
+    );
+    return Array.isArray(mine?.coachRecordedActivities) ? mine.coachRecordedActivities : [];
   }, [activeTeam]);
 
   return {
@@ -316,5 +331,6 @@ export function useTeamRoster({
     handleAcceptJoinOffer,
     handleDismissJoinOffer,
     cloudTeamRosterAthletes,
+    myTeamRecordedActivities,
   };
 }

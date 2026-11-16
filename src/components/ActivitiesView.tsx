@@ -13,6 +13,7 @@ import {
   Send,
   Sparkles,
   ThumbsUp,
+  Timer,
   Trophy,
   Upload,
   Cpu,
@@ -62,6 +63,7 @@ import {
 import { generatePostWorkoutDebrief } from '../physiology/workoutDebrief';
 import { autoDetectUnstructuredIntervals } from '../physiology/scholasticEngine';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
+import { QuickRunLoggerCard } from './QuickRunLoggerCard';
 
 interface ActivitiesViewProps {
   activities: UnifiedActivity[];
@@ -83,6 +85,7 @@ interface ActivitiesViewProps {
   onOpenOfficialRaceModal?: () => void;
   onImportParsedActivity?: (activity: UnifiedActivity) => void;
   onImportParsedActivities?: (activities: UnifiedActivity[]) => void;
+  onOpenTracksideStopwatch?: () => void;
   athleteWeightKg?: number;
   athleteProfile?: AthleteProfile;
 }
@@ -200,6 +203,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
   onOpenOfficialRaceModal,
   onImportParsedActivity,
   onImportParsedActivities,
+  onOpenTracksideStopwatch,
   athleteWeightKg = 72.5,
   athleteProfile,
 }) => {
@@ -1000,6 +1004,28 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 className="w-full min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {onOpenTracksideStopwatch && (
+              <button
+                type="button"
+                data-testid="log-open-stopwatch-btn"
+                onClick={onOpenTracksideStopwatch}
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-xs font-semibold text-slate-800 dark:text-slate-100 transition-colors whitespace-nowrap cursor-pointer"
+                title="Open 0.01s Trackside Split Stopwatch"
+              >
+                <Timer className="w-3.5 h-3.5 ap-text-brand" />
+                <span>Time Session</span>
+              </button>
+            )}
+
+            {onImportParsedActivity && athleteProfile && (
+              <QuickRunLoggerCard
+                compact
+                distanceUnit={distanceUnit}
+                athleteProfile={athleteProfile}
+                onSaveRun={onImportParsedActivity}
+              />
+            )}
 
             {/* Consolidated + Import & Actions Dropdown Menu */}
             <div className="relative">

@@ -6846,7 +6846,10 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       invitedAt: m.invitedAt,
       openedAt: m.openedAt,
       joinedAt: m.joinedAt,
-      liveSnapshot: projectedSnapshot
+      liveSnapshot: projectedSnapshot,
+      coachRecordedActivities: (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities) ? safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(m.coachRecordedActivities, {
+        maskWellnessWeightKgZero: true
+      }) : m.coachRecordedActivities : void 0
     };
     if (isCoach || isSelf) {
       base.invitedEmail = m.invitedEmail;
@@ -7460,6 +7463,63 @@ async function broadcastWorkoutToTeamSquad(params) {
   await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
+async function recordCoachStopwatchActivities(params) {
+  const doc = await loadTenantVaultAsync(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    return null;
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const entry of params.entries || []) {
+    const cleanId = String(entry?.membershipId || "").trim();
+    const rawAct = entry?.activity;
+    if (!cleanId || !rawAct || !rawAct.id) continue;
+    const mem = doc.memberships.find((m) => m.membershipId === cleanId && m.status !== "REVOKED");
+    if (!mem) continue;
+    const enforceHideWeight = Boolean(doc.brand.defaultSafeSportShield || mem.isMinorU18);
+    const cleanList = sanitizeTelemetryForCleanRoom({ activities: [rawAct] }).activities || [];
+    const safeAct = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(cleanList, { maskWellnessWeightKgZero: true })[0] : cleanList[0];
+    if (!safeAct) continue;
+    const prevRecorded = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
+    mem.coachRecordedActivities = [
+      safeAct,
+      ...prevRecorded.filter((a) => a.id !== safeAct.id)
+    ].slice(0, 50);
+    const baseSnap = mem.liveSnapshot || {
+      updatedAt: nowIso,
+      hasConnectedWatch: false,
+      verdictLabel: "Coach Track Session",
+      readinessScore: 80,
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+      acuteLoad7d: 0,
+      lowAerobicPct: 80,
+      highAerobicPct: 15,
+      neuromuscularPct: 5,
+      caraHours7d: 0,
+      safeSportHideWeight: enforceHideWeight,
+      sharingTier: mem.sharingTier || "SUMMARY_ONLY",
+      activities: []
+    };
+    const prevSnapActs = Array.isArray(baseSnap.activities) ? baseSnap.activities : [];
+    mem.liveSnapshot = {
+      ...baseSnap,
+      updatedAt: nowIso,
+      safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
+      activities: [safeAct, ...prevSnapActs.filter((a) => a.id !== safeAct.id)].slice(0, 30)
+    };
+  }
+  doc.updatedAt = nowIso;
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
 function buildConsentedCoachActivities(rawActivities, sharingTier, allowGpsRoutes) {
   if (!Array.isArray(rawActivities) || sharingTier === "LOAD_ONLY") {
     return [];
@@ -7963,6 +8023,33 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed to broadcast workout."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/stopwatch-activities", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await recordCoachStopwatchActivities({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      entries
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to save stopwatch activities."
     });
   }
 });

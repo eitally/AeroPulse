@@ -49,6 +49,9 @@ interface CockpitStageBannersProps {
 
   dismissedQuickConnectBanner: boolean;
   onDismissQuickConnectBanner: () => void;
+
+  myTeamsCount?: number;
+  isCoachMode?: boolean;
 }
 
 export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
@@ -73,11 +76,39 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
   onExitSampleDemo,
   dismissedQuickConnectBanner,
   onDismissQuickConnectBanner,
+  myTeamsCount = 0,
+  isCoachMode = false,
 }) => {
+  const activeBannerSlot = readOnlyNotice
+    ? 'READ_ONLY'
+    : activeConnectedAthlete
+      ? 'CONNECTED_ATHLETE'
+      : pendingUrlJoinOffer
+        ? 'JOIN_OFFER'
+        : isSampleDemoMode
+          ? 'SAMPLE_DEMO'
+          : isSyncing
+            ? 'SYNCING'
+            : redactedStravaCount > 0 &&
+                !connectionStatus.stravaConnected &&
+                !dismissedStravaBanner
+              ? 'STRAVA_UNLOCK'
+              : !isSampleDemoMode &&
+                  !connectionStatus.stravaConnected &&
+                  !connectionStatus.garminConnected &&
+                  !connectionStatus.intervalsConnected &&
+                  activitiesCount === 0 &&
+                  !isSyncing &&
+                  !dismissedQuickConnectBanner &&
+                  myTeamsCount === 0 &&
+                  !isCoachMode
+                ? 'QUICK_CONNECT'
+                : null;
+
   return (
     <>
       {/* Multi-Team Magic Join Offer Banner */}
-      {pendingUrlJoinOffer && (
+      {activeBannerSlot === 'JOIN_OFFER' && pendingUrlJoinOffer && (
         <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-[#C8FF00]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2 py-0.5 rounded-md font-mono uppercase text-2xs font-bold ap-badge-volt">
@@ -107,7 +138,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
       )}
 
       {/* Non-blocking Background Strava History Sync Progress Bar */}
-      {isSyncing && (
+      {activeBannerSlot === 'SYNCING' && isSyncing && (
         <div
           role="status"
           aria-live="polite"
@@ -142,7 +173,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
       )}
 
       {/* Active Friend / Coached Athlete Context Banner */}
-      {activeConnectedAthlete && (
+      {activeBannerSlot === 'CONNECTED_ATHLETE' && activeConnectedAthlete && (
         <div className="rounded-2xl liquid-glass border-sky-500/40 p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-500/50 flex items-center justify-center font-mono font-bold text-sm text-sky-300">
@@ -201,7 +232,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         </div>
       )}
 
-      {readOnlyNotice && (
+      {activeBannerSlot === 'READ_ONLY' && readOnlyNotice && (
         <div
           role="status"
           aria-live="polite"
@@ -230,7 +261,8 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         </div>
       )}
 
-      {redactedStravaCount > 0 &&
+      {activeBannerSlot === 'STRAVA_UNLOCK' &&
+        redactedStravaCount > 0 &&
         !connectionStatus.stravaConnected &&
         !dismissedStravaBanner && (
           <div className="rounded-2xl liquid-glass border-amber-500/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -268,7 +300,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           </div>
         )}
 
-      {isSampleDemoMode && (
+      {activeBannerSlot === 'SAMPLE_DEMO' && isSampleDemoMode && (
         <div
           role="status"
           aria-live="polite"
@@ -304,13 +336,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         </div>
       )}
 
-      {!isSampleDemoMode &&
-        !connectionStatus.stravaConnected &&
-        !connectionStatus.garminConnected &&
-        !connectionStatus.intervalsConnected &&
-        activitiesCount === 0 &&
-        !isSyncing &&
-        !dismissedQuickConnectBanner && (
+      {activeBannerSlot === 'QUICK_CONNECT' && (
           <div className="rounded-2xl liquid-glass border-[#28573B]/35 dark:border-[#25573A] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-slate-700 dark:text-slate-200 max-w-xl">
               <span className="font-bold ap-text-brand">Connect your training data:</span>{' '}

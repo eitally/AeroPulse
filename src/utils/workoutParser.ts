@@ -485,3 +485,52 @@ export function computeAmplitudeHeightPct(intensityPct: number, fallbackHeightPc
   if (!Number.isFinite(intensityPct) || intensityPct <= 0) return fallbackHeightPct;
   return Math.max(20, Math.min(100, Math.round(((intensityPct - 35) / 85) * 100)));
 }
+
+function formatPacePerUnitFromSecsPerKm(secsPerKm: number, distanceUnit: 'mi' | 'km' = 'km'): string {
+  const safeSecsPerKm = Math.max(120, Math.min(720, secsPerKm));
+  const targetSecs = distanceUnit === 'mi' ? Math.round(safeSecsPerKm * 1.609344) : Math.round(safeSecsPerKm);
+  const mins = Math.floor(targetSecs / 60);
+  const secs = targetSecs % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}/${distanceUnit}`;
+}
+
+/**
+ * Formats a raw workout syntax line into plain, athlete-readable splits with resolved
+ * personal pace or wattage targets instead of exposing raw `% Pace` or `% FTP` codes.
+ */
+export function formatHumanReadableStepLine(
+  line: string,
+  sport: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport',
+  thresholdPaceSecsPerKm?: number,
+  distanceUnit: 'mi' | 'km' = 'km',
+  ftpWatts?: number
+): string {
+  const trimmed = line.replace(/^\s*-\s*/, '').trim();
+  if (!trimmed) return '';
+
+  const repeatPrefixMatch = trimmed.match(/^(\d{1,2})\s*[x×]\s*(.+)$/i);
+  const normalizedPrefix = repeatPrefixMatch
+    ? `${repeatPrefixMatch[1]} × ${repeatPrefixMatch[2].trim()}`
+    : trimmed;
+
+  const pctPaceMatch = normalizedPrefix.match(/(\d+(?:\.\d+)?)\s*%\s*pace/i);
+  if (pctPaceMatch && sport === 'Running' && thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0) {
+    const pct = Number(pctPaceMatch[1]);
+    if (Number.isFinite(pct) && pct > 20) {
+      const targetSecsPerKm = thresholdPaceSecsPerKm / (pct / 100);
+      const splitLabel = formatPacePerUnitFromSecsPerKm(targetSecsPerKm, distanceUnit);
+      return normalizedPrefix.replace(/(\d+(?:\.\d+)?)\s*%\s*pace/i, `@ ${splitLabel}`);
+    }
+  }
+
+  const pctFtpMatch = normalizedPrefix.match(/(\d+(?:\.\d+)?)\s*%\s*ftp/i);
+  if (pctFtpMatch && sport === 'Cycling' && ftpWatts && ftpWatts > 50) {
+    const pct = Number(pctFtpMatch[1]);
+    if (Number.isFinite(pct) && pct > 20) {
+      const watts = Math.round((ftpWatts * pct) / 100);
+      return normalizedPrefix.replace(/(\d+(?:\.\d+)?)\s*%\s*ftp/i, `@ ${watts}W`);
+    }
+  }
+
+  return normalizedPrefix;
+}

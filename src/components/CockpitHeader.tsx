@@ -15,6 +15,8 @@ import {
   Sun,
   Moon,
   ChevronDown,
+  ChevronLeft,
+  ClipboardText,
   Sliders,
   Timer,
   HelpCircle,
@@ -23,6 +25,7 @@ import {
 import type {
   ActiveTab,
   AthleteProfile,
+  CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
@@ -36,6 +39,8 @@ import type {
 export interface CockpitHeaderProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  coachSubTab?: CoachWorkspaceSubTab;
+  onSelectCoachSubTab?: (subTab: CoachWorkspaceSubTab) => void;
   activeTeam: TeamSummaryWithRole | null;
   myTeams: TeamSummaryWithRole[];
   activeTeamId: string | null;
@@ -78,6 +83,8 @@ export interface CockpitHeaderProps {
 export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   activeTab,
   setActiveTab,
+  coachSubTab = 'CLIPBOARD',
+  onSelectCoachSubTab,
   activeTeam,
   myTeams,
   activeTeamId,
@@ -189,7 +196,46 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
             </a>
 
-            {myTeams.length > 0 ? (
+            <button
+              type="button"
+              data-testid="toggle-coach-workspace"
+              aria-label={
+                activeTab === 'coach'
+                  ? 'Return to My Training'
+                  : activeTeam
+                    ? `Open Coach Workspace (${activeTeam.brand.shortName || activeTeam.brand.name})`
+                    : 'Open Coach Workspace'
+              }
+              onClick={() => setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach')}
+              className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                activeTab === 'coach'
+                  ? 'ap-nav-volt-active'
+                  : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
+              }`}
+              title={
+                activeTab === 'coach'
+                  ? 'Switch back to your personal Athlete view'
+                  : 'Open full-screen Coach Workspace (Clipboard, Team Plan, Stopwatch & Roster)'
+              }
+            >
+              {activeTab === 'coach' ? (
+                <>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>My Training</span>
+                </>
+              ) : (
+                <>
+                  <Users className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>
+                    {activeTeam
+                      ? `Coach · ${activeTeam.brand.shortName || activeTeam.brand.name}`
+                      : 'Coach'}
+                  </span>
+                </>
+              )}
+            </button>
+
+            {myTeams.length > 0 && (
               <div className="hidden xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -204,7 +250,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     onSelectActiveTeam(e.target.value ? e.target.value : null)
                   }
                   aria-label="Switch Active Team Workspace"
-                  className="bg-transparent text-2xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[115px] truncate"
+                  className="bg-transparent text-2xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[110px] truncate"
                 >
                   {myTeams.map((t) => (
                     <option
@@ -222,29 +268,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     Personal Mode
                   </option>
                 </select>
-                <button
-                  type="button"
-                  data-testid="open-roster-modal"
-                  aria-label="Manage Team Roster"
-                  onClick={() => onOpenRosterModalWithTab('TEAMS_BRANDING')}
-                  className="text-2xs font-mono uppercase px-1.5 py-0.5 rounded bg-white dark:bg-[#171E1B] text-slate-700 dark:text-slate-200 hover:opacity-85 cursor-pointer"
-                  title="Manage Team Branding, Bulk CSV Invites & Roster"
-                >
-                  Manage
-                </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                data-testid="open-roster-modal"
-                aria-label="Open Team Roster Modal"
-                onClick={() => onOpenRosterModalWithTab('TEAMS_BRANDING')}
-                className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
-                title="Create or Join a High School, Collegiate, or Club Team"
-              >
-                <Users className="w-3 h-3 ap-text-brand" />
-                <span>+ Team</span>
-              </button>
             )}
 
             <button
@@ -293,82 +317,109 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             )}
           </div>
 
-          {/* 2. Center: 5 Primary Workspaces (Today | Plan | Stopwatch | Activities | Progress) */}
+          {/* 2. Center: 4 Symmetrical Workspaces (Today | Plan | Log | Lab OR Coach Mode 4 Tabs) */}
           <nav
             aria-label="Primary workspaces"
             className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
           >
-            {(
-              [
-                {
-                  id: 'fitness',
-                  label: 'Today',
-                  icon: HeartPulse,
-                  match: ['fitness'],
-                },
-                {
-                  id: 'calendar',
-                  label: 'Plan',
-                  icon: Calendar,
-                  match: ['calendar'],
-                },
-                {
-                  id: 'stopwatch',
-                  label: 'Stopwatch',
-                  icon: Timer,
-                  match: ['stopwatch'],
-                },
-                {
-                  id: 'activities',
-                  label: 'Activities',
-                  icon: Activity,
-                  match: ['activities'],
-                },
-                {
-                  id: 'totals',
-                  label: 'Progress',
-                  icon: Target,
-                  match: ['totals', 'curves', 'trends', 'charts'],
-                },
-              ] as const
-            ).map((item) => {
-              const NavIcon = item.icon;
-              const isActive = (item.match as readonly string[]).includes(activeTab);
-              return (
-                <a
-                  key={item.id}
-                  href={`#${
-                    item.id === 'totals'
-                      ? isActive
-                        ? 'totals'
-                        : lastProgressTab
-                      : item.id
-                  }`}
-                  aria-current={isActive ? 'page' : undefined}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveTab(
+            {activeTab === 'coach' && onSelectCoachSubTab ? (
+              (
+                [
+                  { id: 'CLIPBOARD', label: 'Clipboard', icon: ClipboardText },
+                  { id: 'TEAM_PLAN', label: 'Team Plan', icon: Calendar },
+                  { id: 'STOPWATCH', label: 'Stopwatch', icon: Timer },
+                  { id: 'ROSTER', label: 'Roster', icon: Users },
+                ] as const
+              ).map((item) => {
+                const NavIcon = item.icon;
+                const isActive = coachSubTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => onSelectCoachSubTab(item.id)}
+                    className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 cursor-pointer ap-track-tab ${
+                      isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
+                    }`}
+                  >
+                    <span className="ap-track-tab-inner">
+                      <NavIcon
+                        className="w-3.5 h-3.5"
+                        weight={isActive ? 'fill' : 'duotone'}
+                      />
+                      <span>{item.label}</span>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              (
+                [
+                  {
+                    id: 'fitness',
+                    label: 'Today',
+                    icon: HeartPulse,
+                    match: ['fitness'],
+                  },
+                  {
+                    id: 'calendar',
+                    label: 'Plan',
+                    icon: Calendar,
+                    match: ['calendar'],
+                  },
+                  {
+                    id: 'activities',
+                    label: 'Log',
+                    icon: Activity,
+                    match: ['activities', 'stopwatch'],
+                  },
+                  {
+                    id: 'totals',
+                    label: 'Lab',
+                    icon: Target,
+                    match: ['totals', 'curves', 'trends', 'charts'],
+                  },
+                ] as const
+              ).map((item) => {
+                const NavIcon = item.icon;
+                const isActive = (item.match as readonly string[]).includes(activeTab);
+                return (
+                  <a
+                    key={item.id}
+                    href={`#${
                       item.id === 'totals'
                         ? isActive
                           ? 'totals'
                           : lastProgressTab
                         : item.id
-                    );
-                  }}
-                  className={`min-h-[38px] inline-flex items-center px-2 lg:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
-                    isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
-                  }`}
-                >
-                  <span className="ap-track-tab-inner">
-                    <NavIcon
-                      className="w-3.5 h-3.5"
-                      weight={isActive ? 'fill' : 'duotone'}
-                    />
-                    <span>{item.label}</span>
-                  </span>
-                </a>
-              );
-            })}
+                    }`}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setActiveTab(
+                        item.id === 'totals'
+                          ? isActive
+                            ? 'totals'
+                            : lastProgressTab
+                          : item.id
+                      );
+                    }}
+                    className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                      isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
+                    }`}
+                  >
+                    <span className="ap-track-tab-inner">
+                      <NavIcon
+                        className="w-3.5 h-3.5"
+                        weight={isActive ? 'fill' : 'duotone'}
+                      />
+                      <span>{item.label}</span>
+                    </span>
+                  </a>
+                );
+              })
+            )}
           </nav>
 
           {/* Right: Live Floating Stopwatch Pill + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
@@ -409,24 +460,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </div>
             )}
 
-            {/* Direct Data Sources Pill Button */}
-            <button
-              type="button"
-              onClick={onOpenDataSources}
-              aria-label={anySourceConnected ? 'Manage Data Sources' : 'Connect Data Sources'}
-              className="hidden sm:inline-flex min-h-[36px] items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all whitespace-nowrap cursor-pointer"
-              title="Connect Strava, Garmin Connect, Intervals.icu, or upload .FIT workouts"
-            >
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  anySourceConnected ? 'bg-emerald-500' : 'bg-[#FC4C02]'
-                }`}
-              />
-              <span className="hidden lg:inline">
-                {anySourceConnected ? 'Sources' : 'Connect'}
-              </span>
-              <Database className="w-3.5 h-3.5 lg:hidden text-emerald-600 dark:text-emerald-400" />
-            </button>
+            {/* Right Utility Cluster: Floating Live Stopwatch (active only) + Athlete Switcher + AI Coach + Theme + Account */}
 
             {/* AI Coach Action Button — Stadium Pine Instrument Pill */}
             <button
@@ -585,6 +619,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     <button
                       type="button"
                       role="menuitem"
+                      data-testid="open-roster-modal"
                       onClick={() => {
                         onOpenRosterModalWithTab('TEAMS_BRANDING');
                         setIsAccountMenuOpen(false);
@@ -676,56 +711,35 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       </div>
                     </div>
 
-                    {/* Distance Units & Theme Row */}
+                    {/* Distance Units Row */}
                     <div className="flex items-center justify-between px-2">
                       <span className="text-slate-600 dark:text-slate-300 font-medium">
-                        Units &amp; Theme
+                        Distance Units
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-2xs">
-                          {(['mi', 'km'] as const).map((u) => (
-                            <button
-                              key={u}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={distanceUnit === u}
-                              onClick={() => {
-                                setDistanceUnit(u);
-                                try {
-                                  localStorage.setItem('thresh_distance_unit_user_set', '1');
-                                } catch {
-                                  // ignore
-                                }
-                              }}
-                              className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                                distanceUnit === u
-                                  ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                                  : 'text-slate-500 dark:text-slate-400'
-                              }`}
-                            >
-                              {u}
-                            </button>
-                          ))}
-                        </div>
-
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={onToggleDark}
-                          className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center gap-1 text-2xs font-medium cursor-pointer"
-                        >
-                          {isDark ? (
-                            <>
-                              <Sun className="w-3.5 h-3.5 text-amber-400" weight="fill" />
-                              <span>Dark</span>
-                            </>
-                          ) : (
-                            <>
-                              <Moon className="w-3.5 h-3.5 text-slate-700" weight="fill" />
-                              <span>Light</span>
-                            </>
-                          )}
-                        </button>
+                      <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track font-mono text-2xs">
+                        {(['mi', 'km'] as const).map((u) => (
+                          <button
+                            key={u}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={distanceUnit === u}
+                            onClick={() => {
+                              setDistanceUnit(u);
+                              try {
+                                localStorage.setItem('thresh_distance_unit_user_set', '1');
+                              } catch {
+                                // ignore
+                              }
+                            }}
+                            className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                              distanceUnit === u
+                                ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                : 'text-slate-500 dark:text-slate-400'
+                            }`}
+                          >
+                            {u}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
@@ -764,100 +778,80 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           </div>
         </div>
 
-        {/* Mobile & Compact (< xl) Quick-Context Strip: Live Stopwatch Pill, Team, Athlete, Sources */}
-        <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {activeTab !== 'stopwatch' && (
-            <div className="sm:hidden shrink-0">
-              <TracksideLiveHeaderPill
-                onOpenTracksidePad={() => setActiveTab('stopwatch')}
-                showIdleLauncher={false}
-              />
-            </div>
-          )}
-          {myTeams.length > 0 ? (
-            <div className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{
-                  backgroundColor:
-                    activeTeam?.brand.primaryHex || 'var(--ap-thresh-vermilion)',
-                }}
-              />
-              <select
-                value={activeTeamId || ''}
-                onChange={(e) =>
-                  onSelectActiveTeam(e.target.value ? e.target.value : null)
-                }
-                aria-label="Switch Active Team Workspace (Mobile)"
-                className="bg-transparent text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[110px] truncate"
-              >
-                {myTeams.map((t) => (
-                  <option
-                    key={t.brand.teamId}
-                    value={t.brand.teamId}
-                    className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
-                  >
-                    {t.brand.shortName || t.brand.name}
-                  </option>
-                ))}
-                <option
-                  value=""
-                  className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+        {/* Mobile & Compact (< xl) Context Strip: Live Stopwatch Pill, Team Selector, Athlete Selector */}
+        {( (activeTab !== 'stopwatch' && activeTab !== 'coach') || myTeams.length > 0 || activeViewedAthleteId !== 'SELF' ) && (
+          <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {activeTab !== 'stopwatch' && activeTab !== 'coach' && (
+              <div className="sm:hidden shrink-0">
+                <TracksideLiveHeaderPill
+                  onOpenTracksidePad={() => setActiveTab('stopwatch')}
+                  showIdleLauncher={false}
+                />
+              </div>
+            )}
+            {myTeams.length > 0 && (
+              <div className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{
+                    backgroundColor:
+                      activeTeam?.brand.primaryHex || 'var(--ap-thresh-vermilion)',
+                  }}
+                />
+                <select
+                  value={activeTeamId || ''}
+                  onChange={(e) =>
+                    onSelectActiveTeam(e.target.value ? e.target.value : null)
+                  }
+                  aria-label="Switch Active Team Workspace (Mobile)"
+                  className="bg-transparent text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[110px] truncate"
                 >
-                  Personal Mode
-                </option>
-              </select>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onOpenRosterModalWithTab('TEAMS_BRANDING')}
-              className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5 ap-text-brand" />
-              <span>+ Team</span>
-            </button>
-          )}
-
-          {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
-            <div className="min-h-[44px] inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
-              <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
-              <select
-                value={activeViewedAthleteId}
-                onChange={(e) => {
-                  setActiveViewedAthleteId(e.target.value);
-                  setSelectedActivity(null);
-                }}
-                aria-label="Switch Active Athlete Profile (Mobile)"
-                className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[125px] truncate"
-              >
-                <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
-                  {primaryAthleteDisplayName} (You)
-                </option>
-                {combinedRoster
-                  .filter((a) => a.status === 'CONNECTED')
-                  .map((a) => (
-                    <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
-                      {a.name}
+                  {myTeams.map((t) => (
+                    <option
+                      key={t.brand.teamId}
+                      value={t.brand.teamId}
+                      className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                    >
+                      {t.brand.shortName || t.brand.name}
                     </option>
                   ))}
-              </select>
-            </div>
-          )}
+                  <option
+                    value=""
+                    className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                  >
+                    Personal Mode
+                  </option>
+                </select>
+              </div>
+            )}
 
-          <button
-            type="button"
-            onClick={onOpenDataSources}
-            className="sm:hidden min-h-[44px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-semibold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
-          >
-            <span
-              className={`w-2 h-2 rounded-full shrink-0 ${
-                anySourceConnected ? 'bg-emerald-500' : 'bg-[#FC4C02]'
-              }`}
-            />
-            <span>{anySourceConnected ? 'Sources' : 'Connect'}</span>
-          </button>
-        </div>
+            {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
+              <div className="min-h-[44px] inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
+                <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
+                <select
+                  value={activeViewedAthleteId}
+                  onChange={(e) => {
+                    setActiveViewedAthleteId(e.target.value);
+                    setSelectedActivity(null);
+                  }}
+                  aria-label="Switch Active Athlete Profile (Mobile)"
+                  className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[125px] truncate"
+                >
+                  <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                    {primaryAthleteDisplayName} (You)
+                  </option>
+                  {combinedRoster
+                    .filter((a) => a.status === 'CONNECTED')
+                    .map((a) => (
+                      <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                        {a.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
       </header>
     </div>
   );

@@ -103,13 +103,10 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
       await expect(mintedList).toBeVisible();
       await expect(mintedList).toContainText(/THV-[A-F0-9]{4}-[A-F0-9]{4}/);
 
-      // 3. Roster Modal -> Pods & CARA tab -> Relay Lineup Optimizer & NFHS Top-Times Board
-      await page.locator('[data-testid="open-roster-modal"]').first().click();
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible({ timeout: 10000 });
-
-      await dialog.getByRole('tab', { name: /Pods & CARA/i }).click();
-      await expect(dialog).toContainText(/3\.0h Flat Comp Day/i);
+      // 3. Dedicated Coach Workspace -> Clipboard (Relay Optimizer & NFHS Top Times) + Roster (CARA 3.0h Comp Day)
+      await page.getByTestId('toggle-coach-workspace').click();
+      const coachView = page.getByTestId('coach-workspace-view');
+      await expect(coachView).toBeVisible({ timeout: 10000 });
 
       const relayPanel = page.getByTestId('relay-optimizer-panel');
       await relayPanel.scrollIntoViewIfNeeded();
@@ -134,6 +131,11 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
         animations: 'disabled',
       });
       await toggleDarkMode(page, false);
+
+      await page.getByTestId('coach-subtab-roster').click();
+      const caraAudit = page.getByTestId('coach-cara-audit');
+      await expect(caraAudit).toBeVisible();
+      await expect(caraAudit).toContainText(/3\.0h Comp Day/i);
 
       await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
     });

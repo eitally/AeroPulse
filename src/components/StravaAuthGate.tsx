@@ -61,7 +61,7 @@ export interface FirstRunCalibrationPayload {
   claimedTeams?: TeamSummaryWithRole[];
   activeTeamId?: string;
   sessionToken?: string;
-  entryTarget: 'WORKSPACE' | 'DATA_SOURCES' | 'UPLOAD_FIT' | 'CREATE_TEAM';
+  entryTarget: 'WORKSPACE' | 'DATA_SOURCES' | 'UPLOAD_FIT' | 'CREATE_TEAM' | 'COACH_MODE';
 }
 
 export interface StravaOAuthJoinContext {
@@ -229,6 +229,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
+  const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>('ATHLETE');
 
   const isUserAuthenticated = Boolean(status.stravaConnected || localUser || currentUser);
   const [step, setStep] = useState<WizardStep>(() =>
@@ -1005,7 +1006,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {step === 1 && (
+            {(step === 1 || (step === 2 && isMinorAthlete)) && (
               <button
                 type="button"
                 onClick={() => setShowTeamCodeDrawer((prev) => !prev)}
@@ -1136,11 +1137,48 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
              ============================================================== */}
           {step === 1 && (
             <div className="space-y-5 relative z-10">
-              <div className="space-y-2">
+              <div className="space-y-3">
+                {!activeBrand && (
+                  <div
+                    role="group"
+                    aria-label="Choose your THRESH role"
+                    className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
+                  >
+                    <button
+                      type="button"
+                      data-testid="onboarding-role-athlete"
+                      aria-pressed={onboardingRole === 'ATHLETE'}
+                      onClick={() => setOnboardingRole('ATHLETE')}
+                      className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                        onboardingRole === 'ATHLETE'
+                          ? 'ap-nav-volt-active'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      I&apos;m an Athlete
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="onboarding-role-coach"
+                      aria-pressed={onboardingRole === 'COACH'}
+                      onClick={() => setOnboardingRole('COACH')}
+                      className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                        onboardingRole === 'COACH'
+                          ? 'ap-nav-volt-active'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      I&apos;m a Coach
+                    </button>
+                  </div>
+                )}
+
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
                   {activeBrand
                     ? `Join ${activeBrand.name} on THRESH`
-                    : 'Know How Hard to Push Today—Before You Lace Up or Clip In.'}
+                    : onboardingRole === 'COACH'
+                      ? 'Coach Your Squad’s Pace Groups, Calendar & Track Splits.'
+                      : 'Know How Hard to Push Today—Before You Lace Up or Clip In.'}
                 </h1>
                 {activeBrand && (
                   <div>
@@ -1708,7 +1746,52 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </button>
               </div>
 
-              {!status.stravaConnected ? (
+              {onboardingRole === 'COACH' && !activeBrand && (
+                <div
+                  data-testid="coach-quickstart-card"
+                  className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-[#1C5436]/25 dark:border-[#C8FF00]/25"
+                >
+                  <div className="space-y-1">
+                    <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                      Coach Workspace Quick-Start
+                    </h2>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Skip personal wearable calibration and go straight to creating your team, importing a CSV roster, or timing track workouts.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      aria-label="Coach Name"
+                      value={athleteName}
+                      onChange={(e) => setAthleteName(e.target.value)}
+                      placeholder="Coach Name (e.g. Coach Vega)"
+                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      data-testid="enter-coach-mode-btn"
+                      disabled={busy}
+                      onClick={() => void handleFinalizeOnboarding('COACH_MODE')}
+                      className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Enter Coach Workspace</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingRole('ATHLETE')}
+                    className="text-2xs underline text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                  >
+                    Switch to personal Athlete setup instead
+                  </button>
+                </div>
+              )}
+
+              {(onboardingRole !== 'COACH' || Boolean(activeBrand)) && (
+                <>
+                  {!status.stravaConnected ? (
                 <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-orange-500/25">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-1">
@@ -1907,24 +1990,53 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
                 {/* Minor Youth Protection Gate: If under 18 and not yet attached to a team */}
                 {isMinorAthlete && !activeBrand && (
-                  <div className="ap-status-caution rounded-xl p-3.5 space-y-2 text-xs">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                  <div className="ap-status-caution rounded-xl p-3.5 space-y-2.5 text-xs">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
                       <ShieldCheck className="w-4 h-4 shrink-0" />
                       <span>Scholastic Youth Protection Gate</span>
                     </div>
-                    <p className="text-slate-300 text-2xs leading-relaxed">
-                      Under COPPA and our youth privacy rules, athletes under 18 must join through an authorized school or club athletic team roster. Standalone public registration by minors without a team wrapper is restricted.
+                    <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
+                      Under COPPA and our youth privacy rules, athletes under 18 must join through an authorized school or club athletic team roster.
                     </p>
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setShowTeamCodeDrawer(true)}
-                        className="ap-btn-primary !min-h-[36px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    {!showTeamCodeDrawer ? (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          data-testid="youth-open-join-code-btn"
+                          onClick={() => setShowTeamCodeDrawer(true)}
+                          className="ap-btn-primary !min-h-[40px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Enter Coach / Team Join Code</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        data-testid="youth-inline-join-code-box"
+                        className="flex flex-col sm:flex-row gap-2 pt-1"
                       >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>Enter Coach / Team Join Code</span>
-                      </button>
-                    </div>
+                        <input
+                          type="text"
+                          value={joinCodeInput}
+                          aria-label="Enter 6-character Team Join Code"
+                          onChange={(e) => {
+                            setJoinCodeInput(e.target.value.toUpperCase());
+                            setJoinSlug(undefined);
+                            setInviteToken('');
+                          }}
+                          placeholder="Enter 6-char Team Code (e.g. PAXC-26)"
+                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
+                        />
+                        <button
+                          type="button"
+                          disabled={isLoadingPreview || !joinCodeInput.trim()}
+                          onClick={() => void lookupTeamPreview(joinCodeInput, inviteToken)}
+                          className="ap-btn-secondary !min-h-[44px] px-3 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                        >
+                          {isLoadingPreview ? 'Checking…' : 'Apply Code'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2237,6 +2349,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </span>
                 </button>
               </div>
+                </>
+              )}
             </div>
           )}
 
