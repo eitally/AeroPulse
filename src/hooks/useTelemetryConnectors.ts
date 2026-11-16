@@ -17,6 +17,7 @@ import {
   isGenericAthleteName,
   safeParseResponseJson,
   saveRotatedStravaTokensToStorage,
+  saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
 
 interface UseTelemetryConnectorsParams {
@@ -511,6 +512,7 @@ export function useTelemetryConnectors({
       return null;
     }
     if (data.stravaSyncPolicy) {
+      saveStravaSyncPolicyToStorage(data.stravaSyncPolicy);
       setConnectionStatus((prev) => ({
         ...prev,
         stravaSyncPolicy: data.stravaSyncPolicy,

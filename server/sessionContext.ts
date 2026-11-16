@@ -25,6 +25,7 @@ import {
 
 export const requestContext = new AsyncLocalStorage<Request>();
 export const explicitScopeKeyByReq = new WeakMap<Request, string>();
+export const responseByReq = new WeakMap<Request, Response>();
 
 export const SEGMENTS_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-segments-by-activity.json';
 export const ROUTES_BY_ACTIVITY_CACHE_FILE = '/tmp/thresh-routes-by-activity.json';
@@ -113,7 +114,11 @@ export function hasExplicitCredentialHeader(req?: Request): boolean {
 export function isAuthenticatedRequest(req?: Request): boolean {
   const activeReq = req ?? requestContext.getStore();
   if (!activeReq) return false;
-  return hasValidSessionToken(activeReq) || hasExplicitCredentialHeader(activeReq);
+  return (
+    hasValidSessionToken(activeReq) ||
+    hasExplicitCredentialHeader(activeReq) ||
+    Boolean(readCompactVaultFromCookie(activeReq)?.sid)
+  );
 }
 
 export function bindRequestScopeKey(req: Request | undefined, sid: string): string {
@@ -354,7 +359,14 @@ export function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
     }
 
     const cookieVault = readCompactVaultFromCookie(activeReq);
-    if (cookieVault && cookieVault.sid?.slice(0, 24) === scopeKey) {
+    const shouldHydrateCookieVault = Boolean(
+      cookieVault &&
+        (cookieVault.sid?.slice(0, 24) === scopeKey ||
+          (!loaded.stravaRefreshToken &&
+            !loaded.stravaAccessToken &&
+            Boolean(cookieVault.stravaRefreshToken || cookieVault.stravaAccessToken)))
+    );
+    if (cookieVault && shouldHydrateCookieVault) {
       loaded = {
         ...cookieVault,
         ...loaded,
@@ -392,6 +404,27 @@ export function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
     }
 
     const hydrated = createDefaultRuntimeSessionStore(loaded);
+    if (
+      activeReq &&
+      !hydrated.stravaSyncPolicy &&
+      (hydrated.stravaRefreshToken || hydrated.stravaAccessToken)
+    ) {
+      const headerWindow = String(activeReq.headers['x-strava-sync-window'] || '').trim();
+      if (
+        headerWindow === '90d' ||
+        headerWindow === '180d' ||
+        headerWindow === '365d' ||
+        headerWindow === 'all' ||
+        headerWindow === 'none'
+      ) {
+        hydrated.stravaSyncPolicy = {
+          window: headerWindow,
+          importProfileAndGear: activeReq.headers['x-strava-import-gear'] !== '0',
+          confirmedAt: new Date().toISOString(),
+          grantedScope: hydrated.stravaGrantedScope || undefined,
+        };
+      }
+    }
     scopedStoresInMemory.set(scopeKey, hydrated);
     if (activeReq) {
       let map = hydratedReqScopeMap.get(activeReq);
@@ -424,14 +457,47 @@ export const runtimeStore: RuntimeSessionStore = new Proxy({} as RuntimeSessionS
   },
 });
 
+function mergeRuntimeStoreCredentials(
+  target: RuntimeSessionStore,
+  source: RuntimeSessionStore
+): void {
+  const srcExp = source.stravaExpiresAt || 0;
+  const dstExp = target.stravaExpiresAt || 0;
+  if ((source.stravaRefreshToken || source.stravaAccessToken) && (!target.stravaRefreshToken || srcExp >= dstExp)) {
+    if (source.stravaAccessToken) target.stravaAccessToken = source.stravaAccessToken;
+    if (source.stravaRefreshToken) target.stravaRefreshToken = source.stravaRefreshToken;
+    if (srcExp > 0) target.stravaExpiresAt = srcExp;
+  }
+  if (!target.stravaClientId && source.stravaClientId) target.stravaClientId = source.stravaClientId;
+  if (!target.stravaClientSecret && source.stravaClientSecret) target.stravaClientSecret = source.stravaClientSecret;
+  if (!target.stravaAthleteId && source.stravaAthleteId) target.stravaAthleteId = source.stravaAthleteId;
+  if (!target.stravaAthleteName && source.stravaAthleteName) target.stravaAthleteName = source.stravaAthleteName;
+  if (!target.stravaMeasurementPreference && source.stravaMeasurementPreference) {
+    target.stravaMeasurementPreference = source.stravaMeasurementPreference;
+  }
+  if (!target.stravaGrantedScope && source.stravaGrantedScope) target.stravaGrantedScope = source.stravaGrantedScope;
+  if (!target.stravaSyncPolicy && source.stravaSyncPolicy) target.stravaSyncPolicy = source.stravaSyncPolicy;
+  if (!target.intervalsApiKey && source.intervalsApiKey) target.intervalsApiKey = source.intervalsApiKey;
+  if (!target.intervalsAccessToken && source.intervalsAccessToken) target.intervalsAccessToken = source.intervalsAccessToken;
+  if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
+  if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
+  if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
+  if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
+  if ((!target.gearItems || target.gearItems.length === 0) && source.gearItems?.length) target.gearItems = source.gearItems;
+  if (!target.athleteProfile && source.athleteProfile) target.athleteProfile = source.athleteProfile;
+  if (!target.geminiApiKey && source.geminiApiKey) target.geminiApiKey = source.geminiApiKey;
+}
+
 export function emitEncryptedVaultCookieIfPossible(
   req: Request | undefined,
   res: Response | undefined,
   scopeKey: string,
   store: RuntimeSessionStore
 ) {
-  if (!res || res.headersSent) return;
   const activeReq = req ?? requestContext.getStore();
+  const activeRes =
+    res ?? (activeReq ? responseByReq.get(activeReq) ?? (activeReq as Request & { res?: Response }).res : undefined);
+  if (!activeRes || activeRes.headersSent) return;
   const isSecure = Boolean(
     activeReq &&
       (activeReq.secure ||
@@ -470,19 +536,45 @@ export function emitEncryptedVaultCookieIfPossible(
     polarScope: store.polarScope || undefined,
     garminPersonalApiKey: garminSess?.personalApiKey || undefined,
   };
-  const header = buildEncryptedVaultCookieHeader(compact, isSecure);
+  let header = buildEncryptedVaultCookieHeader(compact, isSecure);
+  if (!header) {
+    // Trim verbose display metadata so core OAuth tokens always stay within the 4KB cookie limit
+    header = buildEncryptedVaultCookieHeader(
+      {
+        sid: scopeKey,
+        stravaAccessToken: compact.stravaAccessToken,
+        stravaRefreshToken: compact.stravaRefreshToken,
+        stravaExpiresAt: compact.stravaExpiresAt,
+        stravaAthleteId: compact.stravaAthleteId,
+        stravaClientId: compact.stravaClientId,
+        stravaMeasurementPreference: compact.stravaMeasurementPreference,
+        stravaGrantedScope: compact.stravaGrantedScope,
+        stravaSyncPolicy: compact.stravaSyncPolicy,
+        intervalsApiKey: compact.intervalsApiKey,
+        intervalsAccessToken: compact.intervalsAccessToken,
+        intervalsAthleteId: compact.intervalsAthleteId,
+        wahooAccessToken: compact.wahooAccessToken,
+        wahooRefreshToken: compact.wahooRefreshToken,
+        wahooExpiresAt: compact.wahooExpiresAt,
+        polarAccessToken: compact.polarAccessToken,
+        garminPersonalApiKey: compact.garminPersonalApiKey,
+      },
+      isSecure
+    );
+  }
   if (header) {
-    appendSetCookieHeader(res, header);
+    appendSetCookieHeader(activeRes, header);
   }
 }
 
 export function saveSessionCache(req?: Request, res?: Response) {
-  const scopeKey = resolveSessionScopeKey(req);
+  const activeReq = req ?? requestContext.getStore();
+  const scopeKey = resolveSessionScopeKey(activeReq);
   if (!scopeKey) return;
-  const store = getScopedRuntimeStore(req);
+  const store = getScopedRuntimeStore(activeReq);
   scopedStoresInMemory.set(scopeKey, store);
   saveTenantVaultSync(`session_${scopeKey}`, store);
-  emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store);
+  emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
 }
 
 export async function saveSessionCacheAsync(
@@ -491,11 +583,16 @@ export async function saveSessionCacheAsync(
   explicitSid?: string
 ): Promise<void> {
   const activeReq = req ?? requestContext.getStore();
+  const prevScopeKey = resolveSessionScopeKey(activeReq);
+  const prevStore = prevScopeKey ? getScopedRuntimeStore(activeReq) : null;
   const scopeKey = explicitSid
     ? bindRequestScopeKey(activeReq, explicitSid)
-    : resolveSessionScopeKey(activeReq);
+    : prevScopeKey;
   if (!scopeKey) return;
   const store = getScopedRuntimeStore(activeReq);
+  if (prevStore && prevScopeKey && prevScopeKey !== scopeKey) {
+    mergeRuntimeStoreCredentials(store, prevStore);
+  }
   scopedStoresInMemory.set(scopeKey, store);
   await saveTenantVaultAsync(`session_${scopeKey}`, store);
   emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);

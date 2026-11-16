@@ -19,12 +19,14 @@ import {
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
   loadPersistedTelemetrySnapshot,
+  loadStravaSyncPolicyFromStorage,
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
   reclassifyActivityEnvironment,
   safeParseResponseJson,
   savePersistedTelemetrySnapshot,
   saveRotatedStravaTokensToStorage,
+  saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
 
 export function hasStravaClientCredentials(): boolean {
@@ -153,6 +155,7 @@ export function useTelemetrySync({
         localStorage.removeItem('thresh_active_team_id_v1');
         localStorage.removeItem('aeropulse_garmin_athlete_name');
         localStorage.removeItem('aeropulse_intervals_athlete_name');
+        localStorage.removeItem('aeropulse_strava_sync_policy');
       }
       localStorage.setItem('aeropulse_store_owner_athlete_id', cleanId);
       localStorage.setItem('aeropulse_strava_athlete_id', cleanId);
@@ -198,6 +201,9 @@ export function useTelemetrySync({
       }
       if (isActiveStravaSession && data.stravaTokens) {
         saveRotatedStravaTokensToStorage(data.stravaTokens);
+      }
+      if (isActiveStravaSession && data.stravaSyncPolicy?.confirmedAt) {
+        saveStravaSyncPolicyToStorage(data.stravaSyncPolicy);
       }
       if (data.mapTileApiKey) {
         try {
@@ -442,12 +448,7 @@ export function useTelemetrySync({
 
         // Refresh headers in case status check rotated the Strava token
         const activeHeaders = getSavedIntervalsHeaders();
-        const hasVirtualCyclingArchive =
-          activitiesRef.current.filter(
-            (a) => a.sportCategory === 'Cycling' && a.environment === 'INDOOR'
-          ).length >= 50;
-        const hasPersistedArchive =
-          !fullHistory && activitiesRef.current.length >= 50 && hasVirtualCyclingArchive;
+        const hasPersistedArchive = !fullHistory && activitiesRef.current.length >= 10;
         const deltaOldestDate = new Date(Date.now() - 60 * 86400 * 1000)
           .toISOString()
           .slice(0, 10);
@@ -610,7 +611,9 @@ export function useTelemetrySync({
           }
         }
 
-        const savedWindow = statusData.stravaSyncPolicy?.window as StravaSyncWindow | undefined;
+        const savedWindow =
+          (statusData.stravaSyncPolicy?.window as StravaSyncWindow | undefined) ||
+          (loadStravaSyncPolicyFromStorage()?.window as StravaSyncWindow | undefined);
         const targetStravaWindow: StravaSyncWindow =
           explicitStravaWindow || (fullHistory ? 'all' : savedWindow || '90d');
         const grantedScopeStr = String(statusData.stravaGrantedScope || '');
@@ -622,17 +625,24 @@ export function useTelemetrySync({
           targetStravaWindow !== 'none' &&
           !stravaMissingActivityScope
         ) {
-          const hasPersistedVirtualCycling = activitiesRef.current.some(
-            (a) => a.sportCategory === 'Cycling' && a.environment === 'INDOOR'
+          const stravaActs = activitiesRef.current.filter(
+            (a) => Boolean(a.stravaId) || a.sourceBadges?.includes('Strava')
           );
+          const latestStravaMs = stravaActs.reduce((maxMs, a) => {
+            const t = new Date(a.startDateLocal || 0).getTime();
+            return Number.isFinite(t) && t > maxMs ? t : maxMs;
+          }, 0);
           const useDelta =
-            !fullHistory &&
-            !explicitStravaWindow &&
-            hasPersistedArchive &&
-            hasPersistedVirtualCycling;
+            !fullHistory && !explicitStravaWindow && stravaActs.length > 0 && latestStravaMs > 0;
           const syncQs = new URLSearchParams({ window: targetStravaWindow });
           if (useDelta) {
+            // 14-day overlap buffer catches any activity edits, late uploads, or kudos without re-pulling full history
+            const deltaAfterEpoch = Math.max(
+              0,
+              Math.floor((latestStravaMs - 14 * 86400 * 1000) / 1000)
+            );
             syncQs.set('deltaOnly', 'true');
+            syncQs.set('afterEpoch', String(deltaAfterEpoch));
           } else if (fullHistory || targetStravaWindow === 'all') {
             syncQs.set('full', 'true');
           }
@@ -1029,7 +1039,13 @@ export function useTelemetrySync({
     }
     let mounted = true;
     (async () => {
-      if (hasStravaClientCredentials()) {
+      let notLoggedOutAtBoot = true;
+      try {
+        notLoggedOutAtBoot = localStorage.getItem('aeropulse_logged_out') !== '1';
+      } catch {
+        notLoggedOutAtBoot = true;
+      }
+      if (notLoggedOutAtBoot) {
         const cached = await loadPersistedTelemetrySnapshot();
         if (mounted && cached) {
           if (Array.isArray(cached.activities) && cached.activities.length > 0) {
@@ -1205,15 +1221,19 @@ export function useTelemetrySync({
       let notLoggedOut = true;
       try {
         notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
-        isGatePassed = localStorage.getItem('aeropulse_auth_gate_passed') === '1' && notLoggedOut;
-        if (
-          !isGatePassed &&
+        const storedGatePassed = localStorage.getItem('aeropulse_auth_gate_passed') === '1' && notLoggedOut;
+        const localSavedPolicy = loadStravaSyncPolicyFromStorage();
+        const hasPersistedStravaSession = Boolean(
           notLoggedOut &&
-          statusData?.stravaConnected &&
-          statusData?.stravaSyncPolicy?.confirmedAt
-        ) {
+            statusData?.stravaConnected &&
+            (storedGatePassed ||
+              statusData?.stravaSyncPolicy?.confirmedAt ||
+              localSavedPolicy?.confirmedAt ||
+              activitiesRef.current.length > 0)
+        );
+        isGatePassed = storedGatePassed || hasPersistedStravaSession;
+        if (hasPersistedStravaSession) {
           localStorage.setItem('aeropulse_auth_gate_passed', '1');
-          isGatePassed = true;
           if (mounted) {
             setIsSessionLoggedOut(false);
             hasEnteredWorkspaceRef.current = true;
@@ -1227,7 +1247,7 @@ export function useTelemetrySync({
       if (
         mounted &&
         isGatePassed &&
-        hasStravaClientCredentials() &&
+        (hasStravaClientCredentials() || statusData?.stravaConnected) &&
         (justConnectedViaOAuth ||
           exchangedUrlCode ||
           statusData?.stravaConnected ||

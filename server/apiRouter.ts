@@ -2,6 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { securityHeadersMiddleware } from './securityUtils.ts';
 import {
   requestContext,
+  responseByReq,
   resolveSessionScopeKey,
   loadTenantVaultAsync,
 } from './sessionContext.ts';
@@ -25,7 +26,8 @@ export const apiRouter = express.Router();
 
 // Security headers & scoped session context middleware
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use((req: Request, _res: Response, next: NextFunction) => {
+apiRouter.use((req: Request, res: Response, next: NextFunction) => {
+  responseByReq.set(req, res);
   requestContext.run(req, () => {
     const scopeKey = resolveSessionScopeKey(req);
     if (scopeKey && process.env.DATABASE_URL?.trim()) {

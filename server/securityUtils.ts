@@ -8,7 +8,7 @@ const SESSION_SECRET_FILE = '/tmp/thresh-session-secret.key';
 export const SESSION_COOKIE_NAME = 'thresh_session';
 export const LEGACY_SESSION_COOKIE_NAME = 'aeropulse_session';
 export const OAUTH_STATE_COOKIE_NAME = 'thresh_oauth_state';
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 365 days (sliding across deploys)
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 export interface VerifiedSessionClaims {

@@ -34,6 +34,7 @@ export interface UPlotPMCDashboardProps {
   onSelectDate?: (date: string) => void;
   onSelectDateRange?: (startDate: string, endDate: string) => void;
   height?: number;
+  embedded?: boolean;
 }
 
 export type EChartsPMCDashboardProps = UPlotPMCDashboardProps;
@@ -44,6 +45,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
   onSelectDate,
   onSelectDateRange,
   height: _height = 540,
+  embedded = false,
 }) => {
   const chartWrapperRef = useRef<HTMLDivElement | null>(null);
   const pane1Ref = useRef<HTMLDivElement | null>(null);
@@ -54,7 +56,9 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
   const uplot2Ref = useRef<uPlot | null>(null);
   const uplot3Ref = useRef<uPlot | null>(null);
 
-  const [showEftpOverlay, setShowEftpOverlay] = useState<boolean>(true);
+  const [showEftpOverlay, setShowEftpOverlay] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : true
+  );
   const [showTssBars, setShowTssBars] = useState<boolean>(true);
   const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
   const [selectedDay, setSelectedDay] = useState<PMCDayPoint | null>(null);
@@ -71,6 +75,40 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
   const [isDark, setIsDark] = useState<boolean>(() =>
     typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
   );
+
+  const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    h: typeof window !== 'undefined' ? window.innerHeight : 800,
+  }));
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncViewport = () => {
+      setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    };
+    window.addEventListener('resize', syncViewport, { passive: true });
+    window.addEventListener('orientationchange', syncViewport, { passive: true });
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('orientationchange', syncViewport);
+    };
+  }, []);
+
+  const isNarrowMobile = viewportSize.w < 640;
+  const isLandscapeMobile = viewportSize.h <= 500 && viewportSize.w > viewportSize.h;
+  const isCompactChartView = isNarrowMobile || isLandscapeMobile;
+
+  const paneHeights = useMemo(() => {
+    if (isLandscapeMobile) {
+      return { p1: 164, p2: 80, p3: 68 };
+    }
+    if (isNarrowMobile) {
+      return { p1: 216, p2: 98, p3: 80 };
+    }
+    return { p1: 270, p2: 115, p3: 95 };
+  }, [isLandscapeMobile, isNarrowMobile]);
+
+  const activeAxisLeftPx = isNarrowMobile || viewportSize.w < 540 ? 30 : 42;
 
   const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() =>
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -195,14 +233,22 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     uplot2Ref.current = null;
     uplot3Ref.current = null;
 
-    const width = Math.max(300, Math.floor(wrapper.getBoundingClientRect().width || 800));
+    const rawWidth = Math.floor(wrapper.getBoundingClientRect().width || viewportSize.w || 340);
+    const width = Math.max(240, rawWidth);
+    const isNarrowCanvas = width < 520;
+    const axisLeftSize = isNarrowCanvas ? 30 : 42;
+    const axisRightSize = showEftpOverlay ? (isNarrowCanvas ? 36 : 46) : 0;
+    const sharedPadding: [number, number, number, number] = isNarrowCanvas
+      ? [6, showEftpOverlay ? 4 : 14, 4, 0]
+      : [8, showEftpOverlay ? 6 : 14, 6, 2];
+
     const themePalette = getThreshThemePalette(isDark);
     const axisColor = themePalette.axisLine;
     const gridColor = themePalette.splitLine;
     const ctlColor = themePalette.ctlCyan;
     const atlColor = themePalette.atlRose;
     const eftpColor = themePalette.tsbGreyAmber;
-    const textMuted = themePalette.textMuted;
+    const pxRatio = Math.max(1, uPlot.pxRatio || 1);
 
     const n = enrichedTimeline.length;
     const xIndices = Array.from({ length: n }, (_, i) => i);
@@ -211,18 +257,43 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     const eftpData = enrichedTimeline.map((d) => Math.round(d.eftp));
     const tsbData = enrichedTimeline.map((d) => Math.round(d.tsb * 10) / 10);
     const rampData = enrichedTimeline.map((d) => Math.round(d.rampRate * 10) / 10);
+    const maxDailyTss = Math.max(0, ...enrichedTimeline.map((d) => d.tss || 0));
 
-    const padLeft = 54;
-    const padRight = 54;
-    const sharedPadding: [number, number, number, number] = [8, padRight, 8, padLeft];
+    const getXAxisSplits = (_u: uPlot, _axisIdx: number, min: number, max: number) => {
+      if (n <= 1) return [0];
+      if (n <= 7) return Array.from({ length: n }, (_, i) => i);
+      const maxTicks = isNarrowCanvas ? 4 : isLandscapeMobile ? 7 : 8;
+      const step = Math.max(1, Math.ceil((max - min) / Math.max(2, maxTicks - 1)));
+      const out: number[] = [];
+      for (
+        let i = Math.max(0, Math.ceil(min));
+        i <= Math.min(n - 1, Math.floor(max));
+        i += step
+      ) {
+        out.push(i);
+      }
+      const lastIdx = n - 1;
+      const prev = out[out.length - 1];
+      if (prev !== lastIdx && (prev == null || lastIdx - prev >= Math.ceil(step * 0.55))) {
+        out.push(lastIdx);
+      }
+      return out;
+    };
 
     const formatXAxisLabel = (_u: uPlot, splits: number[]) => {
+      const useMonthYear = n > 180;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       return splits.map((s) => {
         const idx = Math.round(s);
         const pt = enrichedTimeline[idx];
         if (!pt) return '';
         const parts = pt.date.split('-');
-        return parts.length >= 3 ? `${parts[1]}/${parts[2]}` : pt.date;
+        if (parts.length < 3) return pt.date;
+        if (useMonthYear) {
+          const mIdx = Math.max(0, Math.min(11, Number(parts[1]) - 1));
+          return `${months[mIdx]} '${parts[0].slice(2)}`;
+        }
+        return `${Number(parts[1])}/${Number(parts[2])}`;
       });
     };
 
@@ -262,7 +333,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     // -------------------------------------------------------------
     const opts1: uPlot.Options = {
       width,
-      height: 270,
+      height: paneHeights.p1,
       padding: sharedPadding,
       legend: { show: false },
       cursor: createCursorOpts(0),
@@ -297,8 +368,10 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           side: 3, // Left
           stroke: ctlColor,
           grid: { stroke: gridColor, width: 1 },
-          ticks: { stroke: gridColor, width: 1 },
-          size: padLeft,
+          ticks: { stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 5 },
+          size: axisLeftSize,
+          gap: isNarrowCanvas ? 2 : 4,
+          space: isLandscapeMobile ? 24 : isNarrowCanvas ? 28 : 36,
           font: '11px JetBrains Mono, monospace',
           values: (_u, splits) => splits.map((v) => Math.round(v).toString()),
         },
@@ -308,8 +381,10 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           show: showEftpOverlay,
           stroke: eftpColor,
           grid: { show: false },
-          ticks: { stroke: gridColor, width: 1 },
-          size: padRight,
+          ticks: { show: showEftpOverlay, stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 5 },
+          size: axisRightSize,
+          gap: isNarrowCanvas ? 2 : 4,
+          space: isLandscapeMobile ? 26 : 36,
           font: '11px JetBrains Mono, monospace',
           values: (_u, splits) => splits.map((v) => `${Math.round(v)}W`),
         },
@@ -358,7 +433,15 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
             const ctx = u.ctx;
             const y0 = u.valToPos(0, 'y', true);
             const plotW = u.bbox.width;
-            const barW = Math.max(2, Math.min(9, (plotW / n) * 0.72));
+            const yMaxScale = Math.max(80, u.scales.y.max || 80);
+            // Reserve top 18px CSS so the "CTL / ATL" pane label is never occluded by tall load bars
+            const maxBarTopPx = u.bbox.top + 18 * pxRatio;
+            const availBarH = Math.max(24, y0 - maxBarTopPx);
+            const barScaleDenom = Math.max(yMaxScale, maxDailyTss * 1.05);
+            const barW = Math.max(
+              (n > 120 ? 1.5 : 2) * pxRatio,
+              Math.min((isNarrowCanvas ? 8 : 11) * pxRatio, (plotW / Math.max(1, n)) * 0.68)
+            );
 
             for (let i = 0; i < n; i++) {
               const pt = enrichedTimeline[i];
@@ -374,13 +457,13 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
                 const seg = segs[s];
                 const segLoad = visualLoads[s] || seg.load;
                 if (segLoad <= 0) continue;
-                const segH = Math.max(1, Math.abs(u.valToPos(segLoad, 'y', true) - y0));
+                const segH = Math.max(pxRatio, (segLoad / barScaleDenom) * availBarH);
                 const isTopSeg = s === segs.length - 1;
 
                 ctx.fillStyle = seg.focus.barColor;
                 ctx.beginPath();
-                if (isTopSeg && barW >= 4 && typeof ctx.roundRect === 'function') {
-                  const r = Math.min(2, barW / 2);
+                if (isTopSeg && barW >= 4 * pxRatio && typeof ctx.roundRect === 'function') {
+                  const r = Math.min(2 * pxRatio, barW / 2);
                   ctx.roundRect(xPos - barW / 2, currentY - segH, barW, segH, [r, r, 0, 0]);
                 } else {
                   ctx.rect(xPos - barW / 2, currentY - segH, barW, segH);
@@ -394,15 +477,23 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
       },
     };
 
+    const syncPlotMetricsAttr = (u: uPlot | null) => {
+      if (!u || !wrapper) return;
+      const ratio = Math.max(1, uPlot.pxRatio || 1);
+      wrapper.dataset.canvasWidth = String(u.width);
+      wrapper.dataset.plotWidth = String(Math.round(u.bbox.width / ratio));
+    };
+
     const inst1 = new uPlot(opts1, [xIndices, ctlData, atlData, eftpData], pane1El);
     uplot1Ref.current = inst1;
+    syncPlotMetricsAttr(inst1);
 
     // -------------------------------------------------------------
     // PANE 2: Form (TSB)
     // -------------------------------------------------------------
     const opts2: uPlot.Options = {
       width,
-      height: 115,
+      height: paneHeights.p2,
       padding: sharedPadding,
       legend: { show: false },
       cursor: createCursorOpts(1),
@@ -426,25 +517,34 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           show: !showRampSubplot,
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
-          ticks: { stroke: gridColor, width: 1 },
+          ticks: { stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 4 },
+          size: isLandscapeMobile ? 24 : isNarrowCanvas ? 26 : 30,
+          gap: 3,
           font: '11px JetBrains Mono, monospace',
+          splits: getXAxisSplits,
           values: formatXAxisLabel,
         },
         {
           scale: 'tsb',
           side: 3, // Left
-          stroke: '#f59e0b',
+          stroke: '#D97706',
           grid: { stroke: gridColor, width: 1 },
-          ticks: { stroke: gridColor, width: 1 },
-          size: padLeft,
+          ticks: { stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 5 },
+          size: axisLeftSize,
+          gap: isNarrowCanvas ? 2 : 4,
+          space: isLandscapeMobile ? 22 : isNarrowCanvas ? 26 : 32,
           font: '11px JetBrains Mono, monospace',
           values: (_u, splits) => splits.map((v) => Math.round(v).toString()),
         },
         {
           scale: 'tsb',
-          side: 1, // Right gutter placeholder to ensure exact horizontal plot alignment
-          show: false,
-          size: padRight,
+          side: 1, // Right gutter spacer matches eFTP axis width when shown
+          show: showEftpOverlay,
+          size: axisRightSize,
+          stroke: 'transparent',
+          grid: { show: false },
+          ticks: { show: false },
+          values: (_u, splits) => splits.map(() => ''),
         },
       ],
       series: [
@@ -462,13 +562,16 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
             const ctx = u.ctx;
             const y0 = u.valToPos(0, 'tsb', true);
             const plotW = u.bbox.width;
-            const barW = Math.max(2, Math.min(9, (plotW / n) * 0.72));
+            const barW = Math.max(
+              2 * pxRatio,
+              Math.min((isNarrowCanvas ? 8 : 10) * pxRatio, (plotW / Math.max(1, n)) * 0.68)
+            );
 
             // Dashed reference lines at 0, -10, -30
             ctx.save();
-            ctx.setLineDash([4, 4]);
+            ctx.setLineDash([4 * pxRatio, 4 * pxRatio]);
             ctx.strokeStyle = axisColor;
-            ctx.lineWidth = 1;
+            ctx.lineWidth = pxRatio;
             [0, -10, -30].forEach((refY) => {
               const yPos = u.valToPos(refY, 'tsb', true);
               ctx.beginPath();
@@ -511,7 +614,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     if (showRampSubplot && pane3El) {
       const opts3: uPlot.Options = {
         width,
-        height: 95,
+        height: paneHeights.p3,
         padding: sharedPadding,
         legend: { show: false },
         cursor: createCursorOpts(2),
@@ -535,25 +638,34 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
             show: true,
             stroke: axisColor,
             grid: { stroke: gridColor, width: 1 },
-            ticks: { stroke: gridColor, width: 1 },
+            ticks: { stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 4 },
+            size: isLandscapeMobile ? 24 : isNarrowCanvas ? 26 : 30,
+            gap: 3,
             font: '11px JetBrains Mono, monospace',
+            splits: getXAxisSplits,
             values: formatXAxisLabel,
           },
           {
             scale: 'ramp',
             side: 3, // Left
-            stroke: '#10b981',
+            stroke: '#059669',
             grid: { stroke: gridColor, width: 1 },
-            ticks: { stroke: gridColor, width: 1 },
-            size: padLeft,
+            ticks: { stroke: gridColor, width: 1, size: isNarrowCanvas ? 3 : 5 },
+            size: axisLeftSize,
+            gap: isNarrowCanvas ? 2 : 4,
+            space: isLandscapeMobile ? 20 : isNarrowCanvas ? 22 : 28,
             font: '11px JetBrains Mono, monospace',
             values: (_u, splits) => splits.map((v) => Math.round(v).toString()),
           },
           {
             scale: 'ramp',
-            side: 1, // Right placeholder
-            show: false,
-            size: padRight,
+            side: 1, // Right spacer matches eFTP axis width when shown
+            show: showEftpOverlay,
+            size: axisRightSize,
+            stroke: 'transparent',
+            grid: { show: false },
+            ticks: { show: false },
+            values: (_u, splits) => splits.map(() => ''),
           },
         ],
         series: [
@@ -571,13 +683,16 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
               const ctx = u.ctx;
               const y0 = u.valToPos(0, 'ramp', true);
               const plotW = u.bbox.width;
-              const barW = Math.max(2, Math.min(8, (plotW / n) * 0.72));
+              const barW = Math.max(
+                2 * pxRatio,
+                Math.min((isNarrowCanvas ? 7 : 9) * pxRatio, (plotW / Math.max(1, n)) * 0.68)
+              );
 
               // Dashed reference lines at 0 and 5
               ctx.save();
-              ctx.setLineDash([4, 4]);
+              ctx.setLineDash([4 * pxRatio, 4 * pxRatio]);
               ctx.strokeStyle = axisColor;
-              ctx.lineWidth = 1;
+              ctx.lineWidth = pxRatio;
               [0, 5].forEach((refY) => {
                 const yPos = u.valToPos(refY, 'ramp', true);
                 ctx.beginPath();
@@ -614,14 +729,15 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
       uplot3Ref.current = inst3;
     }
 
-    // Responsive resize observer
+    // Responsive resize observer (handles portrait <-> landscape rotation without clipping)
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const nextWidth = Math.floor(entry.contentRect.width);
         if (nextWidth > 120) {
-          uplot1Ref.current?.setSize({ width: nextWidth, height: 270 });
-          uplot2Ref.current?.setSize({ width: nextWidth, height: 115 });
-          uplot3Ref.current?.setSize({ width: nextWidth, height: 95 });
+          uplot1Ref.current?.setSize({ width: nextWidth, height: paneHeights.p1 });
+          uplot2Ref.current?.setSize({ width: nextWidth, height: paneHeights.p2 });
+          uplot3Ref.current?.setSize({ width: nextWidth, height: paneHeights.p3 });
+          syncPlotMetricsAttr(uplot1Ref.current);
         }
       }
     });
@@ -643,19 +759,46 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     showRampSubplot,
     isDark,
     syncObj,
+    paneHeights,
+    isLandscapeMobile,
+    viewportSize.w,
   ]);
 
-  // Pointer drag selection (brush) and click selection
+  const resolvePlotBoundsCss = useCallback(
+    (wrapWidth: number) => {
+      const u = uplot1Ref.current;
+      const pxr = Math.max(1, uPlot.pxRatio || 1);
+      if (u && u.bbox && u.bbox.width > 0) {
+        const left = u.bbox.left / pxr;
+        const widthCss = u.bbox.width / pxr;
+        return { left, right: left + widthCss, widthCss };
+      }
+      const left = activeAxisLeftPx;
+      const right = Math.max(left + 40, wrapWidth - 8);
+      return { left, right, widthCss: right - left };
+    },
+    [activeAxisLeftPx]
+  );
+
+  // Pointer drag selection (mouse brush) and touch inspect (without hijacking vertical scroll)
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0 || !chartWrapperRef.current || enrichedTimeline.length < 2) return;
       const rect = chartWrapperRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const padLeft = 54;
-      const padRight = Math.max(padLeft + 20, rect.width - 54);
-      if (x < padLeft || x > padRight) return;
-      const ratio = Math.max(0, Math.min(1, (x - padLeft) / (padRight - padLeft)));
+      const { left, right, widthCss } = resolvePlotBoundsCss(rect.width);
+      if (x < left || x > right) return;
+      const ratio = Math.max(0, Math.min(1, (x - left) / Math.max(1, widthCss)));
       const idx = Math.round(ratio * (enrichedTimeline.length - 1));
+      if (e.pointerType === 'touch') {
+        const day = enrichedTimeline[idx];
+        if (day) {
+          setHoveredIdx(idx);
+          setSelectedDay(day);
+          if (onSelectDateRef.current) onSelectDateRef.current(day.date);
+        }
+        return;
+      }
       setDragSelection({
         startX: x,
         currentX: x,
@@ -663,17 +806,16 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
         endIdx: idx,
       });
     },
-    [enrichedTimeline]
+    [enrichedTimeline, resolvePlotBoundsCss]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!dragSelection || !chartWrapperRef.current || enrichedTimeline.length < 2) return;
       const rect = chartWrapperRef.current.getBoundingClientRect();
-      const padLeft = 54;
-      const padRight = Math.max(padLeft + 20, rect.width - 54);
-      const x = Math.max(padLeft, Math.min(padRight, e.clientX - rect.left));
-      const ratio = Math.max(0, Math.min(1, (x - padLeft) / (padRight - padLeft)));
+      const { left, right, widthCss } = resolvePlotBoundsCss(rect.width);
+      const x = Math.max(left, Math.min(right, e.clientX - rect.left));
+      const ratio = Math.max(0, Math.min(1, (x - left) / Math.max(1, widthCss)));
       const idx = Math.round(ratio * (enrichedTimeline.length - 1));
       setDragSelection((prev) =>
         prev
@@ -685,7 +827,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           : null
       );
     },
-    [dragSelection, enrichedTimeline]
+    [dragSelection, enrichedTimeline, resolvePlotBoundsCss]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -711,11 +853,13 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
   }, [dragSelection, enrichedTimeline, onSelectDateRange]);
 
   const activeHoverDay = hoveredIdx != null ? enrichedTimeline[hoveredIdx] : null;
+  const mobileInspectDay =
+    activeHoverDay || selectedDay || enrichedTimeline[enrichedTimeline.length - 1] || null;
 
   return (
-    <div className="rounded-2xl liquid-glass p-3 sm:p-4">
+    <div className={embedded ? 'px-0.5 py-1 sm:px-1 sm:py-1.5' : 'rounded-2xl liquid-glass p-2 sm:p-4'}>
       {/* Header bar with summary vitals, Load Focus legend, and toggles */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-emerald-900/15 dark:border-emerald-400/15">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 px-1 sm:px-0 border-b border-emerald-900/15 dark:border-emerald-400/15">
         <div className="flex flex-wrap items-center gap-2 text-2xs font-mono">
           <TrendingUp className="w-3.5 h-3.5 text-[#0F766E] dark:text-[#2DD4BF] shrink-0" />
           <span className="text-slate-700 dark:text-slate-300">
@@ -772,7 +916,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowTssBars((v) => !v)}
-            className={`min-h-[36px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border ${
+            className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border cursor-pointer ${
               showTssBars
                 ? 'bg-teal-500/15 border-teal-500/40 text-teal-800 dark:text-teal-300'
                 : 'liquid-glass-subtle text-slate-700 dark:text-slate-300'
@@ -783,7 +927,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowRampSubplot((v) => !v)}
-            className={`min-h-[36px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border ${
+            className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border cursor-pointer ${
               showRampSubplot
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
                 : 'liquid-glass-subtle text-slate-700 dark:text-slate-300'
@@ -794,7 +938,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowEftpOverlay((v) => !v)}
-            className={`min-h-[36px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border ${
+            className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded text-2xs font-mono uppercase transition-colors border cursor-pointer ${
               showEftpOverlay
                 ? 'bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300'
                 : 'liquid-glass-subtle text-slate-700 dark:text-slate-300'
@@ -805,10 +949,32 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
         </div>
       </div>
 
+      {/* Compact Inline Readout Bar for Mobile Portrait / Landscape (never obscures chart) */}
+      {isCompactChartView && mobileInspectDay && (
+        <div
+          data-testid="pmc-mobile-inline-readout"
+          className="mb-1.5 px-2 py-1 rounded-lg bg-[#E9EFE9] dark:bg-[#15231B] border border-[#26583A]/20 dark:border-[#399663]/25 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-2xs font-mono tabular-nums"
+        >
+          <span className="font-bold text-slate-900 dark:text-slate-100">
+            {mobileInspectDay.date}
+          </span>
+          <span className="text-slate-700 dark:text-slate-300">
+            CTL <strong className="text-[#0F766E] dark:text-[#2DD4BF]">{mobileInspectDay.ctl.toFixed(1)}</strong> · ATL{' '}
+            <strong className="text-[#BE123C] dark:text-[#FB7185]">{mobileInspectDay.atl.toFixed(1)}</strong> · TSB{' '}
+            <strong className="text-[#B45309] dark:text-amber-300">
+              {mobileInspectDay.tsb > 0 ? '+' : ''}
+              {mobileInspectDay.tsb.toFixed(1)}
+            </strong>{' '}
+            · {Math.round(mobileInspectDay.tss)} TSS
+          </span>
+        </div>
+      )}
+
       {/* Synchronized Multi-Pane Chart Canvas Container */}
       <div
         ref={chartWrapperRef}
-        className="relative select-none cursor-crosshair"
+        data-testid="pmc-uplot-wrapper"
+        className="relative w-full select-none cursor-crosshair touch-pan-y"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -818,34 +984,43 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           setHoverPos(null);
         }}
       >
-        {/* Pane Labels */}
-        <div className="absolute top-1 left-3 text-2xs font-mono font-bold text-[#0F766E] dark:text-[#2DD4BF] z-10 pointer-events-none">
+        {/* Pane Labels positioned cleanly inside plot area */}
+        <div
+          className="absolute top-1 text-2xs font-mono font-bold text-[#0F766E] dark:text-[#2DD4BF] z-10 pointer-events-none"
+          style={{ left: `${activeAxisLeftPx + 6}px` }}
+        >
           CTL / ATL
         </div>
         {showEftpOverlay && (
-          <div className="absolute top-1 right-3 text-2xs font-mono font-bold text-amber-600 dark:text-amber-400 z-10 pointer-events-none">
+          <div className="absolute top-1 right-12 text-2xs font-mono font-bold text-amber-600 dark:text-amber-400 z-10 pointer-events-none">
             eFTP (W)
           </div>
         )}
 
         {/* Pane 1: Main PMC */}
-        <div ref={pane1Ref} className="w-full h-[270px]" />
+        <div ref={pane1Ref} className="w-full" style={{ height: `${paneHeights.p1}px` }} />
 
         {/* Pane 2: Form (TSB) */}
-        <div className="relative mt-1">
-          <div className="absolute top-1 left-3 text-2xs font-mono font-bold text-amber-600 dark:text-amber-400 z-10 pointer-events-none">
+        <div className="relative mt-0.5 sm:mt-1">
+          <div
+            className="absolute top-1 text-2xs font-mono font-bold text-amber-600 dark:text-amber-400 z-10 pointer-events-none"
+            style={{ left: `${activeAxisLeftPx + 6}px` }}
+          >
             Form (TSB)
           </div>
-          <div ref={pane2Ref} className="w-full h-[115px]" />
+          <div ref={pane2Ref} className="w-full" style={{ height: `${paneHeights.p2}px` }} />
         </div>
 
         {/* Pane 3: Ramp Rate (Optional) */}
         {showRampSubplot && (
-          <div className="relative mt-1">
-            <div className="absolute top-1 left-3 text-2xs font-mono font-bold text-emerald-600 dark:text-emerald-400 z-10 pointer-events-none">
+          <div className="relative mt-0.5 sm:mt-1">
+            <div
+              className="absolute top-1 text-2xs font-mono font-bold text-emerald-600 dark:text-emerald-400 z-10 pointer-events-none"
+              style={{ left: `${activeAxisLeftPx + 6}px` }}
+            >
               Ramp (/wk)
             </div>
-            <div ref={pane3Ref} className="w-full h-[95px]" />
+            <div ref={pane3Ref} className="w-full" style={{ height: `${paneHeights.p3}px` }} />
           </div>
         )}
 
@@ -865,10 +1040,10 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
           </div>
         )}
 
-        {/* Rich Floating Tooltip */}
-        {activeHoverDay && hoverPos && !dragSelection && (
+        {/* Rich Floating Tooltip (Desktop Only) */}
+        {activeHoverDay && hoverPos && !dragSelection && !isCompactChartView && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[245px] p-3 rounded-xl border shadow-xl text-2xs font-mono transition-opacity backdrop-blur-md bg-white/95 dark:bg-slate-900/95 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
+            className="pointer-events-none absolute z-30 min-w-[245px] p-3 rounded-xl border shadow-xl text-2xs font-mono transition-opacity bg-white dark:bg-[#101B15] text-slate-900 dark:text-slate-100 border-slate-300 dark:border-emerald-500/30"
             style={{
               left: `${Math.min(
                 hoverPos.x + 14,

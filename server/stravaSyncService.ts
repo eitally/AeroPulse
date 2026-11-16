@@ -21,7 +21,8 @@ export async function syncStravaAllHistory(
   req?: Request,
   forceFull = false,
   deltaOnly = false,
-  explicitWindow?: string
+  explicitWindow?: string,
+  clientAfterEpoch = 0
 ) {
   let activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
@@ -79,7 +80,11 @@ export async function syncStravaAllHistory(
           : 0;
   const afterEpoch =
     windowDays > 0 ? Math.floor((Date.now() - windowDays * 86400 * 1000) / 1000) : 0;
-  const afterQuery = afterEpoch > 0 ? `&after=${afterEpoch}` : '';
+  const effectiveAfterEpoch =
+    !forceFull && deltaOnly && clientAfterEpoch > 0
+      ? Math.max(afterEpoch, Math.floor(clientAfterEpoch))
+      : afterEpoch;
+  const afterQuery = effectiveAfterEpoch > 0 ? `&after=${effectiveAfterEpoch}` : '';
 
   let headers = { Authorization: `Bearer ${activeAccessToken}` };
   let rawActivitiesMap = new Map<string, Record<string, any>>();
@@ -146,7 +151,7 @@ export async function syncStravaAllHistory(
       for (const item of firstPageItems) {
         if (item && item.id) rawActivitiesMap.set(String(item.id), item);
       }
-      const shouldPaginateAll = existingCachedCount <= 200 || !deltaOnly || forceFull;
+      const shouldPaginateAll = forceFull || (!deltaOnly && existingCachedCount <= 200);
       // Guard Strava global 100 req / 15m quota: cap cold-start pagination and inspect X-RateLimit-Usage
       const isStravaRateLimited = (resp: globalThis.Response): boolean => {
         const usage = resp.headers.get('x-ratelimit-usage') || '';

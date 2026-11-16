@@ -1197,6 +1197,40 @@ export interface RotatedStravaTokenPayload {
   athleteName?: string;
 }
 
+export interface StoredClientStravaSyncPolicy {
+  window?: string;
+  importProfileAndGear?: boolean;
+  confirmedAt?: string;
+  grantedScope?: string;
+}
+
+const STRAVA_SYNC_POLICY_STORAGE_KEY = 'aeropulse_strava_sync_policy';
+
+export function saveStravaSyncPolicyToStorage(policy?: StoredClientStravaSyncPolicy | null) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (!policy) {
+      localStorage.removeItem(STRAVA_SYNC_POLICY_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(STRAVA_SYNC_POLICY_STORAGE_KEY, JSON.stringify(policy));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function loadStravaSyncPolicyFromStorage(): StoredClientStravaSyncPolicy | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STRAVA_SYNC_POLICY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredClientStravaSyncPolicy;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayload | null) {
   if (!tokens) return;
   try {
@@ -1250,6 +1284,13 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
     if (stravaRefreshToken && notLoggedOut) headers['x-strava-refresh-token'] = stravaRefreshToken;
     if (stravaAccessToken && notLoggedOut) headers['x-strava-access-token'] = stravaAccessToken;
     if (stravaExpiresAt && notLoggedOut) headers['x-strava-expires-at'] = stravaExpiresAt;
+    if (notLoggedOut) {
+      const savedPolicy = loadStravaSyncPolicyFromStorage();
+      if (savedPolicy?.window) {
+        headers['x-strava-sync-window'] = savedPolicy.window;
+        headers['x-strava-import-gear'] = savedPolicy.importProfileAndGear === false ? '0' : '1';
+      }
+    }
     if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
     if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
     if (geminiApiKey) headers['x-gemini-api-key'] = geminiApiKey;

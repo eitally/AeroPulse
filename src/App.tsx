@@ -1188,6 +1188,7 @@ export default function App() {
       localStorage.removeItem('aeropulse_strava_athlete_name');
       localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
       localStorage.removeItem('aeropulse_strava_athlete_ftp');
+      localStorage.removeItem('aeropulse_strava_sync_policy');
       localStorage.removeItem('aeropulse_store_owner_athlete_id');
       localStorage.removeItem('thresh_primary_sport');
       localStorage.removeItem('thresh_my_teams_v1');

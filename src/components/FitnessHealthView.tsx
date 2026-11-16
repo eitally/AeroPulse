@@ -1853,7 +1853,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         ) : (
       <section className="rounded-2xl liquid-glass overflow-hidden">
         {/* Top Control Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-900/40">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 px-2.5 sm:px-5 py-2.5 sm:py-3 border-b border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-900/40">
           {/* Left: Plain-English Title + Info Icon + Date Range Picker */}
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="flex items-center gap-1.5 pr-1">
@@ -1961,10 +1961,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             )}
           </div>
 
-          {/* Center: Distilled 4-Preset Date Switcher + Custom Trigger */}
+          {/* Center: Distilled Preset Date Switcher + Custom Trigger */}
           <div className="ap-toolbar-scroll p-1 rounded-xl liquid-capsule-track max-w-full">
             {(
               [
+                { id: '7D', label: '7d' },
                 { id: '42D', label: '42d' },
                 { id: '3M', label: '90d' },
                 { id: '1Y', label: '1y' },
@@ -2164,7 +2165,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         </div>
 
         {/* Daily Activities Bar (responsive wrapping on mobile, static 58px height on sm+ so desktop SVG never shifts) */}
-        <div className="px-3 sm:px-5 py-1.5 bg-white/30 dark:bg-[#15231B]/35 border-b border-slate-200/60 dark:border-white/10 min-h-[52px] sm:h-[58px] sm:min-h-[58px] sm:max-h-[58px] overflow-hidden flex items-start justify-between gap-2 sm:gap-3 text-xs">
+        <div className="px-2.5 sm:px-5 py-1.5 bg-white/30 dark:bg-[#15231B]/35 border-b border-slate-200/60 dark:border-white/10 min-h-[52px] sm:h-[58px] sm:min-h-[58px] sm:max-h-[58px] overflow-hidden flex items-start justify-between gap-2 sm:gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-1.5 sm:max-h-[46px] sm:overflow-hidden flex-1">
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/5 dark:bg-white/10 font-mono font-bold text-slate-800 dark:text-slate-100 shrink-0">
               {activePoint.date}
@@ -2304,7 +2305,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             APACHE ECHARTS CHRONIC FITNESS DECAY MODEL (CTL / ATL / TSB / RAMP WITH DATAZOOM)
            ========================================================================== */}
         {(pmcEngine === 'ECHARTS' || pmcEngine === 'BOTH') && (
-          <div className="px-3 sm:px-5 pt-3 pb-1">
+          <div className="px-1 sm:px-2 lg:px-5 pt-2 sm:pt-3 pb-1">
             <Suspense
               fallback={
                 <div
@@ -2316,6 +2317,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               }
             >
               <UPlotPMCDashboard
+                embedded
                 timeline={echartsTimeline}
                 onSelectActivity={onSelectActivity}
                 onSelectDate={handleEChartsSelectDate}
@@ -2330,7 +2332,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             UNIFIED MULTI-PANE INTERVALS.ICU SVG CANVAS + RIGHT-MARGIN READOUT GUTTER
            ========================================================================== */}
         {(pmcEngine === 'SVG' || pmcEngine === 'BOTH') && (
-        <div className="px-2 sm:px-4 pt-3 pb-2 select-none overflow-x-auto">
+        <div className="px-1 sm:px-4 pt-3 pb-2 select-none overflow-x-auto">
           {(() => {
             const len = Math.max(1, enrichedSeries.length);
             const plotLeft = 48;
