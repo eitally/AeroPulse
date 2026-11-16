@@ -29,7 +29,10 @@ import { resolveStravaAthleteIdentity } from './stravaRouter.ts';
 import {
   BANISTER_ATL_DECAY,
   BANISTER_CTL_DECAY,
+  getLocalDateIso,
+  shiftIsoDate,
 } from '../../src/physiology/stravaLoadCalibration.ts';
+import { normalizeRawStravaActivity } from '../stravaSyncService.ts';
 
 export const garminRouter = Router();
 
@@ -179,7 +182,13 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
 
     const normalizedActivities = normalizeGarminPersonalApiActivities(
       garminData.activities || [],
-      syncedProfile.ftp || 250
+      syncedProfile.ftp || 250,
+      {
+        lthr: syncedProfile.lthr,
+        runLthr: syncedProfile.runLthr,
+        thresholdPaceSecsPerKm: syncedProfile.thresholdPaceSecsPerKm,
+        restingHr: syncedProfile.restingHr,
+      }
     );
 
     runtimeStore.athleteFtp = syncedProfile.ftp;
@@ -191,10 +200,38 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
     await saveSessionCacheAsync(req, res);
 
     const loadByDate = new Map<string, number>();
+    const garminTimestamps: number[] = [];
     for (const a of normalizedActivities) {
       const d = String(a.startDateLocal || '').slice(0, 10);
       if (d) {
         loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
+      }
+      const ts = new Date(a.startDateLocal || 0).getTime();
+      if (Number.isFinite(ts) && ts > 0) garminTimestamps.push(ts);
+    }
+
+    // Include non-duplicate cached Strava activities so pre-28d CTL warmup is accurate
+    const stravaCal = {
+      calibratedFtp: Math.max(120, syncedProfile.ftp || 250),
+      calibratedBikeLthr: Math.max(135, syncedProfile.lthr || 163),
+      calibratedRunLthr: Math.max(140, syncedProfile.runLthr || 168),
+      calibratedThresholdPaceSecsPerKm: Math.max(
+        155,
+        syncedProfile.thresholdPaceSecsPerKm || 255
+      ),
+      restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52)),
+    };
+    for (const rawSa of sActs) {
+      if (!rawSa || !rawSa.start_date_local) continue;
+      const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
+      const saTs = new Date(saNorm.startDateLocal || 0).getTime();
+      const isDup =
+        Number.isFinite(saTs) &&
+        garminTimestamps.some((gTs) => Math.abs(gTs - saTs) <= 300 * 1000);
+      if (isDup) continue;
+      const d = saNorm.startDateLocal.slice(0, 10);
+      if (d) {
+        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(saNorm.trainingLoad || 0));
       }
     }
 
@@ -202,8 +239,24 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
     let lastWeight = syncedProfile.weightKg || 0;
     let ctlRaw = 0;
     let atlRaw = 0;
+    const wellnessRows = garminData.wellnessRows || [];
+    const firstWellnessDate =
+      wellnessRows.length > 0
+        ? String(wellnessRows[0].id || '').slice(0, 10)
+        : getLocalDateIso();
+    const warmupStartDate = shiftIsoDate(firstWellnessDate, -365);
+    for (
+      let dWarm = warmupStartDate;
+      dWarm < firstWellnessDate;
+      dWarm = shiftIsoDate(dWarm, 1)
+    ) {
+      const warmLoad = loadByDate.get(dWarm) || 0;
+      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + warmLoad * (1 - BANISTER_CTL_DECAY);
+      atlRaw = atlRaw * BANISTER_ATL_DECAY + warmLoad * (1 - BANISTER_ATL_DECAY);
+    }
+
     const ctlHistory: number[] = [];
-    const formattedWellnessDays = (garminData.wellnessRows || []).map((w, idx) => {
+    const formattedWellnessDays = wellnessRows.map((w, idx) => {
       const d = String(w.id || '').slice(0, 10);
       const dailyLoad = loadByDate.get(d) || 0;
       ctlRaw = ctlRaw * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);

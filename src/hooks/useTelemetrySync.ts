@@ -18,6 +18,7 @@ import {
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
   decodeGooglePolylineClient,
+  deduplicateActivitiesArchive,
   getSavedIntervalsHeaders,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
@@ -26,7 +27,9 @@ import {
   mergeActivitiesNonDestructive,
   mergeWellnessDaysNonDestructive,
   overlayBiometricsOntoActivityWellness,
+  recalibrateStravaActivityLoadClient,
   reclassifyActivityEnvironment,
+  repairAndRecomputeWellnessDays,
   safeParseResponseJson,
   savePersistedTelemetrySnapshot,
   saveRotatedStravaTokensToStorage,
@@ -463,13 +466,15 @@ export function useTelemetrySync({
 
         // Refresh headers in case status check rotated the Strava token
         const activeHeaders = getSavedIntervalsHeaders();
-        const hasPersistedArchive = !fullHistory && activitiesRef.current.length >= 10;
+        const hasPersistedArchive =
+          !fullHistory && !needsPmcModelV2SyncRef.current && activitiesRef.current.length >= 10;
         const deltaOldestDate = new Date(Date.now() - 60 * 86400 * 1000)
           .toISOString()
           .slice(0, 10);
 
         let mergedActivities: UnifiedActivity[] | null = null;
         let nextWellnessDays = wellnessDaysRef.current;
+        let garminWellnessBiometrics: UnifiedWellnessDay[] = [];
         let nextPlannedEvents = plannedEventsRef.current;
         let nextGearItems = gearItemsRef.current;
         let nextRedactedCount = redactedStravaCountRef.current;
@@ -546,12 +551,15 @@ export function useTelemetrySync({
           if (garminResp.ok) {
             const garminData = await garminResp.json();
             if (Array.isArray(garminData.wellnessDays) && garminData.wellnessDays.length > 0) {
-              nextWellnessDays = mergeWellnessDaysNonDestructive(
-                nextWellnessDays,
-                garminData.wellnessDays
-              );
-              setWellnessDays(nextWellnessDays);
-              wellnessDaysRef.current = nextWellnessDays;
+              garminWellnessBiometrics = garminData.wellnessDays;
+              if (nextWellnessDays.length > 0) {
+                nextWellnessDays = overlayBiometricsOntoActivityWellness(
+                  nextWellnessDays,
+                  garminWellnessBiometrics
+                );
+                setWellnessDays(nextWellnessDays);
+                wellnessDaysRef.current = nextWellnessDays;
+              }
             }
             if (Array.isArray(garminData.activities) && garminData.activities.length > 0) {
               const garminActs = garminData.activities.map((a: UnifiedActivity) =>
@@ -671,7 +679,6 @@ export function useTelemetrySync({
           });
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
-            needsPmcModelV2SyncRef.current = false;
             if (stravaData.missingActivityScope) {
               setConnectionStatus((prev) => ({
                 ...prev,
@@ -1018,21 +1025,58 @@ export function useTelemetrySync({
           }
         }
 
+        if (
+          mergedActivities === null &&
+          (garminWellnessBiometrics.length > 0 || needsPmcModelV2SyncRef.current) &&
+          activitiesRef.current.length > 0
+        ) {
+          mergedActivities = [];
+        }
+
         if (mergedActivities !== null) {
-          // Non-destructively merge with existing persisted archive so deployments/delta syncs never lose workouts, streams, or routes
-          const combinedArchive = mergeActivitiesNonDestructive(
-            activitiesRef.current,
-            mergedActivities
+          // Non-destructively merge, deduplicate & ensure legacy v1/v2 Garmin/Strava entries recalibrate to v3
+          const mergedArchiveRaw = deduplicateActivitiesArchive(
+            mergeActivitiesNonDestructive(activitiesRef.current, mergedActivities)
+          );
+          const combinedArchive = mergedArchiveRaw.map((a) =>
+            (a.loadModelVersion || 0) < CURRENT_PMC_MODEL_VERSION
+              ? recalibrateStravaActivityLoadClient(a, athleteProfileRef.current)
+              : a
           );
           setActivities(combinedArchive);
           activitiesRef.current = combinedArchive;
+
+          const combinedBiometrics =
+            garminWellnessBiometrics.length > 0
+              ? mergeWellnessDaysNonDestructive(nextWellnessDays, garminWellnessBiometrics)
+              : nextWellnessDays;
 
           if (!statusData.intervalsConnected && combinedArchive.length > 0) {
             const activityDerivedWellness = computeWellnessDaysFromActivities(combinedArchive);
             nextWellnessDays = overlayBiometricsOntoActivityWellness(
               activityDerivedWellness,
-              nextWellnessDays
+              combinedBiometrics
             );
+            setWellnessDays(nextWellnessDays);
+            wellnessDaysRef.current = nextWellnessDays;
+          } else if (statusData.intervalsConnected && combinedArchive.length > 0) {
+            const repairedWellness = repairAndRecomputeWellnessDays(
+              nextWellnessDays,
+              combinedArchive,
+              undefined,
+              { profile: athleteProfileRef.current }
+            );
+            nextWellnessDays =
+              garminWellnessBiometrics.length > 0
+                ? overlayBiometricsOntoActivityWellness(
+                    repairedWellness,
+                    garminWellnessBiometrics
+                  )
+                : repairedWellness;
+            setWellnessDays(nextWellnessDays);
+            wellnessDaysRef.current = nextWellnessDays;
+          } else if (nextWellnessDays.length === 0 && garminWellnessBiometrics.length > 0) {
+            nextWellnessDays = garminWellnessBiometrics;
             setWellnessDays(nextWellnessDays);
             wellnessDaysRef.current = nextWellnessDays;
           }
@@ -1076,6 +1120,11 @@ export function useTelemetrySync({
             earliestActivityDate: oldestLoaded,
           });
           if (savedTimestamp) setIdbSavedAt(savedTimestamp);
+          needsPmcModelV2SyncRef.current = false;
+        } else if (garminWellnessBiometrics.length > 0 && nextWellnessDays.length === 0) {
+          nextWellnessDays = garminWellnessBiometrics;
+          setWellnessDays(nextWellnessDays);
+          wellnessDaysRef.current = nextWellnessDays;
         }
         await fetchServerConfigStatus();
       } catch (err) {

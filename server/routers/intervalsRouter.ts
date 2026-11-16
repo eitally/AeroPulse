@@ -687,15 +687,24 @@ export async function syncIntervalsAllHistory(
           ? Math.round(1000 / Number(a.gap))
           : undefined;
 
+      const canUsePowerForIf =
+        sportCategory === 'Cycling' ||
+        (sportCategory === 'Running' && Number(runtimeStore.athleteRunFtp) > 0);
       const userFtp =
         sportCategory === 'Running'
-          ? runtimeStore.athleteRunFtp || runtimeStore.athleteFtp || 250
+          ? runtimeStore.athleteRunFtp || 350
           : runtimeStore.athleteFtp || 250;
+      const rawIcuIf = Number(a.icu_intensity ?? 0);
       let trainingLoad = Math.round(Number(a.icu_training_load ?? 0));
-      let intensityFactor: number | undefined;
-      if (normalizedPower && movingTimeSecs > 0) {
+      let intensityFactor: number | undefined =
+        rawIcuIf > 0
+          ? Number((rawIcuIf > 3 ? rawIcuIf / 100 : rawIcuIf).toFixed(2))
+          : undefined;
+      if (canUsePowerForIf && normalizedPower && movingTimeSecs > 0) {
         const ifVal = normalizedPower / userFtp;
-        intensityFactor = Number(ifVal.toFixed(2));
+        if (!intensityFactor) {
+          intensityFactor = Number(ifVal.toFixed(2));
+        }
         if (!trainingLoad) {
           trainingLoad = Math.round(
             ((movingTimeSecs * normalizedPower * ifVal) / (userFtp * 3600)) * 100
@@ -704,7 +713,9 @@ export async function syncIntervalsAllHistory(
       } else if (avgHr > 0 && movingTimeSecs > 0) {
         const userLthr = runtimeStore.athleteLthr || 165;
         const hrRatio = Math.max(0.4, Math.min(1.25, avgHr / userLthr));
-        intensityFactor = Number(hrRatio.toFixed(2));
+        if (!intensityFactor) {
+          intensityFactor = Number(hrRatio.toFixed(2));
+        }
         if (!trainingLoad) {
           trainingLoad = Math.round((movingTimeSecs / 3600) * Math.pow(hrRatio, 2) * 80);
         }
@@ -713,7 +724,7 @@ export async function syncIntervalsAllHistory(
       }
 
       let efficiencyFactor = 0;
-      if (normalizedPower && avgHr > 0) {
+      if (sportCategory === 'Cycling' && normalizedPower && avgHr > 0) {
         efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
       } else if (
         sportCategory === 'Running' &&
@@ -760,12 +771,32 @@ export async function syncIntervalsAllHistory(
         };
       });
 
+      const hrZoneSecs = Array.isArray(a.icu_hr_zone_times)
+        ? a.icu_hr_zone_times.slice(0, 7).map((v: any) => Math.max(0, Math.round(Number(v || 0))))
+        : [0, 0, 0, 0, 0, 0, 0];
+      const pwrZoneSecs = Array.isArray(a.icu_zone_times)
+        ? a.icu_zone_times.slice(0, 7).map((v: any) => Math.max(0, Math.round(Number(v || 0))))
+        : undefined;
+      const intervalsSourceBadges = Array.from(
+        new Set([
+          'Intervals.icu',
+          ...(a.source === 'GARMIN_CONNECT'
+            ? ['Garmin']
+            : a.source === 'STRAVA'
+              ? ['Strava']
+              : []),
+        ])
+      );
+
       return {
         id: String(a.id),
+        intervalsId: String(a.id),
         intervalsActivityId: String(a.id),
         stravaId: a.strava_id ? String(a.strava_id) : undefined,
         garminActivityId: a.source === 'GARMIN_CONNECT' ? String(a.id) : undefined,
         source: a.source || 'INTERVALS_ICU',
+        sourceBadges: intervalsSourceBadges,
+        rawSportType: rawType || undefined,
         name: rawName || `${subType} ${sportCategory}`,
         startDateLocal: String(a.start_date_local || '').replace(/Z$/i, ''),
         sportCategory,
@@ -790,6 +821,10 @@ export async function syncIntervalsAllHistory(
           normalizedPower && avgPower && avgPower > 0
             ? Number((normalizedPower / avgPower).toFixed(2))
             : undefined,
+        zoneSecs: {
+          hr: hrZoneSecs,
+          ...(pwrZoneSecs ? { power: pwrZoneSecs } : {}),
+        },
         gearName: a.gear?.name || undefined,
         deviceName: a.device_name ? String(a.device_name) : undefined,
         hasSegments: Boolean(a.has_segments),
