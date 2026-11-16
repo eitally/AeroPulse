@@ -8,20 +8,34 @@ import {
 } from './securityUtils.ts';
 import { bindRequestScopeKey } from './sessionContext.ts';
 
+export function ensureRequestSession(
+  req: Request,
+  res: Response,
+  fallbackSubject = 'thresh-athlete'
+): { sid: string; sessionToken: string } {
+  const verified = getVerifiedSessionClaims(req);
+  if (verified?.sid) {
+    bindRequestScopeKey(req, verified.sid);
+    const sessionToken = setSessionCookie(
+      req,
+      res,
+      verified.sub || fallbackSubject,
+      verified.sid
+    );
+    return { sid: verified.sid, sessionToken };
+  }
+  const sid = crypto.randomBytes(16).toString('hex');
+  const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
+  bindRequestScopeKey(req, sid);
+  return { sid, sessionToken };
+}
+
 export function ensureRequestSessionSid(
   req: Request,
   res: Response,
   fallbackSubject = 'thresh-athlete'
 ): string {
-  const verified = getVerifiedSessionClaims(req);
-  if (verified?.sid) {
-    bindRequestScopeKey(req, verified.sid);
-    return verified.sid;
-  }
-  const sid = crypto.randomBytes(16).toString('hex');
-  setSessionCookie(req, res, fallbackSubject, sid);
-  bindRequestScopeKey(req, sid);
-  return sid;
+  return ensureRequestSession(req, res, fallbackSubject).sid;
 }
 
 export function renderThreshOAuthHtml(opts: {
@@ -94,6 +108,127 @@ export function resolveStravaCallbackUrl(req: Request): string {
     .trim()
     .replace(/[^a-zA-Z0-9.:-]/g, '');
   return `${proto}://${rawHost || 'localhost:3000'}/auth/strava/callback`;
+}
+
+const validatedStravaRedirectCache = new Map<
+  string,
+  { redirectUri: string; expiresAt: number }
+>();
+
+export function clearStravaRedirectCacheForTesting(): void {
+  validatedStravaRedirectCache.clear();
+}
+
+async function probeStravaRedirectUri(
+  clientId: string,
+  redirectUri: string
+): Promise<'valid' | 'invalid_redirect' | 'unknown'> {
+  try {
+    const probeUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(
+      clientId
+    )}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&response_type=code&approval_prompt=auto&scope=read`;
+    const resp = await fetch(probeUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(2500) : undefined,
+    });
+    if ((resp.status >= 300 && resp.status < 400) || resp.status === 200) {
+      return 'valid';
+    }
+    if (resp.status === 400) {
+      const text = await resp.text();
+      if (text.includes('redirect_uri')) {
+        return 'invalid_redirect';
+      }
+    }
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Resolves the Strava OAuth callback URL and verifies against Strava that the domain is
+ * accepted for the given clientId. Automatically falls back to the registered legacy domain
+ * during a domain migration (which preserves query params across Vercel 307 redirect).
+ */
+export async function resolveValidatedStravaCallbackUrl(
+  req: Request,
+  clientId: string
+): Promise<string> {
+  const primaryUri = resolveStravaCallbackUrl(req);
+  if (
+    (process.env.STRAVA_REDIRECT_URI || '').trim() ||
+    !clientId ||
+    !primaryUri.startsWith('https://')
+  ) {
+    return primaryUri;
+  }
+
+  let primaryUrl: URL;
+  try {
+    primaryUrl = new URL(primaryUri);
+  } catch {
+    return primaryUri;
+  }
+  if (primaryUrl.hostname === 'localhost' || primaryUrl.hostname === '127.0.0.1') {
+    return primaryUri;
+  }
+
+  const cacheKey = `${clientId}|${primaryUri}`;
+  const cached = validatedStravaRedirectCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.redirectUri;
+  }
+
+  const primaryProbe = await probeStravaRedirectUri(clientId, primaryUri);
+  if (primaryProbe === 'valid') {
+    validatedStravaRedirectCache.set(cacheKey, {
+      redirectUri: primaryUri,
+      expiresAt: Date.now() + 60_000,
+    });
+    return primaryUri;
+  }
+  if (primaryProbe === 'unknown') {
+    return primaryUri;
+  }
+
+  const fallbackCandidates: string[] = [];
+  const envFallback = (process.env.STRAVA_FALLBACK_REDIRECT_URI || '').trim();
+  if (envFallback) {
+    try {
+      const parsedFallback = new URL(envFallback);
+      if (parsedFallback.protocol === 'https:') {
+        const cleanFallback = parsedFallback.toString();
+        if (cleanFallback !== primaryUri) {
+          fallbackCandidates.push(cleanFallback);
+        }
+      }
+    } catch {
+      // ignore invalid STRAVA_FALLBACK_REDIRECT_URI
+    }
+  }
+  if (primaryUrl.hostname === 'thresh-dev.vercel.app') {
+    const legacyUri = 'https://aeropulse-eta.vercel.app/auth/strava/callback';
+    if (legacyUri !== primaryUri && !fallbackCandidates.includes(legacyUri)) {
+      fallbackCandidates.push(legacyUri);
+    }
+  }
+
+  for (const candidate of fallbackCandidates) {
+    const candidateProbe = await probeStravaRedirectUri(clientId, candidate);
+    if (candidateProbe === 'valid') {
+      validatedStravaRedirectCache.set(cacheKey, {
+        redirectUri: candidate,
+        expiresAt: Date.now() + 60_000,
+      });
+      return candidate;
+    }
+  }
+
+  return primaryUri;
 }
 
 export function resolveIntervalsCallbackUrl(req: Request): string {

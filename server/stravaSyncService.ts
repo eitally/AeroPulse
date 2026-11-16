@@ -389,7 +389,7 @@ export async function syncStravaAllHistory(
   }
 
   // Pass 2: Normalize workouts using calibrated athlete FTP, sport-specific LTHR, and rTSS pace fallback
-  const normalizedStravaActivities = activitiesList.map((a) => {
+  const normalizedStravaActivities = activitiesList.map((a, idx) => {
     const detail = detailById.get(Number(a.id)) || a;
     const sportType = String(a.sport_type || a.type || '').trim();
     const actName = String(a.name || '');
@@ -606,7 +606,8 @@ export async function syncStravaAllHistory(
       kudoers: cachedK?.kudoers,
       comments: cachedK?.comments,
       summaryPolyline,
-      routeLatLngs: decodedRoute && decodedRoute.length >= 2 ? decodedRoute : undefined,
+      routeLatLngs:
+        idx < 25 && decodedRoute && decodedRoute.length >= 2 ? decodedRoute : undefined,
       startLatLng,
       endLatLng,
       segmentEfforts,

@@ -62,20 +62,17 @@ export default defineConfig(() => {
           navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/docs(\/|$)/],
           runtimeCaching: [
             {
-              // Never cache authenticated API or OAuth endpoints in Service Worker storage
-              urlPattern: ({ url }) => /^\/(api|auth)\//i.test(url.pathname),
-              handler: 'NetworkOnly',
-            },
-            {
               // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks
-              urlPattern: ({ request }) =>
-                request.destination === 'script' ||
-                request.destination === 'style' ||
-                request.destination === 'worker' ||
-                request.destination === 'document',
+              // Never intercept /api/* or /auth/* in the Service Worker so OAuth callbacks & API calls go directly to the network
+              urlPattern: ({ request, url }) =>
+                !/^\/(api|auth)\//i.test(url.pathname) &&
+                (request.destination === 'script' ||
+                  request.destination === 'style' ||
+                  request.destination === 'worker' ||
+                  request.destination === 'document'),
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'thresh-ui-assets-network-first-v2',
+                cacheName: 'thresh-ui-assets-network-first-v3',
                 networkTimeoutSeconds: 4,
                 expiration: {
                   maxEntries: 120,

@@ -28,10 +28,13 @@ import {
 } from '../sessionContext.ts';
 import { isServerOwnedSecret } from '../secretManager.ts';
 import {
+  ensureRequestSession,
   ensureRequestSessionSid,
   renderThreshOAuthHtml,
   resolveStravaCallbackUrl,
+  resolveValidatedStravaCallbackUrl,
 } from '../oauthHelpers.ts';
+import { resolveSafeOrigin, resolveTrustedCorsOrigin } from '../securityUtils.ts';
 import { buildServerAthleteProfile, isGenericName } from '../physiologyEngine.ts';
 import { decodeGooglePolyline } from './activitiesRouter.ts';
 import { migrateAnonymousTeamsToStravaSid } from '../teamService.ts';
@@ -456,9 +459,49 @@ export async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
   return tokenData;
 }
 
+function buildStravaCallbackScript(opts: {
+  serializedPayload: string;
+  preScript?: string;
+  redirectOnNonPopup?: boolean;
+}): string {
+  return `(function(){
+    var payload = ${opts.serializedPayload};
+    ${opts.preScript || ''}
+    var hasOpener = false;
+    try {
+      if (window.opener && window.opener !== window) {
+        hasOpener = true;
+        window.opener.postMessage(payload, window.location.origin);
+        if (payload.openerOrigin && payload.openerOrigin !== window.location.origin) {
+          window.opener.postMessage(payload, payload.openerOrigin);
+        }
+      }
+    } catch (e) {}
+    try {
+      var bc = new BroadcastChannel('aeropulse_oauth');
+      bc.postMessage(payload);
+    } catch (e) {}
+    try {
+      localStorage.setItem('aeropulse_oauth_result_v1', JSON.stringify({ ts: Date.now(), payload: payload }));
+    } catch (e) {}
+    var isPopupWindow = Boolean(payload.isPopupFlow) || hasOpener || window.name === 'strava_oauth_popup';
+    if (isPopupWindow) {
+      setTimeout(function() { try { window.close(); } catch (e) {} }, 250);
+    }${
+      opts.redirectOnNonPopup
+        ? ` else {
+      window.location.replace(payload.returnUrl || '/');
+    }`
+        : ''
+    }
+  })();`;
+}
+
 export const stravaCallbackHandler = async (req: Request, res: Response) => {
   const oauthState = String(req.query.state || '').trim();
   const verifiedState = oauthState ? verifyOAuthStateToken(oauthState) : null;
+  const isPopupFlow = verifiedState?.flow === 'popup';
+  const trustedOpenerOrigin = resolveTrustedCorsOrigin(verifiedState?.origin) || undefined;
 
   try {
     const oauthErr = req.query.error as string | undefined;
@@ -476,6 +519,8 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
         provider: 'strava',
         cancelled: isCancelled,
         error: friendlyErr,
+        isPopupFlow,
+        openerOrigin: trustedOpenerOrigin,
       });
       res
         .status(isCancelled ? 200 : 400)
@@ -490,23 +535,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             ctaHref: returnHref,
             ctaOnClick:
               "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
-            scriptBody: `(function(){
-              var payload = ${cancelJson};
-              var hasOpener = false;
-              try {
-                if (window.opener && window.opener !== window) {
-                  hasOpener = true;
-                  window.opener.postMessage(payload, window.location.origin);
-                }
-              } catch (e) {}
-              try {
-                var bc = new BroadcastChannel('aeropulse_oauth');
-                bc.postMessage(payload);
-              } catch (e) {}
-              if (hasOpener || window.name === 'strava_oauth_popup') {
-                setTimeout(function() { try { window.close(); } catch (e) {} }, 250);
-              }
-            })();`,
+            scriptBody: buildStravaCallbackScript({ serializedPayload: cancelJson }),
           })
         );
       return;
@@ -734,6 +763,8 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       measurementPreference,
       grantedScope: scopeParam,
       returnUrl,
+      isPopupFlow,
+      openerOrigin: trustedOpenerOrigin,
       tokens: {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
@@ -748,6 +779,41 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       },
     });
 
+    const successHydrationScript = `try {
+      if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+      if (payload.tokens) {
+        var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
+        if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
+          localStorage.removeItem('aeropulse_strava_athlete_name');
+          localStorage.removeItem('aeropulse_auth_gate_passed');
+        }
+        if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
+        if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
+        if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
+        if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
+        if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
+        if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
+        if (payload.tokens.weightKg) localStorage.setItem('aeropulse_strava_athlete_weight_kg', String(payload.tokens.weightKg));
+        if (payload.tokens.ftp) localStorage.setItem('aeropulse_strava_athlete_ftp', String(payload.tokens.ftp));
+        if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
+        if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
+        localStorage.removeItem('aeropulse_logged_out');
+        var sameAthlete = !prevAthleteId || !payload.tokens.athleteId || String(payload.tokens.athleteId) === prevAthleteId;
+        var hasLocalSyncPolicy = false;
+        try { hasLocalSyncPolicy = Boolean(localStorage.getItem('aeropulse_strava_sync_policy')); } catch (e) {}
+        if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
+          localStorage.setItem('aeropulse_auth_gate_passed', '1');
+        } else if (!sameAthlete) {
+          localStorage.removeItem('aeropulse_auth_gate_passed');
+        }
+      } else {
+        if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
+        if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
+        localStorage.removeItem('aeropulse_logged_out');
+      }
+      localStorage.setItem('aeropulse_oauth_just_connected', '1');
+    } catch (e) {}`;
+
     res
       .status(200)
       .type('html')
@@ -761,60 +827,11 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             : 'Your Strava account is linked. Return to THRESH to confirm your sync preferences.',
           ctaLabel: 'Continue to THRESH',
           ctaHref: returnUrl,
-          scriptBody: `(function(){
-            var payload = ${oauthSuccessPayload};
-            try {
-              if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-              if (payload.tokens) {
-                var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
-                if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
-                  localStorage.removeItem('aeropulse_strava_athlete_name');
-                  localStorage.removeItem('aeropulse_auth_gate_passed');
-                }
-                if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
-                if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
-                if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
-                if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
-                if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
-                if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
-                if (payload.tokens.weightKg) localStorage.setItem('aeropulse_strava_athlete_weight_kg', String(payload.tokens.weightKg));
-                if (payload.tokens.ftp) localStorage.setItem('aeropulse_strava_athlete_ftp', String(payload.tokens.ftp));
-                if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
-                if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
-                localStorage.removeItem('aeropulse_logged_out');
-                var sameAthlete = !prevAthleteId || !payload.tokens.athleteId || String(payload.tokens.athleteId) === prevAthleteId;
-                var hasLocalSyncPolicy = false;
-                try { hasLocalSyncPolicy = Boolean(localStorage.getItem('aeropulse_strava_sync_policy')); } catch (e) {}
-                if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
-                  localStorage.setItem('aeropulse_auth_gate_passed', '1');
-                } else if (!sameAthlete) {
-                  localStorage.removeItem('aeropulse_auth_gate_passed');
-                }
-              } else {
-                if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
-                if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
-                localStorage.removeItem('aeropulse_logged_out');
-              }
-              localStorage.setItem('aeropulse_oauth_just_connected', '1');
-            } catch (e) {}
-            var hasOpener = false;
-            try {
-              if (window.opener && window.opener !== window) {
-                hasOpener = true;
-                window.opener.postMessage(payload, window.location.origin);
-              }
-            } catch (e) {}
-            try {
-              var bc = new BroadcastChannel('aeropulse_oauth');
-              bc.postMessage(payload);
-            } catch (e) {}
-            var isPopupWindow = hasOpener || window.name === 'strava_oauth_popup';
-            if (isPopupWindow) {
-              setTimeout(function() { try { window.close(); } catch (e) {} }, 250);
-            } else {
-              window.location.replace(payload.returnUrl || '/');
-            }
-          })();`,
+          scriptBody: buildStravaCallbackScript({
+            serializedPayload: oauthSuccessPayload,
+            preScript: successHydrationScript,
+            redirectOnNonPopup: true,
+          }),
         })
       );
   } catch (error) {
@@ -825,6 +842,8 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       type: 'OAUTH_AUTH_ERROR',
       provider: 'strava',
       error: friendlyErr,
+      isPopupFlow,
+      openerOrigin: trustedOpenerOrigin,
     });
     res
       .status(500)
@@ -839,23 +858,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           ctaHref: buildReturnOnboardingUrl(verifiedState, { auth_error: friendlyErr }),
           ctaOnClick:
             "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
-          scriptBody: `(function(){
-            var payload = ${errJson};
-            var hasOpener = false;
-            try {
-              if (window.opener && window.opener !== window) {
-                hasOpener = true;
-                window.opener.postMessage(payload, window.location.origin);
-              }
-            } catch (e) {}
-            try {
-              var bc = new BroadcastChannel('aeropulse_oauth');
-              bc.postMessage(payload);
-            } catch (e) {}
-            if (hasOpener || window.name === 'strava_oauth_popup') {
-              setTimeout(function() { try { window.close(); } catch (e) {} }, 250);
-            }
-          })();`,
+          scriptBody: buildStravaCallbackScript({ serializedPayload: errJson }),
         })
       );
   }
@@ -880,20 +883,12 @@ stravaRouter.post('/api/strava/credentials', async (req: Request, res: Response)
   res.json({ saved: true, clientId });
 });
 
-stravaRouter.get(['/api/strava/auth/url', '/api/auth/strava/url'], (req: Request, res: Response) => {
-  const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
-  if (!clientId || !clientSecret) {
-    res.status(400).json({
-      error:
-        'Strava OAuth is not configured on this server yet. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in your Vercel Environment Variables (or local .env).',
-    });
-    return;
-  }
-
-  const sid = ensureRequestSessionSid(req, res);
+async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId: string) {
+  const { sid, sessionToken } = ensureRequestSession(req, res);
   const mode = String(req.query.mode || 'cloud').toLowerCase();
   const flow = String(req.query.flow || 'redirect').toLowerCase() === 'popup' ? 'popup' : 'redirect';
   const prompt = String(req.query.prompt || 'auto').toLowerCase() === 'force' ? 'force' : 'auto';
+  const callerOrigin = resolveSafeOrigin(req.query.origin as string | undefined) || undefined;
   const clientNonce = String(req.query.state || '').trim();
   const joinCode = String(req.query.joinCode || req.query.join || '').trim().slice(0, 32) || undefined;
   const slug = String(req.query.slug || '').trim().slice(0, 64) || undefined;
@@ -905,6 +900,7 @@ stravaRouter.get(['/api/strava/auth/url', '/api/auth/strava/url'], (req: Request
     sid,
     flow,
     mode,
+    origin: callerOrigin,
     joinCode,
     slug,
     inviteToken,
@@ -912,7 +908,9 @@ stravaRouter.get(['/api/strava/auth/url', '/api/auth/strava/url'], (req: Request
   setOAuthStateCookie(req, res, nonce);
 
   const redirectUri =
-    mode === 'localhost' ? 'http://localhost/exchange_token' : resolveStravaCallbackUrl(req);
+    mode === 'localhost'
+      ? 'http://localhost/exchange_token'
+      : await resolveValidatedStravaCallbackUrl(req, clientId);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -923,51 +921,53 @@ stravaRouter.get(['/api/strava/auth/url', '/api/auth/strava/url'], (req: Request
   });
 
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
-});
+  return { authUrl, redirectUri, stateToken, sessionToken };
+}
 
-stravaRouter.get(['/api/strava/auth/login', '/api/auth/strava/login'], (req: Request, res: Response) => {
-  const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
-  if (!clientId || !clientSecret) {
-    const msg = encodeURIComponent(
-      'Strava OAuth is not configured on this server yet (missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET).'
+stravaRouter.get(
+  ['/api/strava/auth/url', '/api/auth/strava/url'],
+  async (req: Request, res: Response) => {
+    const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+    if (!clientId || !clientSecret) {
+      res.status(400).json({
+        error:
+          'Strava OAuth is not configured on this server yet. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in your Vercel Environment Variables (or local .env).',
+      });
+      return;
+    }
+
+    const { authUrl, redirectUri, stateToken, sessionToken } = await buildStravaAuthorizeRequest(
+      req,
+      res,
+      clientId
     );
-    res.redirect(302, `/?auth_error=${msg}`);
-    return;
+    res.json({ url: authUrl, redirectUri, clientId, state: stateToken, sessionToken });
   }
-  const sid = ensureRequestSessionSid(req, res);
-  const prompt = String(req.query.prompt || 'auto').toLowerCase() === 'force' ? 'force' : 'auto';
-  const joinCode = String(req.query.joinCode || req.query.join || '').trim().slice(0, 32) || undefined;
-  const slug = String(req.query.slug || '').trim().slice(0, 64) || undefined;
-  const inviteToken =
-    String(req.query.inviteToken || req.query.t || '').trim().slice(0, 96) || undefined;
+);
 
-  const { stateToken, nonce } = issueOAuthStateToken({
-    sid,
-    flow: 'redirect',
-    mode: 'cloud',
-    joinCode,
-    slug,
-    inviteToken,
-  });
-  setOAuthStateCookie(req, res, nonce);
+stravaRouter.get(
+  ['/api/strava/auth/login', '/api/auth/strava/login'],
+  async (req: Request, res: Response) => {
+    const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
+    if (!clientId || !clientSecret) {
+      const msg = encodeURIComponent(
+        'Strava OAuth is not configured on this server yet (missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET).'
+      );
+      res.redirect(302, `/?auth_error=${msg}`);
+      return;
+    }
 
-  const redirectUri = resolveStravaCallbackUrl(req);
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    approval_prompt: prompt,
-    scope: 'read,activity:read_all,profile:read_all',
-    state: stateToken,
-  });
-  res.redirect(302, `https://www.strava.com/oauth/authorize?${params.toString()}`);
-});
+    const { authUrl } = await buildStravaAuthorizeRequest(req, res, clientId);
+    res.redirect(302, authUrl);
+  }
+);
 
 stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) => {
   const state = String(req.query.state || '').trim();
   const verifiedState = verifyOAuthStateToken(state);
-  if (!verifiedState) {
+  const rawNonce = /^[a-f0-9_-]{12,64}$/i.test(state) ? state : '';
+  const lookupNonce = verifiedState?.nonce || rawNonce;
+  if (!lookupNonce) {
     res.json({ completed: false });
     return;
   }
@@ -979,12 +979,10 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
     }
   }
 
-  let found: PendingStravaOAuthEntry | null | undefined = pendingOAuthByState.get(
-    verifiedState.nonce
-  );
+  let found: PendingStravaOAuthEntry | null | undefined = pendingOAuthByState.get(lookupNonce);
   if (!found) {
     found = await loadTenantVaultAsync<PendingStravaOAuthEntry | null>(
-      `oauth_poll_${verifiedState.nonce}`,
+      `oauth_poll_${lookupNonce}`,
       null
     );
   }
@@ -998,18 +996,24 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
   const canonicalSidForFound = found.athleteId
     ? deriveStravaSessionSid(found.athleteId)
     : undefined;
-  const authorizedCaller =
-    (cookieNonce && cookieNonce === verifiedState.nonce) ||
-    (verifiedState.sid && callerClaims?.sid === verifiedState.sid) ||
-    (canonicalSidForFound && callerClaims?.sid === canonicalSidForFound) ||
-    !verifiedState.sid;
+  const authorizedCaller = verifiedState
+    ? (cookieNonce && cookieNonce === verifiedState.nonce) ||
+      (verifiedState.sid && callerClaims?.sid === verifiedState.sid) ||
+      (canonicalSidForFound && callerClaims?.sid === canonicalSidForFound) ||
+      !callerClaims?.sid ||
+      !verifiedState.sid
+    : Boolean(
+        (cookieNonce && cookieNonce === lookupNonce) ||
+          (found.sid && callerClaims?.sid === found.sid) ||
+          (canonicalSidForFound && callerClaims?.sid === canonicalSidForFound)
+      );
   if (!authorizedCaller) {
     res.json({ completed: false });
     return;
   }
 
-  pendingOAuthByState.delete(verifiedState.nonce);
-  await deleteTenantVault(`oauth_poll_${verifiedState.nonce}`);
+  pendingOAuthByState.delete(lookupNonce);
+  await deleteTenantVault(`oauth_poll_${lookupNonce}`);
   clearOAuthStateCookie(res);
 
   const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {

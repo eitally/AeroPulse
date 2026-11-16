@@ -16,6 +16,7 @@ import {
   getSavedIntervalsHeaders,
   isGenericAthleteName,
   safeParseResponseJson,
+  sanitizeHttpHeaderValue,
   saveRotatedStravaTokensToStorage,
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
@@ -56,6 +57,16 @@ export function useTelemetryConnectors({
   setIdbSavedAt,
 }: UseTelemetryConnectorsParams) {
   const handledOAuthTokensRef = useRef<Set<string>>(new Set());
+  const oauthErrorReceivedRef = useRef<boolean>(false);
+  const oauthCompletedRef = useRef<boolean>(false);
+  const activePollTimerRef = useRef<number | null>(null);
+
+  const stopStravaOAuthPoll = useCallback(() => {
+    if (activePollTimerRef.current !== null) {
+      window.clearInterval(activePollTimerRef.current);
+      activePollTimerRef.current = null;
+    }
+  }, []);
 
   const completeStravaAuthHandshake = useCallback(
     async (opts: {
@@ -64,6 +75,8 @@ export function useTelemetryConnectors({
       hasExistingSyncPolicy?: boolean;
     }) => {
       const { tokens, sessionToken, hasExistingSyncPolicy } = opts;
+      oauthCompletedRef.current = true;
+      stopStravaOAuthPoll();
       const dedupeKey = String(
         tokens?.accessToken || tokens?.refreshToken || sessionToken || ''
       ).trim();
@@ -240,6 +253,8 @@ export function useTelemetryConnectors({
         (payload.type === 'OAUTH_AUTH_ERROR' || payload.type === 'aeropulse_oauth_error') &&
         payload.error
       ) {
+        oauthErrorReceivedRef.current = true;
+        stopStravaOAuthPoll();
         if (!payload.cancelled) {
           setSyncError(String(payload.error));
         }
@@ -304,12 +319,27 @@ export function useTelemetryConnectors({
       processIncomingOAuthPayload(event.data);
     };
 
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== 'aeropulse_oauth_result_v1' || !event.newValue) return;
+      try {
+        const parsed = JSON.parse(event.newValue) as { payload?: any };
+        if (parsed?.payload) {
+          processIncomingOAuthPayload(parsed.payload);
+        }
+      } catch {
+        // ignore malformed storage payload
+      }
+    };
+
     window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+      stopStravaOAuthPoll();
       if (bc) bc.close();
     };
-  }, [completeStravaAuthHandshake, setSyncError]);
+  }, [completeStravaAuthHandshake, setSyncError, stopStravaOAuthPoll]);
 
   const handleLaunchIntervalsOAuth = async (flow = 'popup') => {
     try {
@@ -556,12 +586,68 @@ export function useTelemetryConnectors({
     await fetchServerConfigStatus();
   };
 
+  const startStravaOAuthPoll = useCallback(
+    (pollStateToken: string, popup: Window | null) => {
+      stopStravaOAuthPoll();
+      let attempts = 0;
+      const pollHeaders: Record<string, string> = {};
+      try {
+        const sessionTok = sanitizeHttpHeaderValue(
+          localStorage.getItem('aeropulse_session_token')
+        );
+        if (sessionTok) pollHeaders['x-session-token'] = sessionTok;
+      } catch {
+        // ignore
+      }
+      const timer = window.setInterval(async () => {
+        attempts += 1;
+        if (oauthCompletedRef.current || oauthErrorReceivedRef.current || attempts > 80) {
+          stopStravaOAuthPoll();
+          return;
+        }
+        try {
+          const pollResp = await fetch(
+            `/api/strava/auth/poll?state=${encodeURIComponent(pollStateToken)}`,
+            { credentials: 'include', headers: pollHeaders }
+          );
+          if (!pollResp.ok) return;
+          const pollData = await pollResp.json();
+          if (pollData?.completed && pollData.tokens) {
+            stopStravaOAuthPoll();
+            try {
+              if (popup && !popup.closed) popup.close();
+            } catch {
+              // ignore
+            }
+            await completeStravaAuthHandshake({
+              tokens: pollData.tokens,
+              sessionToken: pollData.sessionToken,
+              hasExistingSyncPolicy: pollData.hasExistingSyncPolicy,
+            });
+          }
+        } catch {
+          // ignore transient poll errors
+        }
+      }, 1500);
+      activePollTimerRef.current = timer;
+    },
+    [completeStravaAuthHandshake, stopStravaOAuthPoll]
+  );
+
   const handleLaunchStravaOAuth = async (
     mode: 'cloud' | 'localhost' = 'cloud',
     joinContext?: StravaOAuthJoinContext,
     forcePrompt = false
   ) => {
     setSyncError(null);
+    oauthErrorReceivedRef.current = false;
+    oauthCompletedRef.current = false;
+    stopStravaOAuthPoll();
+    try {
+      localStorage.removeItem('aeropulse_oauth_result_v1');
+    } catch {
+      // ignore
+    }
     if (forcePrompt && !hasEnteredWorkspaceRef.current) {
       try {
         localStorage.removeItem('aeropulse_auth_gate_passed');
@@ -607,23 +693,35 @@ export function useTelemetryConnectors({
       }
     }
 
-    try {
-      const prompt =
-        forcePrompt || (hasEnteredWorkspaceRef.current && !isSessionLoggedOut) ? 'force' : 'auto';
-      const authQs = new URLSearchParams({
-        origin: window.location.origin,
-        mode,
-        flow: popup && !popup.closed ? 'popup' : 'redirect',
-        prompt,
-        state: oauthState,
-      });
-      if (joinContext?.joinCode) authQs.set('joinCode', joinContext.joinCode);
-      if (joinContext?.slug) authQs.set('slug', joinContext.slug);
-      if (joinContext?.inviteToken) authQs.set('inviteToken', joinContext.inviteToken);
+    const prompt =
+      forcePrompt || (hasEnteredWorkspaceRef.current && !isSessionLoggedOut) ? 'force' : 'auto';
+    const authQs = new URLSearchParams({
+      origin: window.location.origin,
+      mode,
+      flow: popup && !popup.closed ? 'popup' : 'redirect',
+      prompt,
+      state: oauthState,
+    });
+    if (joinContext?.joinCode) authQs.set('joinCode', joinContext.joinCode);
+    if (joinContext?.slug) authQs.set('slug', joinContext.slug);
+    if (joinContext?.inviteToken) authQs.set('inviteToken', joinContext.inviteToken);
 
+    const launchHeaders: Record<string, string> = {};
+    try {
+      const sessionTok = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_session_token'));
+      const cid = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_id'));
+      const csec = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_secret'));
+      if (sessionTok) launchHeaders['x-session-token'] = sessionTok;
+      if (cid) launchHeaders['x-strava-client-id'] = cid;
+      if (csec) launchHeaders['x-strava-client-secret'] = csec;
+    } catch {
+      // ignore
+    }
+
+    try {
       const resp = await fetch(`/api/strava/auth/url?${authQs.toString()}`, {
         credentials: 'include',
-        headers: getSavedIntervalsHeaders(),
+        headers: launchHeaders,
       });
       const data = await safeParseResponseJson(resp);
       if (!resp.ok || !data?.url) {
@@ -641,64 +739,55 @@ export function useTelemetryConnectors({
         return;
       }
 
+      if (data.sessionToken) {
+        try {
+          if (!localStorage.getItem('aeropulse_session_token')) {
+            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const pollStateToken = String(data.state || oauthState);
 
       if (popup && !popup.closed) {
         popup.location.replace(data.url);
         popup.focus();
 
-        // Poll /api/strava/auth/poll alongside postMessage & BroadcastChannel for cross-browser resilience
+        // Poll /api/strava/auth/poll alongside postMessage, BroadcastChannel & storage for cross-browser resilience
         if (mode === 'cloud') {
-          let attempts = 0;
-          let closedTicks = 0;
-          const pollTimer = window.setInterval(async () => {
-            attempts += 1;
-            if (popup && popup.closed) {
-              closedTicks += 1;
-            }
-            if (attempts > 90 || closedTicks > 12) {
-              window.clearInterval(pollTimer);
-              return;
-            }
-            try {
-              const pollResp = await fetch(
-                `/api/strava/auth/poll?state=${encodeURIComponent(pollStateToken)}`,
-                { credentials: 'include', headers: getSavedIntervalsHeaders() }
-              );
-              if (!pollResp.ok) return;
-              const pollData = await pollResp.json();
-              if (pollData?.completed && pollData.tokens) {
-                window.clearInterval(pollTimer);
-                try {
-                  if (popup && !popup.closed) popup.close();
-                } catch {
-                  // ignore
-                }
-                await completeStravaAuthHandshake({
-                  tokens: pollData.tokens,
-                  sessionToken: pollData.sessionToken,
-                  hasExistingSyncPolicy: pollData.hasExistingSyncPolicy,
-                });
-              }
-            } catch {
-              // ignore transient poll errors
-            }
-          }, 1200);
+          startStravaOAuthPoll(pollStateToken, popup);
         }
         return;
       }
 
       // Fallback when on mobile, standalone PWA, or when popup opening was blocked
       window.location.assign(data.url);
-    } catch (err) {
-      if (popup && !popup.closed) {
-        try {
-          popup.close();
-        } catch {
-          // ignore
+    } catch {
+      const fallbackLoginUrl = `/api/strava/auth/login?${authQs.toString()}`;
+      try {
+        if (popup && !popup.closed) {
+          popup.location.replace(fallbackLoginUrl);
+          popup.focus();
+          if (mode === 'cloud') {
+            startStravaOAuthPoll(oauthState, popup);
+          }
+          return;
         }
+        window.location.assign(fallbackLoginUrl);
+      } catch {
+        if (popup && !popup.closed) {
+          try {
+            popup.close();
+          } catch {
+            // ignore
+          }
+        }
+        setSyncError(
+          'Unable to reach the Strava sign-in endpoint. Refresh the page and try again, or verify your connection to thresh-dev.vercel.app.'
+        );
       }
-      setSyncError(err instanceof Error ? err.message : 'Failed to start Strava OAuth sign-in.');
     }
   };
 

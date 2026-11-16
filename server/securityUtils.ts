@@ -22,6 +22,7 @@ export interface OAuthStateClaims {
   sid?: string;
   flow?: 'popup' | 'redirect';
   mode?: string;
+  origin?: string;
   joinCode?: string;
   slug?: string;
   inviteToken?: string;
@@ -132,6 +133,7 @@ export function issueOAuthStateToken(
     sid: input.sid,
     flow: input.flow || 'redirect',
     mode: input.mode,
+    origin: input.origin,
     joinCode: input.joinCode,
     slug: input.slug,
     inviteToken: input.inviteToken,
@@ -402,6 +404,41 @@ export function resolveSafeOrigin(rawOrigin?: string): string | null {
   }
 }
 
+const TRUSTED_PROD_CORS_ORIGINS = new Set<string>([
+  'https://thresh-dev.vercel.app',
+  'https://aeropulse-eta.vercel.app',
+]);
+
+/**
+ * Validates whether a request Origin is allowed for cross-origin credentialed requests
+ * (for example, during legacy domain -> new domain 307 migration).
+ */
+export function resolveTrustedCorsOrigin(rawOrigin?: string): string | null {
+  const safeOrigin = resolveSafeOrigin(rawOrigin);
+  if (!safeOrigin) return null;
+  if (TRUSTED_PROD_CORS_ORIGINS.has(safeOrigin)) {
+    return safeOrigin;
+  }
+  const appOrigin = resolveSafeOrigin(process.env.APP_URL || '');
+  if (appOrigin && safeOrigin === appOrigin) {
+    return safeOrigin;
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const parsed = new URL(safeOrigin);
+      if (
+        parsed.protocol === 'http:' &&
+        (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+      ) {
+        return safeOrigin;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function isPrivateIpv4Octets(octets: number[]): boolean {
   if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
     return true;
@@ -537,6 +574,18 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
+  const allowedOrigin = resolveTrustedCorsOrigin(req.headers.origin as string | undefined);
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, x-session-token, x-strava-client-id, x-strava-client-secret, x-strava-refresh-token, x-strava-access-token, x-strava-expires-at, x-strava-sync-window, x-strava-import-gear, x-intervals-api-key, x-intervals-athlete-id, x-intervals-access-token, x-wahoo-access-token, x-polar-access-token, x-garmin-personal-api-key, x-garmin-bearer-token, x-garmin-oauth1-token, x-garmin-oauth1-secret, x-map-tile-api-key, x-map-tile-provider, x-gemini-api-key'
+    );
+    res.setHeader('Vary', 'Origin');
+  }
+
   const reqPath = req.path || req.url || '';
   if (
     reqPath.startsWith('/api/') ||
@@ -546,6 +595,11 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   ) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
+  }
+
+  if (req.method === 'OPTIONS' && allowedOrigin) {
+    res.status(204).end();
+    return;
   }
 
   next();
