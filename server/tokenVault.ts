@@ -284,6 +284,7 @@ export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promis
 }
 
 export const VAULT_COOKIE_NAME = 'thresh_vault';
+export const USER_VAULT_COOKIE_NAME = 'thresh_user';
 const VAULT_COOKIE_TTL_SECS = 30 * 24 * 60 * 60; // 30 days
 
 export interface CompactCookieVaultPayload {
@@ -348,6 +349,34 @@ export function buildEncryptedVaultCookieHeader(
 
 export function buildClearVaultCookieHeader(): string {
   return `${VAULT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
+/**
+ * Encrypts a compact ThreshUser identity record (< 3.5KB) into an HttpOnly AES-256-GCM
+ * cookie so Google/Magic-Link/Passkey sessions survive Vercel cold starts without DATABASE_URL.
+ */
+export function buildEncryptedUserCookieHeader(
+  userPayload: unknown,
+  isSecure: boolean
+): string | null {
+  const envelope = encryptJsonForVault(userPayload);
+  const encoded = encodeURIComponent(envelope);
+  if (encoded.length > 3700) {
+    return null;
+  }
+  const parts = [
+    `${USER_VAULT_COOKIE_NAME}=${encoded}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${VAULT_COOKIE_TTL_SECS}`,
+  ];
+  if (isSecure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+export function buildClearUserCookieHeader(): string {
+  return `${USER_VAULT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
 /**

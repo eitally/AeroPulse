@@ -341,11 +341,29 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   // Hydrate session if already signed in via THRESH session cookie
   useEffect(() => {
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    const justSignedIn = search.includes('auth_just_signed_in=1');
+    if (justSignedIn) {
+      try {
+        localStorage.removeItem('aeropulse_logged_out');
+      } catch {
+        // ignore
+      }
+    }
     if (!localUser && !currentUser && !status.stravaConnected) {
       fetch('/api/auth/me', { credentials: 'include' })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data?.authenticated && data?.user) {
+            try {
+              const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
+              if (justSignedIn) localStorage.removeItem('aeropulse_logged_out');
+              if ((justSignedIn || notLoggedOut) && data.sessionToken) {
+                localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+              }
+            } catch {
+              // ignore
+            }
             setLocalUser(data.user);
             onAuthenticatedUser?.(data.user);
             if (data.user.name && !athleteName) setAthleteName(data.user.name);
@@ -522,15 +540,31 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setStepNotice(null);
     setJoinError(null);
     try {
-      const res = await fetch('/api/auth/google/url', { credentials: 'include' });
+      localStorage.removeItem('aeropulse_logged_out');
+    } catch {
+      // ignore
+    }
+    try {
+      const qs = new URLSearchParams();
+      if (currentJoinContext?.joinCode) qs.set('joinCode', currentJoinContext.joinCode);
+      if (currentJoinContext?.slug) qs.set('slug', currentJoinContext.slug);
+      if (currentJoinContext?.inviteToken) qs.set('inviteToken', currentJoinContext.inviteToken);
+      const query = qs.toString();
+      const res = await fetch(`/api/auth/google/url${query ? `?${query}` : ''}`, {
+        credentials: 'include',
+      });
       const data = await res.json().catch(() => ({}));
-      if (data.configured && data.authUrl) {
-        window.location.href = data.authUrl;
-      } else if (data.devMockLoginUrl) {
-        window.location.href = data.devMockLoginUrl;
-      } else {
-        setJoinError('Google sign-in is not configured on this server.');
+      const targetUrl = data.url || data.authUrl;
+      const devMockTarget = data.devMockUrl || data.devMockLoginUrl;
+      if (res.ok && data.configured && targetUrl) {
+        window.location.href = targetUrl;
+        return;
       }
+      if (res.ok && !data.configured && devMockTarget) {
+        window.location.href = devMockTarget;
+        return;
+      }
+      setJoinError(data.error || data.message || 'Google sign-in is not configured on this server.');
     } catch {
       setJoinError('Failed to initialize Google sign-in.');
     } finally {

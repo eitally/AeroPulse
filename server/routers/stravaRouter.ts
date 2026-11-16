@@ -20,6 +20,7 @@ import {
   loadJsonFile,
   saveJsonFile,
   loadTenantVaultAsync,
+  saveTenantVaultAsync,
   deleteTenantVault,
   deriveStravaSessionSid,
   STRAVA_KUDOS_CACHE_FILE,
@@ -708,15 +709,20 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       hasExistingSyncPolicy,
     };
     pendingOAuthByState.set(verifiedState.nonce, pendingPayload);
-    await loadTenantVaultAsync(`oauth_poll_${verifiedState.nonce}`, pendingPayload);
+    if (verifiedState?.nonce) {
+      await saveTenantVaultAsync(`oauth_poll_${verifiedState.nonce}`, pendingPayload);
+    }
 
     clearOAuthStateCookie(res);
 
-    const returnUrl = buildReturnOnboardingUrl(verifiedState, {
+    const hasPendingTeamJoin = Boolean(verifiedState?.slug || verifiedState?.joinCode);
+    const onboardingUrl = buildReturnOnboardingUrl(verifiedState, {
+      oauth: 'strava_connected',
       oauth_just_connected: '1',
       ...(athleteId ? { strava_athlete_id: athleteId } : {}),
       ...(athleteName && !isGenericName(athleteName) ? { strava_athlete_name: athleteName } : {}),
     });
+    const returnUrl = hasExistingSyncPolicy && !hasPendingTeamJoin ? '/#fitness' : onboardingUrl;
 
     const oauthSuccessPayload = safeJsonForScript({
       type: 'OAUTH_AUTH_SUCCESS',
@@ -750,15 +756,42 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           title: 'Strava Connected · THRESH',
           heading: `Strava Connected${athleteName && !isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}`,
           accentColor: '#10B981',
-          body: 'Your Strava account is linked. Return to THRESH to confirm your sync preferences.',
+          body: hasExistingSyncPolicy
+            ? 'Welcome back! Restoring your THRESH training workspace…'
+            : 'Your Strava account is linked. Return to THRESH to confirm your sync preferences.',
           ctaLabel: 'Continue to THRESH',
           ctaHref: returnUrl,
           scriptBody: `(function(){
             var payload = ${oauthSuccessPayload};
             try {
               if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-              if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
-              if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
+              if (payload.tokens) {
+                var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
+                if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
+                  localStorage.removeItem('aeropulse_strava_athlete_name');
+                  localStorage.removeItem('aeropulse_auth_gate_passed');
+                }
+                if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
+                if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
+                if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
+                if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
+                if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
+                if (payload.tokens.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.tokens.athleteName);
+                if (payload.tokens.weightKg) localStorage.setItem('aeropulse_strava_athlete_weight_kg', String(payload.tokens.weightKg));
+                if (payload.tokens.ftp) localStorage.setItem('aeropulse_strava_athlete_ftp', String(payload.tokens.ftp));
+                if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
+                if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
+                localStorage.removeItem('aeropulse_logged_out');
+                if (payload.hasExistingSyncPolicy) {
+                  localStorage.setItem('aeropulse_auth_gate_passed', '1');
+                } else {
+                  localStorage.removeItem('aeropulse_auth_gate_passed');
+                }
+              } else {
+                if (payload.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.athleteId));
+                if (payload.athleteName) localStorage.setItem('aeropulse_strava_athlete_name', payload.athleteName);
+                localStorage.removeItem('aeropulse_logged_out');
+              }
               localStorage.setItem('aeropulse_oauth_just_connected', '1');
             } catch (e) {}
             var hasOpener = false;

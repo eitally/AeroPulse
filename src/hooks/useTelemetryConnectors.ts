@@ -135,6 +135,7 @@ export function useTelemetryConnectors({
       const statusData = await fetchServerConfigStatus();
       const alreadyHasPolicy = Boolean(
         hasExistingSyncPolicy ||
+          statusData?.stravaSyncPolicy?.confirmedAt ||
           statusData?.stravaSyncPolicy?.consentedAt ||
           hasEnteredWorkspaceRef.current
       );
@@ -144,6 +145,7 @@ export function useTelemetryConnectors({
         } catch {
           // ignore
         }
+        hasEnteredWorkspaceRef.current = true;
         setHasEnteredWorkspace(true);
         void syncLiveTelemetry(false);
       }
@@ -180,15 +182,70 @@ export function useTelemetryConnectors({
 
     const processIncomingOAuthPayload = (payload: any) => {
       if (!payload || typeof payload !== 'object') return;
-      if (payload.type === 'aeropulse_oauth_success' && payload.tokens) {
-        void completeStravaAuthHandshake({
-          tokens: payload.tokens,
-          sessionToken: payload.sessionToken,
-          hasExistingSyncPolicy: payload.hasExistingSyncPolicy,
-        });
-      } else if (payload.type === 'aeropulse_oauth_error' && payload.error) {
-        setSyncError(String(payload.error));
-      } else if (payload.type === 'aeropulse_oauth_code' && payload.code) {
+      if (payload.type === 'OAUTH_AUTH_SUCCESS' || payload.type === 'aeropulse_oauth_success') {
+        if (payload.provider === 'intervals') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
+          }
+          if (payload.sessionToken) {
+            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+          }
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.removeItem('aeropulse_intervals_api_key');
+          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          return;
+        }
+        if (payload.provider === 'wahoo') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_wahoo_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_wahoo_athlete_name', payload.athleteName);
+          }
+          if (payload.sessionToken) {
+            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+          }
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.setItem('aeropulse_wahoo_connected', '1');
+          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          return;
+        }
+        if (payload.provider === 'polar') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_polar_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_polar_athlete_name', payload.athleteName);
+          }
+          if (payload.sessionToken) {
+            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+          }
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.setItem('aeropulse_polar_connected', '1');
+          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          return;
+        }
+        if (payload.tokens) {
+          void completeStravaAuthHandshake({
+            tokens: payload.tokens,
+            sessionToken: payload.sessionToken,
+            hasExistingSyncPolicy: payload.hasExistingSyncPolicy,
+          });
+        }
+      } else if (
+        (payload.type === 'OAUTH_AUTH_ERROR' || payload.type === 'aeropulse_oauth_error') &&
+        payload.error
+      ) {
+        if (!payload.cancelled) {
+          setSyncError(String(payload.error));
+        }
+      } else if (
+        (payload.type === 'OAUTH_AUTH_CODE' || payload.type === 'aeropulse_oauth_code') &&
+        payload.code
+      ) {
         const codeStr = String(payload.code).trim();
         const dedupeKey = `code:${codeStr}`;
         if (handledOAuthTokensRef.current.has(dedupeKey)) return;
@@ -202,9 +259,25 @@ export function useTelemetryConnectors({
               body: JSON.stringify({ code: codeStr }),
             });
             const exData = await safeParseResponseJson(exResp);
-            if (exResp.ok && exData?.tokens) {
+            const resolvedTokens =
+              exData?.tokens ||
+              (exData?.accessToken || exData?.refreshToken
+                ? {
+                    accessToken: exData.accessToken,
+                    refreshToken: exData.refreshToken,
+                    expiresAt: exData.expiresAt,
+                    clientId: exData.clientId,
+                    athleteId: exData.athleteId,
+                    athleteName: exData.athleteName,
+                    weightKg: exData.weightKg,
+                    ftp: exData.ftp,
+                    measurementPreference: exData.measurementPreference,
+                    grantedScope: exData.grantedScope,
+                  }
+                : null);
+            if (exResp.ok && resolvedTokens) {
               await completeStravaAuthHandshake({
-                tokens: exData.tokens,
+                tokens: resolvedTokens,
                 sessionToken: exData.sessionToken,
                 hasExistingSyncPolicy: exData.hasExistingSyncPolicy,
               });
@@ -221,6 +294,7 @@ export function useTelemetryConnectors({
     const handleMessage = (event: MessageEvent) => {
       if (
         event.origin !== window.location.origin &&
+        !event.origin.includes('.vercel.app') &&
         !event.origin.includes('run.app') &&
         !event.origin.includes('localhost')
       ) {
@@ -574,9 +648,13 @@ export function useTelemetryConnectors({
         // Poll /api/strava/auth/poll alongside postMessage & BroadcastChannel for cross-browser resilience
         if (mode === 'cloud') {
           let attempts = 0;
+          let closedTicks = 0;
           const pollTimer = window.setInterval(async () => {
             attempts += 1;
-            if (attempts > 90 || (popup && popup.closed && attempts > 3)) {
+            if (popup && popup.closed) {
+              closedTicks += 1;
+            }
+            if (attempts > 90 || closedTicks > 12) {
               window.clearInterval(pollTimer);
               return;
             }

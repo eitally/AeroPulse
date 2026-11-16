@@ -4,6 +4,7 @@ import {
   getVaultStorageBackend,
   deleteTenantVault,
   buildClearVaultCookieHeader,
+  buildClearUserCookieHeader,
 } from '../tokenVault.ts';
 import {
   appendSetCookieHeader,
@@ -465,6 +466,7 @@ configRouter.post('/api/auth/logout', async (req: Request, res: Response) => {
     clearSessionCookie(res);
     clearOAuthStateCookie(res);
     appendSetCookieHeader(res, buildClearVaultCookieHeader());
+    appendSetCookieHeader(res, buildClearUserCookieHeader());
 
     const clearCredentials = Boolean(req.body?.clearCredentials) && wasAuthenticated;
     if (clearCredentials) {

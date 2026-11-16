@@ -59,7 +59,7 @@ import { CockpitFooter } from './components/CockpitFooter';
 import { MobileDock } from './components/MobileDock';
 import { CockpitModals } from './components/CockpitModals';
 
-import { useTelemetrySync, hasStravaClientCredentials } from './hooks/useTelemetrySync';
+import { useTelemetrySync, hasStravaClientCredentials, type CompleteStravaAuthFn } from './hooks/useTelemetrySync';
 import { useTelemetryConnectors } from './hooks/useTelemetryConnectors';
 import { useRouteStreams } from './hooks/useRouteStreams';
 import { usePlannedEvents } from './hooks/usePlannedEvents';
@@ -507,6 +507,7 @@ export default function App() {
     isSessionLoggedOut,
   });
 
+  const completeStravaAuthHandshakeRef = useRef<CompleteStravaAuthFn | null>(null);
   const { reconcileStoreOwnerAthleteId, fetchServerConfigStatus, syncLiveTelemetry } =
     useTelemetrySync({
       activitiesRef,
@@ -530,9 +531,18 @@ export default function App() {
       setMyTeams,
       setActiveTeamId,
       setActiveViewedAthleteId,
+      idbHydratedRef,
+      hasEnteredWorkspace,
+      hasEnteredWorkspaceRef,
+      setHasEnteredWorkspace,
+      isSessionLoggedOut,
+      setIsSessionLoggedOut,
+      isSampleDemoMode,
+      completeStravaAuthHandshakeRef,
     });
 
   const {
+    completeStravaAuthHandshake,
     handleLaunchIntervalsOAuth,
     handleConnectIntervals,
     handleDisconnectIntervals,
@@ -568,6 +578,8 @@ export default function App() {
     setHasEnteredWorkspace,
     setIdbSavedAt,
   });
+
+  completeStravaAuthHandshakeRef.current = completeStravaAuthHandshake;
 
   const {
     isScanningSegments,
