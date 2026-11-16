@@ -54,11 +54,12 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
+          globIgnores: ['**/brand/*.png'],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/docs(\/|$)/],
           runtimeCaching: [
             {
               // Never cache authenticated API or OAuth endpoints in Service Worker storage

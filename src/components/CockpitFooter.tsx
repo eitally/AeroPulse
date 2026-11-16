@@ -6,6 +6,7 @@ interface CockpitFooterProps {
   onOpenProfile: () => void;
   onOpenDataSources: () => void;
   onOpenGuide: () => void;
+  onOpenBrandStudio?: () => void;
 }
 
 export const CockpitFooter: React.FC<CockpitFooterProps> = ({
@@ -13,6 +14,7 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
   onOpenProfile,
   onOpenDataSources,
   onOpenGuide,
+  onOpenBrandStudio,
 }) => {
   return (
     <footer className="pt-5 border-t border-emerald-900/15 dark:border-[#244331] flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
@@ -23,28 +25,40 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
           Run &amp; Ride Threshold Telemetry
         </span>
       </div>
-      <div className="flex items-center gap-4 font-medium">
+      <div className="flex flex-wrap items-center gap-4 font-medium">
         <button
           type="button"
           onClick={onOpenProfile}
-          className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
         >
           Zones &amp; FTP ({athleteFtp}W)
         </button>
         <button
           type="button"
           onClick={onOpenDataSources}
-          className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
         >
           Data Sources
         </button>
         <button
           type="button"
           onClick={onOpenGuide}
-          className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
         >
           Guide
         </button>
+        <a
+          href="/brand"
+          onClick={(e) => {
+            if (onOpenBrandStudio && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+              e.preventDefault();
+              onOpenBrandStudio();
+            }
+          }}
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center font-semibold ap-text-brand hover:underline cursor-pointer"
+        >
+          Brand &amp; Style Guide
+        </a>
       </div>
     </footer>
   );

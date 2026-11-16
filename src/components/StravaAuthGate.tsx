@@ -92,6 +92,7 @@ interface StravaAuthGateProps {
   onEnterSampleDemo?: () => void;
   onImportBatchActivities?: (activities: UnifiedActivity[]) => void;
   onBypassToLocalSession?: () => Promise<void>;
+  onOpenBrandStudio?: () => void;
   existingActivities?: UnifiedActivity[];
   distanceUnit?: DistanceUnit;
 }
@@ -201,6 +202,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   onEnterSampleDemo,
   onImportBatchActivities,
   onBypassToLocalSession,
+  onOpenBrandStudio,
   existingActivities = [],
   distanceUnit: propDistanceUnit,
 }) => {
@@ -2559,6 +2561,38 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             </div>
           )}
         </main>
+
+        <footer className="ap-card-inset rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-slate-600 dark:text-slate-300 relative z-10">
+          <span className="font-mono text-2xs font-semibold text-slate-600 dark:text-slate-400">
+            THRESH — Run &amp; Ride Readiness
+          </span>
+          <div className="flex flex-wrap items-center gap-4 font-medium">
+            <a
+              href="/docs/"
+              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center hover:text-slate-950 dark:hover:text-white transition-colors"
+            >
+              Guide &amp; Docs
+            </a>
+            <a
+              href="/brand"
+              onClick={(e) => {
+                if (onOpenBrandStudio && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                  e.preventDefault();
+                  onOpenBrandStudio();
+                }
+              }}
+              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center font-semibold ap-text-brand hover:underline cursor-pointer"
+            >
+              Brand &amp; Style Guide
+            </a>
+            <a
+              href="/docs/#sec-safesport"
+              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center hover:text-slate-950 dark:hover:text-white transition-colors"
+            >
+              Safe-Sport &amp; Privacy
+            </a>
+          </div>
+        </footer>
       </div>
 
       <ArchiveOnboardingWizard

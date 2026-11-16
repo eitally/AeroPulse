@@ -66,11 +66,15 @@ import { usePlannedEvents } from './hooks/usePlannedEvents';
 import { useTeamRoster } from './hooks/useTeamRoster';
 import { useCoachChat } from './hooks/useCoachChat';
 import { useRosterActions } from './hooks/useRosterActions';
+import { useBrandStudioRoute } from './utils/brandRoute';
+
+const BrandGuidePage = React.lazy(() => import('./components/BrandGuidePage'));
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 
 export default function App() {
+  const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -1592,6 +1596,17 @@ export default function App() {
     }
   };
 
+  if (isBrandRoute) {
+    const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
+    return (
+      <IconContext.Provider value={{ weight: 'duotone' }}>
+        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">Loading THRESH Brand Studio…</div>}>
+          <BrandGuidePage isDark={isDark} onToggleDark={() => setIsDark((d) => !d)} hasActiveWorkspace={hasWorkspace} onExitBrand={() => closeBrand(hasWorkspace ? activeTab : undefined)} />
+        </React.Suspense>
+      </IconContext.Provider>
+    );
+  }
+
   if (
     !isSampleDemoMode &&
     (isSessionLoggedOut || !hasEnteredWorkspace || (!hasStravaClientCredentials() && !currentUser))
@@ -1634,6 +1649,7 @@ export default function App() {
           onImportBatchActivities={handleImportMultipleParsedActivities}
           existingActivities={activities}
           distanceUnit={distanceUnit}
+          onOpenBrandStudio={openBrand}
           onBypassToLocalSession={async () => {
             try {
               localStorage.removeItem('aeropulse_logged_out');
@@ -1832,6 +1848,7 @@ export default function App() {
               onOpenProfile={() => setIsProfileModalOpen(true)}
               onOpenDataSources={() => setIsDataSourcesOpen(true)}
               onOpenGuide={() => setShowMetricsGuide(true)}
+              onOpenBrandStudio={openBrand}
             />
           </div>
         </div>
