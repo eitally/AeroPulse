@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-12T18:27:00Z",
+  "generatedAt": "2026-11-16T07:50:00Z",
   "title": "Design System: THRESH",
   "extensions": {
     "colorMeta": {
@@ -34,6 +34,21 @@
           "oklch(96% 0.11 122)"
         ]
       },
+      "turf-lime-mark": {
+        "role": "primary",
+        "displayName": "Turf Lime Mark",
+        "canonical": "#56BA00",
+        "tonalRamp": [
+          "oklch(22% 0.08 132)",
+          "oklch(34% 0.12 132)",
+          "oklch(46% 0.16 132)",
+          "oklch(58% 0.19 132)",
+          "oklch(70% 0.21 132)",
+          "oklch(80% 0.19 132)",
+          "oklch(89% 0.12 132)",
+          "oklch(96% 0.05 132)"
+        ]
+      },
       "stadium-pine": {
         "role": "primary",
         "displayName": "Stadium Pine",
@@ -47,6 +62,21 @@
           "oklch(74% 0.07 154)",
           "oklch(86% 0.04 154)",
           "oklch(95% 0.02 154)"
+        ]
+      },
+      "pine-gauge-dark": {
+        "role": "primary",
+        "displayName": "Dark Gauge Pine",
+        "canonical": "#399663",
+        "tonalRamp": [
+          "oklch(20% 0.05 155)",
+          "oklch(31% 0.08 155)",
+          "oklch(43% 0.10 155)",
+          "oklch(55% 0.115 155)",
+          "oklch(67% 0.11 155)",
+          "oklch(78% 0.08 155)",
+          "oklch(88% 0.045 155)",
+          "oklch(95% 0.02 155)"
         ]
       },
       "volt-olive-ink": {
@@ -166,6 +196,21 @@
           "oklch(60% 0.02 152)",
           "oklch(72% 0.015 152)",
           "oklch(84% 0.01 152)",
+          "oklch(95% 0.008 152)"
+        ]
+      },
+      "tile-obsidian": {
+        "role": "neutral",
+        "displayName": "Tile Obsidian",
+        "canonical": "#0B1911",
+        "tonalRamp": [
+          "oklch(17% 0.022 152)",
+          "oklch(26% 0.028 152)",
+          "oklch(37% 0.032 152)",
+          "oklch(49% 0.032 152)",
+          "oklch(61% 0.028 152)",
+          "oklch(73% 0.022 152)",
+          "oklch(85% 0.014 152)",
           "oklch(95% 0.008 152)"
         ]
       },
@@ -653,7 +698,7 @@
     "typographyMeta": {
       "display": {
         "displayName": "Display",
-        "purpose": "Onboarding hero headlines in StravaAuthGate and primary cockpit milestones."
+        "purpose": "Onboarding hero headlines in StravaAuthGate, /brand studio hero heading, and primary cockpit milestones."
       },
       "headline": {
         "displayName": "Headline",
@@ -673,7 +718,7 @@
       },
       "kpi": {
         "displayName": "KPI Readout",
-        "purpose": "Hero readiness metrics, FTP/VDOT thresholds, and live 0.01s tabular stopwatch displays."
+        "purpose": "Hero readiness metrics, FTP/VDOT thresholds, and live 0.01s tabular stopwatch displays (scaling to 2.25rem in the /brand comparator)."
       }
     },
     "shadows": [
@@ -805,6 +850,22 @@
       "description": "Crisp Paper telemetry card housing a shadowless Chalk Inset well, tabular KPI numerals, and a dashed optimal polarization corridor bar.",
       "html": "<article class=\"ds-telemetry-card\"><div class=\"ds-card-head\"><h3 class=\"ds-card-title\">7-Day Rolling Load Focus</h3><span class=\"ds-ctl-pill\">+3.8 CTL/wk</span></div><div class=\"ds-inset-well\"><div class=\"ds-gauge-row\"><span class=\"ds-zone-label\"><span class=\"ds-zone-dot\"></span>Low Aerobic · Z1–Z2</span><span class=\"ds-zone-val\">312 TSS (71%)</span></div><div class=\"ds-gauge-track\"><div class=\"ds-gauge-fill\"></div><div class=\"ds-gauge-corridor\" title=\"Optimal Corridor: 65–78%\"></div></div></div></article>",
       "css": ".ds-telemetry-card { max-width: 24rem; padding: 1.125rem; border-radius: 1rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); box-shadow: 0 2px 10px -3px rgba(16, 20, 17, 0.05), 0 1px 2px 0 rgba(16, 20, 17, 0.03); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; } .ds-card-title { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-ctl-pill { padding: 0.15rem 0.5rem; border-radius: 0.375rem; background: #e3ece5; border: 1px solid rgba(40, 87, 59, 0.22); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 600; color: #1f3528; } .ds-inset-well { padding: 0.875rem; border-radius: 0.75rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid var(--ap-inset-border, rgba(38, 88, 58, 0.16)); display: flex; flex-direction: column; gap: 0.5rem; } .ds-gauge-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.6875rem; } .ds-zone-label { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 600; color: #1f3528; } .ds-zone-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; background-color: #0d9488; } .ds-zone-val { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-weight: 700; color: #101411; } .ds-gauge-track { position: relative; height: 0.625rem; border-radius: 9999px; background: rgba(148, 163, 184, 0.32); overflow: hidden; } .ds-gauge-fill { width: 71%; height: 100%; border-radius: 9999px; background-color: #0d9488; transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-gauge-corridor { position: absolute; top: 0; bottom: 0; left: 65%; width: 13%; border-left: 2px dashed rgba(16, 20, 17, 0.65); border-right: 2px dashed rgba(16, 20, 17, 0.65); background: rgba(16, 20, 17, 0.06); }"
+    },
+    {
+      "name": "Brand Asset Specimen & Stress-Test Export Card",
+      "kind": "card",
+      "refersTo": "specimen-stage-dark",
+      "description": "Brand Studio asset card pairing a legality status pill, simulated backdrop well, physical print floor, and SVG/PNG/Copy actions.",
+      "html": "<article class=\"ds-brand-card\"><div class=\"ds-brand-head\"><div><h3 class=\"ds-brand-title\">Primary Lockup — Dark Stage</h3><p class=\"ds-brand-sub\">Track Volt (#C8FF00) + Pine (#399663) horizontal lockup</p></div><span class=\"ds-brand-legality\">Native Pairing</span></div><div class=\"ds-brand-well\"><svg viewBox=\"0 0 128 128\" width=\"56\" height=\"56\" aria-hidden=\"true\"><rect x=\"2\" y=\"2\" width=\"124\" height=\"124\" rx=\"28\" fill=\"#0B1911\" stroke=\"#399663\" stroke-width=\"3.5\"/><path d=\"M 47.74 88.33 A 23.4 23.4 0 0 1 51.6 51.66 L 55.73 58.27 A 15.6 15.6 0 0 0 53.16 82.72 Z\" fill=\"#399663\"/><path d=\"M 22.6 114.37 A 59.6 59.6 0 1 1 122.3 59.11 L 114.28 60.81 A 51.4 51.4 0 1 0 28.29 108.47 Z\" fill=\"#C8FF00\"/><path d=\"M 58.73 66.59 L 102.53 30.18 L 69.27 76.41 Z\" fill=\"#C8FF00\"/><circle cx=\"64\" cy=\"71.5\" r=\"9\" fill=\"#C8FF00\"/></svg></div><p class=\"ds-brand-spec\">Min print 0.5 in (13 mm) tall · Min web 28 px tall</p><div class=\"ds-brand-actions\"><button type=\"button\" class=\"ds-brand-btn\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z\"/></svg><span>.SVG</span></button><button type=\"button\" class=\"ds-brand-pill-btn\">2x PNG</button><button type=\"button\" class=\"ds-brand-pill-btn\">Copy</button></div></article>",
+      "css": ".ds-brand-card { max-width: 24rem; padding: 1rem; border-radius: 1rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); box-shadow: 0 2px 10px -3px rgba(16, 20, 17, 0.05), 0 1px 2px 0 rgba(16, 20, 17, 0.03); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-brand-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; } .ds-brand-title { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-brand-sub { margin: 0.15rem 0 0; font-size: 0.75rem; color: #43584b; line-height: 1.35; } .ds-brand-legality { padding: 0.125rem 0.625rem; border-radius: 9999px; background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; white-space: nowrap; } .ds-brand-well { height: 7.5rem; border-radius: 0.75rem; background-color: #0b120e; background-image: radial-gradient(circle at 18% 12%, rgba(200, 255, 0, 0.14), transparent 58%); border: 1px solid #2b543b; display: flex; align-items: center; justify-content: center; } .ds-brand-spec { margin: 0; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; color: #43584b; } .ds-brand-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; padding-top: 0.5rem; border-top: 1px solid rgba(38, 88, 58, 0.14); } .ds-brand-btn, .ds-brand-pill-btn { min-height: 2.25rem; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.375rem 0.6875rem; border-radius: 0.5rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid rgba(38, 88, 58, 0.22); color: #101411; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-brand-btn:hover, .ds-brand-pill-btn:hover { background: #dce7de; border-color: #2b5b3f; } .ds-brand-btn:focus-visible, .ds-brand-pill-btn:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
+    },
+    {
+      "name": "3-Tier Swatch Copy Row",
+      "kind": "custom",
+      "refersTo": "swatch-copy-tile",
+      "description": "Dual Light/Dark 1-click copy tile inside a color token card supporting HEX, RGB, HSL, and CSS custom-property formats.",
+      "html": "<article class=\"ds-token-card\"><div class=\"ds-token-head\"><div><h4 class=\"ds-token-name\">Track Volt</h4><p class=\"ds-token-role\">Primary CTA fill &amp; active track tab</p></div><span class=\"ds-token-wcag\">&gt; 15:1 AAA</span></div><div class=\"ds-token-grid\"><button type=\"button\" class=\"ds-swatch-btn\"><span class=\"ds-swatch-chip ds-swatch-chip--volt\" aria-hidden=\"true\"></span><span class=\"ds-swatch-meta\"><span class=\"ds-swatch-mode\">LIGHT</span><span class=\"ds-swatch-val\">#C8FF00</span></span></button><button type=\"button\" class=\"ds-swatch-btn\"><span class=\"ds-swatch-chip ds-swatch-chip--pine\" aria-hidden=\"true\"></span><span class=\"ds-swatch-meta\"><span class=\"ds-swatch-mode\">PINE INK</span><span class=\"ds-swatch-val\">#1C5436</span></span></button></div></article>",
+      "css": ".ds-token-card { max-width: 24rem; padding: 1rem; border-radius: 0.75rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-token-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; } .ds-token-name { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-token-role { margin: 0.125rem 0 0; font-size: 0.75rem; color: #43584b; } .ds-token-wcag { padding: 0.125rem 0.5rem; border-radius: 9999px; background: #f7fee7; color: #365314; border: 1px solid #bef264; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; white-space: nowrap; } .ds-token-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; } .ds-swatch-btn { min-height: 2.75rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid var(--ap-inset-border, rgba(38, 88, 58, 0.16)); display: flex; align-items: center; gap: 0.5rem; text-align: left; cursor: pointer; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-swatch-btn:hover { background: #dce7de; border-color: #2b5b3f; } .ds-swatch-btn:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; } .ds-swatch-chip { width: 1.25rem; height: 1.25rem; border-radius: 0.375rem; border: 1px solid rgba(16, 20, 17, 0.18); flex-shrink: 0; } .ds-swatch-chip--volt { background: #c8ff00; } .ds-swatch-chip--pine { background: #1c5436; } .ds-swatch-meta { display: flex; flex-direction: column; min-width: 0; } .ds-swatch-mode { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; text-transform: uppercase; color: #43584b; } .ds-swatch-val { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 700; color: #101411; }"
     }
   ],
   "narrative": {
@@ -835,6 +896,11 @@
         "section": "colors"
       },
       {
+        "name": "The Print Gamut & Partner Isolation Rule",
+        "body": "Out-of-gamut Track Volt (`#C8FF00`) digital fills convert to Stadium Pine (`#1C5436`) + Turf Lime (`#56BA00`) or 1-Ink Stencil for 4-color CMYK paper without Pantone 809C spot ink, while partner brand inks (`#C23800`) stay strictly isolated from THRESH marks and `Team × THRESH` co-brand lockups.",
+        "section": "colors"
+      },
+      {
         "name": "The Tabular Telemetry Rule",
         "body": "Every physiological metric (`CTL`, `ATL`, `TSB`, `Watts`, `W/kg`, `bpm`, `min/mi`, `min/km`), `0.01s` FAT/stopwatch split, join code, and chart axis renders in `JetBrains Mono` with `font-variant-numeric: tabular-nums` so numbers never shift horizontally as values update.",
         "section": "typography"
@@ -858,6 +924,11 @@
         "name": "The Recessed Well Rule",
         "body": "Sub-sections inside a card—such as bento KPI tiles, privacy pledge blocks, and Load Focus rows—step *down* into shadowless Chalk Inset (`#E9EFE9`) or Deep Turf (`#15231B`) wells rather than stacking elevated white/carbon cards inside cards.",
         "section": "elevation"
+      },
+      {
+        "name": "The True 1-Ink Knockout Rule",
+        "body": "Monochrome screen-print, vinyl-plotter, and CNC laser stencils split radial gauge sectors mathematically around the `313°` needle moat and close boundary ticks as outlined capsule contours (`fill-rule=\"evenodd\"`), banning fake `#FFFFFF` masking strokes or SVG `<mask>` overlays.",
+        "section": "shapes"
       }
     ],
     "dos": [
@@ -866,7 +937,9 @@
       "**Do** set every physiological readout, `0.01s` split, pace/power zone, join code, and chart axis in `JetBrains Mono` with `font-variant-numeric: tabular-nums`, respecting the `0.6875rem` (`11px`) `--text-2xs` floor.",
       "**Do** counter-skew inner content (`skewX(14deg)`) inside every `-14deg` `.ap-track-tab` and `.ap-lane-badge` so typography and Phosphor icons remain upright.",
       "**Do** synchronize HTML/CSS UI tokens 1:1 with canvas/SVG chart palettes via `getThreshThemePalette(isDark)` (`src/utils/themeTokens.ts`), keeping `Z1–Z6` and `CTL`/`ATL`/`TSB` colors locked even under school/club co-branding.",
-      "**Do** render explicit `CALIBRATING` states when an athlete has zero synced workouts, and shield body weight / `W/kg` emphasis automatically when U18 Safe-Sport mode is active."
+      "**Do** render explicit `CALIBRATING` states when an athlete has zero synced workouts, and shield body weight / `W/kg` emphasis automatically when U18 Safe-Sport mode is active.",
+      "**Do** use true boolean compound-path 1-ink knockouts (`Obsidian Black`, `Reversed White`, `Track Volt`, and unframed `Gauge Symbols`) for singlets, heat-transfer vinyl, CNC etching, and 600-DPI B&W laser heat sheets, and convert `#C8FF00` to Light Stage Pine (`#1C5436`) + Turf Lime (`#56BA00`) for 4-color CMYK paper.",
+      "**Do** preserve `1R` minimum clear space around `B3-3A × W1` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`)."
     ],
     "donts": [
       "**Don't** apply full-bar or full-screen `backdrop-filter: blur()` or `background-attachment: fixed` to headers, cards, or modals; maintain crisp opaque surface layering for `60fps` telemetry scrolling.",
@@ -874,7 +947,9 @@
       "**Don't** override `Z1–Z6` effort colors, Banister `CTL`/`ATL`/`TSB` series, or `.ap-status-*` readiness pills with custom team co-branding colors or raw Track Volt.",
       "**Don't** use raw Track Volt (`#C8FF00`) as text or un-cased icon ink on white, Stadium Chalk (`#F4F7F2`), or Chalk Inset (`#E9EFE9`) backgrounds where contrast collapses below WCAG AA.",
       "**Don't** introduce a third typeface, sub-`11px` hardcoded pixel text (`text-[9px]`, `text-[10px]`), or Unicode emoji icons in place of drawn Phosphor vector icons.",
-      "**Don't** fabricate synthetic `CTL`, `FTP`, resting HR, testimonials, customer school logos, or commercial pricing tiers on any surface."
+      "**Don't** fabricate synthetic `CTL`, `FTP`, resting HR, testimonials, customer school logos, or commercial pricing tiers on any surface.",
+      "**Don't** paint fake `#FFFFFF` background strokes (`stroke=\"#FFFFFF\"`), SVG `<mask>` overlays, or drop shadows under monochrome marks to simulate knockouts on fabric or photography.",
+      "**Don't** stretch mark proportions, warp the `W1` wordmark, fuse Strava/Garmin/partner logos directly onto the THRESH lockup, or resell standalone THRESH-branded merchandise."
     ]
   }
 }
