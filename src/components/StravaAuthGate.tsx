@@ -993,8 +993,16 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       </a>
       <div className="max-w-2xl w-full mx-auto space-y-4">
         {/* Clean Top Navigation Bar */}
-        <header className="rounded-2xl liquid-glass-header px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-          <AeroPulseLogo size="sm" teamBrand={activeBrand} />
+        <header className="relative overflow-hidden rounded-2xl liquid-glass-header px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="ap-brand-hairline absolute inset-x-0 top-0" aria-hidden="true" />
+          <div className="flex items-center gap-2.5">
+            <AeroPulseLogo size="sm" teamBrand={activeBrand} />
+            {!activeBrand && (
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                Run &amp; Ride Readiness
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
             {step === 1 && (
