@@ -113,5 +113,157 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
 
       await page.evaluate(() => localStorage.clear());
     });
+
+    test('Clicking Connect with Strava completes popup OAuth callback -> Step 2 without Failed to fetch', async ({
+      page,
+      context,
+    }) => {
+      await context.clearCookies();
+      await page.goto('/');
+      await page.evaluate(() => localStorage.clear());
+      await page.reload();
+
+      let oauthDone = false;
+      await page.route('**/api/config/status*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            vaultStorageBackend: 'ENCRYPTED_FILE',
+            stravaConfigured: true,
+            stravaClientId: '121717',
+            stravaConnected: oauthDone,
+            stravaSource: oauthDone ? 'OAUTH' : 'NONE',
+            stravaAthleteId: oauthDone ? '776655' : undefined,
+            stravaAthleteName: oauthDone ? 'Popup Test Runner' : undefined,
+          }),
+        });
+      });
+
+      await page.route('**/api/strava/auth/url*', async (route) => {
+        const reqUrl = new URL(route.request().url());
+        const callerOrigin = reqUrl.searchParams.get('origin') || 'http://localhost:3000';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            url: `${callerOrigin}/auth/strava/callback?e2e_mock=1&state=mock_state_1`,
+            redirectUri: `${callerOrigin}/auth/strava/callback`,
+            clientId: '121717',
+            state: 'mock_state_1',
+            sessionToken: 'e2e_popup_session_tok',
+          }),
+        });
+      });
+
+      await context.route('**/auth/strava/callback*', async (route) => {
+        oauthDone = true;
+        const payload = {
+          type: 'OAUTH_AUTH_SUCCESS',
+          provider: 'strava',
+          athleteId: '776655',
+          athleteName: 'Popup Test Runner',
+          sessionToken: 'e2e_popup_session_tok',
+          hasExistingSyncPolicy: false,
+          isPopupFlow: true,
+          tokens: {
+            accessToken: 'e2e_popup_acc',
+            refreshToken: 'e2e_popup_ref',
+            expiresAt: 2100000000,
+            clientId: '121717',
+            athleteId: '776655',
+            athleteName: 'Popup Test Runner',
+          },
+        };
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: `<!doctype html><html><body><p>Connected</p><script>
+            (function(){
+              var payload = ${JSON.stringify(payload)};
+              try { if (window.opener && window.opener !== window) window.opener.postMessage(payload, window.location.origin); } catch (e) {}
+              try { new BroadcastChannel('aeropulse_oauth').postMessage(payload); } catch (e) {}
+              try { localStorage.setItem('aeropulse_oauth_result_v1', JSON.stringify({ ts: Date.now(), payload: payload })); } catch (e) {}
+              setTimeout(function(){ try { window.close(); } catch (e) {} }, 120);
+            })();
+          </script></body></html>`,
+        });
+      });
+
+      await page.route('**/api/strava/auth/poll*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ completed: false }),
+        });
+      });
+
+      const stravaBtn = page.getByRole('button', { name: /Connect with Strava/i });
+      await expect(stravaBtn).toBeVisible({ timeout: 15000 });
+
+      const popupPromise = page.waitForEvent('popup');
+      await stravaBtn.click();
+      const popup = await popupPromise;
+      await popup.waitForEvent('close', { timeout: 15000 });
+
+      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByText(/Failed to fetch/i)).toHaveCount(0);
+      await context.unroute('**/auth/strava/callback*');
+      await page.evaluate(() => localStorage.clear());
+    });
+
+    test('Falls back to /api/strava/auth/login inside popup without Failed to fetch when /api/strava/auth/url aborts', async ({
+      page,
+      context,
+    }) => {
+      await context.clearCookies();
+      await page.goto('/');
+      await page.evaluate(() => localStorage.clear());
+      await page.reload();
+
+      let abortedAuthUrl = false;
+      let interceptedFallbackUrl = '';
+
+      await page.route('**/api/strava/auth/url*', async (route) => {
+        abortedAuthUrl = true;
+        await route.abort('failed');
+      });
+
+      await context.route('**/api/strava/auth/login*', async (route) => {
+        interceptedFallbackUrl = route.request().url();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: '<!doctype html><html><body><h1>Mock Strava Login</h1></body></html>',
+        });
+      });
+
+      await page.route('**/api/strava/auth/poll*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ completed: false }),
+        });
+      });
+
+      const stravaBtn = page.getByRole('button', { name: /Connect with Strava/i });
+      await expect(stravaBtn).toBeVisible({ timeout: 15000 });
+
+      const popupPromise = page.waitForEvent('popup');
+      await stravaBtn.click();
+      const popup = await popupPromise;
+
+      await expect.poll(() => abortedAuthUrl).toBe(true);
+      await expect.poll(() => interceptedFallbackUrl).toContain('/api/strava/auth/login');
+      expect(interceptedFallbackUrl).toContain('flow=popup');
+      expect(popup.isClosed()).toBe(false);
+      await expect(page.getByText(/Failed to fetch/i)).toHaveCount(0);
+
+      await popup.close();
+      await context.unroute('**/api/strava/auth/login*');
+      await page.evaluate(() => localStorage.clear());
+    });
   });
 });

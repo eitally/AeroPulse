@@ -1257,19 +1257,77 @@ export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayl
   }
 }
 
+/**
+ * Strips whitespace and non-ASCII / control characters so HTTP fetch() headers never throw TypeError.
+ */
+export function sanitizeHttpHeaderValue(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let out = '';
+  const trimmed = raw.trim();
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code >= 0x20 && code <= 0x7e) {
+      out += trimmed[i];
+    }
+  }
+  return out;
+}
+
+/**
+ * Decodes an encoded Google/Strava polyline string (1e5 precision) into [lat, lng] pairs.
+ */
+export function decodeGooglePolylineClient(encoded?: string): [number, number][] | undefined {
+  if (!encoded || typeof encoded !== 'string') return undefined;
+  const points: [number, number][] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < len) {
+    let b = 0;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < len);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < len);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push([Number((lat / 1e5).toFixed(5)), Number((lng / 1e5).toFixed(5))]);
+  }
+  return points.length >= 2 ? points : undefined;
+}
+
 export function getSavedIntervalsHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
+  const setClean = (key: string, val?: string | null) => {
+    const clean = sanitizeHttpHeaderValue(val);
+    if (clean) headers[key] = clean;
+  };
   try {
     const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
     const sessionToken = localStorage.getItem('aeropulse_session_token') || '';
     if (sessionToken && notLoggedOut) {
-      headers['x-session-token'] = sessionToken;
+      setClean('x-session-token', sessionToken);
     }
     const apiKey = localStorage.getItem('aeropulse_intervals_api_key') || '';
     const athleteId = localStorage.getItem('aeropulse_intervals_athlete_id') || '0';
     if (apiKey && notLoggedOut) {
-      headers['x-intervals-api-key'] = apiKey;
-      headers['x-intervals-athlete-id'] = athleteId;
+      setClean('x-intervals-api-key', apiKey);
+      headers['x-intervals-athlete-id'] = sanitizeHttpHeaderValue(athleteId) || '0';
     }
     const stravaClientId = localStorage.getItem('aeropulse_strava_client_id') || '';
     const stravaClientSecret = localStorage.getItem('aeropulse_strava_client_secret') || '';
@@ -1279,29 +1337,29 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
     const mapTileApiKey = localStorage.getItem('aeropulse_map_tile_api_key') || '';
     const mapTileProvider = localStorage.getItem('aeropulse_map_tile_provider') || '';
     const geminiApiKey = localStorage.getItem('aeropulse_gemini_api_key') || '';
-    if (stravaClientId) headers['x-strava-client-id'] = stravaClientId;
-    if (stravaClientSecret) headers['x-strava-client-secret'] = stravaClientSecret;
-    if (stravaRefreshToken && notLoggedOut) headers['x-strava-refresh-token'] = stravaRefreshToken;
-    if (stravaAccessToken && notLoggedOut) headers['x-strava-access-token'] = stravaAccessToken;
-    if (stravaExpiresAt && notLoggedOut) headers['x-strava-expires-at'] = stravaExpiresAt;
+    if (stravaClientId) setClean('x-strava-client-id', stravaClientId);
+    if (stravaClientSecret) setClean('x-strava-client-secret', stravaClientSecret);
+    if (stravaRefreshToken && notLoggedOut) setClean('x-strava-refresh-token', stravaRefreshToken);
+    if (stravaAccessToken && notLoggedOut) setClean('x-strava-access-token', stravaAccessToken);
+    if (stravaExpiresAt && notLoggedOut) setClean('x-strava-expires-at', stravaExpiresAt);
     if (notLoggedOut) {
       const savedPolicy = loadStravaSyncPolicyFromStorage();
       if (savedPolicy?.window) {
-        headers['x-strava-sync-window'] = savedPolicy.window;
+        setClean('x-strava-sync-window', savedPolicy.window);
         headers['x-strava-import-gear'] = savedPolicy.importProfileAndGear === false ? '0' : '1';
       }
     }
-    if (mapTileApiKey) headers['x-map-tile-api-key'] = mapTileApiKey;
-    if (mapTileProvider) headers['x-map-tile-provider'] = mapTileProvider;
-    if (geminiApiKey) headers['x-gemini-api-key'] = geminiApiKey;
+    if (mapTileApiKey) setClean('x-map-tile-api-key', mapTileApiKey);
+    if (mapTileProvider) setClean('x-map-tile-provider', mapTileProvider);
+    if (geminiApiKey) setClean('x-gemini-api-key', geminiApiKey);
     const garminPersonalKey = localStorage.getItem('aeropulse_garmin_personal_api_key');
     const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token');
     const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token');
     const garminSecret = localStorage.getItem('aeropulse_garmin_oauth1_secret');
-    if (garminPersonalKey && notLoggedOut) headers['x-garmin-personal-api-key'] = garminPersonalKey;
-    if (garminBearer && notLoggedOut) headers['x-garmin-bearer-token'] = garminBearer;
-    if (garminOauth1 && notLoggedOut) headers['x-garmin-oauth1-token'] = garminOauth1;
-    if (garminSecret && notLoggedOut) headers['x-garmin-oauth1-secret'] = garminSecret;
+    if (garminPersonalKey && notLoggedOut) setClean('x-garmin-personal-api-key', garminPersonalKey);
+    if (garminBearer && notLoggedOut) setClean('x-garmin-bearer-token', garminBearer);
+    if (garminOauth1 && notLoggedOut) setClean('x-garmin-oauth1-token', garminOauth1);
+    if (garminSecret && notLoggedOut) setClean('x-garmin-oauth1-secret', garminSecret);
   } catch {
     // ignore
   }

@@ -15,6 +15,7 @@ import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
+  decodeGooglePolylineClient,
   getSavedIntervalsHeaders,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
@@ -793,8 +794,12 @@ export function useTelemetrySync({
               }
             }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
-              const toUnifiedFromStrava = (sa: any): UnifiedActivity =>
-                reclassifyActivityEnvironment({
+              const toUnifiedFromStrava = (sa: any): UnifiedActivity => {
+                const resolvedRoute =
+                  Array.isArray(sa.routeLatLngs) && sa.routeLatLngs.length >= 2
+                    ? sa.routeLatLngs
+                    : decodeGooglePolylineClient(sa.summaryPolyline);
+                return reclassifyActivityEnvironment({
                   id: `strava-${sa.stravaId}`,
                   stravaId: String(sa.stravaId),
                   startDateLocal: sa.startDateLocal,
@@ -829,12 +834,13 @@ export function useTelemetrySync({
                   kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
                   comments: Array.isArray(sa.comments) ? sa.comments : [],
                   summaryPolyline: sa.summaryPolyline,
-                  routeLatLngs: Array.isArray(sa.routeLatLngs) ? sa.routeLatLngs : undefined,
+                  routeLatLngs: resolvedRoute,
                   startLatLng: sa.startLatLng,
                   endLatLng: sa.endLatLng,
                   segmentEfforts: sa.segmentEfforts || [],
                   sourceBadges: ['Strava'],
                 });
+              };
 
               if (!mergedActivities) {
                 mergedActivities = stravaData.activities.map(toUnifiedFromStrava);
@@ -926,9 +932,9 @@ export function useTelemetrySync({
                       routeLatLngs:
                         Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 2
                           ? act.routeLatLngs
-                          : Array.isArray(matched.routeLatLngs) && matched.routeLatLngs.length > 2
+                          : Array.isArray(matched.routeLatLngs) && matched.routeLatLngs.length >= 2
                             ? matched.routeLatLngs
-                            : act.routeLatLngs,
+                            : decodeGooglePolylineClient(matched.summaryPolyline) || act.routeLatLngs,
                       startLatLng: act.startLatLng || matched.startLatLng,
                       endLatLng: act.endLatLng || matched.endLatLng,
                       segmentEfforts:
