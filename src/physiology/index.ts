@@ -9,3 +9,5 @@ export * from './raceSimulator';
 export * from './raceRubberBander';
 export * from './scholasticEngine';
 export * from './teamOnboardingEngine';
+export * from './trackLiveAutoRegulationEngine';
+export * from './trackOvalGpsFusionEngine';

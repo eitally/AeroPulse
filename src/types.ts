@@ -71,6 +71,7 @@ export interface ActivityInterval {
   avgPaceSecsPerKm?: number;
   gapPaceSecsPerKm?: number;
   avgCadence?: number;
+  avgGroundContactTimeMs?: number;
   decouplingPct?: number;
   strideLengthMeters?: number;
 }
@@ -151,6 +152,8 @@ export interface ActivityStreamSet {
   heartrate?: number[];
   velocitySmooth?: number[]; // m/s
   cadence?: number[];
+  groundContactTimeMs?: number[];
+  snappedTrackDistance?: number[];
   altitude?: number[];
 }
 
@@ -264,6 +267,9 @@ export interface UnifiedActivity {
   footwearClass?: TrackFootwearClass;
   spikedDistanceMeters?: number;
   trackFacility?: NcaaTrackFacilityType;
+  stimulusCompletionRatio?: number;
+  autoRegPivotSummary?: string;
+  isCompetitionDay?: boolean;
   sourceBadges: ActivitySourceBadge[];
 }
 
@@ -710,6 +716,10 @@ export interface PostWorkoutDebriefReport {
   aerobicDecouplingPct: number | null;
   wPrimeMinPct: number | null;
   bestHrr60Bpm: number | null;
+  anchoredHrr60MeanBpm?: number | null;
+  strideLengthFadePct?: number | null;
+  cadenceFadePct?: number | null;
+  fadePrimaryDriver?: 'STRIDE_LENGTH_LOSS' | 'CADENCE_DROP' | 'EVEN_MECHANICS' | null;
   insights: PostWorkoutDebriefInsight[];
 }
 
