@@ -259,7 +259,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
         {
           scale: 'y',
           side: 3, // Left axis
-          stroke: '#3B82F6',
+          stroke: '#0284C7',
           grid: { stroke: gridStroke, width: 1 },
           ticks: { stroke: gridStroke, width: 1 },
           size: 52,
@@ -272,7 +272,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
         {
           scale: 'hr',
           side: 1, // Right axis
-          stroke: '#EF4444',
+          stroke: '#DC2626',
           grid: { show: false },
           ticks: { stroke: gridStroke, width: 1 },
           size: 48,
@@ -287,13 +287,13 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
         {
           label: primaryLabel,
           scale: 'y',
-          stroke: '#3B82F6',
+          stroke: '#0284C7',
           width: 1.85,
           fill: (u) => {
             const ctx = u.ctx;
             const grad = ctx.createLinearGradient(0, u.bbox.top, 0, u.bbox.top + u.bbox.height);
-            grad.addColorStop(0, 'rgba(59, 130, 246, 0.28)');
-            grad.addColorStop(1, 'rgba(59, 130, 246, 0.02)');
+            grad.addColorStop(0, 'rgba(2, 132, 199, 0.28)');
+            grad.addColorStop(1, 'rgba(2, 132, 199, 0.02)');
             return grad;
           },
           spanGaps: true,
@@ -301,14 +301,14 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
         {
           label: 'Heart Rate (bpm)',
           scale: 'hr',
-          stroke: '#EF4444',
+          stroke: '#DC2626',
           width: 1.75,
           spanGaps: true,
         },
         {
           label: 'Cadence (rpm/spm)',
           scale: 'cad',
-          stroke: '#10B981',
+          stroke: '#059669',
           width: 1.35,
           dash: [4, 2],
           show: showCadence && preparedData.hasCadence,
@@ -317,9 +317,9 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
         {
           label: 'Elevation (m)',
           scale: 'alt',
-          stroke: '#A855F7',
+          stroke: '#7C3AED',
           width: 1.15,
-          fill: 'rgba(168, 85, 247, 0.08)',
+          fill: 'rgba(124, 58, 237, 0.08)',
           show: showAltitude && preparedData.hasAltitude,
           spanGaps: true,
         },

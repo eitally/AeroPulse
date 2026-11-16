@@ -11,6 +11,7 @@ import {
   Download,
   Dumbbell,
   FileText,
+  Flame,
   Footprints,
   Heart,
   Moon,
@@ -34,7 +35,7 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { formatDistance } from '../utils/formatters';
+import { formatDistance, formatPace } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import {
   buildFitStepsFromWorkoutSyntax,
@@ -733,6 +734,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [cardDensity, setCardDensity] = useState<'intervals' | 'compact'>('intervals');
   const [mobileLayout, setMobileLayout] = useState<'agenda' | 'grid'>('agenda');
   const [showDayEffortStripe, setShowDayEffortStripe] = useState<boolean>(true);
+  const [showCellWellness, setShowCellWellness] = useState<boolean>(false);
   const [hoveredPrescription, setHoveredPrescription] = useState<{
     dateStr: string;
     stripe: DayPlannedEffortStripe;
@@ -1430,6 +1432,34 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                       </div>
                     </button>
 
+                    {onOpenGoalsArchitect && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-testid="calendar-open-block-builder"
+                        onClick={() => {
+                          setIsActionsOpen(false);
+                          onOpenGoalsArchitect();
+                        }}
+                        className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                      >
+                        <div className="p-1.5 rounded-lg bg-[#C8FF00]/20 border border-[#56BA00]/35 text-[#1C5436] dark:text-[#C8FF00] shrink-0 mt-0.5">
+                          <Flame className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                            <span>Build Training Block</span>
+                            <span className="text-3xs font-mono px-1.5 py-0.5 rounded ap-status-info">
+                              Periodize
+                            </span>
+                          </div>
+                          <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            Generate multi-week track or endurance plan
+                          </div>
+                        </div>
+                      </button>
+                    )}
+
                     {onOpenOfficialRaceModal && (
                       <button
                         type="button"
@@ -1536,6 +1566,24 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                       }`}
                     >
                       {showDayEffortStripe ? 'On' : 'Off'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-white/10">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      Daily Wellness (HRV / Sleep)
+                    </span>
+                    <button
+                      type="button"
+                      aria-pressed={showCellWellness}
+                      onClick={() => setShowCellWellness((v) => !v)}
+                      className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 rounded-lg border text-2xs font-mono font-bold transition-all cursor-pointer ${
+                        showCellWellness
+                          ? 'ap-status-prime'
+                          : 'border-slate-300/70 dark:border-slate-700/70 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {showCellWellness ? 'On' : 'Off'}
                     </button>
                   </div>
 
@@ -1718,7 +1766,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                             >
                               {formatHeaderDate(day.dateStr)}
                             </span>
-                            {w && (
+                            {showCellWellness && w && (
                               <div className="flex items-center gap-2 text-2xs font-mono text-slate-600 dark:text-slate-300">
                                 {sleepH && <span>{sleepH}</span>}
                                 {w.restingHR > 0 && <span>{w.restingHR}bpm</span>}
@@ -2284,7 +2332,8 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                               )}
 
                               {/* Line 1 of Morning Wellness: Sleep duration + score + weight (shielded under Safe-Sport) */}
-                              {w &&
+                              {showCellWellness &&
+                                w &&
                                 (sleepHm ||
                                   w.sleepScore > 0 ||
                                   (!athleteProfile?.safeSportHideWeight && w.weightKg > 0)) && (
@@ -2324,7 +2373,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                               )}
 
                               {/* Line 2 of Morning Wellness: Resting HR + HRV + Day Load */}
-                              {w && (w.restingHR > 0 || w.hrvRMSSD > 0 || dayLoadSum > 0) && (
+                              {showCellWellness &&
+                                w &&
+                                (w.restingHR > 0 || w.hrvRMSSD > 0 || dayLoadSum > 0) && (
                                 <div className="flex flex-wrap items-center justify-center gap-x-1 text-2xs font-mono tabular-nums leading-tight">
                                   {w.restingHR > 0 && (
                                     <span className="inline-flex items-center gap-0.5 text-rose-700 dark:text-rose-400 font-semibold">
@@ -2803,26 +2854,45 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 </div>
               </div>
 
-              {/* Quick Workout Templates */}
+              {/* Quick Workout Templates (Sport-Aware: Cycling % FTP vs Running Pace & Track) */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-2xs text-slate-500">Presets:</span>
-                {[
-                  {
-                    label: 'Z2 Aerobic Endurance (90m)',
-                    name: '90m Z2 Aerobic Base',
-                    syntax: `- 10m 55% FTP Warmup\n- 70m 70% FTP Z2 Endurance\n- 10m 55% FTP Cooldown`,
-                  },
-                  {
-                    label: '4x8m Sweet Spot',
-                    name: '4x8m Sweet Spot Progression',
-                    syntax: `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`,
-                  },
-                  {
-                    label: '5x4m VO2max Intervals',
-                    name: '5x4m VO2max Ceiling',
-                    syntax: `- 15m 60% FTP Warmup\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 115% FTP VO2max\n- 10m 50% FTP Cooldown`,
-                  },
-                ].map((preset) => (
+                {(builderSport === 'Running'
+                  ? [
+                      {
+                        label: 'Easy Aerobic Run (45m)',
+                        name: '45m Easy Aerobic Base',
+                        syntax: `- 10m 62% Pace Warm-up\n- 25m 75% Pace Z2 Easy\n- 10m 60% Pace Cool-down`,
+                      },
+                      {
+                        label: 'Threshold Cruise (4x1mi)',
+                        name: '4x1mi Threshold Cruise Intervals',
+                        syntax: `- 15m Z2 Warm-up\n- 4x 1600m @ threshold pace w/ 60s jog\n- 10m Z1 Cool-down`,
+                      },
+                      {
+                        label: 'Track 800m / Mile (6x400m)',
+                        name: '6x400m Mile-Pace Track Session',
+                        syntax: `- 12m Z1 Warm-up\n- 6x 400m @ mile pace w/ 200m jog\n- 10m Z1 Cool-down`,
+                      },
+                    ]
+                  : [
+                      {
+                        label: 'Z2 Aerobic Endurance (90m)',
+                        name: '90m Z2 Aerobic Base',
+                        syntax: `- 10m 55% FTP Warmup\n- 70m 70% FTP Z2 Endurance\n- 10m 55% FTP Cooldown`,
+                      },
+                      {
+                        label: '4x8m Sweet Spot',
+                        name: '4x8m Sweet Spot Progression',
+                        syntax: `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`,
+                      },
+                      {
+                        label: '5x4m VO2max Intervals',
+                        name: '5x4m VO2max Ceiling',
+                        syntax: `- 15m 60% FTP Warmup\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 115% FTP VO2max\n- 10m 50% FTP Cooldown`,
+                      },
+                    ]
+                ).map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
@@ -2847,7 +2917,11 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                   </label>
                   <span className="text-2xs font-mono text-blue-600 dark:text-sky-400">
                     Est. {Math.round(computedBuilderSummary.durationSecs / 60)}m ·{' '}
-                    {computedBuilderSummary.load} TSS (FTP {athleteFtp}W)
+                    {computedBuilderSummary.load} TSS (
+                    {builderSport === 'Running'
+                      ? `LT2 ${formatPace(athleteProfile?.thresholdPaceSecsPerKm || 250, distanceUnit)}`
+                      : `FTP ${athleteFtp}W`}
+                    )
                   </span>
                 </div>
                 <textarea

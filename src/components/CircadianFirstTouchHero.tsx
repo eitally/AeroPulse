@@ -639,20 +639,23 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-[#1C5436]/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
               <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                 <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
-                  <span className="inline-flex items-center gap-1 font-medium">
+                  <span
+                    className="inline-flex items-center gap-1 font-medium"
+                    title="Overnight HRV (rMSSD)"
+                  >
                     <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                    HRV (rMSSD)
+                    Overnight HRV
                   </span>
                   <span className="text-3xs sm:text-2xs opacity-85">
                     {productivity.hrv7dAvgMs > 0
                       ? `${productivity.hrv7dAvgMs}ms`
-                      : '—'}
+                      : 'Wearable'}
                   </span>
                 </div>
                 <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.hrvLatestMs > 0
                     ? `${productivity.hrvLatestMs} ms`
-                    : '— ms'}
+                    : 'Wearable needed'}
                 </div>
               </div>
 
@@ -691,7 +694,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                   {productivity.rhrLatestBpm > 0
                     ? `${productivity.rhrLatestBpm} bpm`
-                    : '— bpm'}
+                    : 'Wearable needed'}
                 </div>
               </div>
 

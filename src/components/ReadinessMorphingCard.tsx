@@ -439,11 +439,11 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
     const baseItems = [
       {
         id: 'hrv',
-        label: 'Ln rMSSD (30d)',
+        label: 'HRV Trend',
         value:
           hasHrv && lnReadiness.lnRmssd !== null
-            ? `${lnReadiness.lnRmssd.toFixed(2)} (${lnReadiness.zScore30d >= 0 ? '+' : ''}${lnReadiness.zScore30d.toFixed(1)} SD)`
-            : '— Ln',
+            ? `${Math.round(recentHrvDay.hrvRMSSD || lnReadiness.hrv)}ms (${lnReadiness.zScore30d >= 0 ? '+' : ''}${lnReadiness.zScore30d.toFixed(1)} SD Ln rMSSD)`
+            : 'Sync HRV (Ln rMSSD)',
         detail: hasHrv ? lnReadiness.hrvDetail : 'Awaiting Garmin / Intervals sync',
         state: hrvState,
       },
@@ -474,12 +474,12 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
       },
       {
         id: 'decouple',
-        label: 'Last Workout Decoupling',
-        value: lastDecouplingPct !== null ? `${lastDecouplingPct}% Pa:Hr` : '— Pa:Hr',
+        label: 'Heart Rate Drift',
+        value: lastDecouplingPct !== null ? `${lastDecouplingPct}% drift` : '—',
         detail:
           lastDecouplingPct !== null
             ? lastDecouplingPct <= 5
-              ? '<5% Coupled'
+              ? '<5% Steady'
               : '>5% Drift Warning'
             : 'No 20m+ stream analyzed yet',
         state: decoupleState,
@@ -830,7 +830,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         replaceExistingDate: true,
       });
       setSyncedBanner(
-        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Training Calendar for ${todayIso} and pushed structured steps to Intervals.icu (syncs automatically to Garmin Connect watches & Edge head units if linked).`
+        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Plan for ${todayIso}.`
       );
       window.setTimeout(() => setSyncedBanner(null), 6500);
     } finally {

@@ -841,7 +841,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
         level: curLvls[5],
         target: selectedArchetype.targetProgressionLevels[5],
         delta28d: fmtDelta(5),
-        color: '#4F46E5',
+        color: '#7C3AED',
       },
     ];
 
@@ -3181,21 +3181,21 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   label: 'Z1–Z2 Low Aerobic',
                   pct: totalsAndPolarization.lowPct,
                   hours: totalsAndPolarization.lowHours,
-                  color: '#10B981',
+                  color: '#059669',
                   x: 95,
                 },
                 {
                   label: 'Z3 Tempo / Grey',
                   pct: totalsAndPolarization.modPct,
                   hours: totalsAndPolarization.modHours,
-                  color: '#F59E0B',
+                  color: '#D97706',
                   x: 245,
                 },
                 {
                   label: 'Z4+ Threshold/VO2',
                   pct: totalsAndPolarization.highPct,
                   hours: totalsAndPolarization.highHours,
-                  color: '#EF4444',
+                  color: '#DC2626',
                   x: 395,
                 },
               ].map((bar) => {

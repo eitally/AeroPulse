@@ -1372,16 +1372,16 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 y={yLoadHr(62)}
                 width={lhPlotW}
                 height={Math.max(2, lhBottom - yLoadHr(62))}
-                fill="#10B981"
+                fill="#059669"
                 fillOpacity="0.05"
               />
 
               {/* Horizontal Gridlines & FTP-Normalized Benchmarks */}
               {[
-                { val: 100, label: '100 TSS/hr (100% FTP · Z4)', color: '#F43F5E' },
-                { val: 78, label: '78 TSS/hr (88% FTP · Z3/Z4)', color: '#F59E0B' },
-                { val: 62, label: '62 TSS/hr (78% FTP · Z2 Ceiling)', color: '#10B981' },
-                { val: 45, label: '45 TSS/hr (67% FTP · Recovery)', color: '#334155' },
+                { val: 100, label: '100 TSS/hr (100% FTP · Z4)', color: '#E11D48' },
+                { val: 78, label: '78 TSS/hr (88% FTP · Z3/Z4)', color: '#D97706' },
+                { val: 62, label: '62 TSS/hr (78% FTP · Z2 Ceiling)', color: '#059669' },
+                { val: 45, label: '45 TSS/hr (67% FTP · Recovery)', color: '#43584B' },
               ].map((bm) => {
                 const y = yLoadHr(bm.val);
                 return (

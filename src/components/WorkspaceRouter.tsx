@@ -288,16 +288,16 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
                 onClick={() => setActiveTab('totals')}
                 className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'totals'
-                    ? 'bg-emerald-600 text-white shadow-xs dark:bg-emerald-700'
+                    ? 'ap-nav-volt-active shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
                 }`}
               >
                 <Target
                   className={`w-3.5 h-3.5 ${
-                    activeTab === 'totals' ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                    activeTab === 'totals' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
-                Totals &amp; Volume
+                Goals &amp; Progression
               </button>
 
               <button
@@ -310,13 +310,13 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
                 onClick={() => setActiveTab('curves')}
                 className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'curves'
-                    ? 'bg-emerald-600 text-white shadow-xs dark:bg-emerald-700'
+                    ? 'ap-nav-volt-active shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
                 }`}
               >
                 <BarChart3
                   className={`w-3.5 h-3.5 ${
-                    activeTab === 'curves' ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                    activeTab === 'curves' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
                 Power &amp; Pace Curves
@@ -332,16 +332,16 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
                 onClick={() => setActiveTab('trends')}
                 className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'trends'
-                    ? 'bg-emerald-600 text-white shadow-xs dark:bg-emerald-700'
+                    ? 'ap-nav-volt-active shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
                 }`}
               >
                 <TrendingUp
                   className={`w-3.5 h-3.5 ${
-                    activeTab === 'trends' ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                    activeTab === 'trends' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
-                Physiological Trends
+                Trends
               </button>
 
               <button
@@ -354,16 +354,16 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
                 onClick={() => setActiveTab('charts')}
                 className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'charts'
-                    ? 'bg-emerald-600 text-white shadow-xs dark:bg-emerald-700'
+                    ? 'ap-nav-volt-active shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
                 }`}
               >
                 <LineChart
                   className={`w-3.5 h-3.5 ${
-                    activeTab === 'charts' ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                    activeTab === 'charts' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
-                Custom Correlation Charts
+                Custom Charts
               </button>
             </div>
           </div>
@@ -450,6 +450,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           isScanningSegments={isScanningSegments}
           onSelectActivity={handleSelectActivityAndOpenTab}
           onOpenActivitiesSegments={handleOpenActivitiesTab}
+          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
         />
       )}
 

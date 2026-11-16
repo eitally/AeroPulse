@@ -915,7 +915,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               </span>
             ) : (
               <span className="px-2.5 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-slate-700 dark:text-slate-300">
-                Offline-Safe IndexedDB / Local
+                Saved on Device (Offline Ready)
               </span>
             )}
           </div>
@@ -1398,7 +1398,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           >
             <span>{activeEnvAdjustment.advisoryNote}</span>
             <span className="font-mono text-2xs uppercase tracking-wider px-2 py-0.5 rounded bg-black/15">
-              Hadley Index {Math.round(activeEnvAdjustment.hadleySumF ?? 0)}
+              Heat + Humidity Alert (Hadley Index {Math.round(activeEnvAdjustment.hadleySumF ?? 0)})
             </span>
           </div>
         )}
@@ -1704,7 +1704,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           {chuteQueueSecs.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-2xs font-mono font-bold uppercase text-emerald-800 dark:text-emerald-300">
-                FIFO Queue — Tap a runner below to assign #1:
+                Finish Order Queue — Tap next runner in line:
               </span>
               {chuteQueueSecs.map((ts, idx) => (
                 <span

@@ -162,11 +162,11 @@ function buildTileConfigs(
 
 function colorForMetricFraction(frac: number): string {
   const clamped = Math.max(0, Math.min(1, frac));
-  if (clamped < 0.25) return '#3B82F6'; // Blue (Z1/Z2)
-  if (clamped < 0.5) return '#10B981'; // Emerald (Z3)
-  if (clamped < 0.72) return '#F59E0B'; // Amber (Z4)
-  if (clamped < 0.88) return '#F97316'; // Orange (Z5)
-  return '#EF4444'; // Red (Z6 Peak)
+  if (clamped < 0.25) return '#0284C7'; // Blue (Z1/Z2)
+  if (clamped < 0.5) return '#059669'; // Emerald (Z3)
+  if (clamped < 0.72) return '#D97706'; // Amber (Z4)
+  if (clamped < 0.88) return '#EA580C'; // Orange (Z5)
+  return '#DC2626'; // Red (Z6 Peak)
 }
 
 interface SingleActivityMapProps {
@@ -345,9 +345,9 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
       // 1. Base / Colored Polyline Rendering
       if (colorMode === 'STRAVA' || !isStreamAligned) {
-        // Subtle outer glow + crisp Strava Orange core line
+        // Subtle outer glow + crisp Strava Vermilion core line
         L.polyline(coords, {
-          color: '#FC4C02',
+          color: '#C23800',
           weight: 7,
           opacity: 0.25,
           lineCap: 'round',
@@ -355,7 +355,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         }).addTo(routeGroup);
 
         const mainPoly = L.polyline(coords, {
-          color: '#FC4C02',
+          color: '#C23800',
           weight: 4,
           opacity: props.zoomStreamRange ? 0.45 : 0.95,
           lineCap: 'round',
@@ -425,7 +425,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         const zoomSlice = coords.slice(clampedStart, clampedEnd + 1);
         if (zoomSlice.length >= 2) {
           L.polyline(zoomSlice, {
-            color: '#38BDF8',
+            color: '#0284C7',
             weight: 9,
             opacity: 0.35,
             lineCap: 'round',
@@ -472,7 +472,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
         if (segPath && segPath.length >= 2) {
           const segLine = L.polyline(segPath, {
-            color: isSelectedSeg ? '#FACC15' : eff.prRank === 1 ? '#F59E0B' : '#3B82F6',
+            color: isSelectedSeg ? '#C8FF00' : eff.prRank === 1 ? '#D97706' : '#0284C7',
             weight: isSelectedSeg ? 6.5 : 3.5,
             opacity: isSelectedSeg ? 1 : 0.7,
             dashArray: isSelectedSeg ? undefined : '5 4',
@@ -510,8 +510,8 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
             if (u >= nextSplit) {
               const splitMarker = L.circleMarker(coords[i], {
                 radius: 4.5,
-                fillColor: '#0F172A',
-                color: '#F8FAFC',
+                fillColor: '#101411',
+                color: '#F4F7F2',
                 weight: 1.5,
                 fillOpacity: 0.9,
               }).addTo(routeGroup);
@@ -531,7 +531,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
       L.circleMarker(startPt, {
         radius: 7,
-        fillColor: '#10B981',
+        fillColor: '#059669',
         color: '#FFFFFF',
         weight: 2.5,
         fillOpacity: 1,
@@ -541,7 +541,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
       L.circleMarker(endPt, {
         radius: 7,
-        fillColor: '#EF4444',
+        fillColor: '#DC2626',
         color: '#FFFFFF',
         weight: 2.5,
         fillOpacity: 1,
@@ -577,14 +577,14 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         const isHighlighted = props.highlightedActivityId === act.id;
         const baseColor =
           act.sportCategory === 'Running'
-            ? '#10B981'
+            ? '#059669'
             : act.sportCategory === 'Cycling'
-              ? '#FC4C02'
-              : '#3B82F6';
+              ? '#C23800'
+              : '#0284C7';
 
         if (isHighlighted) {
           L.polyline(pts, {
-            color: '#FACC15',
+            color: '#C8FF00',
             weight: 8,
             opacity: 0.4,
             lineCap: 'round',
@@ -592,7 +592,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         }
 
         const poly = L.polyline(pts, {
-          color: isHighlighted ? '#FACC15' : baseColor,
+          color: isHighlighted ? '#C8FF00' : baseColor,
           weight: isHighlighted ? 4.5 : 3,
           opacity: isHighlighted ? 1 : props.highlightedActivityId ? 0.45 : 0.8,
           lineCap: 'round',
@@ -619,7 +619,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         // Start pin for each workout
         const startPin = L.circleMarker(pts[0], {
           radius: isHighlighted ? 6.5 : 4.5,
-          fillColor: isHighlighted ? '#FACC15' : baseColor,
+          fillColor: isHighlighted ? '#C8FF00' : baseColor,
           color: '#FFFFFF',
           weight: 1.5,
           fillOpacity: 0.95,
@@ -679,8 +679,8 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
     // Outer pulse ring + bright telemetry cursor dot
     L.circleMarker(pt, {
       radius: 13,
-      fillColor: '#3B82F6',
-      color: '#3B82F6',
+      fillColor: '#0284C7',
+      color: '#0284C7',
       weight: 2,
       fillOpacity: 0.25,
     }).addTo(cursorGroup);
@@ -693,7 +693,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
     const dot = L.circleMarker(pt, {
       radius: 6.5,
-      fillColor: '#38BDF8',
+      fillColor: '#0284C7',
       color: '#FFFFFF',
       weight: 2.5,
       fillOpacity: 1,

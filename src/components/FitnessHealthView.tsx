@@ -1,15 +1,12 @@
-import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   Activity,
   Calendar,
   ChevronDown,
   ChevronUp,
-  Layers,
-  Radar,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
-  Users,
 } from "./icons/PhosphorIcons";
 import {
   AthleteProfile,
@@ -38,12 +35,6 @@ import {
 
 const UPlotPMCDashboard = lazy(() =>
   import('./charts/UPlotPMCDashboard').then((m) => ({ default: m.UPlotPMCDashboard }))
-);
-const DualAthleteComparator = lazy(() =>
-  import('./DualAthleteComparator').then((m) => ({ default: m.DualAthleteComparator }))
-);
-const AthletePerformanceRadar = lazy(() =>
-  import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar }))
 );
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 import {
@@ -128,8 +119,6 @@ const SHORT_MONTHS = [
   'Dec',
 ];
 
-const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 function formatIntervalsRangeLabel(startStr: string, endStr: string): string {
   const fmt = (s: string) => {
     const [y, m, d] = s.split('-').map(Number);
@@ -139,29 +128,12 @@ function formatIntervalsRangeLabel(startStr: string, endStr: string): string {
   return `${fmt(startStr)} - ${fmt(endStr)}`;
 }
 
-function formatGutterDate(dateStr: string): { top: string; bottom: string } {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  if (!y || !m || !d) return { top: dateStr, bottom: '' };
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  const wk = SHORT_WEEKDAYS[dt.getUTCDay()];
-  const mon = SHORT_MONTHS[m - 1];
-  return {
-    top: `${wk} ${String(d).padStart(2, '0')}`,
-    bottom: mon,
-  };
-}
-
 const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   wellnessDays,
   plannedEvents,
   activities = [],
   athleteProfile,
   distanceUnit = 'mi',
-  selfName = 'Primary Athlete',
-  selfProfile,
-  selfWellnessDays,
-  connectedAthletes = [],
-  onOpenRosterModal,
   onSelectActivity,
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -193,20 +165,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const [forwardDays, setForwardDays] = useState<0 | 14 | 28 | 42>(0);
   const [simulatedDailyTss, setSimulatedDailyTss] = useState<number>(65);
 
-  // Synchronized Subplots toggles
-  const [showTsbSubplot, setShowTsbSubplot] = useState<boolean>(true);
-  const [showRampSubplot, setShowRampSubplot] = useState<boolean>(true);
-  const [showMaxHrSubplot, setShowMaxHrSubplot] = useState<boolean>(true);
-  const [showEftpSubplot, setShowEftpSubplot] = useState<boolean>(true);
-  const [showWeeklyLoadSubplot, setShowWeeklyLoadSubplot] = useState<boolean>(true);
-  const [showHrvSubplot, setShowHrvSubplot] = useState<boolean>(true);
-
-  // Interactive hover & click-and-drag brush zoom state
+  // Interactive hover state synced with uPlot PMC cursor
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [brushStartIdx, setBrushStartIdx] = useState<number | null>(null);
-  const [brushEndIdx, setBrushEndIdx] = useState<number | null>(null);
-  const isBrushingRef = useRef<boolean>(false);
-  const svgRef = useRef<SVGSVGElement | null>(null);
 
   const todayIso = useMemo(() => getLocalDateIso(), []);
   const hasWellnessTelemetry = wellnessDays.length > 0;
@@ -400,11 +360,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     latestDay,
   ]);
 
-  const [activeMilestoneFilter, setActiveMilestoneFilter] = useState<
-    'ALL' | MilestoneCategory | 'NONE'
-  >('ALL');
-
-  // Enrich each day with Max HR, Weekly Load buckets, and True Physiological / Race Milestones
+  // Enrich each day with Max HR and True Physiological / Race Milestones
   const enrichedSeries = useMemo(() => {
     // Pre-scan window to find fastest running pace (>= 1500m) and top cycling NP breakthroughs
     let bestRunPaceInWindow = Infinity;
@@ -580,64 +536,6 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     });
   }, [chartSeries, activitiesByDate, athleteProfile]);
 
-  // Group into 7-day calendar week buckets for the Weekly Load (Work) bar subplot (split by per-activity Garmin Load Focus)
-  const weeklyLoadBuckets = useMemo(() => {
-    const buckets: {
-      startIdx: number;
-      endIdx: number;
-      totalLoad: number;
-      lowAerobicLoad: number;
-      highAerobicLoad: number;
-      anaerobicLoad: number;
-    }[] = [];
-    if (enrichedSeries.length === 0) return buckets;
-
-    let bucketStart = 0;
-    let sumLoad = 0;
-    let sumLow = 0;
-    let sumHigh = 0;
-    let sumAnaerobic = 0;
-
-    enrichedSeries.forEach((d, idx) => {
-      if (d.activitySegments && d.activitySegments.length > 0) {
-        for (const seg of d.activitySegments) {
-          sumLoad += seg.load;
-          if (seg.focus.type === 'ANAEROBIC') {
-            sumAnaerobic += seg.load;
-          } else if (seg.focus.type === 'HIGH_AEROBIC') {
-            sumHigh += seg.load;
-          } else {
-            sumLow += seg.load;
-          }
-        }
-      } else {
-        const load = d.dailyLoad || 0;
-        sumLoad += load;
-        sumLow += load;
-      }
-      const [y, m, dayNum] = d.date.split('-').map(Number);
-      const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, dayNum || 1));
-      const isSunday = dt.getUTCDay() === 0;
-      if (isSunday || idx === enrichedSeries.length - 1) {
-        buckets.push({
-          startIdx: bucketStart,
-          endIdx: idx,
-          totalLoad: Math.round(sumLoad),
-          lowAerobicLoad: Math.round(sumLow),
-          highAerobicLoad: Math.round(sumHigh),
-          anaerobicLoad: Math.round(sumAnaerobic),
-        });
-        bucketStart = idx + 1;
-        sumLoad = 0;
-        sumLow = 0;
-        sumHigh = 0;
-        sumAnaerobic = 0;
-      }
-    });
-    return buckets;
-  }, [enrichedSeries]);
-
-  const [pmcEngine, setPmcEngine] = useState<'ECHARTS' | 'SVG' | 'BOTH'>('ECHARTS');
   const dexieStats = useLiveWorkoutStoreStats();
 
   const echartsTimeline: PMCDayPoint[] = useMemo(() => {
@@ -684,8 +582,6 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const startDateStr = enrichedSeries[0]?.date || customStart;
   const endDateStr =
     enrichedSeries[enrichedSeries.length - 1]?.date || customEnd;
-  const totalDaysCount = enrichedSeries.length;
-  const totalWeeksCount = Math.max(1, Math.round(totalDaysCount / 7));
 
   // Compute 28d vs 90d Aerobic Efficiency (EF = NP/HR) & Pa:Hr Decoupling Durability for the Coach Summary Card
   const aerobicDurabilityStats = useMemo(() => {
@@ -793,73 +689,6 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     }
   };
 
-  // Convert clientX mouse coordinate to index in enrichedSeries
-  const clientXToIndex = (clientX: number): number | null => {
-    if (!svgRef.current || enrichedSeries.length === 0) return null;
-    const rect = svgRef.current.getBoundingClientRect();
-    const svgX = ((clientX - rect.left) / Math.max(1, rect.width)) * 1140;
-    const plotLeft = 48;
-    const plotRight = 982;
-    const plotW = plotRight - plotLeft;
-    if (svgX < plotLeft - 10 || svgX > plotRight + 10) return null;
-    const clamped = Math.max(0, Math.min(1, (svgX - plotLeft) / plotW));
-    return Math.round(clamped * Math.max(0, enrichedSeries.length - 1));
-  };
-
-  const handleSvgMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
-    const idx = clientXToIndex(e.clientX);
-    if (idx === null) return;
-    isBrushingRef.current = true;
-    setBrushStartIdx(idx);
-    setBrushEndIdx(idx);
-  };
-
-  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const idx = clientXToIndex(e.clientX);
-    if (idx !== null) {
-      setHoverIdx(idx);
-      if (isBrushingRef.current) {
-        setBrushEndIdx(idx);
-      }
-    }
-  };
-
-  const handleSvgMouseUp = () => {
-    if (!isBrushingRef.current) return;
-    isBrushingRef.current = false;
-    if (
-      brushStartIdx !== null &&
-      brushEndIdx !== null &&
-      Math.abs(brushEndIdx - brushStartIdx) >= 4
-    ) {
-      const low = Math.min(brushStartIdx, brushEndIdx);
-      const high = Math.max(brushStartIdx, brushEndIdx);
-      const dStart = enrichedSeries[low]?.date;
-      const dEnd = enrichedSeries[high]?.date;
-      if (dStart && dEnd) {
-        setCustomStart(dStart);
-        setCustomEnd(dEnd);
-        setRangePreset('CUSTOM');
-      }
-    } else if (
-      brushStartIdx !== null &&
-      brushEndIdx !== null &&
-      Math.abs(brushEndIdx - brushStartIdx) <= 1
-    ) {
-      // Single click on a day with workouts opens the primary workout on that day
-      const clickedDay = enrichedSeries[brushStartIdx];
-      if (
-        clickedDay &&
-        clickedDay.dayActivities.length > 0 &&
-        onSelectActivity
-      ) {
-        onSelectActivity(clickedDay.dayActivities[0]);
-      }
-    }
-    setBrushStartIdx(null);
-    setBrushEndIdx(null);
-  };
-
   // Circadian 6:00 AM Hero: Morning Brief expanded by default; collapse automatically once today's workout is completed
   const todayCompletedActivities = useMemo(
     () => activitiesByDate.get(todayIso) || [],
@@ -900,13 +729,14 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const [showGuardrailsBar, setShowGuardrailsBar] = useState<boolean>(false);
 
   const [collapsedSections, setCollapsedSections] = useState<
-    Record<'pmc' | 'ledger' | 'comparator' | 'radars', boolean>
+    Record<'pmc' | 'ledger', boolean>
   >({
     pmc: false,
     ledger: true,
-    comparator: true,
-    radars: true,
   });
+  const isStudentContext = Boolean(
+    athleteProfile?.academicDivision || athleteProfile?.safeSportHideWeight
+  );
 
   const studentCheckIn = useMemo<StudentAthleteCheckIn>(
     () => ({
@@ -967,7 +797,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     [crossTrainModality, crossTrainMins, crossTrainRpe]
   );
 
-  const toggleSection = (key: 'pmc' | 'ledger' | 'comparator' | 'radars') => {
+  const toggleSection = (key: 'pmc' | 'ledger') => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -1493,11 +1323,13 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           {(isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
-                {/* Left 6 Cols: 5-Second Student-Athlete Check-In (Exams, Shin/Metatarsal BSI, Ferritin) */}
+                {/* Left 6 Cols: 5-Second Readiness & Soreness Check-In */}
                 <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 dark:text-white">
-                      5-Second Student-Athlete Check-In (Academic + Bone &amp; PHV)
+                      {isStudentContext
+                        ? '5-Second Student-Athlete Check-In'
+                        : '5-Second Soreness & Life-Stress Check-In'}
                     </span>
                     <span className="px-2 py-0.5 rounded ap-status-info font-mono text-2xs font-bold">
                       Intensity Cap: {studentGuardrail.intensityScalePct}%
@@ -1510,7 +1342,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         htmlFor={`${formId}-academic-stress`}
                         className="block text-2xs font-mono text-slate-500 mb-1"
                       >
-                        Academic / Exam Stress
+                        {isStudentContext ? 'School / Exam Stress' : 'Life / Work Stress'}
                       </label>
                       <select
                         id={`${formId}-academic-stress`}
@@ -1520,11 +1352,21 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         }
                         className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 font-mono text-xs"
                       >
-                        <option value={1}>1 — Normal Classes</option>
-                        <option value={2}>2 — Light Papers</option>
-                        <option value={3}>3 — Midterms / Labs</option>
-                        <option value={4}>4 — Heavy Exams</option>
-                        <option value={5}>5 — Finals / All-Nighter</option>
+                        <option value={1}>
+                          {isStudentContext ? '1 — Normal Classes' : '1 — Low / Routine'}
+                        </option>
+                        <option value={2}>
+                          {isStudentContext ? '2 — Light Papers' : '2 — Manageable Week'}
+                        </option>
+                        <option value={3}>
+                          {isStudentContext ? '3 — Midterms / Labs' : '3 — Busy / Moderate'}
+                        </option>
+                        <option value={4}>
+                          {isStudentContext ? '4 — Heavy Exams' : '4 — Heavy Workload'}
+                        </option>
+                        <option value={5}>
+                          {isStudentContext ? '5 — Finals / All-Nighter' : '5 — Exhausted / Poor Sleep'}
+                        </option>
                       </select>
                     </div>
 
@@ -1546,7 +1388,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         <option value={0}>0 — Zero Pain</option>
                         <option value={1}>1 — Mild Diffuse Tightness</option>
                         <option value={2}>2 — Focal Point Tenderness</option>
-                        <option value={3}>3 — Hop / Walk Pain (BSI)</option>
+                        <option value={3}>3 — Hop / Walk Pain (Stop)</option>
                       </select>
                     </div>
 
@@ -1579,7 +1421,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         htmlFor={`${formId}-phv-knee`}
                         className="block text-2xs font-mono text-slate-500 mb-1"
                       >
-                        Knee Growth-Plate (PHV)
+                        {isStudentContext ? 'Knee Growth-Plate' : 'Front Knee Tendon'}
                       </label>
                       <select
                         id={`${formId}-phv-knee`}
@@ -1592,8 +1434,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                       >
                         <option value={0}>0 — Pain-Free</option>
                         <option value={1}>1 — Post-Jump Tightness</option>
-                        <option value={2}>2 — Tender Tibial Bump</option>
-                        <option value={3}>3 — Pause Plyos &amp; Spikes</option>
+                        <option value={2}>2 — Tender Kneecap / Bump</option>
+                        <option value={3}>3 — Pause Jumps &amp; Spikes</option>
                       </select>
                     </div>
 
@@ -1602,7 +1444,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         htmlFor={`${formId}-phv-heel`}
                         className="block text-2xs font-mono text-slate-500 mb-1"
                       >
-                        Heel Apophysis (PHV)
+                        {isStudentContext ? 'Heel Growth-Plate' : 'Heel / Plantar Soreness'}
                       </label>
                       <select
                         id={`${formId}-phv-heel`}
@@ -2052,7 +1894,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             {isCustomizeOpen && (
               <div className="absolute right-0 top-10 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl border border-slate-300/80 dark:border-white/15">
                 <div className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/70 dark:border-white/10 pb-1.5 flex items-center justify-between">
-                  <span>Synchronized Chart Strips</span>
+                  <span>Chart Options</span>
                   <button
                     type="button"
                     onClick={() => setIsCustomizeOpen(false)}
@@ -2061,53 +1903,9 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     Done
                   </button>
                 </div>
-                {[
-                  {
-                    label: 'Form (TSB 5-Zone Curve)',
-                    checked: showTsbSubplot,
-                    set: setShowTsbSubplot,
-                  },
-                  {
-                    label: '7-Day Ramp Rate (CTL/wk)',
-                    checked: showRampSubplot,
-                    set: setShowRampSubplot,
-                  },
-                  {
-                    label: 'Daily Max HR Spikes',
-                    checked: showMaxHrSubplot,
-                    set: setShowMaxHrSubplot,
-                  },
-                  {
-                    label: 'Ride & Run eFTP Step Lines',
-                    checked: showEftpSubplot,
-                    set: setShowEftpSubplot,
-                  },
-                  {
-                    label: 'Weekly Training Load (Work)',
-                    checked: showWeeklyLoadSubplot,
-                    set: setShowWeeklyLoadSubplot,
-                  },
-                  {
-                    label: 'Overnight HRV & Resting HR',
-                    checked: showHrvSubplot,
-                    set: setShowHrvSubplot,
-                  },
-                ].map((item) => (
-                  <label
-                    key={item.label}
-                    className="flex items-center justify-between gap-2 cursor-pointer select-none py-0.5 text-slate-700 dark:text-slate-300 font-medium"
-                  >
-                    <span>{item.label}</span>
-                    <input
-                      type="checkbox"
-                      checked={item.checked}
-                      onChange={(e) => item.set(e.target.checked)}
-                      className="rounded border-slate-400 text-blue-600 focus:ring-blue-500"
-                    />
-                  </label>
-                ))}
-                {forwardDays > 0 && (
-                  <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-1">
+
+                {forwardDays > 0 ? (
+                  <div className="space-y-1">
                     <div className="flex justify-between font-mono text-2xs">
                       <label htmlFor={`${formId}-sim-daily-tss`}>Simulated TSS/day:</label>
                       <span className="font-bold text-blue-500">
@@ -2127,35 +1925,25 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                       className="w-full accent-blue-600"
                     />
                   </div>
+                ) : (
+                  <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Toggle Load Bars, Ramp Rate, or Threshold Pace directly on the chart toolbar above, or choose a Projection window to simulate future fitness.
+                  </p>
                 )}
 
-                {/* Chart Layout & Local Cache Diagnostics */}
-                <div className="pt-2.5 border-t border-slate-200/70 dark:border-white/10 space-y-2">
-                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Chart Layout
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl liquid-capsule-track text-2xs font-mono">
-                    {(
-                      [
-                        { id: 'SVG', label: 'Multi-Pane' },
-                        { id: 'ECHARTS', label: 'Interactive' },
-                        { id: 'BOTH', label: 'Split View' },
-                      ] as const
-                    ).map((eng) => (
-                      <button
-                        key={eng.id}
-                        type="button"
-                        onClick={() => setPmcEngine(eng.id)}
-                        className={`px-2 py-1 rounded-lg transition-all ${
-                          pmcEngine === eng.id
-                            ? 'liquid-capsule-active text-cyan-600 dark:text-cyan-300 font-bold'
-                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
-                        }`}
-                      >
-                        {eng.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomizeOpen(false);
+                      onOpenCoachWithPrompt(
+                        `My current Fitness (CTL) is ${latestDay.ctl}, Fatigue (ATL) is ${latestDay.atl}, Form (TSB) is ${latestDay.tsb} (${getIntervalsFormZone(latestDay.tsb).label}), Sleep Score is ${latestWithSleep.sleepScore}, and HRV is ${latestWithHrv.hrvRMSSD}ms. Analyze my fitness/fatigue trend and recommend adjustments for the coming week.`
+                      );
+                    }}
+                    className="w-full min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Ask AI Coach About My PMC
+                  </button>
                   <div className="flex items-center justify-between text-2xs font-mono text-emerald-600 dark:text-emerald-400 pt-1">
                     <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -2309,1612 +2097,29 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         </div>
 
         {/* ==========================================================================
-            APACHE ECHARTS CHRONIC FITNESS DECAY MODEL (CTL / ATL / TSB / RAMP WITH DATAZOOM)
+            SINGLE CANONICAL uPLOT PERFORMANCE MANAGEMENT CHART (CTL / ATL / TSB / RAMP)
            ========================================================================== */}
-        {(pmcEngine === 'ECHARTS' || pmcEngine === 'BOTH') && (
-          <div className="px-1 sm:px-2 lg:px-5 pt-2 sm:pt-3 pb-1">
-            <Suspense
-              fallback={
-                <div
-                  className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
-                  style={{ height: `${isCompactMobile ? 380 : 530}px` }}
-                >
-                  Loading Performance Management Chart…
-                </div>
-              }
-            >
-              <UPlotPMCDashboard
-                embedded
-                timeline={echartsTimeline}
-                onSelectActivity={onSelectActivity}
-                onSelectDate={handleEChartsSelectDate}
-                onSelectDateRange={handleEChartsSelectDateRange}
-                height={isCompactMobile ? 380 : 530}
-              />
-            </Suspense>
-          </div>
-        )}
-
-        {/* ==========================================================================
-            UNIFIED MULTI-PANE INTERVALS.ICU SVG CANVAS + RIGHT-MARGIN READOUT GUTTER
-           ========================================================================== */}
-        {(pmcEngine === 'SVG' || pmcEngine === 'BOTH') && (
-        <div className="px-1 sm:px-4 pt-3 pb-2 select-none overflow-x-auto">
-          {(() => {
-            const len = Math.max(1, enrichedSeries.length);
-            const plotLeft = 48;
-            const plotRight = 982;
-            const plotW = plotRight - plotLeft;
-            const gutterLeft = 996;
-            const xFor = (i: number) =>
-              plotLeft + (i / Math.max(1, len - 1)) * plotW;
-
-            // --- PANE 1 GEOMETRY: Training load per day (2x tall: 310px height) ---
-            const p1Top = 14;
-            const p1Height = 300;
-            const p1Bottom = p1Top + p1Height;
-
-            // Auto-scaled Y-axis floor & ceiling (rounded to 10-unit intervals, just like Intervals.icu!)
-            const allCtlAtl = enrichedSeries.flatMap((d) => [d.ctl, d.atl]);
-            const rawMinLoad = Math.min(...allCtlAtl);
-            const rawMaxLoad = Math.max(...allCtlAtl);
-            const minLoad = Math.max(
-              0,
-              Math.floor((rawMinLoad - 4) / 10) * 10
-            );
-            const maxLoad = Math.max(
-              minLoad + 40,
-              Math.ceil((rawMaxLoad + 5) / 10) * 10
-            );
-            const loadSpan = Math.max(20, maxLoad - minLoad);
-            const yLoad = (v: number) =>
-              Math.max(
-                p1Top,
-                Math.min(
-                  p1Bottom,
-                  p1Bottom - ((v - minLoad) / loadSpan) * p1Height
-                )
-              );
-
-            const loadTicks: number[] = [];
-            for (let t = minLoad; t <= maxLoad; t += 10) {
-              loadTicks.push(t);
-            }
-
-            const ctlPolyline = enrichedSeries
-              .map((d, i) => `${xFor(i).toFixed(1)},${yLoad(d.ctl).toFixed(1)}`)
-              .join(' ');
-            const atlPolyline = enrichedSeries
-              .map((d, i) => `${xFor(i).toFixed(1)},${yLoad(d.atl).toFixed(1)}`)
-              .join(' ');
-            const ctlAreaPoints = `${plotLeft},${p1Bottom} ${ctlPolyline} ${plotRight},${p1Bottom}`;
-
-            // --- DYNAMIC VERTICAL STACK FOR SECONDARY PANES ---
-            let cursorY = p1Bottom + 10;
-
-            // Pane 2: Form (TSB) — 185px tall
-            const p2Top = cursorY;
-            const p2Height = showTsbSubplot ? 185 : 0;
-            const p2Bottom = p2Top + p2Height;
-            if (showTsbSubplot) cursorY = p2Bottom + 10;
-
-            // Pane 2B: 7-Day Ramp Rate (CTL/wk) — 88px tall (directly beneath Form chart)
-            const pRampTop = cursorY;
-            const pRampHeight = showRampSubplot ? 88 : 0;
-            const pRampBottom = pRampTop + pRampHeight;
-            if (showRampSubplot) cursorY = pRampBottom + 10;
-
-            // Pane 3: Max HR — 96px tall
-            const p3Top = cursorY;
-            const p3Height = showMaxHrSubplot ? 96 : 0;
-            const p3Bottom = p3Top + p3Height;
-            if (showMaxHrSubplot) cursorY = p3Bottom + 10;
-
-            // Pane 4: Ride / Run eFTP — 74px tall
-            const p4Top = cursorY;
-            const p4Height = showEftpSubplot ? 74 : 0;
-            const p4Bottom = p4Top + p4Height;
-            if (showEftpSubplot) cursorY = p4Bottom + 10;
-
-            // Pane 5: Weekly Load (Work) — 82px tall
-            const p5Top = cursorY;
-            const p5Height = showWeeklyLoadSubplot ? 82 : 0;
-            const p5Bottom = p5Top + p5Height;
-            if (showWeeklyLoadSubplot) cursorY = p5Bottom + 10;
-
-            // Pane 6: Overnight HRV & RHR — 86px tall
-            const p6Top = cursorY;
-            const p6Height = showHrvSubplot ? 86 : 0;
-            const p6Bottom = p6Top + p6Height;
-            if (showHrvSubplot) cursorY = p6Bottom + 10;
-
-            const bottomAxisY = cursorY + 14;
-            const totalSvgHeight = bottomAxisY + 12;
-
-            // Form (TSB) Y mapping (-38 to +28)
-            const tsbMax = 28;
-            const tsbMin = -38;
-            const yTsb = (tsb: number) => {
-              const clamped = Math.max(tsbMin, Math.min(tsbMax, tsb));
-              return (
-                p2Top + ((tsbMax - clamped) / (tsbMax - tsbMin)) * p2Height
-              );
-            };
-            const tsbPolyline = showTsbSubplot
-              ? enrichedSeries
-                  .map(
-                    (d, i) => `${xFor(i).toFixed(1)},${yTsb(d.tsb).toFixed(1)}`
-                  )
-                  .join(' ')
-              : '';
-
-            // Gradient stop percentages for the multi-color Form line
-            const pctAtTsb = (val: number) =>
-              `${Math.max(0, Math.min(100, ((tsbMax - val) / (tsbMax - tsbMin)) * 100)).toFixed(1)}%`;
-
-            // Month / Year Calendar Ticks along the shared bottom X-axis
-            const calendarTicks: { idx: number; label: string; isYear: boolean }[] = [];
-            enrichedSeries.forEach((d, i) => {
-              if (i === 0) {
-                const [, m, dayNum] = d.date.split('-').map(Number);
-                const g = formatGutterDate(d.date);
-                calendarTicks.push({
-                  idx: 0,
-                  label: `${g.top.split(' ')[0]} ${String(dayNum).padStart(2, '0')} ${SHORT_MONTHS[(m || 1) - 1]}`,
-                  isYear: false,
-                });
-                return;
-              }
-              const prevDate = enrichedSeries[i - 1].date;
-              if (d.date.slice(0, 7) !== prevDate.slice(0, 7)) {
-                const [y, m] = d.date.split('-').map(Number);
-                if (m === 1) {
-                  calendarTicks.push({ idx: i, label: String(y), isYear: true });
-                } else {
-                  calendarTicks.push({
-                    idx: i,
-                    label: SHORT_MONTHS[(m || 1) - 1],
-                    isYear: false,
-                  });
-                }
-              }
-            });
-
-            const activeFormZone = getIntervalsFormZone(activePoint.tsb);
-            const activeGutterDate = formatGutterDate(activePoint.date);
-
-            return (
-              <svg
-                ref={svgRef}
-                viewBox={`0 0 1140 ${totalSvgHeight}`}
-                className="w-full h-auto min-w-[780px] cursor-crosshair"
-                onMouseDown={handleSvgMouseDown}
-                onMouseMove={handleSvgMouseMove}
-                onMouseUp={handleSvgMouseUp}
-                onMouseLeave={() => {
-                  setHoverIdx(null);
-                  if (isBrushingRef.current) {
-                    isBrushingRef.current = false;
-                    setBrushStartIdx(null);
-                    setBrushEndIdx(null);
-                  }
-                }}
+        <div className="px-1 sm:px-2 lg:px-5 pt-2 sm:pt-3 pb-2">
+          <Suspense
+            fallback={
+              <div
+                className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
+                style={{ height: `${isCompactMobile ? 380 : 530}px` }}
               >
-                <defs>
-                  {/* Soft Cyan Vertical Area Fill for CTL Fitness */}
-                  <linearGradient
-                    id="intervals-ctl-area-grad"
-                    x1="0"
-                    y1={p1Top}
-                    x2="0"
-                    y2={p1Bottom}
-                    gradientUnits="userSpaceOnUse"
-                  >
-                    <stop offset="0%" stopColor="#0EA5E9" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#0EA5E9" stopOpacity="0.02" />
-                  </linearGradient>
-
-                  {/* Luminous SVG Curve Glow Filters */}
-                  <filter id="ctl-glow" x="-5%" y="-15%" width="110%" height="130%">
-                    <feDropShadow dx="0" dy="1" stdDeviation="2.2" floodColor="#0EA5E9" floodOpacity="0.35" />
-                  </filter>
-                  <filter id="atl-glow" x="-5%" y="-15%" width="110%" height="130%">
-                    <feDropShadow dx="0" dy="1" stdDeviation="1.8" floodColor="#8B5CF6" floodOpacity="0.28" />
-                  </filter>
-
-                  {/* Continuous Multi-Color Form (TSB) Stroke Gradient with Hard Stops at Zone Thresholds */}
-                  {showTsbSubplot && (
-                    <linearGradient
-                      id="intervals-tsb-stroke-grad"
-                      x1="0"
-                      y1={p2Top}
-                      x2="0"
-                      y2={p2Bottom}
-                      gradientUnits="userSpaceOnUse"
-                    >
-                      <stop offset="0%" stopColor="#F59E0B" />
-                      <stop offset={pctAtTsb(20)} stopColor="#F59E0B" />
-                      <stop offset={pctAtTsb(20)} stopColor="#0EA5E9" />
-                      <stop offset={pctAtTsb(5)} stopColor="#0EA5E9" />
-                      <stop offset={pctAtTsb(5)} stopColor="#94A3B8" />
-                      <stop offset={pctAtTsb(-10)} stopColor="#94A3B8" />
-                      <stop offset={pctAtTsb(-10)} stopColor="#10B981" />
-                      <stop offset={pctAtTsb(-30)} stopColor="#10B981" />
-                      <stop offset={pctAtTsb(-30)} stopColor="#EF4444" />
-                      <stop offset="100%" stopColor="#EF4444" />
-                    </linearGradient>
-                  )}
-                </defs>
-
-                {/* ==============================================================
-                    PANE 1: TRAINING LOAD PER DAY (CTL FITNESS & ATL FATIGUE)
-                   ============================================================== */}
-                <rect
-                  x={plotLeft}
-                  y={p1Top}
-                  width={plotW}
-                  height={p1Height}
-                  fill="none"
-                  stroke="currentColor"
-                  className="text-slate-200 dark:text-slate-800"
-                />
-
-                <text
-                  x={15}
-                  y={p1Top + p1Height / 2}
-                  transform={`rotate(-90 15 ${p1Top + p1Height / 2})`}
-                  textAnchor="middle"
-                  className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                >
-                  Training load per day
-                </text>
-
-                {/* 10-Unit Auto-Scaled Horizontal Gridlines */}
-                {loadTicks.map((t) => {
-                  const y = yLoad(t);
-                  return (
-                    <g key={`p1-tick-${t}`}>
-                      <line
-                        x1={plotLeft}
-                        y1={y}
-                        x2={plotRight}
-                        y2={y}
-                        stroke="currentColor"
-                        className="text-slate-100 dark:text-slate-800/80"
-                        strokeWidth="1"
-                      />
-                      <text
-                        x={plotLeft - 6}
-                        y={y + 3.5}
-                        textAnchor="end"
-                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                      >
-                        {t}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Dashed Horizontal Reference Line at Active/Current CTL Fitness Level */}
-                <line
-                  x1={plotLeft}
-                  y1={yLoad(activePoint.ctl)}
-                  x2={plotRight}
-                  y2={yLoad(activePoint.ctl)}
-                  stroke="#94A3B8"
-                  strokeWidth="1"
-                  strokeDasharray="2 2"
-                  opacity="0.7"
-                />
-
-                {/* Daily Training Load Bars (Stacked per-activity by Garmin Load Focus: Low Aerobic / High Aerobic / Anaerobic) */}
-                {enrichedSeries.map((d, i) => {
-                  const load = d.dailyLoad || 0;
-                  if (load <= 0) return null;
-                  const x = xFor(i);
-                  const maxBarH = p1Height * 0.42;
-                  const totalBarH = Math.min(maxBarH, Math.max(3, (load / 180) * maxBarH));
-                  const barW = Math.max(1.8, Math.min(5.5, (plotW / len) * 0.68));
-                  const isHovered = activeIdx === i;
-                  const baseOpacity = isHovered ? 0.96 : d.isProjected ? 0.25 : 0.78;
-                  const segments =
-                    d.activitySegments && d.activitySegments.length > 0
-                      ? d.activitySegments
-                      : [
-                          {
-                            activityId: `day-${d.date}`,
-                            activityName: d.garminFocus.label,
-                            sport: 'Training',
-                            load,
-                            focus: d.garminFocus,
-                          },
-                        ];
-                  const minSlice = segments.length > 1 ? Math.max(7, load * 0.11) : 0;
-                  const boostedLoads = segments.map((s) =>
-                    s.load > 0 ? Math.max(s.load, minSlice) : 0
-                  );
-                  const segTotalLoad =
-                    boostedLoads.reduce((acc, v) => acc + v, 0) || load;
-                  let currentBottom = p1Bottom;
-
-                  return (
-                    <g key={`p1-garmin-load-stack-${d.date}`}>
-                      {segments.map((seg, sIdx) => {
-                        const frac = boostedLoads[sIdx] / segTotalLoad;
-                        const segH =
-                          sIdx === segments.length - 1
-                            ? Math.max(1.5, currentBottom - (p1Bottom - totalBarH))
-                            : Math.max(2, frac * totalBarH);
-                        const yTop = currentBottom - segH;
-                        currentBottom = yTop;
-                        return (
-                          <rect
-                            key={`p1-garmin-seg-${d.date}-${seg.activityId}-${sIdx}`}
-                            x={x - barW / 2}
-                            y={yTop}
-                            width={barW}
-                            height={segH}
-                            rx={sIdx === segments.length - 1 ? 1 : 0}
-                            fill={seg.focus.solidColor}
-                            opacity={baseOpacity}
-                          />
-                        );
-                      })}
-                    </g>
-                  );
-                })}
-
-                {/* CTL Shaded Cyan Area */}
-                <polygon
-                  points={ctlAreaPoints}
-                  fill="url(#intervals-ctl-area-grad)"
-                />
-
-                {/* Purple Fatigue (ATL) Curve */}
-                <polyline
-                  fill="none"
-                  stroke="#8B5CF6"
-                  strokeWidth="1.65"
-                  strokeLinejoin="round"
-                  filter="url(#atl-glow)"
-                  points={atlPolyline}
-                />
-
-                {/* Cyan Fitness (CTL) Curve */}
-                <polyline
-                  fill="none"
-                  stroke="#0EA5E9"
-                  strokeWidth="2.25"
-                  strokeLinejoin="round"
-                  filter="url(#ctl-glow)"
-                  points={ctlPolyline}
-                />
-
-                {/* Milestone Markers Along X-Axis Baseline & CTL Curve (A-Races & eFTP Only on CTL) */}
-                {activeMilestoneFilter !== 'NONE' &&
-                  enrichedSeries.map((d, i) => {
-                    if (!d.milestones || d.milestones.length === 0) return null;
-                    const visibleMilestones =
-                      activeMilestoneFilter === 'ALL'
-                        ? d.milestones
-                        : d.milestones.filter((m) => m.category === activeMilestoneFilter);
-                    if (visibleMilestones.length === 0) return null;
-
-                    const x = xFor(i);
-                    const primaryMs = visibleMilestones[0];
-                    const ctlMilestone = visibleMilestones.find(
-                      (m) =>
-                        m.category === 'EFTP_BREAKTHROUGH' || m.category === 'RACE_OR_DISTANCE_PR'
-                    );
-                    const isHoveredDay = activeIdx === i;
-                    const baseY = p1Bottom - 7;
-
-                    return (
-                      <g key={`p1-markers-${d.date}`}>
-                        {/* Subtle vertical guideline connecting X-axis milestone to CTL curve */}
-                        {ctlMilestone && (
-                          <line
-                            x1={x}
-                            y1={yLoad(d.ctl) + 4}
-                            x2={x}
-                            y2={baseY - 5}
-                            stroke={ctlMilestone.colorHex}
-                            strokeWidth={isHoveredDay ? '1.3' : '0.8'}
-                            strokeDasharray="2 2"
-                            opacity={isHoveredDay ? '0.85' : '0.4'}
-                          />
-                        )}
-
-                        {/* CTL Curve Node: ONLY for A-Races / Distance PRs and eFTP Breakthroughs */}
-                        {ctlMilestone && (
-                          <g>
-                            <circle
-                              cx={x}
-                              cy={yLoad(d.ctl)}
-                              r={isHoveredDay ? 5.2 : 3.8}
-                              fill={ctlMilestone.colorHex}
-                              stroke="#0F172A"
-                              strokeWidth="1.4"
-                            />
-                            <circle
-                              cx={x}
-                              cy={yLoad(d.ctl)}
-                              r={1.6}
-                              fill="#FFFFFF"
-                            />
-                          </g>
-                        )}
-
-                        {/* Color-Coded X-Axis Baseline Milestone Badge */}
-                        {primaryMs.category === 'EFTP_BREAKTHROUGH' && (
-                          /* Aero Orange Diamond Badge for New eFTP Breakthrough */
-                          <polygon
-                            points={`${x},${baseY - 5} ${x + 4.8},${baseY} ${x},${baseY + 5} ${x - 4.8},${baseY}`}
-                            fill="#F97316"
-                            stroke="#FFFFFF"
-                            strokeWidth={isHoveredDay ? '1.5' : '0.9'}
-                          />
-                        )}
-                        {primaryMs.category === 'RACE_OR_DISTANCE_PR' && (
-                          /* Gold Trophy / Hex Badge for Official Race or Running Distance PR */
-                          <g>
-                            <circle
-                              cx={x}
-                              cy={baseY}
-                              r={isHoveredDay ? 5.2 : 4.2}
-                              fill="#F59E0B"
-                              stroke="#FFFFFF"
-                              strokeWidth={isHoveredDay ? '1.5' : '1'}
-                            />
-                            <circle cx={x} cy={baseY} r={1.6} fill="#0F172A" />
-                          </g>
-                        )}
-                        {primaryMs.category === 'POWER_OR_BENCHMARK_PR' && (
-                          /* Magenta Triangle / Peak Badge for Power Curve or Benchmark Segment PR */
-                          <polygon
-                            points={`${x},${baseY - 5} ${x + 4.8},${baseY + 4.2} ${x - 4.8},${baseY + 4.2}`}
-                            fill="#EC4899"
-                            stroke="#FFFFFF"
-                            strokeWidth={isHoveredDay ? '1.5' : '0.9'}
-                          />
-                        )}
-                      </g>
-                    );
-                  })}
-
-                {/* On-Canvas Floating Callout Tooltip When Hovering a Day with a Milestone */}
-                {activePoint.milestones &&
-                  activePoint.milestones.length > 0 &&
-                  activeMilestoneFilter !== 'NONE' &&
-                  (() => {
-                    const visible =
-                      activeMilestoneFilter === 'ALL'
-                        ? activePoint.milestones
-                        : activePoint.milestones.filter(
-                            (m) => m.category === activeMilestoneFilter
-                          );
-                    if (visible.length === 0) return null;
-                    const ms = visible[0];
-                    const rawX = xFor(activeIdx);
-                    const boxW = Math.min(340, Math.max(175, ms.detailLabel.length * 6.2 + 24));
-                    const boxX = Math.max(
-                      plotLeft + 6,
-                      Math.min(plotRight - boxW - 6, rawX - boxW / 2)
-                    );
-                    const boxY = p1Bottom - 36;
-                    return (
-                      <g pointerEvents="none">
-                        <rect
-                          x={boxX}
-                          y={boxY}
-                          width={boxW}
-                          height={22}
-                          rx={6}
-                          fill="#0F172A"
-                          fillOpacity="0.94"
-                          stroke={ms.colorHex}
-                          strokeWidth="1.2"
-                        />
-                        <circle cx={boxX + 10} cy={boxY + 11} r={3.2} fill={ms.colorHex} />
-                        <text
-                          x={boxX + 18}
-                          y={boxY + 14.5}
-                          className="fill-white text-2xs font-mono font-semibold"
-                        >
-                          {ms.detailLabel.slice(0, 50)}
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* Active Hover Dots on CTL & ATL */}
-                <circle
-                  cx={xFor(activeIdx)}
-                  cy={yLoad(activePoint.ctl)}
-                  r={4}
-                  fill="#0EA5E9"
-                  stroke="#fff"
-                  strokeWidth="1.5"
-                />
-                <circle
-                  cx={xFor(activeIdx)}
-                  cy={yLoad(activePoint.atl)}
-                  r={3.8}
-                  fill="#8B5CF6"
-                  stroke="#fff"
-                  strokeWidth="1.5"
-                />
-
-                {/* PANE 1 RIGHT-MARGIN PINNED READOUT GUTTER (Exact Intervals.icu Layout) */}
-                <g transform={`translate(${gutterLeft + 52}, ${p1Top + 14})`}>
-                  <text
-                    x={0}
-                    y={0}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    {activeGutterDate.top}
-                  </text>
-                  <text
-                    x={0}
-                    y={13}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    {activeGutterDate.bottom}
-                  </text>
-
-                  <text
-                    x={0}
-                    y={44}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    Fitness
-                  </text>
-                  <text
-                    x={0}
-                    y={62}
-                    textAnchor="middle"
-                    className="fill-[#0284C7] dark:fill-[#38BDF8] text-sm font-sans font-bold"
-                  >
-                    {Math.round(activePoint.ctl)}
-                  </text>
-
-                  <text
-                    x={0}
-                    y={88}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    Fatigue
-                  </text>
-                  <text
-                    x={0}
-                    y={106}
-                    textAnchor="middle"
-                    className="fill-[#7C3AED] dark:fill-[#A855F7] text-sm font-sans font-bold"
-                  >
-                    {Math.round(activePoint.atl)}
-                  </text>
-
-                  <text
-                    x={0}
-                    y={132}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    Form
-                  </text>
-                  <text
-                    x={0}
-                    y={150}
-                    textAnchor="middle"
-                    fill={activeFormZone.hex}
-                    className="text-sm font-sans font-bold"
-                  >
-                    {Math.round(activePoint.tsb)}
-                  </text>
-
-                  <text
-                    x={0}
-                    y={174}
-                    textAnchor="middle"
-                    className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                  >
-                    {activeFormZone.label === 'Grey Zone'
-                      ? 'Grey Zone'
-                      : `${activeFormZone.label} Zone`}
-                  </text>
-                </g>
-
-                {/* ==============================================================
-                    PANE 2: FORM (TSB = CTL - ATL) WITH 5 INTERVALS.ICU ZONE BANDS
-                   ============================================================== */}
-                {showTsbSubplot && (
-                  <g>
-                    <text
-                      x={15}
-                      y={p2Top + p2Height / 2}
-                      transform={`rotate(-90 15 ${p2Top + p2Height / 2})`}
-                      textAnchor="middle"
-                      className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                    >
-                      Form
-                    </text>
-
-                    {/* 5 Horizontal Intervals.icu Zone Background Fills */}
-                    {/* Transition (> +20) */}
-                    <rect
-                      x={plotLeft}
-                      y={yTsb(tsbMax)}
-                      width={plotW}
-                      height={Math.max(0, yTsb(20) - yTsb(tsbMax))}
-                      fill="rgba(245, 158, 11, 0.08)"
-                    />
-                    {/* Fresh (+5 to +20) */}
-                    <rect
-                      x={plotLeft}
-                      y={yTsb(20)}
-                      width={plotW}
-                      height={Math.max(0, yTsb(5) - yTsb(20))}
-                      fill="rgba(14, 165, 233, 0.08)"
-                    />
-                    {/* Grey Zone (-10 to +5) */}
-                    <rect
-                      x={plotLeft}
-                      y={yTsb(5)}
-                      width={plotW}
-                      height={Math.max(0, yTsb(-10) - yTsb(5))}
-                      fill="rgba(148, 163, 184, 0.09)"
-                    />
-                    {/* Optimal (-30 to -10) */}
-                    <rect
-                      x={plotLeft}
-                      y={yTsb(-10)}
-                      width={plotW}
-                      height={Math.max(0, yTsb(-30) - yTsb(-10))}
-                      fill="rgba(16, 185, 129, 0.10)"
-                    />
-                    {/* High Risk (< -30) */}
-                    <rect
-                      x={plotLeft}
-                      y={yTsb(-30)}
-                      width={plotW}
-                      height={Math.max(0, yTsb(tsbMin) - yTsb(-30))}
-                      fill="rgba(239, 68, 68, 0.11)"
-                    />
-
-                    {/* Pane 2 Border */}
-                    <rect
-                      x={plotLeft}
-                      y={p2Top}
-                      width={plotW}
-                      height={p2Height}
-                      fill="none"
-                      stroke="currentColor"
-                      className="text-slate-200 dark:text-slate-800"
-                    />
-
-                    {/* Zone Threshold Reference Lines (+20, +5, -10, -30) */}
-                    {[20, 5, -10, -30].map((v) => {
-                      const y = yTsb(v);
-                      return (
-                        <g key={`tsb-line-${v}`}>
-                          <line
-                            x1={plotLeft}
-                            y1={y}
-                            x2={plotRight}
-                            y2={y}
-                            stroke="currentColor"
-                            className="text-slate-200 dark:text-slate-700/70"
-                            strokeDasharray="2 2"
-                          />
-                          <text
-                            x={plotLeft - 6}
-                            y={y + 3.5}
-                            textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                          >
-                            {v}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Continuous Multi-Color Form (TSB) Curve */}
-                    <polyline
-                      fill="none"
-                      stroke="url(#intervals-tsb-stroke-grad)"
-                      strokeWidth="1.9"
-                      strokeLinejoin="round"
-                      points={tsbPolyline}
-                    />
-
-                    {/* Red Warning Dots on High Risk (< -30) Days */}
-                    {enrichedSeries.map((d, i) =>
-                      d.tsb < -30 ? (
-                        <circle
-                          key={`hrisk-${d.date}`}
-                          cx={xFor(i)}
-                          cy={yTsb(d.tsb)}
-                          r={2.6}
-                          fill="#EF4444"
-                        />
-                      ) : null
-                    )}
-
-                    {/* Active Hover Dot on TSB */}
-                    <circle
-                      cx={xFor(activeIdx)}
-                      cy={yTsb(activePoint.tsb)}
-                      r={4}
-                      fill={activeFormZone.hex}
-                      stroke="#fff"
-                      strokeWidth="1.5"
-                    />
-
-                    {/* Right-Margin Zone Labels Aligned to Band Heights */}
-                    <g className="text-2xs font-sans">
-                      <line
-                        x1={gutterLeft - 4}
-                        y1={yTsb(tsbMax) + 2}
-                        x2={gutterLeft - 4}
-                        y2={yTsb(20) - 2}
-                        stroke="#F59E0B"
-                        strokeWidth="2"
-                      />
-                      <text
-                        x={gutterLeft + 4}
-                        y={(yTsb(tsbMax) + yTsb(20)) / 2 + 4}
-                        fill="#D97706"
-                      >
-                        Transition
-                      </text>
-
-                      <line
-                        x1={gutterLeft - 4}
-                        y1={yTsb(20) + 2}
-                        x2={gutterLeft - 4}
-                        y2={yTsb(5) - 2}
-                        stroke="#0EA5E9"
-                        strokeWidth="2"
-                      />
-                      <text
-                        x={gutterLeft + 4}
-                        y={(yTsb(20) + yTsb(5)) / 2 + 4}
-                        fill="#0284C7"
-                      >
-                        Fresh
-                      </text>
-
-                      <line
-                        x1={gutterLeft - 4}
-                        y1={yTsb(5) + 2}
-                        x2={gutterLeft - 4}
-                        y2={yTsb(-10) - 2}
-                        stroke="#94A3B8"
-                        strokeWidth="2"
-                      />
-                      <text
-                        x={gutterLeft + 4}
-                        y={(yTsb(5) + yTsb(-10)) / 2 + 4}
-                        fill="#64748B"
-                      >
-                        Grey Zone
-                      </text>
-
-                      <line
-                        x1={gutterLeft - 4}
-                        y1={yTsb(-10) + 2}
-                        x2={gutterLeft - 4}
-                        y2={yTsb(-30) - 2}
-                        stroke="#10B981"
-                        strokeWidth="2"
-                      />
-                      <text
-                        x={gutterLeft + 4}
-                        y={(yTsb(-10) + yTsb(-30)) / 2 + 4}
-                        fill="#10B981"
-                      >
-                        Optimal
-                      </text>
-
-                      <line
-                        x1={gutterLeft - 4}
-                        y1={yTsb(-30) + 2}
-                        x2={gutterLeft - 4}
-                        y2={yTsb(tsbMin) - 2}
-                        stroke="#EF4444"
-                        strokeWidth="2"
-                      />
-                      <text
-                        x={gutterLeft + 4}
-                        y={(yTsb(-30) + yTsb(tsbMin)) / 2 + 4}
-                        fill="#EF4444"
-                      >
-                        High Risk
-                      </text>
-                    </g>
-                  </g>
-                )}
-
-                {/* ==============================================================
-                    PANE 2B: 7-DAY RAMP RATE (CTL/WK) SUB-CHART BENEATH FORM
-                   ============================================================== */}
-                {showRampSubplot &&
-                  (() => {
-                    const rampMin = -8;
-                    const rampMax = 12;
-                    const yRamp = (v: number) => {
-                      const clamped = Math.max(rampMin, Math.min(rampMax, v));
-                      return (
-                        pRampTop +
-                        ((rampMax - clamped) / (rampMax - rampMin)) * pRampHeight
-                      );
-                    };
-                    const zeroY = yRamp(0);
-                    const optY = yRamp(5);
-                    const riskY = yRamp(7);
-                    const barW = Math.max(1.8, Math.min(5.2, (plotW / len) * 0.65));
-
-                    return (
-                      <g>
-                        {/* Optimal Ramp Zone Band (0 to +5.0 CTL/wk) */}
-                        <rect
-                          x={plotLeft}
-                          y={optY}
-                          width={plotW}
-                          height={Math.max(0, zeroY - optY)}
-                          fill="rgba(16, 185, 129, 0.07)"
-                        />
-                        {/* Caution Ramp Zone Band (+5.0 to +7.0 CTL/wk) */}
-                        <rect
-                          x={plotLeft}
-                          y={riskY}
-                          width={plotW}
-                          height={Math.max(0, optY - riskY)}
-                          fill="rgba(245, 158, 11, 0.07)"
-                        />
-                        {/* High Risk Ramp Zone Band (> +7.0 CTL/wk) */}
-                        <rect
-                          x={plotLeft}
-                          y={pRampTop}
-                          width={plotW}
-                          height={Math.max(0, riskY - pRampTop)}
-                          fill="rgba(244, 63, 94, 0.07)"
-                        />
-
-                        <rect
-                          x={plotLeft}
-                          y={pRampTop}
-                          width={plotW}
-                          height={pRampHeight}
-                          fill="none"
-                          stroke="currentColor"
-                          className="text-slate-200 dark:text-slate-800"
-                        />
-
-                        <text
-                          x={15}
-                          y={pRampTop + pRampHeight / 2}
-                          transform={`rotate(-90 15 ${pRampTop + pRampHeight / 2})`}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Ramp (/wk)
-                        </text>
-
-                        {[-5, 0, 5, 10].map((v) => (
-                          <g key={`ramp-grid-${v}`}>
-                            <line
-                              x1={plotLeft}
-                              y1={yRamp(v)}
-                              x2={plotRight}
-                              y2={yRamp(v)}
-                              stroke={v === 0 ? '#64748B' : v === 5 ? '#10B981' : 'currentColor'}
-                              strokeDasharray={v === 5 ? '3 3' : undefined}
-                              strokeWidth={v === 0 ? '1.1' : '1'}
-                              opacity={v === 0 || v === 5 ? '0.6' : '1'}
-                              className={
-                                v === 0 || v === 5
-                                  ? undefined
-                                  : 'text-slate-100 dark:text-slate-800/80'
-                              }
-                            />
-                            <text
-                              x={plotLeft - 6}
-                              y={yRamp(v) + 3}
-                              textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                            >
-                              {v > 0 ? `+${v}` : v}
-                            </text>
-                          </g>
-                        ))}
-
-                        {enrichedSeries.map((d, i) => {
-                          const r = d.rampRate || 0;
-                          const x = xFor(i);
-                          const valY = yRamp(r);
-                          const top = Math.min(zeroY, valY);
-                          const h = Math.max(1.5, Math.abs(valY - zeroY));
-                          const fillHex =
-                            r > 7
-                              ? '#F43F5E'
-                              : r > 5
-                                ? '#F59E0B'
-                                : r >= 0
-                                  ? '#10B981'
-                                  : '#38BDF8';
-                          return (
-                            <rect
-                              key={`ramp-bar-${d.date}`}
-                              x={x - barW / 2}
-                              y={top}
-                              width={barW}
-                              height={h}
-                              rx={0.8}
-                              fill={fillHex}
-                              opacity={activeIdx === i ? '1' : d.isProjected ? '0.35' : '0.78'}
-                            />
-                          );
-                        })}
-
-                        {/* Right-margin readout */}
-                        <text
-                          x={gutterLeft + 4}
-                          y={pRampTop + pRampHeight / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Ramp{' '}
-                          <tspan
-                            fill={
-                              activePoint.rampRate > 7
-                                ? '#F43F5E'
-                                : activePoint.rampRate > 5
-                                  ? '#F59E0B'
-                                  : activePoint.rampRate >= 0
-                                    ? '#10B981'
-                                    : '#38BDF8'
-                            }
-                            className="font-bold font-mono"
-                          >
-                            {activePoint.rampRate > 0
-                              ? `+${activePoint.rampRate.toFixed(1)}`
-                              : activePoint.rampRate.toFixed(1)}
-                            /wk
-                          </tspan>
-                        </text>
-                        <text
-                          x={gutterLeft + 4}
-                          y={pRampTop + pRampHeight / 2 + 12}
-                          className="fill-slate-400 dark:fill-slate-500 text-2xs font-sans"
-                        >
-                          {activePoint.rampRate > 7
-                            ? 'High Risk (>+7)'
-                            : activePoint.rampRate > 5
-                              ? 'Heavy Build'
-                              : activePoint.rampRate >= 0
-                                ? 'Optimal (0..+5)'
-                                : 'Taper / Recov'}
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* ==============================================================
-                    PANE 3: DAILY MAX HR VERTICAL IMPULSE SPIKES
-                   ============================================================== */}
-                {showMaxHrSubplot &&
-                  (() => {
-                    const hrMin = 90;
-                    const hrMax = 188;
-                    const yHr = (hr: number) =>
-                      Math.max(
-                        p3Top,
-                        Math.min(
-                          p3Bottom,
-                          p3Bottom - ((hr - hrMin) / (hrMax - hrMin)) * p3Height
-                        )
-                      );
-                    return (
-                      <g>
-                        <rect
-                          x={plotLeft}
-                          y={p3Top}
-                          width={plotW}
-                          height={p3Height}
-                          fill="none"
-                          stroke="currentColor"
-                          className="text-slate-200 dark:text-slate-800"
-                        />
-                        <text
-                          x={15}
-                          y={p3Top + p3Height / 2}
-                          transform={`rotate(-90 15 ${p3Top + p3Height / 2})`}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Max HR
-                        </text>
-                        {[100, 120, 140, 160, 180].map((v) => (
-                          <g key={`hr-grid-${v}`}>
-                            <line
-                              x1={plotLeft}
-                              y1={yHr(v)}
-                              x2={plotRight}
-                              y2={yHr(v)}
-                              stroke="currentColor"
-                              className="text-slate-100 dark:text-slate-800/80"
-                            />
-                            <text
-                              x={plotLeft - 6}
-                              y={yHr(v) + 3}
-                              textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                            >
-                              {v}
-                            </text>
-                          </g>
-                        ))}
-                        {enrichedSeries.map((d, i) => {
-                          if (!d.maxHr || d.maxHr < 95) return null;
-                          const x = xFor(i);
-                          const topY = yHr(d.maxHr);
-                          return (
-                            <line
-                              key={`hr-bar-${d.date}`}
-                              x1={x}
-                              y1={topY}
-                              x2={x}
-                              y2={p3Bottom}
-                              stroke={hoverIdx === i ? '#EF4444' : '#F87171'}
-                              strokeWidth={len > 220 ? '1.6' : '2.4'}
-                              opacity={hoverIdx === i ? '1' : '0.82'}
-                            />
-                          );
-                        })}
-                        {/* Right-margin readout */}
-                        <text
-                          x={gutterLeft + 4}
-                          y={p3Top + p3Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Max HR{' '}
-                          <tspan className="fill-[#EF4444] font-bold">
-                            {activePoint.maxHr > 0
-                              ? `${activePoint.maxHr} bpm`
-                              : '—'}
-                          </tspan>
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* ==============================================================
-                    PANE 4: RIDE & RUN eFTP STEP LINES
-                   ============================================================== */}
-                {showEftpSubplot &&
-                  (() => {
-                    const allEftp = enrichedSeries.flatMap((d) => [
-                      d.rideEftp || 310,
-                      d.runEftp || 340,
-                    ]);
-                    const minFtp = Math.floor((Math.min(...allEftp) - 10) / 20) * 20;
-                    const maxFtp = Math.ceil((Math.max(...allEftp) + 10) / 20) * 20;
-                    const span = Math.max(40, maxFtp - minFtp);
-                    const yFtp = (w: number) =>
-                      Math.max(
-                        p4Top,
-                        Math.min(
-                          p4Bottom,
-                          p4Bottom - ((w - minFtp) / span) * p4Height
-                        )
-                      );
-                    const ridePts = enrichedSeries
-                      .map(
-                        (d, i) =>
-                          `${xFor(i).toFixed(1)},${yFtp(d.rideEftp || 310).toFixed(1)}`
-                      )
-                      .join(' ');
-                    const runPts = enrichedSeries
-                      .map(
-                        (d, i) =>
-                          `${xFor(i).toFixed(1)},${yFtp(d.runEftp || 340).toFixed(1)}`
-                      )
-                      .join(' ');
-
-                    return (
-                      <g>
-                        <rect
-                          x={plotLeft}
-                          y={p4Top}
-                          width={plotW}
-                          height={p4Height}
-                          fill="none"
-                          stroke="currentColor"
-                          className="text-slate-200 dark:text-slate-800"
-                        />
-                        <text
-                          x={15}
-                          y={p4Top + p4Height / 2}
-                          transform={`rotate(-90 15 ${p4Top + p4Height / 2})`}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Ride / Run FTP
-                        </text>
-                        {[minFtp + 10, Math.round((minFtp + maxFtp) / 2), maxFtp - 10].map(
-                          (v, idx) => (
-                            <g key={`ftp-tick-${idx}`}>
-                              <line
-                                x1={plotLeft}
-                                y1={yFtp(v)}
-                                x2={plotRight}
-                                y2={yFtp(v)}
-                                stroke="currentColor"
-                                className="text-slate-100 dark:text-slate-800/80"
-                              />
-                              <text
-                                x={plotLeft - 6}
-                                y={yFtp(v) + 3}
-                                textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                              >
-                                {v}
-                              </text>
-                            </g>
-                          )
-                        )}
-                        <polyline
-                          fill="none"
-                          stroke="#8B5CF6"
-                          strokeWidth="1.5"
-                          points={runPts}
-                        />
-                        <polyline
-                          fill="none"
-                          stroke="#F97316"
-                          strokeWidth="1.6"
-                          points={ridePts}
-                        />
-                        <text
-                          x={gutterLeft + 4}
-                          y={p4Top + p4Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Run{' '}
-                          <tspan className="fill-[#8B5CF6] font-bold">
-                            {activePoint.runEftp || 340}W
-                          </tspan>
-                        </text>
-                        <text
-                          x={gutterLeft + 4}
-                          y={p4Top + p4Height / 2 + 12}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          eFTP{' '}
-                          <tspan className="fill-[#F97316] font-bold">
-                            {activePoint.rideEftp || 310}W
-                          </tspan>
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* ==============================================================
-                    PANE 5: WEEKLY TRAINING LOAD (WORK / TSS) BARS BY GARMIN FOCUS
-                   ============================================================== */}
-                {showWeeklyLoadSubplot &&
-                  (() => {
-                    const maxWkLoad = Math.max(
-                      500,
-                      ...weeklyLoadBuckets.map((b) => b.totalLoad)
-                    );
-                    const yWk = (v: number) =>
-                      Math.max(
-                        p5Top,
-                        Math.min(
-                          p5Bottom,
-                          p5Bottom - (v / maxWkLoad) * (p5Height - 6)
-                        )
-                      );
-                    const activeBucket =
-                      weeklyLoadBuckets.find(
-                        (b) => activeIdx >= b.startIdx && activeIdx <= b.endIdx
-                      ) || weeklyLoadBuckets[weeklyLoadBuckets.length - 1];
-
-                    return (
-                      <g>
-                        <rect
-                          x={plotLeft}
-                          y={p5Top}
-                          width={plotW}
-                          height={p5Height}
-                          fill="none"
-                          stroke="currentColor"
-                          className="text-slate-200 dark:text-slate-800"
-                        />
-                        <text
-                          x={15}
-                          y={p5Top + p5Height / 2}
-                          transform={`rotate(-90 15 ${p5Top + p5Height / 2})`}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Work / Wk
-                        </text>
-                        {[0, Math.round(maxWkLoad * 0.5), Math.round(maxWkLoad * 0.9)].map(
-                          (v, idx) => (
-                            <g key={`wk-tick-${idx}`}>
-                              <line
-                                x1={plotLeft}
-                                y1={yWk(v)}
-                                x2={plotRight}
-                                y2={yWk(v)}
-                                stroke="currentColor"
-                                className="text-slate-100 dark:text-slate-800/80"
-                              />
-                              <text
-                                x={plotLeft - 6}
-                                y={yWk(v) + 3}
-                                textAnchor="end"
-                                className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                              >
-                                {v}
-                              </text>
-                            </g>
-                          )
-                        )}
-                        {weeklyLoadBuckets.map((b, bIdx) => {
-                          const xStart = xFor(b.startIdx);
-                          const xEnd = xFor(b.endIdx);
-                          const barW = Math.max(4, xEnd - xStart - 2);
-                          const lowTopY = yWk(b.lowAerobicLoad);
-                          const highTopY = yWk(b.lowAerobicLoad + b.highAerobicLoad);
-                          const totalTopY = yWk(b.totalLoad);
-                          return (
-                            <g key={`wk-bar-${bIdx}`}>
-                              {/* Low Aerobic Base (Sky Blue) */}
-                              {b.lowAerobicLoad > 0 && (
-                                <rect
-                                  x={xStart + 1}
-                                  y={lowTopY}
-                                  width={barW}
-                                  height={Math.max(1, p5Bottom - lowTopY)}
-                                  fill="#38BDF8"
-                                  opacity="0.72"
-                                />
-                              )}
-                              {/* High Aerobic Stack (Orange) */}
-                              {b.highAerobicLoad > 0 && (
-                                <rect
-                                  x={xStart + 1}
-                                  y={highTopY}
-                                  width={barW}
-                                  height={Math.max(1, lowTopY - highTopY)}
-                                  fill="#F97316"
-                                  opacity="0.78"
-                                />
-                              )}
-                              {/* Anaerobic Stack (Magenta-Purple) */}
-                              {b.anaerobicLoad > 0 && (
-                                <rect
-                                  x={xStart + 1}
-                                  y={totalTopY}
-                                  width={barW}
-                                  height={Math.max(1, highTopY - totalTopY)}
-                                  fill="#D946EF"
-                                  opacity="0.82"
-                                />
-                              )}
-                            </g>
-                          );
-                        })}
-                        <text
-                          x={gutterLeft + 4}
-                          y={p5Top + p5Height / 2 + 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          Week{' '}
-                          <tspan className="fill-[#38BDF8] font-bold">
-                            {activeBucket ? `${activeBucket.totalLoad} TSS` : '—'}
-                          </tspan>
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* ==============================================================
-                    PANE 6: OVERNIGHT HRV (rMSSD) & RESTING HR STRIP
-                   ============================================================== */}
-                {showHrvSubplot &&
-                  (() => {
-                    const minHrv = 25;
-                    const maxHrv = 95;
-                    const yHrv = (v: number) =>
-                      Math.max(
-                        p6Top,
-                        Math.min(
-                          p6Bottom,
-                          p6Bottom - ((v - minHrv) / (maxHrv - minHrv)) * p6Height
-                        )
-                      );
-                    const hrvPts = enrichedSeries
-                      .map(
-                        (d, i) =>
-                          `${xFor(i).toFixed(1)},${yHrv(d.hrvRMSSD || 52).toFixed(1)}`
-                      )
-                      .join(' ');
-                    const rhrPts = enrichedSeries
-                      .map(
-                        (d, i) =>
-                          `${xFor(i).toFixed(1)},${yHrv(d.restingHR || 49).toFixed(1)}`
-                      )
-                      .join(' ');
-                    const upperBand = enrichedSeries
-                      .map(
-                        (d, i) =>
-                          `${xFor(i).toFixed(1)},${yHrv(d.hrvNormalBandHigh || 62).toFixed(1)}`
-                      )
-                      .join(' ');
-                    const lowerBand = [...enrichedSeries]
-                      .reverse()
-                      .map((d, revIdx) => {
-                        const i = len - 1 - revIdx;
-                        return `${xFor(i).toFixed(1)},${yHrv(d.hrvNormalBandLow || 44).toFixed(1)}`;
-                      })
-                      .join(' ');
-
-                    return (
-                      <g>
-                        <rect
-                          x={plotLeft}
-                          y={p6Top}
-                          width={plotW}
-                          height={p6Height}
-                          fill="none"
-                          stroke="currentColor"
-                          className="text-slate-200 dark:text-slate-800"
-                        />
-                        <text
-                          x={15}
-                          y={p6Top + p6Height / 2}
-                          transform={`rotate(-90 15 ${p6Top + p6Height / 2})`}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          HRV / RHR
-                        </text>
-                        {[40, 60, 80].map((v) => (
-                          <g key={`hrv-tick-${v}`}>
-                            <line
-                              x1={plotLeft}
-                              y1={yHrv(v)}
-                              x2={plotRight}
-                              y2={yHrv(v)}
-                              stroke="currentColor"
-                              className="text-slate-100 dark:text-slate-800/80"
-                            />
-                            <text
-                              x={plotLeft - 6}
-                              y={yHrv(v) + 3}
-                              textAnchor="end"
-                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                            >
-                              {v}
-                            </text>
-                          </g>
-                        ))}
-                        <polygon
-                          points={`${upperBand} ${lowerBand}`}
-                          fill="rgba(16, 185, 129, 0.14)"
-                        />
-                        <polyline
-                          fill="none"
-                          stroke="#F43F5E"
-                          strokeWidth="1.3"
-                          strokeDasharray="3 2"
-                          points={rhrPts}
-                        />
-                        <polyline
-                          fill="none"
-                          stroke="#10B981"
-                          strokeWidth="1.7"
-                          points={hrvPts}
-                        />
-                        <text
-                          x={gutterLeft + 4}
-                          y={p6Top + p6Height / 2 - 4}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          HRV{' '}
-                          <tspan className="fill-[#10B981] font-bold">
-                            {activePoint.hrvRMSSD || '—'}ms
-                          </tspan>
-                        </text>
-                        <text
-                          x={gutterLeft + 4}
-                          y={p6Top + p6Height / 2 + 12}
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-sans"
-                        >
-                          RHR{' '}
-                          <tspan className="fill-[#F43F5E] font-bold">
-                            {activePoint.restingHR || '—'}bpm
-                          </tspan>
-                        </text>
-                      </g>
-                    );
-                  })()}
-
-                {/* ==============================================================
-                    SHARED BOTTOM CALENDAR AXIS (Sat 08 Nov, Dec, 2026, Feb...)
-                   ============================================================== */}
-                {calendarTicks.map((t, idx) => {
-                  const x = xFor(t.idx);
-                  return (
-                    <text
-                      key={`cal-tick-${idx}`}
-                      x={x}
-                      y={bottomAxisY}
-                      textAnchor={idx === 0 ? 'start' : 'middle'}
-                      className={`text-2xs font-sans ${
-                        t.isYear
-                          ? 'fill-slate-900 dark:fill-slate-100 font-bold'
-                          : 'fill-slate-500 dark:fill-slate-400'
-                      }`}
-                    >
-                      {t.label}
-                    </text>
-                  );
-                })}
-
-                {/* Full-Height Synchronized Crosshair & Brush Selection Overlay */}
-                {hoverIdx !== null && (
-                  <line
-                    x1={xFor(hoverIdx)}
-                    y1={p1Top}
-                    x2={xFor(hoverIdx)}
-                    y2={cursorY - 10}
-                    stroke="#0EA5E9"
-                    strokeWidth="1.2"
-                    strokeDasharray="3 2"
-                    pointerEvents="none"
-                  />
-                )}
-
-                {brushStartIdx !== null &&
-                  brushEndIdx !== null &&
-                  Math.abs(brushEndIdx - brushStartIdx) >= 2 && (
-                    <rect
-                      x={Math.min(xFor(brushStartIdx), xFor(brushEndIdx))}
-                      y={p1Top}
-                      width={Math.abs(xFor(brushEndIdx) - xFor(brushStartIdx))}
-                      height={cursorY - 10 - p1Top}
-                      fill="rgba(14, 165, 233, 0.16)"
-                      stroke="#0EA5E9"
-                      strokeWidth="1"
-                      pointerEvents="none"
-                    />
-                  )}
-              </svg>
-            );
-          })()}
-        </div>
-        )}
-
-        {/* Interactive Milestone Badges Legend & Filter Strip (SVG Multi-Pane mode) */}
-        {(pmcEngine === 'SVG' || pmcEngine === 'BOTH') && (() => {
-          const eftpCount = enrichedSeries.filter((d) =>
-            d.milestones?.some((m) => m.category === 'EFTP_BREAKTHROUGH')
-          ).length;
-          const raceCount = enrichedSeries.filter((d) =>
-            d.milestones?.some((m) => m.category === 'RACE_OR_DISTANCE_PR')
-          ).length;
-          const powerCount = enrichedSeries.filter((d) =>
-            d.milestones?.some((m) => m.category === 'POWER_OR_BENCHMARK_PR')
-          ).length;
-          const totalMilestones = eftpCount + raceCount + powerCount;
-
-          return (
-            <div className="px-4 sm:px-6 py-2.5 border-t border-slate-200/60 dark:border-white/10 bg-slate-900/5 dark:bg-[#15231B]/50 flex flex-wrap items-center justify-between gap-2.5 text-2xs">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono uppercase tracking-wider text-2xs font-bold text-slate-500 dark:text-slate-400 mr-1">
-                  Milestones ({totalMilestones}):
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveMilestoneFilter('ALL')}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
-                    activeMilestoneFilter === 'ALL'
-                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/40 font-bold'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <span>All</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveMilestoneFilter((prev) =>
-                      prev === 'EFTP_BREAKTHROUGH' ? 'ALL' : 'EFTP_BREAKTHROUGH'
-                    )
-                  }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
-                    activeMilestoneFilter === 'EFTP_BREAKTHROUGH'
-                      ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/50 font-bold'
-                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-orange-500/40'
-                  }`}
-                  title="New eFTP Breakthroughs plotted on CTL & X-Axis"
-                >
-                  <span className="w-2 h-2 rotate-45 bg-[#F97316] inline-block shrink-0" />
-                  <span>eFTP ({eftpCount})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveMilestoneFilter((prev) =>
-                      prev === 'RACE_OR_DISTANCE_PR' ? 'ALL' : 'RACE_OR_DISTANCE_PR'
-                    )
-                  }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
-                    activeMilestoneFilter === 'RACE_OR_DISTANCE_PR'
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/50 font-bold'
-                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-amber-500/40'
-                  }`}
-                  title="Official Race & Distance PRs plotted on CTL & X-Axis"
-                >
-                  <span className="w-2 h-2 rounded-full bg-[#F59E0B] border border-white inline-block shrink-0" />
-                  <span>Race PR ({raceCount})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveMilestoneFilter((prev) =>
-                      prev === 'POWER_OR_BENCHMARK_PR' ? 'ALL' : 'POWER_OR_BENCHMARK_PR'
-                    )
-                  }
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-2xs transition-all border ${
-                    activeMilestoneFilter === 'POWER_OR_BENCHMARK_PR'
-                      ? 'bg-pink-500/20 text-pink-600 dark:text-pink-300 border-pink-500/50 font-bold'
-                      : 'border-slate-300/60 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-pink-500/40'
-                  }`}
-                  title="Power Curve & Benchmark Segment PRs"
-                >
-                  <span className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[8px] border-b-[#EC4899] inline-block shrink-0" />
-                  <span>Power PR ({powerCount})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveMilestoneFilter((prev) => (prev === 'NONE' ? 'ALL' : 'NONE'))
-                  }
-                  className="px-2 py-0.5 rounded-md text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-300/50 dark:border-white/10"
-                >
-                  {activeMilestoneFilter === 'NONE' ? 'Show' : 'Hide'}
-                </button>
+                Loading Performance Management Chart…
               </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  onOpenCoachWithPrompt(
-                    `My current Fitness (CTL) is ${latestDay.ctl}, Fatigue (ATL) is ${latestDay.atl}, Form (TSB) is ${latestDay.tsb} (${getIntervalsFormZone(latestDay.tsb).label}), Sleep Score is ${latestWithSleep.sleepScore}, and HRV is ${latestWithHrv.hrvRMSSD}ms. Analyze my fitness/fatigue trend and recommend adjustments for the coming week.`
-                  )
-                }
-                className="min-h-[30px] px-3 py-1 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-semibold shadow-sm transition-all whitespace-nowrap shrink-0"
-              >
-                Ask AI Coach About My PMC
-              </button>
-            </div>
-          );
-        })()}
+            }
+          >
+            <UPlotPMCDashboard
+              embedded
+              timeline={echartsTimeline}
+              onSelectActivity={onSelectActivity}
+              onSelectDate={handleEChartsSelectDate}
+              onSelectDateRange={handleEChartsSelectDateRange}
+              height={isCompactMobile ? 380 : 530}
+            />
+          </Suspense>
+        </div>
       </section>
         )}
       </div>
@@ -4316,110 +2521,6 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         )}
       </div>
 
-      {/* ==========================================================================
-          5. ON-DEMAND BENCHMARKING & ATHLETE COMPARISON TOOLS (HIDDEN BY DEFAULT)
-         ========================================================================== */}
-      <div className="rounded-2xl liquid-glass px-4 sm:px-5 py-3.5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-            <Radar className="w-4 h-4 text-purple-400 shrink-0" />
-            <span>
-              <strong className="text-slate-900 dark:text-white">
-                Benchmarking &amp; Peer Comparison:
-              </strong>{' '}
-              Compare your telemetry side-by-side with a training partner or inspect your Age-Graded Percentile Radars.
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              aria-expanded={!collapsedSections.comparator}
-              aria-controls="fitness-sec-comparator"
-              onClick={() => toggleSection('comparator')}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
-                !collapsedSections.comparator
-                  ? 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/40'
-                  : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/25'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>
-                {collapsedSections.comparator
-                  ? 'Compare with Another Athlete ▾'
-                  : 'Hide Athlete Comparison ▴'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              aria-expanded={!collapsedSections.radars}
-              onClick={() => toggleSection('radars')}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors border ${
-                !collapsedSections.radars
-                  ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300 border-purple-500/40'
-                  : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/25'
-              }`}
-            >
-              <Radar className="w-3.5 h-3.5" />
-              <span>
-                {collapsedSections.radars
-                  ? 'Age-Graded Percentile Radars ▾'
-                  : 'Hide Percentile Radars ▴'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {!collapsedSections.comparator && (
-          <div id="fitness-sec-comparator" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
-            <Suspense
-              fallback={
-                <div className="h-48 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Dual-Athlete Comparator…
-                </div>
-              }
-            >
-              <DualAthleteComparator
-                selfName={selfName}
-                selfProfile={selfProfile || athleteProfile}
-                selfWellnessDays={
-                  selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
-                }
-                selfActivities={activities}
-                connectedAthletes={connectedAthletes}
-                onOpenRosterModal={onOpenRosterModal}
-                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-              />
-            </Suspense>
-          </div>
-        )}
-
-        {!collapsedSections.radars && (
-          <div id="fitness-sec-radars" className="pt-2 border-t border-slate-200/70 dark:border-white/10">
-            <Suspense
-              fallback={
-                <div className="h-48 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Percentile Radars…
-                </div>
-              }
-            >
-              <AthletePerformanceRadar
-                selfName={selfName}
-                selfProfile={selfProfile || athleteProfile}
-                selfWellnessDays={
-                  selfWellnessDays && selfWellnessDays.length > 0 ? selfWellnessDays : wellnessDays
-                }
-                selfActivities={activities}
-                selfPlannedEvents={plannedEvents}
-                connectedAthletes={connectedAthletes}
-                onOpenRosterModal={onOpenRosterModal}
-                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-              />
-            </Suspense>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
