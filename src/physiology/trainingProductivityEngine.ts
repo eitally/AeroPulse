@@ -7,6 +7,17 @@ import type {
 } from '../types';
 import { classifyActivityGarminLoad } from './garminLoadFocus';
 import { generatePostWorkoutDebrief } from './workoutDebrief';
+import {
+  BANISTER_ATL_DECAY,
+  BANISTER_CTL_DECAY,
+  STRAVA_LOAD_MODEL_VERSION,
+  computeHrrRatio,
+  getLocalDateIso,
+  isEBikeActivityText,
+  shiftIsoDate,
+} from './stravaLoadCalibration';
+
+export { getLocalDateIso, shiftIsoDate };
 
 export type TrainingProductivityVerdict =
   | 'PRODUCTIVE'
@@ -178,28 +189,6 @@ export interface SessionImpactReceipt {
   tomorrowHeadline: string;
 }
 
-/**
- * Returns local calendar YYYY-MM-DD (avoids UTC rollover at 4-5 PM in US timezones).
- */
-export function getLocalDateIso(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/**
- * Shifts a YYYY-MM-DD calendar string by `deltaDays` without DST drift.
- */
-export function shiftIsoDate(isoDate: string, deltaDays: number): string {
-  const [yStr, mStr, dStr] = isoDate.slice(0, 10).split('-');
-  const dt = new Date(
-    Date.UTC(Number(yStr) || 2026, (Number(mStr) || 1) - 1, Number(dStr) || 1)
-  );
-  dt.setUTCDate(dt.getUTCDate() + deltaDays);
-  return dt.toISOString().slice(0, 10);
-}
-
 function formatDayShort(isoDate: string): string {
   const [yStr, mStr, dStr] = isoDate.slice(0, 10).split('-');
   const dt = new Date(
@@ -239,31 +228,38 @@ function resolveActivityEffectiveLoad(
   profile?: AthleteProfile | null
 ): number {
   const explicit = Number(activity.trainingLoad || 0);
-  if (explicit > 0) return explicit;
+  if (
+    explicit > 0 ||
+    (activity.loadModelVersion === STRAVA_LOAD_MODEL_VERSION &&
+      Number.isFinite(activity.trainingLoad))
+  ) {
+    return Math.max(0, explicit);
+  }
   const hrs = Math.max(0, (activity.movingTimeSecs || 0) / 3600);
   if (hrs <= 0.05) return 0;
 
+  const isEBike = isEBikeActivityText(activity.rawSportType, activity.name);
   const ftp =
     activity.sportCategory === 'Running'
       ? profile?.runFtp || 350
       : activity.environment === 'INDOOR'
-        ? profile?.indoorFtp || profile?.ftp || 280
-        : profile?.ftp || 280;
+        ? profile?.indoorFtp || profile?.ftp || 250
+        : profile?.ftp || 250;
   const np = Number(activity.normalizedPower || activity.avgPower || 0);
-  if (np > 40 && ftp > 60) {
+  if (!isEBike && activity.deviceWatts !== false && np > 40 && ftp > 60) {
     const ifVal = Math.min(1.35, Math.max(0.35, np / ftp));
     return Math.round(hrs * ifVal * ifVal * 100);
   }
 
   const lthr =
     activity.sportCategory === 'Running'
-      ? profile?.runLthr || profile?.lthr || 162
-      : profile?.lthr || 160;
-  if (activity.avgHr > 70 && lthr > 100) {
-    const hrRatio = Math.min(1.15, Math.max(0.45, activity.avgHr / lthr));
-    return Math.round(hrs * hrRatio * hrRatio * 82);
+      ? profile?.runLthr || profile?.lthr || 168
+      : profile?.lthr || 163;
+  if (activity.avgHr > 60 && lthr > 100) {
+    const hrr = computeHrrRatio(activity.avgHr, lthr, profile?.restingHr || 54);
+    return Math.round(hrs * hrr * hrr * 92);
   }
-  return Math.round(hrs * 45);
+  return Math.round(hrs * 28);
 }
 
 /**
@@ -391,7 +387,7 @@ function computeFallbackPmcAtDate(
   asOfDateIso: string,
   profile?: AthleteProfile | null
 ): { ctl: number; atl: number; tsb: number; ctlRamp7d: number } {
-  const startIso = shiftIsoDate(asOfDateIso, -84);
+  const startIso = shiftIsoDate(asOfDateIso, -365);
   if (activities.length === 0) {
     return { ctl: 0, atl: 0, tsb: 0, ctlRamp7d: 0 };
   }
@@ -408,11 +404,11 @@ function computeFallbackPmcAtDate(
   let ctl7dAgo = 0;
   const sevenDaysAgoIso = shiftIsoDate(asOfDateIso, -7);
 
-  for (let offset = -84; offset <= 0; offset++) {
+  for (let offset = -365; offset <= 0; offset++) {
     const dIso = shiftIsoDate(asOfDateIso, offset);
     const load = loadByDate.get(dIso) || 0;
-    ctl = ctl + (load - ctl) / 42;
-    atl = atl + (load - atl) / 7;
+    ctl = ctl * BANISTER_CTL_DECAY + load * (1 - BANISTER_CTL_DECAY);
+    atl = atl * BANISTER_ATL_DECAY + load * (1 - BANISTER_ATL_DECAY);
     if (dIso === sevenDaysAgoIso) {
       ctl7dAgo = ctl;
     }
@@ -956,7 +952,7 @@ export function evaluateRollingTrainingProductivity(params: {
     headlineWhy =
       'Sync recent workouts from Strava (or optionally connect Garmin Connect / Intervals.icu or upload .FIT files) to calibrate your 7-day load corridor and energy-system focus.';
   } else if (
-    acwr > 1.35 ||
+    (acwr > 1.35 && acuteLoad7d >= 180) ||
     ctlRamp7d > 7.0 ||
     (acwr > 1.18 && autonomicState === 'SUPPRESSED') ||
     (tsb < -30 && autonomicState !== 'PRIME')

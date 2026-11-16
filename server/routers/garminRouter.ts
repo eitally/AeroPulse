@@ -26,6 +26,10 @@ import {
   parseWorkoutSyntaxToSteps,
 } from '../physiologyEngine.ts';
 import { resolveStravaAthleteIdentity } from './stravaRouter.ts';
+import {
+  BANISTER_ATL_DECAY,
+  BANISTER_CTL_DECAY,
+} from '../../src/physiology/stravaLoadCalibration.ts';
 
 export const garminRouter = Router();
 
@@ -196,19 +200,21 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
 
     let lastRhr = syncedProfile.restingHr || 0;
     let lastWeight = syncedProfile.weightKg || 0;
-    let ctl = 0;
-    let atl = 0;
+    let ctlRaw = 0;
+    let atlRaw = 0;
     const ctlHistory: number[] = [];
     const formattedWellnessDays = (garminData.wellnessRows || []).map((w, idx) => {
       const d = String(w.id || '').slice(0, 10);
       const dailyLoad = loadByDate.get(d) || 0;
-      ctl = Number((ctl + (dailyLoad - ctl) / 42).toFixed(1));
-      atl = Number((atl + (dailyLoad - atl) / 7).toFixed(1));
+      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);
+      atlRaw = atlRaw * BANISTER_ATL_DECAY + dailyLoad * (1 - BANISTER_ATL_DECAY);
+      const ctl = Number(ctlRaw.toFixed(1));
+      const atl = Number(atlRaw.toFixed(1));
       ctlHistory.push(ctl);
       const ctl7dAgo = idx >= 7 ? ctlHistory[idx - 7] : ctlHistory[0] || 0;
       const rampRate = Number((ctl - ctl7dAgo).toFixed(1));
-      const tsb = Number((ctl - atl).toFixed(1));
-      const loadRatio = ctl > 0 ? Number((atl / ctl).toFixed(2)) : 0;
+      const tsb = Number((ctlRaw - atlRaw).toFixed(1));
+      const loadRatio = ctl > 0 ? Number((atlRaw / ctlRaw).toFixed(2)) : 0;
 
       if (Number(w.restingHR) >= 30) lastRhr = Math.round(Number(w.restingHR));
       if (Number(w.weight) >= 35) lastWeight = Number(Number(w.weight).toFixed(1));

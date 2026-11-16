@@ -5,6 +5,14 @@ import type {
   UnifiedActivity,
 } from '../types.ts';
 import { computeCyclingTss, computeRunningTss } from './powerPaceMetrics.ts';
+import {
+  BANISTER_ATL_DECAY,
+  BANISTER_CTL_DECAY,
+  STRAVA_LOAD_MODEL_VERSION,
+  getLocalDateIso,
+  isEBikeActivityText,
+  shiftIsoDate,
+} from './stravaLoadCalibration.ts';
 
 export interface ResolvedDateThresholds {
   ftp: number;
@@ -78,11 +86,28 @@ export function computeHistoricalActivityLoad(
   activity: UnifiedActivity,
   profile: AthleteProfile
 ): number {
+  if (isEBikeActivityText(activity.rawSportType, activity.name)) {
+    return Number.isFinite(activity.trainingLoad) && activity.trainingLoad >= 0
+      ? activity.trainingLoad
+      : 0;
+  }
+
+  const hasHistoryOverrides =
+    Array.isArray(profile.thresholdHistory) && profile.thresholdHistory.length > 0;
+  if (
+    activity.loadModelVersion === STRAVA_LOAD_MODEL_VERSION &&
+    !hasHistoryOverrides &&
+    profile.source !== 'CUSTOM_OVERRIDE' &&
+    Number.isFinite(activity.trainingLoad)
+  ) {
+    return Math.max(0, activity.trainingLoad);
+  }
+
   const dateStr = (activity.startDateLocal || '').slice(0, 10);
   const thresholds = resolveThresholdsAtDate(profile, dateStr);
   const dur = activity.movingTimeSecs || 0;
 
-  if (activity.sportCategory === 'Cycling' && dur > 0) {
+  if (activity.sportCategory === 'Cycling' && dur > 0 && activity.deviceWatts !== false) {
     const np = activity.normalizedPower || activity.avgPower || 0;
     const activeFtp =
       activity.environment === 'INDOOR' ? thresholds.indoorFtp : thresholds.ftp;
@@ -124,7 +149,8 @@ export function computeDualSportPmcSeries(
     a.startDateLocal.localeCompare(b.startDateLocal)
   );
   const firstDateStr = sorted[0].startDateLocal.slice(0, 10);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateIso();
+  const endDateStr = todayStr >= firstDateStr ? todayStr : firstDateStr;
 
   const byDay = new Map<string, { sys: number; cyc: number; run: number }>();
   for (const act of sorted) {
@@ -137,8 +163,8 @@ export function computeDualSportPmcSeries(
     byDay.set(d, bucket);
   }
 
-  const ctlDecay = Math.exp(-1 / 42);
-  const atlDecay = Math.exp(-1 / 7);
+  const ctlDecay = BANISTER_CTL_DECAY;
+  const atlDecay = BANISTER_ATL_DECAY;
 
   let sysCtl = 0;
   let sysAtl = 0;
@@ -147,27 +173,21 @@ export function computeDualSportPmcSeries(
   let runCtl = 0;
   let runAtl = 0;
 
-  const startMs = Date.parse(`${firstDateStr}T00:00:00Z`);
-  const endMs = Math.max(startMs, Date.parse(`${todayStr}T00:00:00Z`));
-  const dayMs = 86_400_000;
-
   const fullSeries: DualSportPmcPoint[] = [];
-  for (let ms = startMs; ms <= endMs; ms += dayMs) {
-    const dStr = new Date(ms).toISOString().slice(0, 10);
+  for (let dStr = firstDateStr; dStr <= endDateStr; dStr = shiftIsoDate(dStr, 1)) {
     const loads = byDay.get(dStr) || { sys: 0, cyc: 0, run: 0 };
-
-    const sysTsb = sysCtl - sysAtl;
-    const cycTsb = cycCtl - cycAtl;
-    const runTsb = runCtl - runAtl;
 
     sysCtl = sysCtl * ctlDecay + loads.sys * (1 - ctlDecay);
     sysAtl = sysAtl * atlDecay + loads.sys * (1 - atlDecay);
+    const sysTsb = sysCtl - sysAtl;
 
     cycCtl = cycCtl * ctlDecay + loads.cyc * (1 - ctlDecay);
     cycAtl = cycAtl * atlDecay + loads.cyc * (1 - atlDecay);
+    const cycTsb = cycCtl - cycAtl;
 
     runCtl = runCtl * ctlDecay + loads.run * (1 - ctlDecay);
     runAtl = runAtl * atlDecay + loads.run * (1 - atlDecay);
+    const runTsb = runCtl - runAtl;
 
     fullSeries.push({
       date: dStr,
