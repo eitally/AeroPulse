@@ -154,8 +154,8 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
       `redirect_uri=${encodeURIComponent('https://aeropulse-eta.vercel.app/auth/strava/callback')}`
     );
 
-    // Once Strava dashboard callback domain is updated to thresh-dev.vercel.app, primary domain succeeds directly
-    clearStravaRedirectCacheForTesting();
+    // Fallback redirects must NOT stick in cache: once thresh-dev is registered on Strava,
+    // the very next request resolves to thresh-dev.vercel.app immediately without clearing cache
     acceptThreshDev = true;
     const directResp = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fthresh-dev.vercel.app&mode=cloud&flow=popup`
@@ -166,6 +166,74 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(directData.url).toContain(
       `redirect_uri=${encodeURIComponent('https://thresh-dev.vercel.app/auth/strava/callback')}`
     );
+  });
+
+  it('canonicalizes legacy aeropulse-eta and Vercel preview origins to thresh-dev callback, preserves preview CORS, and blocks lone x-strava-client-id override', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('https://www.strava.com/oauth/authorize')) {
+        const parsed = new URL(url);
+        const redirectUri = parsed.searchParams.get('redirect_uri') || '';
+        if (redirectUri.includes('thresh-dev.vercel.app')) {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://www.strava.com/login' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            message: 'Bad Request',
+            errors: [{ resource: 'Application', field: 'redirect_uri', code: 'invalid' }],
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    // 1. Legacy origin (aeropulse-eta.vercel.app) immediately resolves to thresh-dev.vercel.app
+    const legacyResp = await originalFetch(
+      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Faeropulse-eta.vercel.app&mode=cloud&flow=popup`,
+      {
+        headers: {
+          Origin: 'https://aeropulse-eta.vercel.app',
+          'x-strava-client-id': '999999',
+        },
+      }
+    );
+    expect(legacyResp.status).toBe(200);
+    const legacyData = await legacyResp.json();
+    expect(legacyData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+    // Lone x-strava-client-id without x-strava-client-secret must NOT override server clientId
+    expect(legacyData.clientId).toBe('121717');
+
+    // 2. Vercel preview deployment origin falls back to thresh-dev.vercel.app and gets CORS headers
+    const previewOrigin = 'https://thresh-git-preview-willow-glen-photography.vercel.app';
+    const previewResp = await originalFetch(
+      `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(previewOrigin)}&mode=cloud&flow=popup`,
+      {
+        headers: { Origin: previewOrigin },
+      }
+    );
+    expect(previewResp.status).toBe(200);
+    expect(previewResp.headers.get('access-control-allow-origin')).toBe(previewOrigin);
+    expect(previewResp.headers.get('access-control-allow-credentials')).toBe('true');
+    const previewData = await previewResp.json();
+    expect(previewData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+
+    // 3. Full BYO pair (x-strava-client-id + x-strava-client-secret) overrides server clientId
+    const byoResp = await originalFetch(
+      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fthresh-dev.vercel.app&mode=cloud&flow=popup`,
+      {
+        headers: {
+          'x-strava-client-id': '555',
+          'x-strava-client-secret': 'user_custom_byo_secret_xyz',
+        },
+      }
+    );
+    expect(byoResp.status).toBe(200);
+    const byoData = await byoResp.json();
+    expect(byoData.clientId).toBe('555');
   });
 
   it('supports /auth/login popup fallback, emits cross-origin postMessage + storage relay, and allows cookie-less poll with signed state', async () => {
@@ -229,6 +297,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(html).toContain('"isPopupFlow":true');
     expect(html).toContain('"openerOrigin":"https://aeropulse-eta.vercel.app"');
     expect(html).toContain('window.opener.postMessage(payload, payload.openerOrigin)');
+    expect(html).toContain('window.opener.location.href = window.location.origin');
     expect(html).toContain('aeropulse_oauth_result_v1');
 
     // Different authenticated athlete must be rejected from polling this state
