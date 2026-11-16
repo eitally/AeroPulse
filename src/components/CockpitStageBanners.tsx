@@ -275,8 +275,8 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           className="rounded-xl liquid-glass-subtle border-[#28573B]/35 dark:border-[#25573A] px-3 py-2 flex flex-wrap items-center justify-between gap-2"
         >
           <div className="flex flex-wrap items-center gap-2 text-xs text-[#35463B] dark:text-slate-200 min-w-0">
-            <span className="ap-lane-badge shrink-0">
-              <span className="ap-lane-badge-inner">Sample Demo</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00] shrink-0">
+              Sample Demo
             </span>
             <span className="hidden sm:inline">
               Illustrative athlete &amp; coach telemetry — nothing is saved to your device or Strava.

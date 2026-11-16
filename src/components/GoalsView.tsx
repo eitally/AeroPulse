@@ -2829,8 +2829,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <Trophy className="w-4 h-4 text-amber-500" />
               <span>Personal Records &amp; Peak Efforts</span>
             </h2>
-            <span className="ap-lane-badge">
-              <span>All-Time · {currentYear} · Last 90d</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+              All-Time · {currentYear} · Last 90d
             </span>
           </div>
 

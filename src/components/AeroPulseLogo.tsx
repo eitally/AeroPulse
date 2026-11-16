@@ -140,27 +140,6 @@ const W1_WORDMARK_PATHS = [
   'M 228 0 H 242 V 25.2 H 254 V 0 H 268 V 64 H 254 V 38.4 H 242 V 64 H 228 Z',
 ];
 
-// Precomputed Pure Interior Gauge Geometry for Square Icon / Favicon (128x128 optically centered at 64, 71.5)
-const ICON_CX = 64;
-const ICON_CY = 71.5;
-const ICON_PINE_SECTORS = [
-  buildRadialSectorPath(ICON_CX, ICON_CY, 19.5, 7.6, 134, 238),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 31.5, 7.6, 134, 258),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 43.5, 7.6, 134, 278),
-];
-const ICON_VOLT_SECTORS = [
-  buildRadialSectorPath(ICON_CX, ICON_CY, 19.5, 7.8, 246, 348),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 31.5, 7.8, 266, 348),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 43.5, 7.8, 286, 348),
-  // Outermost 4th lane wraps continuously from 134° around to 348°, mirroring B3-3A's full-wrap outer lane
-  buildRadialSectorPath(ICON_CX, ICON_CY, 55.5, 8.0, 134, 348),
-];
-const [ICON_NTX, ICON_NTY] = polar(ICON_CX, ICON_CY, 56.0, 313);
-const [ICON_NBX1, ICON_NBY1] = polar(ICON_CX, ICON_CY, 6.8, 223);
-const [ICON_NBX2, ICON_NBY2] = polar(ICON_CX, ICON_CY, 6.8, 43);
-const ICON_NEEDLE_PATH = `M ${ICON_NBX1} ${ICON_NBY1} L ${ICON_NTX} ${ICON_NTY} L ${ICON_NBX2} ${ICON_NBY2} Z`;
-const [ICON_TX1, ICON_TY1] = polar(ICON_CX, ICON_CY, 14.5, 356);
-
 /**
  * Full Custom THRESH Vector Lockup SVG:
  * B3-3A Smooth 4-Lane Stadium Gauge (1 visible darker Pine straightaway lane + full-wrap outer Volt arrow lane
@@ -182,7 +161,7 @@ export const ThreshFullVectorLockup: React.FC<{
 
   const themeVarsClass = isTeamOverride
     ? '[--thresh-pine:#334155] dark:[--thresh-pine:#64748B] [--thresh-casing:#FFFFFF] dark:[--thresh-casing:#101814] [--thresh-pin:#FFFFFF] dark:[--thresh-pin:#0E1912] [--thresh-g1-start:#0E1912] dark:[--thresh-g1-start:#F6FBF7]'
-    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#56BA00] dark:[--thresh-volt:#C8FF00] [--thresh-casing:#FFFFFF] dark:[--thresh-casing:#101814] [--thresh-pin:#FFFFFF] dark:[--thresh-pin:#0E1912] [--thresh-g1-0:#0E2619] [--thresh-g1-1:#185230] [--thresh-g1-2:#2E801E] [--thresh-g1-3:#4BA800] dark:[--thresh-g1-0:#F6FBF7] dark:[--thresh-g1-1:#E8FFD1] dark:[--thresh-g1-2:#D4FF38] dark:[--thresh-g1-3:#C8FF00]';
+    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#3F8E00] dark:[--thresh-volt:#C8FF00] [--thresh-casing:#FFFFFF] dark:[--thresh-casing:#101814] [--thresh-pin:#FFFFFF] dark:[--thresh-pin:#0E1912] [--thresh-g1-0:#0E2619] [--thresh-g1-1:#143D26] [--thresh-g1-2:#1C5436] [--thresh-g1-3:#2D6A00] dark:[--thresh-g1-0:#F6FBF7] dark:[--thresh-g1-1:#E8FFD1] dark:[--thresh-g1-2:#D4FF38] dark:[--thresh-g1-3:#C8FF00]';
 
   const activeGaugeColor = isTeamOverride ? accentColor : 'var(--thresh-volt)';
 
@@ -272,73 +251,33 @@ export const ThreshFullVectorLockup: React.FC<{
 };
 
 /**
- * Pure THRESH Gauge Square Icon Mark (mirrors the interior of the full B3-3A logo for compact badges & avatars).
+ * Compact 32x32 THRESH Option E "Volt Beacon" Icon Mark for favicons, PWA tiles, and square avatars.
  */
 export const ThreshSquareTrackIcon: React.FC<{
   className?: string;
   accentColor?: string;
+  inkColor?: string;
   isTeamOverride?: boolean;
-}> = ({ className = 'w-8 h-8', accentColor = '#C8FF00', isTeamOverride = false }) => {
-  const activeVolt = isTeamOverride ? accentColor : '#C8FF00';
-  const pineColor = isTeamOverride ? '#64748B' : '#399663';
+}> = ({
+  className = 'w-8 h-8',
+  accentColor = '#C8FF00',
+  inkColor = '#080A09',
+  isTeamOverride = false,
+}) => {
+  const tileFill = isTeamOverride ? accentColor : '#C8FF00';
+  const tileInk = isTeamOverride ? inkColor : '#080A09';
 
   return (
     <svg
-      viewBox="0 0 128 128"
+      viewBox="0 0 32 32"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
     >
-      <rect
-        x="2"
-        y="2"
-        width="124"
-        height="124"
-        rx="28"
-        fill="#0B1911"
-        stroke="#399663"
-        strokeWidth="3.5"
-      />
-      <g transform="translate(64 66) scale(0.84) translate(-64 -70)">
-        <g fill={pineColor}>
-          {ICON_PINE_SECTORS.map((d, i) => (
-            <path key={i} d={d} />
-          ))}
-        </g>
-        <g fill={activeVolt}>
-          {ICON_VOLT_SECTORS.map((d, i) => (
-            <path key={i} d={d} />
-          ))}
-        </g>
-        <line
-          x1={ICON_TX1}
-          y1={ICON_TY1}
-          x2={120.5}
-          y2={67.55}
-          stroke={activeVolt}
-          strokeWidth="4.2"
-          strokeLinecap="round"
-        />
-        <path
-          d={ICON_NEEDLE_PATH}
-          fill={activeVolt}
-          stroke="#0B1911"
-          strokeWidth="7.4"
-          strokeLinejoin="round"
-          style={{ paintOrder: 'stroke fill' }}
-        />
-        <circle
-          cx={ICON_CX}
-          cy={ICON_CY}
-          r="11.8"
-          fill={activeVolt}
-          stroke="#0B1911"
-          strokeWidth="4.6"
-          style={{ paintOrder: 'stroke fill' }}
-        />
-        <circle cx={ICON_CX} cy={ICON_CY} r="4.5" fill="#0B1911" />
-      </g>
+      <rect x="1" y="1" width="30" height="30" rx="6" fill={tileFill} stroke="#163022" strokeWidth="2" />
+      <path d="M 7 6 H 27 L 26 10 H 6 Z" fill={tileInk} />
+      <path d="M 12.5 12 H 18.5 L 15 26 H 9 Z" fill={tileInk} />
     </svg>
   );
 };

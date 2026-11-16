@@ -23,7 +23,6 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
-import { ThreshBrandWatermark } from './AeroPulseLogo';
 import { downloadGarminFitWorkoutFile } from '../utils/fitWorkoutEncoder';
 import {
   EffortZoneCode,
@@ -991,7 +990,6 @@ ${dataLines.join('\n')}
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
       {/* Signature 4px THRESH Volt Top Rail */}
       <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
-      <ThreshBrandWatermark className="w-52 h-44 absolute -right-3 -bottom-5 pointer-events-none" />
 
       {/* Top Bar: Collapsible Summary Header */}
       <div
