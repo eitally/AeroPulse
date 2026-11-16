@@ -19,6 +19,7 @@ import {
   Users,
 } from './icons/PhosphorIcons';
 import type {
+  CoachEventGroup,
   SportCategory,
   TeamBrandConfig,
   TeamOrgType,
@@ -1611,6 +1612,44 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           <div className="text-2xs font-mono uppercase text-slate-500">
                             {m.role.replace('_', ' ')}
                           </div>
+                          {isActiveTeamCoach && m.role === 'ATHLETE' && (
+                            <select
+                              aria-label={`Event group for ${m.invitedName}`}
+                              value={m.eventGroup || ''}
+                              onChange={async (e) => {
+                                const val = (e.target.value || null) as CoachEventGroup | null;
+                                try {
+                                  const res = await fetch(
+                                    `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/members/${encodeURIComponent(m.membershipId)}/event-group`,
+                                    {
+                                      method: 'PATCH',
+                                      credentials: 'include',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ eventGroup: val, origin: originUrl }),
+                                    }
+                                  );
+                                  const payload = await res.json();
+                                  if (res.ok && payload.team) {
+                                    const updatedTeam = payload.team as TeamSummaryWithRole;
+                                    onTeamsUpdated(
+                                      myTeams.map((t) =>
+                                        t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+                                      ),
+                                      updatedTeam.brand.teamId
+                                    );
+                                  }
+                                } catch {
+                                  // ignore offline event-group change error
+                                }
+                              }}
+                              className="mt-1 min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                            >
+                              <option value="">All Events</option>
+                              <option value="SPRINTS">Sprints</option>
+                              <option value="MID_DISTANCE">800m / Mile</option>
+                              <option value="DISTANCE">3000m / 3200m+</option>
+                            </select>
+                          )}
                         </td>
 
                         <td className="py-3 px-3">

@@ -251,26 +251,35 @@ export function useTeamRoster({
         const squadBroadcasts: PlannedWorkoutEvent[] = (
           activeTeam.broadcastWorkouts || []
         )
-          .filter(
-            (bw) =>
-              bw.targetSquadGroup === 'ALL' ||
-              bw.targetSquadGroup === m.squadGroup ||
-              (Array.isArray(bw.targetMembershipIds) &&
-                bw.targetMembershipIds.includes(m.membershipId))
-          )
-          .map((bw) => ({
-            id: bw.broadcastId,
-            date: bw.date,
-            name: bw.name,
-            sportCategory: bw.sportCategory,
-            environmentPreference: 'FLEXIBLE',
-            description: bw.description,
-            plannedLoad: bw.plannedLoad,
-            plannedDurationSecs: bw.plannedDurationSecs,
-            targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
-            workoutSyntax: bw.workoutSyntax,
-            source: 'USER',
-          }));
+          .filter((bw) => {
+            if (bw.athleteOverrides?.[m.membershipId]) return true;
+            if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
+              return bw.targetMembershipIds.includes(m.membershipId);
+            }
+            const squadMatch = bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === m.squadGroup;
+            if (!squadMatch) return false;
+            if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+              return Boolean(m.eventGroup) && bw.targetEventGroups.includes(m.eventGroup!);
+            }
+            return true;
+          })
+          .map((bw) => {
+            const ov = bw.athleteOverrides?.[m.membershipId];
+            return {
+              id: bw.broadcastId,
+              date: bw.date,
+              name: ov?.name || bw.name,
+              sportCategory: bw.sportCategory,
+              environmentPreference: 'FLEXIBLE',
+              description: ov?.description || bw.description,
+              plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
+              plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
+              targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+              workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+              ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+              source: 'USER',
+            };
+          });
 
         return {
           id: `team-mem-${m.membershipId}`,
@@ -281,6 +290,7 @@ export function useTeamRoster({
           location: `${activeTeam.brand.shortName} · ${m.squadGroup}`,
           primarySport:
             activeTeam.brand.primarySport === 'Cycling' ? 'Cycling' : 'Running',
+          ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
           role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
           status: 'CONNECTED',
           connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),

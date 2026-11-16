@@ -622,6 +622,7 @@ export interface ConnectedAthleteRecord {
   status: 'CONNECTED' | 'PENDING_INCOMING' | 'PENDING_OUTGOING';
   primaryGoalSummary: string;
   primarySport: SportCategory;
+  eventGroup?: CoachEventGroup;
   athleteProfile: AthleteProfile;
   privacySettings: AthletePrivacySettings;
   wellnessDays: UnifiedWellnessDay[];
@@ -932,7 +933,10 @@ export type VdotPodIntensity =
   | 'RACE_3200M'
   | 'REPETITION'
   | 'RACE_1600M'
-  | 'RACE_800M';
+  | 'RACE_800M'
+  | 'RACE_400M';
+
+export type CoachEventGroup = 'SPRINTS' | 'MID_DISTANCE' | 'DISTANCE';
 
 export type TrackRepDistanceMeters = 150 | 200 | 300 | 400 | 500 | 600 | 800 | 1000 | 1200 | 1600;
 export type SpeedReservePhenotype = 'ENDURANCE' | 'HYBRID' | 'SPEED';
@@ -1013,6 +1017,17 @@ export interface TrackSplitEnvironmentAdjustment {
   advisoryNote: string;
 }
 
+export interface TrackSetSpec {
+  repCount: number;
+  repDistanceMeters: TrackRepDistanceMeters;
+  zoneCode: TrackTrainingZoneCode;
+  podIntensity: VdotPodIntensity;
+  targetSplitSecs?: number;
+  restDurationSecs: number;
+  setRestAfterSecs?: number;
+  recoveryCue?: string;
+}
+
 export interface TrackWorkoutSpec {
   repCount: number;
   repDistanceMeters: TrackRepDistanceMeters;
@@ -1027,6 +1042,9 @@ export interface TrackWorkoutSpec {
   footwearClass?: TrackFootwearClass;
   spikedDistanceMeters?: number;
   trackFacility?: NcaaTrackFacilityType;
+  warmupDistanceMeters?: number;
+  cooldownDistanceMeters?: number;
+  sets?: TrackSetSpec[];
 }
 
 export interface VdotPodAthleteMember {
@@ -1281,6 +1299,7 @@ export interface TeamMembershipRecord {
   sharingTier?: CoachDataSharingTier;
   role: TeamMemberRole;
   squadGroup: string;
+  eventGroup?: CoachEventGroup;
   invitedName: string;
   invitedEmail?: string;
   invitedPhone?: string;
@@ -1306,6 +1325,7 @@ export interface TeamBroadcastWorkout {
   broadcastId: string;
   teamId: string;
   targetSquadGroup: string; // 'ALL' or specific squad like 'Varsity'
+  targetEventGroups?: CoachEventGroup[]; // Optional Event Group filter ('SPRINTS', 'MID_DISTANCE', 'DISTANCE')
   targetMembershipIds?: string[]; // Optional subset of membershipIds (e.g. single athlete or VDOT pod)
   date: string;
   name: string;
@@ -1314,6 +1334,18 @@ export interface TeamBroadcastWorkout {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  trackSpec?: TrackWorkoutSpec;
+  athleteOverrides?: Record<
+    string,
+    {
+      name?: string;
+      workoutSyntax: string;
+      description?: string;
+      plannedDurationSecs?: number;
+      plannedLoad?: number;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  >;
   pushedByCoachName: string;
   createdAt: string;
 }
@@ -1322,6 +1354,7 @@ export interface TeamSummaryWithRole {
   brand: TeamBrandConfig;
   myRole: TeamMemberRole;
   mySquadGroup: string;
+  myEventGroup?: CoachEventGroup;
   myMembershipId: string;
   totalInvited: number;
   openedCount: number;

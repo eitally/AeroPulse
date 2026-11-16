@@ -852,27 +852,47 @@ export default function App() {
     if (isSampleDemoMode) return sampleDemoPlannedEvents;
     if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
     const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
-      .filter(
-        (bw) =>
-          bw.targetSquadGroup === 'ALL' ||
-          bw.targetSquadGroup === activeTeam.mySquadGroup ||
-          (Boolean(activeTeam.myMembershipId) &&
-            Array.isArray(bw.targetMembershipIds) &&
-            bw.targetMembershipIds.includes(activeTeam.myMembershipId))
-      )
-      .map((bw) => ({
-        id: bw.broadcastId,
-        date: bw.date,
-        name: bw.name,
-        sportCategory: bw.sportCategory,
-        environmentPreference: 'FLEXIBLE',
-        description: bw.description,
-        plannedLoad: bw.plannedLoad,
-        plannedDurationSecs: bw.plannedDurationSecs,
-        targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
-        workoutSyntax: bw.workoutSyntax,
-        source: 'USER',
-      }));
+      .filter((bw) => {
+        if (activeTeam.myMembershipId && bw.athleteOverrides?.[activeTeam.myMembershipId]) {
+          return true;
+        }
+        if (
+          Boolean(activeTeam.myMembershipId) &&
+          Array.isArray(bw.targetMembershipIds) &&
+          bw.targetMembershipIds.length > 0
+        ) {
+          return bw.targetMembershipIds.includes(activeTeam.myMembershipId);
+        }
+        const squadMatch =
+          bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === activeTeam.mySquadGroup;
+        if (!squadMatch) return false;
+        if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+          return (
+            Boolean(activeTeam.myEventGroup) &&
+            bw.targetEventGroups.includes(activeTeam.myEventGroup!)
+          );
+        }
+        return true;
+      })
+      .map((bw) => {
+        const ov = activeTeam.myMembershipId
+          ? bw.athleteOverrides?.[activeTeam.myMembershipId]
+          : undefined;
+        return {
+          id: bw.broadcastId,
+          date: bw.date,
+          name: ov?.name || bw.name,
+          sportCategory: bw.sportCategory,
+          environmentPreference: 'FLEXIBLE',
+          description: ov?.description || bw.description,
+          plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
+          plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
+          targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+          workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+          ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+          source: 'USER',
+        };
+      });
     const existingIds = new Set(plannedEvents.map((e) => e.id));
     return [
       ...plannedEvents,

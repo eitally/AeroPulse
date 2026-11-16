@@ -3225,6 +3225,17 @@ function buildTrackSpeedReserveProfile(input = {}) {
     zones
   };
 }
+function solve400mRacePaceSecsPerKm(profile) {
+  const t400Eff = Math.max(
+    43,
+    (400 - 0.62 * profile.dPrimeMeters) / Math.max(2, profile.csMps)
+  );
+  const v400Hyper = 400 / t400Eff;
+  const v400Asr = profile.masMps + 0.55 * profile.asrMps;
+  const vMinFasterThan800 = 1e3 / Math.max(85, profile.zones.FR.paceSecsPerKm - 14);
+  const v400 = Math.max(v400Hyper, v400Asr, vMinFasterThan800);
+  return round1(clamp(1e3 / v400, 95, 290));
+}
 
 // src/physiology/trackProgressionAndKalmanEngine.ts
 var clamp2 = (val, min, max) => Math.max(min, Math.min(max, val));
@@ -4311,21 +4322,65 @@ function parseClockOrSecondsToken(token) {
   return null;
 }
 function extractDistanceMeters(cleanLine) {
-  const kmMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
+  const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, "").trim();
+  const source = distPart.length > 0 ? distPart : cleanLine;
+  const kmMatch = source.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
   if (kmMatch) return Math.round(Number(kmMatch[1]) * 1e3);
-  const miMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
+  const miMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
   if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
-  const metersWordMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
+  const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
   if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
-  const mTokens = Array.from(cleanLine.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
+  const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
   for (const tok of mTokens) {
     const val = Number(tok[1]);
     if (val >= 100) return val;
-    if (val >= 30 && val <= 90 && /\b(sprint|stride|fly|accel|hill)\b/i.test(cleanLine)) {
+    if (val >= 30 && val <= 99 && /\b(sprint|stride|fly|accel|hill|walk|jog|float|rec|recovery)\b/i.test(cleanLine)) {
       return val;
     }
   }
   return void 0;
+}
+function resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) {
+  const sr = buildTrackSpeedReserveProfile({ thresholdPaceSecsPerKm });
+  if (/\bwarm\s*-?\s*up\b|\bcool\s*-?\s*down\b/i.test(cleanLine)) {
+    return { paceSecsPerKm: sr.zones.E.paceSecsPerKm, forceIntensityPct: 55 };
+  }
+  if (/\b(?:walk|standing|recovery)\b/i.test(cleanLine) && !/\bjog\b/i.test(cleanLine)) {
+    return { forceIntensityPct: 48 };
+  }
+  if (/\b400\s*m?\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = solve400mRacePaceSecsPerKm(sr);
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b800\s*m?\s*(?:race\s*)?(?:pace|effort)\b|\bFR\b|fast\s*rep/i.test(cleanLine)) {
+    const pace = sr.zones.FR.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:1600\s*m?|1500\s*m?|1\s*mile|mile)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.R.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:3200\s*m?|3000\s*m?|3k|2\s*mile|2\s*mi)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = Number(((sr.zones.I.paceSecsPerKm + sr.zones.R.paceSecsPerKm) / 2).toFixed(1));
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:5000\s*m?|5k)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.I.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:10k|cv|critical\s*velocity)\b/i.test(cleanLine)) {
+    const pace = sr.zones.CV.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:threshold|lt2)\b/i.test(cleanLine)) {
+    const pace = sr.zones.T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:sub-?t|sub-?threshold)\b/i.test(cleanLine)) {
+    const pace = sr.zones.SUB_T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  return {};
 }
 function extractExplicitIntensityPct(cleanLine) {
   const rangeMatch = cleanLine.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
@@ -4380,8 +4435,9 @@ function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explici
     distanceMeters
   );
   const stepKind = inferStepKind(cleanLine, explicitKind);
-  let intensityPct = explicitPct ?? 65;
-  if (explicitPct === void 0) {
+  const namedPace = explicitPct === void 0 && !parsedTargetPace ? resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) : {};
+  let intensityPct = explicitPct ?? namedPace.forceIntensityPct ?? 65;
+  if (explicitPct === void 0 && namedPace.forceIntensityPct === void 0) {
     if (parsedTargetPace && parsedTargetPace > 60) {
       intensityPct = Math.round(thresholdPaceSecsPerKm / parsedTargetPace * 100);
     } else if (/\bFR\b|fast\s*rep|800m\s*(?:race|pace|effort)/i.test(cleanLine)) {
@@ -4392,7 +4448,7 @@ function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explici
       intensityPct = 94;
     } else if (/\bcv\b|critical/i.test(cleanLine)) {
       intensityPct = 102;
-    } else if (/z1|recovery|easy|warmup|cooldown|jog|float|walk/i.test(cleanLine)) {
+    } else if (/z1|recovery|easy|warm\s*-?\s*up|cool\s*-?\s*down|jog|float|walk/i.test(cleanLine)) {
       intensityPct = 55;
     } else if (/z2|endurance|aerobic/i.test(cleanLine)) {
       intensityPct = 68;
@@ -4406,7 +4462,7 @@ function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explici
       intensityPct = 130;
     }
   }
-  const effectiveTargetPace = parsedTargetPace ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
+  const effectiveTargetPace = parsedTargetPace ?? namedPace.paceSecsPerKm ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
   let durationSecs = 600;
   const hrMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs)\b/i);
   const secMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs)\b/i);
@@ -4442,9 +4498,58 @@ function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explici
     stepKind
   };
 }
+function splitTopLevelClauses(line) {
+  const parts = [];
+  let buf = "";
+  let depth = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")" && depth > 0) depth -= 1;
+    if (depth === 0 && (ch === "+" || ch === ",")) {
+      const trimmed = buf.trim();
+      if (trimmed) parts.push(trimmed);
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  const tail = buf.trim();
+  if (tail) parts.push(tail);
+  return parts;
+}
+function normalizeInputLines(syntax) {
+  const out = [];
+  for (const raw of syntax.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      out.push("");
+      continue;
+    }
+    if (line.startsWith("-")) {
+      out.push(line);
+      continue;
+    }
+    if (line.includes("+") || line.includes(",")) {
+      const clauses = splitTopLevelClauses(line);
+      if (clauses.length > 1 && clauses.some(
+        (c) => /^(?:\d{1,2}\s*[x×]|\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)|warm\s*-?\s*up|cool\s*-?\s*down)/i.test(
+          c
+        )
+      )) {
+        for (const c of clauses) {
+          out.push(c.startsWith("-") ? c : `- ${c}`);
+        }
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
 function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
   if (!syntax || !syntax.trim()) return [];
-  const rawLines = syntax.split("\n").map((l) => l.trim());
+  const rawLines = normalizeInputLines(syntax);
   const nodes = [];
   let currentRepeat = null;
   const flushRepeat = () => {
@@ -4463,9 +4568,10 @@ function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
       flushRepeat();
       continue;
     }
-    if (!line.startsWith("-")) {
+    const looksLikeStandaloneStep = !line.startsWith("-") && (/^(\d{1,2})\s*[x×]\s*\d+/i.test(line) || /^\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)\b/i.test(line));
+    if (!line.startsWith("-") && !looksLikeStandaloneStep) {
       const headerRepeatMatch = line.match(
-        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*x\b[:\s-]*(.*)$/i
+        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*[x×]\b[:\s-]*(.*)$/i
       );
       if (headerRepeatMatch) {
         flushRepeat();
@@ -4483,10 +4589,10 @@ function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
     }
     const clean = line.replace(/^-+\s*/, "").trim();
     if (!clean) continue;
-    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*x(?:\s+|(?=\d))(.+)$/i);
+    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*[x×](?:\s+|(?=\d))(.+)$/i);
     if (inlineRepeatMatch) {
       flushRepeat();
-      const count = Math.max(2, Number(inlineRepeatMatch[1]));
+      const count = Math.max(1, Number(inlineRepeatMatch[1]));
       const remainder = inlineRepeatMatch[2].trim();
       let mainPart = remainder;
       let restPart = null;
@@ -6314,6 +6420,20 @@ function calibrateThresholdsFromSeedMark(seedInput, primarySport = "Running", di
 }
 
 // server/teamService.ts
+function inferEventGroupFromSeedMark(seed) {
+  if (!seed || !seed.trim()) return void 0;
+  const s = seed.trim();
+  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
+    return "DISTANCE";
+  }
+  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
+    return "MID_DISTANCE";
+  }
+  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
+    return "SPRINTS";
+  }
+  return void 0;
+}
 var TEAMS_DIRECTORY_KEY = "teams_index_v1";
 var EMAIL_DIRECTORY_KEY = "users_email_idx_v1";
 function teamDocVaultKey(teamId) {
@@ -6834,6 +6954,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       sharingTier: m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
+      ...m.eventGroup ? { eventGroup: m.eventGroup } : {},
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : void 0,
@@ -6867,15 +6988,24 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   });
   const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
     if (isCoach) return true;
+    if (bw.athleteOverrides && bw.athleteOverrides[myMembership.membershipId]) {
+      return true;
+    }
     if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
       return bw.targetMembershipIds.includes(myMembership.membershipId);
     }
-    return bw.targetSquadGroup === "ALL" || bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase();
+    const squadMatches = bw.targetSquadGroup === "ALL" || bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase();
+    if (!squadMatches) return false;
+    if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+      return Boolean(myMembership.eventGroup) && bw.targetEventGroups.includes(myMembership.eventGroup);
+    }
+    return true;
   });
   return {
     brand: doc.brand,
     myRole: myMembership.role,
     mySquadGroup: myMembership.squadGroup,
+    ...myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {},
     myMembershipId: myMembership.membershipId,
     totalInvited,
     openedCount,
@@ -7093,6 +7223,7 @@ async function bulkCreateAndSendInvites(params) {
       teamId: doc.brand.teamId,
       role: "ATHLETE",
       squadGroup: row.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
+      ...inferEventGroupFromSeedMark(row.seedMarkOrFtp) ? { eventGroup: inferEventGroupFromSeedMark(row.seedMarkOrFtp) } : {},
       invitedName: String(row.invitedName || "Team Athlete").trim().slice(0, 64),
       invitedEmail: cleanEmail,
       invitedPhone: row.invitedPhone,
@@ -7277,6 +7408,7 @@ async function claimTeamJoinInvite(params) {
       sharingTier: resolvedSharingTier,
       role: "ATHLETE",
       squadGroup: params.squadGroup?.trim() || orgDefaults.defaultSquads[0] || "Varsity",
+      ...inferEventGroupFromSeedMark(params.seedMarkOrFtp) ? { eventGroup: inferEventGroupFromSeedMark(params.seedMarkOrFtp) } : {},
       invitedName: params.athleteName?.trim().slice(0, 64) || "Team Athlete",
       invitedEmail: cleanEmail,
       isMinorU18: doc.brand.orgType === "HIGH_SCHOOL",
@@ -7303,6 +7435,10 @@ async function claimTeamJoinInvite(params) {
     }
     if (params.seedMarkOrFtp?.trim()) {
       mem.seedMarkOrFtp = params.seedMarkOrFtp.trim();
+      if (!mem.eventGroup) {
+        const inferredGroup = inferEventGroupFromSeedMark(mem.seedMarkOrFtp);
+        if (inferredGroup) mem.eventGroup = inferredGroup;
+      }
     }
     mem.status = "ACTIVE";
     if (!mem.openedAt) mem.openedAt = nowIso;
@@ -7429,6 +7565,27 @@ async function acknowledgeParentConsent(token) {
   }
   return { ok: false, error: "Invalid or expired parent consent link." };
 }
+async function updateTeamMemberEventGroup(params) {
+  const doc = await loadTenantVaultAsync(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    return null;
+  }
+  const targetMem = doc.memberships.find(
+    (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
+  );
+  if (!targetMem) return null;
+  targetMem.eventGroup = params.eventGroup || void 0;
+  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
 async function broadcastWorkoutToTeamSquad(params) {
   const doc = await loadTenantVaultAsync(
     teamDocVaultKey(params.teamId),
@@ -7443,22 +7600,39 @@ async function broadcastWorkoutToTeamSquad(params) {
   }
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const cleanTargets = Array.isArray(params.targetMembershipIds) ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
+  const cleanEventGroups = Array.isArray(params.targetEventGroups) ? params.targetEventGroups.filter(
+    (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
+  ) : void 0;
+  const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
+  const targetSquadGroup = String(params.targetSquadGroup || "ALL").trim() || "ALL";
   const workout = {
     broadcastId: `bw_${crypto6.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
-    targetSquadGroup: String(params.targetSquadGroup || "ALL").trim() || "ALL",
+    targetSquadGroup,
+    ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
     ...cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {},
-    date: String(params.date || nowIso.slice(0, 10)).slice(0, 10),
+    date: dateStr,
     name: String(params.name || "Team Prescribed Session").trim().slice(0, 100),
     sportCategory: params.sportCategory || "Running",
     plannedDurationSecs: Math.max(300, Number(params.plannedDurationSecs) || 3600),
     plannedLoad: Math.max(5, Number(params.plannedLoad) || 65),
-    workoutSyntax: String(params.workoutSyntax || "").slice(0, 2e3),
+    workoutSyntax: String(params.workoutSyntax || "").slice(0, 3e3),
     description: String(params.description || "").slice(0, 1e3),
+    ...params.trackSpec ? { trackSpec: params.trackSpec } : {},
+    ...params.athleteOverrides && Object.keys(params.athleteOverrides).length > 0 ? { athleteOverrides: params.athleteOverrides } : {},
     pushedByCoachName: doc.brand.coachDisplayName,
     createdAt: nowIso
   };
-  doc.broadcastWorkouts = [workout, ...doc.broadcastWorkouts || []].slice(0, 60);
+  const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
+  const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
+    if (params.replaceSameDateTarget === false) return true;
+    const sameDate = bw.date === dateStr;
+    const sameSquad = bw.targetSquadGroup === targetSquadGroup;
+    const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
+    const sameMembers = JSON.stringify((bw.targetMembershipIds || []).slice().sort()) === JSON.stringify((cleanTargets || []).slice().sort());
+    return !(sameDate && sameSquad && sameGroups && sameMembers);
+  });
+  doc.broadcastWorkouts = [workout, ...existingFiltered].slice(0, 120);
   doc.updatedAt = nowIso;
   await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
@@ -8000,11 +8174,15 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
     }
     const originUrl = resolveRequestOrigin(req);
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
+    const targetEventGroups = Array.isArray(req.body?.targetEventGroups) ? req.body.targetEventGroups.filter(
+      (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
+    ) : void 0;
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
       originUrl,
       targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
+      targetEventGroups,
       targetMembershipIds,
       date: String(req.body?.date || ""),
       name: String(req.body?.name || ""),
@@ -8012,7 +8190,10 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
       plannedDurationSecs: Number(req.body?.plannedDurationSecs || 3600),
       plannedLoad: Number(req.body?.plannedLoad || 65),
       workoutSyntax: String(req.body?.workoutSyntax || ""),
-      description: String(req.body?.description || "")
+      description: String(req.body?.description || ""),
+      trackSpec: req.body?.trackSpec,
+      athleteOverrides: req.body?.athleteOverrides,
+      replaceSameDateTarget: typeof req.body?.replaceSameDateTarget === "boolean" ? req.body.replaceSameDateTarget : true
     });
     if (!updated) {
       res.status(403).json({ ok: false, error: "Coach permissions required." });
@@ -8023,6 +8204,35 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed to broadcast workout."
+    });
+  }
+});
+teamRouter.patch("/api/teams/:teamId/members/:membershipId/event-group", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const rawGroup = req.body?.eventGroup;
+    const eventGroup = rawGroup === "SPRINTS" || rawGroup === "MID_DISTANCE" || rawGroup === "DISTANCE" ? rawGroup : null;
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await updateTeamMemberEventGroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      membershipId: String(req.params.membershipId || ""),
+      originUrl,
+      eventGroup
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions or roster member not found." });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to update athlete event group."
     });
   }
 });

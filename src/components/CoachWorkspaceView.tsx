@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import type {
   AthleteProfile,
   CoachWorkspaceSubTab,
@@ -9,31 +9,23 @@ import type {
   SportCategory,
   TargetGoal,
   TeamSummaryWithRole,
-  TrackRepDistanceMeters,
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
-  VdotPodIntensity,
 } from '../types';
 import {
-  computeTeamVdotPacingPods,
-  formatPrintablePodSplitSheet,
-  formatTrackMark,
   summarizeNcaaCaraWeeklyHours,
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
-import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
-import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import { CalendarView } from './CalendarView';
 import { TeamManagementPanel } from './TeamManagementPanel';
 import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
+import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
 import {
   Calendar,
-  Check,
   ClipboardText,
-  Copy,
   Shield,
   Timer,
   Users,
@@ -145,13 +137,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenAthleteToday,
   onOpenRosterModal,
 }) => {
-  const [podIntensity, setPodIntensity] = useState<VdotPodIntensity>('THRESHOLD_CV');
-  const [podRepCount, setPodRepCount] = useState(5);
-  const [podRepDistance, setPodRepDistance] = useState<TrackRepDistanceMeters>(800);
-  const [podRecoveryLabel, setPodRecoveryLabel] = useState('90s jog');
-  const [workoutDate, setWorkoutDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [copiedSplitSheet, setCopiedSplitSheet] = useState(false);
-
   const connectedAthletesOnly = useMemo(
     () => combinedRoster.filter((a) => a.status === 'CONNECTED'),
     [combinedRoster]
@@ -174,18 +159,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }));
   }, [connectedAthletesOnly, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
 
-  const generatedPods = useMemo(
-    () =>
-      computeTeamVdotPacingPods({
-        roster: podRoster,
-        intensity: podIntensity,
-        repCount: podRepCount,
-        repDistanceMeters: podRepDistance,
-        recoveryLabel: podRecoveryLabel,
-      }),
-    [podRoster, podIntensity, podRepCount, podRepDistance, podRecoveryLabel]
-  );
-
   const triageAthletes = useMemo(() => {
     return connectedAthletesOnly.map((ath) => {
       const latestW =
@@ -203,31 +176,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       return { ath, tsb, hrv, isStrained, watchLight };
     });
   }, [connectedAthletesOnly]);
-
-  const handleLaunchPodsInStopwatch = () => {
-    stageWorkoutInTracksideStopwatch({
-      title: `${podRepCount}x${podRepDistance}m`,
-      spec: {
-        repCount: podRepCount,
-        repDistanceMeters: podRepDistance,
-        zoneCode:
-          podIntensity === 'SUB_THRESHOLD'
-            ? 'SUB_T'
-            : podIntensity === 'INTERVAL_VO2'
-              ? 'I'
-              : podIntensity === 'REPETITION' || podIntensity === 'RACE_1600M'
-                ? 'R'
-                : podIntensity === 'RACE_800M'
-                  ? 'FR'
-                  : 'CV',
-        podIntensity,
-        restDurationSecs: 60,
-        waveMode: 'POD_10S',
-      },
-      pods: generatedPods,
-    });
-    setSubTab('STOPWATCH');
-  };
 
   return (
     <div className="space-y-4" data-testid="coach-workspace-view">
@@ -412,137 +360,19 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               </section>
           )}
 
-              {/* Track Pace Groups & 1-Tap Stopwatch Staging */}
-              <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                    Pace Groups &amp; Track Split Sheet
-                  </h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const sheet = formatPrintablePodSplitSheet(
-                          `${podRepCount}x${podRepDistance}m (${podIntensity})`,
-                          workoutDate,
-                          generatedPods
-                        );
-                        navigator.clipboard.writeText(sheet);
-                        setCopiedSplitSheet(true);
-                        window.setTimeout(() => setCopiedSplitSheet(false), 2500);
-                      }}
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {copiedSplitSheet ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      <span>{copiedSplitSheet ? 'Copied' : 'Copy Sheet'}</span>
-                    </button>
+          {/* Track Multi-Set Workout Builder, Event Groups & Pace Pod Splits */}
+          <CoachClipboardWorkoutBuilder
+            activeTeam={activeTeam}
+            myTeams={myTeams}
+            connectedAthletes={connectedAthletesOnly}
+            primaryAthleteDisplayName={primaryAthleteDisplayName}
+            selfProfile={selfProfile}
+            onTeamsUpdated={onTeamsUpdated}
+            onCreatePlannedEvent={onCreatePlannedEvent}
+            onOpenStopwatchSubTab={() => setSubTab('STOPWATCH')}
+          />
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        openPrintablePodClipboardWindow({
-                          workoutTitle: `${podRepCount}x${podRepDistance}m`,
-                          dateStr: workoutDate,
-                          repDistanceMeters: podRepDistance,
-                          repCount: podRepCount,
-                          recoveryLabel: podRecoveryLabel,
-                          pods: generatedPods,
-                          teamName: activeTeam?.brand.name || 'THRESH Squad',
-                        })
-                      }
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <ClipboardText className="w-3.5 h-3.5" />
-                      <span>Print Sheet</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleLaunchPodsInStopwatch}
-                      className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Timer className="w-3.5 h-3.5" weight="bold" />
-                      <span>Launch in Stopwatch</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-                  <select
-                    aria-label="Workout Pace Target"
-                    value={podIntensity}
-                    onChange={(e) => setPodIntensity(e.target.value as VdotPodIntensity)}
-                    className="col-span-2 min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs"
-                  >
-                    <option value="SUB_THRESHOLD">Sub-Threshold</option>
-                    <option value="THRESHOLD_CV">Threshold / CV</option>
-                    <option value="INTERVAL_VO2">3K–5K Pace (VO2)</option>
-                    <option value="RACE_3200M">3200m Pace</option>
-                    <option value="RACE_1600M">Mile / 1600m Pace</option>
-                    <option value="RACE_800M">800m Pace</option>
-                    <option value="EASY">Easy / Recovery</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    aria-label="Repetitions"
-                    value={podRepCount}
-                    onChange={(e) => setPodRepCount(Math.max(1, Number(e.target.value) || 1))}
-                    className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs"
-                  />
-                  <select
-                    aria-label="Repetition Distance"
-                    value={podRepDistance}
-                    onChange={(e) =>
-                      setPodRepDistance(Number(e.target.value) as TrackRepDistanceMeters)
-                    }
-                    className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs"
-                  >
-                    {([150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600] as const).map(
-                      (dist) => (
-                        <option key={dist} value={dist}>
-                          {dist}m
-                        </option>
-                      )
-                    )}
-                  </select>
-                  <input
-                    type="date"
-                    aria-label="Workout Date"
-                    value={workoutDate}
-                    onChange={(e) => setWorkoutDate(e.target.value)}
-                    className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {generatedPods.map((pod) => (
-                    <div
-                      key={pod.podId}
-                      className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 space-y-1.5 text-xs"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {pod.podName} · {pod.athletes.length} runners
-                        </span>
-                        <span className="font-mono font-bold text-[#1C5436] dark:text-[#C8FF00]">
-                          {formatTrackMark(pod.targetRepSplitSecs ?? pod.splitsSecs.split800m)} / {podRepDistance}m
-                        </span>
-                      </div>
-                      <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
-                        {pod.athletes.map((a) => a.name).join(', ')}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <ScholasticRelayAndTopTimesPanel
+          <ScholasticRelayAndTopTimesPanel
                 candidates={podRoster}
                 roster={connectedAthletesOnly}
               />

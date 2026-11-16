@@ -5,7 +5,10 @@ import type {
   TrackFootwearClass,
   TrackLaneNumber,
   TrackRepDistanceMeters,
+  TrackTrainingZoneCode,
+  TrackWorkoutSpec,
   UnifiedActivity,
+  VdotPodIntensity,
 } from '../types';
 import type {
   RunnerSplitTelemetry,
@@ -97,6 +100,63 @@ export function buildTracksideStopwatchCsv(params: {
   return [headers.map(csvEscape).join(','), ...rows].join('\n');
 }
 
+export interface ExpandedStopwatchRep {
+  setNumber: number;
+  repInSet: number;
+  repDistanceMeters: TrackRepDistanceMeters;
+  restDurationSecs: number;
+  zoneCode: TrackTrainingZoneCode;
+  podIntensity: VdotPodIntensity;
+  targetSplitSecs?: number;
+}
+
+/**
+ * Unrolls a multi-set `TrackWorkoutSpec` into a linear per-rep list with intra-set and inter-set rest.
+ */
+export function expandTrackWorkoutSpecReps(
+  spec?: TrackWorkoutSpec | null
+): ExpandedStopwatchRep[] {
+  if (!spec) return [];
+  const sets =
+    spec.sets && spec.sets.length > 0
+      ? spec.sets
+      : [
+          {
+            repCount: spec.repCount,
+            repDistanceMeters: spec.repDistanceMeters,
+            zoneCode: spec.zoneCode,
+            podIntensity: spec.podIntensity,
+            targetSplitSecs: spec.targetSplitSecs,
+            restDurationSecs: spec.restDurationSecs,
+          },
+        ];
+
+  const out: ExpandedStopwatchRep[] = [];
+  sets.forEach((setSpec, setIdx) => {
+    const count = Math.max(1, Math.round(setSpec.repCount));
+    for (let r = 0; r < count; r++) {
+      const isLastInSet = r === count - 1;
+      const hasNextSet = setIdx < sets.length - 1;
+      const restSecs =
+        isLastInSet && hasNextSet && typeof setSpec.setRestAfterSecs === 'number'
+          ? setSpec.setRestAfterSecs
+          : setSpec.restDurationSecs;
+      out.push({
+        setNumber: setIdx + 1,
+        repInSet: r + 1,
+        repDistanceMeters: setSpec.repDistanceMeters,
+        restDurationSecs: Math.max(0, Math.round(restSecs)),
+        zoneCode: setSpec.zoneCode,
+        podIntensity: setSpec.podIntensity,
+        ...(typeof setSpec.targetSplitSecs === 'number'
+          ? { targetSplitSecs: setSpec.targetSplitSecs }
+          : {}),
+      });
+    }
+  });
+  return out;
+}
+
 export function synthesizeTracksideWorkoutActivity(params: {
   runnerId: string;
   runnerName: string;
@@ -113,6 +173,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
   trackFacility?: NcaaTrackFacilityType;
   stimulusCompletionRatio?: number;
   autoRegPivotSummary?: string;
+  multiSetSpec?: TrackWorkoutSpec | null;
 }): UnifiedActivity {
   const {
     runnerId,
@@ -130,11 +191,17 @@ export function synthesizeTracksideWorkoutActivity(params: {
     trackFacility = 'OUTDOOR_400M',
     stimulusCompletionRatio,
     autoRegPivotSummary,
+    multiSetSpec,
   } = params;
 
   const validSplits = lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0);
   const safeThresholdPace = Math.max(115, Math.min(480, thresholdPaceSecsPerKm || 245));
-  const repDist = Math.max(100, repDistanceMeters);
+  const fallbackRepDist = Math.max(100, repDistanceMeters);
+  const expandedReps =
+    multiSetSpec?.sets && multiSetSpec.sets.length > 0
+      ? expandTrackWorkoutSpecReps(multiSetSpec)
+      : [];
+  const hasMultipleSets = (multiSetSpec?.sets?.length ?? 0) > 1;
 
   const intervals: ActivityInterval[] = [];
   const timeStream: number[] = [];
@@ -145,17 +212,22 @@ export function synthesizeTracksideWorkoutActivity(params: {
 
   let elapsedCursor = 0;
   let distCursor = 0;
+  let totalWorkDist = 0;
   let totalWorkSecs = 0;
   let weightedLoadAcc = 0;
 
   validSplits.forEach((lapSecs, idx) => {
+    const planRep = expandedReps[idx];
+    const thisRepDist = planRep?.repDistanceMeters ?? fallbackRepDist;
+    const thisRestSecs = planRep?.restDurationSecs ?? restDurationSecs;
     const lapDuration = Math.max(1, Math.round(lapSecs));
-    const lapPaceSecsKm = Math.round((lapSecs / repDist) * 1000);
-    const speedMps = repDist / Math.max(1, lapSecs);
-    const intensityRatio = Math.max(0.75, Math.min(1.45, safeThresholdPace / Math.max(120, lapPaceSecsKm)));
+    const lapPaceSecsKm = Math.round((lapSecs / thisRepDist) * 1000);
+    const speedMps = thisRepDist / Math.max(1, lapSecs);
+    const intensityRatio = Math.max(0.75, Math.min(1.55, safeThresholdPace / Math.max(120, lapPaceSecsKm)));
     const repTss = intensityRatio * intensityRatio * (lapSecs / 3600) * 100;
     weightedLoadAcc += repTss;
     totalWorkSecs += lapSecs;
+    totalWorkDist += thisRepDist;
 
     const startHr = Math.min(maxHr, Math.round(lthr * 0.9 + idx * 1.5));
     const endHr = Math.min(maxHr, Math.round(lthr * 1.02 + idx * 2));
@@ -163,32 +235,37 @@ export function synthesizeTracksideWorkoutActivity(params: {
     for (let s = 0; s < lapDuration; s++) {
       const frac = s / Math.max(1, lapDuration);
       timeStream.push(elapsedCursor + s);
-      distanceStream.push(Number((distCursor + frac * repDist).toFixed(1)));
+      distanceStream.push(Number((distCursor + frac * thisRepDist).toFixed(1)));
       velocityStream.push(Number(speedMps.toFixed(2)));
       hrStream.push(Math.round(startHr + frac * (endHr - startHr)));
-      cadenceStream.push(repDist <= 400 ? 194 : 188);
+      cadenceStream.push(thisRepDist <= 400 ? 194 : 188);
     }
+
+    const repLabel =
+      hasMultipleSets && planRep
+        ? `Set ${planRep.setNumber} · Rep ${planRep.repInSet} (${thisRepDist}m): ${formatTrackMark(lapSecs, 2)}`
+        : `Rep ${idx + 1} (${thisRepDist}m): ${formatTrackMark(lapSecs, 2)}`;
 
     intervals.push({
       id: `rep-${idx + 1}`,
       type: 'WORK',
-      label: `Rep ${idx + 1} (${repDist}m): ${formatTrackMark(lapSecs, 2)}`,
+      label: repLabel,
       startTimeSecs: elapsedCursor,
       durationSecs: Number(lapSecs.toFixed(2)),
-      distanceMeters: repDist,
+      distanceMeters: thisRepDist,
       avgPaceSecsPerKm: lapPaceSecsKm,
       gapPaceSecsPerKm: lapPaceSecsKm,
       avgHr: Math.round((startHr + endHr) / 2),
       maxHr: endHr,
-      avgCadence: repDist <= 400 ? 194 : 188,
+      avgCadence: thisRepDist <= 400 ? 194 : 188,
       zone: intensityRatio >= 1.05 ? 5 : 4,
     });
 
     elapsedCursor += lapDuration;
-    distCursor += repDist;
+    distCursor += thisRepDist;
 
-    if (restDurationSecs > 0 && idx < validSplits.length - 1) {
-      const restInt = Math.max(5, Math.round(restDurationSecs));
+    if (thisRestSecs > 0 && idx < validSplits.length - 1) {
+      const restInt = Math.max(5, Math.round(thisRestSecs));
       for (let s = 0; s < restInt; s++) {
         timeStream.push(elapsedCursor + s);
         distanceStream.push(Number(distCursor.toFixed(1)));
@@ -211,12 +288,18 @@ export function synthesizeTracksideWorkoutActivity(params: {
     }
   });
 
-  const totalWorkDist = validSplits.length * repDist;
   const avgWorkPaceSecsKm =
     totalWorkDist > 0 ? Math.round((totalWorkSecs / totalWorkDist) * 1000) : safeThresholdPace;
-  // Warmup/cooldown aerobic baseline allowance (~28 rTSS for 25-30m easy track warmup/cooldown)
-  const warmupCooldownSecs = 1500;
-  const trainingLoad = Math.max(12, Math.round(weightedLoadAcc + 26));
+  const wuDist = Math.max(0, multiSetSpec?.warmupDistanceMeters ?? 0);
+  const cdDist = Math.max(0, multiSetSpec?.cooldownDistanceMeters ?? 0);
+  const hasExplicitWuCd = wuDist + cdDist > 0;
+  const extraEasyDist = hasExplicitWuCd ? wuDist + cdDist : 4200;
+  const easyPaceSecsKm = Math.round(safeThresholdPace * 1.24);
+  const warmupCooldownSecs = hasExplicitWuCd
+    ? Math.round((extraEasyDist / 1000) * easyPaceSecsKm)
+    : 1500;
+  const extraEasyTss = (warmupCooldownSecs / 3600) * 0.68 * 0.68 * 100;
+  const trainingLoad = Math.max(12, Math.round(weightedLoadAcc + (hasExplicitWuCd ? extraEasyTss : 26)));
   const avgLapSecs = totalWorkSecs / Math.max(1, validSplits.length);
 
   const streams: ActivityStreamSet = {
@@ -227,7 +310,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
     cadence: cadenceStream,
   };
 
-  const titlePrefix = sessionTitle?.trim() || `${validSplits.length}x${repDist}m Track Session`;
+  const titlePrefix = sessionTitle?.trim() || `${validSplits.length}x${fallbackRepDist}m Track Session`;
   const isSpikeShoe =
     footwearClass === 'TRADITIONAL_TRACK_SPIKE' || footwearClass === 'CARBON_SUPER_SPIKE';
   const spikedDistanceMeters = isSpikeShoe ? Math.round(totalWorkDist) : 0;
@@ -244,12 +327,12 @@ export function synthesizeTracksideWorkoutActivity(params: {
     environment,
     subType: 'Track',
     movingTimeSecs: Math.round(totalWorkSecs + warmupCooldownSecs),
-    distanceMeters: Math.round(distCursor + 4200),
+    distanceMeters: Math.round(distCursor + extraEasyDist),
     elevationGainMeters: 0,
     trainingLoad,
     avgHr: Math.round(lthr * 0.92),
     maxHr,
-    avgCadence: repDist <= 400 ? 192 : 186,
+    avgCadence: fallbackRepDist <= 400 ? 192 : 186,
     avgPaceSecsPerKm: avgWorkPaceSecsKm,
     gapPaceSecsPerKm: avgWorkPaceSecsKm,
     aerobicDecouplingPct: 1.8,

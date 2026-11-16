@@ -8,6 +8,7 @@ import type {
   TrackFootwearClass,
   TrackLaneNumber,
   TrackRepDistanceMeters,
+  TrackSetSpec,
   TrackTrainingZoneCode,
   TrackWorkoutSpec,
   VdotPodIntensity,
@@ -234,6 +235,28 @@ function sanitizeCustomWorkoutSpec(raw: unknown): TrackWorkoutSpec | null {
   const snappedDist = VALID_REP_DISTANCES.reduce((best, cur) =>
     Math.abs(cur - repDistNum) < Math.abs(best - repDistNum) ? cur : best
   );
+  const sanitizeSets = Array.isArray(candidate.sets)
+    ? candidate.sets
+        .filter((s) => s && typeof s.repCount === 'number' && s.repCount >= 1 && s.repDistanceMeters > 0)
+        .map((s) => ({
+          repCount: Math.max(1, Math.round(s.repCount)),
+          repDistanceMeters: snapRepDistance(s.repDistanceMeters),
+          zoneCode: s.zoneCode || candidate.zoneCode || 'CV',
+          podIntensity: s.podIntensity || candidate.podIntensity || 'THRESHOLD_CV',
+          ...(typeof s.targetSplitSecs === 'number' && Number.isFinite(s.targetSplitSecs)
+            ? { targetSplitSecs: s.targetSplitSecs }
+            : {}),
+          restDurationSecs:
+            typeof s.restDurationSecs === 'number' && Number.isFinite(s.restDurationSecs)
+              ? Math.max(0, Math.round(s.restDurationSecs))
+              : 60,
+          ...(typeof s.setRestAfterSecs === 'number' && Number.isFinite(s.setRestAfterSecs)
+            ? { setRestAfterSecs: Math.max(0, Math.round(s.setRestAfterSecs)) }
+            : {}),
+          ...(typeof s.recoveryCue === 'string' ? { recoveryCue: s.recoveryCue } : {}),
+        }))
+    : undefined;
+
   return {
     repCount: Math.max(1, Math.round(candidate.repCount)),
     repDistanceMeters: snappedDist,
@@ -250,6 +273,13 @@ function sanitizeCustomWorkoutSpec(raw: unknown): TrackWorkoutSpec | null {
     ...(candidate.waveMode ? { waveMode: candidate.waveMode } : {}),
     ...(candidate.eventGroup ? { eventGroup: candidate.eventGroup } : {}),
     ...(candidate.phase ? { phase: candidate.phase } : {}),
+    ...(typeof candidate.warmupDistanceMeters === 'number' && Number.isFinite(candidate.warmupDistanceMeters)
+      ? { warmupDistanceMeters: Math.max(0, Math.round(candidate.warmupDistanceMeters)) }
+      : {}),
+    ...(typeof candidate.cooldownDistanceMeters === 'number' && Number.isFinite(candidate.cooldownDistanceMeters)
+      ? { cooldownDistanceMeters: Math.max(0, Math.round(candidate.cooldownDistanceMeters)) }
+      : {}),
+    ...(sanitizeSets && sanitizeSets.length > 0 ? { sets: sanitizeSets } : {}),
   };
 }
 
@@ -1456,10 +1486,19 @@ function classifyZoneAndPodFromHints(
   intensityPct?: number
 ): { zoneCode: TrackTrainingZoneCode; podIntensity: VdotPodIntensity } {
   const pct = intensityPct ?? 0;
-  if (pct >= 126 || /\bFR\b|800m\s*pace|fast\s*rep/i.test(textHint)) {
+  if (pct >= 134 || /\b400\s*m?\s*(?:race\s*)?(?:pace|effort)\b/i.test(textHint)) {
+    return { zoneCode: 'FR', podIntensity: 'RACE_400M' };
+  }
+  if (pct >= 126 || /\bFR\b|\b800\s*m?\s*(?:race\s*)?(?:pace|effort)\b|fast\s*rep/i.test(textHint)) {
     return { zoneCode: 'FR', podIntensity: 'RACE_800M' };
   }
-  if (pct >= 114 || /\bR\b|repetition|1500m|mile\s*pace/i.test(textHint)) {
+  if (/\b(?:1500\s*m?|1600\s*m?|1\s*mile|mile)\s*(?:race\s*)?(?:pace|effort)\b/i.test(textHint)) {
+    return { zoneCode: 'R', podIntensity: 'RACE_1600M' };
+  }
+  if (/\b(?:3200\s*m?|3000\s*m?|2\s*mile|2\s*mi)\s*(?:race\s*)?(?:pace|effort)\b/i.test(textHint)) {
+    return { zoneCode: 'I', podIntensity: 'RACE_3200M' };
+  }
+  if (pct >= 114 || /\bR\b|repetition/i.test(textHint)) {
     return { zoneCode: 'R', podIntensity: 'REPETITION' };
   }
   if (pct >= 106 || /\bI\b|vo2/i.test(textHint)) {
@@ -1478,8 +1517,8 @@ function classifyZoneAndPodFromHints(
 }
 
 /**
- * Extracts a structured TrackWorkoutSpec from an explicit PlannedWorkoutEvent (direct `trackSpec`,
- * `workoutSyntax` repeat AST, or `name` interval signature like `6x800m`).
+ * Extracts a structured multi-set TrackWorkoutSpec from an explicit PlannedWorkoutEvent
+ * (direct `trackSpec`, `workoutSyntax` repeat AST across all sets + WU/CD, or signature like `6x800m`).
  */
 export function inferTrackWorkoutSpecFromPlannedEvent(
   ev: Pick<PlannedWorkoutEvent, 'name' | 'workoutSyntax' | 'trackSpec'>
@@ -1488,22 +1527,48 @@ export function inferTrackWorkoutSpecFromPlannedEvent(
     return {
       ...ev.trackSpec,
       repDistanceMeters: snapRepDistance(ev.trackSpec.repDistanceMeters),
+      ...(ev.trackSpec.sets
+        ? {
+            sets: ev.trackSpec.sets.map((s) => ({
+              ...s,
+              repDistanceMeters: snapRepDistance(s.repDistanceMeters),
+            })),
+          }
+        : {}),
     };
   }
 
   const syntax = ev.workoutSyntax || '';
   if (syntax.trim()) {
     const ast = parseStructuredTrackWorkout(syntax);
-    for (const node of ast) {
+    const sets: TrackSetSpec[] = [];
+    let warmupDistanceMeters: number | undefined;
+    let cooldownDistanceMeters: number | undefined;
+
+    for (let i = 0; i < ast.length; i++) {
+      const node = ast[i];
+      if (node.type === 'step') {
+        if (node.step.stepKind === 'warmup' && node.step.distanceMeters) {
+          warmupDistanceMeters = (warmupDistanceMeters || 0) + node.step.distanceMeters;
+        } else if (node.step.stepKind === 'cooldown' && node.step.distanceMeters) {
+          cooldownDistanceMeters = (cooldownDistanceMeters || 0) + node.step.distanceMeters;
+        } else if (node.step.stepKind === 'rest' && sets.length > 0 && node.step.durationSecs > 0) {
+          sets[sets.length - 1].setRestAfterSecs = Math.round(node.step.durationSecs);
+        }
+        continue;
+      }
+
       if (node.type === 'repeat') {
-        const workStep = node.steps.find((s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 100);
+        const workStep = node.steps.find(
+          (s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 100
+        );
         if (workStep && workStep.distanceMeters) {
           const restStep = node.steps.find((s) => s.stepKind === 'rest');
           const { zoneCode, podIntensity } = classifyZoneAndPodFromHints(
             `${ev.name} ${workStep.label}`,
             workStep.intensityPct
           );
-          return {
+          sets.push({
             repCount: node.repeatCount,
             repDistanceMeters: snapRepDistance(workStep.distanceMeters),
             zoneCode,
@@ -1516,10 +1581,28 @@ export function inferTrackWorkoutSpecFromPlannedEvent(
                 }
               : {}),
             restDurationSecs: Math.max(0, Math.round(restStep?.durationSecs ?? 60)),
-            waveMode: 'MASS',
-          };
+          });
         }
       }
+    }
+
+    if (sets.length > 0) {
+      const totalReps = sets.reduce((acc, s) => acc + s.repCount, 0);
+      const first = sets[0];
+      return {
+        repCount: totalReps,
+        repDistanceMeters: first.repDistanceMeters,
+        zoneCode: first.zoneCode,
+        podIntensity: first.podIntensity,
+        ...(typeof first.targetSplitSecs === 'number'
+          ? { targetSplitSecs: first.targetSplitSecs }
+          : {}),
+        restDurationSecs: first.restDurationSecs,
+        waveMode: 'MASS',
+        ...(warmupDistanceMeters ? { warmupDistanceMeters } : {}),
+        ...(cooldownDistanceMeters ? { cooldownDistanceMeters } : {}),
+        sets,
+      };
     }
   }
 

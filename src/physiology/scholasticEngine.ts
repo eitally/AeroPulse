@@ -23,6 +23,7 @@ import type {
 } from '../types.ts';
 import {
   buildTrackSpeedReserveProfile,
+  solve400mRacePaceSecsPerKm,
   solveTrackPaceSecsPerKmForPctVdot,
 } from './trackSpeedReserveEngine.ts';
 import {
@@ -131,6 +132,11 @@ const INTENSITY_PACE_MULTIPLIERS: Record<
     paceMultiplierVsThreshold: 0.735,
     label: '800m Race / Fast Rep Pace',
     pctFtpSyntax: '130%-140% Pace',
+  },
+  RACE_400M: {
+    paceMultiplierVsThreshold: 0.625,
+    label: '400m Race / Speed Reserve',
+    pctFtpSyntax: '148%-160% Pace',
   },
 };
 
@@ -315,6 +321,9 @@ export function computeTeamVdotPacingPods(params: {
           ).toFixed(1)
         );
         break;
+      case 'RACE_400M':
+        targetPaceSecsPerKm = solve400mRacePaceSecsPerKm(podProfile);
+        break;
       default:
         targetPaceSecsPerKm = podProfile.zones.CV.paceSecsPerKm;
     }
@@ -339,7 +348,9 @@ export function computeTeamVdotPacingPods(params: {
             ? 'CV'
             : intensity === 'INTERVAL_VO2' || intensity === 'RACE_3200M'
               ? 'I'
-              : 'R';
+              : intensity === 'RACE_800M' || intensity === 'RACE_400M'
+                ? 'FR'
+                : 'R';
 
     const environmentAdjustment = environment
       ? computeTrackEnvironmentSplitAdjustment({
@@ -463,6 +474,126 @@ export function formatPrintablePodSplitSheet(
         1
       )} | 1600m ${formatTrackMark(pod.splitsSecs.split1600m, 1)}`
     );
+  }
+  return lines.join('\n');
+}
+
+export interface MultiSetPodSetInput {
+  repCount: number;
+  repDistanceMeters: TrackRepDistanceMeters;
+  intensity: VdotPodIntensity;
+  restLabel: string;
+  setRestAfterSecs?: number;
+}
+
+export interface MultiSetPodPreview {
+  podId: string;
+  podName: string;
+  centerVdot: number;
+  athletes: VdotPodAthleteMember[];
+  basePod: VdotTrainingPod;
+  setSplits: Array<{
+    setIndex: number;
+    summaryLabel: string;
+    targetSplitSecs: number;
+    formattedSplit: string;
+    restLabel: string;
+    setRestAfterSecs?: number;
+  }>;
+}
+
+/**
+ * Computes per-pod split tables across arbitrary multi-set prescriptions
+ * (e.g. `2x200m @ 800m + 4x800m @ Mile + 2x200m @ 400m`) using each pod's VDOT cluster.
+ */
+export function computeMultiSetPodSplits(params: {
+  roster: VdotPodRosterInput[];
+  sets: MultiSetPodSetInput[];
+  maxPods?: number;
+  environment?: TrackEnvironmentConditions;
+}): MultiSetPodPreview[] {
+  const { roster, sets, maxPods = 5, environment } = params;
+  if (!roster || roster.length === 0 || !sets || sets.length === 0) return [];
+
+  const firstPods = computeTeamVdotPacingPods({
+    roster,
+    intensity: sets[0].intensity,
+    repCount: sets[0].repCount,
+    repDistanceMeters: sets[0].repDistanceMeters,
+    recoveryLabel: sets[0].restLabel,
+    maxPods,
+    environment,
+  });
+
+  const perSetPodLists = sets.map((setSpec, idx) =>
+    idx === 0
+      ? firstPods
+      : computeTeamVdotPacingPods({
+          roster,
+          intensity: setSpec.intensity,
+          repCount: setSpec.repCount,
+          repDistanceMeters: setSpec.repDistanceMeters,
+          recoveryLabel: setSpec.restLabel,
+          maxPods,
+          environment,
+        })
+  );
+
+  return firstPods.map((basePod, podIdx) => {
+    const setSplits = sets.map((setSpec, setIdx) => {
+      const podsForSet = perSetPodLists[setIdx];
+      const matched =
+        podsForSet.find((p) => p.podId === basePod.podId) || podsForSet[podIdx] || basePod;
+      const splitSecs =
+        matched.targetRepSplitSecs ??
+        Number(((matched.targetPaceSecsPerKm / 1000) * setSpec.repDistanceMeters).toFixed(1));
+      const shortIntensity = INTENSITY_PACE_MULTIPLIERS[setSpec.intensity]?.label || setSpec.intensity;
+      return {
+        setIndex: setIdx,
+        summaryLabel: `${setSpec.repCount}×${setSpec.repDistanceMeters}m (${shortIntensity})`,
+        targetSplitSecs: splitSecs,
+        formattedSplit: formatTrackMark(splitSecs, 1),
+        restLabel: setSpec.restLabel,
+        setRestAfterSecs: setSpec.setRestAfterSecs,
+      };
+    });
+
+    return {
+      podId: basePod.podId,
+      podName: basePod.podName,
+      centerVdot: basePod.centerVdot,
+      athletes: basePod.athletes,
+      basePod,
+      setSplits,
+    };
+  });
+}
+
+/**
+ * Formats a printable multi-set trackside clipboard sheet across pace pods.
+ */
+export function formatMultiSetPrintableSplitSheet(
+  title: string,
+  dateStr: string,
+  warmupLabel: string | null,
+  setsSummary: string,
+  cooldownLabel: string | null,
+  pods: MultiSetPodPreview[]
+): string {
+  const header = `THRESH TRACKSIDE SHEET — ${title.toUpperCase()} (${dateStr})`;
+  const divider = '='.repeat(Math.min(76, header.length));
+  const lines = [header, divider];
+  if (warmupLabel) lines.push(`Warm-up:   ${warmupLabel}`);
+  lines.push(`Workout:   ${setsSummary}`);
+  if (cooldownLabel) lines.push(`Cooldown:  ${cooldownLabel}`);
+
+  for (const pod of pods) {
+    lines.push(`\n[${pod.podName}] VDOT ~${pod.centerVdot}`);
+    lines.push(`  Athletes: ${pod.athletes.map((a) => a.name).join(', ')}`);
+    for (const s of pod.setSplits) {
+      const restSuffix = s.setRestAfterSecs ? ` (+${Math.round(s.setRestAfterSecs / 60)}m set rest)` : '';
+      lines.push(`  - ${s.summaryLabel}: ${s.formattedSplit}/rep · rest ${s.restLabel}${restSuffix}`);
+    }
   }
   return lines.join('\n');
 }
