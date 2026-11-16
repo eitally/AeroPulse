@@ -409,14 +409,20 @@ const TRUSTED_PROD_CORS_ORIGINS = new Set<string>([
   'https://aeropulse-eta.vercel.app',
 ]);
 
+const VERCEL_PREVIEW_CORS_REGEX =
+  /^https:\/\/(?:thresh|aeropulse)(?:-[a-z0-9-]+)?\.vercel\.app$/i;
+
 /**
  * Validates whether a request Origin is allowed for cross-origin credentialed requests
- * (for example, during legacy domain -> new domain 307 migration).
+ * (for example, during legacy domain -> new domain 307 migration or Vercel preview launches).
  */
 export function resolveTrustedCorsOrigin(rawOrigin?: string): string | null {
   const safeOrigin = resolveSafeOrigin(rawOrigin);
   if (!safeOrigin) return null;
   if (TRUSTED_PROD_CORS_ORIGINS.has(safeOrigin)) {
+    return safeOrigin;
+  }
+  if (VERCEL_PREVIEW_CORS_REGEX.test(safeOrigin)) {
     return safeOrigin;
   }
   const appOrigin = resolveSafeOrigin(process.env.APP_URL || '');

@@ -712,8 +712,10 @@ export function useTelemetryConnectors({
       const cid = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_id'));
       const csec = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_secret'));
       if (sessionTok) launchHeaders['x-session-token'] = sessionTok;
-      if (cid) launchHeaders['x-strava-client-id'] = cid;
-      if (csec) launchHeaders['x-strava-client-secret'] = csec;
+      if (cid && csec) {
+        launchHeaders['x-strava-client-id'] = cid;
+        launchHeaders['x-strava-client-secret'] = csec;
+      }
     } catch {
       // ignore
     }

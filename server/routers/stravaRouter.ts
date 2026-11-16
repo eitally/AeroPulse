@@ -58,18 +58,30 @@ export function getEffectiveStravaClientConfig(req?: Request) {
   const headerRefreshToken = activeReq?.headers['x-strava-refresh-token'] as string | undefined;
   const headerAccessToken = activeReq?.headers['x-strava-access-token'] as string | undefined;
   const headerExpiresAt = Number(activeReq?.headers['x-strava-expires-at'] || 0);
-  const clientId = (
-    headerClientId ||
-    runtimeStore.stravaClientId ||
-    process.env.STRAVA_CLIENT_ID ||
-    ''
-  ).trim();
-  const clientSecret = (
-    headerClientSecret ||
-    runtimeStore.stravaClientSecret ||
-    process.env.STRAVA_CLIENT_SECRET ||
-    ''
-  ).trim();
+
+  const envClientId = (process.env.STRAVA_CLIENT_ID || '').trim();
+  const envClientSecret = (process.env.STRAVA_CLIENT_SECRET || '').trim();
+  const cleanHeaderId = (headerClientId || '').trim();
+  const cleanHeaderSecret = (headerClientSecret || '').trim();
+  const cleanStoreId = (runtimeStore.stravaClientId || '').trim();
+  const cleanStoreSecret = (runtimeStore.stravaClientSecret || '').trim();
+  const hasByoHeaderPair = Boolean(cleanHeaderId && cleanHeaderSecret);
+  const hasByoStorePair = Boolean(
+    cleanStoreId && cleanStoreSecret && !isServerOwnedSecret(cleanStoreSecret)
+  );
+
+  // Only allow user-supplied clientId overrides when paired with a BYO clientSecret;
+  // prevents a stale localStorage aeropulse_strava_client_id from overriding server STRAVA_CLIENT_ID.
+  const clientId = hasByoHeaderPair
+    ? cleanHeaderId
+    : hasByoStorePair
+      ? cleanStoreId
+      : envClientId || cleanHeaderId || cleanStoreId;
+  const clientSecret = hasByoHeaderPair
+    ? cleanHeaderSecret
+    : hasByoStorePair
+      ? cleanStoreSecret
+      : envClientSecret || cleanHeaderSecret || cleanStoreSecret;
   if (activeReq && !isAuthenticatedRequest(activeReq)) {
     return {
       clientId,
@@ -477,6 +489,13 @@ function buildStravaCallbackScript(opts: {
         }
       }
     } catch (e) {}
+    ${
+      opts.redirectOnNonPopup
+        ? `if (hasOpener && payload.openerOrigin === 'https://aeropulse-eta.vercel.app' && window.location.origin !== 'https://aeropulse-eta.vercel.app') {
+      try { window.opener.location.href = window.location.origin + (payload.returnUrl || '/'); } catch (e) {}
+    }`
+        : ''
+    }
     try {
       var bc = new BroadcastChannel('aeropulse_oauth');
       bc.postMessage(payload);

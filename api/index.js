@@ -275,10 +275,14 @@ var TRUSTED_PROD_CORS_ORIGINS = /* @__PURE__ */ new Set([
   "https://thresh-dev.vercel.app",
   "https://aeropulse-eta.vercel.app"
 ]);
+var VERCEL_PREVIEW_CORS_REGEX = /^https:\/\/(?:thresh|aeropulse)(?:-[a-z0-9-]+)?\.vercel\.app$/i;
 function resolveTrustedCorsOrigin(rawOrigin) {
   const safeOrigin = resolveSafeOrigin(rawOrigin);
   if (!safeOrigin) return null;
   if (TRUSTED_PROD_CORS_ORIGINS.has(safeOrigin)) {
+    return safeOrigin;
+  }
+  if (VERCEL_PREVIEW_CORS_REGEX.test(safeOrigin)) {
     return safeOrigin;
   }
   const appOrigin = resolveSafeOrigin(process.env.APP_URL || "");
@@ -8631,6 +8635,11 @@ function renderThreshOAuthHtml(opts) {
   </body>
 </html>`;
 }
+var CANONICAL_PROD_ORIGIN = "https://thresh-dev.vercel.app";
+var LEGACY_PROD_ORIGIN = "https://aeropulse-eta.vercel.app";
+function canonicalizeOrigin(origin) {
+  return origin === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
+}
 function resolveStravaCallbackUrl(req) {
   const explicitRedirect = (process.env.STRAVA_REDIRECT_URI || "").trim();
   if (explicitRedirect) {
@@ -8644,18 +8653,19 @@ function resolveStravaCallbackUrl(req) {
   }
   const safeOrigin = resolveSafeOrigin(req.query.origin);
   if (safeOrigin) {
-    return `${safeOrigin}/auth/strava/callback`;
+    return `${canonicalizeOrigin(safeOrigin)}/auth/strava/callback`;
   }
   const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
   if (appUrl && !appUrl.includes("MY_APP_URL")) {
-    return `${appUrl}/auth/strava/callback`;
+    return `${canonicalizeOrigin(appUrl)}/auth/strava/callback`;
   }
   const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
   const proto = rawProto === "https" ? "https" : "http";
   const rawHost = String(
     req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
   ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  return `${proto}://${rawHost || "localhost:3000"}/auth/strava/callback`;
+  const canonicalHost = rawHost === "aeropulse-eta.vercel.app" ? "thresh-dev.vercel.app" : rawHost;
+  return `${proto}://${canonicalHost || "localhost:3000"}/auth/strava/callback`;
 }
 var validatedStravaRedirectCache = /* @__PURE__ */ new Map();
 async function probeStravaRedirectUri(clientId, redirectUri) {
@@ -8707,7 +8717,7 @@ async function resolveValidatedStravaCallbackUrl(req, clientId) {
   if (primaryProbe === "valid") {
     validatedStravaRedirectCache.set(cacheKey, {
       redirectUri: primaryUri,
-      expiresAt: Date.now() + 6e4
+      expiresAt: Date.now() + 15e3
     });
     return primaryUri;
   }
@@ -8715,32 +8725,31 @@ async function resolveValidatedStravaCallbackUrl(req, clientId) {
     return primaryUri;
   }
   const fallbackCandidates = [];
+  const pushCandidate = (candidate) => {
+    if (!candidate) return;
+    if (candidate !== primaryUri && !fallbackCandidates.includes(candidate)) {
+      fallbackCandidates.push(candidate);
+    }
+  };
   const envFallback = (process.env.STRAVA_FALLBACK_REDIRECT_URI || "").trim();
   if (envFallback) {
     try {
       const parsedFallback = new URL(envFallback);
       if (parsedFallback.protocol === "https:") {
-        const cleanFallback = parsedFallback.toString();
-        if (cleanFallback !== primaryUri) {
-          fallbackCandidates.push(cleanFallback);
-        }
+        pushCandidate(parsedFallback.toString());
       }
     } catch {
     }
   }
-  if (primaryUrl.hostname === "thresh-dev.vercel.app") {
-    const legacyUri = "https://aeropulse-eta.vercel.app/auth/strava/callback";
-    if (legacyUri !== primaryUri && !fallbackCandidates.includes(legacyUri)) {
-      fallbackCandidates.push(legacyUri);
-    }
+  const appOrigin = resolveSafeOrigin(process.env.APP_URL || "");
+  if (appOrigin && appOrigin.startsWith("https://") && !appOrigin.includes("MY_APP_URL")) {
+    pushCandidate(`${appOrigin}/auth/strava/callback`);
   }
+  pushCandidate(`${CANONICAL_PROD_ORIGIN}/auth/strava/callback`);
+  pushCandidate(`${LEGACY_PROD_ORIGIN}/auth/strava/callback`);
   for (const candidate of fallbackCandidates) {
     const candidateProbe = await probeStravaRedirectUri(clientId, candidate);
     if (candidateProbe === "valid") {
-      validatedStravaRedirectCache.set(cacheKey, {
-        redirectUri: candidate,
-        expiresAt: Date.now() + 6e4
-      });
       return candidate;
     }
   }
@@ -9635,8 +9644,18 @@ function getEffectiveStravaClientConfig(req) {
   const headerRefreshToken = activeReq?.headers["x-strava-refresh-token"];
   const headerAccessToken = activeReq?.headers["x-strava-access-token"];
   const headerExpiresAt = Number(activeReq?.headers["x-strava-expires-at"] || 0);
-  const clientId = (headerClientId || runtimeStore.stravaClientId || process.env.STRAVA_CLIENT_ID || "").trim();
-  const clientSecret = (headerClientSecret || runtimeStore.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || "").trim();
+  const envClientId = (process.env.STRAVA_CLIENT_ID || "").trim();
+  const envClientSecret = (process.env.STRAVA_CLIENT_SECRET || "").trim();
+  const cleanHeaderId = (headerClientId || "").trim();
+  const cleanHeaderSecret = (headerClientSecret || "").trim();
+  const cleanStoreId = (runtimeStore.stravaClientId || "").trim();
+  const cleanStoreSecret = (runtimeStore.stravaClientSecret || "").trim();
+  const hasByoHeaderPair = Boolean(cleanHeaderId && cleanHeaderSecret);
+  const hasByoStorePair = Boolean(
+    cleanStoreId && cleanStoreSecret && !isServerOwnedSecret(cleanStoreSecret)
+  );
+  const clientId = hasByoHeaderPair ? cleanHeaderId : hasByoStorePair ? cleanStoreId : envClientId || cleanHeaderId || cleanStoreId;
+  const clientSecret = hasByoHeaderPair ? cleanHeaderSecret : hasByoStorePair ? cleanStoreSecret : envClientSecret || cleanHeaderSecret || cleanStoreSecret;
   if (activeReq && !isAuthenticatedRequest(activeReq)) {
     return {
       clientId,
@@ -9918,6 +9937,9 @@ function buildStravaCallbackScript(opts) {
         }
       }
     } catch (e) {}
+    ${opts.redirectOnNonPopup ? `if (hasOpener && payload.openerOrigin === 'https://aeropulse-eta.vercel.app' && window.location.origin !== 'https://aeropulse-eta.vercel.app') {
+      try { window.opener.location.href = window.location.origin + (payload.returnUrl || '/'); } catch (e) {}
+    }` : ""}
     try {
       var bc = new BroadcastChannel('aeropulse_oauth');
       bc.postMessage(payload);
