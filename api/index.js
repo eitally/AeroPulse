@@ -14,7 +14,7 @@ var SESSION_SECRET_FILE = "/tmp/thresh-session-secret.key";
 var SESSION_COOKIE_NAME = "thresh_session";
 var LEGACY_SESSION_COOKIE_NAME = "aeropulse_session";
 var OAUTH_STATE_COOKIE_NAME = "thresh_oauth_state";
-var SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1e3;
+var SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1e3;
 var OAUTH_STATE_TTL_MS = 15 * 60 * 1e3;
 var cachedSecret = null;
 function getSessionSecret() {
@@ -593,7 +593,7 @@ async function saveTenantVaultAsync(tenantId, data) {
 }
 var VAULT_COOKIE_NAME = "thresh_vault";
 var USER_VAULT_COOKIE_NAME = "thresh_user";
-var VAULT_COOKIE_TTL_SECS = 30 * 24 * 60 * 60;
+var VAULT_COOKIE_TTL_SECS = 365 * 24 * 60 * 60;
 function buildEncryptedVaultCookieHeader(payload, isSecure) {
   const envelope = encryptJsonForVault(payload);
   const encoded = encodeURIComponent(envelope);
@@ -1768,6 +1768,7 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
 // server/sessionContext.ts
 var requestContext = new AsyncLocalStorage();
 var explicitScopeKeyByReq = /* @__PURE__ */ new WeakMap();
+var responseByReq = /* @__PURE__ */ new WeakMap();
 var SEGMENTS_BY_ACTIVITY_CACHE_FILE = "/tmp/thresh-segments-by-activity.json";
 var ROUTES_BY_ACTIVITY_CACHE_FILE = "/tmp/thresh-routes-by-activity.json";
 var STRAVA_KUDOS_CACHE_FILE = "/tmp/thresh-strava-kudos.json";
@@ -1781,7 +1782,7 @@ function hasExplicitCredentialHeader(req) {
 function isAuthenticatedRequest(req) {
   const activeReq = req ?? requestContext.getStore();
   if (!activeReq) return false;
-  return hasValidSessionToken(activeReq) || hasExplicitCredentialHeader(activeReq);
+  return hasValidSessionToken(activeReq) || hasExplicitCredentialHeader(activeReq) || Boolean(readCompactVaultFromCookie(activeReq)?.sid);
 }
 function bindRequestScopeKey(req, sid) {
   const scopeKey = sid.slice(0, 24);
@@ -1964,7 +1965,10 @@ function getScopedRuntimeStore(req) {
       }
     }
     const cookieVault = readCompactVaultFromCookie(activeReq);
-    if (cookieVault && cookieVault.sid?.slice(0, 24) === scopeKey) {
+    const shouldHydrateCookieVault = Boolean(
+      cookieVault && (cookieVault.sid?.slice(0, 24) === scopeKey || !loaded.stravaRefreshToken && !loaded.stravaAccessToken && Boolean(cookieVault.stravaRefreshToken || cookieVault.stravaAccessToken))
+    );
+    if (cookieVault && shouldHydrateCookieVault) {
       loaded = {
         ...cookieVault,
         ...loaded,
@@ -1995,6 +1999,17 @@ function getScopedRuntimeStore(req) {
       };
     }
     const hydrated = createDefaultRuntimeSessionStore(loaded);
+    if (activeReq && !hydrated.stravaSyncPolicy && (hydrated.stravaRefreshToken || hydrated.stravaAccessToken)) {
+      const headerWindow = String(activeReq.headers["x-strava-sync-window"] || "").trim();
+      if (headerWindow === "90d" || headerWindow === "180d" || headerWindow === "365d" || headerWindow === "all" || headerWindow === "none") {
+        hydrated.stravaSyncPolicy = {
+          window: headerWindow,
+          importProfileAndGear: activeReq.headers["x-strava-import-gear"] !== "0",
+          confirmedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          grantedScope: hydrated.stravaGrantedScope || void 0
+        };
+      }
+    }
     scopedStoresInMemory.set(scopeKey, hydrated);
     if (activeReq) {
       let map = hydratedReqScopeMap.get(activeReq);
@@ -2025,9 +2040,37 @@ var runtimeStore = new Proxy({}, {
     return true;
   }
 });
+function mergeRuntimeStoreCredentials(target, source) {
+  const srcExp = source.stravaExpiresAt || 0;
+  const dstExp = target.stravaExpiresAt || 0;
+  if ((source.stravaRefreshToken || source.stravaAccessToken) && (!target.stravaRefreshToken || srcExp >= dstExp)) {
+    if (source.stravaAccessToken) target.stravaAccessToken = source.stravaAccessToken;
+    if (source.stravaRefreshToken) target.stravaRefreshToken = source.stravaRefreshToken;
+    if (srcExp > 0) target.stravaExpiresAt = srcExp;
+  }
+  if (!target.stravaClientId && source.stravaClientId) target.stravaClientId = source.stravaClientId;
+  if (!target.stravaClientSecret && source.stravaClientSecret) target.stravaClientSecret = source.stravaClientSecret;
+  if (!target.stravaAthleteId && source.stravaAthleteId) target.stravaAthleteId = source.stravaAthleteId;
+  if (!target.stravaAthleteName && source.stravaAthleteName) target.stravaAthleteName = source.stravaAthleteName;
+  if (!target.stravaMeasurementPreference && source.stravaMeasurementPreference) {
+    target.stravaMeasurementPreference = source.stravaMeasurementPreference;
+  }
+  if (!target.stravaGrantedScope && source.stravaGrantedScope) target.stravaGrantedScope = source.stravaGrantedScope;
+  if (!target.stravaSyncPolicy && source.stravaSyncPolicy) target.stravaSyncPolicy = source.stravaSyncPolicy;
+  if (!target.intervalsApiKey && source.intervalsApiKey) target.intervalsApiKey = source.intervalsApiKey;
+  if (!target.intervalsAccessToken && source.intervalsAccessToken) target.intervalsAccessToken = source.intervalsAccessToken;
+  if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
+  if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
+  if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
+  if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
+  if ((!target.gearItems || target.gearItems.length === 0) && source.gearItems?.length) target.gearItems = source.gearItems;
+  if (!target.athleteProfile && source.athleteProfile) target.athleteProfile = source.athleteProfile;
+  if (!target.geminiApiKey && source.geminiApiKey) target.geminiApiKey = source.geminiApiKey;
+}
 function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
-  if (!res || res.headersSent) return;
   const activeReq = req ?? requestContext.getStore();
+  const activeRes = res ?? (activeReq ? responseByReq.get(activeReq) ?? activeReq.res : void 0);
+  if (!activeRes || activeRes.headersSent) return;
   const isSecure = Boolean(
     activeReq && (activeReq.secure || String(activeReq.headers["x-forwarded-proto"] || "").toLowerCase() === "https")
   );
@@ -2061,24 +2104,54 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
     polarScope: store.polarScope || void 0,
     garminPersonalApiKey: garminSess?.personalApiKey || void 0
   };
-  const header = buildEncryptedVaultCookieHeader(compact, isSecure);
+  let header = buildEncryptedVaultCookieHeader(compact, isSecure);
+  if (!header) {
+    header = buildEncryptedVaultCookieHeader(
+      {
+        sid: scopeKey,
+        stravaAccessToken: compact.stravaAccessToken,
+        stravaRefreshToken: compact.stravaRefreshToken,
+        stravaExpiresAt: compact.stravaExpiresAt,
+        stravaAthleteId: compact.stravaAthleteId,
+        stravaClientId: compact.stravaClientId,
+        stravaMeasurementPreference: compact.stravaMeasurementPreference,
+        stravaGrantedScope: compact.stravaGrantedScope,
+        stravaSyncPolicy: compact.stravaSyncPolicy,
+        intervalsApiKey: compact.intervalsApiKey,
+        intervalsAccessToken: compact.intervalsAccessToken,
+        intervalsAthleteId: compact.intervalsAthleteId,
+        wahooAccessToken: compact.wahooAccessToken,
+        wahooRefreshToken: compact.wahooRefreshToken,
+        wahooExpiresAt: compact.wahooExpiresAt,
+        polarAccessToken: compact.polarAccessToken,
+        garminPersonalApiKey: compact.garminPersonalApiKey
+      },
+      isSecure
+    );
+  }
   if (header) {
-    appendSetCookieHeader(res, header);
+    appendSetCookieHeader(activeRes, header);
   }
 }
 function saveSessionCache(req, res) {
-  const scopeKey = resolveSessionScopeKey(req);
+  const activeReq = req ?? requestContext.getStore();
+  const scopeKey = resolveSessionScopeKey(activeReq);
   if (!scopeKey) return;
-  const store = getScopedRuntimeStore(req);
+  const store = getScopedRuntimeStore(activeReq);
   scopedStoresInMemory.set(scopeKey, store);
   saveTenantVaultSync(`session_${scopeKey}`, store);
-  emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store);
+  emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
 }
 async function saveSessionCacheAsync(req, res, explicitSid) {
   const activeReq = req ?? requestContext.getStore();
-  const scopeKey = explicitSid ? bindRequestScopeKey(activeReq, explicitSid) : resolveSessionScopeKey(activeReq);
+  const prevScopeKey = resolveSessionScopeKey(activeReq);
+  const prevStore = prevScopeKey ? getScopedRuntimeStore(activeReq) : null;
+  const scopeKey = explicitSid ? bindRequestScopeKey(activeReq, explicitSid) : prevScopeKey;
   if (!scopeKey) return;
   const store = getScopedRuntimeStore(activeReq);
+  if (prevStore && prevScopeKey && prevScopeKey !== scopeKey) {
+    mergeRuntimeStoreCredentials(store, prevStore);
+  }
   scopedStoresInMemory.set(scopeKey, store);
   await saveTenantVaultAsync(`session_${scopeKey}`, store);
   emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
@@ -8695,7 +8768,7 @@ import express4 from "express";
 import crypto9 from "crypto";
 
 // server/stravaSyncService.ts
-async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, explicitWindow) {
+async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, explicitWindow, clientAfterEpoch = 0) {
   let activeAccessToken = await ensureValidStravaAccessToken(req, false);
   if (!activeAccessToken) {
     throw new Error("Strava is not connected via OAuth yet.");
@@ -8731,7 +8804,8 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
   }
   const windowDays = effectiveWindow === "90d" ? 90 : effectiveWindow === "180d" ? 180 : effectiveWindow === "365d" ? 365 : 0;
   const afterEpoch = windowDays > 0 ? Math.floor((Date.now() - windowDays * 86400 * 1e3) / 1e3) : 0;
-  const afterQuery = afterEpoch > 0 ? `&after=${afterEpoch}` : "";
+  const effectiveAfterEpoch = !forceFull && deltaOnly && clientAfterEpoch > 0 ? Math.max(afterEpoch, Math.floor(clientAfterEpoch)) : afterEpoch;
+  const afterQuery = effectiveAfterEpoch > 0 ? `&after=${effectiveAfterEpoch}` : "";
   let headers = { Authorization: `Bearer ${activeAccessToken}` };
   let rawActivitiesMap = /* @__PURE__ */ new Map();
   let scopedArchiveFile = "";
@@ -8793,7 +8867,7 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
       for (const item of firstPageItems) {
         if (item && item.id) rawActivitiesMap.set(String(item.id), item);
       }
-      const shouldPaginateAll = existingCachedCount <= 200 || !deltaOnly || forceFull;
+      const shouldPaginateAll = forceFull || !deltaOnly && existingCachedCount <= 200;
       const isStravaRateLimited = (resp) => {
         const usage = resp.headers.get("x-ratelimit-usage") || "";
         const shortWindow = Number(usage.split(",")[0] || 0);
@@ -9280,7 +9354,7 @@ async function ensureValidStravaAccessToken(req, forceRefresh = false) {
               stravaIdentityByToken.set(activeAccessToken, entry);
             }
           }
-          saveSessionCache();
+          await saveSessionCacheAsync(req);
           refreshedSuccessfully = true;
           break;
         }
@@ -9344,7 +9418,7 @@ async function resolveStravaAthleteIdentity(req) {
       if (measurementPreference && !runtimeStore.stravaMeasurementPreference) {
         runtimeStore.stravaMeasurementPreference = measurementPreference;
       }
-      saveSessionCache();
+      await saveSessionCacheAsync(req);
     }
     return entry;
   } catch {
@@ -9691,9 +9765,12 @@ var stravaCallbackHandler = async (req, res) => {
                 if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
                 if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
                 localStorage.removeItem('aeropulse_logged_out');
-                if (payload.hasExistingSyncPolicy) {
+                var sameAthlete = !prevAthleteId || !payload.tokens.athleteId || String(payload.tokens.athleteId) === prevAthleteId;
+                var hasLocalSyncPolicy = false;
+                try { hasLocalSyncPolicy = Boolean(localStorage.getItem('aeropulse_strava_sync_policy')); } catch (e) {}
+                if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
                   localStorage.setItem('aeropulse_auth_gate_passed', '1');
-                } else {
+                } else if (!sameAthlete) {
                   localStorage.removeItem('aeropulse_auth_gate_passed');
                 }
               } else {
@@ -10155,7 +10232,15 @@ stravaRouter.get("/api/strava/sync", async (req, res) => {
     const forceFull = req.query.full === "true";
     const deltaOnly = req.query.deltaOnly === "true";
     const explicitWindow = typeof req.query.window === "string" ? req.query.window.trim() : void 0;
-    const data = await syncStravaAllHistory(req, forceFull, deltaOnly, explicitWindow);
+    const afterEpochParam = Number(req.query.afterEpoch || 0);
+    const data = await syncStravaAllHistory(
+      req,
+      forceFull,
+      deltaOnly,
+      explicitWindow,
+      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0
+    );
+    await saveSessionCacheAsync(req, res);
     res.json(data);
   } catch (error) {
     res.status(401).json({
@@ -10258,6 +10343,7 @@ stravaRouter.get("/api/strava/activities/:id/streams", async (req, res) => {
         }));
       }
     }
+    await saveSessionCacheAsync(req, res);
     res.json({
       streams: {
         time: downsample(raw?.time?.data) || [],
@@ -10270,7 +10356,8 @@ stravaRouter.get("/api/strava/activities/:id/streams", async (req, res) => {
         altitude: downsample(raw?.altitude?.data)
       },
       segmentEfforts,
-      kudoers
+      kudoers,
+      stravaTokens: getStravaTokenRotationPayload(req)
     });
   } catch (error) {
     res.status(500).json({
@@ -10337,11 +10424,13 @@ stravaRouter.get("/api/strava/activities/:id/kudos", async (req, res) => {
       }
     }
     const entry = kudosCache[activityId] || kudosCache[stravaId] || {};
+    await saveSessionCacheAsync(req, res);
     res.json({
       kudosCount: entry.kudosCount || 0,
       hasKudoed: Boolean(entry.hasKudoed),
       kudoers: entry.kudoers || [],
-      comments: entry.comments || []
+      comments: entry.comments || [],
+      stravaTokens: getStravaTokenRotationPayload(req)
     });
   } catch (error) {
     res.status(500).json({
@@ -13489,11 +13578,13 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   const isPolarConnected = Boolean(polarAccessToken);
   let sessionToken;
   if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)) {
-    const canonicalSid = resolvedStravaAthleteId ? deriveStravaSessionSid(resolvedStravaAthleteId) : void 0;
+    const existingClaims = getVerifiedSessionClaims(req);
+    const keepUserSub = Boolean(existingClaims?.sub?.startsWith("usr_"));
+    const canonicalSid = keepUserSub ? existingClaims.sid : resolvedStravaAthleteId ? deriveStravaSessionSid(resolvedStravaAthleteId) : existingClaims?.sid;
     sessionToken = setSessionCookie(
       req,
       res,
-      resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || "athlete",
+      keepUserSub ? existingClaims.sub : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || "athlete",
       canonicalSid
     );
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -14108,7 +14199,8 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 // server/apiRouter.ts
 var apiRouter = express7.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use((req, _res, next) => {
+apiRouter.use((req, res, next) => {
+  responseByReq.set(req, res);
   requestContext.run(req, () => {
     const scopeKey = resolveSessionScopeKey(req);
     if (scopeKey && process.env.DATABASE_URL?.trim()) {

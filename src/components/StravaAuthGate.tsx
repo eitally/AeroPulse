@@ -43,6 +43,10 @@ import {
   registerPasskey,
 } from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
+import {
+  getSavedIntervalsHeaders,
+  saveStravaSyncPolicyToStorage,
+} from '../utils/telemetryStorage';
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
@@ -750,6 +754,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           : '';
       const authHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
+        ...getSavedIntervalsHeaders(),
         ...(sessionTokenHeader ? { 'x-session-token': sessionTokenHeader } : {}),
       };
 
@@ -770,6 +775,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           }
         }
       }
+      saveStravaSyncPolicyToStorage(savedPolicy);
       setConfirmedPolicy(savedPolicy);
 
       // Youth Protection Gate (COPPA & Scholastic Safe-Sport)

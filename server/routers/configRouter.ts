@@ -16,6 +16,7 @@ import {
 import {
   isAuthenticatedRequest,
   getActiveGarminSession,
+  getVerifiedSessionClaims,
   resolveSessionScopeKey,
   saveSessionCache,
   saveSessionCacheAsync,
@@ -185,13 +186,19 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
 
   let sessionToken: string | undefined;
   if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)) {
-    const canonicalSid = resolvedStravaAthleteId
-      ? deriveStravaSessionSid(resolvedStravaAthleteId)
-      : undefined;
+    const existingClaims = getVerifiedSessionClaims(req);
+    const keepUserSub = Boolean(existingClaims?.sub?.startsWith('usr_'));
+    const canonicalSid = keepUserSub
+      ? existingClaims!.sid
+      : resolvedStravaAthleteId
+        ? deriveStravaSessionSid(resolvedStravaAthleteId)
+        : existingClaims?.sid;
     sessionToken = setSessionCookie(
       req,
       res,
-      resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || 'athlete',
+      keepUserSub
+        ? existingClaims!.sub
+        : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || 'athlete',
       canonicalSid
     );
     await saveSessionCacheAsync(req, res, canonicalSid);

@@ -14,12 +14,6 @@
           });
         }
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-          var refreshingSw = false;
-          navigator.serviceWorker.addEventListener('controllerchange', function () {
-            if (refreshingSw) return;
-            refreshingSw = true;
-            window.location.reload();
-          });
           navigator.serviceWorker.getRegistrations().then(function (regs) {
             regs.forEach(function (reg) {
               reg.update().catch(function () {});

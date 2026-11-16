@@ -285,7 +285,7 @@ export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promis
 
 export const VAULT_COOKIE_NAME = 'thresh_vault';
 export const USER_VAULT_COOKIE_NAME = 'thresh_user';
-const VAULT_COOKIE_TTL_SECS = 30 * 24 * 60 * 60; // 30 days
+const VAULT_COOKIE_TTL_SECS = 365 * 24 * 60 * 60; // 365 days (sliding across deploys)
 
 export interface CompactCookieVaultPayload {
   sid: string;

@@ -5,7 +5,10 @@ import {
   getActivityStreamFromDexie,
   saveActivityStreamToDexie,
 } from '../db/workoutStore';
-import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
+import {
+  getSavedIntervalsHeaders,
+  saveRotatedStravaTokensToStorage,
+} from '../utils/telemetryStorage';
 
 interface UseRouteStreamsParams {
   activitiesRef: React.MutableRefObject<UnifiedActivity[]>;
@@ -34,6 +37,7 @@ export function useRouteStreams({
     try {
       const resp = await fetch('/api/segments/scan-more', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       });
       if (resp.ok) {
@@ -82,6 +86,7 @@ export function useRouteStreams({
 
       const resp = await fetch('/api/activities/hydrate-routes', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
         body: JSON.stringify({ activityIds: uncachedOutdoorIds }),
       });
@@ -133,6 +138,7 @@ export function useRouteStreams({
       try {
         const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
           body: JSON.stringify({ action: 'toggle_kudos' }),
         });
@@ -188,6 +194,7 @@ export function useRouteStreams({
       try {
         const resp = await fetch(`/api/activities/${encodeURIComponent(key)}/kudos`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
           body: JSON.stringify({
             action: 'add_comment',
@@ -350,10 +357,13 @@ export function useRouteStreams({
         if (connectionStatus.stravaConnected && activity.stravaId) {
           const resp = await fetch(
             `/api/strava/activities/${encodeURIComponent(activity.stravaId)}/streams`,
-            { headers }
+            { credentials: 'include', headers }
           );
           if (resp.ok) {
             const payload = await resp.json();
+            if (payload.stravaTokens) {
+              saveRotatedStravaTokensToStorage(payload.stravaTokens);
+            }
             const streams = payload.streams || payload;
             const segmentEfforts = Array.isArray(payload.segmentEfforts)
               ? payload.segmentEfforts

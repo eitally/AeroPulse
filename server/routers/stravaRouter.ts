@@ -216,7 +216,7 @@ export async function ensureValidStravaAccessToken(req?: Request, forceRefresh =
               stravaIdentityByToken.set(activeAccessToken, entry);
             }
           }
-          saveSessionCache();
+          await saveSessionCacheAsync(req);
           refreshedSuccessfully = true;
           break;
         }
@@ -290,7 +290,7 @@ export async function resolveStravaAthleteIdentity(req?: Request): Promise<Cache
       if (measurementPreference && !runtimeStore.stravaMeasurementPreference) {
         runtimeStore.stravaMeasurementPreference = measurementPreference;
       }
-      saveSessionCache();
+      await saveSessionCacheAsync(req);
     }
     return entry;
   } catch {
@@ -782,9 +782,12 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
                 if (payload.tokens.measurementPreference) localStorage.setItem('aeropulse_strava_measurement_pref', payload.tokens.measurementPreference);
                 if (payload.tokens.grantedScope) localStorage.setItem('aeropulse_strava_granted_scope', payload.tokens.grantedScope);
                 localStorage.removeItem('aeropulse_logged_out');
-                if (payload.hasExistingSyncPolicy) {
+                var sameAthlete = !prevAthleteId || !payload.tokens.athleteId || String(payload.tokens.athleteId) === prevAthleteId;
+                var hasLocalSyncPolicy = false;
+                try { hasLocalSyncPolicy = Boolean(localStorage.getItem('aeropulse_strava_sync_policy')); } catch (e) {}
+                if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
                   localStorage.setItem('aeropulse_auth_gate_passed', '1');
-                } else {
+                } else if (!sameAthlete) {
                   localStorage.removeItem('aeropulse_auth_gate_passed');
                 }
               } else {
@@ -1348,7 +1351,15 @@ stravaRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
     const forceFull = req.query.full === 'true';
     const deltaOnly = req.query.deltaOnly === 'true';
     const explicitWindow = typeof req.query.window === 'string' ? req.query.window.trim() : undefined;
-    const data = await syncStravaAllHistory(req, forceFull, deltaOnly, explicitWindow);
+    const afterEpochParam = Number(req.query.afterEpoch || 0);
+    const data = await syncStravaAllHistory(
+      req,
+      forceFull,
+      deltaOnly,
+      explicitWindow,
+      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0
+    );
+    await saveSessionCacheAsync(req, res);
     res.json(data);
   } catch (error) {
     res.status(401).json({
@@ -1474,6 +1485,7 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
       }
     }
 
+    await saveSessionCacheAsync(req, res);
     res.json({
       streams: {
         time: downsample(raw?.time?.data as number[]) || [],
@@ -1487,6 +1499,7 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
       },
       segmentEfforts,
       kudoers,
+      stravaTokens: getStravaTokenRotationPayload(req),
     });
   } catch (error) {
     res.status(500).json({
@@ -1573,11 +1586,13 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
     }
 
     const entry = kudosCache[activityId] || kudosCache[stravaId] || {};
+    await saveSessionCacheAsync(req, res);
     res.json({
       kudosCount: entry.kudosCount || 0,
       hasKudoed: Boolean(entry.hasKudoed),
       kudoers: entry.kudoers || [],
       comments: entry.comments || [],
+      stravaTokens: getStravaTokenRotationPayload(req),
     });
   } catch (error) {
     res.status(500).json({
