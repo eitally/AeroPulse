@@ -1,6 +1,6 @@
 import type { ActivityEnvironment, SportCategory } from '../types.ts';
 
-export const STRAVA_LOAD_MODEL_VERSION = 2;
+export const STRAVA_LOAD_MODEL_VERSION = 3;
 export const BANISTER_CTL_DECAY = Math.exp(-1 / 42);
 export const BANISTER_ATL_DECAY = Math.exp(-1 / 7);
 
@@ -288,7 +288,7 @@ export function computeStravaActivityLoadV2(input: StravaLoadInput): StravaLoadR
   const isEBike = isEBikeActivityText(rawType, actName);
   const isLowImpactCasual =
     !isEBike &&
-    (/^(walk|golf|yoga|pilates|stretch|mobility|meditation|breathwork|sailing|skateboard)/i.test(
+    (/^(walk|casual_walking|speed_walking|golf|yoga|pilates|stretch|mobility|meditation|breathwork|sailing|skateboard)/i.test(
       rawType
     ) ||
       (input.sportCategory === 'Strength' &&
@@ -298,7 +298,7 @@ export function computeStravaActivityLoadV2(input: StravaLoadInput): StravaLoadR
   const isModerateOutdoor =
     !isEBike &&
     !isLowImpactCasual &&
-    (/^(hike|snowshoe|standuppaddling|kayaking|canoeing|rowing|alpineski|backcountryski|nordicski|surfing)/i.test(
+    (/^(hike|hiking|snowshoe|stand_up_paddleboarding|standuppaddling|kayaking|canoeing|indoor_rowing|rowing|resort_skiing_snowboarding|alpineski|backcountryski|nordicski|surfing)/i.test(
       rawType
     ) ||
       (input.sportCategory === 'Strength' &&

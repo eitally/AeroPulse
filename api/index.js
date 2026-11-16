@@ -696,6 +696,368 @@ async function deleteTenantVault(tenantId) {
   }
 }
 
+// src/physiology/stravaLoadCalibration.ts
+var STRAVA_LOAD_MODEL_VERSION = 3;
+var BANISTER_CTL_DECAY = Math.exp(-1 / 42);
+var BANISTER_ATL_DECAY = Math.exp(-1 / 7);
+function getLocalDateIso(date = /* @__PURE__ */ new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+function shiftIsoDate(isoDate, deltaDays) {
+  const [yStr, mStr, dStr] = isoDate.slice(0, 10).split("-");
+  const dt = new Date(
+    Date.UTC(Number(yStr) || 2026, (Number(mStr) || 1) - 1, Number(dStr) || 1)
+  );
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
+}
+function isEBikeActivityText(rawSportType, name) {
+  const combined = `${rawSportType || ""} ${name || ""}`;
+  return /e[-_]?bike|e[-_]?mtb|emountainbike|velomobile/i.test(combined);
+}
+function isVirtualCyclingText(text) {
+  return /virtualride|virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|\brgt\b/i.test(
+    text || ""
+  );
+}
+function deriveObservedPhysiologyMetrics(activities, weightKg = 70) {
+  let maxBikeWatts20m = 0;
+  let maxBikePeakWatts = 0;
+  let maxBikeHr = 0;
+  let maxBikeSustainedHr = 0;
+  let maxRunHr = 0;
+  let maxRunSustainedHr = 0;
+  let maxRunSustainedWatts = 0;
+  let bestRunPaceSecsPerKm = 0;
+  if (Array.isArray(activities)) {
+    for (const a of activities) {
+      if (!a) continue;
+      const sport = String(
+        a.sportCategory || a.rawSportType || a.sport_type || a.type || a.activityType?.typeKey || ""
+      );
+      const rawType = String(a.rawSportType || a.sport_type || a.type || "");
+      const actName = String(a.name || a.activityName || "");
+      const isEBike = isEBikeActivityText(rawType || sport, actName);
+      const isBike = !isEBike && /ride|cycling|virtualride|bike|biking|zwift|peloton|spin/i.test(sport);
+      const isRun = /run|trailrun|virtualrun|running|treadmill/i.test(sport);
+      const dur = Number(
+        a.movingTimeSecs ?? a.movingDuration ?? a.moving_time ?? a.elapsed_time ?? a.duration ?? 0
+      );
+      const dist = Number(a.distanceMeters ?? a.distance ?? 0);
+      const avgP = Number(a.avgPower ?? a.icu_average_watts ?? a.average_watts ?? 0);
+      const np = Number(
+        a.normalizedPower ?? a.normPower ?? a.icu_weighted_avg_watts ?? a.weighted_average_watts ?? avgP
+      );
+      const sustainedBikeW = avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
+      const p20 = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
+      const peakW = Number(a.max_watts ?? a.maxPower ?? a.maxAvgPower_1 ?? a.pMax ?? 0);
+      const avgHr = Number(a.avgHr ?? a.averageHR ?? a.average_heartrate ?? 0);
+      const peakHr = Number(a.maxHr ?? a.maxHR ?? a.max_heartrate ?? 0);
+      const deviceWattsFlag = a.device_watts ?? a.deviceWatts;
+      const hasMeteredBikeWatts = deviceWattsFlag !== false;
+      if (isBike) {
+        if (hasMeteredBikeWatts) {
+          if (p20 >= 150 && p20 <= 600) {
+            if (p20 > maxBikeWatts20m) maxBikeWatts20m = p20;
+          } else if (dur >= 1200 && sustainedBikeW >= 150 && sustainedBikeW <= 600 && (avgHr === 0 || avgHr >= 142 || peakHr >= 160 && avgHr >= peakHr * 0.82) && sustainedBikeW > maxBikeWatts20m) {
+            maxBikeWatts20m = sustainedBikeW;
+          }
+          if (peakW >= 250 && peakW <= 2500 && peakW > maxBikePeakWatts) {
+            maxBikePeakWatts = Math.round(peakW);
+          } else if (sustainedBikeW >= 150 && np > 0 && np * 2.25 > maxBikePeakWatts) {
+            maxBikePeakWatts = Math.round(np * 2.25);
+          }
+        }
+        if (peakHr >= 158 && peakHr <= 225 && peakHr > maxBikeHr) {
+          maxBikeHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 146 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
+          maxBikeSustainedHr = avgHr;
+        }
+      } else if (isRun) {
+        if (peakHr >= 158 && peakHr <= 225 && peakHr > maxRunHr) {
+          maxRunHr = peakHr;
+        }
+        if (dur >= 1200 && avgHr >= 148 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
+          maxRunSustainedHr = avgHr;
+        }
+        if (deviceWattsFlag !== false && dur >= 1200 && np >= 120 && np <= 650 && np > maxRunSustainedWatts) {
+          maxRunSustainedWatts = np;
+        }
+        const split5k = Number(a.fastestSplit_5000 ?? 0);
+        const paceFrom5k = split5k >= 780 && split5k <= 2100 ? Math.round(split5k / 5) : 0;
+        const pace = paceFrom5k || Number(a.gapPaceSecsPerKm ?? a.avgPaceSecsPerKm ?? 0) || (dist >= 3e3 && dur >= 900 ? Math.round(dur / (dist / 1e3)) : 0);
+        const isHardEnoughForThreshold = pace <= 300 || pace <= 420 && (avgHr >= 150 || peakHr >= 162 && avgHr >= peakHr * 0.85);
+        if ((paceFrom5k > 0 || dur >= 1200 && dist >= 3e3) && pace >= 165 && pace <= 420 && isHardEnoughForThreshold) {
+          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
+            bestRunPaceSecsPerKm = pace;
+          }
+        }
+      }
+    }
+  }
+  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
+  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
+  const obsBikeLthr = maxBikeSustainedHr >= 146 ? Math.max(
+    148,
+    Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
+  ) : obsBikeMaxHr >= 158 ? Math.max(148, Math.round(obsBikeMaxHr * 0.9)) : 0;
+  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
+  const obsRunLthr = maxRunSustainedHr >= 148 ? Math.max(
+    150,
+    Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
+  ) : obsRunMaxHr >= 158 ? Math.max(150, Math.round(obsRunMaxHr * 0.91)) : obsBikeLthr ? obsBikeLthr + 4 : 0;
+  const obsFtp = maxBikeWatts20m >= 150 ? Math.round(maxBikeWatts20m * 0.95) : 0;
+  const obsPMax = maxBikePeakWatts >= 400 ? Math.round(maxBikePeakWatts) : obsFtp > 0 ? Math.round(obsFtp * 3.6) : 0;
+  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
+  const obsThresholdPace = bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
+  const safeW = weightKg > 30 ? weightKg : 70;
+  const obsRunFtp = maxRunSustainedWatts >= 140 ? Math.round(maxRunSustainedWatts * 0.92) : obsThresholdPace > 0 ? Math.round(safeW * (1e3 / obsThresholdPace) * 0.98) : 0;
+  const obsVo2Bike = obsFtp > 0 && safeW > 30 ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7))) : 0;
+  const obsVo2Run = obsThresholdPace > 0 ? Math.max(32, Math.min(88, Math.round(1e3 / obsThresholdPace * 60 * 0.2 + 3.5))) : obsVo2Bike;
+  return {
+    obsFtp,
+    obsPMax,
+    obsWPrime,
+    obsBikeMaxHr,
+    obsBikeLthr,
+    obsRunMaxHr,
+    obsRunLthr,
+    obsThresholdPace,
+    obsRunFtp,
+    obsVo2Bike,
+    obsVo2Run
+  };
+}
+function computeHrrRatio(avgBpm, lthrBpm, restingHr = 54) {
+  const safeRest = Math.max(38, Math.min(78, restingHr || 54));
+  const reserve = Math.max(65, (lthrBpm || 163) - safeRest);
+  return Math.max(0, Math.min(1.22, (avgBpm - safeRest) / reserve));
+}
+function computeStravaActivityLoadV2(input) {
+  const rawType = String(input.rawSportType || "").trim();
+  const actName = String(input.name || "").trim();
+  const isEBike = isEBikeActivityText(rawType, actName);
+  const isLowImpactCasual = !isEBike && (/^(walk|casual_walking|speed_walking|golf|yoga|pilates|stretch|mobility|meditation|breathwork|sailing|skateboard)/i.test(
+    rawType
+  ) || input.sportCategory === "Strength" && /\b(walk|walking|stroll|golf|yoga|pilates|stretch|stretching|mobility|meditation|breathwork|sauna)\b/i.test(
+    actName
+  ));
+  const isModerateOutdoor = !isEBike && !isLowImpactCasual && (/^(hike|hiking|snowshoe|stand_up_paddleboarding|standuppaddling|kayaking|canoeing|indoor_rowing|rowing|resort_skiing_snowboarding|alpineski|backcountryski|nordicski|surfing)/i.test(
+    rawType
+  ) || input.sportCategory === "Strength" && /\b(hike|hiking|snowshoe|paddle|kayak|canoe|ski|snowboard|rowing)\b/i.test(actName));
+  const movingTimeSecs = Math.max(0, Number(input.movingTimeSecs || 0));
+  const hrs = movingTimeSecs / 3600;
+  if (hrs <= 0.01) {
+    return {
+      trainingLoad: Math.min(20, Math.max(0, Math.round(Number(input.sufferScore || 0) * 0.25))),
+      intensityFactor: void 0,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  const restHr = Math.max(38, Math.min(78, Number(input.restingHr || 54)));
+  const avgHr = Math.round(Number(input.avgHr || 0));
+  const bikeLthr = Math.max(135, Number(input.calibratedBikeLthr || 163));
+  const runLthr = Math.max(140, Number(input.calibratedRunLthr || 168));
+  const ftp = Math.max(120, Number(input.calibratedFtp || 250));
+  const thresholdPace = Math.max(155, Number(input.calibratedThresholdPaceSecsPerKm || 255));
+  const distMeters = Math.max(0, Number(input.distanceMeters || 0));
+  const elevGain = Math.max(0, Number(input.elevationGainMeters || 0));
+  if (isEBike) {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      return {
+        trainingLoad: Math.min(Math.round(hrs * 40), Math.round(hrs * 65 * hrr * hrr)),
+        intensityFactor: Number(Math.min(0.95, 0.35 + hrr * 0.5).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    return {
+      trainingLoad: Math.round(hrs * 18),
+      intensityFactor: 0.42,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (isLowImpactCasual) {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      return {
+        trainingLoad: Math.min(Math.round(hrs * 32), Math.round(hrs * 65 * hrr * hrr)),
+        intensityFactor: Number(Math.min(0.85, 0.3 + hrr * 0.48).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    return {
+      trainingLoad: Math.round(hrs * 14),
+      intensityFactor: 0.38,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (isModerateOutdoor) {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, runLthr, restHr);
+      return {
+        trainingLoad: Math.round(hrs * 78 * hrr * hrr),
+        intensityFactor: Number(Math.min(1.05, 0.4 + hrr * 0.55).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    return {
+      trainingLoad: Math.round(hrs * 24),
+      intensityFactor: 0.5,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (input.sportCategory === "Cycling") {
+    const np = Number(input.normalizedPower || input.avgPower || 0);
+    if (input.hasRealDeviceWatts && np > 0) {
+      const ifVal = Math.max(0.25, Math.min(1.35, np / ftp));
+      return {
+        trainingLoad: Math.round(movingTimeSecs * np * ifVal / (ftp * 3600) * 100),
+        intensityFactor: Number(ifVal.toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      return {
+        trainingLoad: Math.round(hrs * 92 * hrr * hrr),
+        intensityFactor: Number(Math.min(1.18, 0.45 + hrr * 0.55).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    const speedKph = distMeters > 0 && hrs > 0 ? distMeters / 1e3 / hrs : 18;
+    const rate = speedKph < 16 ? 20 : speedKph < 22 ? 28 : 35;
+    return {
+      trainingLoad: Math.round(hrs * rate),
+      intensityFactor: Number(Math.sqrt(rate / 100).toFixed(2)),
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (input.sportCategory === "Running") {
+    const hrrRun = avgHr > 60 ? computeHrrRatio(avgHr, runLthr, restHr) : 0;
+    const hrLoad = avgHr > 60 ? Math.round(hrs * 95 * hrrRun * hrrRun) : 0;
+    let paceLoad = 0;
+    let paceIf = 0;
+    const rawPace = input.avgPaceSecsPerKm && input.avgPaceSecsPerKm > 120 ? input.avgPaceSecsPerKm : distMeters > 200 && movingTimeSecs > 0 ? movingTimeSecs / (distMeters / 1e3) : 0;
+    if (rawPace > 120) {
+      const gradeFraction = distMeters > 0 ? elevGain / distMeters : 0;
+      const gapPace = rawPace / (1 + Math.min(0.25, Math.max(0, gradeFraction) * 3.1));
+      paceIf = Math.max(0.35, Math.min(1.25, thresholdPace / gapPace));
+      paceLoad = Math.round(hrs * 100 * paceIf * paceIf);
+    }
+    if (hrLoad > 0 && paceLoad > 0) {
+      let resolvedLoad;
+      if (hrrRun <= 0.78 && paceLoad > hrLoad * 1.2) {
+        resolvedLoad = Math.round(hrLoad * 1.05);
+      } else if (movingTimeSecs < 1500) {
+        resolvedLoad = Math.max(hrLoad, paceLoad);
+      } else {
+        resolvedLoad = Math.round(0.5 * paceLoad + 0.5 * hrLoad);
+      }
+      const effIf = Math.min(
+        1.22,
+        Math.sqrt(Math.max(0.1, resolvedLoad / Math.max(0.1, hrs * 100)))
+      );
+      return {
+        trainingLoad: resolvedLoad,
+        intensityFactor: Number(effIf.toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    if (paceLoad > 0) {
+      return {
+        trainingLoad: paceLoad,
+        intensityFactor: Number(paceIf.toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    if (hrLoad > 0) {
+      return {
+        trainingLoad: hrLoad,
+        intensityFactor: Number(Math.min(1.18, 0.45 + hrrRun * 0.55).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    return {
+      trainingLoad: Math.round(hrs * 38),
+      intensityFactor: 0.62,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (input.sportCategory === "Swimming") {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      return {
+        trainingLoad: Math.round(hrs * 88 * hrr * hrr),
+        intensityFactor: Number(Math.min(1.15, 0.45 + hrr * 0.55).toFixed(2)),
+        isEBike,
+        isLowImpactCasual,
+        isModerateOutdoor
+      };
+    }
+    return {
+      trainingLoad: Math.round(hrs * 36),
+      intensityFactor: 0.6,
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  if (avgHr > 60) {
+    const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+    const load = Math.min(
+      Math.round(hrs * 65),
+      Math.max(Math.round(hrs * 16), Math.round(hrs * 76 * hrr * hrr))
+    );
+    return {
+      trainingLoad: load,
+      intensityFactor: Number(Math.min(1, 0.35 + hrr * 0.55).toFixed(2)),
+      isEBike,
+      isLowImpactCasual,
+      isModerateOutdoor
+    };
+  }
+  return {
+    trainingLoad: Math.round(hrs * 28),
+    intensityFactor: 0.53,
+    isEBike,
+    isLowImpactCasual,
+    isModerateOutdoor
+  };
+}
+
 // server/garminConnectService.ts
 var DEFAULT_GARMIN_OAUTH_KEY = process.env.GARMIN_CONSUMER_KEY || "";
 var DEFAULT_GARMIN_OAUTH_SECRET = process.env.GARMIN_CONSUMER_SECRET || "";
@@ -1673,9 +2035,9 @@ function getEnvGarminPersonalApiKey() {
   }
   return String(process.env.GARMIN_PERSONAL_API_KEY || "").trim();
 }
-function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
+function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250, calibrationOpts) {
   if (!Array.isArray(rawActivities)) return [];
-  const activeFtp = Math.max(100, Number(ftpWatts || 250));
+  const activeFtp = Math.max(120, Number(ftpWatts || 250));
   return rawActivities.filter((a) => a && (a.activityId || a.id)).map((a) => {
     const id = String(a.activityId || a.id);
     const typeKey = String(
@@ -1683,12 +2045,16 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
     ).toLowerCase();
     const name = String(a.activityName || a.name || typeKey || "Garmin Activity");
     const combined = `${typeKey} ${name}`.toLowerCase();
+    const isEBike = isEBikeActivityText(typeKey, name);
+    const isExplicitCasualOrOtherType = /walk|hiking|hike|yoga|pilates|golf|strength|elliptical|stair|breathwork|meditation|rowing|stand_up_paddle|kayak|ski|snowshoe/i.test(
+      typeKey
+    );
     let sportCategory = "Strength";
-    if (/cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
+    if (!isExplicitCasualOrOtherType && (/cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
       combined
-    )) {
+    ) || isEBike)) {
       sportCategory = "Cycling";
-    } else if (/running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)) {
+    } else if (!isExplicitCasualOrOtherType && /running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)) {
       sportCategory = "Running";
     } else if (/swimming|swim|lap_swimming|open_water/i.test(combined)) {
       sportCategory = "Swimming";
@@ -1721,30 +2087,51 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
     );
     const distanceMeters = Math.round(Number(a.distance ?? 0));
     const elevationGainMeters = Math.round(Number(a.elevationGain ?? 0));
-    const avgPower = Number(a.avgPower) > 0 ? Math.round(Number(a.avgPower)) : void 0;
-    const normalizedPower = Number(a.normPower) > 0 ? Math.round(Number(a.normPower)) : avgPower;
+    const rawAvgPower = Number(a.avgPower) > 0 ? Math.round(Number(a.avgPower)) : void 0;
+    const rawNormalizedPower = Number(a.normPower) > 0 ? Math.round(Number(a.normPower)) : rawAvgPower;
+    const avgPower = isEBike ? void 0 : rawAvgPower;
+    const normalizedPower = isEBike ? void 0 : rawNormalizedPower;
     const rawMaxPower = Number(a.maxPower ?? a.maxAvgPower_1 ?? 0);
-    const maxPower = rawMaxPower > 0 ? Math.round(rawMaxPower) : void 0;
+    const maxPower = !isEBike && rawMaxPower > 0 ? Math.round(rawMaxPower) : void 0;
     const rawMax20m = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
-    const max20MinPower = rawMax20m > 0 ? Math.round(rawMax20m) : void 0;
+    const max20MinPower = !isEBike && rawMax20m > 0 ? Math.round(rawMax20m) : void 0;
     const fastestSplit1000 = Number(a.fastestSplit_1000) > 0 ? Math.round(Number(a.fastestSplit_1000)) : void 0;
     const fastestSplit1609 = Number(a.fastestSplit_1609) > 0 ? Math.round(Number(a.fastestSplit_1609)) : void 0;
     const fastestSplit5000 = Number(a.fastestSplit_5000) > 0 ? Math.round(Number(a.fastestSplit_5000)) : void 0;
     const avgHr = Math.round(Number(a.averageHR ?? 0));
     const maxHr = Math.round(Number(a.maxHR ?? 0));
     const avgCadence = Number(a.averageBikingCadenceInRevPerMinute) > 0 ? Math.round(Number(a.averageBikingCadenceInRevPerMinute)) : Number(a.averageRunningCadenceInStepsPerMinute) > 0 ? Math.round(Number(a.averageRunningCadenceInStepsPerMinute)) : void 0;
-    const intensityFactor = normalizedPower && activeFtp > 0 ? Number((normalizedPower / activeFtp).toFixed(2)) : void 0;
-    let trainingLoad = Math.round(Number(a.activityTrainingLoad ?? 0));
-    if (!trainingLoad && normalizedPower && movingTimeSecs > 0) {
-      const ifVal = normalizedPower / activeFtp;
-      trainingLoad = Math.round(
-        movingTimeSecs * normalizedPower * ifVal / (activeFtp * 3600) * 100
-      );
-    } else if (!trainingLoad && avgHr > 0 && movingTimeSecs > 0) {
-      trainingLoad = Math.round(movingTimeSecs / 3600 * Math.pow(avgHr / 153, 2) * 65);
+    const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
+    const hasRealCyclingWatts = !isEBike && sportCategory === "Cycling" && Boolean(normalizedPower && normalizedPower > 0);
+    const loadResult = computeStravaActivityLoadV2({
+      sportCategory,
+      rawSportType: typeKey || void 0,
+      name,
+      environment: isIndoor ? "INDOOR" : "OUTDOOR",
+      movingTimeSecs,
+      distanceMeters,
+      elevationGainMeters,
+      normalizedPower,
+      avgPower,
+      hasRealDeviceWatts: hasRealCyclingWatts,
+      avgHr,
+      maxHr,
+      avgPaceSecsPerKm,
+      calibratedFtp: activeFtp,
+      calibratedBikeLthr: calibrationOpts?.lthr || 163,
+      calibratedRunLthr: calibrationOpts?.runLthr || 168,
+      calibratedThresholdPaceSecsPerKm: calibrationOpts?.thresholdPaceSecsPerKm || 255,
+      restingHr: calibrationOpts?.restingHr || 52
+    });
+    const intensityFactor = loadResult.intensityFactor;
+    const trainingLoad = loadResult.trainingLoad;
+    let efficiencyFactor = 0;
+    if (hasRealCyclingWatts && normalizedPower && avgHr > 0) {
+      efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
+    } else if (sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 && avgHr > 0) {
+      const speedMetersPerMin = distanceMeters / (movingTimeSecs / 60);
+      efficiencyFactor = Number((speedMetersPerMin / avgHr).toFixed(2));
     }
-    const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
-    const efficiencyFactor = normalizedPower && avgHr > 0 ? Number((normalizedPower / avgHr).toFixed(2)) : 0;
     const hrZones = [
       Math.round(Number(a.hrTimeInZone_1 ?? 0)),
       Math.round(Number(a.hrTimeInZone_2 ?? 0)),
@@ -1775,6 +2162,7 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
       startDateLocal,
       name,
       sportCategory,
+      rawSportType: typeKey || void 0,
       environment: isIndoor ? "INDOOR" : "OUTDOOR",
       subType,
       movingTimeSecs,
@@ -1782,6 +2170,7 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
       elevationGainMeters,
       avgPower,
       normalizedPower,
+      deviceWatts: sportCategory === "Cycling" ? hasRealCyclingWatts : void 0,
       max_watts: maxPower,
       max20MinPower,
       fastestSplit_1000: fastestSplit1000,
@@ -1789,6 +2178,7 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250) {
       fastestSplit_5000: fastestSplit5000,
       intensityFactor,
       trainingLoad,
+      loadModelVersion: STRAVA_LOAD_MODEL_VERSION,
       avgHr,
       maxHr,
       avgCadence,
@@ -2305,354 +2695,6 @@ function estimateVdotFromRace(distanceMeters, durationSecs) {
   const pctMax = 0.8 + 0.1894393 * Math.exp(-0.012778 * durationMins) + 0.2989558 * Math.exp(-0.1932605 * durationMins);
   if (!(pctMax > 0.2) || !(vo2 > 5)) return 0;
   return Math.round(vo2 / pctMax * 10) / 10;
-}
-
-// src/physiology/stravaLoadCalibration.ts
-var STRAVA_LOAD_MODEL_VERSION = 2;
-var BANISTER_CTL_DECAY = Math.exp(-1 / 42);
-var BANISTER_ATL_DECAY = Math.exp(-1 / 7);
-function isEBikeActivityText(rawSportType, name) {
-  const combined = `${rawSportType || ""} ${name || ""}`;
-  return /e[-_]?bike|e[-_]?mtb|emountainbike|velomobile/i.test(combined);
-}
-function isVirtualCyclingText(text) {
-  return /virtualride|virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|\brgt\b/i.test(
-    text || ""
-  );
-}
-function deriveObservedPhysiologyMetrics(activities, weightKg = 70) {
-  let maxBikeWatts20m = 0;
-  let maxBikePeakWatts = 0;
-  let maxBikeHr = 0;
-  let maxBikeSustainedHr = 0;
-  let maxRunHr = 0;
-  let maxRunSustainedHr = 0;
-  let maxRunSustainedWatts = 0;
-  let bestRunPaceSecsPerKm = 0;
-  if (Array.isArray(activities)) {
-    for (const a of activities) {
-      if (!a) continue;
-      const sport = String(
-        a.sportCategory || a.rawSportType || a.sport_type || a.type || a.activityType?.typeKey || ""
-      );
-      const rawType = String(a.rawSportType || a.sport_type || a.type || "");
-      const actName = String(a.name || a.activityName || "");
-      const isEBike = isEBikeActivityText(rawType || sport, actName);
-      const isBike = !isEBike && /ride|cycling|virtualride|bike|biking|zwift|peloton|spin/i.test(sport);
-      const isRun = /run|trailrun|virtualrun|running|treadmill/i.test(sport);
-      const dur = Number(
-        a.movingTimeSecs ?? a.movingDuration ?? a.moving_time ?? a.elapsed_time ?? a.duration ?? 0
-      );
-      const dist = Number(a.distanceMeters ?? a.distance ?? 0);
-      const avgP = Number(a.avgPower ?? a.icu_average_watts ?? a.average_watts ?? 0);
-      const np = Number(
-        a.normalizedPower ?? a.normPower ?? a.icu_weighted_avg_watts ?? a.weighted_average_watts ?? avgP
-      );
-      const sustainedBikeW = avgP > 0 && np > avgP * 1.08 ? Math.round(avgP * 1.05) : np;
-      const p20 = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
-      const peakW = Number(a.max_watts ?? a.maxPower ?? a.maxAvgPower_1 ?? a.pMax ?? 0);
-      const avgHr = Number(a.avgHr ?? a.averageHR ?? a.average_heartrate ?? 0);
-      const peakHr = Number(a.maxHr ?? a.maxHR ?? a.max_heartrate ?? 0);
-      const deviceWattsFlag = a.device_watts ?? a.deviceWatts;
-      const hasMeteredBikeWatts = deviceWattsFlag !== false;
-      if (isBike) {
-        if (hasMeteredBikeWatts) {
-          if (p20 >= 150 && p20 <= 600) {
-            if (p20 > maxBikeWatts20m) maxBikeWatts20m = p20;
-          } else if (dur >= 1200 && sustainedBikeW >= 150 && sustainedBikeW <= 600 && (avgHr === 0 || avgHr >= 142 || peakHr >= 160 && avgHr >= peakHr * 0.82) && sustainedBikeW > maxBikeWatts20m) {
-            maxBikeWatts20m = sustainedBikeW;
-          }
-          if (peakW >= 250 && peakW <= 2500 && peakW > maxBikePeakWatts) {
-            maxBikePeakWatts = Math.round(peakW);
-          } else if (sustainedBikeW >= 150 && np > 0 && np * 2.25 > maxBikePeakWatts) {
-            maxBikePeakWatts = Math.round(np * 2.25);
-          }
-        }
-        if (peakHr >= 158 && peakHr <= 225 && peakHr > maxBikeHr) {
-          maxBikeHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 146 && avgHr <= 210 && avgHr > maxBikeSustainedHr) {
-          maxBikeSustainedHr = avgHr;
-        }
-      } else if (isRun) {
-        if (peakHr >= 158 && peakHr <= 225 && peakHr > maxRunHr) {
-          maxRunHr = peakHr;
-        }
-        if (dur >= 1200 && avgHr >= 148 && avgHr <= 210 && avgHr > maxRunSustainedHr) {
-          maxRunSustainedHr = avgHr;
-        }
-        if (deviceWattsFlag !== false && dur >= 1200 && np >= 120 && np <= 650 && np > maxRunSustainedWatts) {
-          maxRunSustainedWatts = np;
-        }
-        const split5k = Number(a.fastestSplit_5000 ?? 0);
-        const paceFrom5k = split5k >= 780 && split5k <= 2100 ? Math.round(split5k / 5) : 0;
-        const pace = paceFrom5k || Number(a.gapPaceSecsPerKm ?? a.avgPaceSecsPerKm ?? 0) || (dist >= 3e3 && dur >= 900 ? Math.round(dur / (dist / 1e3)) : 0);
-        const isHardEnoughForThreshold = pace <= 300 || pace <= 420 && (avgHr >= 150 || peakHr >= 162 && avgHr >= peakHr * 0.85);
-        if ((paceFrom5k > 0 || dur >= 1200 && dist >= 3e3) && pace >= 165 && pace <= 420 && isHardEnoughForThreshold) {
-          if (bestRunPaceSecsPerKm === 0 || pace < bestRunPaceSecsPerKm) {
-            bestRunPaceSecsPerKm = pace;
-          }
-        }
-      }
-    }
-  }
-  const anyMaxHr = Math.max(maxBikeHr, maxRunHr);
-  const obsBikeMaxHr = maxBikeHr || anyMaxHr || 0;
-  const obsBikeLthr = maxBikeSustainedHr >= 146 ? Math.max(
-    148,
-    Math.min(obsBikeMaxHr ? obsBikeMaxHr - 6 : 200, Math.round(maxBikeSustainedHr * 0.98))
-  ) : obsBikeMaxHr >= 158 ? Math.max(148, Math.round(obsBikeMaxHr * 0.9)) : 0;
-  const obsRunMaxHr = maxRunHr || obsBikeMaxHr || 0;
-  const obsRunLthr = maxRunSustainedHr >= 148 ? Math.max(
-    150,
-    Math.min(obsRunMaxHr ? obsRunMaxHr - 5 : 205, Math.round(maxRunSustainedHr * 0.98))
-  ) : obsRunMaxHr >= 158 ? Math.max(150, Math.round(obsRunMaxHr * 0.91)) : obsBikeLthr ? obsBikeLthr + 4 : 0;
-  const obsFtp = maxBikeWatts20m >= 150 ? Math.round(maxBikeWatts20m * 0.95) : 0;
-  const obsPMax = maxBikePeakWatts >= 400 ? Math.round(maxBikePeakWatts) : obsFtp > 0 ? Math.round(obsFtp * 3.6) : 0;
-  const obsWPrime = obsFtp > 0 ? Math.round(obsFtp * 75) : 0;
-  const obsThresholdPace = bestRunPaceSecsPerKm > 0 ? Math.round(bestRunPaceSecsPerKm * 1.03) : 0;
-  const safeW = weightKg > 30 ? weightKg : 70;
-  const obsRunFtp = maxRunSustainedWatts >= 140 ? Math.round(maxRunSustainedWatts * 0.92) : obsThresholdPace > 0 ? Math.round(safeW * (1e3 / obsThresholdPace) * 0.98) : 0;
-  const obsVo2Bike = obsFtp > 0 && safeW > 30 ? Math.max(32, Math.min(88, Math.round(10.8 * (obsFtp / safeW) + 7))) : 0;
-  const obsVo2Run = obsThresholdPace > 0 ? Math.max(32, Math.min(88, Math.round(1e3 / obsThresholdPace * 60 * 0.2 + 3.5))) : obsVo2Bike;
-  return {
-    obsFtp,
-    obsPMax,
-    obsWPrime,
-    obsBikeMaxHr,
-    obsBikeLthr,
-    obsRunMaxHr,
-    obsRunLthr,
-    obsThresholdPace,
-    obsRunFtp,
-    obsVo2Bike,
-    obsVo2Run
-  };
-}
-function computeHrrRatio(avgBpm, lthrBpm, restingHr = 54) {
-  const safeRest = Math.max(38, Math.min(78, restingHr || 54));
-  const reserve = Math.max(65, (lthrBpm || 163) - safeRest);
-  return Math.max(0, Math.min(1.22, (avgBpm - safeRest) / reserve));
-}
-function computeStravaActivityLoadV2(input) {
-  const rawType = String(input.rawSportType || "").trim();
-  const actName = String(input.name || "").trim();
-  const isEBike = isEBikeActivityText(rawType, actName);
-  const isLowImpactCasual = !isEBike && (/^(walk|golf|yoga|pilates|stretch|mobility|meditation|breathwork|sailing|skateboard)/i.test(
-    rawType
-  ) || input.sportCategory === "Strength" && /\b(walk|walking|stroll|golf|yoga|pilates|stretch|stretching|mobility|meditation|breathwork|sauna)\b/i.test(
-    actName
-  ));
-  const isModerateOutdoor = !isEBike && !isLowImpactCasual && (/^(hike|snowshoe|standuppaddling|kayaking|canoeing|rowing|alpineski|backcountryski|nordicski|surfing)/i.test(
-    rawType
-  ) || input.sportCategory === "Strength" && /\b(hike|hiking|snowshoe|paddle|kayak|canoe|ski|snowboard|rowing)\b/i.test(actName));
-  const movingTimeSecs = Math.max(0, Number(input.movingTimeSecs || 0));
-  const hrs = movingTimeSecs / 3600;
-  if (hrs <= 0.01) {
-    return {
-      trainingLoad: Math.min(20, Math.max(0, Math.round(Number(input.sufferScore || 0) * 0.25))),
-      intensityFactor: void 0,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  const restHr = Math.max(38, Math.min(78, Number(input.restingHr || 54)));
-  const avgHr = Math.round(Number(input.avgHr || 0));
-  const bikeLthr = Math.max(135, Number(input.calibratedBikeLthr || 163));
-  const runLthr = Math.max(140, Number(input.calibratedRunLthr || 168));
-  const ftp = Math.max(120, Number(input.calibratedFtp || 250));
-  const thresholdPace = Math.max(155, Number(input.calibratedThresholdPaceSecsPerKm || 255));
-  const distMeters = Math.max(0, Number(input.distanceMeters || 0));
-  const elevGain = Math.max(0, Number(input.elevationGainMeters || 0));
-  if (isEBike) {
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.min(Math.round(hrs * 40), Math.round(hrs * 65 * hrr * hrr)),
-        intensityFactor: Number(Math.min(0.95, 0.35 + hrr * 0.5).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 18),
-      intensityFactor: 0.42,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (isLowImpactCasual) {
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.min(Math.round(hrs * 32), Math.round(hrs * 65 * hrr * hrr)),
-        intensityFactor: Number(Math.min(0.85, 0.3 + hrr * 0.48).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 14),
-      intensityFactor: 0.38,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (isModerateOutdoor) {
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, runLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 78 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.05, 0.4 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 24),
-      intensityFactor: 0.5,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (input.sportCategory === "Cycling") {
-    const np = Number(input.normalizedPower || input.avgPower || 0);
-    if (input.hasRealDeviceWatts && np > 0) {
-      const ifVal = Math.max(0.25, Math.min(1.35, np / ftp));
-      return {
-        trainingLoad: Math.round(movingTimeSecs * np * ifVal / (ftp * 3600) * 100),
-        intensityFactor: Number(ifVal.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 92 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.18, 0.45 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    const speedKph = distMeters > 0 && hrs > 0 ? distMeters / 1e3 / hrs : 18;
-    const rate = speedKph < 16 ? 20 : speedKph < 22 ? 28 : 35;
-    return {
-      trainingLoad: Math.round(hrs * rate),
-      intensityFactor: Number(Math.sqrt(rate / 100).toFixed(2)),
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (input.sportCategory === "Running") {
-    const hrrRun = avgHr > 60 ? computeHrrRatio(avgHr, runLthr, restHr) : 0;
-    const hrLoad = avgHr > 60 ? Math.round(hrs * 95 * hrrRun * hrrRun) : 0;
-    let paceLoad = 0;
-    let paceIf = 0;
-    const rawPace = input.avgPaceSecsPerKm && input.avgPaceSecsPerKm > 120 ? input.avgPaceSecsPerKm : distMeters > 200 && movingTimeSecs > 0 ? movingTimeSecs / (distMeters / 1e3) : 0;
-    if (rawPace > 120) {
-      const gradeFraction = distMeters > 0 ? elevGain / distMeters : 0;
-      const gapPace = rawPace / (1 + Math.min(0.25, Math.max(0, gradeFraction) * 3.1));
-      paceIf = Math.max(0.35, Math.min(1.25, thresholdPace / gapPace));
-      paceLoad = Math.round(hrs * 100 * paceIf * paceIf);
-    }
-    if (hrLoad > 0 && paceLoad > 0) {
-      let resolvedLoad;
-      if (hrrRun <= 0.78 && paceLoad > hrLoad * 1.2) {
-        resolvedLoad = Math.round(hrLoad * 1.05);
-      } else if (movingTimeSecs < 1500) {
-        resolvedLoad = Math.max(hrLoad, paceLoad);
-      } else {
-        resolvedLoad = Math.round(0.5 * paceLoad + 0.5 * hrLoad);
-      }
-      const effIf = Math.min(
-        1.22,
-        Math.sqrt(Math.max(0.1, resolvedLoad / Math.max(0.1, hrs * 100)))
-      );
-      return {
-        trainingLoad: resolvedLoad,
-        intensityFactor: Number(effIf.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    if (paceLoad > 0) {
-      return {
-        trainingLoad: paceLoad,
-        intensityFactor: Number(paceIf.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    if (hrLoad > 0) {
-      return {
-        trainingLoad: hrLoad,
-        intensityFactor: Number(Math.min(1.18, 0.45 + hrrRun * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 38),
-      intensityFactor: 0.62,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (input.sportCategory === "Swimming") {
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 88 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.15, 0.45 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 36),
-      intensityFactor: 0.6,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  if (avgHr > 60) {
-    const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-    const load = Math.min(
-      Math.round(hrs * 65),
-      Math.max(Math.round(hrs * 16), Math.round(hrs * 76 * hrr * hrr))
-    );
-    return {
-      trainingLoad: load,
-      intensityFactor: Number(Math.min(1, 0.35 + hrr * 0.55).toFixed(2)),
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
-  }
-  return {
-    trainingLoad: Math.round(hrs * 28),
-    intensityFactor: 0.53,
-    isEBike,
-    isLowImpactCasual,
-    isModerateOutdoor
-  };
 }
 
 // src/physiology/pmc.ts
@@ -11628,12 +11670,16 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
     const maxHr = Number(a.max_heartrate ?? 0);
     const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
     const gapPaceSecsPerKm = sportCategory === "Running" && a.gap && Number(a.gap) > 0 ? Math.round(1e3 / Number(a.gap)) : void 0;
-    const userFtp = sportCategory === "Running" ? runtimeStore.athleteRunFtp || runtimeStore.athleteFtp || 250 : runtimeStore.athleteFtp || 250;
+    const canUsePowerForIf = sportCategory === "Cycling" || sportCategory === "Running" && Number(runtimeStore.athleteRunFtp) > 0;
+    const userFtp = sportCategory === "Running" ? runtimeStore.athleteRunFtp || 350 : runtimeStore.athleteFtp || 250;
+    const rawIcuIf = Number(a.icu_intensity ?? 0);
     let trainingLoad = Math.round(Number(a.icu_training_load ?? 0));
-    let intensityFactor;
-    if (normalizedPower && movingTimeSecs > 0) {
+    let intensityFactor = rawIcuIf > 0 ? Number((rawIcuIf > 3 ? rawIcuIf / 100 : rawIcuIf).toFixed(2)) : void 0;
+    if (canUsePowerForIf && normalizedPower && movingTimeSecs > 0) {
       const ifVal = normalizedPower / userFtp;
-      intensityFactor = Number(ifVal.toFixed(2));
+      if (!intensityFactor) {
+        intensityFactor = Number(ifVal.toFixed(2));
+      }
       if (!trainingLoad) {
         trainingLoad = Math.round(
           movingTimeSecs * normalizedPower * ifVal / (userFtp * 3600) * 100
@@ -11642,7 +11688,9 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
     } else if (avgHr > 0 && movingTimeSecs > 0) {
       const userLthr = runtimeStore.athleteLthr || 165;
       const hrRatio = Math.max(0.4, Math.min(1.25, avgHr / userLthr));
-      intensityFactor = Number(hrRatio.toFixed(2));
+      if (!intensityFactor) {
+        intensityFactor = Number(hrRatio.toFixed(2));
+      }
       if (!trainingLoad) {
         trainingLoad = Math.round(movingTimeSecs / 3600 * Math.pow(hrRatio, 2) * 80);
       }
@@ -11650,7 +11698,7 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
       trainingLoad = Math.round(movingTimeSecs / 3600 * 45);
     }
     let efficiencyFactor = 0;
-    if (normalizedPower && avgHr > 0) {
+    if (sportCategory === "Cycling" && normalizedPower && avgHr > 0) {
       efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
     } else if (sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 && avgHr > 0) {
       const speedMetersPerMin = distanceMeters / (movingTimeSecs / 60);
@@ -11682,12 +11730,23 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
         strideLengthMeters: iv.average_stride ? Number(Number(iv.average_stride).toFixed(2)) : void 0
       };
     });
+    const hrZoneSecs = Array.isArray(a.icu_hr_zone_times) ? a.icu_hr_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : [0, 0, 0, 0, 0, 0, 0];
+    const pwrZoneSecs = Array.isArray(a.icu_zone_times) ? a.icu_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : void 0;
+    const intervalsSourceBadges = Array.from(
+      /* @__PURE__ */ new Set([
+        "Intervals.icu",
+        ...a.source === "GARMIN_CONNECT" ? ["Garmin"] : a.source === "STRAVA" ? ["Strava"] : []
+      ])
+    );
     return {
       id: String(a.id),
+      intervalsId: String(a.id),
       intervalsActivityId: String(a.id),
       stravaId: a.strava_id ? String(a.strava_id) : void 0,
       garminActivityId: a.source === "GARMIN_CONNECT" ? String(a.id) : void 0,
       source: a.source || "INTERVALS_ICU",
+      sourceBadges: intervalsSourceBadges,
+      rawSportType: rawType || void 0,
       name: rawName || `${subType} ${sportCategory}`,
       startDateLocal: String(a.start_date_local || "").replace(/Z$/i, ""),
       sportCategory,
@@ -11708,6 +11767,10 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
       efficiencyFactor,
       aerobicDecouplingPct: a.decoupling != null ? Number(Number(a.decoupling).toFixed(1)) : void 0,
       variabilityIndex: normalizedPower && avgPower && avgPower > 0 ? Number((normalizedPower / avgPower).toFixed(2)) : void 0,
+      zoneSecs: {
+        hr: hrZoneSecs,
+        ...pwrZoneSecs ? { power: pwrZoneSecs } : {}
+      },
       gearName: a.gear?.name || void 0,
       deviceName: a.device_name ? String(a.device_name) : void 0,
       hasSegments: Boolean(a.has_segments),
@@ -14626,7 +14689,13 @@ garminRouter.get("/api/garmin/sync", async (req, res) => {
     );
     const normalizedActivities = normalizeGarminPersonalApiActivities(
       garminData.activities || [],
-      syncedProfile.ftp || 250
+      syncedProfile.ftp || 250,
+      {
+        lthr: syncedProfile.lthr,
+        runLthr: syncedProfile.runLthr,
+        thresholdPaceSecsPerKm: syncedProfile.thresholdPaceSecsPerKm,
+        restingHr: syncedProfile.restingHr
+      }
     );
     runtimeStore.athleteFtp = syncedProfile.ftp;
     runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
@@ -14636,18 +14705,50 @@ garminRouter.get("/api/garmin/sync", async (req, res) => {
     runtimeStore.athleteProfile = syncedProfile;
     await saveSessionCacheAsync(req, res);
     const loadByDate = /* @__PURE__ */ new Map();
+    const garminTimestamps = [];
     for (const a of normalizedActivities) {
       const d = String(a.startDateLocal || "").slice(0, 10);
       if (d) {
         loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
+      }
+      const ts = new Date(a.startDateLocal || 0).getTime();
+      if (Number.isFinite(ts) && ts > 0) garminTimestamps.push(ts);
+    }
+    const stravaCal = {
+      calibratedFtp: Math.max(120, syncedProfile.ftp || 250),
+      calibratedBikeLthr: Math.max(135, syncedProfile.lthr || 163),
+      calibratedRunLthr: Math.max(140, syncedProfile.runLthr || 168),
+      calibratedThresholdPaceSecsPerKm: Math.max(
+        155,
+        syncedProfile.thresholdPaceSecsPerKm || 255
+      ),
+      restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52))
+    };
+    for (const rawSa of sActs) {
+      if (!rawSa || !rawSa.start_date_local) continue;
+      const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
+      const saTs = new Date(saNorm.startDateLocal || 0).getTime();
+      const isDup = Number.isFinite(saTs) && garminTimestamps.some((gTs) => Math.abs(gTs - saTs) <= 300 * 1e3);
+      if (isDup) continue;
+      const d = saNorm.startDateLocal.slice(0, 10);
+      if (d) {
+        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(saNorm.trainingLoad || 0));
       }
     }
     let lastRhr = syncedProfile.restingHr || 0;
     let lastWeight = syncedProfile.weightKg || 0;
     let ctlRaw = 0;
     let atlRaw = 0;
+    const wellnessRows = garminData.wellnessRows || [];
+    const firstWellnessDate = wellnessRows.length > 0 ? String(wellnessRows[0].id || "").slice(0, 10) : getLocalDateIso();
+    const warmupStartDate = shiftIsoDate(firstWellnessDate, -365);
+    for (let dWarm = warmupStartDate; dWarm < firstWellnessDate; dWarm = shiftIsoDate(dWarm, 1)) {
+      const warmLoad = loadByDate.get(dWarm) || 0;
+      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + warmLoad * (1 - BANISTER_CTL_DECAY);
+      atlRaw = atlRaw * BANISTER_ATL_DECAY + warmLoad * (1 - BANISTER_ATL_DECAY);
+    }
     const ctlHistory = [];
-    const formattedWellnessDays = (garminData.wellnessRows || []).map((w, idx) => {
+    const formattedWellnessDays = wellnessRows.map((w, idx) => {
       const d = String(w.id || "").slice(0, 10);
       const dailyLoad = loadByDate.get(d) || 0;
       ctlRaw = ctlRaw * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);

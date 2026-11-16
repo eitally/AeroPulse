@@ -13,8 +13,11 @@ import {
   mergeActivitiesNonDestructive,
   overlayBiometricsOntoActivityWellness,
   recalibrateStravaActivityLoadClient,
+  repairAndRecomputeWellnessDays,
   sanitizeStaleCollapsedProfile,
 } from '../src/utils/telemetryStorage';
+import { normalizeGarminPersonalApiActivities } from '../server/garminConnectService';
+import { buildDayLoadSegments, classifyActivityGarminLoad } from '../src/physiology/garminLoadFocus';
 import { computeDualSportPmcSeries } from '../src/physiology/pmc';
 import { evaluateRollingTrainingProductivity } from '../src/physiology/trainingProductivityEngine';
 import type { UnifiedActivity, UnifiedWellnessDay } from '../src/types';
@@ -415,5 +418,169 @@ describe('Strava Physiological Load v2, Threshold Guard & Banister PMC Accuracy'
     const nov16 = decaySeries.find((d) => d.date === '2026-11-16')!;
     expect(nov02.atl).toBeCloseTo(100 * (1 - BANISTER_ATL_DECAY), 1);
     expect(nov16.atl).toBeLessThan(2.0);
+  });
+
+  it('eliminates Garmin 28d CTL=0 cliff, EPOC TSS, run-watts/bike-FTP inflation, and auto-repairs timeline on reload', () => {
+    const normalizedGarmin = normalizeGarminPersonalApiActivities(
+      [
+        {
+          activityId: 990011,
+          activityName: 'San Jose Walking',
+          startTimeLocal: '2026-11-16 08:15:00',
+          duration: 2400,
+          distance: 2800,
+          averageHR: 98,
+          maxHR: 112,
+          activityTrainingLoad: 95,
+          avgPower: 220,
+          normPower: 260,
+          activityType: { typeKey: 'casual_walking' },
+        },
+        {
+          activityId: 990012,
+          activityName: 'Easy Neighborhood Jog',
+          startTimeLocal: '2026-11-10 07:30:00',
+          duration: 1800,
+          distance: 5800,
+          averageHR: 145,
+          maxHR: 162,
+          activityTrainingLoad: 145,
+          avgPower: 430,
+          normPower: 455,
+          activityType: { typeKey: 'running' },
+        },
+      ],
+      305,
+      { lthr: 170 }
+    );
+
+    const walkAct = normalizedGarmin.find((a) => a.id === 'garmin-990011') as unknown as UnifiedActivity;
+    const runAct = normalizedGarmin.find((a) => a.id === 'garmin-990012') as unknown as UnifiedActivity;
+
+    expect(walkAct.loadModelVersion).toBe(STRAVA_LOAD_MODEL_VERSION);
+    expect(walkAct.trainingLoad).toBeGreaterThan(0);
+    expect(walkAct.trainingLoad).toBeLessThan(25);
+    expect(walkAct.intensityFactor!).toBeLessThan(0.75);
+    expect(classifyActivityGarminLoad(walkAct, { ftp: 305, lthr: 170 }).type).toBe('LOW_AEROBIC');
+
+    // Running power (455W) must never be divided by cycling FTP (305W) -> no phantom IF 1.49 / purple bar
+    expect(runAct.loadModelVersion).toBe(STRAVA_LOAD_MODEL_VERSION);
+    expect(runAct.intensityFactor!).toBeLessThan(1.0);
+    expect(runAct.trainingLoad).toBeLessThan(65);
+    expect(classifyActivityGarminLoad(runAct, { ftp: 305, lthr: 170 }).type).not.toBe('ANAEROBIC');
+
+    // Construct pre-cliff wellness 2026-10-06..2026-10-18 (CTL 68, ATL 72, rideEftp 305)
+    // followed by a Garmin 28d cold-start cliff on 2026-10-19 (CTL 3.5) + phantom ATL 107.8 through 2026-11-16
+    const buildDay = (
+      date: string,
+      overrides: Partial<UnifiedWellnessDay> = {}
+    ): UnifiedWellnessDay => ({
+      date,
+      ctl: 68.0,
+      atl: 72.0,
+      tsb: -4.0,
+      rampRate: 1.5,
+      hrvRMSSD: 76,
+      hrvBaseline7d: 74,
+      restingHR: 48,
+      sleepSecs: 28800,
+      sleepScore: 85,
+      weightKg: 72,
+      dailyLoad: 65,
+      readinessStatus: 'Optimal',
+      rideEftp: 305,
+      ...overrides,
+    });
+
+    const shiftDate = (baseIso: string, days: number): string => {
+      const d = new Date(`${baseIso}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const existingWellness: UnifiedWellnessDay[] = [];
+    for (let i = 0; i <= 12; i += 1) {
+      existingWellness.push(buildDay(shiftDate('2026-10-06', i)));
+    }
+    for (let i = 0; i <= 28; i += 1) {
+      const date = shiftDate('2026-10-19', i);
+      const frac = i / 28;
+      existingWellness.push(
+        buildDay(date, {
+          ctl: Number((3.5 + frac * (67.9 - 3.5)).toFixed(1)),
+          atl: Number((22.0 + frac * (107.8 - 22.0)).toFixed(1)),
+          tsb: Number((3.5 - 22.0 - frac * 21.4).toFixed(1)),
+          rampRate: i === 0 ? -64.5 : 5.2,
+          dailyLoad: i === 28 ? 88 : 120,
+          hrvRMSSD: i === 28 ? 64 : 71,
+          restingHR: i === 28 ? 49 : 48,
+          sleepScore: i === 28 ? 82 : 84,
+          rideEftp: 305,
+        })
+      );
+    }
+
+    // Legacy polluted v2 walk + moderate Garmin v2 walk/jog activities after 10/19
+    const pollutedWalk: UnifiedActivity = {
+      ...walkAct,
+      id: 'garmin-polluted-walk-1116',
+      name: 'San Jose Walking',
+      startDateLocal: '2026-11-16T08:15:00',
+      trainingLoad: 88,
+      intensityFactor: 1.32,
+      loadModelVersion: 2,
+      sourceBadges: ['Garmin'],
+      segmentEfforts: [],
+    };
+    const lightOctRun: UnifiedActivity = {
+      ...runAct,
+      id: 'garmin-light-oct-run',
+      name: 'Easy Jog',
+      startDateLocal: '2026-10-22T07:30:00',
+      trainingLoad: 145,
+      intensityFactor: 1.49,
+      loadModelVersion: 2,
+      sourceBadges: ['Garmin'],
+      segmentEfforts: [],
+    };
+
+    const repaired = repairAndRecomputeWellnessDays(
+      existingWellness,
+      [lightOctRun, pollutedWalk],
+      '2026-11-16',
+      { profile: { ftp: 305, lthr: 170, maxHr: 190 } }
+    );
+
+    const oct18 = repaired.find((d) => d.date === '2026-10-18')!;
+    const oct19 = repaired.find((d) => d.date === '2026-10-19')!;
+    const nov16 = repaired.find((d) => d.date === '2026-11-16')!;
+
+    expect(oct18.ctl).toBe(68.0);
+    // 10/19 decays smoothly from 68.0 rather than collapsing near zero
+    expect(oct19.ctl).toBeGreaterThanOrEqual(64);
+    expect(oct19.ctl).toBeLessThan(70);
+    // Modest light activity must not produce phantom ATL 107.8
+    expect(nov16.atl).toBeLessThan(35);
+    expect(nov16.dailyLoad).toBeGreaterThan(0);
+    expect(nov16.dailyLoad).toBeLessThan(25);
+    // Hardware biometrics & eFTP must remain intact
+    expect(nov16.rideEftp).toBe(305);
+    expect(nov16.hrvRMSSD).toBe(64);
+    expect(nov16.restingHR).toBe(49);
+    expect(nov16.sleepScore).toBe(82);
+
+    const recalWalk = recalibrateStravaActivityLoadClient(pollutedWalk, {
+      ftp: 305,
+      lthr: 170,
+      maxHr: 190,
+    });
+    const segments = buildDayLoadSegments([recalWalk], nov16.dailyLoad, '2026-11-16', {
+      ftp: 305,
+      lthr: 170,
+    });
+    const totalSegmentTss = segments.reduce((sum, s) => sum + s.load, 0);
+    expect(totalSegmentTss).toBe(nov16.dailyLoad);
+    expect(segments.some((s) => s.focus.type === 'ANAEROBIC')).toBe(false);
+    expect(segments[0]?.focus.type).toBe('LOW_AEROBIC');
   });
 });

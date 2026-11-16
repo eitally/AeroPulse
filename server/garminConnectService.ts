@@ -7,6 +7,11 @@ import {
   saveTenantVaultAsync,
   saveTenantVaultSync,
 } from './tokenVault.ts';
+import {
+  STRAVA_LOAD_MODEL_VERSION,
+  computeStravaActivityLoadV2,
+  isEBikeActivityText,
+} from '../src/physiology/stravaLoadCalibration.ts';
 
 export interface GarminSessionStore {
   personalApiKey?: string; // Official Garmin Connect Personal API Key (GCDC_...)
@@ -1468,10 +1473,16 @@ export function getEnvGarminPersonalApiKey(): string {
 
 export function normalizeGarminPersonalApiActivities(
   rawActivities: Record<string, any>[],
-  ftpWatts = 250
+  ftpWatts = 250,
+  calibrationOpts?: {
+    lthr?: number;
+    runLthr?: number;
+    thresholdPaceSecsPerKm?: number;
+    restingHr?: number;
+  }
 ): Record<string, any>[] {
   if (!Array.isArray(rawActivities)) return [];
-  const activeFtp = Math.max(100, Number(ftpWatts || 250));
+  const activeFtp = Math.max(120, Number(ftpWatts || 250));
 
   return rawActivities
     .filter((a) => a && (a.activityId || a.id))
@@ -1482,16 +1493,26 @@ export function normalizeGarminPersonalApiActivities(
       ).toLowerCase();
       const name = String(a.activityName || a.name || typeKey || 'Garmin Activity');
       const combined = `${typeKey} ${name}`.toLowerCase();
+      const isEBike = isEBikeActivityText(typeKey, name);
+      const isExplicitCasualOrOtherType =
+        /walk|hiking|hike|yoga|pilates|golf|strength|elliptical|stair|breathwork|meditation|rowing|stand_up_paddle|kayak|ski|snowshoe/i.test(
+          typeKey
+        );
 
       let sportCategory: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport' =
         'Strength';
       if (
-        /cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
+        !isExplicitCasualOrOtherType &&
+        (/cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
           combined
-        )
+        ) ||
+          isEBike)
       ) {
         sportCategory = 'Cycling';
-      } else if (/running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)) {
+      } else if (
+        !isExplicitCasualOrOtherType &&
+        /running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)
+      ) {
         sportCategory = 'Running';
       } else if (/swimming|swim|lap_swimming|open_water/i.test(combined)) {
         sportCategory = 'Swimming';
@@ -1542,16 +1563,18 @@ export function normalizeGarminPersonalApiActivities(
       );
       const distanceMeters = Math.round(Number(a.distance ?? 0));
       const elevationGainMeters = Math.round(Number(a.elevationGain ?? 0));
-      const avgPower =
+      const rawAvgPower =
         Number(a.avgPower) > 0 ? Math.round(Number(a.avgPower)) : undefined;
-      const normalizedPower =
+      const rawNormalizedPower =
         Number(a.normPower) > 0
           ? Math.round(Number(a.normPower))
-          : avgPower;
+          : rawAvgPower;
+      const avgPower = isEBike ? undefined : rawAvgPower;
+      const normalizedPower = isEBike ? undefined : rawNormalizedPower;
       const rawMaxPower = Number(a.maxPower ?? a.maxAvgPower_1 ?? 0);
-      const maxPower = rawMaxPower > 0 ? Math.round(rawMaxPower) : undefined;
+      const maxPower = !isEBike && rawMaxPower > 0 ? Math.round(rawMaxPower) : undefined;
       const rawMax20m = Number(a.max20MinPower ?? a.maxAvgPower_1200 ?? 0);
-      const max20MinPower = rawMax20m > 0 ? Math.round(rawMax20m) : undefined;
+      const max20MinPower = !isEBike && rawMax20m > 0 ? Math.round(rawMax20m) : undefined;
       const fastestSplit1000 =
         Number(a.fastestSplit_1000) > 0 ? Math.round(Number(a.fastestSplit_1000)) : undefined;
       const fastestSplit1609 =
@@ -1567,27 +1590,49 @@ export function normalizeGarminPersonalApiActivities(
             ? Math.round(Number(a.averageRunningCadenceInStepsPerMinute))
             : undefined;
 
-      const intensityFactor =
-        normalizedPower && activeFtp > 0
-          ? Number((normalizedPower / activeFtp).toFixed(2))
-          : undefined;
-
-      let trainingLoad = Math.round(Number(a.activityTrainingLoad ?? 0));
-      if (!trainingLoad && normalizedPower && movingTimeSecs > 0) {
-        const ifVal = normalizedPower / activeFtp;
-        trainingLoad = Math.round(
-          ((movingTimeSecs * normalizedPower * ifVal) / (activeFtp * 3600)) * 100
-        );
-      } else if (!trainingLoad && avgHr > 0 && movingTimeSecs > 0) {
-        trainingLoad = Math.round((movingTimeSecs / 3600) * Math.pow(avgHr / 153, 2) * 65);
-      }
-
       const avgPaceSecsPerKm =
-        sportCategory === 'Running' && distanceMeters > 0
+        sportCategory === 'Running' && distanceMeters > 0 && movingTimeSecs > 0
           ? Math.round(movingTimeSecs / (distanceMeters / 1000))
           : undefined;
-      const efficiencyFactor =
-        normalizedPower && avgHr > 0 ? Number((normalizedPower / avgHr).toFixed(2)) : 0;
+
+      const hasRealCyclingWatts =
+        !isEBike && sportCategory === 'Cycling' && Boolean(normalizedPower && normalizedPower > 0);
+      const loadResult = computeStravaActivityLoadV2({
+        sportCategory,
+        rawSportType: typeKey || undefined,
+        name,
+        environment: isIndoor ? 'INDOOR' : 'OUTDOOR',
+        movingTimeSecs,
+        distanceMeters,
+        elevationGainMeters,
+        normalizedPower,
+        avgPower,
+        hasRealDeviceWatts: hasRealCyclingWatts,
+        avgHr,
+        maxHr,
+        avgPaceSecsPerKm,
+        calibratedFtp: activeFtp,
+        calibratedBikeLthr: calibrationOpts?.lthr || 163,
+        calibratedRunLthr: calibrationOpts?.runLthr || 168,
+        calibratedThresholdPaceSecsPerKm: calibrationOpts?.thresholdPaceSecsPerKm || 255,
+        restingHr: calibrationOpts?.restingHr || 52,
+      });
+
+      const intensityFactor = loadResult.intensityFactor;
+      const trainingLoad = loadResult.trainingLoad;
+
+      let efficiencyFactor = 0;
+      if (hasRealCyclingWatts && normalizedPower && avgHr > 0) {
+        efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
+      } else if (
+        sportCategory === 'Running' &&
+        distanceMeters > 0 &&
+        movingTimeSecs > 0 &&
+        avgHr > 0
+      ) {
+        const speedMetersPerMin = distanceMeters / (movingTimeSecs / 60);
+        efficiencyFactor = Number((speedMetersPerMin / avgHr).toFixed(2));
+      }
 
       const hrZones = [
         Math.round(Number(a.hrTimeInZone_1 ?? 0)),
@@ -1630,6 +1675,7 @@ export function normalizeGarminPersonalApiActivities(
         startDateLocal,
         name,
         sportCategory,
+        rawSportType: typeKey || undefined,
         environment: isIndoor ? ('INDOOR' as const) : ('OUTDOOR' as const),
         subType,
         movingTimeSecs,
@@ -1637,6 +1683,7 @@ export function normalizeGarminPersonalApiActivities(
         elevationGainMeters,
         avgPower,
         normalizedPower,
+        deviceWatts: sportCategory === 'Cycling' ? hasRealCyclingWatts : undefined,
         max_watts: maxPower,
         max20MinPower,
         fastestSplit_1000: fastestSplit1000,
@@ -1644,6 +1691,7 @@ export function normalizeGarminPersonalApiActivities(
         fastestSplit_5000: fastestSplit5000,
         intensityFactor,
         trainingLoad,
+        loadModelVersion: STRAVA_LOAD_MODEL_VERSION,
         avgHr,
         maxHr,
         avgCadence,

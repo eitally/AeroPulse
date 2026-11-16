@@ -167,15 +167,19 @@ export function classifyActivityGarminLoad(
 
   // 5. Fallback to Intensity Factor (IF), Variability Index (VI), and Heart Rate vs LTHR
   const rawIf = Number(activity.intensityFactor || 0);
+  const normalizedRawIf = rawIf > 3 ? rawIf / 100 : rawIf;
+  const ignoreStaleRunningWattsIf =
+    activity.sportCategory === 'Running' &&
+    normalizedRawIf > 1.25 &&
+    (activity.movingTimeSecs || 0) >= 900;
   const np = Number(activity.normalizedPower || activity.avgPower || 0);
-  const ifVal =
-    rawIf > 3
-      ? rawIf / 100
-      : rawIf > 0
-        ? rawIf
-        : np > 0 && ftp > 0 && activity.sportCategory === 'Cycling'
-          ? np / ftp
-          : 0;
+  const ifVal = ignoreStaleRunningWattsIf
+    ? 0
+    : normalizedRawIf > 0
+      ? normalizedRawIf
+      : np > 0 && ftp > 0 && activity.sportCategory === 'Cycling' && activity.deviceWatts !== false
+        ? np / ftp
+        : 0;
   const viVal =
     activity.variabilityIndex && activity.variabilityIndex > 0
       ? activity.variabilityIndex
@@ -252,7 +256,7 @@ export function buildDayLoadSegments(
     });
 
     const sumRaw = rawList.reduce((acc, item) => acc + item.rawLoad, 0);
-    const targetTotal = dailyLoad > 0 ? Math.max(dailyLoad, sumRaw) : sumRaw;
+    const targetTotal = sumRaw > 0 ? sumRaw : dailyLoad;
     const scale = sumRaw > 0 ? targetTotal / sumRaw : 1;
 
     return rawList.map((item) => ({
