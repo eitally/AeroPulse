@@ -17,6 +17,8 @@ import {
   TrendingUp,
   Zap,
 } from './icons/PhosphorIcons';
+import { formatHumanReadableStepLine } from '../utils/workoutParser';
+import { QuickRunLoggerCard } from './QuickRunLoggerCard';
 import type {
   AthleteProfile,
   DistanceUnit,
@@ -61,6 +63,7 @@ interface CircadianFirstTouchHeroProps {
   }) => Promise<void>;
   onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt?: (prompt: string) => void;
+  onQuickLogRun?: (activity: UnifiedActivity) => void;
 }
 
 function toneBadgeClass(tone: 'prime' | 'info' | 'caution' | 'strained'): string {
@@ -159,6 +162,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
+  onQuickLogRun,
 }) => {
   const todayIso = useMemo(() => getLocalDateIso(), []);
 
@@ -794,11 +798,20 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   .split('\n')
                   .filter((line) => line.trim().length > 0)
                   .slice(0, 4)
-                  .map((stepLine, idx) => (
-                    <div key={idx} className="py-1 first:pt-0 last:pb-0 truncate">
-                      {stepLine.replace(/^-\s*/, '· ')}
-                    </div>
-                  ))}
+                  .map((stepLine, idx) => {
+                    const readableLine = formatHumanReadableStepLine(
+                      stepLine,
+                      todayScheduled?.sportCategory || rxSport || 'Running',
+                      athleteProfile?.thresholdPaceSecsPerKm,
+                      distanceUnit,
+                      athleteProfile?.ftp
+                    );
+                    return (
+                      <div key={idx} className="py-1 first:pt-0 last:pb-0 truncate">
+                        {readableLine.replace(/^-\s*/, '· ')}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
@@ -887,6 +900,17 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </button>
                 )}
               </div>
+
+              {onQuickLogRun &&
+                athleteProfile &&
+                (todayScheduled?.sportCategory || rxSport) === 'Running' && (
+                  <QuickRunLoggerCard
+                    compact
+                    distanceUnit={distanceUnit}
+                    athleteProfile={athleteProfile}
+                    onSaveRun={onQuickLogRun}
+                  />
+                )}
 
               {rxToast && (
                 <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-2xs font-medium">

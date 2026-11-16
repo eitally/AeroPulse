@@ -169,18 +169,22 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await toggleDarkMode(page, false);
     });
 
-    test('3. Athlete Roster Modal — Light and Dark Mode', async ({ page }) => {
+    test('3. Coach Workspace Mode & Account Roster Access — Light and Dark Mode', async ({ page }) => {
       await enterSampleDemoMode(page);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(400);
 
-      // Open Roster modal via explicit data-testid
-      const teamBtn = page.locator('[data-testid="open-roster-modal"]').first();
-      await expect(teamBtn).toBeVisible({ timeout: 10000 });
-      await teamBtn.click();
+      // Enter dedicated Coach Workspace Mode via header toggle
+      const coachToggle = page.getByTestId('toggle-coach-workspace');
+      await expect(coachToggle).toBeVisible({ timeout: 10000 });
+      await coachToggle.click();
 
-      // Verify dialog is visible (allows time for lazy chunk to download and mount)
-      const dialog = page.locator('div[role="dialog"]');
-      await expect(dialog).toBeVisible({ timeout: 15000 });
+      const coachView = page.getByTestId('coach-workspace-view');
+      await expect(coachView).toBeVisible({ timeout: 15000 });
+
+      const nav = page.locator('nav[aria-label="Primary workspaces"]');
+      for (const label of ['Clipboard', 'Team Plan', 'Stopwatch', 'Roster']) {
+        await expect(nav.getByRole('button', { name: label })).toBeVisible();
+      }
 
       // Light mode capture
       await page.screenshot({
@@ -189,29 +193,26 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         animations: 'disabled',
       });
 
-      // Close modal before toggling theme
-      await page.keyboard.press('Escape');
-      await expect(dialog).not.toBeVisible();
-
       // Switch to Dark Mode
       await toggleDarkMode(page, true);
-
-      // Re-open Roster modal in Dark Mode
-      await teamBtn.click();
-      await expect(dialog).toBeVisible({ timeout: 15000 });
+      await expect(coachView).toBeVisible();
       await page.waitForTimeout(300);
 
-      // Dark mode capture for Roster dialog
+      // Dark mode capture for Coach Workspace
       await page.screenshot({
         path: 'test-results/screenshots/roster-modal-desktop-1440-dark.png',
         fullPage: false,
         animations: 'disabled',
       });
 
-      // Close modal
-      await page.keyboard.press('Escape');
-      await expect(dialog).not.toBeVisible();
       await toggleDarkMode(page, false);
+
+      // Return to personal Athlete Mode and verify 4-tab Athlete Nav
+      await coachToggle.click();
+      await expect(coachView).not.toBeVisible();
+      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+        await expect(nav.getByRole('link', { name: label })).toBeVisible();
+      }
     });
 
     test('3b. Trackside Stopwatch Workspace & Offline Airplane-Mode Resilience (FEA-01)', async ({ page, context }) => {
@@ -250,17 +251,22 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       });
       await toggleDarkMode(page, false);
 
-      // Clear state and verify Airplane-Mode workflow (Boot Today -> idle chunk warmup -> setOffline -> navigate & time)
+      // Clear state and verify Airplane-Mode workflow via 4-tab Athlete Nav (Today -> Log -> Time Session while Offline)
       await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
       await enterSampleDemoMode(page);
+      const desktopNav = page.locator('nav[aria-label="Primary workspaces"]');
+      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+        await expect(desktopNav.getByRole('link', { name: label })).toBeVisible();
+      }
+      await expect(desktopNav.getByRole('link', { name: 'Stopwatch' })).toHaveCount(0);
       await page.waitForTimeout(1300);
 
       await context.setOffline(true);
       try {
-        await page
-          .locator('nav[aria-label="Primary workspaces"]')
-          .getByRole('link', { name: 'Stopwatch' })
-          .click();
+        await desktopNav.getByRole('link', { name: 'Log' }).click();
+        const openStopwatchBtn = page.getByTestId('log-open-stopwatch-btn');
+        await expect(openStopwatchBtn).toBeVisible({ timeout: 10000 });
+        await openStopwatchBtn.click();
         await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
           timeout: 10000,
         });
@@ -402,9 +408,28 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         timeout: 15000,
       });
 
-      // Verify 5-tab MobileDock includes Stopwatch
+      // Verify 4-tab Athlete MobileDock switches cleanly to 4-tab Coach MobileDock and back
       const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
-      await expect(mobileDock.getByRole('button', { name: 'Stopwatch' })).toBeVisible();
+      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+        await expect(mobileDock.getByRole('button', { name: label })).toBeVisible();
+      }
+      await expect(mobileDock.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-current', 'page');
+
+      await page.getByTestId('toggle-coach-workspace').click();
+      for (const label of ['Clipboard', 'Team Plan', 'Stopwatch', 'Roster']) {
+        await expect(mobileDock.getByRole('button', { name: label })).toBeVisible();
+      }
+      await mobileDock.getByRole('button', { name: 'Stopwatch' }).click();
+      await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+        timeout: 10000,
+      });
+      await page.getByTestId('toggle-coach-workspace').click();
+      await expect(mobileDock.getByRole('button', { name: 'Today' })).toBeVisible();
+      await mobileDock.getByRole('button', { name: 'Log' }).click();
+      await page.getByTestId('log-open-stopwatch-btn').click();
+      await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+        timeout: 10000,
+      });
 
       // Add walk-on athlete and record 1 split so mobile cards showcase active timing
       await page.getByLabel('Walk-On Runner Name').fill('Jordan Miles');

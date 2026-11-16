@@ -1299,6 +1299,7 @@ export interface TeamMembershipRecord {
   openedAt?: string;
   joinedAt?: string;
   liveSnapshot?: TeamAthleteLiveSnapshot;
+  coachRecordedActivities?: UnifiedActivity[];
 }
 
 export interface TeamBroadcastWorkout {
@@ -1355,7 +1356,10 @@ export type ActiveTab =
   | 'activities'
   | 'curves'
   | 'totals'
-  | 'stopwatch';
+  | 'stopwatch'
+  | 'coach';
+
+export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';
 
 
 

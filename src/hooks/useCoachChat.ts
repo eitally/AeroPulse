@@ -1,32 +1,141 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
+  AnnualMileageGoal,
   AthleteProfile,
   CoachChatMessage,
+  DistanceUnit,
+  EnvironmentFilter,
   PlannedWorkoutEvent,
+  TargetGoal,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
 import { INITIAL_CHAT_MESSAGES } from '../data/mockTelemetry';
+import { computeAnnualMileageSummary, formatDistance } from '../utils/formatters';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 
 interface UseCoachChatParams {
   latestWellness: UnifiedWellnessDay | null;
   effectiveActivities: UnifiedActivity[];
   effectiveAthleteProfile: AthleteProfile;
-  telemetrySummaryForGemini: any;
+  effectiveWellnessDays: UnifiedWellnessDay[];
+  effectiveAnnualMileageGoals: AnnualMileageGoal[];
+  envFilter: EnvironmentFilter;
+  distanceUnit: DistanceUnit;
+  effectivePlannedEvents: PlannedWorkoutEvent[];
+  effectiveTargetGoals: TargetGoal[];
 }
 
 export function useCoachChat({
   latestWellness,
   effectiveActivities,
   effectiveAthleteProfile,
-  telemetrySummaryForGemini,
+  effectiveWellnessDays,
+  effectiveAnnualMileageGoals,
+  envFilter,
+  distanceUnit,
+  effectivePlannedEvents,
+  effectiveTargetGoals,
 }: UseCoachChatParams) {
   const [isCoachDrawerOpen, setIsCoachDrawerOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<CoachChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [coachDraftPrompt, setCoachDraftPrompt] = useState('');
   const chatAbortRef = useRef<AbortController | null>(null);
+
+  const telemetrySummaryForGemini = useMemo(() => {
+    const today = effectiveWellnessDays[effectiveWellnessDays.length - 1];
+    const runGoal =
+      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Running')
+        ?.targetDistanceMeters || 2414016;
+    const bikeGoal =
+      effectiveAnnualMileageGoals.find((g) => g.sportCategory === 'Cycling')
+        ?.targetDistanceMeters || 8046720;
+    const runSummary = computeAnnualMileageSummary(
+      'Running',
+      runGoal,
+      effectiveActivities,
+      envFilter
+    );
+    const bikeSummary = computeAnnualMileageSummary(
+      'Cycling',
+      bikeGoal,
+      effectiveActivities,
+      envFilter
+    );
+
+    return {
+      todayWellness: today,
+      garminHealthSummary: today
+        ? {
+            trainingStatus: today.garminTrainingStatus,
+            trainingStatusReason: today.trainingStatusReason,
+            sleepHours: (today.sleepSecs / 3600).toFixed(1),
+            sleepScore: today.sleepScore,
+            sleepDebtHours7d: ((today.sleepDebt7dSecs || 0) / 3600).toFixed(1),
+            hrvRMSSD: today.hrvRMSSD,
+            hrvStatus: today.hrvStatus,
+            hrvNormalCorridor: `${today.hrvNormalBandLow || 44}-${today.hrvNormalBandHigh || 62} ms`,
+            restingHR: today.restingHR,
+            rideEftp: today.rideEftp,
+            runEftp: today.runEftp,
+            ctl: today.ctl,
+            atl: today.atl,
+            tsb: today.tsb,
+          }
+        : undefined,
+      activeEnvironmentFilter: envFilter,
+      runningAnnualMileage: {
+        ytdCombined: formatDistance(runSummary.combinedTotalMeters, distanceUnit, 1),
+        ytdOutdoor: formatDistance(runSummary.outdoorMeters, distanceUnit, 1),
+        ytdIndoorTreadmill: formatDistance(runSummary.indoorMeters, distanceUnit, 1),
+        annualTarget: formatDistance(runSummary.targetMeters, distanceUnit, 0),
+        deltaVsSchedule: formatDistance(runSummary.deltaVsScheduleMeters, distanceUnit, 1),
+      },
+      cyclingAnnualMileage: {
+        ytdCombined: formatDistance(bikeSummary.combinedTotalMeters, distanceUnit, 1),
+        ytdOutdoor: formatDistance(bikeSummary.outdoorMeters, distanceUnit, 1),
+        ytdIndoorSmartTrainer: formatDistance(bikeSummary.indoorMeters, distanceUnit, 1),
+        annualTarget: formatDistance(bikeSummary.targetMeters, distanceUnit, 0),
+        deltaVsSchedule: formatDistance(bikeSummary.deltaVsScheduleMeters, distanceUnit, 1),
+      },
+      recentWorkouts: effectiveActivities.slice(0, 10).map((a) => ({
+        date: a.startDateLocal.slice(0, 10),
+        name: a.name,
+        sport: a.sportCategory,
+        environment: a.environment,
+        subType: a.subType,
+        distance: formatDistance(a.distanceMeters, distanceUnit, 1),
+        durationMins: Math.round(a.movingTimeSecs / 60),
+        load: a.trainingLoad,
+        decouplingPct: a.aerobicDecouplingPct,
+        npWatts: a.normalizedPower,
+        avgHr: a.avgHr,
+      })),
+      upcomingPlannedWorkouts: effectivePlannedEvents.slice(0, 8),
+      targetGoals: effectiveTargetGoals,
+      athleteProfile: {
+        weightKg: effectiveAthleteProfile.weightKg,
+        restingHr: effectiveAthleteProfile.restingHr,
+        ftp: effectiveAthleteProfile.ftp,
+        indoorFtp: effectiveAthleteProfile.indoorFtp,
+        lthr: effectiveAthleteProfile.lthr,
+        maxHr: effectiveAthleteProfile.maxHr,
+        runFtp: effectiveAthleteProfile.runFtp,
+        powerZones: effectiveAthleteProfile.powerZones,
+        hrZones: effectiveAthleteProfile.hrZones,
+      },
+    };
+  }, [
+    effectiveWellnessDays,
+    effectiveAnnualMileageGoals,
+    effectiveActivities,
+    envFilter,
+    distanceUnit,
+    effectivePlannedEvents,
+    effectiveTargetGoals,
+    effectiveAthleteProfile,
+  ]);
 
   const buildClientCoachFallback = useCallback(
     (userText: string): Omit<CoachChatMessage, 'id' | 'role' | 'timestamp'> => {

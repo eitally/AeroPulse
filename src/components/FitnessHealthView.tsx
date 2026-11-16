@@ -86,6 +86,7 @@ interface FitnessHealthViewProps {
   }) => Promise<void>;
   onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
+  onQuickLogRun?: (activity: UnifiedActivity) => void;
 }
 
 type DateRangePreset =
@@ -165,6 +166,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
+  onQuickLogRun,
 }) => {
   // Default to 42D (6-week microcycle) so daily load bars and acute fitness swings are immediately readable
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('42D');
@@ -989,6 +991,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onSyncMorphedToCalendar={onSyncMorphedToCalendar}
         onOpenAthleteProfileModal={onOpenAthleteProfileModal}
         onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+        onQuickLogRun={onQuickLogRun}
       />
 
       {/* ==========================================================================

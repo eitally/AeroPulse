@@ -6,6 +6,7 @@ import type {
   AthleteGearItem,
   AthleteProfile,
   BenchmarkSegmentHistory,
+  CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
@@ -45,6 +46,9 @@ const GoalsView = lazy(() =>
 const TracksideStopwatchView = lazy(() =>
   import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView }))
 );
+const CoachWorkspaceView = lazy(() =>
+  import('./CoachWorkspaceView').then((m) => ({ default: m.CoachWorkspaceView }))
+);
 
 export const ViewLoadingSkeleton: React.FC = () => (
   <div className="rounded-2xl liquid-glass p-8 text-center text-xs font-mono text-slate-500 dark:text-slate-400 animate-pulse">
@@ -78,6 +82,14 @@ export interface WorkspaceRouterProps {
   benchmarkSegments: BenchmarkSegmentHistory[];
   isScanningSegments: boolean;
   isHydratingRoutes: boolean;
+  coachSubTab: CoachWorkspaceSubTab;
+  setCoachSubTab: (tab: CoachWorkspaceSubTab) => void;
+  activeTeam: TeamSummaryWithRole | null;
+  activeViewedAthleteId: string;
+  onSelectAthleteViewport: (athleteId: string) => void;
+  resendConfigured: boolean;
+  onSelectActiveTeam: (teamId: string | null) => void;
+  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
 
   // Handlers
   handleSelectActivityAndOpenTab: (act: UnifiedActivity) => void;
@@ -156,6 +168,14 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   benchmarkSegments,
   isScanningSegments,
   isHydratingRoutes,
+  coachSubTab,
+  setCoachSubTab,
+  activeTeam,
+  activeViewedAthleteId,
+  onSelectAthleteViewport,
+  resendConfigured,
+  onSelectActiveTeam,
+  onTeamsUpdated,
 
   handleSelectActivityAndOpenTab,
   handleCalendarCreatePlannedEvent,
@@ -184,10 +204,12 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   handleSwitchToCalendarTab,
   handleSaveStopwatchActivities,
 }) => {
-  // Warm TracksideStopwatchView lazy chunk on idle so trackside Airplane Mode navigation never hits network
+  // Warm lazy workspace chunks on idle so trackside Airplane Mode navigation never hits network
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void import('./TracksideStopwatchView');
+      void import('./ActivitiesView');
+      void import('./CoachWorkspaceView');
     }, 900);
     return () => window.clearTimeout(timer);
   }, []);
@@ -364,6 +386,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSyncMorphedToCalendar={handleCreatePlannedEvent}
           onOpenAthleteProfileModal={handleOpenProfileModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          onQuickLogRun={handleImportSingleParsedActivity}
         />
       )}
 
@@ -407,6 +430,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onImportParsedActivity={handleImportSingleParsedActivity}
           onImportParsedActivities={handleImportMultipleParsedActivities}
+          onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
           athleteWeightKg={latestWeightKg}
           athleteProfile={effectiveAthleteProfile}
         />
@@ -464,6 +488,44 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           activeTeamId={activeTeamId}
           onSaveStopwatchActivities={handleSaveStopwatchActivities}
           onOpenActivitiesTab={handleOpenActivitiesTab}
+          onOpenRosterModal={handleOpenRosterModal}
+        />
+      )}
+
+      {activeTab === 'coach' && (
+        <CoachWorkspaceView
+          subTab={coachSubTab}
+          setSubTab={setCoachSubTab}
+          activeTeam={activeTeam}
+          myTeams={myTeams}
+          activeTeamId={activeTeamId}
+          onSelectActiveTeam={onSelectActiveTeam}
+          combinedRoster={combinedRoster}
+          activeViewedAthleteId={activeViewedAthleteId}
+          onSelectAthleteViewport={onSelectAthleteViewport}
+          primaryAthleteDisplayName={primaryAthleteDisplayName}
+          selfProfile={effectiveAthleteProfile}
+          athleteFtp={athleteFtp}
+          effectivePlannedEvents={effectivePlannedEvents}
+          effectiveActivities={effectiveActivities}
+          effectiveWellnessDays={effectiveWellnessDays}
+          effectiveTargetGoals={effectiveTargetGoals}
+          envFilter={envFilter}
+          selectedSport={selectedSport}
+          onSelectSport={setSelectedSport}
+          distanceUnit={distanceUnit}
+          resendConfigured={resendConfigured}
+          onTeamsUpdated={onTeamsUpdated}
+          onSelectActivityAndOpenTab={handleSelectActivityAndOpenTab}
+          onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
+          onDeletePlannedEvent={handleDeletePlannedEvent}
+          onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+          onOpenProfileModal={handleOpenProfileModal}
+          onOpenGoalsTab={handleOpenGoalsTab}
+          onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
+          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          onSaveStopwatchActivities={handleSaveStopwatchActivities}
+          onOpenAthleteToday={handleOpenTodayTab}
           onOpenRosterModal={handleOpenRosterModal}
         />
       )}

@@ -889,6 +889,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              data-testid="stopwatch-back-to-log-btn"
+              onClick={onOpenActivitiesTab}
+              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white cursor-pointer"
+            >
+              <span>← Back</span>
+            </button>
             <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               Trackside Stopwatch
             </h1>

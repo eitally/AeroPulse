@@ -794,6 +794,14 @@ function projectTeamSummaryForCaller(
       openedAt: m.openedAt,
       joinedAt: m.joinedAt,
       liveSnapshot: projectedSnapshot,
+      coachRecordedActivities:
+        (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities)
+          ? safeSportShieldEnforced
+            ? stripSafeSportWeightAndBodyCompFields(m.coachRecordedActivities, {
+                maskWellnessWeightKgZero: true,
+              })
+            : m.coachRecordedActivities
+          : undefined,
     };
     if (isCoach || isSelf) {
       base.invitedEmail = m.invitedEmail;
@@ -1667,6 +1675,84 @@ export async function broadcastWorkoutToTeamSquad(params: {
   doc.updatedAt = nowIso;
   await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
+
+export async function recordCoachStopwatchActivities(params: {
+  callerSid: string;
+  teamId: string;
+  originUrl: string;
+  entries: Array<{ membershipId: string; activity: UnifiedActivity }>;
+}): Promise<TeamSummaryWithRole | null> {
+  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+  );
+  if (
+    !callerMem ||
+    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+  ) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  for (const entry of params.entries || []) {
+    const cleanId = String(entry?.membershipId || '').trim();
+    const rawAct = entry?.activity;
+    if (!cleanId || !rawAct || !rawAct.id) continue;
+
+    const mem = doc.memberships.find((m) => m.membershipId === cleanId && m.status !== 'REVOKED');
+    if (!mem) continue;
+
+    const enforceHideWeight = Boolean(doc.brand.defaultSafeSportShield || mem.isMinorU18);
+    const cleanList = (sanitizeTelemetryForCleanRoom({ activities: [rawAct] }).activities ||
+      []) as UnifiedActivity[];
+    const safeAct = enforceHideWeight
+      ? stripSafeSportWeightAndBodyCompFields(cleanList, { maskWellnessWeightKgZero: true })[0]
+      : cleanList[0];
+    if (!safeAct) continue;
+
+    const prevRecorded = Array.isArray(mem.coachRecordedActivities)
+      ? mem.coachRecordedActivities
+      : [];
+    mem.coachRecordedActivities = [
+      safeAct,
+      ...prevRecorded.filter((a) => a.id !== safeAct.id),
+    ].slice(0, 50);
+
+    const baseSnap: TeamAthleteLiveSnapshot = mem.liveSnapshot || {
+      updatedAt: nowIso,
+      hasConnectedWatch: false,
+      verdictLabel: 'Coach Track Session',
+      readinessScore: 80,
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+      acuteLoad7d: 0,
+      lowAerobicPct: 80,
+      highAerobicPct: 15,
+      neuromuscularPct: 5,
+      caraHours7d: 0,
+      safeSportHideWeight: enforceHideWeight,
+      sharingTier: mem.sharingTier || 'SUMMARY_ONLY',
+      activities: [],
+    };
+    const prevSnapActs = Array.isArray(baseSnap.activities) ? baseSnap.activities : [];
+    mem.liveSnapshot = {
+      ...baseSnap,
+      updatedAt: nowIso,
+      safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
+      activities: [safeAct, ...prevSnapActs.filter((a) => a.id !== safeAct.id)].slice(0, 30),
+    };
+  }
+
+  doc.updatedAt = nowIso;
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
 
