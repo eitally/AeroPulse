@@ -11,3 +11,5 @@ export * from './scholasticEngine';
 export * from './teamOnboardingEngine';
 export * from './trackLiveAutoRegulationEngine';
 export * from './trackOvalGpsFusionEngine';
+export * from './trackProgressionAndKalmanEngine';
+export * from './trackMeetAndRelayEngine';

@@ -10,6 +10,10 @@ import {
   computeNormalizedPower,
 } from './powerPaceMetrics.ts';
 import { resolveThresholdsAtDate } from './pmc.ts';
+import {
+  computeTrackExecutionScore,
+  extractTrackIntervalMetricsForActivity,
+} from './trackProgressionAndKalmanEngine.ts';
 
 function formatClockOffset(sec: number): string {
   const clean = Math.max(0, Math.round(sec));
@@ -480,14 +484,29 @@ export function generatePostWorkoutDebrief(
     });
   }
 
-  // Compute deterministic execution score (0-100) from decoupling + finish discipline
+  // Compute deterministic execution score (0-100) from track interval execution OR decoupling/finish discipline
   let executionScore = 88;
-  if (aerobicDecouplingPct !== null) {
-    if (aerobicDecouplingPct <= 3.5) executionScore += 6;
-    else if (aerobicDecouplingPct > 7.5) executionScore -= 10;
+  const trackMetrics =
+    activity.sportCategory === 'Running' && workReps.length >= 2
+      ? extractTrackIntervalMetricsForActivity(activity, thresholds.thresholdPaceSecsPerKm)
+      : null;
+
+  if (trackMetrics) {
+    executionScore = Math.round(
+      computeTrackExecutionScore({
+        ...trackMetrics,
+        aerobicDecouplingPct,
+        strideLengthFadePct,
+      }).totalScore
+    );
+  } else {
+    if (aerobicDecouplingPct !== null) {
+      if (aerobicDecouplingPct <= 3.5) executionScore += 6;
+      else if (aerobicDecouplingPct > 7.5) executionScore -= 10;
+    }
+    if (bestHrr60Bpm !== null && bestHrr60Bpm >= 25) executionScore += 4;
+    executionScore = Math.max(55, Math.min(99, executionScore));
   }
-  if (bestHrr60Bpm !== null && bestHrr60Bpm >= 25) executionScore += 4;
-  executionScore = Math.max(55, Math.min(99, executionScore));
 
   const headline = hasWatts
     ? `NP ${npWatts ?? '—'}W · ${aerobicDecouplingPct !== null ? `${aerobicDecouplingPct.toFixed(1)}% Pw:Hr Drift` : `${Math.round(totalDurationSec / 60)}m 1Hz Signal Pass`}`

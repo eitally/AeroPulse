@@ -872,12 +872,13 @@ export function computeCrossTrainingEquivalence(params: {
 
 /**
  * Audits rolling 7-day training volume against NCAA Bylaw 17.1 Countable Athletically Related
- * Activities (CARA: 20 hours/week max in-season, 4 hours/day max).
+ * Activities (CARA: 20 hours/week max in-season, 4 hours/day max, statutory flat `3.0h` on any Competition Day).
  */
 export function summarizeNcaaCaraWeeklyHours(
   activities: UnifiedActivity[],
   referenceDateStr?: string,
-  extraStrengthOrMeetingHours = 0
+  extraStrengthOrMeetingHours = 0,
+  competitionDates: string[] = []
 ): NcaaCaraWeeklyAudit {
   const refMs = referenceDateStr
     ? new Date(`${referenceDateStr.slice(0, 10)}T23:59:59Z`).getTime()
@@ -885,20 +886,40 @@ export function summarizeNcaaCaraWeeklyHours(
   const startMs = refMs - 7 * 86400 * 1000;
 
   const hoursByDay = new Map<string, number>();
-  let totalSecs = 0;
+  const competitionDays = new Set<string>(
+    competitionDates
+      .map((d) => d.slice(0, 10))
+      .filter((d) => {
+        if (!d) return false;
+        const dMs = new Date(`${d}T12:00:00Z`).getTime();
+        return !Number.isNaN(dMs) && dMs > startMs && dMs <= refMs;
+      })
+  );
 
   for (const act of activities) {
     if (!act?.startDateLocal) continue;
     const tMs = new Date(act.startDateLocal).getTime();
     if (Number.isNaN(tMs) || tMs <= startMs || tMs > refMs) continue;
     const dayKey = act.startDateLocal.slice(0, 10);
+    if (Boolean(act.officialRaceData) || Boolean(act.isCompetitionDay)) {
+      competitionDays.add(dayKey);
+    }
     const secs = Math.max(0, act.movingTimeSecs || 0);
-    totalSecs += secs;
     hoursByDay.set(dayKey, (hoursByDay.get(dayKey) || 0) + secs / 3600);
   }
 
+  // NCAA Bylaw 17.1.7.1: any competition day counts flat 3.0 hours regardless of race duration or multi-event count
+  for (const compDay of competitionDays) {
+    hoursByDay.set(compDay, 3.0);
+  }
+
+  let practiceAndCompHours = 0;
+  for (const dayHours of hoursByDay.values()) {
+    practiceAndCompHours += dayHours;
+  }
+
   const rolling7dCountableHours = Number(
-    (totalSecs / 3600 + Math.max(0, extraStrengthOrMeetingHours)).toFixed(2)
+    (practiceAndCompHours + Math.max(0, extraStrengthOrMeetingHours)).toFixed(2)
   );
   const maxSingleDayHours = Number(
     Math.max(0, ...Array.from(hoursByDay.values())).toFixed(2)
@@ -925,6 +946,7 @@ export function summarizeNcaaCaraWeeklyHours(
     maxSingleDayHours,
     dailyCapHours,
     remainingWeeklyHours,
+    competitionDaysCount: competitionDays.size,
     compliant,
     statusLabel,
   };
