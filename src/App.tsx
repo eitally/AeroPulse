@@ -1112,22 +1112,22 @@ export default function App() {
     try {
       localStorage.setItem('aeropulse_logged_out', '1');
       localStorage.removeItem('aeropulse_auth_gate_passed');
-      localStorage.removeItem('aeropulse_calibrated_v1');
       localStorage.removeItem('aeropulse_session_token');
       localStorage.removeItem('aeropulse_strava_access_token');
       localStorage.removeItem('aeropulse_strava_refresh_token');
       localStorage.removeItem('aeropulse_strava_expires_at');
-      localStorage.removeItem('aeropulse_strava_athlete_id');
-      localStorage.removeItem('aeropulse_strava_athlete_name');
-      localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
-      localStorage.removeItem('aeropulse_strava_athlete_ftp');
-      localStorage.removeItem('aeropulse_strava_sync_policy');
-      localStorage.removeItem('aeropulse_store_owner_athlete_id');
-      localStorage.removeItem('thresh_primary_sport');
       localStorage.removeItem('thresh_my_teams_v1');
       localStorage.removeItem('thresh_active_team_id_v1');
       sessionStorage.removeItem('thresh_pending_team_join_v1');
       if (clearAllVaultKeys) {
+        localStorage.removeItem('aeropulse_calibrated_v1');
+        localStorage.removeItem('aeropulse_strava_athlete_id');
+        localStorage.removeItem('aeropulse_strava_athlete_name');
+        localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
+        localStorage.removeItem('aeropulse_strava_athlete_ftp');
+        localStorage.removeItem('aeropulse_strava_sync_policy');
+        localStorage.removeItem('aeropulse_store_owner_athlete_id');
+        localStorage.removeItem('thresh_primary_sport');
         localStorage.removeItem('aeropulse_intervals_api_key');
         localStorage.removeItem('aeropulse_intervals_athlete_id');
         localStorage.removeItem('aeropulse_intervals_athlete_name');
@@ -1186,8 +1186,10 @@ export default function App() {
     } catch {
       // ignore
     }
-    await clearPersistedTelemetrySnapshot();
-    setIdbSavedAt(null);
+    if (clearAllVaultKeys) {
+      await clearPersistedTelemetrySnapshot();
+      setIdbSavedAt(null);
+    }
     await fetchServerConfigStatus();
   }, [fetchServerConfigStatus, resetSampleDemoEphemeralState]);
 

@@ -14,7 +14,9 @@ import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   getSavedIntervalsHeaders,
+  hasPendingTeamJoinInBrowser,
   isGenericAthleteName,
+  loadStravaSyncPolicyFromStorage,
   safeParseResponseJson,
   sanitizeHttpHeaderValue,
   saveRotatedStravaTokensToStorage,
@@ -146,7 +148,56 @@ export function useTelemetryConnectors({
       }
 
       setIsSessionLoggedOut(false);
+      const pendingTeamJoin = hasPendingTeamJoinInBrowser();
+      if (!pendingTeamJoin) {
+        const existingLocalPolicy = loadStravaSyncPolicyFromStorage();
+        if (!existingLocalPolicy?.window) {
+          const grantedScope = String(tokens?.grantedScope || '');
+          const lacksScope = Boolean(grantedScope) && !grantedScope.includes('activity:read');
+          saveStravaSyncPolicyToStorage({
+            window: lacksScope ? 'none' : '90d',
+            importProfileAndGear: true,
+            confirmedAt: new Date().toISOString(),
+            grantedScope: grantedScope || undefined,
+          });
+        }
+        try {
+          localStorage.setItem('aeropulse_auth_gate_passed', '1');
+          const pendingRole = sessionStorage.getItem('thresh_onboarding_role');
+          if (pendingRole === 'COACH') {
+            sessionStorage.removeItem('thresh_onboarding_role');
+            window.location.hash = '#coach';
+          } else if (!window.location.hash) {
+            window.location.hash = '#fitness';
+          }
+        } catch {
+          // ignore storage/hash errors
+        }
+        hasEnteredWorkspaceRef.current = true;
+        setHasEnteredWorkspace(true);
+      }
+
       const statusData = await fetchServerConfigStatus();
+      if (!pendingTeamJoin) {
+        if (!statusData?.stravaSyncPolicy?.confirmedAt) {
+          const activePolicy = loadStravaSyncPolicyFromStorage();
+          void fetch('/api/strava/sync-policy', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getSavedIntervalsHeaders(),
+            },
+            body: JSON.stringify({
+              window: activePolicy?.window || '90d',
+              importProfileAndGear: activePolicy?.importProfileAndGear !== false,
+            }),
+          }).catch(() => null);
+        }
+        void syncLiveTelemetry(false);
+        return;
+      }
+
       const alreadyHasPolicy = Boolean(
         hasExistingSyncPolicy ||
           statusData?.stravaSyncPolicy?.confirmedAt ||
