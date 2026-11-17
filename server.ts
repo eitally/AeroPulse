@@ -4,6 +4,7 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { apiRouter } from './server/apiRouter.ts';
+import { strava64BitJsonReviver } from './server/stravaIdUtils.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +15,12 @@ async function startServer() {
   const httpServer = http.createServer(app);
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use(
+    express.json({
+      limit: '2mb',
+      reviver: strava64BitJsonReviver as unknown as (key: string, value: any) => any,
+    })
+  );
   app.use(apiRouter);
 
   const publicPath = path.resolve(__dirname, 'public');

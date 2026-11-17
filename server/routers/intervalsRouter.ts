@@ -45,6 +45,7 @@ import {
 import { computeIntervalsSegmentEfforts } from './activitiesRouter.ts';
 import { resolveStravaAthleteIdentity, ensureValidStravaAccessToken } from './stravaRouter.ts';
 import { connectServiceToUser, disconnectServiceFromUser } from '../authService.ts';
+import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
 
 export function getEffectiveIntervalsConfig(req?: Request) {
   const activeReq = req ?? requestContext.getStore();
@@ -1232,10 +1233,10 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
             fetch('https://www.strava.com/api/v3/athlete', { headers: sHeaders }),
             fetch('https://www.strava.com/api/v3/athlete/zones', { headers: sHeaders }),
           ]);
-          sAth = sAthResp.ok ? ((await sAthResp.json()) as Record<string, any>) : {};
-          sZones = sZonesResp.ok ? ((await sZonesResp.json()) as Record<string, any>) : null;
+          sAth = sAthResp.ok ? await readStravaResponseJson<Record<string, any>>(sAthResp) : {};
+          sZones = sZonesResp.ok ? await readStravaResponseJson<Record<string, any>>(sZonesResp) : null;
         }
-        const sId = String(sAth.id || stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
+        const sId = (extractStravaId(sAth) || stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
         const sActs = sId
           ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
           : [];

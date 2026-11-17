@@ -3,6 +3,7 @@ import { runtimeStore, saveSessionCacheAsync } from '../sessionContext.ts';
 import { hasValidCronAuthorization } from '../securityUtils.ts';
 import { getEffectiveIntervalsConfig, syncIntervalsAllHistory } from './intervalsRouter.ts';
 import { syncStravaAllHistory } from './stravaRouter.ts';
+import { extractStravaId } from '../stravaIdUtils.ts';
 
 export async function executeHourlyBackgroundPoll() {
   const results: Record<string, any> = {
@@ -99,7 +100,8 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
       ok: true,
       source: 'strava-webhook',
       aspectType: req.body?.aspect_type,
-      objectId: req.body?.object_id,
+      objectId: extractStravaId(req.body, 'object_id_str', 'object_id') || undefined,
+      ownerId: extractStravaId(req.body, 'owner_id_str', 'owner_id') || undefined,
       ...summary,
     });
   } catch (error) {
