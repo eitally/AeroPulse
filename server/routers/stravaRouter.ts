@@ -39,6 +39,7 @@ import { buildServerAthleteProfile, isGenericName } from '../physiologyEngine.ts
 import { decodeGooglePolyline } from './activitiesRouter.ts';
 import { migrateAnonymousTeamsToStravaSid } from '../teamService.ts';
 import { findOrCreateUser } from '../authService.ts';
+import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
 
 export interface StoredStravaSyncPolicy {
   window: '90d' | '180d' | '365d' | 'all' | 'none';
@@ -193,12 +194,18 @@ export async function ensureValidStravaAccessToken(req?: Request, forceRefresh =
           }),
         });
         if (refreshResp.ok) {
-          const refreshed = (await refreshResp.json()) as {
+          const refreshed = await readStravaResponseJson<{
             access_token: string;
             refresh_token: string;
             expires_at: number;
-            athlete?: { firstname?: string; lastname?: string; username?: string; id?: number };
-          };
+            athlete?: {
+              firstname?: string;
+              lastname?: string;
+              username?: string;
+              id?: number | string;
+              id_str?: string;
+            };
+          }>(refreshResp);
           const prevCached = stravaIdentityByToken.get(candidateToken);
           activeAccessToken = refreshed.access_token;
           activeRefreshToken = refreshed.refresh_token || candidateToken;
@@ -224,7 +231,7 @@ export async function ensureValidStravaAccessToken(req?: Request, forceRefresh =
             if (name) {
               runtimeStore.stravaAthleteName = name;
               const entry: CachedStravaIdentity = {
-                athleteId: String(refreshed.athlete.id || ''),
+                athleteId: extractStravaId(refreshed.athlete),
                 athleteName: name,
               };
               stravaIdentityByToken.set(activeRefreshToken, entry);
@@ -272,8 +279,8 @@ export async function resolveStravaAthleteIdentity(req?: Request): Promise<Cache
       }
     }
     if (!resp.ok) return null;
-    const rawAthlete = (await resp.json()) as Record<string, any>;
-    const athleteId = String(rawAthlete.id || '');
+    const rawAthlete = await readStravaResponseJson<Record<string, any>>(resp);
+    const athleteId = extractStravaId(rawAthlete);
     const fullName =
       [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ').trim() ||
       String(rawAthlete.username || '').trim();
@@ -453,12 +460,13 @@ export async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
     throw new Error(`Strava token exchange failed: ${errText}`);
   }
 
-  const tokenData = (await tokenResp.json()) as {
+  const tokenData = await readStravaResponseJson<{
     access_token: string;
     refresh_token: string;
     expires_at: number;
     athlete?: {
       id?: number | string;
+      id_str?: string;
       username?: string;
       firstname?: string;
       lastname?: string;
@@ -466,7 +474,7 @@ export async function exchangeStravaAuthCode(codeInput: string, req?: Request) {
       ftp?: number;
       measurement_preference?: string;
     };
-  };
+  }>(tokenResp);
 
   return tokenData;
 }
@@ -623,12 +631,13 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       throw new Error(`Strava token exchange failed: ${errText}`);
     }
 
-    const tokenData = (await tokenResp.json()) as {
+    const tokenData = await readStravaResponseJson<{
       access_token: string;
       refresh_token: string;
       expires_at: number;
       athlete?: {
         id?: number | string;
+        id_str?: string;
         username?: string;
         firstname?: string;
         lastname?: string;
@@ -636,13 +645,13 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
         ftp?: number;
         measurement_preference?: string;
       };
-    };
+    }>(tokenResp);
 
     let athleteName =
       [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ').trim() ||
       tokenData.athlete?.username?.trim() ||
       '';
-    let athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
+    let athleteId = extractStravaId(tokenData.athlete) || undefined;
     let weightKg =
       typeof tokenData.athlete?.weight === 'number' && tokenData.athlete.weight > 30
         ? Number(tokenData.athlete.weight.toFixed(1))
@@ -671,14 +680,15 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           headers: { Authorization: `Bearer ${tokenData.access_token}` },
         });
         if (athResp.ok) {
-          const rawAth = (await athResp.json()) as Record<string, any>;
+          const rawAth = await readStravaResponseJson<Record<string, any>>(athResp);
           const enrichedName =
             [rawAth.firstname, rawAth.lastname].filter(Boolean).join(' ').trim() ||
             String(rawAth.username || '').trim();
           if (enrichedName && (!athleteName || isGenericName(athleteName))) {
             athleteName = enrichedName;
           }
-          if (!athleteId && rawAth.id) athleteId = String(rawAth.id);
+          const fetchedAthId = extractStravaId(rawAth);
+          if (!athleteId && fetchedAthId) athleteId = fetchedAthId;
           if (!weightKg && Number(rawAth.weight) > 30) {
             weightKg = Number(Number(rawAth.weight).toFixed(1));
           }
@@ -1089,7 +1099,7 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
       [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(' ').trim() ||
       tokenData.athlete?.username?.trim() ||
       'Strava Athlete';
-    const athleteId = tokenData.athlete?.id ? String(tokenData.athlete.id) : undefined;
+    const athleteId = extractStravaId(tokenData.athlete) || undefined;
     const weightKg =
       typeof tokenData.athlete?.weight === 'number' && tokenData.athlete.weight > 30
         ? Number(tokenData.athlete.weight.toFixed(1))
@@ -1183,11 +1193,11 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
         }),
       });
       if (refreshResp.ok) {
-        const refreshed = (await refreshResp.json()) as {
+        const refreshed = await readStravaResponseJson<{
           access_token: string;
           refresh_token: string;
           expires_at: number;
-        };
+        }>(refreshResp);
         resolvedAccessToken = refreshed.access_token;
         resolvedRefreshToken = refreshed.refresh_token || refreshToken;
         resolvedExpiresAt = refreshed.expires_at;
@@ -1235,20 +1245,22 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     let ftp: number | undefined;
     let measurementPreference: 'mi' | 'km' | undefined;
     if (athleteResp.ok) {
-      const athlete = (await athleteResp.json()) as {
+      const athlete = await readStravaResponseJson<{
         id?: number | string;
+        id_str?: string;
         username?: string;
         firstname?: string;
         lastname?: string;
         weight?: number;
         ftp?: number;
         measurement_preference?: string;
-      };
+      }>(athleteResp);
       athleteName =
         [athlete.firstname, athlete.lastname].filter(Boolean).join(' ').trim() ||
         athlete.username?.trim() ||
         'Strava Athlete';
-      if (athlete.id) athleteId = String(athlete.id);
+      const fetchedAthId = extractStravaId(athlete);
+      if (fetchedAthId) athleteId = fetchedAthId;
       if (typeof athlete.weight === 'number' && athlete.weight > 30) {
         weightKg = Number(athlete.weight.toFixed(1));
       }
@@ -1424,7 +1436,7 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
     }
 
     const raw = streamsResp.ok
-      ? ((await streamsResp.json()) as Record<string, { data?: any[] }>)
+      ? await readStravaResponseJson<Record<string, { data?: any[] }>>(streamsResp)
       : {};
     const timeData = Array.isArray(raw?.time?.data) ? (raw.time.data as number[]) : [];
     const step = Math.max(1, Math.floor(timeData.length / 500));
@@ -1441,7 +1453,8 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
 
     let segmentEfforts: any[] = [];
     if (detailResp.ok) {
-      const detail = (await detailResp.json()) as Record<string, any>;
+      const detail = await readStravaResponseJson<Record<string, any>>(detailResp);
+      const resolvedActivityId = extractStravaId(detail) || activityId;
       const rawEfforts = Array.isArray(detail.segment_efforts) ? detail.segment_efforts : [];
       const sportType = String(detail.sport_type || detail.type || '');
       const sportCat = /run|trailrun|virtualrun|treadmill/i.test(sportType)
@@ -1464,9 +1477,10 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
           }
           if (pts.length >= 2) pathLatLngs = pts;
         }
+        const effortId = extractStravaId(se);
         return {
-          id: String(se.id),
-          segmentId: String(se.segment?.id || se.id),
+          id: effortId,
+          segmentId: extractStravaId(se.segment) || effortId,
           name: String(se.name || se.segment?.name || 'Segment'),
           sportCategory: sportCat,
           distanceMeters: dist,
@@ -1482,7 +1496,7 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
           prRank: se.pr_rank === 1 || se.pr_rank === 2 || se.pr_rank === 3 ? se.pr_rank : null,
           komRank: typeof se.kom_rank === 'number' ? se.kom_rank : null,
           startDateLocal: String(se.start_date_local || detail.start_date_local || ''),
-          activityId: String(detail.id || activityId),
+          activityId: resolvedActivityId,
           activityName: String(detail.name || ''),
           startIndex: sIdx,
           endIndex: eIdx,
@@ -1495,7 +1509,7 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
 
     let kudoers: any[] | undefined;
     if (kudosResp.ok) {
-      const rawKudos = (await kudosResp.json()) as any[];
+      const rawKudos = await readStravaResponseJson<any[]>(kudosResp);
       if (Array.isArray(rawKudos)) {
         kudoers = rawKudos.map((k: any) => ({
           firstname: String(k.firstname || 'Athlete'),
@@ -1564,7 +1578,7 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
       ]);
 
       if (kResp.ok) {
-        const rawKudos = (await kResp.json()) as any[];
+        const rawKudos = await readStravaResponseJson<any[]>(kResp);
         const kudoers = Array.isArray(rawKudos)
           ? rawKudos.map((k: any) => ({
               firstname: String(k.firstname || 'Athlete'),
@@ -1578,10 +1592,10 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
         const existing = kudosCache[activityId] || kudosCache[stravaId] || {};
         let mergedComments = existing.comments || [];
         if (cResp.ok) {
-          const rawComments = (await cResp.json()) as any[];
+          const rawComments = await readStravaResponseJson<any[]>(cResp);
           if (Array.isArray(rawComments)) {
             const remoteComments = rawComments.map((c: any, idx: number) => ({
-              id: String(c.id || `sc-${stravaId}-${idx}`),
+              id: extractStravaId(c) || `sc-${stravaId}-${idx}`,
               text: String(c.text || ''),
               createdAt: String(c.created_at || new Date().toISOString()),
               athleteName:
