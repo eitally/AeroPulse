@@ -207,10 +207,10 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
 
       await toggleDarkMode(page, false);
 
-      // Return to personal Athlete Mode and verify 4-tab Athlete Nav
+      // Return to personal Athlete Mode and verify 3-Pillar Athlete Nav
       await coachToggle.click();
       await expect(coachView).not.toBeVisible();
-      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+      for (const label of ['Today', 'Training Calendar', 'Plan Builder']) {
         await expect(nav.getByRole('link', { name: label })).toBeVisible();
       }
     });
@@ -251,11 +251,11 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       });
       await toggleDarkMode(page, false);
 
-      // Clear state and verify Airplane-Mode workflow via 4-tab Athlete Nav (Today -> Log -> Time Session while Offline)
+      // Clear state and verify Airplane-Mode workflow via 3-Pillar Athlete Nav (Today -> Training Calendar -> Activity Log -> Time Session while Offline)
       await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
       await enterSampleDemoMode(page);
       const desktopNav = page.locator('nav[aria-label="Primary workspaces"]');
-      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+      for (const label of ['Today', 'Training Calendar', 'Plan Builder']) {
         await expect(desktopNav.getByRole('link', { name: label })).toBeVisible();
       }
       await expect(desktopNav.getByRole('link', { name: 'Stopwatch' })).toHaveCount(0);
@@ -263,7 +263,8 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
 
       await context.setOffline(true);
       try {
-        await desktopNav.getByRole('link', { name: 'Log' }).click();
+        await desktopNav.getByRole('link', { name: 'Training Calendar' }).click();
+        await page.getByTestId('calendar-subview-log').click();
         const openStopwatchBtn = page.getByTestId('log-open-stopwatch-btn');
         await expect(openStopwatchBtn).toBeVisible({ timeout: 10000 });
         await openStopwatchBtn.click();
@@ -408,12 +409,12 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
         timeout: 15000,
       });
 
-      // Verify 4-tab Athlete MobileDock switches cleanly to 4-tab Coach MobileDock and back
+      // Verify 3-tab Athlete MobileDock switches cleanly to 4-tab Coach MobileDock and back
       const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
-      for (const label of ['Today', 'Plan', 'Log', 'Lab']) {
+      for (const label of ['Today', 'Calendar', 'Plan Builder']) {
         await expect(mobileDock.getByRole('button', { name: label })).toBeVisible();
       }
-      await expect(mobileDock.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-current', 'page');
+      await expect(mobileDock.getByRole('button', { name: 'Calendar' })).toHaveAttribute('aria-current', 'page');
 
       await page.getByTestId('toggle-coach-workspace').click();
       for (const label of ['Clipboard', 'Team Plan', 'Stopwatch', 'Roster']) {
@@ -425,7 +426,8 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       });
       await page.getByTestId('toggle-coach-workspace').click();
       await expect(mobileDock.getByRole('button', { name: 'Today' })).toBeVisible();
-      await mobileDock.getByRole('button', { name: 'Log' }).click();
+      await mobileDock.getByRole('button', { name: 'Calendar' }).click();
+      await page.getByTestId('calendar-subview-log').click();
       await page.getByTestId('log-open-stopwatch-btn').click();
       await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
         timeout: 10000,

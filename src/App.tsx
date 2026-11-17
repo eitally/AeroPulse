@@ -47,6 +47,7 @@ import {
 import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
+  inferPrimarySportFromActivities,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
   loadPersistedTelemetrySnapshot,
@@ -83,6 +84,7 @@ export default function App() {
     try {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.replace(/^#/, '');
+        if (hash === 'plan-builder') return 'totals';
         if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
           return hash as ActiveTab;
         }
@@ -98,6 +100,10 @@ export default function App() {
     const handleHashChange = () => {
       try {
         const hash = window.location.hash.replace(/^#/, '');
+        if (hash === 'plan-builder') {
+          setActiveTab('totals');
+          return;
+        }
         if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
           setActiveTab(hash as ActiveTab);
         }
@@ -333,10 +339,10 @@ export default function App() {
         setActiveTab('calendar');
       } else if (e.key === '3') {
         e.preventDefault();
-        setActiveTab('activities');
+        setActiveTab('totals');
       } else if (e.key === '4') {
         e.preventDefault();
-        setActiveTab(lastLabTabRef.current);
+        setActiveTab('activities');
       }
     };
     window.addEventListener('keydown', onGlobalKeyDown);
@@ -903,16 +909,19 @@ export default function App() {
   const effectiveAthleteProfile = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
     if (isSampleDemoMode) return sampleDemoProfile;
-    if (activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight) {
-      return { ...athleteProfile, safeSportHideWeight: true };
-    }
-    return athleteProfile;
+    const inferredSport = !athleteProfile.primarySport ? inferPrimarySportFromActivities(effectiveActivities) : undefined;
+    const withSafeSport =
+      activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight
+        ? { ...athleteProfile, safeSportHideWeight: true }
+        : athleteProfile;
+    return inferredSport ? { ...withSafeSport, primarySport: inferredSport } : withSafeSport;
   }, [
     activeConnectedAthlete,
     isSampleDemoMode,
     sampleDemoProfile,
     athleteProfile,
     activeTeam,
+    effectiveActivities,
   ]);
 
   const effectiveTargetGoals = useMemo(() => {
@@ -1300,7 +1309,6 @@ export default function App() {
   const handleSelectActivityAndOpenTab = useCallback(
     (act: UnifiedActivity) => {
       void handleSelectActivity(act);
-      setActiveTab('activities');
     },
     [handleSelectActivity]
   );
@@ -1723,12 +1731,19 @@ export default function App() {
               onDismissQuickConnectBanner={() => setDismissedQuickConnectBanner(true)}
               myTeamsCount={isSampleDemoMode ? 0 : myTeams.length}
               isCoachMode={activeTab === 'coach'}
+              athleteProfile={effectiveAthleteProfile}
+              distanceUnit={distanceUnit}
+              onOpenProfileModal={handleOpenProfileModal}
+              onOpenPlanBuilder={handleOpenGoalsTab}
+              onExploreFitness={handleOpenTodayTab}
             />
 
             <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
               <WorkspaceRouter
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                stravaSyncWindow={connectionStatus.stravaSyncPolicy?.window}
+                onOpenDataSources={() => setIsDataSourcesOpen(true)}
                 coachSubTab={coachSubTab}
                 setCoachSubTab={setCoachSubTab}
                 activeTeam={isSampleDemoMode ? null : activeTeam}

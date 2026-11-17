@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect } from 'react';
-import { Target, BarChart3, TrendingUp, LineChart } from './icons/PhosphorIcons';
+import { Activity, Calendar, Target, Timer } from './icons/PhosphorIcons';
 import type {
   ActiveTab,
   AnnualMileageGoal,
@@ -12,6 +12,7 @@ import type {
   EnvironmentFilter,
   PlannedWorkoutEvent,
   SportCategory,
+  StravaSyncWindow,
   TargetGoal,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
@@ -20,7 +21,6 @@ import type {
 } from '../types';
 import type { PlannedEventBatchItem } from './GoalsView';
 import type { SavedStopwatchEntry } from './TracksideStopwatchView';
-import { INITIAL_POWER_PACE_CURVES } from '../data/mockTelemetry';
 
 const CalendarView = lazy(() =>
   import('./CalendarView').then((m) => ({ default: m.CalendarView }))
@@ -28,17 +28,11 @@ const CalendarView = lazy(() =>
 const FitnessHealthView = lazy(() =>
   import('./FitnessHealthView').then((m) => ({ default: m.FitnessHealthView }))
 );
-const PhysiologicalTrendsView = lazy(() =>
-  import('./PhysiologicalTrendsView').then((m) => ({ default: m.PhysiologicalTrendsView }))
-);
-const CustomChartsView = lazy(() =>
-  import('./CustomChartsView').then((m) => ({ default: m.CustomChartsView }))
+const TodayPhysiologyDeepDive = lazy(() =>
+  import('./TodayPhysiologyDeepDive').then((m) => ({ default: m.TodayPhysiologyDeepDive }))
 );
 const ActivitiesView = lazy(() =>
   import('./ActivitiesView').then((m) => ({ default: m.ActivitiesView }))
-);
-const PhysiologyView = lazy(() =>
-  import('./PhysiologyView').then((m) => ({ default: m.PhysiologyView }))
 );
 const GoalsView = lazy(() =>
   import('./GoalsView').then((m) => ({ default: m.GoalsView }))
@@ -90,6 +84,8 @@ export interface WorkspaceRouterProps {
   resendConfigured: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  stravaSyncWindow?: StravaSyncWindow;
+  onOpenDataSources?: () => void;
 
   // Handlers
   handleSelectActivityAndOpenTab: (act: UnifiedActivity) => void;
@@ -176,6 +172,8 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   resendConfigured,
   onSelectActiveTeam,
   onTeamsUpdated,
+  stravaSyncWindow,
+  onOpenDataSources,
 
   handleSelectActivityAndOpenTab,
   handleCalendarCreatePlannedEvent,
@@ -207,6 +205,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   // Warm lazy workspace chunks on idle so trackside Airplane Mode navigation never hits network
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      void import('./CalendarView');
       void import('./TracksideStopwatchView');
       void import('./ActivitiesView');
       void import('./CoachWorkspaceView');
@@ -216,6 +215,70 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
 
   return (
     <Suspense fallback={<ViewLoadingSkeleton />}>
+      {/* Contextual Sub-Switcher inside Training Calendar (Calendar | Activity Log + quick Stopwatch / Plan Builder) */}
+      {(activeTab === 'calendar' || activeTab === 'activities') && (
+        <div className="rounded-2xl liquid-glass p-2 flex flex-wrap items-center justify-between gap-2">
+          <div
+            role="tablist"
+            aria-label="Training Calendar views"
+            className="flex items-center gap-1 p-1 bg-white/70 dark:bg-[#121B15]/80 backdrop-blur-md border border-emerald-900/15 dark:border-[#244331] rounded-xl shadow-xs"
+          >
+            <button
+              type="button"
+              role="tab"
+              data-testid="calendar-subview-grid"
+              aria-selected={activeTab === 'calendar'}
+              onClick={() => setActiveTab('calendar')}
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold tracking-tight transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                activeTab === 'calendar'
+                  ? 'ap-nav-volt-active shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Calendar</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              data-testid="calendar-subview-log"
+              aria-selected={activeTab === 'activities'}
+              onClick={() => setActiveTab('activities')}
+              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold tracking-tight transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                activeTab === 'activities'
+                  ? 'ap-nav-volt-active shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Activity Log ({effectiveActivities.length})</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="calendar-bar-stopwatch-btn"
+              onClick={() => setActiveTab('stopwatch')}
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Timer className="w-3.5 h-3.5 ap-text-brand" />
+              <span>Time Session</span>
+            </button>
+            <button
+              type="button"
+              data-testid="calendar-bar-plan-builder-btn"
+              onClick={() => setActiveTab('totals')}
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>Plan Builder</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'calendar' && (
         <CalendarView
           activities={effectiveActivities}
@@ -241,172 +304,61 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
         />
       )}
 
-      {/* Contextual Sub-Switcher for Progress Workspace */}
-      {(activeTab === 'totals' ||
+      {(activeTab === 'fitness' ||
         activeTab === 'curves' ||
         activeTab === 'trends' ||
         activeTab === 'charts') && (
-        <div className="rounded-2xl liquid-glass p-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div
-              role="tablist"
-              aria-label="Progress &amp; Physiology Lab views"
-              onKeyDown={(e) => {
-                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-                const progressTabs: Array<'totals' | 'curves' | 'trends' | 'charts'> = [
-                  'totals',
-                  'curves',
-                  'trends',
-                  'charts',
-                ];
-                const currentIdx = progressTabs.indexOf(
-                  activeTab as 'totals' | 'curves' | 'trends' | 'charts'
-                );
-                if (currentIdx === -1) return;
-                e.preventDefault();
-                const nextIdx =
-                  e.key === 'Home'
-                    ? 0
-                    : e.key === 'End'
-                    ? progressTabs.length - 1
-                    : e.key === 'ArrowRight'
-                    ? (currentIdx + 1) % progressTabs.length
-                    : (currentIdx - 1 + progressTabs.length) % progressTabs.length;
-                setActiveTab(progressTabs[nextIdx]);
-                const nextTabEl = document.getElementById(`tab-${progressTabs[nextIdx]}`);
-                if (nextTabEl) nextTabEl.focus();
-              }}
-              className="flex items-center gap-1 p-1 bg-white/70 dark:bg-[#121B15]/80 backdrop-blur-md border border-emerald-900/15 dark:border-[#244331] rounded-xl shadow-xs"
-            >
-              <button
-                type="button"
-                id="tab-totals"
-                role="tab"
-                tabIndex={activeTab === 'totals' ? 0 : -1}
-                aria-selected={activeTab === 'totals'}
-                aria-controls="panel-totals"
-                onClick={() => setActiveTab('totals')}
-                className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'totals'
-                    ? 'ap-nav-volt-active shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
-                }`}
-              >
-                <Target
-                  className={`w-3.5 h-3.5 ${
-                    activeTab === 'totals' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                />
-                Goals &amp; Progression
-              </button>
+        <div className="space-y-6">
+          <FitnessHealthView
+            wellnessDays={effectiveWellnessDays}
+            plannedEvents={effectivePlannedEvents}
+            activities={effectiveActivities}
+            athleteProfile={effectiveAthleteProfile}
+            distanceUnit={distanceUnit}
+            selfName={primaryAthleteDisplayName}
+            selfProfile={effectiveAthleteProfile}
+            selfWellnessDays={effectiveWellnessDays}
+            connectedAthletes={combinedRoster}
+            onOpenRosterModal={handleOpenRosterModal}
+            onSelectActivity={handleSelectActivityAndOpenTab}
+            onSyncMorphedToCalendar={handleCreatePlannedEvent}
+            onOpenAthleteProfileModal={handleOpenProfileModal}
+            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            onQuickLogRun={handleImportSingleParsedActivity}
+          />
 
-              <button
-                type="button"
-                id="tab-curves"
-                role="tab"
-                tabIndex={activeTab === 'curves' ? 0 : -1}
-                aria-selected={activeTab === 'curves'}
-                aria-controls="panel-curves"
-                onClick={() => setActiveTab('curves')}
-                className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'curves'
-                    ? 'ap-nav-volt-active shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
-                }`}
-              >
-                <BarChart3
-                  className={`w-3.5 h-3.5 ${
-                    activeTab === 'curves' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                />
-                Power &amp; Pace Curves
-              </button>
-
-              <button
-                type="button"
-                id="tab-trends"
-                role="tab"
-                tabIndex={activeTab === 'trends' ? 0 : -1}
-                aria-selected={activeTab === 'trends'}
-                aria-controls="panel-trends"
-                onClick={() => setActiveTab('trends')}
-                className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'trends'
-                    ? 'ap-nav-volt-active shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
-                }`}
-              >
-                <TrendingUp
-                  className={`w-3.5 h-3.5 ${
-                    activeTab === 'trends' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                />
-                Trends
-              </button>
-
-              <button
-                type="button"
-                id="tab-charts"
-                role="tab"
-                tabIndex={activeTab === 'charts' ? 0 : -1}
-                aria-selected={activeTab === 'charts'}
-                aria-controls="panel-charts"
-                onClick={() => setActiveTab('charts')}
-                className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'charts'
-                    ? 'ap-nav-volt-active shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-[#1A2E22]'
-                }`}
-              >
-                <LineChart
-                  className={`w-3.5 h-3.5 ${
-                    activeTab === 'charts' ? 'text-[#080A09]' : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                />
-                Custom Charts
-              </button>
-            </div>
-          </div>
+          <TodayPhysiologyDeepDive
+            activities={effectiveActivities}
+            wellnessDays={effectiveWellnessDays}
+            annualMileageGoals={effectiveAnnualMileageGoals}
+            targetGoals={effectiveTargetGoals}
+            benchmarkSegments={benchmarkSegments}
+            envFilter={envFilter}
+            onSelectEnvFilter={setEnvFilter}
+            distanceUnit={distanceUnit}
+            athleteWeightKg={latestWeightKg}
+            currentCtl={latestCtl}
+            athleteProfile={effectiveAthleteProfile}
+            isScanningSegments={isScanningSegments}
+            stravaSyncWindow={stravaSyncWindow}
+            initialOpen={activeTab !== 'fitness'}
+            initialSection={
+              activeTab === 'curves'
+                ? 'CURVES'
+                : activeTab === 'trends' || activeTab === 'charts'
+                  ? 'TRENDS'
+                  : 'CURVES'
+            }
+            onScanMoreSegments={handleScanMoreSegments}
+            onSelectActivity={handleSelectActivityAndOpenTab}
+            onOpenActivitiesSegments={handleOpenActivitiesTab}
+            onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+            onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
+            onSaveProfileOverride={handleSaveProfileOverride}
+            onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
+            onOpenDataSources={onOpenDataSources}
+          />
         </div>
-      )}
-
-      {activeTab === 'fitness' && (
-        <FitnessHealthView
-          wellnessDays={effectiveWellnessDays}
-          plannedEvents={effectivePlannedEvents}
-          activities={effectiveActivities}
-          athleteProfile={effectiveAthleteProfile}
-          distanceUnit={distanceUnit}
-          selfName={primaryAthleteDisplayName}
-          selfProfile={effectiveAthleteProfile}
-          selfWellnessDays={effectiveWellnessDays}
-          connectedAthletes={combinedRoster}
-          onOpenRosterModal={handleOpenRosterModal}
-          onSelectActivity={handleSelectActivityAndOpenTab}
-          onSyncMorphedToCalendar={handleCreatePlannedEvent}
-          onOpenAthleteProfileModal={handleOpenProfileModal}
-          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-          onQuickLogRun={handleImportSingleParsedActivity}
-        />
-      )}
-
-      {activeTab === 'trends' && (
-        <PhysiologicalTrendsView
-          wellnessDays={effectiveWellnessDays}
-          activities={effectiveActivities}
-          athleteWeightKg={latestWeightKg}
-          distanceUnit={distanceUnit}
-          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-        />
-      )}
-
-      {activeTab === 'charts' && (
-        <CustomChartsView
-          activities={effectiveActivities}
-          wellnessDays={effectiveWellnessDays}
-          distanceUnit={distanceUnit}
-          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
-        />
       )}
 
       {activeTab === 'activities' && (
@@ -433,24 +385,6 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
           athleteWeightKg={latestWeightKg}
           athleteProfile={effectiveAthleteProfile}
-        />
-      )}
-
-      {activeTab === 'curves' && (
-        <PhysiologyView
-          curves={INITIAL_POWER_PACE_CURVES}
-          benchmarkSegments={benchmarkSegments}
-          activities={effectiveActivities}
-          wellnessDays={effectiveWellnessDays}
-          envFilter={envFilter}
-          distanceUnit={distanceUnit}
-          athleteWeightKg={latestWeightKg}
-          athleteProfile={effectiveAthleteProfile}
-          onScanMoreSegments={handleScanMoreSegments}
-          isScanningSegments={isScanningSegments}
-          onSelectActivity={handleSelectActivityAndOpenTab}
-          onOpenActivitiesSegments={handleOpenActivitiesTab}
-          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
         />
       )}
 
@@ -528,6 +462,36 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSaveStopwatchActivities={handleSaveStopwatchActivities}
           onOpenAthleteToday={handleOpenTodayTab}
           onOpenRosterModal={handleOpenRosterModal}
+        />
+      )}
+
+      {/* Global In-Place 3-Tab Activity Inspector Modal (no activeTab hijack) */}
+      {selectedActivity !== null && activeTab !== 'activities' && (
+        <ActivitiesView
+          inspectorOnly
+          onOpenCompareView={() => setActiveTab('activities')}
+          activities={effectiveActivities}
+          plannedEvents={effectivePlannedEvents}
+          selectedSport={selectedSport}
+          onSelectSport={setSelectedSport}
+          envFilter={envFilter}
+          onSelectEnvFilter={setEnvFilter}
+          distanceUnit={distanceUnit}
+          selectedActivity={selectedActivity}
+          onSelectActivity={handleSelectActivity}
+          onLoadActivityStreams={loadStreamsForActivity}
+          onScanMoreSegments={handleScanMoreSegments}
+          isScanningSegments={isScanningSegments}
+          onHydrateMoreRoutes={handleHydrateMoreRoutes}
+          isHydratingRoutes={isHydratingRoutes}
+          onToggleKudos={handleToggleActivityKudos}
+          onAddComment={handleAddActivityComment}
+          onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
+          onImportParsedActivity={handleImportSingleParsedActivity}
+          onImportParsedActivities={handleImportMultipleParsedActivities}
+          onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
+          athleteWeightKg={latestWeightKg}
+          athleteProfile={effectiveAthleteProfile}
         />
       )}
     </Suspense>

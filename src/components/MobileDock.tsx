@@ -3,7 +3,6 @@ import type { ActiveTab, CoachWorkspaceSubTab } from '../types';
 import {
   HeartPulse,
   Calendar,
-  Activity,
   Target,
   Timer,
   ClipboardText,
@@ -21,7 +20,6 @@ export interface MobileDockProps {
 export const MobileDock: React.FC<MobileDockProps> = ({
   activeTab,
   onSelectTab,
-  lastProgressTab = 'totals',
   coachSubTab = 'CLIPBOARD',
   onSelectCoachSubTab,
 }) => {
@@ -73,32 +71,26 @@ export const MobileDock: React.FC<MobileDockProps> = ({
       id: 'fitness' as const,
       label: 'Today',
       icon: HeartPulse,
-      match: ['fitness'],
+      match: ['fitness', 'curves', 'trends', 'charts'],
     },
     {
       id: 'calendar' as const,
-      label: 'Plan',
+      label: 'Calendar',
       icon: Calendar,
-      match: ['calendar'],
-    },
-    {
-      id: 'activities' as const,
-      label: 'Log',
-      icon: Activity,
-      match: ['activities', 'stopwatch'],
+      match: ['calendar', 'activities', 'stopwatch'],
     },
     {
       id: 'totals' as const,
-      label: 'Lab',
+      label: 'Plan Builder',
       icon: Target,
-      match: ['totals', 'curves', 'trends', 'charts'],
+      match: ['totals'],
     },
   ] as const;
 
   return (
     <nav
       aria-label="Mobile primary workspaces"
-      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
+      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-3 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -108,15 +100,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
             key={tab.id}
             type="button"
             aria-current={isActive ? 'page' : undefined}
-            onClick={() =>
-              onSelectTab(
-                tab.id === 'totals'
-                  ? isActive
-                    ? 'totals'
-                    : lastProgressTab
-                  : tab.id
-              )
-            }
+            onClick={() => onSelectTab(tab.id)}
             className={`min-h-[46px] flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
               isActive
                 ? 'ap-nav-volt-active'

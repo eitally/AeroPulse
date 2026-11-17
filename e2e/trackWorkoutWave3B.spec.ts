@@ -54,8 +54,9 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
     test('renders 5-axis Track Progression & Kalman Quarantine Drawer, Mints THV Passports, & Optimizes DMR Relay', async ({
       page,
     }) => {
-      // 1. Goals / Progress -> 5-Axis Track Progression & Bayesian Audit Drawer
-      await enterSampleDemoMode(page, '#totals');
+      // 1. Today -> Physiology Deep-Dive -> Zone Progression & Calibration (5-Axis Track Progression & Bayesian Audit Drawer)
+      await enterSampleDemoMode(page, '#curves');
+      await page.getByTestId('today-deep-dive-tab-progression').click();
       const progPanel = page.getByTestId('track-5axis-progression-panel');
       await progPanel.scrollIntoViewIfNeeded();
       await expect(progPanel).toBeVisible({ timeout: 15000 });
@@ -147,7 +148,8 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
     test('verifies >= 44px touch targets across Wave 3B Progression Drawer, THV Passport & Relay Optimizer', async ({
       page,
     }) => {
-      await enterSampleDemoMode(page, '#totals');
+      await enterSampleDemoMode(page, '#curves');
+      await page.getByTestId('today-deep-dive-tab-progression').click();
       const toggleBtn = page.getByTestId('toggle-bayesian-quarantine-btn');
       await toggleBtn.scrollIntoViewIfNeeded();
       await expect(toggleBtn).toBeVisible({ timeout: 15000 });

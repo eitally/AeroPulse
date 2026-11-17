@@ -39,6 +39,43 @@ interface AthleteProfileModalProps {
   onSaveProfileOverride: (updated: AthleteProfile) => Promise<void>;
 }
 
+export function parsePaceInputToSecsPerKm(
+  raw: string,
+  unit: DistanceUnit
+): number | null {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/\/(mi|km)$/i, '')
+    .trim();
+  if (!cleaned) return null;
+  let totalUnitSecs = NaN;
+  if (cleaned.includes(':')) {
+    const parts = cleaned.split(':').map((p) => Number(p.trim()));
+    if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+      totalUnitSecs = parts[0] * 60 + parts[1];
+    }
+  } else {
+    const num = Number(cleaned);
+    if (Number.isFinite(num) && num > 0) {
+      totalUnitSecs = num < 30 ? num * 60 : num;
+    }
+  }
+  if (!Number.isFinite(totalUnitSecs) || totalUnitSecs <= 0) return null;
+  const secsPerKm =
+    unit === 'mi'
+      ? Number((totalUnitSecs / 1.60934).toFixed(1))
+      : Math.round(totalUnitSecs);
+  return Math.max(130, Math.min(600, secsPerKm));
+}
+
+export function formatPaceSecsForInput(secsPerKm: number, unit: DistanceUnit): string {
+  const unitSecs = unit === 'mi' ? secsPerKm * 1.60934 : secsPerKm;
+  const clamped = Math.max(130, Math.min(960, Math.round(unitSecs)));
+  const m = Math.floor(clamped / 60);
+  const s = clamped % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   isOpen,
   onClose,
@@ -51,6 +88,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   onSaveProfileOverride,
 }) => {
   const [hrTab, setHrTab] = useState<'CYCLING' | 'RUNNING'>('CYCLING');
+  const [sportFieldsFilter, setSportFieldsFilter] = useState<'BOTH' | 'RUNNING' | 'CYCLING'>('BOTH');
   const [savedToast, setSavedToast] = useState<string | null>(null);
   const [pendingDeleteHistoryId, setPendingDeleteHistoryId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -78,6 +116,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const [runMaxHr, setRunMaxHr] = useState<number>(athleteProfile.runMaxHr);
   const [thresholdPaceSecsPerKm, setThresholdPaceSecsPerKm] = useState<number>(
     athleteProfile.thresholdPaceSecsPerKm
+  );
+  const [ltPaceInput, setLtPaceInput] = useState<string>(() =>
+    formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)
   );
   const [effectiveDate, setEffectiveDate] = useState<string>(() =>
     new Date().toISOString().slice(0, 10)
@@ -113,12 +154,13 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     setRunLthr(athleteProfile.runLthr);
     setRunMaxHr(athleteProfile.runMaxHr);
     setThresholdPaceSecsPerKm(athleteProfile.thresholdPaceSecsPerKm);
+    setLtPaceInput(formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit));
     setThresholdHistory(athleteProfile.thresholdHistory || []);
     setSafeSportHideWeight(Boolean(athleteProfile.safeSportHideWeight));
     setAcademicDivision(athleteProfile.academicDivision || 'CLUB_OPEN');
     setCompetitionGender(athleteProfile.competitionGender || 'MEN');
     setFerritinInput(athleteProfile.ferritinNgMl ? String(athleteProfile.ferritinNgMl) : '');
-  }, [athleteProfile]);
+  }, [athleteProfile, distanceUnit]);
 
   if (!isOpen) return null;
 
@@ -161,6 +203,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
   const handleSaveManual = async (e: React.FormEvent) => {
     e.preventDefault();
+    const resolvedPaceSecsPerKm =
+      parsePaceInputToSecsPerKm(ltPaceInput, distanceUnit) ?? thresholdPaceSecsPerKm;
+    setThresholdPaceSecsPerKm(resolvedPaceSecsPerKm);
+    setLtPaceInput(formatPaceSecsForInput(resolvedPaceSecsPerKm, distanceUnit));
     const cleanEffDate = (effectiveDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
     const nextEntry: ThresholdHistoryEntry = {
       id: `th-${cleanEffDate}`,
@@ -169,7 +215,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
       indoorFtp,
       lthr,
       runLthr,
-      thresholdPaceSecsPerKm,
+      thresholdPaceSecsPerKm: resolvedPaceSecsPerKm,
       weightKg,
     };
     const mergedHistory = [
@@ -194,7 +240,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         runFtp,
         runLthr,
         runMaxHr,
-        thresholdPaceSecsPerKm,
+        thresholdPaceSecsPerKm: resolvedPaceSecsPerKm,
         powerZones: previewPowerZones,
         hrZones: previewBikeHrZones,
         runHrZones: previewRunHrZones,
@@ -407,11 +453,40 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
               <Sliders className="w-3.5 h-3.5 text-blue-500" />
-              <span>Fine-Tune Thresholds &amp; Biometrics (Auto-Recalculates Zone Tables Below)</span>
+              <span>Fine-Tune Thresholds &amp; Biometrics</span>
             </div>
-            <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">
-              {intervalsConnected ? 'Connected to Intervals.icu' : 'Local / Sandbox Calibration'}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                data-testid="profile-sport-filter"
+                role="group"
+                aria-label="Filter threshold inputs by sport"
+                className="flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-2xs font-semibold"
+              >
+                {(
+                  [
+                    { id: 'BOTH', label: 'Both' },
+                    { id: 'RUNNING', label: 'Running' },
+                    { id: 'CYCLING', label: 'Cycling' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setSportFieldsFilter(tab.id)}
+                    className={`min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                      sportFieldsFilter === tab.id
+                        ? 'ap-nav-volt-active'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">
+                {intervalsConnected ? 'Connected to Intervals.icu' : 'Local Calibration'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
@@ -468,170 +543,216 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               />
             </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-ftp`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Outdoor FTP (W)
-              </label>
-              <input
-                id={`${fieldId}-ftp`}
-                type="number"
-                min={100}
-                max={550}
-                value={ftp}
-                onChange={(e) => setFtp(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+            {sportFieldsFilter !== 'RUNNING' && (
+              <>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-ftp`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Outdoor FTP (W)
+                  </label>
+                  <input
+                    id={`${fieldId}-ftp`}
+                    type="number"
+                    min={100}
+                    max={550}
+                    value={ftp}
+                    onChange={(e) => setFtp(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-indoor-ftp`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Indoor Trainer FTP (W)
-              </label>
-              <input
-                id={`${fieldId}-indoor-ftp`}
-                type="number"
-                min={100}
-                max={550}
-                value={indoorFtp}
-                onChange={(e) => setIndoorFtp(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-indoor-ftp`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Indoor Trainer FTP (W)
+                  </label>
+                  <input
+                    id={`${fieldId}-indoor-ftp`}
+                    type="number"
+                    min={100}
+                    max={550}
+                    value={indoorFtp}
+                    onChange={(e) => setIndoorFtp(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-lthr`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Bike LTHR (bpm)
-              </label>
-              <input
-                id={`${fieldId}-lthr`}
-                type="number"
-                min={110}
-                max={210}
-                value={lthr}
-                onChange={(e) => setLthr(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-lthr`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Bike LTHR (bpm)
+                  </label>
+                  <input
+                    id={`${fieldId}-lthr`}
+                    type="number"
+                    min={110}
+                    max={210}
+                    value={lthr}
+                    onChange={(e) => setLthr(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-max-hr`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Bike Max HR (bpm)
-              </label>
-              <input
-                id={`${fieldId}-max-hr`}
-                type="number"
-                min={130}
-                max={230}
-                value={maxHr}
-                onChange={(e) => setMaxHr(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-max-hr`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Bike Max HR (bpm)
+                  </label>
+                  <input
+                    id={`${fieldId}-max-hr`}
+                    type="number"
+                    min={130}
+                    max={230}
+                    value={maxHr}
+                    onChange={(e) => setMaxHr(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-wprime`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                W&apos; Anaerobic (J)
-              </label>
-              <input
-                id={`${fieldId}-wprime`}
-                type="number"
-                step={500}
-                min={8000}
-                max={45000}
-                value={wPrime}
-                onChange={(e) => setWPrime(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-wprime`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    W&apos; Anaerobic (J)
+                  </label>
+                  <input
+                    id={`${fieldId}-wprime`}
+                    type="number"
+                    step={500}
+                    min={8000}
+                    max={45000}
+                    value={wPrime}
+                    onChange={(e) => setWPrime(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+              </>
+            )}
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-run-ftp`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Run FTP (W)
-              </label>
-              <input
-                id={`${fieldId}-run-ftp`}
-                type="number"
-                min={120}
-                max={550}
-                value={runFtp}
-                onChange={(e) => setRunFtp(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+            {sportFieldsFilter !== 'CYCLING' && (
+              <>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-run-ftp`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Run FTP (W)
+                  </label>
+                  <input
+                    id={`${fieldId}-run-ftp`}
+                    type="number"
+                    min={120}
+                    max={550}
+                    value={runFtp}
+                    onChange={(e) => setRunFtp(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-lt-pace`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Run LT Pace ({formatPace(thresholdPaceSecsPerKm)})
-              </label>
-              <input
-                id={`${fieldId}-lt-pace`}
-                type="range"
-                min={180}
-                max={360}
-                step={1}
-                value={thresholdPaceSecsPerKm}
-                onChange={(e) => setThresholdPaceSecsPerKm(Number(e.target.value))}
-                className="w-full accent-[#558B00] dark:accent-[#C8FF00] mt-2 min-h-[32px]"
-                title={`Adjust Lactate Threshold Run Pace: ${formatPace(thresholdPaceSecsPerKm)}`}
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-lt-pace`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Run LT Pace (/{distanceUnit})
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label="Faster 5 seconds per kilometer"
+                      onClick={() => {
+                        const next = Math.max(130, thresholdPaceSecsPerKm - 5);
+                        setThresholdPaceSecsPerKm(next);
+                        setLtPaceInput(formatPaceSecsForInput(next, distanceUnit));
+                      }}
+                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] font-mono text-xs cursor-pointer"
+                    >
+                      -5s
+                    </button>
+                    <input
+                      id={`${fieldId}-lt-pace`}
+                      data-testid="profile-lt-pace-input"
+                      type="text"
+                      inputMode="text"
+                      placeholder={distanceUnit === 'mi' ? '7:30' : '4:40'}
+                      value={ltPaceInput}
+                      onChange={(e) => {
+                        setLtPaceInput(e.target.value);
+                        const parsed = parsePaceInputToSecsPerKm(e.target.value, distanceUnit);
+                        if (parsed !== null) {
+                          setThresholdPaceSecsPerKm(parsed);
+                        }
+                      }}
+                      onBlur={() => {
+                        const parsed = parsePaceInputToSecsPerKm(ltPaceInput, distanceUnit);
+                        const finalSecs = parsed ?? thresholdPaceSecsPerKm;
+                        setThresholdPaceSecsPerKm(finalSecs);
+                        setLtPaceInput(formatPaceSecsForInput(finalSecs, distanceUnit));
+                      }}
+                      className="w-full min-w-[64px] min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 py-1.5 font-mono text-xs text-center"
+                      title="Enter Lactate Threshold pace in mm:ss (supports 3:30–16:00/mi)"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Slower 5 seconds per kilometer"
+                      onClick={() => {
+                        const next = Math.min(600, thresholdPaceSecsPerKm + 5);
+                        setThresholdPaceSecsPerKm(next);
+                        setLtPaceInput(formatPaceSecsForInput(next, distanceUnit));
+                      }}
+                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] font-mono text-xs cursor-pointer"
+                    >
+                      +5s
+                    </button>
+                  </div>
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-run-lthr`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Run LTHR (bpm)
-              </label>
-              <input
-                id={`${fieldId}-run-lthr`}
-                type="number"
-                min={110}
-                max={215}
-                value={runLthr}
-                onChange={(e) => setRunLthr(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-run-lthr`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Run LTHR (bpm)
+                  </label>
+                  <input
+                    id={`${fieldId}-run-lthr`}
+                    type="number"
+                    min={110}
+                    max={215}
+                    value={runLthr}
+                    onChange={(e) => setRunLthr(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
 
-            <div>
-              <label
-                htmlFor={`${fieldId}-run-max-hr`}
-                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Run Max HR (bpm)
-              </label>
-              <input
-                id={`${fieldId}-run-max-hr`}
-                type="number"
-                min={130}
-                max={230}
-                value={runMaxHr}
-                onChange={(e) => setRunMaxHr(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label
+                    htmlFor={`${fieldId}-run-max-hr`}
+                    className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Run Max HR (bpm)
+                  </label>
+                  <input
+                    id={`${fieldId}-run-max-hr`}
+                    type="number"
+                    min={130}
+                    max={230}
+                    value={runMaxHr}
+                    onChange={(e) => setRunMaxHr(Number(e.target.value))}
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="flex items-end">
               <button
@@ -643,8 +764,16 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Safe-Sport / RED-S Protection & Scholastic / Collegiate Settings */}
-          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
+          {/* Safe-Sport / RED-S Protection & Scholastic / Collegiate Settings (Collapsed by Default Unless Configured) */}
+          <details
+            open={safeSportHideWeight || Boolean(ferritinInput)}
+            className="pt-3 border-t border-slate-200 dark:border-slate-800 group"
+          >
+            <summary className="cursor-pointer list-none select-none flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200">
+              <span>Advanced, Team &amp; Medical Settings (Safe-Sport, Division, Ferritin)</span>
+              <span className="text-2xs font-mono text-slate-500">Toggle</span>
+            </summary>
+            <div className="pt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
             <label className="md:col-span-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2.5 flex items-start justify-between gap-3 cursor-pointer">
               <div className="space-y-0.5">
                 <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
@@ -722,6 +851,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               />
             </div>
           </div>
+          </details>
         </form>
 
         {/* Side-by-Side 7-Zone Power & 7-Zone Heart Rate Tables */}

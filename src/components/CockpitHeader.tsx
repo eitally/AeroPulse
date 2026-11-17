@@ -6,7 +6,6 @@ import type { RosterTab } from './AthleteRosterModal';
 import {
   HeartPulse,
   Calendar,
-  Activity,
   Target,
   RefreshCw,
   Users,
@@ -97,7 +96,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   setEnvFilter,
   selectedSport,
   setSelectedSport,
-  lastProgressTab,
+  lastProgressTab: _lastProgressTab,
   activeViewedAthleteId,
   setActiveViewedAthleteId,
   setSelectedActivity,
@@ -127,6 +126,26 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   const internalMenuRef = useRef<HTMLDivElement>(null);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
 
+  const hasStoredStopwatchSession = () => {
+    try {
+      const raw = window.localStorage.getItem('thresh_trackside_stopwatch_v1');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return Boolean(parsed && (parsed.isRunning || (parsed.elapsedMs || 0) > 0 || (Array.isArray(parsed.athletes) && parsed.athletes.some((a: any) => Array.isArray(a?.splitsMs) && a.splitsMs.length > 0))));
+    } catch {
+      return false;
+    }
+  };
+  const [hasActiveStopwatchPill, setHasActiveStopwatchPill] = useState<boolean>(hasStoredStopwatchSession);
+  useEffect(() => {
+    const refresh = () => setHasActiveStopwatchPill(hasStoredStopwatchSession());
+    window.addEventListener('thresh:trackside-stopwatch-sync', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('thresh:trackside-stopwatch-sync', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
   const isAccountMenuOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setIsAccountMenuOpen = controlledSetOpen || setInternalOpen;
   const accountMenuRef = controlledMenuRef || internalMenuRef;
@@ -285,7 +304,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               <span className="ap-text-brand font-semibold">
                 {isSyncing
                   ? 'Syncing...'
-                  : `CTL ${latestWellness ? latestWellness.ctl.toFixed(0) : '—'}`}
+                  : `Fitness ${latestWellness ? latestWellness.ctl.toFixed(0) : '—'}`}
               </span>
             </button>
 
@@ -317,7 +336,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             )}
           </div>
 
-          {/* 2. Center: 4 Symmetrical Workspaces (Today | Plan | Log | Lab OR Coach Mode 4 Tabs) */}
+          {/* 2. Center: 3-Pillar Athlete Nav (Today | Training Calendar | Plan Builder) OR Coach Mode 4 Tabs */}
           <nav
             aria-label="Primary workspaces"
             className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
@@ -337,6 +356,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   <button
                     key={item.id}
                     type="button"
+                    data-testid={`coach-subtab-${item.id.toLowerCase()}`}
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => onSelectCoachSubTab(item.id)}
                     className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 cursor-pointer ap-track-tab ${
@@ -360,25 +380,22 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     id: 'fitness',
                     label: 'Today',
                     icon: HeartPulse,
-                    match: ['fitness'],
+                    href: '#fitness',
+                    match: ['fitness', 'curves', 'trends', 'charts'],
                   },
                   {
                     id: 'calendar',
-                    label: 'Plan',
+                    label: 'Training Calendar',
                     icon: Calendar,
-                    match: ['calendar'],
-                  },
-                  {
-                    id: 'activities',
-                    label: 'Log',
-                    icon: Activity,
-                    match: ['activities', 'stopwatch'],
+                    href: '#calendar',
+                    match: ['calendar', 'activities', 'stopwatch'],
                   },
                   {
                     id: 'totals',
-                    label: 'Lab',
+                    label: 'Plan Builder',
                     icon: Target,
-                    match: ['totals', 'curves', 'trends', 'charts'],
+                    href: '#plan-builder',
+                    match: ['totals'],
                   },
                 ] as const
               ).map((item) => {
@@ -387,23 +404,11 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 return (
                   <a
                     key={item.id}
-                    href={`#${
-                      item.id === 'totals'
-                        ? isActive
-                          ? 'totals'
-                          : lastProgressTab
-                        : item.id
-                    }`}
+                    href={item.href}
                     aria-current={isActive ? 'page' : undefined}
                     onClick={(e) => {
                       e.preventDefault();
-                      setActiveTab(
-                        item.id === 'totals'
-                          ? isActive
-                            ? 'totals'
-                            : lastProgressTab
-                          : item.id
-                      );
+                      setActiveTab(item.id);
                     }}
                     className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
                       isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
@@ -769,7 +774,9 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
         </div>
 
         {/* Mobile & Compact (< xl) Context Strip: Live Stopwatch Pill, Team Selector, Athlete Selector */}
-        {( (activeTab !== 'stopwatch' && activeTab !== 'coach') || myTeams.length > 0 || activeViewedAthleteId !== 'SELF' ) && (
+        {((activeTab !== 'stopwatch' && activeTab !== 'coach' && hasActiveStopwatchPill) ||
+          myTeams.length > 0 ||
+          activeViewedAthleteId !== 'SELF') && (
           <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {activeTab !== 'stopwatch' && activeTab !== 'coach' && (
               <div className="sm:hidden shrink-0">
