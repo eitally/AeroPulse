@@ -780,7 +780,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       ...(athleteId ? { strava_athlete_id: athleteId } : {}),
       ...(athleteName && !isGenericName(athleteName) ? { strava_athlete_name: athleteName } : {}),
     });
-    const returnUrl = hasExistingSyncPolicy && !hasPendingTeamJoin ? '/#fitness' : onboardingUrl;
+    const returnUrl = !hasPendingTeamJoin ? '/#fitness' : onboardingUrl;
 
     const oauthSuccessPayload = safeJsonForScript({
       type: 'OAUTH_AUTH_SUCCESS',
@@ -789,6 +789,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       athleteName,
       sessionToken,
       hasExistingSyncPolicy,
+      hasPendingTeamJoin,
       measurementPreference,
       grantedScope: scopeParam,
       returnUrl,
@@ -815,6 +816,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
         if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
           localStorage.removeItem('aeropulse_strava_athlete_name');
           localStorage.removeItem('aeropulse_auth_gate_passed');
+          localStorage.removeItem('aeropulse_strava_sync_policy');
         }
         if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
         if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
@@ -830,7 +832,21 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
         var sameAthlete = !prevAthleteId || !payload.tokens.athleteId || String(payload.tokens.athleteId) === prevAthleteId;
         var hasLocalSyncPolicy = false;
         try { hasLocalSyncPolicy = Boolean(localStorage.getItem('aeropulse_strava_sync_policy')); } catch (e) {}
-        if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
+        if (!payload.hasPendingTeamJoin) {
+          localStorage.setItem('aeropulse_auth_gate_passed', '1');
+          if (!sameAthlete || !hasLocalSyncPolicy) {
+            try {
+              var granted = payload.tokens.grantedScope ? String(payload.tokens.grantedScope) : '';
+              var hasActivityScope = !granted || granted.indexOf('activity:read') !== -1;
+              localStorage.setItem('aeropulse_strava_sync_policy', JSON.stringify({
+                window: hasActivityScope ? '90d' : 'none',
+                importProfileAndGear: true,
+                confirmedAt: new Date().toISOString(),
+                grantedScope: granted || undefined
+              }));
+            } catch (e) {}
+          }
+        } else if (payload.hasExistingSyncPolicy || (sameAthlete && hasLocalSyncPolicy)) {
           localStorage.setItem('aeropulse_auth_gate_passed', '1');
         } else if (!sameAthlete) {
           localStorage.removeItem('aeropulse_auth_gate_passed');
@@ -851,9 +867,9 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           title: 'Strava Connected · THRESH',
           heading: `Strava Connected${athleteName && !isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}`,
           accentColor: '#10B981',
-          body: hasExistingSyncPolicy
-            ? 'Welcome back! Restoring your THRESH training workspace…'
-            : 'Your Strava account is linked. Return to THRESH to confirm your sync preferences.',
+          body: !hasPendingTeamJoin
+            ? 'Strava connected! Opening your THRESH training workspace…'
+            : 'Your Strava account is linked. Return to THRESH to complete your team roster setup.',
           ctaLabel: 'Continue to THRESH',
           ctaHref: returnUrl,
           scriptBody: buildStravaCallbackScript({

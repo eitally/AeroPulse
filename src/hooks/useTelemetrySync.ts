@@ -20,6 +20,7 @@ import {
   decodeGooglePolylineClient,
   deduplicateActivitiesArchive,
   getSavedIntervalsHeaders,
+  hasPendingTeamJoinInBrowser,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
   loadPersistedTelemetrySnapshot,
@@ -174,6 +175,47 @@ export function useTelemetrySync({
         localStorage.removeItem('aeropulse_garmin_athlete_name');
         localStorage.removeItem('aeropulse_intervals_athlete_name');
         localStorage.removeItem('aeropulse_strava_sync_policy');
+      } else if (activitiesRef.current.length === 0) {
+        const cached = await loadPersistedTelemetrySnapshot();
+        if (cached) {
+          if ((cached.pmcModelVersion || 0) < CURRENT_PMC_MODEL_VERSION) {
+            needsPmcModelV2SyncRef.current = true;
+          }
+          if (Array.isArray(cached.activities) && cached.activities.length > 0) {
+            setActivities(cached.activities);
+            activitiesRef.current = cached.activities;
+          }
+          if (Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0) {
+            setWellnessDays(cached.wellnessDays);
+            wellnessDaysRef.current = cached.wellnessDays;
+          }
+          if (Array.isArray(cached.plannedEvents) && cached.plannedEvents.length > 0) {
+            setPlannedEvents(cached.plannedEvents);
+            plannedEventsRef.current = cached.plannedEvents;
+          }
+          if (Array.isArray(cached.gearItems) && cached.gearItems.length > 0) {
+            setGearItems(cached.gearItems);
+            gearItemsRef.current = cached.gearItems;
+          }
+          if (typeof cached.redactedStravaCount === 'number') {
+            setRedactedStravaCount(cached.redactedStravaCount);
+            redactedStravaCountRef.current = cached.redactedStravaCount;
+          }
+          if (cached.athleteProfile) {
+            const latestW =
+              Array.isArray(cached.wellnessDays) && cached.wellnessDays.length > 0
+                ? cached.wellnessDays[cached.wellnessDays.length - 1]
+                : undefined;
+            const hydratedProf = buildCompleteAthleteProfile(
+              cached.athleteProfile,
+              latestW,
+              cached.activities
+            );
+            setAthleteProfile(hydratedProf);
+            athleteProfileRef.current = hydratedProf;
+          }
+          setIdbSavedAt(cached.savedAt);
+        }
       }
       localStorage.setItem('aeropulse_store_owner_athlete_id', cleanId);
       localStorage.setItem('aeropulse_strava_athlete_id', cleanId);
@@ -1331,16 +1373,22 @@ export function useTelemetrySync({
         notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
         const storedGatePassed = localStorage.getItem('aeropulse_auth_gate_passed') === '1' && notLoggedOut;
         const localSavedPolicy = loadStravaSyncPolicyFromStorage();
+        const pendingTeamJoin = hasPendingTeamJoinInBrowser();
         const hasPersistedStravaSession = Boolean(
-          notLoggedOut &&
-            statusData?.stravaConnected &&
-            (storedGatePassed ||
-              statusData?.stravaSyncPolicy?.confirmedAt ||
-              localSavedPolicy?.confirmedAt ||
-              activitiesRef.current.length > 0)
+          notLoggedOut && statusData?.stravaConnected && !pendingTeamJoin
         );
         isGatePassed = storedGatePassed || hasPersistedStravaSession;
         if (hasPersistedStravaSession) {
+          if (!statusData?.stravaSyncPolicy?.window && !localSavedPolicy?.window) {
+            const grantedScope = String(statusData?.stravaGrantedScope || '');
+            const lacksScope = Boolean(grantedScope) && !grantedScope.includes('activity:read');
+            saveStravaSyncPolicyToStorage({
+              window: lacksScope ? 'none' : '90d',
+              importProfileAndGear: true,
+              confirmedAt: new Date().toISOString(),
+              grantedScope: grantedScope || undefined,
+            });
+          }
           localStorage.setItem('aeropulse_auth_gate_passed', '1');
           if (mounted) {
             setIsSessionLoggedOut(false);

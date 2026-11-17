@@ -1,4 +1,86 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function installStravaWorkspaceMocks(
+  page: Page,
+  opts: {
+    athleteId?: string;
+    athleteName?: string;
+    initialPolicyWindow?: '90d' | '180d' | '365d' | 'all' | 'none';
+  } = {}
+) {
+  const athleteId = opts.athleteId || '998877';
+  const athleteName = opts.athleteName || 'Test Strava Runner';
+  let syncedPolicy = opts.initialPolicyWindow
+    ? {
+        window: opts.initialPolicyWindow,
+        importProfileAndGear: true,
+        confirmedAt: '2026-11-16T00:00:00.000Z',
+      }
+    : undefined;
+
+  await page.route('**/api/config/status*', async (route) => {
+    const loggedOut = route.request().headers()['x-strava-access-token'] ? false : false;
+    void loggedOut;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        vaultStorageBackend: 'ENCRYPTED_FILE',
+        stravaConfigured: true,
+        stravaClientId: '121717',
+        stravaConnected: true,
+        stravaSource: 'OAUTH',
+        stravaAthleteId: athleteId,
+        stravaAthleteName: athleteName,
+        stravaGrantedScope: 'read,activity:read_all,profile:read_all',
+        stravaSyncPolicy: syncedPolicy,
+        mapTileProvider: 'OSM_KEYLESS',
+        mapTileApiKeyConfigured: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/strava/sync-policy*', async (route) => {
+    let body: any = {};
+    try {
+      body = route.request().postDataJSON();
+    } catch {
+      body = {};
+    }
+    syncedPolicy = {
+      window: body.window || '90d',
+      importProfileAndGear: body.importProfileAndGear !== false,
+      confirmedAt: new Date().toISOString(),
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, stravaSyncPolicy: syncedPolicy }),
+    });
+  });
+
+  await page.route('**/api/strava/sync*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        athleteId,
+        athleteName,
+        activities: [],
+        starredSegments: [],
+        gearItems: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/teams/my-teams*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ teams: [] }),
+    });
+  });
+}
 
 test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,20 +95,28 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
   test.describe('Desktop Viewport (1440x900)', () => {
     test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
-    test('Strava BroadcastChannel OAUTH_AUTH_SUCCESS advances Step 1 -> Step 2 & Google button follows data.url', async ({
+    test('Connect with Strava leads homepage, Google advances Step 2, and standalone Strava enters workspace directly', async ({
       page,
       context,
     }) => {
-      // 1. Fresh AuthGate (not ?demo=1) — test Google Sign-In button reads data.url properly
+      // 1. Fresh AuthGate — Connect with Strava should be the top CTA above Google
       await context.clearCookies();
       await page.goto('/');
       await page.evaluate(() => localStorage.clear());
       await page.reload();
 
+      const stravaBtn = page.getByRole('button', { name: /Connect with Strava/i });
       const googleBtn = page.getByRole('button', { name: /Continue with Google/i });
+      await expect(stravaBtn).toBeVisible({ timeout: 15000 });
       await expect(googleBtn).toBeVisible({ timeout: 15000 });
 
-      // Mock configured Google OAuth URL + /api/auth/me (authenticated only after OAuth redirect starts)
+      const stravaBox = await stravaBtn.boundingBox();
+      const googleBox = await googleBtn.boundingBox();
+      expect(stravaBox).not.toBeNull();
+      expect(googleBox).not.toBeNull();
+      expect(stravaBox!.y).toBeLessThan(googleBox!.y);
+
+      // Google OAuth still follows data.url -> Step 2 setup for non-Strava accounts
       let interceptedAuthUrl = false;
       await page.route('**/api/auth/google/url*', async (route) => {
         interceptedAuthUrl = true;
@@ -83,7 +173,8 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       const googleUrlBody = await googleUrlProbe.json();
       expect(googleUrlBody.url ?? googleUrlBody.devMockUrl ?? googleUrlBody.error).toBeTruthy();
 
-      // 3. Verify Strava OAUTH_AUTH_SUCCESS on BroadcastChannel advances Step 1 -> Step 2
+      // 3. Strava OAUTH_AUTH_SUCCESS on BroadcastChannel enters workspace directly without Step 2 or Step 3
+      await installStravaWorkspaceMocks(page);
       await expect(page.getByRole('button', { name: /Connect with Strava/i })).toBeVisible({
         timeout: 15000,
       });
@@ -101,20 +192,26 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
             expiresAt: 1999999999,
             athleteId: '998877',
             athleteName: 'Test Strava Runner',
+            grantedScope: 'read,activity:read_all,profile:read_all',
           },
         });
         bc.close();
       });
 
-      await expect(page.getByText(/Signed in with Strava.*Test Strava Runner/i)).toBeVisible({
-        timeout: 15000,
+      await expect(page.getByRole('link', { name: 'Today' })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Connect with Strava/i })).toHaveCount(0);
+
+      const savedPolicy = await page.evaluate(() => {
+        const raw = localStorage.getItem('aeropulse_strava_sync_policy');
+        return raw ? JSON.parse(raw) : null;
       });
-      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toBeVisible();
+      expect(savedPolicy?.window).toBe('90d');
 
       await page.evaluate(() => localStorage.clear());
     });
 
-    test('Clicking Connect with Strava completes popup OAuth callback -> Step 2 without Failed to fetch', async ({
+    test('Clicking Connect with Strava completes popup OAuth callback straight to workspace without Failed to fetch', async ({
       page,
       context,
     }) => {
@@ -136,6 +233,36 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
             stravaSource: oauthDone ? 'OAUTH' : 'NONE',
             stravaAthleteId: oauthDone ? '776655' : undefined,
             stravaAthleteName: oauthDone ? 'Popup Test Runner' : undefined,
+            stravaGrantedScope: oauthDone ? 'read,activity:read_all,profile:read_all' : undefined,
+          }),
+        });
+      });
+
+      await page.route('**/api/strava/sync-policy*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            stravaSyncPolicy: {
+              window: '90d',
+              importProfileAndGear: true,
+              confirmedAt: new Date().toISOString(),
+            },
+          }),
+        });
+      });
+
+      await page.route('**/api/strava/sync*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            athleteId: '776655',
+            athleteName: 'Popup Test Runner',
+            activities: [],
+            starredSegments: [],
+            gearItems: [],
           }),
         });
       });
@@ -165,6 +292,7 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
           athleteName: 'Popup Test Runner',
           sessionToken: 'e2e_popup_session_tok',
           hasExistingSyncPolicy: false,
+          hasPendingTeamJoin: false,
           isPopupFlow: true,
           tokens: {
             accessToken: 'e2e_popup_acc',
@@ -173,6 +301,7 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
             clientId: '121717',
             athleteId: '776655',
             athleteName: 'Popup Test Runner',
+            grantedScope: 'read,activity:read_all,profile:read_all',
           },
         };
         await route.fulfill({
@@ -206,9 +335,10 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       const popup = await popupPromise;
       await popup.waitForEvent('close', { timeout: 15000 });
 
-      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toBeVisible({
+      await expect(page.getByRole('link', { name: 'Today' })).toBeVisible({
         timeout: 15000,
       });
+      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toHaveCount(0);
       await expect(page.getByText(/Failed to fetch/i)).toHaveCount(0);
       await context.unroute('**/auth/strava/callback*');
       await page.evaluate(() => localStorage.clear());
@@ -263,6 +393,134 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
 
       await popup.close();
       await context.unroute('**/api/strava/auth/login*');
+      await page.evaluate(() => localStorage.clear());
+    });
+
+    test('Sign Out preserves custom sync policy across Strava re-login, and Team Join links still show Step 2 claim', async ({
+      page,
+      context,
+    }) => {
+      await context.clearCookies();
+      await installStravaWorkspaceMocks(page, {
+        athleteId: '554433',
+        athleteName: 'Returning Runner',
+        initialPolicyWindow: 'all',
+      });
+
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.setItem('aeropulse_auth_gate_passed', '1');
+        localStorage.setItem('aeropulse_session_token', 'tok_returning_1');
+        localStorage.setItem('aeropulse_strava_athlete_id', '554433');
+        localStorage.setItem('aeropulse_strava_athlete_name', 'Returning Runner');
+        localStorage.setItem(
+          'aeropulse_strava_sync_policy',
+          JSON.stringify({
+            window: 'all',
+            importProfileAndGear: true,
+            confirmedAt: '2026-11-16T00:00:00.000Z',
+          })
+        );
+      });
+      await page.reload();
+
+      // Workspace loaded directly -> Sign Out via account menu
+      await expect(page.getByRole('link', { name: 'Today' })).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: /Account and preferences menu/i }).click();
+      await page.getByRole('menuitem', { name: /Back to Welcome \/ Sign Out/i }).click();
+
+      // Back on homepage; custom sync policy ('all') must still be preserved
+      await expect(page.getByRole('button', { name: /Connect with Strava/i })).toBeVisible({
+        timeout: 15000,
+      });
+      const policyAfterLogout = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem('aeropulse_strava_sync_policy') || '{}')
+      );
+      expect(policyAfterLogout.window).toBe('all');
+
+      // Re-login via Strava -> enters workspace directly and keeps window='all'
+      await page.evaluate(() => {
+        const bc = new BroadcastChannel('aeropulse_oauth');
+        bc.postMessage({
+          type: 'OAUTH_AUTH_SUCCESS',
+          provider: 'strava',
+          sessionToken: 'tok_returning_2',
+          hasExistingSyncPolicy: false,
+          tokens: {
+            accessToken: 'acc_returning_2',
+            refreshToken: 'ref_returning_2',
+            expiresAt: 2100000000,
+            athleteId: '554433',
+            athleteName: 'Returning Runner',
+            grantedScope: 'read,activity:read_all',
+          },
+        });
+        bc.close();
+      });
+
+      await expect(page.getByRole('link', { name: 'Today' })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toHaveCount(0);
+      const policyAfterRelogin = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem('aeropulse_strava_sync_policy') || '{}')
+      );
+      expect(policyAfterRelogin.window).toBe('all');
+
+      // Now test Team Join link (?join=PAXC-26) still routes Strava user to Step 2 for roster claim
+      await page.unroute('**/api/config/status*');
+      await page.route('**/api/teams/join-preview*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            found: true,
+            brand: {
+              teamId: 'team_paxc',
+              slug: 'paly-xc',
+              name: 'Palo Alto XC',
+              shortName: 'PAXC',
+              primarySport: 'Running',
+              joinCode: 'PAXC-26',
+              coachDisplayName: 'Miller',
+              primaryHex: '#1C5436',
+              secondaryHex: '#C8FF00',
+              orgType: 'COLLEGIATE',
+              defaultSafeSportShield: false,
+            },
+          }),
+        });
+      });
+
+      await context.clearCookies();
+      await page.evaluate(() => localStorage.clear());
+      await page.goto('/?join=PAXC-26');
+
+      await expect(
+        page.getByRole('button', { name: /Connect with Strava to Join PAXC/i })
+      ).toBeVisible({ timeout: 15000 });
+
+      await page.evaluate(() => {
+        const bc = new BroadcastChannel('aeropulse_oauth');
+        bc.postMessage({
+          type: 'OAUTH_AUTH_SUCCESS',
+          provider: 'strava',
+          sessionToken: 'tok_join_1',
+          hasExistingSyncPolicy: false,
+          tokens: {
+            accessToken: 'acc_join_1',
+            refreshToken: 'ref_join_1',
+            expiresAt: 2100000000,
+            athleteId: '667788',
+            athleteName: 'Join Athlete',
+          },
+        });
+        bc.close();
+      });
+
+      await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toBeVisible({
+        timeout: 15000,
+      });
+
       await page.evaluate(() => localStorage.clear());
     });
   });

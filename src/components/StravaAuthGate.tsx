@@ -229,11 +229,33 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
-  const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>('ATHLETE');
+  const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>(() => {
+    try {
+      return sessionStorage.getItem('thresh_onboarding_role') === 'COACH' ? 'COACH' : 'ATHLETE';
+    } catch {
+      return 'ATHLETE';
+    }
+  });
+
+  const selectOnboardingRole = (nextRole: 'ATHLETE' | 'COACH') => {
+    setOnboardingRole(nextRole);
+    try {
+      if (nextRole === 'COACH') {
+        sessionStorage.setItem('thresh_onboarding_role', 'COACH');
+      } else {
+        sessionStorage.removeItem('thresh_onboarding_role');
+      }
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   const isUserAuthenticated = Boolean(status.stravaConnected || localUser || currentUser);
   const [step, setStep] = useState<WizardStep>(() =>
-    status.stravaConnected || currentUser || status.currentUser ? 2 : 1
+    Boolean((currentUser || status.currentUser) && !status.stravaConnected) ||
+    Boolean(status.stravaConnected && initialJoin.codeOrSlug)
+      ? 2
+      : 1
   );
   const [showArchiveWizard, setShowArchiveWizard] = useState(false);
 
@@ -381,12 +403,21 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     }
   }, [localUser, currentUser, status.stravaConnected, athleteName, athleteEmail, onAuthenticatedUser]);
 
-  // Automatically advance from Step 1 -> Step 2 once Strava OAuth completes or user authenticates!
+  // Advance Step 1 -> Step 2 only for non-Strava accounts or Strava users actively joining a team
   useEffect(() => {
-    if ((status.stravaConnected || localUser) && step === 1) {
+    const hasActiveTeamJoin = Boolean(
+      initialJoin.codeOrSlug ||
+        (invitePreview?.found && invitePreview?.brand) ||
+        joinCodeInput.trim()
+    );
+    if (
+      (Boolean(localUser && !status.stravaConnected) ||
+        Boolean(status.stravaConnected && hasActiveTeamJoin)) &&
+      step === 1
+    ) {
       setStep(2);
     }
-  }, [status.stravaConnected, localUser, step]);
+  }, [status.stravaConnected, localUser, step, initialJoin.codeOrSlug, invitePreview, joinCodeInput]);
 
   // Pre-fill athlete name & measurement preference from Strava profile
   useEffect(() => {
@@ -675,6 +706,22 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setStepNotice(null);
     setJoinError(null);
     try {
+      try {
+        const cleanCode = joinCodeInput.trim();
+        if (cleanCode || joinSlug) {
+          sessionStorage.setItem(
+            PENDING_TEAM_JOIN_STORAGE_KEY,
+            JSON.stringify({
+              codeOrSlug: cleanCode || joinSlug || '',
+              slug: joinSlug || activeBrand?.slug || undefined,
+              token: inviteToken || '',
+              email: athleteEmail.trim() || undefined,
+            })
+          );
+        }
+      } catch {
+        // ignore storage errors
+      }
       await onLaunchStravaOAuth(oauthMode, currentJoinContext, forcePrompt);
     } finally {
       setIsRedirecting(false);
@@ -737,7 +784,43 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setStep(1);
   };
 
-  // Step 2 Confirmation: Save Sync Policy + Claim Team Invite (if present) + Kick off Background Sync + Advance to Step 3
+  const submitCalibrationEntry = async (
+    entryTarget: FirstRunCalibrationPayload['entryTarget'] = 'WORKSPACE',
+    overridePolicy?: StravaSyncPolicy,
+    overrideClaimed?: typeof claimedTeamsState
+  ) => {
+    if (!onCompleteCalibrationEntry) return;
+    const effectiveClaimed = overrideClaimed !== undefined ? overrideClaimed : claimedTeamsState;
+    const hasCustomSeedMark = Boolean(composedSeedMark.trim());
+    await onCompleteCalibrationEntry({
+      athleteName:
+        athleteName.trim() ||
+        status.stravaAthleteName ||
+        status.garminAthleteName ||
+        'Athlete',
+      primarySport:
+        effectiveClaimed?.teams?.[0]?.brand?.primarySport || primarySport,
+      distanceUnit,
+      hasCustomSeedMark,
+      cyclingFtpWatts: hasCustomSeedMark
+        ? effectiveClaimed?.calibratedFtp || liveSeedCalibration.cyclingFtpWatts
+        : undefined,
+      thresholdPaceInput: hasCustomSeedMark
+        ? effectiveClaimed?.calibratedPace ||
+          liveSeedCalibration.thresholdPaceInputDisplay
+        : undefined,
+      safeSportHideWeight: isMinorAthlete
+        ? true
+        : Boolean(effectiveClaimed?.safeSportEnforced || safeSportHideWeight),
+      stravaSyncPolicy: overridePolicy ?? confirmedPolicy,
+      claimedTeams: effectiveClaimed?.teams,
+      activeTeamId: effectiveClaimed?.activeTeamId,
+      sessionToken: effectiveClaimed?.sessionToken,
+      entryTarget,
+    });
+  };
+
+  // Step 2 Confirmation: Save Sync Policy + Claim Team Invite (if present) + Kick off Background Sync
   const handleConfirmStep2 = async () => {
     setIsSavingStep2(true);
     setJoinError(null);
@@ -800,6 +883,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       }
 
       // If athlete is joining a team, claim their roster spot now with their verified Strava identity!
+      let claimedResult: typeof claimedTeamsState = null;
       if (activeBrand && joinCodeInput.trim()) {
         const claimResp = await fetch('/api/teams/join-claim', {
           method: 'POST',
@@ -836,19 +920,29 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         }
         const claimedTeam = claimData.team as TeamSummaryWithRole;
         const allTeams = (claimData.teams as TeamSummaryWithRole[]) || [claimedTeam];
-        setClaimedTeamsState({
+        claimedResult = {
           teams: allTeams,
           activeTeamId: claimedTeam?.brand?.teamId,
           sessionToken: claimData.sessionToken,
           calibratedFtp: claimData.calibrated?.cyclingFtpWatts,
           calibratedPace: claimData.calibrated?.thresholdPaceInputDisplay,
           safeSportEnforced: Boolean(claimData.safeSportShieldEnforced),
-        });
+        };
+        setClaimedTeamsState(claimedResult);
       }
 
-      // Kick off consented Strava sync non-blockingly in the background while user views Step 3!
+      // Kick off consented Strava sync non-blockingly in the background
       if (status.stravaConnected && syncWindow !== 'none' && onSyncNow) {
         void onSyncNow(syncWindow === 'all', syncWindow);
+      }
+
+      if (status.stravaConnected) {
+        await submitCalibrationEntry(
+          onboardingRole === 'COACH' && !activeBrand ? 'COACH_MODE' : 'WORKSPACE',
+          savedPolicy,
+          claimedResult
+        );
+        return;
       }
 
       setStep(3);
@@ -928,35 +1022,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setIsEntering(true);
     setJoinError(null);
     try {
-      const hasCustomSeedMark = Boolean(composedSeedMark.trim());
-      if (onCompleteCalibrationEntry) {
-        await onCompleteCalibrationEntry({
-          athleteName:
-            athleteName.trim() ||
-            status.stravaAthleteName ||
-            status.garminAthleteName ||
-            'Athlete',
-          primarySport:
-            claimedTeamsState?.teams?.[0]?.brand?.primarySport || primarySport,
-          distanceUnit,
-          hasCustomSeedMark,
-          cyclingFtpWatts: hasCustomSeedMark
-            ? claimedTeamsState?.calibratedFtp || liveSeedCalibration.cyclingFtpWatts
-            : undefined,
-          thresholdPaceInput: hasCustomSeedMark
-            ? claimedTeamsState?.calibratedPace ||
-              liveSeedCalibration.thresholdPaceInputDisplay
-            : undefined,
-          safeSportHideWeight: isMinorAthlete
-            ? true
-            : Boolean(claimedTeamsState?.safeSportEnforced || safeSportHideWeight),
-          stravaSyncPolicy: confirmedPolicy,
-          claimedTeams: claimedTeamsState?.teams,
-          activeTeamId: claimedTeamsState?.activeTeamId,
-          sessionToken: claimedTeamsState?.sessionToken,
-          entryTarget,
-        });
-      }
+      await submitCalibrationEntry(entryTarget);
     } finally {
       setIsEntering(false);
     }
@@ -1054,63 +1120,64 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         <main id="main-content" tabIndex={-1} className="ap-content-stage relative overflow-hidden p-4 sm:p-8 space-y-6 focus:outline-none">
           <ThreshBrandWatermark className="w-44 h-36 absolute right-3 bottom-3 pointer-events-none" />
 
-          {/* 3-Step Stadium Track Progress Bar */}
-          <nav
-            aria-label="Onboarding steps"
-            className="grid grid-cols-3 gap-1.5 sm:gap-2 px-0.5 py-0.5 text-xs relative z-10"
-          >
-            {(
-              [
-                {
-                  id: 1 as const,
-                  label: '1. THRESH Sign-In',
-                  mobileLabel: '1. Sign In',
-                  locked: false,
-                },
-                {
-                  id: 2 as const,
-                  label: '2. Sync Choice',
-                  mobileLabel: '2. Sync',
-                  locked: !isUserAuthenticated,
-                },
-                {
-                  id: 3 as const,
-                  label: '3. Optional Add-Ons',
-                  mobileLabel: '3. Add-Ons',
-                  locked: !isUserAuthenticated,
-                },
-              ] as const
-            ).map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                disabled={s.locked}
-                aria-current={step === s.id ? 'step' : undefined}
-                onClick={() => {
-                  if (!s.locked) setStep(s.id);
-                }}
-                title={
-                  s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label
-                }
-                className={`min-h-[44px] sm:min-h-[38px] min-w-0 px-1.5 sm:px-2.5 py-1 transition-all ap-track-tab ${
-                  step === s.id
-                    ? 'ap-nav-volt-active cursor-pointer'
-                    : s.locked
-                      ? 'ap-track-tab-idle opacity-50 cursor-not-allowed'
-                      : 'ap-track-tab-idle cursor-pointer'
-                }`}
-              >
-                <span className="ap-track-tab-inner justify-center w-full min-w-0 gap-1">
-                  {s.locked && <Lock className="w-3 h-3 shrink-0 opacity-70" />}
-                  {!s.locked && step > s.id && (
-                    <Check className="w-3 h-3 shrink-0 ap-text-brand" />
-                  )}
-                  <span className="sm:hidden truncate text-2xs">{s.mobileLabel}</span>
-                  <span className="hidden sm:inline truncate">{s.label}</span>
-                </span>
-              </button>
-            ))}
-          </nav>
+          {(step !== 1 || Boolean(activeBrand)) && (
+            <nav
+              aria-label="Onboarding steps"
+              className="grid grid-cols-3 gap-1.5 sm:gap-2 px-0.5 py-0.5 text-xs relative z-10"
+            >
+              {(
+                [
+                  {
+                    id: 1 as const,
+                    label: '1. THRESH Sign-In',
+                    mobileLabel: '1. Sign In',
+                    locked: false,
+                  },
+                  {
+                    id: 2 as const,
+                    label: '2. Sync Choice',
+                    mobileLabel: '2. Sync',
+                    locked: !isUserAuthenticated,
+                  },
+                  {
+                    id: 3 as const,
+                    label: '3. Optional Add-Ons',
+                    mobileLabel: '3. Add-Ons',
+                    locked: !isUserAuthenticated,
+                  },
+                ] as const
+              ).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={s.locked}
+                  aria-current={step === s.id ? 'step' : undefined}
+                  onClick={() => {
+                    if (!s.locked) setStep(s.id);
+                  }}
+                  title={
+                    s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label
+                  }
+                  className={`min-h-[44px] sm:min-h-[38px] min-w-0 px-1.5 sm:px-2.5 py-1 transition-all ap-track-tab ${
+                    step === s.id
+                      ? 'ap-nav-volt-active cursor-pointer'
+                      : s.locked
+                        ? 'ap-track-tab-idle opacity-50 cursor-not-allowed'
+                        : 'ap-track-tab-idle cursor-pointer'
+                  }`}
+                >
+                  <span className="ap-track-tab-inner justify-center w-full min-w-0 gap-1">
+                    {s.locked && <Lock className="w-3 h-3 shrink-0 opacity-70" />}
+                    {!s.locked && step > s.id && (
+                      <Check className="w-3 h-3 shrink-0 ap-text-brand" />
+                    )}
+                    <span className="sm:hidden truncate text-2xs">{s.mobileLabel}</span>
+                    <span className="hidden sm:inline truncate">{s.label}</span>
+                  </span>
+                </button>
+              ))}
+            </nav>
+          )}
 
           {(errorMessage || joinError) && (
             <div
@@ -1148,7 +1215,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       type="button"
                       data-testid="onboarding-role-athlete"
                       aria-pressed={onboardingRole === 'ATHLETE'}
-                      onClick={() => setOnboardingRole('ATHLETE')}
+                      onClick={() => selectOnboardingRole('ATHLETE')}
                       className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
                         onboardingRole === 'ATHLETE'
                           ? 'ap-nav-volt-active'
@@ -1161,7 +1228,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       type="button"
                       data-testid="onboarding-role-coach"
                       aria-pressed={onboardingRole === 'COACH'}
-                      onClick={() => setOnboardingRole('COACH')}
+                      onClick={() => selectOnboardingRole('COACH')}
                       className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
                         onboardingRole === 'COACH'
                           ? 'ap-nav-volt-active'
@@ -1191,8 +1258,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 )}
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                   {activeBrand
-                    ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll choose your sync choices on the next screen.`
-                    : 'Create your free THRESH athlete account with Google, Passkey, Magic Link, or Strava.'}
+                    ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
+                    : 'Sign in with Strava in one click—or continue with Google, Passkey, or Magic Link.'}
                 </p>
               </div>
 
@@ -1296,9 +1363,44 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </div>
               )}
 
-              {/* Primary THRESH Sign-In Card (Google, Passkeys, Magic Link & Strava) */}
+              {/* Primary THRESH Sign-In Card (1-Click Strava, Google, Passkeys & Magic Link) */}
               <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-4">
-                {/* 1. Continue with Google */}
+                {/* 1. Primary CTA: Connect with Strava */}
+                <button
+                  type="button"
+                  onClick={() => void handleStravaLaunchClick('cloud', false)}
+                  disabled={busy}
+                  className="ap-btn-strava w-full !min-h-[48px] py-2.5 px-4 rounded-xl disabled:opacity-60 font-bold text-sm flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
+                >
+                  {isRedirecting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <StravaChevronMark className="w-4 h-4" />
+                  )}
+                  <span>
+                    {isRedirecting
+                      ? 'Opening Strava Sign-In…'
+                      : activeBrand
+                        ? `Connect with Strava to Join ${activeBrand.shortName}`
+                        : 'Connect with Strava'}
+                  </span>
+                </button>
+
+                <p className="text-2xs text-center text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {activeBrand
+                    ? 'Verify your Strava identity to claim your team roster spot.'
+                    : '1-click sign-in & automatic 90-day read-only workout sync. Customize sync range or add Garmin / Intervals anytime in Data Sources.'}
+                </p>
+
+                {/* Divider: or continue with email / passkey */}
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
+                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
+                    or continue with email / passkey
+                  </span>
+                </div>
+
+                {/* 2. Continue with Google */}
                 <button
                   type="button"
                   onClick={() => void handleGoogleSignIn()}
@@ -1313,7 +1415,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <span>{isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}</span>
                 </button>
 
-                {/* 2. Biometric Passkey (Touch ID / Face ID / WebAuthn) */}
+                {/* 3. Biometric Passkey (Touch ID / Face ID / WebAuthn) */}
                 {passkeySupported && (
                   <button
                     type="button"
@@ -1381,7 +1483,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </span>
                 </div>
 
-                {/* 3. Email Magic Link Form */}
+                {/* 4. Email Magic Link Form */}
                 <form onSubmit={handleSendMagicLink} className="space-y-2">
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
@@ -1434,40 +1536,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   )}
                 </form>
 
-                {/* Divider: or connect with Strava */}
-                <div className="relative flex items-center justify-center my-1">
-                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
-                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
-                    or strava connector
-                  </span>
-                </div>
-
-                {/* 4. Connect with Strava */}
-                <button
-                  type="button"
-                  onClick={() => void handleStravaLaunchClick('cloud', false)}
-                  disabled={busy}
-                  className="ap-btn-strava w-full !min-h-[48px] py-2.5 px-4 rounded-xl disabled:opacity-60 font-bold text-sm flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
-                >
-                  {isRedirecting ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <StravaChevronMark className="w-4 h-4" />
-                  )}
-                  <span>
-                    {isRedirecting
-                      ? 'Opening Strava Sign-In…'
-                      : activeBrand
-                        ? `Connect with Strava to Join ${activeBrand.shortName}`
-                        : 'Connect with Strava'}
-                  </span>
-                </button>
-
-                <p className="text-2xs text-center text-slate-500 dark:text-slate-400 leading-relaxed">
-                  THRESH secures your identity across devices. <strong>Nothing syncs until you choose your sync window in Step 2.</strong>
-                </p>
-
-                {/* 4-Point Read-Only Privacy Pledge */}
+                {/* Read-Only Privacy Pledge */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-200/80 dark:border-white/10 text-xs">
                   <div className="rounded-xl liquid-glass-subtle p-2.5 flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 ap-text-brand shrink-0 mt-0.5" />
@@ -1487,7 +1556,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         You Choose What Syncs
                       </div>
                       <div className="text-2xs text-slate-600 dark:text-slate-400">
-                        Pick Last 90 Days, Full Archive, or Identity-Only in Step 2.
+                        Syncs your last 90 days automatically; switch to Full Archive or Identity-Only anytime in Data Sources.
                       </div>
                     </div>
                   </div>
@@ -1781,7 +1850,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setOnboardingRole('ATHLETE')}
+                    onClick={() => selectOnboardingRole('ATHLETE')}
                     className="text-2xs underline text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                   >
                     Switch to personal Athlete setup instead

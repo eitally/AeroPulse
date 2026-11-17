@@ -1632,6 +1632,29 @@ export function loadStravaSyncPolicyFromStorage(): StoredClientStravaSyncPolicy 
   }
 }
 
+export function hasPendingTeamJoinInBrowser(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (/^\/join\/[^/?#]+/i.test(window.location.pathname)) {
+      return true;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if ((params.get('join') || params.get('team') || '').trim()) {
+      return true;
+    }
+    const saved = window.sessionStorage?.getItem('thresh_pending_team_join_v1');
+    if (saved) {
+      const parsed = JSON.parse(saved) as { codeOrSlug?: string };
+      if (parsed?.codeOrSlug?.trim()) {
+        return true;
+      }
+    }
+  } catch {
+    // ignore storage/URL parse errors
+  }
+  return false;
+}
+
 export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayload | null) {
   if (!tokens) return;
   try {
