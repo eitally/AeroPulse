@@ -44,6 +44,7 @@ interface TeamManagementPanelProps {
   myTeams: TeamSummaryWithRole[];
   activeTeamId: string | null;
   resendConfigured: boolean;
+  initialShowCreateStudio?: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
 }
@@ -121,6 +122,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   myTeams,
   activeTeamId,
   resendConfigured,
+  initialShowCreateStudio = false,
   onSelectActiveTeam,
   onTeamsUpdated,
 }) => {
@@ -132,8 +134,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     [myTeams, activeTeamId]
   );
 
-  const [showCreateOrEditStudio, setShowCreateOrEditStudio] = useState<boolean>(false);
+  const [showCreateOrEditStudio, setShowCreateOrEditStudio] = useState<boolean>(initialShowCreateStudio);
   const [studioMode, setStudioMode] = useState<'CREATE' | 'EDIT'>('CREATE');
+
+  React.useEffect(() => {
+    if (initialShowCreateStudio) {
+      setStudioMode('CREATE');
+      setShowCreateOrEditStudio(true);
+    }
+  }, [initialShowCreateStudio]);
 
   // Studio Form State (clean empty defaults so coaches never submit sample school names)
   const [orgType, setOrgType] = useState<TeamOrgType>('HIGH_SCHOOL');

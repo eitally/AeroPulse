@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type {
   AthleteProfile,
   CoachWorkspaceSubTab,
@@ -18,16 +18,14 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
+import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 import { CalendarView } from './CalendarView';
 import { TeamManagementPanel } from './TeamManagementPanel';
 import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
 import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
 import {
-  Calendar,
-  ClipboardText,
   Shield,
-  Timer,
   Users,
 } from './icons/PhosphorIcons';
 
@@ -91,17 +89,6 @@ export interface CoachWorkspaceViewProps {
   onOpenRosterModal: () => void;
 }
 
-const SUB_TABS: Array<{
-  id: CoachWorkspaceSubTab;
-  label: string;
-  icon: typeof ClipboardText;
-}> = [
-  { id: 'CLIPBOARD', label: 'Clipboard', icon: ClipboardText },
-  { id: 'TEAM_PLAN', label: 'Team Plan', icon: Calendar },
-  { id: 'STOPWATCH', label: 'Stopwatch', icon: Timer },
-  { id: 'ROSTER', label: 'Roster', icon: Users },
-];
-
 export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   subTab,
   setSubTab,
@@ -137,6 +124,61 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenAthleteToday,
   onOpenRosterModal,
 }) => {
+  const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
+
+  const handleTeamPlanCreate = async (eventInput: {
+    date: string;
+    name: string;
+    sportCategory: SportCategory;
+    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+    plannedDurationSecs: number;
+    plannedLoad: number;
+    workoutSyntax: string;
+    description: string;
+    trackSpec?: TrackWorkoutSpec;
+    replaceExistingDate?: boolean;
+  }) => {
+    const canBroadcastTeam =
+      activeTeam &&
+      (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH');
+    if (canBroadcastTeam && activeTeam) {
+      try {
+        const resp = await fetch(
+          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getSavedIntervalsHeaders(),
+            },
+            body: JSON.stringify({
+              origin: window.location.origin,
+              targetSquadGroup: 'ALL',
+              date: eventInput.date,
+              name: eventInput.name,
+              sportCategory: eventInput.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+              plannedDurationSecs: eventInput.plannedDurationSecs,
+              plannedLoad: eventInput.plannedLoad,
+              workoutSyntax: eventInput.workoutSyntax,
+              description: eventInput.description,
+              ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+            }),
+          }
+        );
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          if (Array.isArray(data.teams)) {
+            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+          }
+          return;
+        }
+      } catch {
+        // Fallback to local state if offline or sandboxed
+      }
+    }
+    await onCreatePlannedEvent(eventInput);
+  };
   const connectedAthletesOnly = useMemo(
     () => combinedRoster.filter((a) => a.status === 'CONNECTED'),
     [combinedRoster]
@@ -229,37 +271,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 ))}
               </select>
             )}
-          </div>
-        </div>
 
-        {/* Sub-tab Pills inside Workspace */}
-        <div
-          role="tablist"
-          aria-label="Coach workspace sections"
-          className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl liquid-capsule-track"
-        >
-          {SUB_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = subTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                data-testid={`coach-subtab-${tab.id.toLowerCase()}`}
-                onClick={() => setSubTab(tab.id)}
-                className={`min-h-[44px] sm:min-h-[38px] rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                  active
-                    ? 'ap-nav-volt-active'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" weight={active ? 'fill' : 'duotone'} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+            <button
+              type="button"
+              onClick={onOpenAthleteToday}
+              className="md:hidden min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+            >
+              Exit Coach
+            </button>
+          </div>
         </div>
       </section>
 
@@ -285,7 +305,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 <button
                   type="button"
                   data-testid="coach-empty-setup-btn"
-                  onClick={() => setSubTab('ROSTER')}
+                  onClick={() => {
+                    setOpenCreateTeamOnSwitch(true);
+                    setSubTab('ROSTER');
+                  }}
                   className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-4 py-2 text-xs font-bold cursor-pointer"
                 >
                   Create Team or Import CSV
@@ -393,7 +416,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           athleteFtp={athleteFtp}
           athleteProfile={selfProfile}
           onSelectActivity={onSelectActivityAndOpenTab}
-          onCreatePlannedEvent={onCreatePlannedEvent}
+          onCreatePlannedEvent={handleTeamPlanCreate}
           onDeletePlannedEvent={onDeletePlannedEvent}
           onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
           onOpenTodayWorkout={onOpenAthleteToday}
@@ -427,10 +450,12 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             myTeams={myTeams}
             activeTeamId={activeTeamId}
             resendConfigured={resendConfigured}
+            initialShowCreateStudio={openCreateTeamOnSwitch}
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
           />
 
+          {(!activeTeam || activeTeam.brand.orgType === 'COLLEGIATE') && (
           <section
             data-testid="coach-cara-audit"
             className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3"
@@ -477,6 +502,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               </div>
             )}
           </section>
+          )}
         </div>
       )}
     </div>

@@ -443,7 +443,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       {mode === 'MORNING' || !sessionReceipt ? (
         <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-3.5">
           {/* CARD 1 (5 Cols): 7-Day Rolling Training Productivity & 3-System Load Focus */}
-          <div className="order-2 lg:order-1 lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
+          <div className="order-3 lg:order-1 lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
@@ -636,86 +636,138 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-[#1C5436]/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
-              <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
-                  <span
-                    className="inline-flex items-center gap-1 font-medium"
-                    title="Overnight HRV (rMSSD)"
-                  >
-                    <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                    Overnight HRV
-                  </span>
-                  <span className="text-3xs sm:text-2xs opacity-85">
-                    {productivity.hrv7dAvgMs > 0
-                      ? `${productivity.hrv7dAvgMs}ms`
-                      : 'Wearable'}
-                  </span>
+            {productivity.hrvLatestMs === 0 &&
+            productivity.sleepScoreLatest === 0 &&
+            productivity.sleepHoursLatest === 0 &&
+            productivity.rhrLatestBpm === 0 ? (
+              <div
+                data-testid="strava-only-readiness-summary"
+                className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-[#1C5436]/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1"
+              >
+                <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="font-medium">Form (TSB)</span>
+                    <span className="text-3xs sm:text-2xs opacity-85">Freshness</span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.tsb > 0
+                      ? `+${productivity.tsb.toFixed(0)}`
+                      : productivity.tsb.toFixed(0)}
+                  </div>
                 </div>
-                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                  {productivity.hrvLatestMs > 0
-                    ? `${productivity.hrvLatestMs} ms`
-                    : 'Wearable needed'}
-                </div>
-              </div>
 
-              <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
-                  <span className="inline-flex items-center gap-1 font-medium">
-                    <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                    Overnight Sleep
-                  </span>
-                  <span className="text-3xs sm:text-2xs opacity-85">
-                    {productivity.sleepHoursLatest > 0
-                      ? `${productivity.sleepHoursLatest}h`
-                      : '—'}
-                  </span>
+                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="font-medium">Fitness (CTL)</span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      {productivity.ctlRamp7d >= 0
+                        ? `+${productivity.ctlRamp7d}/wk`
+                        : `${productivity.ctlRamp7d}/wk`}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.ctl.toFixed(0)}
+                  </div>
                 </div>
-                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white truncate">
-                  {productivity.sleepScoreLatest > 0
-                    ? `Score ${productivity.sleepScoreLatest}`
-                    : productivity.sleepHoursLatest > 0
-                      ? `${productivity.sleepHoursLatest} hrs`
-                      : 'Awaiting sync'}
-                </div>
-              </div>
 
-              <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
-                  <span className="font-medium">Resting HR</span>
-                  <span className="text-3xs sm:text-2xs opacity-85">
-                    {productivity.rhrLatestBpm === 0
-                      ? 'Wearable'
-                      : productivity.rhrDeltaBpm === 0
-                        ? 'Base'
-                        : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`}
-                  </span>
+                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="font-medium">7d Acute Load</span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      {productivity.acwr.toFixed(2)}x ACWR
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.acuteLoad7d} TSS
+                  </div>
                 </div>
-                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                  {productivity.rhrLatestBpm > 0
-                    ? `${productivity.rhrLatestBpm} bpm`
-                    : 'Wearable needed'}
-                </div>
-              </div>
 
-              <div className="p-2 lg:p-0 lg:py-2 lg:last:pb-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
-                  <span className="font-medium">Form (TSB)</span>
-                  <span className="text-3xs sm:text-2xs opacity-85">
-                    CTL {productivity.ctl.toFixed(0)}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                  {productivity.tsb > 0
-                    ? `+${productivity.tsb.toFixed(0)}`
-                    : productivity.tsb.toFixed(0)}
+                <div className="col-span-2 lg:col-span-1 pt-2 font-sans text-2xs text-[#43584B] dark:text-[#93A39A]">
+                  Optional: link Garmin, Wahoo, Polar, or Intervals.icu for overnight HRV &amp; sleep.
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-[#1C5436]/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
+                <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span
+                      className="inline-flex items-center gap-1 font-medium"
+                      title="Overnight HRV (rMSSD)"
+                    >
+                      <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      Overnight HRV
+                    </span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      {productivity.hrv7dAvgMs > 0
+                        ? `${productivity.hrv7dAvgMs}ms`
+                        : 'Wearable'}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.hrvLatestMs > 0
+                      ? `${productivity.hrvLatestMs} ms`
+                      : 'Wearable needed'}
+                  </div>
+                </div>
+
+                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                      Overnight Sleep
+                    </span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      {productivity.sleepHoursLatest > 0
+                        ? `${productivity.sleepHoursLatest}h`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white truncate">
+                    {productivity.sleepScoreLatest > 0
+                      ? `Score ${productivity.sleepScoreLatest}`
+                      : productivity.sleepHoursLatest > 0
+                        ? `${productivity.sleepHoursLatest} hrs`
+                        : 'Awaiting sync'}
+                  </div>
+                </div>
+
+                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="font-medium">Resting HR</span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      {productivity.rhrLatestBpm === 0
+                        ? 'Wearable'
+                        : productivity.rhrDeltaBpm === 0
+                          ? 'Base'
+                          : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.rhrLatestBpm > 0
+                      ? `${productivity.rhrLatestBpm} bpm`
+                      : 'Wearable needed'}
+                  </div>
+                </div>
+
+                <div className="p-2 lg:p-0 lg:py-2 lg:last:pb-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
+                    <span className="font-medium">Form (TSB)</span>
+                    <span className="text-3xs sm:text-2xs opacity-85">
+                      CTL {productivity.ctl.toFixed(0)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    {productivity.tsb > 0
+                      ? `+${productivity.tsb.toFixed(0)}`
+                      : productivity.tsb.toFixed(0)}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* CARD 3 (4 Cols): Prepare for Today — Coherent Scheduled or Gap-Filling Prescription */}
-          <div className="order-3 lg:order-3 lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
+          <div className="order-2 lg:order-3 lg:col-span-4 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
             <div className="space-y-2.5">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-white leading-snug">
@@ -848,7 +900,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       >
                         <CalendarCheck className="w-3.5 h-3.5" />
                         <span>
-                          {isSavingRx ? 'Swapping…' : 'Swap to Gap-Filler'}
+                          {isSavingRx ? 'Swapping…' : 'Use Readiness Workout'}
                         </span>
                       </button>
                     )}
@@ -864,7 +916,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       >
                         <CalendarCheck className="w-3.5 h-3.5" />
                         <span>
-                          {isSavingRx ? 'Scheduling…' : 'Schedule Gap-Filler RX'}
+                          {isSavingRx ? 'Scheduling…' : "Schedule Today's Workout"}
                         </span>
                       </button>
                     )}

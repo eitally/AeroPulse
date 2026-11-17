@@ -88,6 +88,8 @@ interface ActivitiesViewProps {
   onOpenTracksideStopwatch?: () => void;
   athleteWeightKg?: number;
   athleteProfile?: AthleteProfile;
+  inspectorOnly?: boolean;
+  onOpenCompareView?: () => void;
 }
 
 interface NormalizedSeriesPoint {
@@ -206,6 +208,8 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
   onOpenTracksideStopwatch,
   athleteWeightKg = 72.5,
   athleteProfile,
+  inspectorOnly = false,
+  onOpenCompareView,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('ALL');
@@ -590,11 +594,13 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
     if (slot === 'A') {
       setCompareIdA(act.id);
       setActiveWorkspace('COMPARE');
+      if (inspectorOnly) onOpenCompareView?.();
       return;
     }
     if (slot === 'B') {
       setCompareIdB(act.id);
       setActiveWorkspace('COMPARE');
+      if (inspectorOnly) onOpenCompareView?.();
       return;
     }
     if (!compareIdA || compareIdA === act.id) {
@@ -605,6 +611,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
       setCompareIdB(act.id);
     }
     setActiveWorkspace('COMPARE');
+    if (inspectorOnly) onOpenCompareView?.();
   };
 
   const handleAutoMatchRepeatForA = () => {
@@ -906,8 +913,14 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
     };
   }, [compareActivityA, compareActivityB, compareXMode, smoothStreams]);
 
+  if (inspectorOnly && !selectedActivity) {
+    return null;
+  }
+
   return (
-    <div className="space-y-6">
+    <div className={inspectorOnly ? undefined : 'space-y-6'}>
+      {!inspectorOnly && (
+        <>
       {/* Filter, Summary KPI Strip & 4-Mode Workspace Switcher Header Card */}
       <section className="relative z-20 rounded-2xl liquid-glass p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -3320,6 +3333,8 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
         )}
         </section>
       </div>
+      )}
+        </>
       )}
 
       {/* Deep Activity Stream, Auto-Detected Intervals & Similar Workout Inspector Modal */}

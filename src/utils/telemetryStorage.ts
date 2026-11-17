@@ -623,7 +623,7 @@ export function buildCompleteAthleteProfile(
     runEFtp: Math.round(runEFtp),
     runLthr: Math.round(runLthr),
     runMaxHr: Math.round(runMaxHr),
-    thresholdPaceSecsPerKm: Math.round(thresholdPaceSecsPerKm),
+    thresholdPaceSecsPerKm: Number(thresholdPaceSecsPerKm.toFixed(1)),
     powerZones,
     hrZones,
     runHrZones,
@@ -1803,6 +1803,22 @@ export async function safeParseResponseJson(resp: Response): Promise<any> {
       }${snippet ? `: ${snippet}` : ''}`,
     };
   }
+}
+
+export function inferPrimarySportFromActivities(
+  activities: UnifiedActivity[]
+): 'Running' | 'Cycling' | undefined {
+  if (!Array.isArray(activities) || activities.length === 0) return undefined;
+  const recent = activities.slice(0, 28);
+  const runCount = recent.filter((a) => a.sportCategory === 'Running').length;
+  const bikeCount = recent.filter((a) => a.sportCategory === 'Cycling').length;
+  if (runCount > bikeCount) return 'Running';
+  if (bikeCount > runCount) return 'Cycling';
+  const allRuns = activities.filter((a) => a.sportCategory === 'Running').length;
+  const allBikes = activities.filter((a) => a.sportCategory === 'Cycling').length;
+  if (allRuns > allBikes) return 'Running';
+  if (allBikes > allRuns) return 'Cycling';
+  return undefined;
 }
 
 export function reRankActivitiesSegments(list: UnifiedActivity[]): UnifiedActivity[] {

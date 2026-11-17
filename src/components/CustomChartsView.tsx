@@ -125,12 +125,27 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
     }
   });
 
+  const hasWearableBiometrics = useMemo(
+    () => wellnessDays.some((d) => (d.hrvRMSSD || 0) > 0 || (d.sleepScore || 0) > 0),
+    [wellnessDays]
+  );
+
   // Active Interactive Builder State
-  const [title, setTitle] = useState('Custom Physiological & Workload Plot');
+  const [title, setTitle] = useState(() =>
+    hasWearableBiometrics
+      ? 'Custom Physiological & Workload Plot'
+      : 'Aerobic Efficiency Factor vs. Heart Rate'
+  );
   const [chartType, setChartType] = useState<'TIME_SERIES' | 'SCATTER'>('TIME_SERIES');
-  const [primaryMetric, setPrimaryMetric] = useState<ChartMetricKey>('ctl');
-  const [secondaryMetric, setSecondaryMetric] = useState<ChartMetricKey | 'NONE'>('sleepScore');
-  const [aggregation, setAggregation] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>('DAILY');
+  const [primaryMetric, setPrimaryMetric] = useState<ChartMetricKey>(() =>
+    hasWearableBiometrics ? 'ctl' : 'efficiencyFactor'
+  );
+  const [secondaryMetric, setSecondaryMetric] = useState<ChartMetricKey | 'NONE'>(() =>
+    hasWearableBiometrics ? 'sleepScore' : 'avgHr'
+  );
+  const [aggregation, setAggregation] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>(() =>
+    hasWearableBiometrics ? 'DAILY' : 'WEEKLY'
+  );
   const [rollingWindowDays, setRollingWindowDays] = useState<1 | 7 | 14 | 28 | 42 | 90>(7);
   const [sportFilter, setSportFilter] = useState<SportCategory | 'ALL'>('ALL');
   const [environmentFilter, setEnvironmentFilter] = useState<EnvironmentFilter>('COMBINED');
