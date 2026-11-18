@@ -29,6 +29,7 @@ import {
 } from '../physiology/scholasticEngine';
 import {
   buildTracksideStopwatchCsv,
+  formatLocalWallClockIso,
   formatStopwatchClockMs,
   synthesizeTracksideRaceActivity,
   synthesizeTracksideWorkoutActivity,
@@ -106,6 +107,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     stopwatchRunning,
     stopwatchElapsedMs,
     nowEpochMs,
+    sessionStartedEpochMs,
     athleteLapTimestampsSecs,
     tapHistory,
     extraPodAthletes,
@@ -842,6 +844,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         ? writableDirect
         : fallbackToSelf.map((t) => ({ ...t, saveTargetId: 'SELF' }));
 
+    const derivedStartMs =
+      sessionStartedEpochMs ?? Math.max(0, Date.now() - Math.max(0, stopwatchElapsedMs));
+    const startDateLocalIso = formatLocalWallClockIso(derivedStartMs);
+
     const entries: SavedStopwatchEntry[] = targets.map((t) => {
       const targetId = 'saveTargetId' in t ? String(t.saveTargetId) : t.runnerId;
       const athleteProfileForTarget =
@@ -867,6 +873,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               netTotalSecs: t.netTotalSecs ?? 0,
               placeFinish: t.placeLabel ? `${t.placeLabel} (Stopwatch)` : undefined,
               includeWarmupCooldown,
+              startDateLocalIso,
+              lane: trackLane,
             })
           : synthesizeTracksideWorkoutActivity({
               runnerId: t.runnerId,
@@ -879,6 +887,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
               restDurationSecs,
               lapSplitsSecs: t.lapSplitsSecs,
+              startDateLocalIso,
+              lane: trackLane,
               footwearClass,
               trackFacility,
               stimulusCompletionRatio: endedEarlyStimulusRatio ?? undefined,

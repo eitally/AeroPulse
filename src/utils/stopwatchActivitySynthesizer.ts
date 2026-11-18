@@ -49,6 +49,17 @@ export function formatStopwatchClockMs(elapsedMs: number): string {
   return `${mStr}:${sStr}.${hStr}`;
 }
 
+export function formatLocalWallClockIso(epochMs: number = Date.now()): string {
+  const d = new Date(Number.isFinite(epochMs) ? epochMs : Date.now());
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day}T${hh}:${mm}:${ss}`;
+}
+
 export function buildTracksideStopwatchCsv(params: {
   sessionType: TracksideSessionType;
   sessionTitle: string;
@@ -169,6 +180,8 @@ export function synthesizeTracksideWorkoutActivity(params: {
   restDurationSecs: number;
   lapSplitsSecs: number[];
   dateIso?: string;
+  startDateLocalIso?: string;
+  lane?: TrackLaneNumber;
   footwearClass?: TrackFootwearClass;
   trackFacility?: NcaaTrackFacilityType;
   stimulusCompletionRatio?: number;
@@ -186,7 +199,9 @@ export function synthesizeTracksideWorkoutActivity(params: {
     repDistanceMeters,
     restDurationSecs,
     lapSplitsSecs,
-    dateIso = new Date().toISOString().slice(0, 10),
+    dateIso,
+    startDateLocalIso,
+    lane = 1,
     footwearClass = 'DAILY_TRAINER',
     trackFacility = 'OUTDOOR_400M',
     stimulusCompletionRatio,
@@ -319,9 +334,13 @@ export function synthesizeTracksideWorkoutActivity(params: {
       ? 'INDOOR'
       : 'OUTDOOR';
 
+  const activityId = `stopwatch-workout-${runnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const resolvedStartDateLocal =
+    startDateLocalIso || (dateIso ? `${dateIso.slice(0, 10)}T15:30:00` : formatLocalWallClockIso(Date.now()));
+
   return {
-    id: `stopwatch-workout-${runnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    startDateLocal: `${dateIso}T15:30:00`,
+    id: activityId,
+    startDateLocal: resolvedStartDateLocal,
     name: `${titlePrefix} (${formatTrackMark(avgLapSecs, 2)} avg · ${runnerName})`,
     sportCategory: 'Running',
     environment,
@@ -351,6 +370,16 @@ export function synthesizeTracksideWorkoutActivity(params: {
       ? { stimulusCompletionRatio: Number(Math.max(0.1, Math.min(1, stimulusCompletionRatio)).toFixed(2)) }
       : {}),
     ...(autoRegPivotSummary ? { autoRegPivotSummary } : {}),
+    stopwatchFusionMeta: {
+      stopwatchActivityId: activityId,
+      lapSplitsSecs: validSplits.map((s) => Number(s.toFixed(2))),
+      repDistanceMeters: fallbackRepDist,
+      restDurationSecs: Math.max(0, Math.round(restDurationSecs)),
+      lane,
+      thresholdPaceSecsPerKm: safeThresholdPace,
+      ...(multiSetSpec ? { multiSetSpec } : {}),
+      fusedWithWearableStreams: false,
+    },
     stravaPrCount: 0,
     segmentEfforts: [],
     intervals,
@@ -380,6 +409,7 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
   lane?: TrackLaneNumber;
   wearableActivity?: Partial<UnifiedActivity>;
   thresholdPaceSecsPerKm?: number;
+  multiSetSpec?: TrackWorkoutSpec | null;
 }): WatchStopwatchFusionResult {
   const {
     wearableStreams,
@@ -388,9 +418,15 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
     restDurationSecs,
     lane = 1,
     thresholdPaceSecsPerKm = 245,
+    multiSetSpec = null,
   } = params;
 
   const validSplits = (lapSplitsSecs || []).filter((s) => Number.isFinite(s) && s > 0);
+  const expandedReps =
+    multiSetSpec?.sets && multiSetSpec.sets.length > 0
+      ? expandTrackWorkoutSpecReps(multiSetSpec)
+      : [];
+  const hasMultipleSets = (multiSetSpec?.sets?.length ?? 0) > 1;
   const time = wearableStreams.time || [];
   const ovalSnapSummary =
     wearableStreams.latlng && wearableStreams.latlng.length >= 12
@@ -442,12 +478,16 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
 
   // Build 1Hz binary work (+1.0) / recovery (-0.5) pattern template from stopwatch timings
   const template: number[] = [];
-  const restInt = Math.max(0, Math.round(restDurationSecs));
+  const defaultRestInt = Math.max(0, Math.round(restDurationSecs));
   for (let i = 0; i < validSplits.length; i++) {
     const repInt = Math.max(1, Math.round(validSplits[i]));
     for (let s = 0; s < repInt; s++) template.push(1.0);
-    if (i < validSplits.length - 1 && restInt > 0) {
-      for (let s = 0; s < restInt; s++) template.push(-0.5);
+    const thisRestInt = Math.max(
+      0,
+      Math.round(expandedReps[i]?.restDurationSecs ?? defaultRestInt)
+    );
+    if (i < validSplits.length - 1 && thisRestInt > 0) {
+      for (let s = 0; s < thisRestInt; s++) template.push(-0.5);
     }
   }
 
@@ -532,11 +572,14 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
   let cursor = optimalLagSecs;
 
   for (let idx = 0; idx < validSplits.length; idx++) {
+    const planRep = expandedReps[idx];
+    const thisRepDist = Math.max(100, planRep?.repDistanceMeters ?? repDist);
+    const thisRestInt = Math.max(0, Math.round(planRep?.restDurationSecs ?? defaultRestInt));
     const lapSecs = Number(validSplits[idx].toFixed(2));
     const repStart = cursor;
     const repEnd = repStart + lapSecs;
-    const paceSecsPerKm = Math.round((lapSecs / repDist) * 1000);
-    const speedMps = repDist / Math.max(0.5, lapSecs);
+    const paceSecsPerKm = Math.round((lapSecs / thisRepDist) * 1000);
+    const speedMps = thisRepDist / Math.max(0.5, lapSecs);
 
     const avgHrRaw = sliceMean(wearableStreams.heartrate, repStart, repEnd, 40);
     const maxHrRaw = sliceMax(wearableStreams.heartrate, repStart, repEnd);
@@ -547,14 +590,18 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
     const spm = avgCadence ? (avgCadence < 120 ? avgCadence * 2 : avgCadence) : undefined;
     const strideLengthMeters = spm ? Number(((speedMps * 60) / spm).toFixed(3)) : undefined;
     const intensityRatio = safeThreshPace / Math.max(95, paceSecsPerKm);
+    const repLabel =
+      hasMultipleSets && planRep
+        ? `Set ${planRep.setNumber} · Rep ${planRep.repInSet} (${thisRepDist}m): ${formatTrackMark(lapSecs, 2)}`
+        : `Rep ${idx + 1} (${thisRepDist}m): ${formatTrackMark(lapSecs, 2)}`;
 
     intervals.push({
       id: `fused-rep-${idx + 1}`,
       type: 'WORK',
-      label: `Rep ${idx + 1} (${repDist}m): ${formatTrackMark(lapSecs, 2)}`,
+      label: repLabel,
       startTimeSecs: Math.round(repStart),
       durationSecs: lapSecs,
-      distanceMeters: repDist,
+      distanceMeters: thisRepDist,
       avgPaceSecsPerKm: paceSecsPerKm,
       gapPaceSecsPerKm: paceSecsPerKm,
       ...(avgHrRaw !== undefined ? { avgHr: Math.round(avgHrRaw) } : {}),
@@ -567,9 +614,9 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
 
     cursor = repEnd;
 
-    if (restInt > 0 && idx < validSplits.length - 1) {
+    if (thisRestInt > 0 && idx < validSplits.length - 1) {
       const recStart = cursor;
-      const recEnd = recStart + restInt;
+      const recEnd = recStart + thisRestInt;
       const recHr = sliceMean(wearableStreams.heartrate, recStart, recEnd, 40);
       const recCad = sliceMean(wearableStreams.cadence, recStart, recEnd, 20);
       const recVel = sliceMean(wearableStreams.velocitySmooth, recStart, recEnd, 0.2);
@@ -577,10 +624,10 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
       intervals.push({
         id: `fused-rec-${idx + 1}`,
         type: 'RECOVERY',
-        label: `Recovery (${restInt}s)`,
+        label: `Recovery (${thisRestInt}s)`,
         startTimeSecs: Math.round(recStart),
-        durationSecs: restInt,
-        distanceMeters: recVel ? Math.round(recVel * restInt) : 0,
+        durationSecs: thisRestInt,
+        distanceMeters: recVel ? Math.round(recVel * thisRestInt) : 0,
         ...(recHr !== undefined ? { avgHr: Math.round(recHr) } : {}),
         ...(recCad !== undefined ? { avgCadence: Math.round(recCad) } : {}),
         zone: 1,
@@ -613,6 +660,8 @@ export function synthesizeTracksideRaceActivity(params: {
   placeFinish?: string;
   includeWarmupCooldown?: boolean;
   dateIso?: string;
+  startDateLocalIso?: string;
+  lane?: TrackLaneNumber;
 }): UnifiedActivity {
   const {
     runnerId,
@@ -627,7 +676,9 @@ export function synthesizeTracksideRaceActivity(params: {
     netTotalSecs,
     placeFinish,
     includeWarmupCooldown = true,
-    dateIso = new Date().toISOString().slice(0, 10),
+    dateIso,
+    startDateLocalIso,
+    lane = 1,
   } = params;
 
   const inferredDistMeters =
@@ -637,11 +688,16 @@ export function synthesizeTracksideRaceActivity(params: {
 
   const trackType = eventLabel === 'XC 5K' ? 'XC_COURSE' : 'OUTDOOR_400M';
   const meetName = sessionTitle?.trim() || `Trackside Timed Meet (${runnerName})`;
+  const resolvedStartIso =
+    startDateLocalIso || (dateIso ? `${dateIso.slice(0, 10)}T10:30:00` : formatLocalWallClockIso(Date.now()));
+  const resolvedDateIso = dateIso || resolvedStartIso.slice(0, 10);
+  const raceId = `stopwatch-race-${runnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  return synthesizeOfficialRaceActivity(
+  const synthesized = synthesizeOfficialRaceActivity(
     {
-      id: `stopwatch-race-${runnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      date: dateIso,
+      id: raceId,
+      date: resolvedDateIso,
+      startDateLocalIso: resolvedStartIso,
       meetName,
       eventLabel: eventLabel === 'Open Race' ? `${inferredDistMeters}m` : eventLabel,
       eventDistanceMeters: inferredDistMeters,
@@ -657,4 +713,16 @@ export function synthesizeTracksideRaceActivity(params: {
     lthr,
     maxHr
   );
+
+  return {
+    ...synthesized,
+    stopwatchFusionMeta: {
+      stopwatchActivityId: raceId,
+      lapSplitsSecs: lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0).map((s) => Number(s.toFixed(2))),
+      repDistanceMeters: lapSplitDistanceMeters,
+      restDurationSecs: 0,
+      lane,
+      fusedWithWearableStreams: false,
+    },
+  };
 }

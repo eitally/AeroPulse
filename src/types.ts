@@ -210,6 +210,18 @@ export type ActivitySourceBadge =
   | 'RunSignup'
   | 'Official FAT';
 
+export interface StopwatchFusionMetadata {
+  stopwatchActivityId: string;
+  lapSplitsSecs: number[];
+  repDistanceMeters: number;
+  restDurationSecs: number;
+  lane?: TrackLaneNumber;
+  thresholdPaceSecsPerKm?: number;
+  multiSetSpec?: TrackWorkoutSpec;
+  fusedWithWearableStreams?: boolean;
+  optimalLagSecs?: number;
+}
+
 export interface UnifiedActivity {
   id: string;
   intervalsId?: string;
@@ -283,6 +295,8 @@ export interface UnifiedActivity {
   stimulusCompletionRatio?: number;
   autoRegPivotSummary?: string;
   isCompetitionDay?: boolean;
+  matchedStopwatchId?: string;
+  stopwatchFusionMeta?: StopwatchFusionMetadata;
   sourceBadges: ActivitySourceBadge[];
 }
 
