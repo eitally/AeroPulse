@@ -30,6 +30,8 @@ const VALID_SPORT_CATEGORIES: readonly SportCategory[] = [
 ];
 
 let preloadListenerInstalled = false;
+let activeLazyImportDepth = 0;
+let latestRequestedTab: ActiveTab | undefined;
 
 /**
  * Rewrites legacy aeropulse-eta.vercel.app URLs to the canonical THRESH production origin
@@ -195,33 +197,46 @@ export async function resolveLazyModuleWithRetry<T extends React.ComponentType<a
   importer: () => Promise<{ default: T }>,
   options: LazyWithRetryOptions
 ): Promise<{ default: T }> {
+  if (options.restoreTab) {
+    latestRequestedTab = options.restoreTab;
+  }
+
+  let reloadTriggered = false;
+  let retryFailure: unknown;
+  activeLazyImportDepth += 1;
   try {
-    return await importer();
-  } catch (firstError) {
-    if (!isDynamicChunkLoadError(firstError)) {
-      throw firstError;
-    }
-
-    await purgeStaleRuntimeChunkCaches();
-
     try {
       return await importer();
-    } catch (retryError) {
-      if (!isDynamicChunkLoadError(retryError)) {
-        throw retryError;
+    } catch (firstError) {
+      if (!isDynamicChunkLoadError(firstError)) {
+        throw firstError;
       }
-      const reloadTriggered = triggerChunkSkewReload(options.chunkKey, options.restoreTab);
-      if (reloadTriggered) {
-        return await new Promise<{ default: T }>((_resolve, reject) => {
-          const timer = typeof setTimeout === 'function' ? setTimeout : null;
-          if (timer) {
-            timer(() => reject(retryError), 2000);
-          }
-        });
+
+      await purgeStaleRuntimeChunkCaches();
+
+      try {
+        return await importer();
+      } catch (retryError) {
+        if (!isDynamicChunkLoadError(retryError)) {
+          throw retryError;
+        }
+        retryFailure = retryError;
+        reloadTriggered = triggerChunkSkewReload(options.chunkKey, options.restoreTab);
+        if (!reloadTriggered) {
+          throw retryError;
+        }
       }
-      throw retryError;
     }
+  } finally {
+    activeLazyImportDepth = Math.max(0, activeLazyImportDepth - 1);
   }
+
+  return await new Promise<{ default: T }>((_resolve, reject) => {
+    const timer = typeof setTimeout === 'function' ? setTimeout : null;
+    if (timer) {
+      timer(() => reject(retryFailure), 2000);
+    }
+  });
 }
 
 /**
@@ -236,6 +251,8 @@ export function lazyWithRetry<T extends React.ComponentType<any>>(
 
 export function resetVitePreloadErrorListenerForTesting(): void {
   preloadListenerInstalled = false;
+  activeLazyImportDepth = 0;
+  latestRequestedTab = undefined;
 }
 
 /**
@@ -263,8 +280,13 @@ export function installVitePreloadErrorRecovery(): void {
   preloadListenerInstalled = true;
 
   window.addEventListener('vite:preloadError', (event: Event) => {
+    if (activeLazyImportDepth > 0) {
+      // Allow Vite's __vitePreload to re-throw directly into resolveLazyModuleWithRetry
+      // so in-place retry and restoreTab ('totals') preservation run deterministically.
+      return;
+    }
     event.preventDefault();
-    triggerChunkSkewReload('vite-preload');
+    triggerChunkSkewReload('vite-preload', latestRequestedTab);
   });
 }
 

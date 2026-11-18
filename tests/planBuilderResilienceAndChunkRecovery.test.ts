@@ -251,6 +251,49 @@ describe('Plan Builder resilience, chunk-mismatch recovery & legacy origin elimi
     expect(preloadEvent.defaultPrevented).toBe(true);
   });
 
+  it('lets __vitePreload re-throw into resolveLazyModuleWithRetry so restoreTab=totals survives Vite 8 preloadError in production', async () => {
+    vi.useFakeTimers();
+    const prodEnv = makeMockBrowserWindow('https://thresh-dev.vercel.app/?demo=1');
+    (globalThis as { window: unknown }).window = prodEnv.mockWindow;
+    Object.defineProperty(globalThis, 'navigator', {
+      value: prodEnv.mockNavigator,
+      configurable: true,
+    });
+
+    installVitePreloadErrorRecovery();
+
+    const observedEvents: boolean[] = [];
+    const vite8PreloadWrappedImporter = vi.fn<() => Promise<{ default: React.FC }>>(async () => {
+      const err = new TypeError('Failed to fetch dynamically imported module: /assets/GoalsView-OLD.js');
+      const evt = new Event('vite:preloadError', { cancelable: true });
+      prodEnv.mockWindow.dispatchEvent(evt);
+      observedEvents.push(evt.defaultPrevented);
+      if (!evt.defaultPrevented) {
+        throw err;
+      }
+      return undefined as unknown as { default: React.FC };
+    });
+
+    const loadPromise = resolveLazyModuleWithRetry(vite8PreloadWrappedImporter, {
+      chunkKey: 'GoalsView',
+      restoreTab: 'totals',
+    });
+
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(vite8PreloadWrappedImporter).toHaveBeenCalledTimes(2);
+    expect(observedEvents).toEqual([false, false]);
+    expect(prodEnv.replaceSpy).toHaveBeenCalledWith('https://thresh-dev.vercel.app/?demo=1');
+    expect(consumeRestoredTabAfterChunkReload()).toBe('totals');
+
+    const rejectionAssertion = expect(loadPromise).rejects.toThrow(
+      'Failed to fetch dynamically imported module'
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    await rejectionAssertion;
+    vi.useRealTimers();
+  });
+
   it('renders WorkspaceErrorBoundary recovery card instead of unmounting to a blank screen on uncaught render failures', () => {
     const derived = WorkspaceErrorBoundary.getDerivedStateFromError(
       new TypeError('Failed to fetch dynamically imported module')
