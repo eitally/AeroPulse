@@ -1,5 +1,13 @@
-import {createRoot} from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
+import { installVitePreloadErrorRecovery } from './utils/lazyWithRetry';
 import './index.css';
 
-createRoot(document.getElementById('root')!).render(<App />);
+installVitePreloadErrorRecovery();
+
+createRoot(document.getElementById('root')!).render(
+  <WorkspaceErrorBoundary fallbackTitle="Reload THRESH Workspace">
+    <App />
+  </WorkspaceErrorBoundary>
+);

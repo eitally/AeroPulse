@@ -356,9 +356,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
   const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
   const currentBikeFtp = useMemo(() => {
-    const latestRideEftp = [...wellnessDays]
+    const safeDays = Array.isArray(wellnessDays) ? wellnessDays : [];
+    const latestRideEftp = [...safeDays]
       .reverse()
-      .find((w) => w.rideEftp && w.rideEftp > 0)?.rideEftp;
+      .find((w) => w?.rideEftp && w.rideEftp > 0)?.rideEftp;
     return athleteProfile?.ftp || latestRideEftp || 250;
   }, [athleteProfile?.ftp, wellnessDays]);
 
@@ -403,13 +404,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
   // Track Speed-Reserve Profile (derived from official FAT races, manual seed mark, or synced threshold pace)
   const trackSpeedReserveState = useMemo(() => {
-    const officialMarks = activities
-      .filter((a) => Boolean(a.officialRaceData))
+    const officialMarks = (Array.isArray(activities) ? activities : [])
+      .filter((a) => Boolean(a?.officialRaceData))
       .map((a) => ({
         distanceMeters: a.officialRaceData!.eventDistanceMeters,
         durationSecs: a.officialRaceData!.fatTimeSecs,
         eventLabel: a.officialRaceData!.eventLabel,
-        dateIso: a.startDateLocal.slice(0, 10),
+        dateIso: (a.startDateLocal || todayIso).slice(0, 10),
       }));
 
     const parsedManualSeed = parseTrackMarkClockInput(
@@ -653,8 +654,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       setLastPopulatedTeamBlock(null);
 
       // Upsert a matching TargetGoal automatically if none exists for this block title
-      const alreadyTracked = targetGoals.some(
-        (g) => g.title.toLowerCase() === selectedArchetype.title.toLowerCase()
+      const alreadyTracked = (Array.isArray(targetGoals) ? targetGoals : []).some(
+        (g) => (g?.title || '').toLowerCase() === selectedArchetype.title.toLowerCase()
       );
       if (!alreadyTracked) {
         const finalWeekLastDate =
@@ -771,8 +772,18 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   };
 
   const activePreviewWeek =
-    generatedPlanWeeks[Math.min(selectedPreviewWeekIdx, generatedPlanWeeks.length - 1)] ||
-    generatedPlanWeeks[0];
+    generatedPlanWeeks[Math.min(selectedPreviewWeekIdx, Math.max(0, generatedPlanWeeks.length - 1))] ||
+    generatedPlanWeeks[0] || {
+      weekNum: 1,
+      startDateIso: resolvedStartMondayIso,
+      phase: 'Build',
+      isDeload: false,
+      isTaper: false,
+      targetTss: 0,
+      targetHours: '0.0',
+      zoneDistributionPct: { low: 80, mod: 10, high: 10 },
+      sessions: [],
+    };
 
   const isImperial = distanceUnit === 'mi';
   const simDistDisplay = isImperial ? Number((simDistKm * 0.621371).toFixed(1)) : simDistKm;
@@ -1869,7 +1880,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {targetGoals.map((goal) => {
               const now = Date.now();
-              const targetTime = new Date(`${goal.targetDate}T00:00:00Z`).getTime();
+              const safeTargetDate = goal.targetDate || todayIso;
+              const parsedTargetTime = new Date(`${safeTargetDate}T00:00:00Z`).getTime();
+              const targetTime = Number.isFinite(parsedTargetTime)
+                ? parsedTargetTime
+                : now + 86_400_000;
               const daysRemaining = Math.max(
                 1,
                 Math.round((targetTime - now) / (1000 * 60 * 60 * 24))
@@ -1877,6 +1892,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               const weeksRemaining = Math.max(1, daysRemaining / 7);
               const ctlGap = goal.targetCtl ? Math.max(0, goal.targetCtl - currentCtl) : 0;
               const reqWeeklyRamp = (ctlGap / weeksRemaining).toFixed(1);
+              const safeTitle = goal.title || 'Performance Target';
+              const safeCurrentValue = Number.isFinite(Number(goal.currentValue))
+                ? Number(goal.currentValue)
+                : 0;
+              const safeTargetValue = Number.isFinite(Number(goal.targetValue))
+                ? Number(goal.targetValue)
+                : 0;
 
               const phase =
                 daysRemaining <= 14
@@ -1893,11 +1915,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                        {goal.priority} · {goal.sportCategory} · {goal.targetDate} ({daysRemaining}d out ·{' '}
+                        {goal.priority || 'A-Race'} · {goal.sportCategory || 'Running'} · {safeTargetDate} ({daysRemaining}d out ·{' '}
                         {phase})
                       </div>
                       <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-                        {goal.title}
+                        {safeTitle}
                       </h3>
                     </div>
                     {pendingDeleteGoalId === goal.id ? (
@@ -1925,7 +1947,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         type="button"
                         onClick={() => setPendingDeleteGoalId(goal.id)}
                         className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:text-red-500"
-                        aria-label={`Remove ${goal.title}`}
+                        aria-label={`Remove ${safeTitle}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1939,19 +1961,19 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       Current:{' '}
                       <strong>
                         {formatGoalMetricValue(
-                          goal.currentValue,
-                          goal.unit,
+                          safeCurrentValue,
+                          goal.unit || 's/km',
                           distanceUnit,
-                          goal.title
+                          safeTitle
                         )}
                       </strong>{' '}
                       → Target:{' '}
                       <strong className="text-emerald-600 dark:text-emerald-400">
                         {formatGoalMetricValue(
-                          goal.targetValue,
-                          goal.unit,
+                          safeTargetValue,
+                          goal.unit || 's/km',
                           distanceUnit,
-                          goal.title
+                          safeTitle
                         )}
                       </strong>
                     </span>

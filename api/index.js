@@ -9930,34 +9930,48 @@ function renderThreshOAuthHtml(opts) {
 var CANONICAL_PROD_ORIGIN = "https://thresh-dev.vercel.app";
 var LEGACY_PROD_ORIGIN = "https://aeropulse-eta.vercel.app";
 function canonicalizeOrigin(origin) {
-  return origin === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
+  return origin.toLowerCase() === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
 }
-function resolveStravaCallbackUrl(req) {
-  const explicitRedirect = (process.env.STRAVA_REDIRECT_URI || "").trim();
+function canonicalizeRedirectUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.origin.toLowerCase() === LEGACY_PROD_ORIGIN) {
+      return `${CANONICAL_PROD_ORIGIN}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+function resolveStandardOAuthCallbackUrl(req, envVarName, callbackPath) {
+  const explicitRedirect = (process.env[envVarName] || "").trim();
   if (explicitRedirect) {
     try {
       const parsed = new URL(explicitRedirect);
       if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        return parsed.toString();
+        return canonicalizeRedirectUrl(parsed.toString());
       }
     } catch {
     }
   }
   const safeOrigin = resolveSafeOrigin(req.query.origin);
   if (safeOrigin) {
-    return `${canonicalizeOrigin(safeOrigin)}/auth/strava/callback`;
+    return `${canonicalizeOrigin(safeOrigin)}${callbackPath}`;
   }
   const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
   if (appUrl && !appUrl.includes("MY_APP_URL")) {
-    return `${canonicalizeOrigin(appUrl)}/auth/strava/callback`;
+    return `${canonicalizeOrigin(appUrl)}${callbackPath}`;
   }
   const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
   const proto = rawProto === "https" ? "https" : "http";
   const rawHost = String(
     req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
   ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  const canonicalHost = rawHost === "aeropulse-eta.vercel.app" ? "thresh-dev.vercel.app" : rawHost;
-  return `${proto}://${canonicalHost || "localhost:3000"}/auth/strava/callback`;
+  const canonicalHost = rawHost.toLowerCase() === "aeropulse-eta.vercel.app" ? "thresh-dev.vercel.app" : rawHost;
+  return `${proto}://${canonicalHost || "localhost:3000"}${callbackPath}`;
+}
+function resolveStravaCallbackUrl(req) {
+  return resolveStandardOAuthCallbackUrl(req, "STRAVA_REDIRECT_URI", "/auth/strava/callback");
 }
 var validatedStravaRedirectCache = /* @__PURE__ */ new Map();
 async function probeStravaRedirectUri(clientId, redirectUri) {
@@ -10048,82 +10062,13 @@ async function resolveValidatedStravaCallbackUrl(req, clientId) {
   return primaryUri;
 }
 function resolveIntervalsCallbackUrl(req) {
-  const explicitRedirect = (process.env.INTERVALS_REDIRECT_URI || "").trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        return parsed.toString();
-      }
-    } catch {
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/intervals/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
-  if (appUrl && !appUrl.includes("MY_APP_URL")) {
-    return `${appUrl}/auth/intervals/callback`;
-  }
-  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
-  const proto = rawProto === "https" ? "https" : "http";
-  const rawHost = String(
-    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
-  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  return `${proto}://${rawHost || "localhost:3000"}/auth/intervals/callback`;
+  return resolveStandardOAuthCallbackUrl(req, "INTERVALS_REDIRECT_URI", "/auth/intervals/callback");
 }
 function resolveWahooCallbackUrl(req) {
-  const explicitRedirect = (process.env.WAHOO_REDIRECT_URI || "").trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        return parsed.toString();
-      }
-    } catch {
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/wahoo/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
-  if (appUrl && !appUrl.includes("MY_APP_URL")) {
-    return `${appUrl}/auth/wahoo/callback`;
-  }
-  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
-  const proto = rawProto === "https" ? "https" : "http";
-  const rawHost = String(
-    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
-  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  return `${proto}://${rawHost || "localhost:3000"}/auth/wahoo/callback`;
+  return resolveStandardOAuthCallbackUrl(req, "WAHOO_REDIRECT_URI", "/auth/wahoo/callback");
 }
 function resolvePolarCallbackUrl(req) {
-  const explicitRedirect = (process.env.POLAR_REDIRECT_URI || "").trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        return parsed.toString();
-      }
-    } catch {
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/polar/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || "");
-  if (appUrl && !appUrl.includes("MY_APP_URL")) {
-    return `${appUrl}/auth/polar/callback`;
-  }
-  const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
-  const proto = rawProto === "https" ? "https" : "http";
-  const rawHost = String(
-    req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
-  ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  return `${proto}://${rawHost || "localhost:3000"}/auth/polar/callback`;
+  return resolveStandardOAuthCallbackUrl(req, "POLAR_REDIRECT_URI", "/auth/polar/callback");
 }
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 

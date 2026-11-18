@@ -1,4 +1,6 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import type { RosterTab } from './AthleteRosterModal';
 import type {
   ActiveTab,
@@ -17,23 +19,29 @@ import type {
   UnifiedWellnessDay,
 } from '../types';
 
-const AICoachDrawer = lazy(() =>
-  import('./AICoachDrawer').then((m) => ({ default: m.AICoachDrawer }))
+const AICoachDrawer = lazyWithRetry(
+  () => import('./AICoachDrawer').then((m) => ({ default: m.AICoachDrawer })),
+  { chunkKey: 'AICoachDrawer' }
 );
-const DataSourcesModal = lazy(() =>
-  import('./DataSourcesModal').then((m) => ({ default: m.DataSourcesModal }))
+const DataSourcesModal = lazyWithRetry(
+  () => import('./DataSourcesModal').then((m) => ({ default: m.DataSourcesModal })),
+  { chunkKey: 'DataSourcesModal' }
 );
-const AthleteProfileModal = lazy(() =>
-  import('./AthleteProfileModal').then((m) => ({ default: m.AthleteProfileModal }))
+const AthleteProfileModal = lazyWithRetry(
+  () => import('./AthleteProfileModal').then((m) => ({ default: m.AthleteProfileModal })),
+  { chunkKey: 'AthleteProfileModal' }
 );
-const OfficialRaceModal = lazy(() =>
-  import('./OfficialRaceModal').then((m) => ({ default: m.OfficialRaceModal }))
+const OfficialRaceModal = lazyWithRetry(
+  () => import('./OfficialRaceModal').then((m) => ({ default: m.OfficialRaceModal })),
+  { chunkKey: 'OfficialRaceModal' }
 );
-const AthleteRosterModal = lazy(() =>
-  import('./AthleteRosterModal').then((m) => ({ default: m.AthleteRosterModal }))
+const AthleteRosterModal = lazyWithRetry(
+  () => import('./AthleteRosterModal').then((m) => ({ default: m.AthleteRosterModal })),
+  { chunkKey: 'AthleteRosterModal' }
 );
-const UserGuideModal = lazy(() =>
-  import('./UserGuideModal').then((m) => ({ default: m.UserGuideModal }))
+const UserGuideModal = lazyWithRetry(
+  () => import('./UserGuideModal').then((m) => ({ default: m.UserGuideModal })),
+  { chunkKey: 'UserGuideModal' }
 );
 
 export interface CockpitModalsProps {
@@ -240,7 +248,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
   onOpenAICoachFromGuide,
 }) => {
   return (
-    <>
+    <WorkspaceErrorBoundary resetKey="cockpit-modals" fallbackTitle="Modal Needs Recovery">
       {isCoachDrawerOpen && (
         <Suspense fallback={null}>
           <AICoachDrawer
@@ -389,6 +397,6 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
           />
         </Suspense>
       )}
-    </>
+    </WorkspaceErrorBoundary>
   );
 };

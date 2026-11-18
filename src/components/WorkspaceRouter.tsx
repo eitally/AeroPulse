@@ -1,5 +1,7 @@
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Activity, Calendar, Target, Timer } from './icons/PhosphorIcons';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import type {
   ActiveTab,
   AnnualMileageGoal,
@@ -26,26 +28,33 @@ import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigest
 import type { PlannedEventBatchItem } from './GoalsView';
 import type { SavedStopwatchEntry } from './TracksideStopwatchView';
 
-const CalendarView = lazy(() =>
-  import('./CalendarView').then((m) => ({ default: m.CalendarView }))
+const CalendarView = lazyWithRetry(
+  () => import('./CalendarView').then((m) => ({ default: m.CalendarView })),
+  { chunkKey: 'CalendarView', restoreTab: 'calendar' }
 );
-const FitnessHealthView = lazy(() =>
-  import('./FitnessHealthView').then((m) => ({ default: m.FitnessHealthView }))
+const FitnessHealthView = lazyWithRetry(
+  () => import('./FitnessHealthView').then((m) => ({ default: m.FitnessHealthView })),
+  { chunkKey: 'FitnessHealthView', restoreTab: 'fitness' }
 );
-const TodayPhysiologyDeepDive = lazy(() =>
-  import('./TodayPhysiologyDeepDive').then((m) => ({ default: m.TodayPhysiologyDeepDive }))
+const TodayPhysiologyDeepDive = lazyWithRetry(
+  () => import('./TodayPhysiologyDeepDive').then((m) => ({ default: m.TodayPhysiologyDeepDive })),
+  { chunkKey: 'TodayPhysiologyDeepDive', restoreTab: 'fitness' }
 );
-const ActivitiesView = lazy(() =>
-  import('./ActivitiesView').then((m) => ({ default: m.ActivitiesView }))
+const ActivitiesView = lazyWithRetry(
+  () => import('./ActivitiesView').then((m) => ({ default: m.ActivitiesView })),
+  { chunkKey: 'ActivitiesView', restoreTab: 'activities' }
 );
-const GoalsView = lazy(() =>
-  import('./GoalsView').then((m) => ({ default: m.GoalsView }))
+const GoalsView = lazyWithRetry(
+  () => import('./GoalsView').then((m) => ({ default: m.GoalsView })),
+  { chunkKey: 'GoalsView', restoreTab: 'totals' }
 );
-const TracksideStopwatchView = lazy(() =>
-  import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView }))
+const TracksideStopwatchView = lazyWithRetry(
+  () => import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView })),
+  { chunkKey: 'TracksideStopwatchView', restoreTab: 'stopwatch' }
 );
-const CoachWorkspaceView = lazy(() =>
-  import('./CoachWorkspaceView').then((m) => ({ default: m.CoachWorkspaceView }))
+const CoachWorkspaceView = lazyWithRetry(
+  () => import('./CoachWorkspaceView').then((m) => ({ default: m.CoachWorkspaceView })),
+  { chunkKey: 'CoachWorkspaceView', restoreTab: 'coach' }
 );
 
 export const ViewLoadingSkeleton: React.FC = () => (
@@ -260,7 +269,12 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   }, []);
 
   return (
-    <Suspense fallback={<ViewLoadingSkeleton />}>
+    <WorkspaceErrorBoundary
+      resetKey={activeTab}
+      restoreTab={activeTab}
+      fallbackTitle="Workspace View Needs Recovery"
+    >
+      <Suspense fallback={<ViewLoadingSkeleton />}>
       {/* Contextual Sub-Switcher inside Training Calendar (Calendar | Activity Log + quick Stopwatch / Plan Builder) */}
       {(activeTab === 'calendar' || activeTab === 'activities') && (
         <div className="rounded-2xl liquid-glass px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2">
@@ -553,6 +567,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           athleteProfile={effectiveAthleteProfile}
         />
       )}
-    </Suspense>
+      </Suspense>
+    </WorkspaceErrorBoundary>
   );
 };
