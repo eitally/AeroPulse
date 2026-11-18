@@ -627,50 +627,41 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                       Volume &amp; 80/20 Polarization ({totalsAndPolarization.distributionStyle})
                     </h3>
-                    <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-2xs font-mono">
-                      {(['28d', '90d', 'YTD', 'ALL'] as const).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setTotalsPeriod(p)}
-                          className={`min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer ${
-                            totalsPeriod === p ? 'ap-nav-volt-active font-bold' : 'text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
-                          {p === 'ALL' ? 'All' : p}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 text-2xs">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPolarizationSports(ALL_SPORTS_LIST)}
-                      className={`min-h-[32px] px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
-                        isAllSportsSelected ? 'ap-nav-volt-active' : 'liquid-glass-subtle text-slate-600 dark:text-slate-300'
-                      }`}
+                    <select
+                      value={totalsPeriod}
+                      aria-label="Polarization period"
+                      onChange={(e) =>
+                        setTotalsPeriod(e.target.value as '28d' | '90d' | 'YTD' | 'ALL')
+                      }
+                      className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-2xs font-mono font-bold text-slate-900 dark:text-slate-100 cursor-pointer"
                     >
-                      All Sports
-                    </button>
-                    {ALL_SPORTS_LIST.map((sp) => {
-                      const active = !isAllSportsSelected && selectedPolarizationSports.includes(sp);
-                      return (
-                        <button
-                          key={sp}
-                          type="button"
-                          onClick={() =>
-                            setSelectedPolarizationSports((prev) =>
-                              isAllSportsSelected ? [sp] : prev.includes(sp) ? (prev.length === 1 ? ALL_SPORTS_LIST : prev.filter((x) => x !== sp)) : [...prev, sp]
-                            )
-                          }
-                          className={`min-h-[32px] px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
-                            active ? 'ap-nav-volt-active' : 'liquid-glass-subtle text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
+                      <option value="28d">28d</option>
+                      <option value="90d">90d</option>
+                      <option value="YTD">YTD</option>
+                      <option value="ALL">All</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-2xs">
+                    <select
+                      value={isAllSportsSelected ? 'ALL' : selectedPolarizationSports[0] || 'ALL'}
+                      aria-label="Polarization sport filter"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedPolarizationSports(
+                          val === 'ALL'
+                            ? ALL_SPORTS_LIST
+                            : ALL_SPORTS_LIST.filter((s) => s === val)
+                        );
+                      }}
+                      className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+                    >
+                      <option value="ALL">All Sports</option>
+                      {ALL_SPORTS_LIST.map((sp) => (
+                        <option key={sp} value={sp}>
                           {sp}
-                        </button>
-                      );
-                    })}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="grid grid-cols-3 gap-2 font-mono text-xs tabular-nums">
                     <div className="rounded-xl border border-slate-200 dark:border-[#244331] p-2.5">
@@ -696,20 +687,18 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                       {currentYear} Annual Volume Targets
                     </h3>
-                    <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-2xs">
-                      {(['COMBINED', 'OUTDOOR', 'INDOOR'] as const).map((env) => (
-                        <button
-                          key={env}
-                          type="button"
-                          onClick={() => onSelectEnvFilter(env)}
-                          className={`min-h-[34px] px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
-                            envFilter === env ? 'ap-nav-volt-active' : 'text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
-                          {env === 'COMBINED' ? 'All' : env === 'OUTDOOR' ? 'Outdoor' : 'Indoor'}
-                        </button>
-                      ))}
-                    </div>
+                    <select
+                      value={envFilter}
+                      aria-label="Annual volume environment"
+                      onChange={(e) =>
+                        onSelectEnvFilter(e.target.value as 'COMBINED' | 'OUTDOOR' | 'INDOOR')
+                      }
+                      className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-2xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+                    >
+                      <option value="COMBINED">All Environments</option>
+                      <option value="OUTDOOR">Outdoor</option>
+                      <option value="INDOOR">Indoor</option>
+                    </select>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <form

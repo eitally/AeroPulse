@@ -34,6 +34,7 @@ import {
 import {
   formatDistance,
   formatDuration,
+  formatMultiSportPace,
   formatPace,
   formatStopwatch,
 } from '../utils/formatters';
@@ -42,6 +43,7 @@ import {
   SegmentEffortOverTimeChart,
 } from './SegmentEffortOverTimeChart';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 const InteractiveRouteMap = lazy(() =>
   import('./InteractiveRouteMap').then((m) => ({ default: m.InteractiveRouteMap }))
@@ -211,6 +213,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
   inspectorOnly = false,
   onOpenCompareView,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('ALL');
   const [visibleLimit, setVisibleLimit] = useState<number>(60);
@@ -944,55 +947,36 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
 
           {/* Unified Sport Filter, Modality Filter (Outdoor vs Virtual/Trainer), Year Selector & Search Input */}
           <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto min-w-0">
-            <div className="ap-toolbar-scroll p-1 rounded-xl liquid-capsule-track max-w-full">
-              {(['ALL', 'Cycling', 'Running', 'Swimming', 'Strength'] as const).map((sport) => (
-                <button
-                  key={sport}
-                  onClick={() => onSelectSport(sport)}
-                  className={`min-h-[30px] px-2.5 py-1 text-xs rounded-lg transition-all whitespace-nowrap ${
-                    selectedSport === sport
-                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
-                  }`}
-                >
-                  {sport === 'ALL' ? 'All Sports' : sport}
-                </button>
-              ))}
-            </div>
+            <select
+              value={selectedSport}
+              aria-label="Filter workouts by sport"
+              onChange={(e) => {
+                onSelectSport(e.target.value as SportCategory | 'ALL');
+                setVisibleLimit(60);
+              }}
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="ALL">All Sports</option>
+              <option value="Cycling">Cycling</option>
+              <option value="Running">Running</option>
+              <option value="Swimming">Swimming</option>
+              <option value="Strength">Strength</option>
+              <option value="Multisport">Cross-Train / Hike / Row</option>
+            </select>
 
-            {/* Explicit Modality Filter: All vs Outdoor vs Virtual / Smart Trainer */}
-            <div className="ap-toolbar-scroll p-1 rounded-xl liquid-capsule-track text-xs max-w-full">
-              {(
-                [
-                  { id: 'COMBINED', label: 'All', count: modalityCounts.all },
-                  { id: 'OUTDOOR', label: 'Outdoor', count: modalityCounts.outdoor },
-                  { id: 'INDOOR', label: 'Virtual', count: modalityCounts.indoor },
-                ] as const
-              ).map((mod) => (
-                <button
-                  key={mod.id}
-                  type="button"
-                  onClick={() => {
-                    onSelectEnvFilter(mod.id);
-                    setVisibleLimit(60);
-                  }}
-                  className={`min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all whitespace-nowrap ${
-                    envFilter === mod.id
-                      ? mod.id === 'INDOOR'
-                        ? 'liquid-capsule-active text-indigo-600 dark:text-indigo-300 font-semibold'
-                        : mod.id === 'OUTDOOR'
-                          ? 'liquid-capsule-active text-emerald-600 dark:text-emerald-300 font-semibold'
-                          : 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
-                  }`}
-                >
-                  <span>{mod.label}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800/90 text-2xs font-mono">
-                    {mod.count}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <select
+              value={envFilter}
+              aria-label="Filter workouts by environment"
+              onChange={(e) => {
+                onSelectEnvFilter(e.target.value as EnvironmentFilter);
+                setVisibleLimit(60);
+              }}
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="COMBINED">All Env ({modalityCounts.all})</option>
+              <option value="OUTDOOR">Outdoor ({modalityCounts.outdoor})</option>
+              <option value="INDOOR">Indoor / Virtual ({modalityCounts.indoor})</option>
+            </select>
 
             <select
               value={yearFilter}
@@ -1052,7 +1036,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   <Upload className="w-3.5 h-3.5 text-blue-500" />
                   <span>{isWorkerProcessing ? 'Parsing...' : '+ Import ▾'}</span>
                 </summary>
-                <div className="absolute right-0 mt-2 w-64 rounded-2xl liquid-glass border border-slate-300/80 dark:border-white/15 shadow-2xl p-2 z-40 space-y-1 text-xs">
+                <div className="absolute right-0 mt-2 w-[min(16rem,calc(100vw-2rem))] rounded-2xl liquid-glass border border-slate-300/80 dark:border-white/15 shadow-2xl p-2 z-40 space-y-1 text-xs">
                   <div className="px-2.5 py-1 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                     Import &amp; Telemetry Actions
                   </div>
@@ -1379,29 +1363,21 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                      {(
-                        [
-                          { id: 'ALL', label: 'All Recent' },
-                          { id: 'WITH_KUDOS', label: 'Most Kudoed' },
-                          { id: 'PR_HUNTS', label: 'Segment PRs' },
-                          { id: 'WITH_GPS', label: 'Outdoor GPS' },
-                        ] as const
-                      ).map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setKudosFeedFilter(tab.id)}
-                          className={`min-h-[28px] px-2.5 py-0.5 rounded-md font-semibold transition-colors whitespace-nowrap ${
-                            kudosFeedFilter === tab.id
-                              ? 'bg-[#C23800] text-white'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
+                    <select
+                      value={kudosFeedFilter}
+                      aria-label="Filter Strava route and kudos feed"
+                      onChange={(e) =>
+                        setKudosFeedFilter(
+                          e.target.value as 'ALL' | 'WITH_KUDOS' | 'PR_HUNTS' | 'WITH_GPS'
+                        )
+                      }
+                      className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+                    >
+                      <option value="ALL">All Recent</option>
+                      <option value="WITH_KUDOS">Most Kudoed</option>
+                      <option value="PR_HUNTS">Segment PRs</option>
+                      <option value="WITH_GPS">Outdoor GPS</option>
+                    </select>
                   </div>
                 </div>
 
@@ -1790,31 +1766,15 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* X-Axis Alignment Mode */}
-              <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setCompareXMode('PERCENT')}
-                  className={`min-h-[30px] px-2.5 py-1 rounded-md font-semibold transition-colors ${
-                    compareXMode === 'PERCENT'
-                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  Align by % Completion (0–100%)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCompareXMode('TIME')}
-                  className={`min-h-[30px] px-2.5 py-1 rounded-md font-semibold transition-colors ${
-                    compareXMode === 'TIME'
-                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  Align by Elapsed Time (mm:ss)
-                </button>
-              </div>
+              <select
+                value={compareXMode}
+                aria-label="Comparison alignment axis"
+                onChange={(e) => setCompareXMode(e.target.value as 'PERCENT' | 'TIME')}
+                className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+              >
+                <option value="PERCENT">Align by % Completion (0–100%)</option>
+                <option value="TIME">Align by Elapsed Time (mm:ss)</option>
+              </select>
 
               {/* Rolling Smoothing Toggle */}
               <button
@@ -2147,20 +2107,24 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   )}
                 </div>
 
-                <svg
-                  viewBox="0 0 860 205"
-                  className="w-full h-52 select-none"
-                  onMouseLeave={() => setCompareHoverStep(null)}
-                >
-                  {(() => {
-                    const { alignedSteps, maxPower } = overlaidComparisonData;
-                    const len = alignedSteps.length;
-                    const chartLeft = 62;
-                    const chartRight = 830;
-                    const chartW = chartRight - chartLeft;
-                    const chartTop = 16;
-                    const chartBottom = 156;
-                    const chartH = chartBottom - chartTop;
+                {(() => {
+                  const svgW = isMobile ? 360 : 860;
+                  const svgH = isMobile ? 185 : 205;
+                  const { alignedSteps, maxPower } = overlaidComparisonData;
+                  const len = alignedSteps.length;
+                  const chartLeft = isMobile ? 36 : 62;
+                  const chartRight = isMobile ? 350 : 830;
+                  const chartW = chartRight - chartLeft;
+                  const chartTop = isMobile ? 14 : 16;
+                  const chartBottom = isMobile ? 152 : 156;
+                  const chartH = chartBottom - chartTop;
+                  return (
+                    <svg
+                      viewBox={`0 0 ${svgW} ${svgH}`}
+                      className={isMobile ? 'w-full h-auto select-none' : 'w-full h-52 select-none'}
+                      onMouseLeave={() => setCompareHoverStep(null)}
+                    >
+                      {(() => {
 
                     const pointsA = alignedSteps
                       .filter((s) => s.powerA !== undefined)
@@ -2183,15 +2147,17 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                     return (
                       <>
                         {/* Y-Axis Title */}
-                        <text
-                          x={16}
-                          y={86}
-                          transform="rotate(-90 16 86)"
-                          textAnchor="middle"
-                          className="fill-blue-500 text-xs font-sans font-bold"
-                        >
-                          Power / Output (Watts)
-                        </text>
+                        {!isMobile && (
+                          <text
+                            x={16}
+                            y={86}
+                            transform="rotate(-90 16 86)"
+                            textAnchor="middle"
+                            className="fill-blue-500 text-xs font-sans font-bold"
+                          >
+                            Power / Output (Watts)
+                          </text>
+                        )}
 
                         {/* Horizontal Grid Lines & Y-Axis Ticks */}
                         {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
@@ -2209,7 +2175,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                                 strokeDasharray="3 3"
                               />
                               <text
-                                x={chartLeft - 8}
+                                x={chartLeft - 6}
                                 y={y + 4}
                                 textAnchor="end"
                                 className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
@@ -2254,7 +2220,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                             <text
                               key={idx}
                               x={x}
-                              y={174}
+                              y={chartBottom + 15}
                               textAnchor="middle"
                               className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
@@ -2264,13 +2230,13 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                         })}
                         <text
                           x={chartLeft + chartW / 2}
-                          y={196}
+                          y={svgH - 6}
                           textAnchor="middle"
-                          className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
+                          className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
                         >
                           {compareXMode === 'PERCENT'
-                            ? 'Normalized Workout Progress (% of Total Duration)'
-                            : 'Elapsed Workout Time (mm:ss)'}
+                            ? 'Progress (% Total Duration)'
+                            : 'Elapsed Time (mm:ss)'}
                         </text>
 
                         {/* Interactive Crosshair Hit Columns */}
@@ -2343,7 +2309,9 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       </>
                     );
                   })()}
-                </svg>
+                    </svg>
+                  );
+                })()}
               </div>
 
               {/* 2. OVERLAID HEART RATE COMPARISON CHART (Synchronized Crosshair) */}
@@ -2425,20 +2393,24 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   )}
                 </div>
 
-                <svg
-                  viewBox="0 0 860 205"
-                  className="w-full h-52 select-none"
-                  onMouseLeave={() => setCompareHoverStep(null)}
-                >
-                  {(() => {
-                    const { alignedSteps, minHr, maxHr } = overlaidComparisonData;
-                    const len = alignedSteps.length;
-                    const chartLeft = 62;
-                    const chartRight = 830;
-                    const chartW = chartRight - chartLeft;
-                    const chartTop = 16;
-                    const chartBottom = 156;
-                    const chartH = chartBottom - chartTop;
+                {(() => {
+                  const svgW = isMobile ? 360 : 860;
+                  const svgH = isMobile ? 185 : 205;
+                  const { alignedSteps, minHr, maxHr } = overlaidComparisonData;
+                  const len = alignedSteps.length;
+                  const chartLeft = isMobile ? 36 : 62;
+                  const chartRight = isMobile ? 350 : 830;
+                  const chartW = chartRight - chartLeft;
+                  const chartTop = isMobile ? 14 : 16;
+                  const chartBottom = isMobile ? 152 : 156;
+                  const chartH = chartBottom - chartTop;
+                  return (
+                    <svg
+                      viewBox={`0 0 ${svgW} ${svgH}`}
+                      className={isMobile ? 'w-full h-auto select-none' : 'w-full h-52 select-none'}
+                      onMouseLeave={() => setCompareHoverStep(null)}
+                    >
+                      {(() => {
                     const hrSpan = Math.max(20, maxHr - minHr);
 
                     const pointsHrA = alignedSteps
@@ -2462,15 +2434,17 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                     return (
                       <>
                         {/* Y-Axis Title */}
-                        <text
-                          x={16}
-                          y={86}
-                          transform="rotate(-90 16 86)"
-                          textAnchor="middle"
-                          className="fill-rose-500 text-xs font-sans font-bold"
-                        >
-                          Heart Rate (bpm)
-                        </text>
+                        {!isMobile && (
+                          <text
+                            x={16}
+                            y={86}
+                            transform="rotate(-90 16 86)"
+                            textAnchor="middle"
+                            className="fill-rose-500 text-xs font-sans font-bold"
+                          >
+                            Heart Rate (bpm)
+                          </text>
+                        )}
 
                         {/* Horizontal Grid Lines & Y-Axis Ticks */}
                         {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
@@ -2488,7 +2462,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                                 strokeDasharray="3 3"
                               />
                               <text
-                                x={chartLeft - 8}
+                                x={chartLeft - 6}
                                 y={y + 4}
                                 textAnchor="end"
                                 className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
@@ -2533,7 +2507,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                             <text
                               key={idx}
                               x={x}
-                              y={174}
+                              y={chartBottom + 15}
                               textAnchor="middle"
                               className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                             >
@@ -2543,13 +2517,13 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                         })}
                         <text
                           x={chartLeft + chartW / 2}
-                          y={196}
+                          y={svgH - 6}
                           textAnchor="middle"
-                          className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
+                          className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
                         >
                           {compareXMode === 'PERCENT'
-                            ? 'Normalized Workout Progress (% of Total Duration)'
-                            : 'Elapsed Workout Time (mm:ss)'}
+                            ? 'Progress (% Total Duration)'
+                            : 'Elapsed Time (mm:ss)'}
                         </text>
 
                         {/* Interactive Crosshair Hit Columns */}
@@ -2628,7 +2602,9 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       </>
                     );
                   })()}
-                </svg>
+                    </svg>
+                  );
+                })()}
               </div>
 
               {/* 3. SIDE-BY-SIDE METRIC DELTA TABLE & DUAL HEART RATE ZONE COMPARISON */}
@@ -3202,15 +3178,30 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        {act.sportCategory === 'Running' && act.avgPaceSecsPerKm ? (
+                        {act.avgPaceSecsPerKm &&
+                        (act.sportCategory === 'Running' ||
+                          act.sportCategory === 'Swimming' ||
+                          act.sportCategory === 'Multisport' ||
+                          act.subType === 'Rowing' ||
+                          act.subType === 'Hiking' ||
+                          act.subType === 'Walking' ||
+                          act.subType === 'Nordic Ski' ||
+                          act.subType === 'Paddling & Water') ? (
                           <>
                             <div className="font-semibold text-slate-900 dark:text-slate-100">
-                              {formatPace(act.avgPaceSecsPerKm, distanceUnit)}
+                              {formatMultiSportPace(
+                                act.avgPaceSecsPerKm,
+                                distanceUnit,
+                                act.sportCategory,
+                                act.subType
+                              )}
                             </div>
                             <div className="text-slate-500 text-xs">
                               {act.normalizedPower
                                 ? `${act.normalizedPower}W`
-                                : `GAP ${formatPace(act.gapPaceSecsPerKm, distanceUnit)}`}
+                                : act.sportCategory === 'Running' && act.gapPaceSecsPerKm
+                                  ? `GAP ${formatPace(act.gapPaceSecsPerKm, distanceUnit)}`
+                                  : act.subType || act.sportCategory}
                             </div>
                           </>
                         ) : act.normalizedPower ? (
@@ -3398,7 +3389,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 data-testid="activity-inspector-tabs"
                 role="tablist"
                 aria-label="Activity Inspector Sections"
-                className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track w-fit"
+                className="grid grid-cols-3 sm:flex items-center gap-1 p-1 rounded-xl liquid-capsule-track w-full sm:w-fit"
               >
                 {(
                   [

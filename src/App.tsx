@@ -1241,11 +1241,41 @@ export default function App() {
     [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
   );
 
+  const closeAllGlobalModals = useCallback(() => {
+    setIsDataSourcesOpen(false);
+    setIsCoachDrawerOpen(false);
+    setIsProfileModalOpen(false);
+    setIsOfficialRaceModalOpen(false);
+    setIsRosterModalOpen(false);
+    setShowMetricsGuide(false);
+    setSelectedActivity(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('thresh-close-popovers'));
+    }
+  }, []);
+
+  const handleSelectActivityMutex = useCallback(
+    (act: UnifiedActivity | null) => {
+      if (act) closeAllGlobalModals();
+      return handleSelectActivity(act);
+    },
+    [closeAllGlobalModals, handleSelectActivity]
+  );
+
   const handleSelectActivityAndOpenTab = useCallback(
     (act: UnifiedActivity) => {
+      closeAllGlobalModals();
       void handleSelectActivity(act);
     },
-    [handleSelectActivity]
+    [closeAllGlobalModals, handleSelectActivity]
+  );
+
+  const handleOpenCoachPromptMutex = useCallback(
+    (prompt: string) => {
+      closeAllGlobalModals();
+      handleOpenCoachWithPrompt(prompt);
+    },
+    [closeAllGlobalModals, handleOpenCoachWithPrompt]
   );
 
   const handleCalendarCreatePlannedEvent = useCallback(
@@ -1282,9 +1312,30 @@ export default function App() {
   const handleOpenGoalsTab = useCallback(() => setActiveTab('totals'), []);
   const handleSwitchToCalendarTab = useCallback(() => setActiveTab('calendar'), []);
   const handleOpenActivitiesTab = useCallback(() => setActiveTab('activities'), []);
-  const handleOpenProfileModal = useCallback(() => setIsProfileModalOpen(true), []);
-  const handleOpenOfficialRaceModal = useCallback(() => setIsOfficialRaceModalOpen(true), []);
-  const handleOpenRosterModal = useCallback(() => setIsRosterModalOpen(true), []);
+  const handleOpenProfileModal = useCallback(() => {
+    closeAllGlobalModals();
+    setIsProfileModalOpen(true);
+  }, [closeAllGlobalModals]);
+  const handleOpenOfficialRaceModal = useCallback(() => {
+    closeAllGlobalModals();
+    setIsOfficialRaceModalOpen(true);
+  }, [closeAllGlobalModals]);
+  const handleOpenRosterModal = useCallback(() => {
+    closeAllGlobalModals();
+    setIsRosterModalOpen(true);
+  }, [closeAllGlobalModals]);
+  const handleOpenDataSourcesModal = useCallback(() => {
+    closeAllGlobalModals();
+    setIsDataSourcesOpen(true);
+  }, [closeAllGlobalModals]);
+  const handleOpenCoachDrawerModal = useCallback(() => {
+    closeAllGlobalModals();
+    setIsCoachDrawerOpen(true);
+  }, [closeAllGlobalModals]);
+  const handleOpenMetricsGuideModal = useCallback(() => {
+    closeAllGlobalModals();
+    setShowMetricsGuide(true);
+  }, [closeAllGlobalModals]);
 
   const handleImportSingleParsedActivity = useCallback(
     (newAct: UnifiedActivity) => {
@@ -1603,6 +1654,7 @@ export default function App() {
           activeTeamId={activeTeamId}
           onSelectActiveTeam={handleSelectActiveTeam}
           onOpenRosterModalWithTab={(tab) => {
+            closeAllGlobalModals();
             setRosterInitialTab(tab);
             setIsRosterModalOpen(true);
           }}
@@ -1624,15 +1676,15 @@ export default function App() {
           primaryAthleteInitials={primaryAthleteInitials}
           combinedRoster={combinedRoster}
           anySourceConnected={anySourceConnected}
-          onOpenDataSources={() => setIsDataSourcesOpen(true)}
-          onOpenCoach={() => setIsCoachDrawerOpen(true)}
+          onOpenDataSources={handleOpenDataSourcesModal}
+          onOpenCoach={handleOpenCoachDrawerModal}
           isDark={isDark}
           onToggleDark={() => setIsDark((prev) => !prev)}
           currentUser={currentUser}
           effectiveActivities={effectiveActivities}
           effectiveAthleteProfile={effectiveAthleteProfile}
-          onOpenProfileModal={() => setIsProfileModalOpen(true)}
-          onOpenGuide={() => setShowMetricsGuide(true)}
+          onOpenProfileModal={handleOpenProfileModal}
+          onOpenGuide={handleOpenMetricsGuideModal}
           distanceUnit={distanceUnit}
           setDistanceUnit={setDistanceUnit}
           onLogoutSession={handleLogoutSession}
@@ -1648,10 +1700,10 @@ export default function App() {
               onDismissJoinOffer={handleDismissJoinOffer}
               isSyncing={isSyncing}
               activitiesCount={effectiveActivities.length}
-              onOpenDataSources={() => setIsDataSourcesOpen(true)}
+              onOpenDataSources={handleOpenDataSourcesModal}
               activeConnectedAthlete={activeConnectedAthlete}
               shieldedConnectedTelemetry={shieldedConnectedTelemetry}
-              onOpenRosterModal={() => setIsRosterModalOpen(true)}
+              onOpenRosterModal={handleOpenRosterModal}
               onReturnToMyProfile={() => {
                 setActiveViewedAthleteId('SELF');
                 setSelectedActivity(null);
@@ -1698,7 +1750,7 @@ export default function App() {
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 stravaSyncWindow={connectionStatus.stravaSyncPolicy?.window}
-                onOpenDataSources={() => setIsDataSourcesOpen(true)}
+                onOpenDataSources={handleOpenDataSourcesModal}
                 coachSubTab={coachSubTab}
                 setCoachSubTab={setCoachSubTab}
                 activeTeam={isSampleDemoMode ? null : activeTeam}
@@ -1745,10 +1797,10 @@ export default function App() {
                 handleOpenProfileModal={handleOpenProfileModal}
                 handleOpenGoalsTab={handleOpenGoalsTab}
                 handleOpenOfficialRaceModal={handleOpenOfficialRaceModal}
-                handleOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+                handleOpenCoachWithPrompt={handleOpenCoachPromptMutex}
                 handleOpenRosterModal={handleOpenRosterModal}
                 handleCreatePlannedEvent={handleCreatePlannedEvent}
-                handleSelectActivity={handleSelectActivity}
+                handleSelectActivity={handleSelectActivityMutex}
                 loadStreamsForActivity={loadStreamsForActivity}
                 handleScanMoreSegments={handleScanMoreSegments}
                 handleHydrateMoreRoutes={handleHydrateMoreRoutes}
@@ -1768,9 +1820,9 @@ export default function App() {
 
             <CockpitFooter
               athleteFtp={effectiveAthleteProfile.ftp}
-              onOpenProfile={() => setIsProfileModalOpen(true)}
-              onOpenDataSources={() => setIsDataSourcesOpen(true)}
-              onOpenGuide={() => setShowMetricsGuide(true)}
+              onOpenProfile={handleOpenProfileModal}
+              onOpenDataSources={handleOpenDataSourcesModal}
+              onOpenGuide={handleOpenMetricsGuideModal}
               onOpenBrandStudio={openBrand}
             />
           </div>
@@ -1893,15 +1945,15 @@ export default function App() {
           showMetricsGuide={showMetricsGuide}
           onCloseMetricsGuide={() => setShowMetricsGuide(false)}
           onNavigateTab={(tab) => setActiveTab(tab)}
-          onOpenDataSourcesFromGuide={() => setIsDataSourcesOpen(true)}
-          onOpenRosterModalFromGuide={() => setIsRosterModalOpen(true)}
-          onOpenProfileModalFromGuide={() => setIsProfileModalOpen(true)}
-          onOpenOfficialRaceModalFromGuide={() => setIsOfficialRaceModalOpen(true)}
+          onOpenDataSourcesFromGuide={handleOpenDataSourcesModal}
+          onOpenRosterModalFromGuide={handleOpenRosterModal}
+          onOpenProfileModalFromGuide={handleOpenProfileModal}
+          onOpenOfficialRaceModalFromGuide={handleOpenOfficialRaceModal}
           onOpenAICoachFromGuide={(prompt) => {
             if (prompt) {
-              handleOpenCoachWithPrompt(prompt);
+              handleOpenCoachPromptMutex(prompt);
             } else {
-              setIsCoachDrawerOpen(true);
+              handleOpenCoachDrawerModal();
             }
           }}
         />

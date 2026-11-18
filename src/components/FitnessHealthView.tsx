@@ -1784,7 +1784,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <button
                 type="button"
                 aria-expanded={isDatePickerOpen}
-                onClick={() => setIsDatePickerOpen((prev) => !prev)}
+                onClick={() => {
+                  setIsDatePickerOpen((prev) => {
+                    if (!prev) setIsCustomizeOpen(false);
+                    return !prev;
+                  });
+                }}
                 className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/50 text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100 transition-all"
               >
                 <span className="font-mono">
@@ -1923,7 +1928,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsCustomizeOpen((prev) => !prev)}
+              onClick={() => {
+                setIsCustomizeOpen((prev) => {
+                  if (!prev) setIsDatePickerOpen(false);
+                  return !prev;
+                });
+              }}
               aria-expanded={isCustomizeOpen}
               className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-blue-500/35 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-sky-300 text-xs font-bold tracking-wide transition-colors"
             >

@@ -162,7 +162,7 @@ test.describe('BUG-01 & BUG-02: Strava Deployment Persistence & Mobile Portrait/
         elevationGainMeters: 42,
         intensityFactor: 0.92,
         trainingLoad: 74,
-        loadModelVersion: 3,
+        loadModelVersion: 4,
         avgHr: 162,
         maxHr: 184,
         avgPaceSecsPerKm: 281,
@@ -175,7 +175,7 @@ test.describe('BUG-01 & BUG-02: Strava Deployment Persistence & Mobile Portrait/
       },
       snapshotMeta: {
         savedAt: '2026-11-14T16:00:00.000Z',
-        pmcModelVersion: 3,
+        pmcModelVersion: 4,
         ownerAthleteId: '777888',
       },
     });
@@ -266,7 +266,7 @@ test.describe('BUG-01 & BUG-02: Strava Deployment Persistence & Mobile Portrait/
           }),
         { timeout: 8000 }
       )
-      .toMatchObject({ pmcModelVersion: 3 });
+      .toMatchObject({ pmcModelVersion: 4 });
 
     const healedAct = await page.evaluate(async () => {
       return await new Promise<number | undefined>((resolve, reject) => {

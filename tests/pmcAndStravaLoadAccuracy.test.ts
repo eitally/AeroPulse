@@ -114,8 +114,11 @@ describe('Strava Physiological Load v2, Threshold Guard & Banister PMC Accuracy'
       sourceBadges: ['Strava'] as ('Strava')[],
     })) as UnifiedActivity[];
 
-    // Walk named "Bike Shop" stays Strength (not misclassified as Cycling)
-    expect(normalized[0].sportCategory).toBe('Strength');
+    // Walk named "Bike Shop" classifies as Multisport/Walking (not misclassified as Cycling)
+    expect(normalized[0].sportCategory).toBe('Multisport');
+    expect(normalized[0].subType).toBe('Walking');
+    expect(normalized[3].sportCategory).toBe('Multisport');
+    expect(normalized[3].subType).toBe('Hiking');
     // Estimated watts ride has un-metered power cleared and reasonable HR TSS (not suffer_score 185)
     expect(normalized[1].deviceWatts).toBe(false);
     expect(normalized[1].avgPower).toBeUndefined();

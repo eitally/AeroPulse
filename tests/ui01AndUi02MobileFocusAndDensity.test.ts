@@ -29,9 +29,9 @@ describe('UI-01 & UI-02 Mobile Focus Stopwatch, Squad Triage Placement & Compact
     expect(header).toContain('Number(parsed.accumulatedMs || 0) > 0');
 
     const stopwatch = readSrc('src/components/TracksideStopwatchView.tsx');
-    expect(stopwatch).toContain('window.innerWidth < 1024');
-    expect(stopwatch).toContain('stopwatch-focus-mode-toggle');
-    expect(stopwatch).toContain('isFloatingFocusMode={isFocusMode && stopwatchRunning}');
+    expect(stopwatch).toContain('stopwatch-tools-btn');
+    expect(stopwatch).toContain('isFloatingFocusMode={false}');
+    expect(stopwatch).not.toContain('stopwatch-focus-mode-toggle');
 
     const coachView = readSrc('src/components/CoachWorkspaceView.tsx');
     expect(coachView).toContain('clipboard-flagged-triage-btn');

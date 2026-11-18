@@ -316,7 +316,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
             <button
               type="button"
               onClick={handlePullFromRemote}
@@ -893,7 +893,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     return (
                       <tr key={pz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                         <td className="py-2 pr-2 font-sans">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                             <span
                               className="w-2.5 h-2.5 rounded-xs shrink-0"
                               style={{ backgroundColor: pz.color }}
@@ -991,7 +991,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   {(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).map((hz) => (
                     <tr key={hz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                       <td className="py-2 pr-2 font-sans">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                           <span
                             className="w-2.5 h-2.5 rounded-xs shrink-0"
                             style={{ backgroundColor: hz.color }}

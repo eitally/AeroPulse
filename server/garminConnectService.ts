@@ -9,6 +9,7 @@ import {
 } from './tokenVault.ts';
 import {
   STRAVA_LOAD_MODEL_VERSION,
+  classifyMultiSportActivity,
   computeStravaActivityLoadV2,
   isEBikeActivityText,
 } from '../src/physiology/stravaLoadCalibration.ts';
@@ -1493,70 +1494,23 @@ export function normalizeGarminPersonalApiActivities(
       ).toLowerCase();
       const name = String(a.activityName || a.name || typeKey || 'Garmin Activity');
       const combined = `${typeKey} ${name}`.toLowerCase();
-      const isEBike = isEBikeActivityText(typeKey, name);
-      const isExplicitCasualOrOtherType =
-        /walk|hiking|hike|yoga|pilates|golf|strength|elliptical|stair|breathwork|meditation|rowing|stand_up_paddle|kayak|ski|snowshoe/i.test(
-          typeKey
-        );
-
-      let sportCategory: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport' =
-        'Strength';
-      if (
-        !isExplicitCasualOrOtherType &&
-        (/cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
-          combined
-        ) ||
-          isEBike)
-      ) {
-        sportCategory = 'Cycling';
-      } else if (
-        !isExplicitCasualOrOtherType &&
-        /running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)
-      ) {
-        sportCategory = 'Running';
-      } else if (/swimming|swim|lap_swimming|open_water/i.test(combined)) {
-        sportCategory = 'Swimming';
-      } else if (/multi_sport|triathlon|duathlon/i.test(combined)) {
-        sportCategory = 'Multisport';
-      }
-
       const startLat = Number(a.startLatitude ?? 0);
       const startLng = Number(a.startLongitude ?? 0);
+      const hasGps = Boolean((startLat || startLng) && !(startLat === 0 && startLng === 0));
       const isWatopiaOrMakuri =
         startLat >= -12.6 && startLat <= -9.8 && startLng >= 164.8 && startLng <= 168.0;
       const isVirtualPlatform =
         isWatopiaOrMakuri ||
         /virtual_ride|virtual|zwift|watopia|makuri|rouvy|mywhoosh|trainerroad/i.test(combined);
-      const isIndoor =
-        isVirtualPlatform ||
-        /indoor|treadmill|virtual|trainer|spin|peloton|gym|strength|yoga/i.test(combined) ||
-        (sportCategory === 'Cycling' && !startLat && !startLng);
-
-      let subType:
-        | 'Road'
-        | 'Trail'
-        | 'Gravel'
-        | 'Virtual Cycling'
-        | 'Smart Trainer'
-        | 'Treadmill'
-        | 'Pool'
-        | 'Open Water'
-        | 'Gym' = 'Road';
-      if (sportCategory === 'Cycling') {
-        if (isVirtualPlatform) subType = 'Virtual Cycling';
-        else if (isIndoor) subType = 'Smart Trainer';
-        else if (/gravel/i.test(combined)) subType = 'Gravel';
-        else if (/mountain|mtb|trail/i.test(combined)) subType = 'Trail';
-        else subType = 'Road';
-      } else if (sportCategory === 'Running') {
-        if (isIndoor) subType = 'Treadmill';
-        else if (/trail/i.test(combined)) subType = 'Trail';
-        else subType = 'Road';
-      } else if (sportCategory === 'Swimming') {
-        subType = /open_water/i.test(combined) ? 'Open Water' : 'Pool';
-      } else {
-        subType = 'Gym';
-      }
+      const classified = classifyMultiSportActivity(typeKey, name, {
+        trainer: isVirtualPlatform || /indoor|treadmill|virtual|trainer|spin|peloton|gym|strength|yoga/i.test(combined),
+        hasGps,
+        isVirtualPlatform,
+      });
+      const sportCategory = classified.sportCategory;
+      const isEBike = classified.subType === 'EBike';
+      const isIndoor = classified.environment === 'INDOOR';
+      const subType = classified.subType;
 
       const movingTimeSecs = Math.round(
         Number(a.movingDuration ?? a.duration ?? a.elapsedDuration ?? 0)

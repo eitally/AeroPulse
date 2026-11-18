@@ -333,7 +333,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl ap-status-caution text-2xs font-mono font-semibold transition-colors whitespace-nowrap cursor-pointer"
                 title="Active viewport filter — click to reset to All Sports & Environments"
               >
-                <span>
+                <span className="max-w-[140px] sm:max-w-none truncate">
                   Filter:{' '}
                   {[
                     envFilter === 'INDOOR'

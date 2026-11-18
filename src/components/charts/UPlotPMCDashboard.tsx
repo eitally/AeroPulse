@@ -236,10 +236,10 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
     const rawWidth = Math.floor(wrapper.getBoundingClientRect().width || viewportSize.w || 340);
     const width = Math.max(240, rawWidth);
     const isNarrowCanvas = width < 520;
-    const axisLeftSize = isNarrowCanvas ? 30 : 42;
-    const axisRightSize = showEftpOverlay ? (isNarrowCanvas ? 36 : 46) : 0;
+    const axisLeftSize = isNarrowCanvas ? 28 : 42;
+    const axisRightSize = showEftpOverlay ? (isNarrowCanvas ? 30 : 46) : 0;
     const sharedPadding: [number, number, number, number] = isNarrowCanvas
-      ? [6, showEftpOverlay ? 4 : 14, 4, 0]
+      ? [4, showEftpOverlay ? 2 : 8, 2, 0]
       : [8, showEftpOverlay ? 6 : 14, 6, 2];
 
     const themePalette = getThreshThemePalette(isDark);

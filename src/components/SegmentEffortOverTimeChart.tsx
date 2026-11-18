@@ -13,6 +13,7 @@ import {
 import { DistanceUnit, UnifiedActivity } from '../types';
 import { formatDistance, formatPace, formatStopwatch } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 export interface SegmentEffortPoint {
   effortId: string;
@@ -149,6 +150,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
   showSegmentPicker = true,
   compact = false,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [sportFilter, setSportFilter] = useState<'ALL' | 'Cycling' | 'Running'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -355,25 +357,19 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
         <div className="space-y-2.5">
           {!compact && (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                {(['ALL', 'Cycling', 'Running'] as const).map((sp) => (
-                  <button
-                    key={sp}
-                    type="button"
-                    onClick={() => {
-                      setSportFilter(sp);
-                      setHoverIdx(null);
-                    }}
-                    className={`min-h-[28px] px-2.5 py-0.5 rounded-md font-semibold transition-colors ${
-                      sportFilter === sp
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-2xs'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    {sp === 'ALL' ? `All Multi-Attempt Segments (${segments.length})` : sp}
-                  </button>
-                ))}
-              </div>
+              <select
+                value={sportFilter}
+                aria-label="Filter segments by sport"
+                onChange={(e) => {
+                  setSportFilter(e.target.value as 'ALL' | 'Cycling' | 'Running');
+                  setHoverIdx(null);
+                }}
+                className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+              >
+                <option value="ALL">All Multi-Attempt Segments ({segments.length})</option>
+                <option value="Cycling">Cycling Segments</option>
+                <option value="Running">Running Segments</option>
+              </select>
 
               <div className="relative w-full sm:w-60">
                 <Search className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -584,19 +580,22 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
 
       {/* Main SVG 'Effort Over Time' Chart: Y = Duration (in seconds), X = Date */}
       <div
-        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-[#15231B]/50 p-3 select-none"
+        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-[#15231B]/50 p-2 sm:p-3 select-none"
         onMouseLeave={() => setHoverIdx(null)}
       >
-        <svg viewBox="0 0 900 265" className="w-full h-64 overflow-visible">
-          {(() => {
-            const chartLeft = 82;
-            const chartRight = showOverlayMetric ? 820 : 865;
-            const chartW = chartRight - chartLeft;
-            const chartTop = 22;
-            const chartBottom = 202;
-            const chartH = chartBottom - chartTop;
+        {(() => {
+          const svgW = isMobile ? 360 : 900;
+          const svgH = isMobile ? 215 : 265;
+          const secondaryCheck = efforts.map((e) => e.avgWatts || e.avgHr || 0).filter((v) => v > 0);
+          const hasRightOverlay = showOverlayMetric && secondaryCheck.length >= 2;
+          const chartLeft = isMobile ? 34 : 82;
+          const chartRight = isMobile ? (hasRightOverlay ? 324 : 352) : showOverlayMetric ? 820 : 865;
+          const chartW = chartRight - chartLeft;
+          const chartTop = isMobile ? 16 : 22;
+          const chartBottom = isMobile ? 182 : 202;
+          const chartH = chartBottom - chartTop;
 
-            const times = efforts.map((e) => e.elapsedTimeSecs);
+          const times = efforts.map((e) => e.elapsedTimeSecs);
             const minTime = Math.min(...times);
             const maxTime = Math.max(...times);
             const padSecs = Math.max(3, Math.ceil((maxTime - minTime) * 0.16));
@@ -690,7 +689,10 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             const prY = toYDurationSecs(activeSegment.prElapsedTimeSecs);
 
             return (
-              <>
+              <svg
+                viewBox={`0 0 ${svgW} ${svgH}`}
+                className={isMobile ? 'w-full h-auto overflow-visible' : 'w-full h-64 overflow-visible'}
+              >
                 <defs>
                   <linearGradient id="effortDurationAreaGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10B981" stopOpacity="0.24" />
@@ -699,18 +701,20 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                 </defs>
 
                 {/* Left Y-Axis Title: Duration (in seconds) */}
-                <text
-                  x={18}
-                  y={112}
-                  transform="rotate(-90 18 112)"
-                  textAnchor="middle"
-                  className="fill-emerald-600 dark:fill-emerald-400 text-2xs font-sans font-bold"
-                >
-                  Duration in Seconds (s · mm:ss)
-                </text>
+                {!isMobile && (
+                  <text
+                    x={18}
+                    y={112}
+                    transform="rotate(-90 18 112)"
+                    textAnchor="middle"
+                    className="fill-emerald-600 dark:fill-emerald-400 text-2xs font-sans font-bold"
+                  >
+                    Duration in Seconds (s · mm:ss)
+                  </text>
+                )}
 
                 {/* Right Y-Axis Title (if overlay enabled) */}
-                {showOverlayMetric && validSecondary.length >= 2 && (
+                {!isMobile && showOverlayMetric && validSecondary.length >= 2 && (
                   <text
                     x={884}
                     y={112}
@@ -743,16 +747,16 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                         strokeDasharray="3 3"
                       />
                       <text
-                        x={chartLeft - 8}
+                        x={chartLeft - 6}
                         y={y + 4}
                         textAnchor="end"
                         className="fill-emerald-600 dark:fill-emerald-400 text-2xs font-mono font-semibold"
                       >
-                        {tSecs}s ({formatStopwatch(tSecs)})
+                        {isMobile ? `${tSecs}s` : `${tSecs}s (${formatStopwatch(tSecs)})`}
                       </text>
                       {showOverlayMetric && validSecondary.length >= 2 && (
                         <text
-                          x={chartRight + 8}
+                          x={chartRight + 6}
                           y={y + 4}
                           className={`${
                             useWatts ? 'fill-blue-500' : 'fill-rose-500'
@@ -904,11 +908,11 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                       {showDateTick && (
                         <text
                           x={x}
-                          y={220}
+                          y={chartBottom + 16}
                           textAnchor="middle"
                           className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                         >
-                          {e.date}
+                          {isMobile ? e.date.slice(5) : e.date}
                         </text>
                       )}
 
@@ -945,16 +949,17 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                 {/* X-Axis Title */}
                 <text
                   x={chartLeft + chartW / 2}
-                  y={246}
+                  y={svgH - 8}
                   textAnchor="middle"
-                  className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
+                  className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
                 >
-                  X-Axis: Attempt Date (YYYY-MM-DD · Gold = PR #1 · Dashed = Linear Trend · Click Point to Inspect)
+                  {isMobile
+                    ? 'Attempt Date (Gold = PR · Dashed = Trend)'
+                    : 'X-Axis: Attempt Date (YYYY-MM-DD · Gold = PR #1 · Dashed = Linear Trend · Click Point to Inspect)'}
                 </text>
-              </>
+              </svg>
             );
           })()}
-        </svg>
       </div>
 
       {/* Chronological Attempt History Table (with exact Duration in seconds + mm:ss) */}

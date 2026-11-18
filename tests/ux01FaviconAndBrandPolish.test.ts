@@ -15,29 +15,29 @@ function readPngDimensions(filePath: string): { width: number; height: number } 
   };
 }
 
-describe('UX-01 · Option E "Volt Beacon" Favicon, PWA Icons & Brand Clarity Polish', () => {
+describe('UX-01 & BRD-02 · S2 Redline Breach × W-A Threshold Horizon Modular Brand, Favicon & PWA Icons', () => {
   const root = process.cwd();
 
-  it('replaces the legacy 7-arc snail-shell icon.svg with the crisp 32x32 Option E Volt Beacon', () => {
+  it('ships the unified 32x32 S2 Redline Breach squircle in public/icon.svg (true evenodd knockout)', () => {
     const svg = fs.readFileSync(path.join(root, 'public', 'icon.svg'), 'utf8');
     expect(svg).toContain('viewBox="0 0 32 32"');
+    expect(svg).toContain('fill="#0B1911"');
+    expect(svg).toContain('stroke="#399663"');
     expect(svg).toContain('fill="#C8FF00"');
-    expect(svg).toContain('stroke="#163022"');
-    expect(svg).toContain('fill="#080A09"');
-    expect(svg).not.toContain('viewBox="0 0 128 128"');
+    expect(svg).toContain('fill-rule="evenodd"');
     expect(svg).not.toContain('paint-order:stroke fill');
   });
 
-  it('cache-busts favicon and apple-touch-icon links to ?v=3 across app and docs HTML', () => {
+  it('links favicon and apple-touch-icon across app and docs HTML', () => {
     const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     const docsHtml = fs.readFileSync(path.join(root, 'public', 'docs', 'index.html'), 'utf8');
 
-    expect(appHtml).toContain('href="/icon.svg?v=3"');
-    expect(appHtml).toContain('href="/apple-touch-icon.png?v=3"');
-    expect(docsHtml).toContain('href="/icon.svg?v=3"');
+    expect(appHtml).toContain('href="/icon.svg?v=4"');
+    expect(appHtml).toContain('href="/apple-touch-icon.png?v=4"');
+    expect(docsHtml).toContain('href="/icon.svg?v=4"');
   });
 
-  it('builds dynamic team favicons using the 32x32 Volt Beacon geometry with encoded team palette', () => {
+  it('builds dynamic team favicons using the 32x32 S2 Redline Breach geometry with encoded team palette', () => {
     const dataUri = buildTeamFaviconDataUri('#1E3A8A', '#FFFFFF', '#0F172A');
     expect(dataUri.startsWith('data:image/svg+xml,')).toBe(true);
     expect(dataUri).toContain('viewBox%3D%220%200%2032%2032%22');
@@ -61,13 +61,18 @@ describe('UX-01 · Option E "Volt Beacon" Favicon, PWA Icons & Brand Clarity Pol
     }
   });
 
-  it('enforces >=4.5:1 light-mode lockup wordmark stops and removes interior card watermarks', () => {
+  it('exports decoupled ThreshMark + ThreshWordmark with high-contrast tokens and zero interior watermarks', () => {
     const logoSrc = fs.readFileSync(path.join(root, 'src', 'components', 'AeroPulseLogo.tsx'), 'utf8');
+    expect(logoSrc).toContain('export const ThreshMark');
+    expect(logoSrc).toContain('export const ThreshWordmark');
     expect(logoSrc).toContain('--thresh-volt:#3F8E00');
-    expect(logoSrc).toContain('--thresh-g1-3:#2D6A00');
-    expect(logoSrc).not.toContain('--thresh-g1-3:#4BA800');
-    expect(logoSrc).not.toContain('--thresh-volt:#56BA00');
+    expect(logoSrc).toContain('--thresh-ink:#101411');
+    expect(logoSrc).toContain('--thresh-ink:#F4F7F4');
+    expect(logoSrc).not.toContain('skewX(-14) scale(1.10, 1.29)');
     expect(logoSrc).toContain('viewBox="0 0 32 32"');
+
+    const footerSrc = fs.readFileSync(path.join(root, 'src', 'components', 'CockpitFooter.tsx'), 'utf8');
+    expect(footerSrc).toContain('surface="on-dark"');
 
     const heroSrc = fs.readFileSync(
       path.join(root, 'src', 'components', 'CircadianFirstTouchHero.tsx'),
