@@ -1,6 +1,5 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  Activity,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -17,7 +16,6 @@ import {
   Send,
   ShieldCheck,
   Sun,
-  UploadSimple,
   Users,
 } from './icons/PhosphorIcons';
 import { ArchiveOnboardingWizard } from './ArchiveOnboardingWizard';
@@ -44,7 +42,7 @@ import {
   registerPasskey,
 } from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
-import { LoginCapabilitySparkStrip, SyncScopeTimelineBar } from './charts/MicroGraphics';
+import { SyncScopeTimelineBar } from './charts/MicroGraphics';
 import {
   getSavedIntervalsHeaders,
   saveStravaSyncPolicyToStorage,
@@ -244,12 +242,19 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       return 'ATHLETE';
     }
   });
+  const [specimenView, setSpecimenView] = useState<'SOLO' | 'COACH'>(() =>
+    onboardingRole === 'COACH' ? 'COACH' : 'SOLO'
+  );
+  const [isSimulatedFatigued, setIsSimulatedFatigued] = useState(false);
+  const [showFitDrawer, setShowFitDrawer] = useState(false);
+  const teamCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingSharedWorkout, setPendingSharedWorkout] = useState(() =>
     peekPendingSharedWorkout()
   );
 
   const selectOnboardingRole = (nextRole: 'ATHLETE' | 'COACH') => {
     setOnboardingRole(nextRole);
+    setSpecimenView(nextRole === 'COACH' ? 'COACH' : 'SOLO');
     try {
       if (nextRole === 'COACH') {
         sessionStorage.setItem('thresh_onboarding_role', 'COACH');
@@ -1096,77 +1101,1172 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   const secondaryConnected = Boolean(isGarminConnected || status.intervalsConnected);
   const showByoStravaSection = Boolean(
-    status.stravaConfigured === false || showCustomStravaKeys
+    showCustomStravaKeys || (errorMessage && /STRAVA_CLIENT_ID|not configured/i.test(errorMessage))
   );
+  const isPasskeyDrawerOpen = Boolean(
+    showAltAuthMethods || showPasskeyRegister || magicLinkSent || passkeyError
+  );
+  const isTeamCodeDrawerOpen = Boolean(showTeamCodeDrawer || activeBrand);
+
+  const handleTogglePasskeyDrawer = () => {
+    setShowTeamCodeDrawer(false);
+    setShowFitDrawer(false);
+    setShowAltAuthMethods((prev) => !prev);
+  };
+
+  const handleOpenTeamCodeDrawer = (alwaysOpen = false, shouldFocus = false) => {
+    setShowAltAuthMethods(false);
+    setShowFitDrawer(false);
+    setShowTeamCodeDrawer((prev) => (alwaysOpen ? true : !prev));
+    if (shouldFocus && typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        teamCodeInputRef.current?.focus();
+      }, 30);
+    }
+  };
+
+  const handleToggleFitDrawer = () => {
+    setShowAltAuthMethods(false);
+    setShowTeamCodeDrawer(false);
+    setShowFitDrawer((prev) => !prev);
+  };
+
+  const atlSpecimenValue = isSimulatedFatigued ? 78 : 58;
+  const tsbSpecimenValue = isSimulatedFatigued ? '-14' : '+6';
+  const loadSumSpecimen = isSimulatedFatigued ? '1,180 TRIMP' : '920 TRIMP';
+  const z2Scale = isSimulatedFatigued ? 0.38 : 0.54;
+  const z4Scale = isSimulatedFatigued ? 0.39 : 0.31;
+  const z6Scale = isSimulatedFatigued ? 0.23 : 0.15;
+  const z2Pct = isSimulatedFatigued ? '38%' : '54%';
+  const z4Pct = isSimulatedFatigued ? '39%' : '31%';
+  const z6Pct = isSimulatedFatigued ? '23%' : '15%';
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-clip py-4 sm:py-8 px-3 sm:px-6 flex flex-col justify-center">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip py-2.5 sm:py-3.5 px-2.5 sm:px-6 flex flex-col justify-center">
       <a href="#main-content" className="ap-skip-link">
         Skip to main content
       </a>
-      <div className="max-w-2xl w-full mx-auto space-y-4">
-        {/* Clean Top Navigation Bar */}
-        <header className="relative overflow-hidden rounded-2xl liquid-glass-header px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="ap-brand-hairline absolute inset-x-0 top-0" aria-hidden="true" />
-          <div className="flex items-center gap-2.5">
-            <AeroPulseLogo size="sm" teamBrand={activeBrand} />
-            {!activeBrand && (
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
-                Run &amp; Ride Readiness
-              </span>
-            )}
-          </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {(step === 1 || (step === 2 && isMinorAthlete)) && (
-              <button
-                type="button"
-                onClick={() => setShowTeamCodeDrawer((prev) => !prev)}
-                aria-expanded={showTeamCodeDrawer}
-                className={`min-h-[44px] sm:min-h-[36px] px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
-                  activeBrand || showTeamCodeDrawer
-                    ? 'ap-nav-volt-active'
-                    : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
-                }`}
+      {step === 1 ? (
+        <div className="max-w-[1360px] w-full mx-auto">
+          <div className="ap-content-stage px-3.5 py-3.5 sm:px-6 sm:py-4">
+            {/* Mock A Shared Header */}
+            <header className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-[#CBDAD0] dark:border-[#233B2D]">
+              <a
+                href="#top"
+                onClick={(e) => e.preventDefault()}
+                className="inline-flex items-center shrink-0 min-w-0"
+                aria-label="THRESH Home"
               >
-                <Users className="w-3.5 h-3.5" />
-                <span>{activeBrand ? activeBrand.shortName : 'Team Code'}</span>
-              </button>
-            )}
+                <AeroPulseLogo size="sm" teamBrand={activeBrand} />
+              </a>
 
-            <a
-              href="/docs/"
-              target="_blank"
-              rel="noreferrer"
-              className="min-h-[44px] sm:min-h-[36px] px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-xl liquid-capsule-track text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white inline-flex items-center gap-1 cursor-pointer"
-            >
-              <span>Guide</span>
-              <ExternalLink className="w-3 h-3 opacity-75" />
-            </a>
-
-            {onToggleDark && (
-              <button
-                type="button"
-                onClick={onToggleDark}
-                aria-label="Toggle color theme"
-                className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2 py-1 rounded-xl liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer"
-                title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              >
-                {isDark ? (
-                  <Sun className="w-4 h-4 text-[#C8FF00]" weight="fill" />
-                ) : (
-                  <Moon className="w-4 h-4 text-[#1D3828]" weight="fill" />
+              <nav className="flex items-center gap-1.5 sm:gap-2" aria-label="Primary actions">
+                {onEnterSampleDemo && (
+                  <button
+                    type="button"
+                    onClick={onEnterSampleDemo}
+                    className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] items-center cursor-pointer transition-colors"
+                  >
+                    Sample Demo
+                  </button>
                 )}
-              </button>
-            )}
+                <a
+                  href="/docs/coach.html"
+                  className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] items-center transition-colors"
+                >
+                  Coach Guide
+                </a>
+                <button
+                  type="button"
+                  data-testid="header-team-code-btn"
+                  onClick={() => handleOpenTeamCodeDrawer(false, true)}
+                  aria-expanded={isTeamCodeDrawerOpen}
+                  className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    activeBrand
+                      ? 'ap-nav-volt-active'
+                      : 'ap-card-inset text-slate-900 dark:text-slate-100 hover:bg-[#DFE8DF] dark:hover:bg-[#15231B]'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      activeBrand
+                        ? 'bg-[#1C5436]'
+                        : 'bg-[#3F6212] dark:bg-[#A3E635]'
+                    }`}
+                  />
+                  <span>
+                    {activeBrand ? (
+                      activeBrand.shortName
+                    ) : (
+                      <>
+                        <span className="hidden sm:inline">Have a </span>Team Code
+                        <span className="hidden sm:inline">?</span>
+                      </>
+                    )}
+                  </span>
+                </button>
+                {onToggleDark && (
+                  <button
+                    type="button"
+                    onClick={onToggleDark}
+                    aria-label="Toggle color theme"
+                    className="min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-slate-900 dark:text-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                    title={isDark ? 'Switch to Daylight Chalk' : 'Switch to Track Pine Dark'}
+                  >
+                    <span className="font-mono text-2xs font-bold tracking-wider">
+                      {isDark ? 'PINE DARK' : 'CHALK'}
+                    </span>
+                  </button>
+                )}
+              </nav>
+            </header>
+
+            <main id="main-content" tabIndex={-1} className="space-y-3.5 focus:outline-none">
+              {(errorMessage || joinError) && (
+                <div
+                  role="alert"
+                  className="ap-status-strained rounded-xl p-3.5 text-xs leading-relaxed break-words"
+                >
+                  {joinError || errorMessage}
+                </div>
+              )}
+
+              {stepNotice && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="ap-status-prime rounded-xl p-3 text-xs font-medium flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{stepNotice}</span>
+                </div>
+              )}
+
+              {pendingSharedWorkout && (
+                <div
+                  data-testid="pending-shared-workout-banner"
+                  className="rounded-2xl ap-status-prime px-4 py-3 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                      Saved for your calendar: {pendingSharedWorkout.title}
+                    </div>
+                    <div className="text-xs text-slate-700 dark:text-slate-200">
+                      Sign in with Strava (or explore interactive demo) to add this{' '}
+                      {pendingSharedWorkout.sport} workout straight to your THRESH Calendar.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearPendingSharedWorkout();
+                      setPendingSharedWorkout(null);
+                    }}
+                    className="min-h-[36px] px-2.5 rounded-lg ap-btn-secondary text-xs font-semibold shrink-0 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {isEmbeddedWebView && (
+                <div className="ap-status-caution rounded-xl p-3 text-xs leading-relaxed">
+                  <strong>Tip for mobile team links:</strong> If external sign-in is blocked inside
+                  this messaging app, tap <strong>⋯ → Open in Safari / Chrome</strong>.
+                </div>
+              )}
+
+              {/* Mock A: 7 + 5 Live Instrument Split */}
+              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-3.5 lg:gap-x-7 lg:gap-y-3.5 items-start">
+                {/* Block 1: Hero Headline + Subhead */}
+                <div className="order-1 lg:col-span-7 lg:col-start-1 lg:row-start-1 w-full">
+                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-[1.08] text-[#101411] dark:text-[#F4F7F4]">
+                    {activeBrand
+                      ? `Join ${activeBrand.name} on THRESH`
+                      : "Know today's readiness before you step on the line."}
+                  </h1>
+                  {activeBrand && (
+                    <div className="mt-2">
+                      <span className="ap-lane-badge">
+                        <span className="ap-lane-badge-inner">
+                          {`Team Roster Invite · ${activeBrand.joinCode}`}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                  <p className="mt-2 text-sm sm:text-base leading-relaxed text-[#1F3528] dark:text-[#C8D8CE]">
+                    {activeBrand
+                      ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
+                      : 'THRESH turns wearable workouts, .FIT files, and trackside splits into daily workout modulation for solo athletes, and real-time injury triage for entire teams.'}
+                  </p>
+                </div>
+
+                {/* Block 2: Sticky Sign-In / Create Account Card (Order 2 on Mobile above-fold!) */}
+                <aside
+                  aria-label="Sign in or create account"
+                  data-testid="homepage-auth-card"
+                  className="order-2 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:row-span-3 lg:sticky lg:top-4 w-full liquid-glass rounded-2xl p-4 sm:p-5 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-[#101411] dark:text-[#F4F7F4]">
+                      Sign in or create account
+                    </h2>
+                    <span className="ap-lane-badge ap-badge-volt shrink-0">
+                      <span className="ap-lane-badge-inner">FREE ACCESS</span>
+                    </span>
+                  </div>
+
+                  {!activeBrand && (
+                    <div className="space-y-2">
+                      <div
+                        role="group"
+                        aria-label="Choose your THRESH role"
+                        className="grid grid-cols-2 gap-1 p-1 rounded-xl ap-pill-track"
+                      >
+                        <button
+                          type="button"
+                          data-testid="onboarding-role-athlete"
+                          aria-pressed={onboardingRole === 'ATHLETE'}
+                          onClick={() => selectOnboardingRole('ATHLETE')}
+                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                            onboardingRole === 'ATHLETE'
+                              ? 'ap-pill-active'
+                              : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                          }`}
+                        >
+                          I&apos;m an Athlete
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="onboarding-role-coach"
+                          aria-pressed={onboardingRole === 'COACH'}
+                          onClick={() => selectOnboardingRole('COACH')}
+                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                            onboardingRole === 'COACH'
+                              ? 'ap-pill-active'
+                              : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                          }`}
+                        >
+                          I&apos;m a Coach
+                        </button>
+                      </div>
+                      <p
+                        data-testid="homepage-role-helper"
+                        className="text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]"
+                      >
+                        {onboardingRole === 'COACH'
+                          ? 'Create a school, college, or club workspace in 60 seconds.'
+                          : 'Sync 90 days of workouts or join your team roster.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {activeBrand &&
+                    (() => {
+                      const bannerPalette = computeAccessibleTeamPalette(
+                        activeBrand.primaryHex,
+                        activeBrand.secondaryHex
+                      );
+                      return (
+                        <div
+                          className="rounded-xl p-3 space-y-1"
+                          style={{
+                            background: `linear-gradient(135deg, ${bannerPalette.primaryOnLight} 0%, ${bannerPalette.secondaryOnLight} 100%)`,
+                            color: bannerPalette.textOnPrimaryLight,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2 text-xs font-mono uppercase tracking-wider opacity-95">
+                            <span>
+                              {invitePreview?.membership?.squadGroup || 'Squad Roster'} ·{' '}
+                              {activeBrand.joinCode}
+                            </span>
+                            <span>Coach {activeBrand.coachDisplayName}</span>
+                          </div>
+                          <div className="text-sm font-bold flex items-center justify-between gap-2">
+                            <span>
+                              {invitePreview?.membership?.invitedName
+                                ? `Spot reserved for ${invitePreview.membership.invitedName}`
+                                : `Ready to join ${activeBrand.name}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setJoinCodeInput('');
+                                setJoinSlug(undefined);
+                                setInviteToken('');
+                                setInvitePreview(null);
+                                applyTeamBrandToDocument(null);
+                                try {
+                                  sessionStorage.removeItem(PENDING_TEAM_JOIN_STORAGE_KEY);
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                              className="text-xs font-mono underline opacity-90 hover:opacity-100 cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Primary CTA 1: Connect with Strava */}
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleStravaLaunchClick('cloud', false)}
+                      disabled={busy}
+                      className="w-full min-h-[50px] py-2.5 px-4 rounded-xl bg-[#C23800] hover:bg-[#A83000] text-white font-extrabold text-base flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors"
+                    >
+                      {isRedirecting ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <StravaChevronMark className="w-[18px] h-[18px]" />
+                      )}
+                      <span>
+                        {isRedirecting
+                          ? 'Opening Strava Sign-In…'
+                          : activeBrand
+                            ? `Connect with Strava to Join ${activeBrand.shortName}`
+                            : 'Connect with Strava'}
+                      </span>
+                    </button>
+                    <p className="text-xs text-center text-[#43584B] dark:text-[#93A39A]">
+                      Read-only 90d import · Never posts or edits activities
+                    </p>
+                  </div>
+
+                  {/* Primary CTA 2: Continue with Google */}
+                  <button
+                    type="button"
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={busy || isGoogleRedirecting}
+                    className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-white dark:bg-[#F4F7F4] text-[#101411] shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm flex items-center justify-center gap-2.5 hover:brightness-95 disabled:opacity-60 cursor-pointer transition-colors"
+                  >
+                    {isGoogleRedirecting ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                    ) : (
+                      <GoogleGIcon className="w-[18px] h-[18px]" />
+                    )}
+                    <span>
+                      {isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}
+                    </span>
+                  </button>
+
+                  {/* 3-Up Progressive Disclosure Pills */}
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                    <button
+                      type="button"
+                      data-testid="homepage-drawer-passkey-btn"
+                      aria-expanded={isPasskeyDrawerOpen}
+                      onClick={handleTogglePasskeyDrawer}
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                        isPasskeyDrawerOpen
+                          ? '!border-[#3F6212] dark:!border-[#A3E635]'
+                          : ''
+                      }`}
+                    >
+                      Passkey / Email
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="homepage-drawer-teamcode-btn"
+                      aria-expanded={isTeamCodeDrawerOpen}
+                      onClick={() => handleOpenTeamCodeDrawer(false, false)}
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                        isTeamCodeDrawerOpen
+                          ? '!border-[#3F6212] dark:!border-[#A3E635]'
+                          : ''
+                      }`}
+                    >
+                      Team Code
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="homepage-drawer-fit-btn"
+                      aria-expanded={showFitDrawer}
+                      onClick={handleToggleFitDrawer}
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                        showFitDrawer ? '!border-[#3F6212] dark:!border-[#A3E635]' : ''
+                      }`}
+                    >
+                      .FIT / .ZIP
+                    </button>
+                  </div>
+
+                  {/* Drawer 1: Passkey / Email Magic Link */}
+                  {isPasskeyDrawerOpen && (
+                    <div
+                      data-testid="homepage-drawer-passkey"
+                      className="rounded-xl ap-card-inset p-3 space-y-2.5"
+                    >
+                      {passkeySupported && (
+                        <button
+                          type="button"
+                          onClick={() => void handlePasskeySignIn()}
+                          disabled={busy || isPasskeyAuthenticating}
+                          className="w-full min-h-[44px] px-3 rounded-xl bg-white dark:bg-[#111A15] text-[#101411] dark:text-[#F4F7F4] font-bold text-xs flex items-center justify-center gap-2 hover:brightness-95 cursor-pointer transition-colors"
+                        >
+                          {isPasskeyAuthenticating ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <KeyRound className="w-3.5 h-3.5 text-[#3F6212] dark:text-[#A3E635]" />
+                          )}
+                          <span>
+                            {isPasskeyAuthenticating
+                              ? 'Authenticating with Touch / Face ID…'
+                              : 'Sign in with Passkey (Touch / Face ID)'}
+                          </span>
+                        </button>
+                      )}
+
+                      {showPasskeyRegister && (
+                        <form
+                          onSubmit={handlePasskeyRegister}
+                          className="rounded-lg bg-white dark:bg-[#111A15] p-2.5 space-y-2 text-xs"
+                        >
+                          <div className="flex items-center justify-between font-semibold text-[#101411] dark:text-white">
+                            <span>Register Passkey for this device</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowPasskeyRegister(false)}
+                              className="text-xs font-mono text-[#43584B] dark:text-[#93A39A] hover:underline cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {passkeyError && (
+                            <p className="text-xs text-rose-600 dark:text-rose-400">
+                              {passkeyError}
+                            </p>
+                          )}
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="email"
+                              required
+                              value={passkeyRegEmail}
+                              onChange={(e) => setPasskeyRegEmail(e.target.value)}
+                              placeholder="Enter your email to link passkey"
+                              className="flex-1 min-h-[44px] rounded-xl ap-card-inset px-3 text-xs text-[#101411] dark:text-white"
+                            />
+                            <button
+                              type="submit"
+                              disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
+                              className="min-h-[44px] px-3 rounded-xl bg-[#C8FF00] text-[#080A09] font-extrabold text-xs shrink-0 cursor-pointer"
+                            >
+                              {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      <form onSubmit={handleSendMagicLink} className="space-y-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="email"
+                            required
+                            value={magicLinkEmail}
+                            onChange={(e) => {
+                              setMagicLinkEmail(e.target.value);
+                              setMagicLinkSent(false);
+                            }}
+                            placeholder="you@school-or-club.org"
+                            aria-label="Email address for magic sign-in link"
+                            className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-semibold text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B]/70 dark:placeholder:text-[#93A39A]/70"
+                          />
+                          <button
+                            type="submit"
+                            disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
+                            className="min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-60 transition-colors"
+                          >
+                            {isSendingMagicLink ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Send className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isSendingMagicLink ? 'Sending…' : 'Send Link'}</span>
+                          </button>
+                        </div>
+                        {magicLinkSent && (
+                          <div className="rounded-xl bg-[#DCFCE7] dark:bg-[#122B1B] text-[#166534] dark:text-[#4ADE80] p-3 text-xs space-y-1.5">
+                            <div className="flex items-center gap-2 font-bold">
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span>Check your inbox for a secure sign-in link!</span>
+                            </div>
+                            <p className="text-xs opacity-90">
+                              We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
+                            </p>
+                            {magicLinkDevUrl && (
+                              <div className="pt-1">
+                                <span className="font-mono text-xs uppercase tracking-wider opacity-80 mr-2">
+                                  Dev Link:
+                                </span>
+                                <a
+                                  href={magicLinkDevUrl}
+                                  className="text-xs font-bold underline hover:opacity-80"
+                                >
+                                  Complete Sign-In Now →
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Drawer 2: Team Code Quick-Join */}
+                  {isTeamCodeDrawerOpen && (
+                    <div
+                      data-testid="homepage-drawer-teamcode"
+                      className="rounded-xl ap-card-inset p-3 space-y-1.5"
+                    >
+                      <div className="flex gap-2">
+                        <input
+                          ref={teamCodeInputRef}
+                          type="text"
+                          value={joinCodeInput}
+                          aria-label="Enter 6-character Team Join Code"
+                          onChange={(e) => {
+                            setJoinCodeInput(e.target.value.toUpperCase());
+                            setJoinSlug(undefined);
+                            setInviteToken('');
+                          }}
+                          placeholder="e.g. WGXC-26"
+                          className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-mono font-bold uppercase placeholder:normal-case tracking-wider text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B]/70 dark:placeholder:text-[#93A39A]/70"
+                        />
+                        <button
+                          type="button"
+                          disabled={isLoadingPreview}
+                          onClick={() => {
+                            if (!joinCodeInput.trim()) {
+                              setJoinError('Enter a 6-character Team Join Code from your coach (e.g. WGXC-26).');
+                              teamCodeInputRef.current?.focus();
+                              return;
+                            }
+                            void lookupTeamPreview(joinCodeInput, inviteToken);
+                          }}
+                          className="min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs shrink-0 cursor-pointer transition-colors"
+                        >
+                          {isLoadingPreview ? 'Checking…' : 'Join Squad'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+                        No watch required to join. Connect Strava or Garmin anytime.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Drawer 3: Local .FIT / .ZIP Offline Mode */}
+                  {showFitDrawer && (
+                    <div
+                      data-testid="homepage-drawer-fit"
+                      className="rounded-xl ap-card-inset p-3 space-y-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setShowArchiveWizard(true)}
+                        className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs cursor-pointer transition-colors"
+                      >
+                        Open Local .FIT / .ZIP Archive (Zero-Cloud Mode)
+                      </button>
+                      <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+                        Unpack Garmin, Strava, Polar, or Wahoo files locally in your browser.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Self-Hosted BYO Strava Keys (Hidden when production server has STRAVA_CLIENT_ID configured) */}
+                  {showByoStravaSection && (
+                    <div className="pt-2 border-t border-[#CBDAD0] dark:border-[#233B2D]">
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomStravaKeys((prev) => !prev)}
+                        className="w-full flex items-center justify-between text-xs font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white cursor-pointer py-1"
+                      >
+                        <span>Self-hosting THRESH? Configure Strava API Keys</span>
+                        {showCustomStravaKeys ? (
+                          <ChevronUp className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 shrink-0" />
+                        )}
+                      </button>
+
+                      {showCustomStravaKeys && (
+                        <div className="mt-2 rounded-xl bg-[#E9EFE9] dark:bg-[#080D0A] p-3.5 space-y-3 text-xs">
+                          <ol className="space-y-2 text-[#1F3528] dark:text-[#C8D8CE] list-decimal list-inside leading-relaxed">
+                            <li>
+                              Open{' '}
+                              <a
+                                href="https://www.strava.com/settings/api"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-semibold underline ap-text-brand inline-flex items-center gap-1"
+                              >
+                                <span>strava.com/settings/api</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>{' '}
+                              and set <strong>Authorization Callback Domain</strong> to:
+                              <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 font-mono">
+                                <span className="font-bold text-[#101411] dark:text-white truncate">
+                                  {currentHostname}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleCopyDomain}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold ap-text-brand shrink-0 cursor-pointer"
+                                >
+                                  {copiedDomain ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                      <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </li>
+                            <li>Enter your Strava API Client ID and Secret:</li>
+                          </ol>
+
+                          <form onSubmit={handleSaveKeysAndLaunchStrava} className="space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                required
+                                aria-label="Strava API Client ID"
+                                value={stravaClientId}
+                                onChange={(e) => setStravaClientId(e.target.value)}
+                                placeholder="Client ID (e.g. 123456)"
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                              />
+                              <input
+                                type="password"
+                                aria-label="Strava API Client Secret"
+                                value={stravaClientSecret}
+                                onChange={(e) => setStravaClientSecret(e.target.value)}
+                                placeholder={
+                                  status.stravaClientId ? 'Client Secret (saved)' : 'Client Secret'
+                                }
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={busy || !stravaClientId.trim()}
+                              className="w-full min-h-[44px] rounded-lg bg-[#C23800] hover:bg-[#A83000] text-white disabled:opacity-50 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <span>Save Keys &amp; Authorize Strava</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
+                          </form>
+
+                          {(onExchangeStravaCode || onSaveStravaDirectToken) && (
+                            <details className="pt-1.5">
+                              <summary className="cursor-pointer text-xs font-medium text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white select-none">
+                                Or paste a Strava Refresh Token / localhost callback URL
+                              </summary>
+                              <form onSubmit={handleManualExchangeSubmit} className="mt-2 space-y-2">
+                                <input
+                                  type="text"
+                                  aria-label="Strava Refresh Token or localhost callback URL"
+                                  value={directRefreshToken || manualCodeInput}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val.includes('code=') || val.startsWith('http')) {
+                                      setManualCodeInput(val);
+                                      setDirectRefreshToken('');
+                                    } else {
+                                      setDirectRefreshToken(val);
+                                      setManualCodeInput(val);
+                                    }
+                                  }}
+                                  placeholder="Paste Refresh Token or http://localhost/...?code=..."
+                                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={
+                                    busy || (!manualCodeInput.trim() && !directRefreshToken.trim())
+                                  }
+                                  className="w-full min-h-[44px] rounded-lg bg-[#DFE8DF] dark:bg-[#15231B] text-xs font-bold cursor-pointer"
+                                >
+                                  Verify &amp; Connect
+                                </button>
+                              </form>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Zero-Auth Sample Demo Row */}
+                  {onEnterSampleDemo && (
+                    <button
+                      type="button"
+                      onClick={onEnterSampleDemo}
+                      className="w-full min-h-[52px] rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                          New here?
+                        </span>
+                        <span className="block text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                          Explore Live Sample Cockpit{'\u00A0'}→
+                        </span>
+                      </span>
+                      <span className="ap-lane-badge ap-badge-volt shrink-0">
+                        <span className="ap-lane-badge-inner">SAMPLE DEMO</span>
+                      </span>
+                    </button>
+                  )}
+                </aside>
+
+                {/* Block 3: Interactive Live Cockpit Preview */}
+                <section
+                  data-testid="homepage-live-cockpit-preview"
+                  aria-label="Live Cockpit Preview"
+                  className="order-3 lg:col-span-7 lg:col-start-1 lg:row-start-2 w-full liquid-glass rounded-2xl p-4 sm:px-5 sm:py-3.5 space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                        Live Cockpit Preview
+                      </h2>
+                      <span className="ap-lane-badge">
+                        <span className="ap-lane-badge-inner">REAL-TIME ENGINE</span>
+                      </span>
+                    </div>
+
+                    <div
+                      role="tablist"
+                      aria-label="Preview audience"
+                      className="inline-flex ap-pill-track p-1 rounded-xl gap-1"
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        data-testid="specimen-tab-solo"
+                        aria-selected={specimenView === 'SOLO'}
+                        onClick={() => setSpecimenView('SOLO')}
+                        className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                          specimenView === 'SOLO'
+                            ? 'ap-pill-active'
+                            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                        }`}
+                      >
+                        Solo Athlete
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        data-testid="specimen-tab-coach"
+                        aria-selected={specimenView === 'COACH'}
+                        onClick={() => setSpecimenView('COACH')}
+                        className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                          specimenView === 'COACH'
+                            ? 'ap-pill-active'
+                            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                        }`}
+                      >
+                        Team Coach
+                      </button>
+                    </div>
+                  </div>
+
+                  {specimenView === 'SOLO' ? (
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-[#43584B] dark:text-[#93A39A]">
+                          Simulate Morning Readiness:
+                        </span>
+                        <div className="inline-flex ap-pill-track p-1 rounded-xl gap-1">
+                          <button
+                            type="button"
+                            data-testid="specimen-readiness-optimal"
+                            aria-pressed={!isSimulatedFatigued}
+                            onClick={() => setIsSimulatedFatigued(false)}
+                            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                              !isSimulatedFatigued
+                                ? 'ap-pill-active'
+                                : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                            }`}
+                          >
+                            Optimal (+6 TSB)
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="specimen-readiness-fatigued"
+                            aria-pressed={isSimulatedFatigued}
+                            onClick={() => setIsSimulatedFatigued(true)}
+                            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                              isSimulatedFatigued
+                                ? 'ap-pill-active'
+                                : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                            }`}
+                          >
+                            Fatigued (-14 TSB)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3 KPI Strip */}
+                      <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
+                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                            42d Fitness (CTL)
+                          </div>
+                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                            64
+                          </div>
+                        </div>
+                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
+                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                            7d Fatigue (ATL)
+                          </div>
+                          <div
+                            data-testid="specimen-atl-value"
+                            className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4]"
+                          >
+                            {atlSpecimenValue}
+                          </div>
+                        </div>
+                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
+                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                            Form (TSB)
+                          </div>
+                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4] flex items-baseline gap-1.5 flex-wrap">
+                            <span data-testid="specimen-tsb-value">{tsbSpecimenValue}</span>
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-2xs font-bold ${
+                                isSimulatedFatigued
+                                  ? 'bg-[#FEF3C7] text-[#92400E] dark:bg-[#2E210C] dark:text-[#FBBF24]'
+                                  : 'bg-[#DCFCE7] text-[#166534] dark:bg-[#122B1B] dark:text-[#4ADE80]'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isSimulatedFatigued ? 'bg-[#D97706]' : 'bg-[#16A34A]'
+                                }`}
+                              />
+                              {isSimulatedFatigued ? 'MODULATED' : 'CLEARED'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3-Channel Load Focus Bars */}
+                      <div className="rounded-xl ap-card-inset p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4]">
+                            7-Day Load Focus Channels
+                          </span>
+                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
+                            {loadSumSpecimen}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
+                            <span>Low Aerobic Z1–Z2</span>
+                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
+                              <div
+                                className="h-full w-full rounded-full bg-[#0D9488] origin-left transition-transform duration-200"
+                                style={{ transform: `scaleX(${z2Scale})` }}
+                              />
+                            </div>
+                            <span className="font-mono tabular-nums text-right">{z2Pct}</span>
+                          </div>
+                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
+                            <span>Threshold Z3–Z4</span>
+                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
+                              <div
+                                className="h-full w-full rounded-full bg-[#EA580C] origin-left transition-transform duration-200"
+                                style={{ transform: `scaleX(${z4Scale})` }}
+                              />
+                            </div>
+                            <span className="font-mono tabular-nums text-right">{z4Pct}</span>
+                          </div>
+                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
+                            <span>Anaerobic Z5–Z6</span>
+                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
+                              <div
+                                className="h-full w-full rounded-full bg-[#7C3AED] origin-left transition-transform duration-200"
+                                style={{ transform: `scaleX(${z6Scale})` }}
+                              />
+                            </div>
+                            <span className="font-mono tabular-nums text-right">{z6Pct}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Today's Prescription Callout */}
+                      <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isSimulatedFatigued ? 'bg-[#D97706]' : 'bg-[#16A34A]'
+                            }`}
+                          />
+                          <span
+                            data-testid="specimen-prescription-text"
+                            className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]"
+                          >
+                            {isSimulatedFatigued
+                              ? 'Today: 4 × 1km @ 3:48/km · Auto-modulated -15% strain guard'
+                              : 'Today: 5 × 1km @ 3:42/km · Full Prescription'}
+                          </span>
+                        </div>
+                        <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
+                          {isSimulatedFatigued ? 'STRAIN GUARD -15%' : 'AUTO-CLEAR 100%'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div data-testid="specimen-coach-panel" className="space-y-2.5">
+                      <div className="rounded-xl ap-card-inset p-3 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                            Squad Safety Triage · Morning Check
+                          </span>
+                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
+                            28 ACTIVE ROSTER
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#166534] dark:bg-[#122B1B] dark:text-[#4ADE80] font-mono text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+                            24 Cleared
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] dark:bg-[#2E210C] dark:text-[#FBBF24] font-mono text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-[#D97706]" />
+                            3 Auto-Modulated
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEE2E2] text-[#991B1B] dark:bg-[#321316] dark:text-[#F87171] font-mono text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-[#DC2626]" />
+                            1 ACWR 1.48 Hold
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl ap-card-inset p-3 space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                            Trackside Pod Splits
+                          </span>
+                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
+                            0.01s PHONE STOPWATCH
+                          </span>
+                        </div>
+                        <div className="font-mono tabular-nums text-xs sm:text-sm font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
+                          Varsity Pod A · 4 × 800m · Avg 2:18.42 · Spread 0.61s
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full bg-[#16A34A] shrink-0" />
+                          <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4]">
+                            Willow Glen XC (<span className="font-mono">WGXC-26</span>) · Athletic.net
+                            Roster &amp; PRs Linked
+                          </span>
+                        </div>
+                        <span className="font-mono text-xs font-bold text-[#166534] dark:text-[#4ADE80] shrink-0">
+                          COPPA/FERPA SHIELD ON
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                {/* Block 4: Dual-Audience Value Wells */}
+                <div className="order-4 lg:col-span-7 lg:col-start-1 lg:row-start-3 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-xl ap-card-inset p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                        For Individual Athletes
+                      </h2>
+                      <span className="ap-lane-badge shrink-0">
+                        <span className="ap-lane-badge-inner">SOLO</span>
+                      </span>
+                    </div>
+                    <ul className="space-y-1.5 text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]">
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#0D9488] shrink-0 mt-1.5" />
+                        <span>
+                          Auto-scales workouts when <span className="font-mono">7d</span> strain spikes
+                          or recovery drops
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
+                        <span>
+                          Works with Strava, Garmin, Polar, Wahoo, COROS/Whoop, or{' '}
+                          <span className="font-mono">.FIT/.ZIP</span>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#7C3AED] shrink-0 mt-1.5" />
+                        <span>
+                          Keep 100% of your training history across clubs, seasons, and graduation
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-xl ap-card-inset p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                        For Coaches &amp; Programs
+                      </h2>
+                      <span className="ap-lane-badge shrink-0">
+                        <span className="ap-lane-badge-inner">TEAM</span>
+                      </span>
+                    </div>
+                    <ul className="space-y-1.5 text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]">
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#0D9488] shrink-0 mt-1.5" />
+                        <span>
+                          Onboard a squad in 2 minutes via <span className="font-mono">Athletic.net</span>
+                          , <span className="font-mono">TFRRS</span>, or a{' '}
+                          <span className="font-mono">6-char</span> code
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
+                        <span>
+                          Spot <span className="font-mono">ACWR</span> overload early, including
+                          watchless high school athletes
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#7C3AED] shrink-0 mt-1.5" />
+                        <span>
+                          Build pace pods once and time <span className="font-mono">0.01s</span> splits
+                          right from the infield
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </main>
+
+            <footer className="mt-3 pt-2.5 border-t border-[#CBDAD0] dark:border-[#233B2D] flex flex-wrap items-center justify-between gap-2 text-xs text-[#43584B] dark:text-[#93A39A]">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-wider">
+                  THRESH
+                </span>
+                <span>· Endurance Readiness &amp; Team Performance Lab</span>
+              </div>
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-0 font-semibold -my-1.5 sm:my-0">
+                <a
+                  href="/docs/"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Guide &amp; Docs
+                </a>
+                <a
+                  href="/docs/coach.html"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Coach Guide
+                </a>
+                <a
+                  href="/brand"
+                  onClick={(e) => {
+                    if (onOpenBrandStudio && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                      e.preventDefault();
+                      onOpenBrandStudio();
+                    }
+                  }}
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline cursor-pointer"
+                >
+                  Brand &amp; Style Guide
+                </a>
+                <a
+                  href="/docs/#sec-safesport"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Safe-Sport &amp; Privacy
+                </a>
+              </div>
+            </footer>
           </div>
-        </header>
+        </div>
+      ) : (
+        <div className="max-w-2xl w-full mx-auto space-y-4">
+          {/* Top Navigation Bar for Steps 2 & 3 */}
+          <header className="relative overflow-hidden rounded-2xl liquid-glass-header px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="ap-brand-hairline absolute inset-x-0 top-0" aria-hidden="true" />
+            <div className="flex items-center gap-2.5">
+              <AeroPulseLogo size="sm" teamBrand={activeBrand} />
+              {!activeBrand && (
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                  Run &amp; Ride Readiness
+                </span>
+              )}
+            </div>
 
-        {/* Main Stadium Track Framed Stage */}
-        <main id="main-content" tabIndex={-1} className="ap-content-stage relative overflow-hidden p-4 sm:p-8 space-y-6 focus:outline-none">
-          <ThreshBrandWatermark className="w-44 h-36 absolute right-3 bottom-3 pointer-events-none" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {step === 2 && isMinorAthlete && (
+                <button
+                  type="button"
+                  onClick={() => setShowTeamCodeDrawer((prev) => !prev)}
+                  aria-expanded={showTeamCodeDrawer}
+                  className={`min-h-[44px] sm:min-h-[36px] px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    activeBrand || showTeamCodeDrawer
+                      ? 'ap-nav-volt-active'
+                      : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{activeBrand ? activeBrand.shortName : 'Team Code'}</span>
+                </button>
+              )}
 
-          {(step !== 1 || Boolean(activeBrand)) && (
+              <a
+                href="/docs/"
+                target="_blank"
+                rel="noreferrer"
+                className="min-h-[44px] sm:min-h-[36px] px-3 sm:px-2.5 py-1.5 sm:py-1 rounded-xl liquid-capsule-track text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white inline-flex items-center gap-1 cursor-pointer"
+              >
+                <span>Guide</span>
+                <ExternalLink className="w-3 h-3 opacity-75" />
+              </a>
+
+              {onToggleDark && (
+                <button
+                  type="button"
+                  onClick={onToggleDark}
+                  aria-label="Toggle color theme"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2 py-1 rounded-xl liquid-capsule-track text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer"
+                  title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                >
+                  {isDark ? (
+                    <Sun className="w-4 h-4 text-[#C8FF00]" weight="fill" />
+                  ) : (
+                    <Moon className="w-4 h-4 text-[#1D3828]" weight="fill" />
+                  )}
+                </button>
+              )}
+            </div>
+          </header>
+
+          {/* Main Stadium Track Framed Stage for Steps 2 & 3 */}
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="ap-content-stage relative overflow-hidden p-4 sm:p-8 space-y-6 focus:outline-none"
+          >
+            <ThreshBrandWatermark className="w-44 h-36 absolute right-3 bottom-3 pointer-events-none" />
+
             <nav
               aria-label="Onboarding steps"
               className="grid grid-cols-3 gap-1.5 sm:gap-2 px-0.5 py-0.5 text-xs relative z-10"
@@ -1201,9 +2301,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   onClick={() => {
                     if (!s.locked) setStep(s.id);
                   }}
-                  title={
-                    s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label
-                  }
+                  title={s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label}
                   className={`min-h-[44px] sm:min-h-[38px] min-w-0 px-1.5 sm:px-2.5 py-1 transition-all ap-track-tab ${
                     step === s.id
                       ? 'ap-nav-volt-active cursor-pointer'
@@ -1223,652 +2321,26 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </button>
               ))}
             </nav>
-          )}
 
-          {(errorMessage || joinError) && (
-            <div
-              role="alert"
-              className="ap-status-strained rounded-xl p-3.5 text-xs leading-relaxed break-words relative z-10"
-            >
-              {joinError || errorMessage}
-            </div>
-          )}
-
-          {stepNotice && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="ap-status-prime rounded-xl p-3 text-xs font-medium flex items-center gap-2 relative z-10"
-            >
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{stepNotice}</span>
-            </div>
-          )}
-
-          {/* ==============================================================
-              STEP 1: THRESH IDENTITY (GOOGLE, PASSKEYS, MAGIC LINK & STRAVA)
-             ============================================================== */}
-          {step === 1 && (
-            <div className="space-y-5 relative z-10">
-              <div className="space-y-3">
-                {!activeBrand && (
-                  <div
-                    role="group"
-                    aria-label="Choose your THRESH role"
-                    className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-                  >
-                    <button
-                      type="button"
-                      data-testid="onboarding-role-athlete"
-                      aria-pressed={onboardingRole === 'ATHLETE'}
-                      onClick={() => selectOnboardingRole('ATHLETE')}
-                      className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-                        onboardingRole === 'ATHLETE'
-                          ? 'ap-nav-volt-active'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      I&apos;m an Athlete
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="onboarding-role-coach"
-                      aria-pressed={onboardingRole === 'COACH'}
-                      onClick={() => selectOnboardingRole('COACH')}
-                      className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-                        onboardingRole === 'COACH'
-                          ? 'ap-nav-volt-active'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      I&apos;m a Coach
-                    </button>
-                  </div>
-                )}
-
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-                  {activeBrand
-                    ? `Join ${activeBrand.name} on THRESH`
-                    : onboardingRole === 'COACH'
-                      ? 'Assign Squad Pace Pods, Prescribe Workouts & Time Track Splits.'
-                      : 'Close Today in 15 Seconds. Wake Up With Tomorrow Locked.'}
-                </h1>
-                {activeBrand && (
-                  <div>
-                    <span className="ap-lane-badge">
-                      <span className="ap-lane-badge-inner">
-                        {`Team Roster Invite · ${activeBrand.joinCode}`}
-                      </span>
-                    </span>
-                  </div>
-                )}
-                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {activeBrand
-                    ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
-                    : 'Sign in with Strava in one click—or continue with Google, Passkey, or Magic Link.'}
-                </p>
-                {!activeBrand && <LoginCapabilitySparkStrip />}
+            {(errorMessage || joinError) && (
+              <div
+                role="alert"
+                className="ap-status-strained rounded-xl p-3.5 text-xs leading-relaxed break-words relative z-10"
+              >
+                {joinError || errorMessage}
               </div>
+            )}
 
-              {/* Pending Shared Workout Stash Banner (PLG-01) */}
-              {pendingSharedWorkout && (
-                <div
-                  data-testid="pending-shared-workout-banner"
-                  className="rounded-2xl ap-status-prime px-4 py-3 flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="min-w-0">
-                    <div className="font-bold text-slate-900 dark:text-white truncate">
-                      Saved for your calendar: {pendingSharedWorkout.title}
-                    </div>
-                    <div className="text-2xs text-slate-700 dark:text-slate-200">
-                      Sign in with Strava (or explore interactive demo) to add this {pendingSharedWorkout.sport} workout straight to your THRESH Calendar.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearPendingSharedWorkout();
-                      setPendingSharedWorkout(null);
-                    }}
-                    className="min-h-[36px] px-2.5 rounded-lg ap-btn-secondary text-2xs font-semibold shrink-0 cursor-pointer"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              )}
-
-              {/* Active or Expandable Team Invite Code Lookup */}
-              {showTeamCodeDrawer && (
-                <div className="liquid-glass rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <Users className="w-4 h-4 ap-text-brand" />
-                      <span>Joining a High School, College, or Club Team?</span>
-                    </span>
-                    {!activeBrand && (
-                      <button
-                        type="button"
-                        onClick={() => setShowTeamCodeDrawer(false)}
-                        className="min-h-[44px] sm:min-h-[32px] px-2 text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-                      >
-                        Hide
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={joinCodeInput}
-                      aria-label="Enter 6-character Team Join Code"
-                      onChange={(e) => {
-                        setJoinCodeInput(e.target.value.toUpperCase());
-                        setJoinSlug(undefined);
-                        setInviteToken('');
-                      }}
-                      placeholder="Enter 6-char Team Code (e.g. PAXC-26)"
-                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-sm font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
-                    />
-                    <button
-                      type="button"
-                      disabled={isLoadingPreview || !joinCodeInput.trim()}
-                      onClick={() => void lookupTeamPreview(joinCodeInput, inviteToken)}
-                      className="ap-btn-secondary !min-h-[44px] w-full sm:w-auto text-xs shrink-0 cursor-pointer"
-                    >
-                      {isLoadingPreview ? 'Checking…' : 'Apply Code'}
-                    </button>
-                  </div>
-
-                  {activeBrand && (() => {
-                    const bannerPalette = computeAccessibleTeamPalette(
-                      activeBrand.primaryHex,
-                      activeBrand.secondaryHex,
-                    );
-                    return (
-                      <div
-                        className="rounded-xl p-3.5 shadow-sm space-y-1"
-                        style={{
-                          background: `linear-gradient(135deg, ${bannerPalette.primaryOnLight} 0%, ${bannerPalette.secondaryOnLight} 100%)`,
-                          color: bannerPalette.textOnPrimaryLight,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2 text-2xs font-mono uppercase tracking-wider opacity-95">
-                          <span>
-                            {invitePreview?.membership?.squadGroup || 'Squad Roster'} ·{' '}
-                            {activeBrand.joinCode}
-                          </span>
-                          <span>Coach {activeBrand.coachDisplayName}</span>
-                        </div>
-                        <div className="text-sm font-bold flex items-center justify-between gap-2">
-                          <span>
-                            {invitePreview?.membership?.invitedName
-                              ? `Spot reserved for ${invitePreview.membership.invitedName}`
-                              : `Ready to join ${activeBrand.name}`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setJoinCodeInput('');
-                              setJoinSlug(undefined);
-                              setInviteToken('');
-                              setInvitePreview(null);
-                              applyTeamBrandToDocument(null);
-                              try {
-                                sessionStorage.removeItem(PENDING_TEAM_JOIN_STORAGE_KEY);
-                              } catch {
-                                // ignore
-                              }
-                            }}
-                            className="text-2xs font-mono underline opacity-90 hover:opacity-100 cursor-pointer"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Embedded In-App Browser Warning (GroupMe / Instagram / Snapchat) */}
-              {isEmbeddedWebView && (
-                <div className="ap-status-caution rounded-xl p-3 text-xs leading-relaxed">
-                  <strong>Tip for mobile team links:</strong> If external sign-in is blocked inside this messaging app, tap <strong>⋯ → Open in Safari / Chrome</strong>.
-                </div>
-              )}
-
-              {/* Primary THRESH Sign-In Card (1-Click Strava, Google, Passkeys & Magic Link) */}
-              <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-4">
-                {/* 1. Primary CTA: Connect with Strava */}
-                <button
-                  type="button"
-                  onClick={() => void handleStravaLaunchClick('cloud', false)}
-                  disabled={busy}
-                  className="ap-btn-strava w-full !min-h-[48px] py-2.5 px-4 rounded-xl disabled:opacity-60 font-bold text-sm flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
-                >
-                  {isRedirecting ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <StravaChevronMark className="w-4 h-4" />
-                  )}
-                  <span>
-                    {isRedirecting
-                      ? 'Opening Strava Sign-In…'
-                      : activeBrand
-                        ? `Connect with Strava to Join ${activeBrand.shortName}`
-                        : 'Connect with Strava'}
-                  </span>
-                </button>
-
-                <p className="text-2xs text-center text-slate-500 dark:text-slate-400 leading-relaxed">
-                  {activeBrand
-                    ? 'Verify your Strava identity to claim your team roster spot.'
-                    : '1-click sign-in & automatic 90-day read-only workout sync. Customize sync range or add Garmin / Intervals anytime in Data Sources.'}
-                </p>
-
-                {/* Divider: or continue with email / passkey */}
-                <div className="relative flex items-center justify-center my-1">
-                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
-                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
-                    or continue with email / passkey
-                  </span>
-                </div>
-
-                {/* 2. Continue with Google */}
-                <button
-                  type="button"
-                  onClick={() => void handleGoogleSignIn()}
-                  disabled={busy || isGoogleRedirecting}
-                  className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-[#15231B] text-slate-800 dark:text-white font-bold text-sm flex items-center justify-center gap-3 shadow-xs hover:bg-slate-50 dark:hover:bg-[#1B3024] cursor-pointer transition-colors"
-                >
-                  {isGoogleRedirecting ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
-                  ) : (
-                    <GoogleGIcon className="w-4 h-4" />
-                  )}
-                  <span>{isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}</span>
-                </button>
-
-                {/* 3. Expandable Secondary Auth: Biometric Passkey & Email Magic Link */}
-                <div>
-                  <button
-                    type="button"
-                    aria-expanded={showAltAuthMethods || showPasskeyRegister || magicLinkSent || Boolean(passkeyError)}
-                    onClick={() => setShowAltAuthMethods((prev) => !prev)}
-                    className="w-full min-h-[44px] sm:min-h-[36px] py-1.5 px-3 rounded-xl ap-btn-secondary text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>
-                      {showAltAuthMethods || showPasskeyRegister || magicLinkSent || Boolean(passkeyError)
-                        ? 'Hide Passkey & Email Magic Link'
-                        : 'Use Passkey or Email Magic Link'}
-                    </span>
-                  </button>
-                </div>
-
-                {(showAltAuthMethods ||
-                  showPasskeyRegister ||
-                  magicLinkSent ||
-                  Boolean(passkeyError)) && (
-                  <div className="space-y-3 pt-1">
-                    {passkeySupported && (
-                      <button
-                        type="button"
-                        onClick={() => void handlePasskeySignIn()}
-                        disabled={busy || isPasskeyAuthenticating}
-                        className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-emerald-600/30 dark:border-emerald-400/20 bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold text-sm flex items-center justify-center gap-2.5 hover:bg-emerald-500/20 cursor-pointer transition-colors"
-                      >
-                        {isPasskeyAuthenticating ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <KeyRound className="w-4 h-4" />
-                        )}
-                        <span>
-                          {isPasskeyAuthenticating
-                            ? 'Authenticating with Touch ID / Face ID…'
-                            : 'Sign in with Passkey (Biometrics)'}
-                        </span>
-                      </button>
-                    )}
-
-                    {showPasskeyRegister && (
-                      <form
-                        onSubmit={handlePasskeyRegister}
-                        className="rounded-xl border border-emerald-600/40 p-3 space-y-2.5 bg-emerald-500/5 text-xs"
-                      >
-                        <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
-                          <span>Register Passkey for this device</span>
-                          <button
-                            type="button"
-                            onClick={() => setShowPasskeyRegister(false)}
-                            className="text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        {passkeyError && (
-                          <p className="text-2xs text-rose-500 dark:text-rose-400">{passkeyError}</p>
-                        )}
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <input
-                            type="email"
-                            required
-                            value={passkeyRegEmail}
-                            onChange={(e) => setPasskeyRegEmail(e.target.value)}
-                            placeholder="Enter your email to link passkey"
-                            className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 text-xs text-slate-900 dark:text-white"
-                          />
-                          <button
-                            type="submit"
-                            disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
-                            className="ap-btn-primary !min-h-[40px] px-3 text-xs shrink-0 cursor-pointer"
-                          >
-                            {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
-                          </button>
-                        </div>
-                      </form>
-                    )}
-
-                    <form onSubmit={handleSendMagicLink} className="space-y-2">
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="email"
-                          required
-                          value={magicLinkEmail}
-                          onChange={(e) => {
-                            setMagicLinkEmail(e.target.value);
-                            setMagicLinkSent(false);
-                          }}
-                          placeholder="athlete@domain.com"
-                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-                        />
-                        <button
-                          type="submit"
-                          disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
-                          className="ap-btn-secondary !min-h-[44px] px-4 text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-                        >
-                          {isSendingMagicLink ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Send className="w-3.5 h-3.5 ap-text-brand" />
-                          )}
-                          <span>{isSendingMagicLink ? 'Sending…' : 'Send Sign-In Link'}</span>
-                        </button>
-                      </div>
-                      {magicLinkSent && (
-                        <div className="ap-status-prime rounded-xl p-3 text-xs space-y-1.5">
-                          <div className="flex items-center gap-2 font-bold">
-                            <CheckCircle2 className="w-4 h-4 shrink-0" />
-                            <span>Check your inbox for a secure sign-in link!</span>
-                          </div>
-                          <p className="text-2xs opacity-90">
-                            We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
-                          </p>
-                          {magicLinkDevUrl && (
-                            <div className="pt-1.5 border-t border-emerald-500/20">
-                              <span className="font-mono text-2xs uppercase tracking-wider opacity-75 mr-2">
-                                Dev Link:
-                              </span>
-                              <a
-                                href={magicLinkDevUrl}
-                                className="text-2xs font-bold underline ap-text-brand hover:opacity-80"
-                              >
-                                Complete Sign-In Now →
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </form>
-                  </div>
-                )}
-
-                {/* Read-Only Privacy Pledge */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-200/80 dark:border-white/10 text-xs">
-                  <div className="rounded-xl liquid-glass-subtle p-2.5 flex items-start gap-2">
-                    <ShieldCheck className="w-4 h-4 ap-text-brand shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-slate-900 dark:text-white">
-                        100% Read-Only Access
-                      </div>
-                      <div className="text-2xs text-slate-600 dark:text-slate-400">
-                        Never posts to feeds, edits titles, or alters workouts.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl liquid-glass-subtle p-2.5 flex items-start gap-2">
-                    <Activity className="w-4 h-4 ap-text-brand shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-slate-900 dark:text-white">
-                        You Choose What Syncs
-                      </div>
-                      <div className="text-2xs text-slate-600 dark:text-slate-400">
-                        Syncs your last 90 days automatically; switch to Full Archive or Identity-Only anytime in Data Sources.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {onEnterSampleDemo && (
-                  <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
-                        <span className="ap-badge-volt px-1.5 py-0.5 rounded text-2xs font-mono uppercase">
-                          Sample Demo
-                        </span>
-                        <span>Preview Before Connecting</span>
-                      </div>
-                      <p className="text-2xs text-slate-600 dark:text-slate-400">
-                        Explore readiness, 1Hz streams &amp; track splits with demo data.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onEnterSampleDemo}
-                      className="ap-btn-secondary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      <span>Explore Sample Cockpit</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* 100% Offline Multi-Source Archive Importer Entry */}
-                <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
-                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono uppercase bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-                        100% Offline
-                      </span>
-                      <span>No Strava Account? Import Training Archive</span>
-                    </div>
-                    <p className="text-2xs text-slate-600 dark:text-slate-400">
-                      Unpack Garmin/Strava ZIP, FIT, or GPX files locally in your browser.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowArchiveWizard(true)}
-                    className="ap-btn-secondary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <UploadSimple className="w-3.5 h-3.5 ap-text-brand" />
-                    <span>Import Archive (.zip/.fit)</span>
-                  </button>
-                </div>
-
-                {!showTeamCodeDrawer && (
-                  <div className="pt-1 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowTeamCodeDrawer(true)}
-                      className="text-xs font-semibold ap-text-brand hover:underline inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Have a coach or school Team Join Code? Enter it here</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Self-Hosted BYO Strava Keys (Hidden when production server has STRAVA_CLIENT_ID configured) */}
-                {showByoStravaSection && (
-                  <div className="pt-3 border-t border-slate-200/80 dark:border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomStravaKeys((prev) => !prev)}
-                      className="w-full flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer py-1"
-                    >
-                      <span>Self-hosting THRESH? Configure Strava API Client ID &amp; Secret</span>
-                      {showCustomStravaKeys ? (
-                        <ChevronUp className="w-4 h-4 shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 shrink-0" />
-                      )}
-                    </button>
-
-                    {showCustomStravaKeys && (
-                      <div className="mt-3 rounded-xl liquid-glass-subtle p-4 space-y-3.5 text-xs">
-                        <ol className="space-y-2 text-slate-700 dark:text-slate-300 list-decimal list-inside leading-relaxed">
-                          <li>
-                            Open{' '}
-                            <a
-                              href="https://www.strava.com/settings/api"
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold underline ap-text-brand inline-flex items-center gap-1"
-                            >
-                              <span>strava.com/settings/api</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>{' '}
-                            and set <strong>Authorization Callback Domain</strong> to:
-                            <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#0D1210] border border-slate-300 dark:border-slate-700 px-3 py-1.5 font-mono">
-                              <span className="font-bold text-slate-900 dark:text-white truncate">
-                                {currentHostname}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={handleCopyDomain}
-                                className="inline-flex items-center gap-1 text-2xs font-semibold ap-text-brand shrink-0 cursor-pointer"
-                              >
-                                {copiedDomain ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                    <span>Copied</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3.5 h-3.5" />
-                                    <span>Copy Domain</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          </li>
-                          <li>Enter your Strava API Client ID and Secret:</li>
-                        </ol>
-
-                        <form onSubmit={handleSaveKeysAndLaunchStrava} className="space-y-2.5">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <input
-                              type="text"
-                              required
-                              aria-label="Strava API Client ID"
-                              value={stravaClientId}
-                              onChange={(e) => setStravaClientId(e.target.value)}
-                              placeholder="Client ID (e.g. 123456)"
-                              className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                            />
-                            <input
-                              type="password"
-                              aria-label="Strava API Client Secret"
-                              value={stravaClientSecret}
-                              onChange={(e) => setStravaClientSecret(e.target.value)}
-                              placeholder={
-                                status.stravaClientId ? 'Client Secret (saved)' : 'Client Secret'
-                              }
-                              className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={busy || !stravaClientId.trim()}
-                            className="ap-btn-strava w-full !min-h-[44px] sm:!min-h-[40px] rounded-lg disabled:opacity-50 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <span>Save Keys &amp; Authorize Strava</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-                        </form>
-
-                        {(onExchangeStravaCode || onSaveStravaDirectToken) && (
-                          <details className="pt-2 border-t border-slate-200/70 dark:border-white/10">
-                            <summary className="cursor-pointer text-2xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 select-none">
-                              Or paste a Strava Refresh Token / localhost callback URL
-                            </summary>
-                            <form onSubmit={handleManualExchangeSubmit} className="mt-2 space-y-2">
-                              <input
-                                type="text"
-                                aria-label="Strava Refresh Token or localhost callback URL"
-                                value={directRefreshToken || manualCodeInput}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val.includes('code=') || val.startsWith('http')) {
-                                    setManualCodeInput(val);
-                                    setDirectRefreshToken('');
-                                  } else {
-                                    setDirectRefreshToken(val);
-                                    setManualCodeInput(val);
-                                  }
-                                }}
-                                placeholder="Paste Refresh Token or http://localhost/...?code=..."
-                                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                              />
-                              <button
-                                type="submit"
-                                disabled={
-                                  busy || (!manualCodeInput.trim() && !directRefreshToken.trim())
-                                }
-                                className="ap-btn-secondary w-full !min-h-[44px] sm:!min-h-[36px] text-xs cursor-pointer"
-                              >
-                                Verify &amp; Connect
-                              </button>
-                            </form>
-                          </details>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+            {stepNotice && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="ap-status-prime rounded-xl p-3 text-xs font-medium flex items-center gap-2 relative z-10"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{stepNotice}</span>
               </div>
-
-              {/* Typographic 3-Column Capability Ledger (No Nested Card Scaffolds) */}
-              <div className="relative z-10 pt-5 border-t border-slate-200/80 dark:border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-5 sm:divide-x sm:divide-slate-200/70 dark:sm:divide-white/10">
-                <div className="space-y-1">
-                  <div className="font-mono text-2xs uppercase tracking-wider ap-text-brand font-bold">
-                    Readiness &amp; Load
-                  </div>
-                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                    Banister <span className="font-mono">42d CTL / 7d ATL / TSB</span>, 3-channel orthopedic guardrails, and daily workout modulations tuned to your recovery.
-                  </p>
-                </div>
-
-                <div className="space-y-1 sm:pl-5">
-                  <div className="font-mono text-2xs uppercase tracking-wider ap-text-brand font-bold">
-                    Run + Ride Telemetry
-                  </div>
-                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                    Synchronized <span className="font-mono">1Hz</span> streams, <span className="font-mono">CP / W&apos;</span> &amp; Daniels <span className="font-mono">VDOT</span> zones, fatigue-sliced durability, and <span className="font-mono">.FIT</span> import/export.
-                  </p>
-                </div>
-
-                <div className="space-y-1 sm:pl-5">
-                  <div className="font-mono text-2xs uppercase tracking-wider ap-text-brand font-bold">
-                    Trackside &amp; Team Ops
-                  </div>
-                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                    Locker-room QR onboarding, auto-scaled <span className="font-mono">VDOT</span> pacing pods, watchless <span className="font-mono">0.01s</span> split timing, and U18 Safe-Sport shields.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+            )}
 
           {/* ==============================================================
               STEP 2: EXPLICIT POST-AUTH STRAVA DATA SYNC & CALIBRATION
@@ -2915,7 +3387,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             </a>
           </div>
         </footer>
-      </div>
+        </div>
+      )}
 
       <ArchiveOnboardingWizard
         isOpen={showArchiveWizard}
