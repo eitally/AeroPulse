@@ -5,24 +5,46 @@
       (function () {
         // Self-migrate any stale PWA / cached Service Worker tab off legacy aeropulse-eta.vercel.app
         if (typeof window !== 'undefined' && window.location.hostname === 'aeropulse-eta.vercel.app') {
-          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-            navigator.serviceWorker
-              .getRegistrations()
-              .then(function (regs) {
-                return Promise.all(
-                  regs.map(function (reg) {
-                    return reg.unregister();
-                  })
-                );
-              })
-              .catch(function () {});
-          }
-          window.location.replace(
+          var targetUrl =
             'https://thresh-dev.vercel.app' +
-              window.location.pathname +
-              window.location.search +
-              window.location.hash
-          );
+            window.location.pathname +
+            window.location.search +
+            window.location.hash;
+          var cleanupTasks = [];
+          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
+            cleanupTasks.push(
+              navigator.serviceWorker
+                .getRegistrations()
+                .then(function (regs) {
+                  return Promise.all(
+                    regs.map(function (reg) {
+                      return reg.unregister().catch(function () {});
+                    })
+                  );
+                })
+                .catch(function () {})
+            );
+          }
+          if ('caches' in window && window.caches) {
+            cleanupTasks.push(
+              window.caches
+                .keys()
+                .then(function (keys) {
+                  return Promise.all(
+                    keys.map(function (key) {
+                      return window.caches.delete(key).catch(function () {});
+                    })
+                  );
+                })
+                .catch(function () {})
+            );
+          }
+          var timeoutFallback = new Promise(function (resolve) {
+            window.setTimeout(resolve, 350);
+          });
+          Promise.race([Promise.all(cleanupTasks), timeoutFallback]).finally(function () {
+            window.location.replace(targetUrl);
+          });
           return;
         }
         // Skip service worker caching and reload triggers in test / demo mode

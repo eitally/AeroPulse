@@ -75,9 +75,19 @@ import { useShareWorkoutRoute, sharedWorkoutToPlannedEventInput } from './utils/
 import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
 import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
 import { getLocalDateIso } from './physiology/stravaLoadCalibration';
+import {
+  consumeRestoredTabAfterChunkReload,
+  lazyWithRetry,
+  sanitizePersistedAnnualGoals,
+  sanitizePersistedTargetGoals,
+} from './utils/lazyWithRetry';
 
-const BrandGuidePage = React.lazy(() => import('./components/BrandGuidePage'));
-const ShareWorkoutPage = React.lazy(() => import('./components/ShareWorkoutPage'));
+const BrandGuidePage = lazyWithRetry(() => import('./components/BrandGuidePage'), {
+  chunkKey: 'BrandGuidePage',
+});
+const ShareWorkoutPage = lazyWithRetry(() => import('./components/ShareWorkoutPage'), {
+  chunkKey: 'ShareWorkoutPage',
+});
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
@@ -86,6 +96,8 @@ export default function App() {
   const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
   const { isShareRoute, sharedWorkout, closeShareWorkout } = useShareWorkoutRoute();
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const restoredTab = consumeRestoredTabAfterChunkReload();
+    if (restoredTab) return restoredTab;
     try {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.replace(/^#/, '');
@@ -234,7 +246,9 @@ export default function App() {
   const [annualMileageGoals, setAnnualMileageGoals] = useState<AnnualMileageGoal[]>(() => {
     try {
       const saved = localStorage.getItem('aeropulse_annual_mileage_goals');
-      return saved ? JSON.parse(saved) : INITIAL_ANNUAL_MILEAGE_GOALS;
+      return saved
+        ? sanitizePersistedAnnualGoals(JSON.parse(saved), INITIAL_ANNUAL_MILEAGE_GOALS)
+        : INITIAL_ANNUAL_MILEAGE_GOALS;
     } catch {
       return INITIAL_ANNUAL_MILEAGE_GOALS;
     }
@@ -244,11 +258,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem('aeropulse_target_goals');
       if (!saved) return [];
-      const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter(
-        (g: TargetGoal) => g.id !== 'goal-1' && g.id !== 'goal-2' && g.id !== 'goal-3'
-      );
+      return sanitizePersistedTargetGoals(JSON.parse(saved));
     } catch {
       return [];
     }

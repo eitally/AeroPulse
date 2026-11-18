@@ -79,17 +79,33 @@ export function renderThreshOAuthHtml(opts: {
 const CANONICAL_PROD_ORIGIN = 'https://thresh-dev.vercel.app';
 const LEGACY_PROD_ORIGIN = 'https://aeropulse-eta.vercel.app';
 
-function canonicalizeOrigin(origin: string): string {
-  return origin === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
+export function canonicalizeOrigin(origin: string): string {
+  return origin.toLowerCase() === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
 }
 
-export function resolveStravaCallbackUrl(req: Request): string {
-  const explicitRedirect = (process.env.STRAVA_REDIRECT_URI || '').trim();
+export function canonicalizeRedirectUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.origin.toLowerCase() === LEGACY_PROD_ORIGIN) {
+      return `${CANONICAL_PROD_ORIGIN}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function resolveStandardOAuthCallbackUrl(
+  req: Request,
+  envVarName: string,
+  callbackPath: string
+): string {
+  const explicitRedirect = (process.env[envVarName] || '').trim();
   if (explicitRedirect) {
     try {
       const parsed = new URL(explicitRedirect);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return parsed.toString();
+        return canonicalizeRedirectUrl(parsed.toString());
       }
     } catch {
       // fall through
@@ -97,11 +113,11 @@ export function resolveStravaCallbackUrl(req: Request): string {
   }
   const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
   if (safeOrigin) {
-    return `${canonicalizeOrigin(safeOrigin)}/auth/strava/callback`;
+    return `${canonicalizeOrigin(safeOrigin)}${callbackPath}`;
   }
   const appUrl = resolveSafeOrigin(process.env.APP_URL || '');
   if (appUrl && !appUrl.includes('MY_APP_URL')) {
-    return `${canonicalizeOrigin(appUrl)}/auth/strava/callback`;
+    return `${canonicalizeOrigin(appUrl)}${callbackPath}`;
   }
   const rawProto = String((req.headers['x-forwarded-proto'] as string) || req.protocol || 'http')
     .split(',')[0]
@@ -114,8 +130,13 @@ export function resolveStravaCallbackUrl(req: Request): string {
     .split(',')[0]
     .trim()
     .replace(/[^a-zA-Z0-9.:-]/g, '');
-  const canonicalHost = rawHost === 'aeropulse-eta.vercel.app' ? 'thresh-dev.vercel.app' : rawHost;
-  return `${proto}://${canonicalHost || 'localhost:3000'}/auth/strava/callback`;
+  const canonicalHost =
+    rawHost.toLowerCase() === 'aeropulse-eta.vercel.app' ? 'thresh-dev.vercel.app' : rawHost;
+  return `${proto}://${canonicalHost || 'localhost:3000'}${callbackPath}`;
+}
+
+export function resolveStravaCallbackUrl(req: Request): string {
+  return resolveStandardOAuthCallbackUrl(req, 'STRAVA_REDIRECT_URI', '/auth/strava/callback');
 }
 
 const validatedStravaRedirectCache = new Map<
@@ -240,105 +261,15 @@ export async function resolveValidatedStravaCallbackUrl(
 }
 
 export function resolveIntervalsCallbackUrl(req: Request): string {
-  const explicitRedirect = (process.env.INTERVALS_REDIRECT_URI || '').trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return parsed.toString();
-      }
-    } catch {
-      // fall through
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/intervals/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || '');
-  if (appUrl && !appUrl.includes('MY_APP_URL')) {
-    return `${appUrl}/auth/intervals/callback`;
-  }
-  const rawProto = String((req.headers['x-forwarded-proto'] as string) || req.protocol || 'http')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const proto = rawProto === 'https' ? 'https' : 'http';
-  const rawHost = String(
-    (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000'
-  )
-    .split(',')[0]
-    .trim()
-    .replace(/[^a-zA-Z0-9.:-]/g, '');
-  return `${proto}://${rawHost || 'localhost:3000'}/auth/intervals/callback`;
+  return resolveStandardOAuthCallbackUrl(req, 'INTERVALS_REDIRECT_URI', '/auth/intervals/callback');
 }
 
 export function resolveWahooCallbackUrl(req: Request): string {
-  const explicitRedirect = (process.env.WAHOO_REDIRECT_URI || '').trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return parsed.toString();
-      }
-    } catch {
-      // fall through
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/wahoo/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || '');
-  if (appUrl && !appUrl.includes('MY_APP_URL')) {
-    return `${appUrl}/auth/wahoo/callback`;
-  }
-  const rawProto = String((req.headers['x-forwarded-proto'] as string) || req.protocol || 'http')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const proto = rawProto === 'https' ? 'https' : 'http';
-  const rawHost = String(
-    (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000'
-  )
-    .split(',')[0]
-    .trim()
-    .replace(/[^a-zA-Z0-9.:-]/g, '');
-  return `${proto}://${rawHost || 'localhost:3000'}/auth/wahoo/callback`;
+  return resolveStandardOAuthCallbackUrl(req, 'WAHOO_REDIRECT_URI', '/auth/wahoo/callback');
 }
 
 export function resolvePolarCallbackUrl(req: Request): string {
-  const explicitRedirect = (process.env.POLAR_REDIRECT_URI || '').trim();
-  if (explicitRedirect) {
-    try {
-      const parsed = new URL(explicitRedirect);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return parsed.toString();
-      }
-    } catch {
-      // fall through
-    }
-  }
-  const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
-  if (safeOrigin) {
-    return `${safeOrigin}/auth/polar/callback`;
-  }
-  const appUrl = resolveSafeOrigin(process.env.APP_URL || '');
-  if (appUrl && !appUrl.includes('MY_APP_URL')) {
-    return `${appUrl}/auth/polar/callback`;
-  }
-  const rawProto = String((req.headers['x-forwarded-proto'] as string) || req.protocol || 'http')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const proto = rawProto === 'https' ? 'https' : 'http';
-  const rawHost = String(
-    (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000'
-  )
-    .split(',')[0]
-    .trim()
-    .replace(/[^a-zA-Z0-9.:-]/g, '');
-  return `${proto}://${rawHost || 'localhost:3000'}/auth/polar/callback`;
+  return resolveStandardOAuthCallbackUrl(req, 'POLAR_REDIRECT_URI', '/auth/polar/callback');
 }
 
 export const resolveCallbackUrl = resolveStravaCallbackUrl;
