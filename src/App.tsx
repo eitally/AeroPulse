@@ -68,7 +68,13 @@ import { useTelemetrySync, hasStravaClientCredentials, type CompleteStravaAuthFn
 import { useTelemetryConnectors } from './hooks/useTelemetryConnectors';
 import { useRouteStreams } from './hooks/useRouteStreams';
 import { usePlannedEvents } from './hooks/usePlannedEvents';
-import { useTeamRoster, buildConnectedRosterFromTeam } from './hooks/useTeamRoster';
+import {
+  useTeamRoster,
+  buildConnectedRosterFromTeam,
+  resolveEffectiveActiveTeam,
+  buildMergedTeamBroadcastEvents,
+} from './hooks/useTeamRoster';
+import { resolveAthleteAgeTier } from './physiology/ageAndComplianceEngine';
 import { useCoachChat } from './hooks/useCoachChat';
 import { useRosterActions } from './hooks/useRosterActions';
 import { useBrandStudioRoute } from './utils/brandRoute';
@@ -329,6 +335,7 @@ export default function App() {
   >(() => buildInitialConnectedAthletes());
   const [sampleDemoTeams, setSampleDemoTeams] = useState<TeamSummaryWithRole[]>([]);
   const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(null);
+  const [sampleDemoExplicitPersonal, setSampleDemoExplicitPersonal] = useState(false);
 
   const resetSampleDemoEphemeralState = useCallback(() => {
     const fresh = buildSampleDemoDataset();
@@ -341,6 +348,7 @@ export default function App() {
     setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
     setSampleDemoTeams([]);
     setSampleDemoActiveTeamId(null);
+    setSampleDemoExplicitPersonal(false);
     setSelectedActivity(null);
     setActiveViewedAthleteId('SELF');
     setInspectedFromCoach(false);
@@ -530,6 +538,7 @@ export default function App() {
     activeTeamId,
     setActiveTeamId,
     activeTeam,
+    explicitPersonalMode,
     resendConfigured,
     pendingUrlJoinOffer,
     handleSelectActiveTeam,
@@ -546,34 +555,40 @@ export default function App() {
 
   const effectiveTeams = isSampleDemoMode ? sampleDemoTeams : myTeams;
   const effectiveActiveTeamId = isSampleDemoMode ? sampleDemoActiveTeamId : activeTeamId;
-  const effectiveActiveTeam = useMemo(() => {
-    if (!effectiveTeams.length) return null;
-    if (effectiveActiveTeamId) {
-      const match = effectiveTeams.find((t) => t.brand.teamId === effectiveActiveTeamId);
-      if (match) return match;
-    }
-    return effectiveTeams[0];
-  }, [effectiveTeams, effectiveActiveTeamId]);
+  const effectiveExplicitPersonalMode = isSampleDemoMode
+    ? sampleDemoExplicitPersonal
+    : explicitPersonalMode;
+  const effectiveActiveTeam = useMemo(
+    () =>
+      resolveEffectiveActiveTeam(
+        effectiveTeams,
+        effectiveActiveTeamId,
+        effectiveExplicitPersonalMode
+      ),
+    [effectiveTeams, effectiveActiveTeamId, effectiveExplicitPersonalMode]
+  );
 
   const effectiveOnTeamsUpdated = useCallback(
     (nextTeams: TeamSummaryWithRole[], nextActiveId?: string | null) => {
       if (isSampleDemoMode) {
         setSampleDemoTeams(nextTeams);
         if (nextActiveId !== undefined) {
-          setSampleDemoActiveTeamId(nextActiveId || (nextTeams[0]?.brand.teamId ?? null));
-        } else if (nextTeams.length > 0 && !sampleDemoActiveTeamId) {
+          setSampleDemoExplicitPersonal(nextActiveId === null && nextTeams.length > 0);
+          setSampleDemoActiveTeamId(nextActiveId ?? null);
+        } else if (nextTeams.length > 0 && !sampleDemoActiveTeamId && !sampleDemoExplicitPersonal) {
           setSampleDemoActiveTeamId(nextTeams[0].brand.teamId);
         }
         return;
       }
       handleTeamsUpdated(nextTeams, nextActiveId);
     },
-    [isSampleDemoMode, sampleDemoActiveTeamId, handleTeamsUpdated]
+    [isSampleDemoMode, sampleDemoActiveTeamId, sampleDemoExplicitPersonal, handleTeamsUpdated]
   );
 
   const effectiveOnSelectActiveTeam = useCallback(
     (nextId: string | null) => {
       if (isSampleDemoMode) {
+        setSampleDemoExplicitPersonal(nextId === null);
         setSampleDemoActiveTeamId(nextId);
         return;
       }
@@ -626,6 +641,7 @@ export default function App() {
     handleDisconnectWahoo,
     handleLaunchPolarOAuth,
     handleDisconnectPolar,
+    handleDisconnectStravaOnly,
     handleUpdateStravaSyncPolicy,
     handleClearPersistedArchive,
     handleSaveStravaCredentials,
@@ -925,82 +941,57 @@ export default function App() {
   const effectivePlannedEvents = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
     const baseEvents = isSampleDemoMode ? sampleDemoPlannedEvents : plannedEvents;
-    const teamSource = effectiveActiveTeam;
-    if (!teamSource || !Array.isArray(teamSource.broadcastWorkouts)) return baseEvents;
-    const isTeamCoach =
-      teamSource.myRole === 'HEAD_COACH' || teamSource.myRole === 'ASSISTANT_COACH';
-    const teamEvents: PlannedWorkoutEvent[] = teamSource.broadcastWorkouts
-      .filter((bw) => {
-        if (isTeamCoach) return true;
-        if (teamSource.myMembershipId && bw.athleteOverrides?.[teamSource.myMembershipId]) {
-          return true;
-        }
-        if (
-          Boolean(teamSource.myMembershipId) &&
-          Array.isArray(bw.targetMembershipIds) &&
-          bw.targetMembershipIds.length > 0
-        ) {
-          return bw.targetMembershipIds.includes(teamSource.myMembershipId);
-        }
-        const squadMatch =
-          bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === teamSource.mySquadGroup;
-        if (!squadMatch) return false;
-        if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
-          return (
-            Boolean(teamSource.myEventGroup) &&
-            bw.targetEventGroups.includes(teamSource.myEventGroup!)
-          );
-        }
-        return true;
-      })
-      .map((bw) => {
-        const ov = teamSource.myMembershipId
-          ? bw.athleteOverrides?.[teamSource.myMembershipId]
-          : undefined;
-        return {
-          id: bw.broadcastId,
-          date: bw.date,
-          name: ov?.name || bw.name,
-          sportCategory: bw.sportCategory,
-          environmentPreference: 'FLEXIBLE',
-          description: ov?.description || bw.description,
-          plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
-          plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
-          targetZoneSummary: `${teamSource.brand.shortName} Squad Session`,
-          workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
-          ...(ov?.scheduledTime || bw.scheduledTime ? { scheduledTime: ov?.scheduledTime || bw.scheduledTime } : {}),
-          ...(ov?.sessionSlot || bw.sessionSlot ? { sessionSlot: ov?.sessionSlot || bw.sessionSlot } : {}),
-          ...(ov?.locationName || bw.locationName ? { locationName: ov?.locationName || bw.locationName } : {}),
-          ...(ov?.locationCategory || bw.locationCategory ? { locationCategory: ov?.locationCategory || bw.locationCategory } : {}),
-          ...(ov?.meetingNotes || bw.meetingNotes ? { meetingNotes: ov?.meetingNotes || bw.meetingNotes } : {}),
-          ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
-          ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
-          ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
-          ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
-          source: 'USER',
-        };
-      });
+    const teamEvents = buildMergedTeamBroadcastEvents(
+      effectiveTeams,
+      effectiveActiveTeam,
+      effectiveExplicitPersonalMode
+    );
+    if (teamEvents.length === 0) return baseEvents;
     const existingIds = new Set(baseEvents.map((e) => e.id));
     return sortPlannedEventsChronologically([
       ...baseEvents,
       ...teamEvents.filter((te) => !existingIds.has(te.id)),
     ]);
-  }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoPlannedEvents, plannedEvents, effectiveActiveTeam]);
+  }, [
+    activeConnectedAthlete,
+    isSampleDemoMode,
+    sampleDemoPlannedEvents,
+    plannedEvents,
+    effectiveTeams,
+    effectiveActiveTeam,
+    effectiveExplicitPersonalMode,
+  ]);
 
   const effectiveAthleteProfile = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
     if (isSampleDemoMode) return sampleDemoProfile;
-    const inferredSport = !athleteProfile.primarySport ? inferPrimarySportFromActivities(effectiveActivities) : undefined;
-    const withSafeSport =
-      effectiveActiveTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight
-        ? { ...athleteProfile, safeSportHideWeight: true }
-        : athleteProfile;
+    const inferredSport = !athleteProfile.primarySport
+      ? inferPrimarySportFromActivities(effectiveActivities)
+      : undefined;
+    const effectiveBirthMonthYear =
+      athleteProfile.birthMonthYear || currentUser?.birthMonthYear;
+    const ageTier = resolveAthleteAgeTier({
+      birthMonthYear: effectiveBirthMonthYear,
+      orgType: effectiveActiveTeam?.brand.orgType,
+    });
+    const enforceSafeSportWeightLock =
+      ageTier.ageTier === 'U13_COPPA' ||
+      ageTier.ageTier === 'YOUTH_13_17' ||
+      Boolean(effectiveActiveTeam?.brand.defaultSafeSportShield);
+    const withSafeSport: AthleteProfile = {
+      ...athleteProfile,
+      ...(effectiveBirthMonthYear && !athleteProfile.birthMonthYear
+        ? { birthMonthYear: effectiveBirthMonthYear }
+        : {}),
+      ...(enforceSafeSportWeightLock ? { safeSportHideWeight: true } : {}),
+    };
     return inferredSport ? { ...withSafeSport, primarySport: inferredSport } : withSafeSport;
   }, [
     activeConnectedAthlete,
     isSampleDemoMode,
     sampleDemoProfile,
     athleteProfile,
+    currentUser?.birthMonthYear,
     effectiveActiveTeam,
     effectiveActivities,
   ]);
@@ -1036,7 +1027,7 @@ export default function App() {
     stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
     targetGoals, setTargetGoals, annualMileageGoals, setAnnualMileageGoals,
     athleteProfile, setAthleteProfile, distanceUnit, setDistanceUnit,
-    activities, wellnessDays, selfLatestWellness, selfPrivacySettings,
+    activities, setActivities, wellnessDays, selfLatestWellness, selfPrivacySettings,
     garminConnected: Boolean(connectionStatus.garminConnected),
     intervalsConnected: Boolean(connectionStatus.intervalsConnected),
     myTeamsCount: myTeams.length, setMyTeams,
@@ -1821,7 +1812,18 @@ export default function App() {
           onLaunchPolarOAuth={handleLaunchPolarOAuth}
           onDisconnectPolar={handleDisconnectPolar}
           onDisconnectGarmin={handleDisconnectGarmin}
-          onDisconnectStrava={handleLogoutSession}
+          onDisconnectStrava={
+            currentUser &&
+            (Boolean(currentUser.email) ||
+              currentUser.authProviders?.some((p) => p.provider !== 'strava'))
+              ? handleDisconnectStravaOnly
+              : handleLogoutSession
+          }
+          hasStandaloneAccount={Boolean(
+            currentUser &&
+              (Boolean(currentUser.email) ||
+                currentUser.authProviders?.some((p) => p.provider !== 'strava'))
+          )}
           onUpdateStravaSyncPolicy={handleUpdateStravaSyncPolicy}
           onSaveStravaCredentials={handleSaveStravaCredentials}
           onLaunchStravaOAuth={handleLaunchStravaOAuth}
@@ -1873,6 +1875,12 @@ export default function App() {
           rosterInitialTab={rosterInitialTab}
           onSelectActiveTeam={effectiveOnSelectActiveTeam}
           onTeamsUpdated={effectiveOnTeamsUpdated}
+          currentUser={currentUser}
+          onUserUpdated={setCurrentUser}
+          onAccountDeleted={() => {
+            setIsRosterModalOpen(false);
+            void handleLogoutAndClearData();
+          }}
           onOpenFullScreenStopwatch={() => {
             setIsRosterModalOpen(false);
             if (activeTab === 'coach') {

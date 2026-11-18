@@ -11,7 +11,7 @@ import type {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { db, getStoreMetadata } from '../db/workoutStore';
+import { getStoreMetadata, saveStoreMetadata } from '../db/workoutStore';
 import {
   CURRENT_PMC_MODEL_VERSION,
   buildCompleteAthleteProfile,
@@ -133,49 +133,61 @@ export function useTelemetrySync({
 }: UseTelemetrySyncParams) {
   const needsPmcModelV2SyncRef = useRef(false);
 
-  const reconcileStoreOwnerAthleteId = useCallback(async (incomingAthleteId?: string | number | null) => {
-    const cleanId = incomingAthleteId ? String(incomingAthleteId).trim() : '';
-    if (!cleanId) return;
-    try {
-      const [snapshotMeta, cachedCount] = await Promise.all([
-        getStoreMetadata<{ ownerAthleteId?: string }>('snapshot_meta'),
-        db.activities.count(),
-      ]);
-      const idbOwner = snapshotMeta?.ownerAthleteId
-        ? String(snapshotMeta.ownerAthleteId).trim()
-        : '';
-      const prevOwner =
-        idbOwner ||
-        localStorage.getItem('aeropulse_store_owner_athlete_id') ||
-        localStorage.getItem('aeropulse_strava_athlete_id') ||
-        '';
-      const isUnownedPollutedStore = !prevOwner && cachedCount > 0;
-      if ((prevOwner && prevOwner !== cleanId) || isUnownedPollutedStore) {
-        await clearPersistedTelemetrySnapshot();
-        setIdbSavedAt(null);
-        setActivities([]);
-        activitiesRef.current = [];
-        setWellnessDays([]);
-        wellnessDaysRef.current = [];
-        setPlannedEvents([]);
-        plannedEventsRef.current = [];
-        setGearItems([]);
-        gearItemsRef.current = [];
-        setRedactedStravaCount(0);
-        redactedStravaCountRef.current = 0;
-        setMyTeams([]);
-        setActiveTeamId(null);
-        setActiveViewedAthleteId('SELF');
-        localStorage.removeItem('thresh_primary_sport');
-        const cleanProf = buildCompleteAthleteProfile(null);
-        setAthleteProfile(cleanProf);
-        athleteProfileRef.current = cleanProf;
-        localStorage.removeItem('thresh_my_teams_v1');
-        localStorage.removeItem('thresh_active_team_id_v1');
-        localStorage.removeItem('aeropulse_garmin_athlete_name');
-        localStorage.removeItem('aeropulse_intervals_athlete_name');
-        localStorage.removeItem('aeropulse_strava_sync_policy');
-      } else if (activitiesRef.current.length === 0) {
+  const reconcileStoreOwnerAthleteId = useCallback(
+    async (incomingAthleteId?: string | number | null, allowedPreviousIds: string[] = []) => {
+      const cleanId = incomingAthleteId ? String(incomingAthleteId).trim() : '';
+      if (!cleanId) return;
+      try {
+        const [snapshotMeta] = await Promise.all([
+          getStoreMetadata<{ ownerAthleteId?: string }>('snapshot_meta'),
+        ]);
+        const idbOwner = snapshotMeta?.ownerAthleteId
+          ? String(snapshotMeta.ownerAthleteId).trim()
+          : '';
+        const prevOwner =
+          idbOwner ||
+          localStorage.getItem('aeropulse_store_owner_athlete_id') ||
+          localStorage.getItem('aeropulse_strava_athlete_id') ||
+          '';
+        const allowedSet = new Set([cleanId, ...allowedPreviousIds.map((x) => String(x).trim()).filter(Boolean)]);
+        if (prevOwner && !allowedSet.has(prevOwner)) {
+          await clearPersistedTelemetrySnapshot();
+          setIdbSavedAt(null);
+          setActivities([]);
+          activitiesRef.current = [];
+          setWellnessDays([]);
+          wellnessDaysRef.current = [];
+          setPlannedEvents([]);
+          plannedEventsRef.current = [];
+          setGearItems([]);
+          gearItemsRef.current = [];
+          setRedactedStravaCount(0);
+          redactedStravaCountRef.current = 0;
+          setMyTeams([]);
+          setActiveTeamId(null);
+          setActiveViewedAthleteId('SELF');
+          localStorage.removeItem('thresh_primary_sport');
+          const cleanProf = buildCompleteAthleteProfile(null);
+          setAthleteProfile(cleanProf);
+          athleteProfileRef.current = cleanProf;
+          localStorage.removeItem('thresh_my_teams_v1');
+          localStorage.removeItem('thresh_active_team_id_v1');
+          localStorage.removeItem('thresh_personal_mode_v1');
+          localStorage.removeItem('aeropulse_garmin_athlete_name');
+          localStorage.removeItem('aeropulse_intervals_athlete_name');
+          localStorage.removeItem('aeropulse_strava_sync_policy');
+        }
+        // Always stamp canonical owner onto IndexedDB metadata + localStorage without wiping pre-Strava data
+        try {
+          localStorage.setItem('aeropulse_store_owner_athlete_id', cleanId);
+        } catch {
+          // ignore
+        }
+        await saveStoreMetadata('snapshot_meta', {
+          ...(snapshotMeta || {}),
+          ownerAthleteId: cleanId,
+        }).catch(() => undefined);
+        if (activitiesRef.current.length === 0) {
         const cached = await loadPersistedTelemetrySnapshot();
         if (cached) {
           if ((cached.pmcModelVersion || 0) < CURRENT_PMC_MODEL_VERSION) {
@@ -218,7 +230,9 @@ export function useTelemetrySync({
         }
       }
       localStorage.setItem('aeropulse_store_owner_athlete_id', cleanId);
-      localStorage.setItem('aeropulse_strava_athlete_id', cleanId);
+      if (!cleanId.startsWith('usr_')) {
+        localStorage.setItem('aeropulse_strava_athlete_id', cleanId);
+      }
     } catch {
       // ignore storage errors
     }
@@ -285,6 +299,13 @@ export function useTelemetrySync({
             const authMeData = await authMeResp.json();
             if (authMeData?.authenticated && authMeData?.user) {
               setCurrentUser(authMeData.user);
+              const linkedIds: string[] = [
+                ...(data.stravaAthleteId ? [String(data.stravaAthleteId)] : []),
+                ...((authMeData.user.authProviders || [])
+                  .filter((p: any) => p.provider === 'strava' && p.providerId)
+                  .map((p: any) => String(p.providerId))),
+              ];
+              await reconcileStoreOwnerAthleteId(authMeData.user.id, linkedIds);
               if (authMeData.sessionToken) {
                 try {
                   localStorage.setItem('aeropulse_session_token', String(authMeData.sessionToken));
@@ -302,7 +323,16 @@ export function useTelemetrySync({
                 // ignore
               }
               if (authMeData.user.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
-                setAthleteProfile((prev) => ({ ...prev, name: authMeData.user.name }));
+                setAthleteProfile((prev) => ({
+                  ...prev,
+                  name: authMeData.user.name,
+                  ...(authMeData.user.birthMonthYear ? { birthMonthYear: authMeData.user.birthMonthYear } : {}),
+                }));
+              } else if (authMeData.user.birthMonthYear && !athleteProfileRef.current?.birthMonthYear) {
+                setAthleteProfile((prev) => ({
+                  ...prev,
+                  birthMonthYear: authMeData.user.birthMonthYear,
+                }));
               }
             }
           }
@@ -351,13 +381,15 @@ export function useTelemetrySync({
         }
       }
       const isClientStravaConnected = Boolean(notLoggedOut && data.stravaConnected);
-      const isClientIntervalsConnected = Boolean(isClientStravaConnected && data.intervalsConnected);
+      const isClientIntervalsConnected = Boolean(notLoggedOut && data.intervalsConnected);
       const isClientGarminConnected = Boolean(
-        isClientStravaConnected &&
+        notLoggedOut &&
           (data.garminConnected ||
             localStorage.getItem('aeropulse_garmin_personal_api_key') ||
             localStorage.getItem('aeropulse_garmin_bearer_token'))
       );
+      const isClientWahooConnected = Boolean(notLoggedOut && data.wahooConnected);
+      const isClientPolarConnected = Boolean(notLoggedOut && data.polarConnected);
       const resolvedStravaName =
         data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)
           ? String(data.stravaAthleteName).trim()
@@ -424,7 +456,11 @@ export function useTelemetrySync({
       setConnectionStatus((prev) => ({
         ...prev,
         mode:
-          isClientIntervalsConnected || isClientStravaConnected || isClientGarminConnected
+          isClientIntervalsConnected ||
+          isClientStravaConnected ||
+          isClientGarminConnected ||
+          isClientWahooConnected ||
+          isClientPolarConnected
             ? 'LIVE'
             : 'SANDBOX_CALIBRATION',
         garminConnected: isClientGarminConnected,
@@ -434,11 +470,28 @@ export function useTelemetrySync({
             prev.garminAthleteName
           : undefined,
         intervalsConnected: isClientIntervalsConnected,
+        intervalsAuthMethod: isClientIntervalsConnected
+          ? data.intervalsAuthMethod || 'USER_INPUT'
+          : 'NONE',
         intervalsAthleteId: isClientIntervalsConnected ? data.intervalsAthleteId || '0' : '0',
         intervalsAthleteName: isClientIntervalsConnected
           ? resolvedIntervalsName || prev.intervalsAthleteName
           : undefined,
         intervalsSource: isClientIntervalsConnected ? data.intervalsSource || 'USER_INPUT' : 'NONE',
+        wahooConfigured:
+          typeof data.wahooConfigured === 'boolean' ? data.wahooConfigured : prev.wahooConfigured,
+        wahooConnected: isClientWahooConnected,
+        wahooAthleteId: isClientWahooConnected ? data.wahooAthleteId || prev.wahooAthleteId : undefined,
+        wahooAthleteName: isClientWahooConnected
+          ? data.wahooAthleteName || prev.wahooAthleteName
+          : undefined,
+        polarConfigured:
+          typeof data.polarConfigured === 'boolean' ? data.polarConfigured : prev.polarConfigured,
+        polarConnected: isClientPolarConnected,
+        polarAthleteId: isClientPolarConnected ? data.polarAthleteId || prev.polarAthleteId : undefined,
+        polarAthleteName: isClientPolarConnected
+          ? data.polarAthleteName || prev.polarAthleteName
+          : undefined,
         stravaConfigured:
           typeof data.stravaConfigured === 'boolean'
             ? data.stravaConfigured
@@ -1482,7 +1535,9 @@ export function useTelemetrySync({
           exchangedUrlCode ||
           statusData?.stravaConnected ||
           statusData?.garminConnected ||
-          statusData?.intervalsConnected)
+          statusData?.intervalsConnected ||
+          statusData?.wahooConnected ||
+          statusData?.polarConnected)
       ) {
         void syncLiveTelemetry(false);
       }

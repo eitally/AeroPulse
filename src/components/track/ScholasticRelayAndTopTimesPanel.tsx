@@ -69,28 +69,91 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
   ScholasticRelayAndTopTimesPanelProps
 > = ({ candidates, roster }) => {
   const [relayEvent, setRelayEvent] = useState<TrackRelayEventType>('DMR');
+  const [divisionFilter, setDivisionFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
   const [boardFilter, setBoardFilter] = useState<'OPEN_AND_LEADOFF' | 'FLYING_SPLITS'>(
     'OPEN_AND_LEADOFF'
   );
+
+  const enrichedCandidates = useMemo(() => {
+    const rosterGenderById = new Map<string, 'M' | 'F' | 'NONBINARY' | undefined>();
+    for (const ath of roster) {
+      const g =
+        ath.genderDivision ||
+        (ath.athleteProfile.competitionGender === 'WOMEN'
+          ? 'F'
+          : ath.athleteProfile.competitionGender === 'MEN'
+            ? 'M'
+            : undefined);
+      rosterGenderById.set(ath.id, g);
+    }
+    return candidates.map((c) => ({
+      ...c,
+      genderDivision: c.genderDivision || rosterGenderById.get(c.id),
+    }));
+  }, [candidates, roster]);
+
+  const { relayPool, inferredCoedSplitLabel } = useMemo(() => {
+    const men = enrichedCandidates.filter((c) => c.genderDivision === 'M');
+    const women = enrichedCandidates.filter((c) => c.genderDivision === 'F');
+    const hasCoedTags = men.length > 0 && women.length > 0;
+    if (divisionFilter === 'M') {
+      return {
+        relayPool: men.length > 0 ? men : hasCoedTags ? [] : enrichedCandidates,
+        inferredCoedSplitLabel: null as string | null,
+      };
+    }
+    if (divisionFilter === 'F') {
+      return {
+        relayPool: women.length > 0 ? women : hasCoedTags ? [] : enrichedCandidates,
+        inferredCoedSplitLabel: null as string | null,
+      };
+    }
+    if (hasCoedTags) {
+      const picked = women.length > men.length ? women : men;
+      const pickedLabel =
+        women.length > men.length
+          ? 'Co-ed guard: showing Women / Girls relay pool'
+          : 'Co-ed guard: showing Men / Boys relay pool';
+      return { relayPool: picked, inferredCoedSplitLabel: pickedLabel };
+    }
+    return { relayPool: enrichedCandidates, inferredCoedSplitLabel: null as string | null };
+  }, [enrichedCandidates, divisionFilter]);
 
   const relayPlan = useMemo(
     () =>
       optimizeTrackRelayLineup({
         relayEvent,
-        candidates,
+        candidates: relayPool,
       }),
-    [relayEvent, candidates]
+    [relayEvent, relayPool]
   );
+
+  const filteredRoster = useMemo(() => {
+    if (divisionFilter === 'ALL') return roster;
+    return roster.filter((ath) => {
+      const g =
+        ath.genderDivision ||
+        (ath.athleteProfile.competitionGender === 'WOMEN'
+          ? 'F'
+          : ath.athleteProfile.competitionGender === 'MEN'
+            ? 'M'
+            : undefined);
+      if (!g) return true;
+      return g === divisionFilter;
+    });
+  }, [roster, divisionFilter]);
 
   const usingSampleMarks = useMemo(
     () =>
-      !roster.some((ath) => (ath.activities || []).some((act) => Boolean(act.officialRaceData))),
-    [roster]
+      !filteredRoster.some((ath) =>
+        (ath.activities || []).some((act) => Boolean(act.officialRaceData))
+      ),
+    [filteredRoster]
   );
 
   const combinedLeaderboardMarks = useMemo<SquadLeaderboardMarkInput[]>(() => {
     const derived: SquadLeaderboardMarkInput[] = [];
-    for (const ath of roster) {
+    for (const ath of filteredRoster) {
       for (const act of ath.activities || []) {
         if (!act.officialRaceData) continue;
         const meta = act.officialRaceData;
@@ -111,7 +174,7 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
       }
     }
     return derived.length > 0 ? derived : SAMPLE_BOARD_MARKS;
-  }, [roster]);
+  }, [filteredRoster]);
 
   const topBoard = useMemo(
     () => buildSquadTopTimesBoard(combinedLeaderboardMarks),
@@ -141,24 +204,61 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
             </span>
           </div>
 
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
-            {(['DMR', '4x400m', '4x800m'] as const).map((ev) => (
-              <button
-                key={ev}
-                type="button"
-                data-testid={`relay-event-btn-${ev}`}
-                onClick={() => setRelayEvent(ev)}
-                className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-mono font-bold cursor-pointer ${
-                  relayEvent === ev
-                    ? 'liquid-capsule-active'
-                    : 'text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                {ev}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label="Filter relay division"
+              className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
+            >
+              {(
+                [
+                  { id: 'ALL', label: 'All', testId: 'relay-gender-filter-all' },
+                  { id: 'M', label: 'Men / Boys', testId: 'relay-gender-filter-m' },
+                  { id: 'F', label: 'Women / Girls', testId: 'relay-gender-filter-f' },
+                ] as const
+              ).map((div) => (
+                <button
+                  key={div.id}
+                  type="button"
+                  data-testid={div.testId}
+                  aria-pressed={divisionFilter === div.id}
+                  onClick={() => setDivisionFilter(div.id)}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                    divisionFilter === div.id
+                      ? 'liquid-capsule-active'
+                      : 'text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {div.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
+              {(['DMR', '4x400m', '4x800m'] as const).map((ev) => (
+                <button
+                  key={ev}
+                  type="button"
+                  data-testid={`relay-event-btn-${ev}`}
+                  onClick={() => setRelayEvent(ev)}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-mono font-bold cursor-pointer ${
+                    relayEvent === ev
+                      ? 'liquid-capsule-active'
+                      : 'text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {ev}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+
+        {inferredCoedSplitLabel && (
+          <p className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+            {inferredCoedSplitLabel} (boys and girls are never mixed into one relay quartet).
+          </p>
+        )}
 
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 font-mono tabular-nums">
           <div>

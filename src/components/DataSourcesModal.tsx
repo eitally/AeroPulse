@@ -42,6 +42,7 @@ interface DataSourcesModalProps {
   onDisconnectPolar?: () => Promise<void>;
   onDisconnectGarmin?: () => Promise<void>;
   onDisconnectStrava?: () => void;
+  hasStandaloneAccount?: boolean;
   onUpdateStravaSyncPolicy?: (
     windowChoice: StravaSyncWindow,
     importProfileAndGear?: boolean
@@ -83,6 +84,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onDisconnectPolar,
   onDisconnectGarmin,
   onDisconnectStrava,
+  hasStandaloneAccount = false,
   onUpdateStravaSyncPolicy,
   onSaveStravaCredentials,
   onLaunchStravaOAuth,
@@ -122,7 +124,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [stravaFallbackInput, setStravaFallbackInput] = useState('');
 
   // Garmin Connect (Credentials + Advanced Personal API Token)
-  const [garminMode, setGarminMode] = useState<'CREDENTIALS' | 'PERSONAL_KEY'>('CREDENTIALS');
+  const [garminMode, setGarminMode] = useState<'CREDENTIALS' | 'PERSONAL_KEY'>('PERSONAL_KEY');
   const [garminEmail, setGarminEmail] = useState('');
   const [garminPassword, setGarminPassword] = useState('');
   const [garminMfaCode, setGarminMfaCode] = useState('');
@@ -299,7 +301,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     setIsConnectingGarmin(true);
     setLocalStatusMsg(null);
     try {
-      const resp = await fetch('/api/garmin/connect-credentials', {
+      const resp = await fetch('/api/config/garmin', {
         method: 'POST',
         credentials: 'include',
         headers: buildAuthHeaders(),
@@ -542,7 +544,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     }}
                     className="min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-xl liquid-glass-subtle text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                   >
-                    Sign Out
+                    {hasStandaloneAccount ? 'Disconnect Strava' : 'Sign Out'}
                   </button>
                 )}
               </div>
@@ -883,7 +885,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Syncs structured workout calendars, Apple Watch / Oura / Whoop wellness, and eFTP curves.
+                  Syncs structured workout calendars, COROS / Suunto / Apple Watch / Oura / WHOOP relay data, and eFTP curves.
                 </p>
               </div>
               <span className="text-xs font-semibold ap-text-brand">

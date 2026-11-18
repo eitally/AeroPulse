@@ -19,6 +19,7 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 import { CalendarView } from './CalendarView';
@@ -60,7 +61,7 @@ export interface CoachWorkspaceViewProps {
   onSelectSport: (sport: SportCategory | 'ALL') => void;
   distanceUnit: DistanceUnit;
   resendConfigured: boolean;
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onSelectActivityAndOpenTab: (act: UnifiedActivity) => void;
   onCreatePlannedEvent: (event: {
     date: string;
@@ -257,12 +258,22 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     await onCreatePlannedEvent(eventInput);
   };
   const connectedAthletesOnly = useMemo(
-    () => combinedRoster.filter((a) => a.status === 'CONNECTED'),
+    () =>
+      combinedRoster.filter(
+        (a) =>
+          a.status === 'CONNECTED' &&
+          a.teamMemberStatus !== 'ALUMNI' &&
+          a.teamMemberStatus !== 'OFF_SEASON' &&
+          a.teamMemberStatus !== 'REVOKED'
+      ),
     [combinedRoster]
   );
 
   const podRoster = useMemo<VdotPodRosterInput[]>(() => {
-    if (connectedAthletesOnly.length === 0) {
+    const activePodAthletes = connectedAthletesOnly.filter(
+      (a) => a.teamMemberStatus !== 'INJURED'
+    );
+    if (activePodAthletes.length === 0) {
       return [
         {
           id: 'SELF',
@@ -271,12 +282,31 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         },
       ];
     }
-    return connectedAthletesOnly.map((a) => ({
+    return activePodAthletes.map((a) => ({
       id: a.id,
       name: a.name,
       thresholdPaceSecsPerKm: a.athleteProfile.thresholdPaceSecsPerKm || 250,
     }));
   }, [connectedAthletesOnly, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
+
+  const relayCandidates = useMemo(
+    () =>
+      connectedAthletesOnly
+        .filter((a) => a.teamMemberStatus !== 'INJURED')
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          thresholdPaceSecsPerKm: a.athleteProfile.thresholdPaceSecsPerKm || 250,
+          genderDivision:
+            a.genderDivision ||
+            (a.athleteProfile.competitionGender === 'WOMEN'
+              ? 'F'
+              : a.athleteProfile.competitionGender === 'MEN'
+                ? 'M'
+                : undefined),
+        })),
+    [connectedAthletesOnly]
+  );
 
   const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
 
@@ -318,7 +348,12 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       const watchLight = evaluateSafeSportPatternWatch({
         activities: ath.activities || [],
         wellnessDays: ath.wellnessDays || [],
-        isMinorU18: Boolean(ath.athleteProfile.safeSportHideWeight),
+        isMinorU18:
+          typeof ath.isMinorU18 === 'boolean'
+            ? ath.isMinorU18
+            : resolveAthleteAgeTier({
+                birthMonthYear: ath.athleteProfile.birthMonthYear,
+              }).isMinorU18,
       }).trafficLight;
       if (tsb < -20 || hrv < 48 || watchLight !== 'GREEN_CLEAR') {
         flaggedIds.add(ath.id);
@@ -497,8 +532,12 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             {showRelayAndTopTimes && (
               <div className="px-3 pb-3 pt-1">
                 <ScholasticRelayAndTopTimesPanel
-                  candidates={podRoster}
-                  roster={connectedAthletesOnly}
+                  candidates={relayCandidates.length > 0 ? relayCandidates : podRoster}
+                  roster={combinedRoster.filter(
+                    (a) =>
+                      a.status === 'CONNECTED' &&
+                      a.teamMemberStatus !== 'REVOKED'
+                  )}
                 />
               </div>
             )}

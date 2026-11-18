@@ -18,6 +18,7 @@ export interface RelayCandidateInput {
   id: string;
   name: string;
   thresholdPaceSecsPerKm: number;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
   seedMarks?: TrackSeedMarkInput[];
   phenotype?: SpeedReservePhenotype;
   dPrimeMeters?: number;

@@ -26,6 +26,7 @@ export interface OAuthStateClaims {
   joinCode?: string;
   slug?: string;
   inviteToken?: string;
+  userId?: string;
   codeVerifier?: string;
   exp: number;
 }
@@ -137,6 +138,7 @@ export function issueOAuthStateToken(
     joinCode: input.joinCode,
     slug: input.slug,
     inviteToken: input.inviteToken,
+    userId: input.userId,
     codeVerifier: input.codeVerifier,
     exp: Date.now() + OAUTH_STATE_TTL_MS,
   };
@@ -313,7 +315,13 @@ export function setSessionCookie(
   explicitSid?: string
 ): string {
   const existing = getVerifiedSessionClaims(req);
-  const token = issueSessionToken(subject, explicitSid || existing?.sid);
+  const targetSid = explicitSid || existing?.sid;
+  const preserveCanonicalUserSub =
+    Boolean(existing?.sub?.startsWith('usr_')) &&
+    !subject.startsWith('usr_') &&
+    Boolean(targetSid && existing?.sid && targetSid === existing.sid);
+  const resolvedSubject = preserveCanonicalUserSub ? existing!.sub : subject;
+  const token = issueSessionToken(resolvedSubject, targetSid);
   const isSecure =
     req.secure ||
     String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';

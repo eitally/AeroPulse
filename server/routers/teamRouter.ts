@@ -1,11 +1,23 @@
 import express, { type Request, type Response } from 'express';
 import {
   decodeAndVerifyToken,
+  escapeHtml,
   getVerifiedSessionClaims,
   resolveSafeOrigin,
   setSessionCookie,
 } from '../securityUtils.ts';
 import { getUserById } from '../authService.ts';
+import {
+  declineAndPurgeParentConsent,
+  graduateTeamClass,
+  leaveOrGraduateTeam,
+  mergeDuplicateRosterMembers,
+  previewParentConsentToken,
+  revokeAthleteGuardianConsentForTeam,
+  transferTeamHeadCoachOwnership,
+  updateMemberRole,
+  updateMemberRosterLifecycleStatus,
+} from '../teamLifecycleService.ts';
 import {
   acknowledgeParentConsent,
   autoLinkPendingTeamInvitesByEmail,
@@ -27,7 +39,7 @@ import {
   updateTeamMemberEventGroup,
   verifyEmailOtpCode,
 } from '../teamService.ts';
-import type { CoachEventGroup } from '../../src/types.ts';
+import type { CoachEventGroup, TeamInviteStatus } from '../../src/types.ts';
 
 export const teamRouter = express.Router();
 
@@ -380,13 +392,25 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
           : req.body?.birthYear
             ? Number(req.body.birthYear)
             : undefined,
+      birthMonthYear: req.body?.birthMonthYear
+        ? String(req.body.birthMonthYear).trim()
+        : undefined,
+      graduationYear:
+        typeof req.body?.graduationYear === 'number'
+          ? req.body.graduationYear
+          : req.body?.graduationYear
+            ? Number(req.body.graduationYear)
+            : undefined,
       parentGuardianEmail: req.body?.parentGuardianEmail
         ? String(req.body.parentGuardianEmail).trim()
         : undefined,
     });
 
     if (!claimed.ok || !claimed.summary) {
-      res.status(404).json({
+      const isValidationError =
+        Boolean(claimed.error) &&
+        /COPPA|13 or older|Parent or guardian email/i.test(claimed.error || '');
+      res.status(isValidationError ? 400 : 404).json({
         ok: false,
         error: claimed.error || 'Team invite could not be claimed.',
       });
@@ -419,11 +443,17 @@ teamRouter.post('/api/teams/sync-snapshot', async (req: Request, res: Response) 
       return;
     }
     const originUrl = resolveRequestOrigin(req);
+    const mergedSnapshot = {
+      ...(req.body?.snapshot || {}),
+      ...(req.body?.privacySettings && !req.body?.snapshot?.privacySettings
+        ? { privacySettings: req.body.privacySettings }
+        : {}),
+    };
     const teams = await syncAthleteSnapshotAcrossTeams({
       callerSid: claims.sid,
       originUrl,
       athleteName: req.body?.athleteName ? String(req.body.athleteName) : undefined,
-      snapshot: req.body?.snapshot || {},
+      snapshot: mergedSnapshot,
     });
     res.json({ ok: true, teams });
   } catch (err) {
@@ -662,66 +692,339 @@ teamRouter.post('/api/teams/:teamId/stopwatch-activities', async (req: Request, 
   }
 });
 
-// 12. Parent/Guardian Consent Acknowledgment (COPPA & Safe Sport Youth Safeguards)
+// 11c. Athlete Voluntary Team Leave / Alumni Graduation
+teamRouter.post('/api/teams/:teamId/leave', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const modeRaw = String(req.body?.mode || 'LEAVE').toUpperCase();
+    const mode = modeRaw === 'GRADUATE_ALUMNI' ? 'GRADUATE_ALUMNI' : 'LEAVE';
+    const originUrl = resolveRequestOrigin(req);
+    const outcome = await leaveOrGraduateTeam({
+      callerSid: claims.sid,
+      userId: claims.sub?.startsWith('usr_') ? claims.sub : undefined,
+      teamId: String(req.params.teamId || ''),
+      mode,
+      originUrl,
+    });
+    if (!outcome.ok) {
+      res.status(400).json({ ok: false, error: outcome.error || 'Could not leave team.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to leave team.',
+    });
+  }
+});
+
+// 11d. Athlete 18+ Guardian CC Revocation (FERPA transfer of rights at 18)
+teamRouter.delete('/api/teams/:teamId/members/me/guardian', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const outcome = await revokeAthleteGuardianConsentForTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      originUrl,
+      birthMonthYear: req.body?.birthMonthYear ? String(req.body.birthMonthYear) : undefined,
+    });
+    if (!outcome.ok) {
+      res.status(400).json({ ok: false, error: outcome.error });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: outcome.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to revoke guardian access.',
+    });
+  }
+});
+
+// 11e. Coach Roster Member Lifecycle Status (ACTIVE / INJURED / OFF_SEASON / ALUMNI / REVOKED)
+teamRouter.patch(
+  '/api/teams/:teamId/members/:membershipId/status',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const rawStatus = String(req.body?.status || '').toUpperCase();
+      const allowed: Array<
+        Extract<TeamInviteStatus, 'ACTIVE' | 'INJURED' | 'OFF_SEASON' | 'ALUMNI' | 'REVOKED'>
+      > = ['ACTIVE', 'INJURED', 'OFF_SEASON', 'ALUMNI', 'REVOKED'];
+      if (!allowed.includes(rawStatus as any)) {
+        res.status(400).json({ ok: false, error: 'Invalid member lifecycle status.' });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await updateMemberRosterLifecycleStatus({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        membershipId: String(req.params.membershipId || ''),
+        status: rawStatus as any,
+        originUrl,
+      });
+      if (!outcome.ok || !outcome.summary) {
+        res.status(403).json({ ok: false, error: outcome.error || 'Could not update member status.' });
+        return;
+      }
+      res.json({ ok: true, team: outcome.summary });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed updating member status.',
+      });
+    }
+  }
+);
+
+// 11f. Graduate Seniors Class -> ALUMNI
+teamRouter.post('/api/teams/:teamId/graduate-class', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const graduationYear = Number(req.body?.graduationYear);
+    if (!Number.isFinite(graduationYear) || graduationYear < 2000 || graduationYear > 2100) {
+      res.status(400).json({ ok: false, error: 'Valid graduationYear is required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const outcome = await graduateTeamClass({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      graduationYear,
+      originUrl,
+    });
+    if (!outcome.ok) {
+      res.status(403).json({ ok: false, error: outcome.error || 'Head Coach permission required.' });
+      return;
+    }
+    res.json({ ok: true, graduatedCount: outcome.graduatedCount, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed graduating class.',
+    });
+  }
+});
+
+// 11g. Assign Assistant Coach Role & Transfer Head Coach Ownership
+teamRouter.patch(
+  '/api/teams/:teamId/members/:membershipId/role',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const role = String(req.body?.role || '').toUpperCase();
+      if (role !== 'ATHLETE' && role !== 'ASSISTANT_COACH') {
+        res.status(400).json({ ok: false, error: 'Role must be ATHLETE or ASSISTANT_COACH.' });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await updateMemberRole({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        membershipId: String(req.params.membershipId || ''),
+        role,
+        originUrl,
+      });
+      if (!outcome.ok || !outcome.summary) {
+        res.status(403).json({ ok: false, error: outcome.error || 'Head Coach permission required.' });
+        return;
+      }
+      res.json({ ok: true, team: outcome.summary });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed updating member role.',
+      });
+    }
+  }
+);
+
+teamRouter.post('/api/teams/:teamId/transfer-ownership', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const outcome = await transferTeamHeadCoachOwnership({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      newHeadCoachMembershipId: String(
+        req.body?.newHeadCoachMembershipId || req.body?.targetMembershipId || ''
+      ),
+      originUrl,
+    });
+    if (!outcome.ok || !outcome.summary) {
+      res.status(403).json({ ok: false, error: outcome.error || 'Could not transfer ownership.' });
+      return;
+    }
+    res.json({ ok: true, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed transferring ownership.',
+    });
+  }
+});
+
+// 11h. Merge Pre-Seeded/Imported Ghost Duplicate Onto Claimed Athlete Row
+teamRouter.post('/api/teams/:teamId/members/merge', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const outcome = await mergeDuplicateRosterMembers({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      sourceMembershipId: String(req.body?.sourceMembershipId || ''),
+      targetMembershipId: String(req.body?.targetMembershipId || ''),
+      originUrl,
+    });
+    if (!outcome.ok || !outcome.summary) {
+      res.status(400).json({ ok: false, error: outcome.error || 'Could not merge members.' });
+      return;
+    }
+    res.json({ ok: true, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed merging roster entries.',
+    });
+  }
+});
+
+// 12. Parent/Guardian Consent Verification & Decline Portal (Non-mutating GET -> Explicit POST)
 teamRouter.get('/api/teams/parent-consent', async (req: Request, res: Response) => {
   try {
     const token = String(req.query.token || req.query.t || '').trim();
-    const result = await acknowledgeParentConsent(token);
-    if (!result.ok) {
+    const preview = await previewParentConsentToken(token);
+    if (!preview.ok) {
       res.status(400).send(`<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Parent Acknowledgment Error · THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head><meta charset="utf-8"><title>Parent Consent Link Error · THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px 16px;max-width:480px;margin:0 auto;text-align:center;color:#1F2937;">
   <h2 style="color:#DC2626;">Invalid or Expired Link</h2>
-  <p>${result.error || 'This consent link could not be verified.'}</p>
+  <p>${escapeHtml(preview.error || 'This consent link could not be verified.')}</p>
   <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to THRESH</a>
 </body>
 </html>`);
       return;
     }
 
+    const safeAthlete = escapeHtml(preview.athleteName || 'Athlete');
+    const safeTeam = escapeHtml(preview.teamName || 'Team');
+    const safeCoach = escapeHtml(preview.coachName || 'Coach');
+    const safeToken = escapeHtml(token);
+    const statusLine = preview.alreadyAcknowledged
+      ? 'Safeguarding consent is already active. You may review details or revoke access below.'
+      : 'Please confirm parental consent for your athlete’s team workspace below, or decline and purge their team data.';
+
     res.send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Parent Acknowledgment Confirmed · THRESH</title>
+  <title>Parent &amp; Guardian Consent · THRESH</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F4F6F3;padding:40px 16px;margin:0;color:#111318;">
-  <div style="max-width:500px;margin:0 auto;background:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;padding:32px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
-    <div style="width:48px;height:48px;border-radius:24px;background:#DCFCE7;color:#15803D;font-size:24px;line-height:48px;margin:0 auto 16px;">✓</div>
-    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#15803D;text-transform:uppercase;">SAFEGUARDING ACKNOWLEDGED</div>
-    <h2 style="margin:8px 0 12px;font-size:22px;color:#111318;">Enrollment Confirmed</h2>
-    <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 20px;">
-      Thank you. Your parent acknowledgment for <strong>${result.athleteName || 'Athlete'}</strong> on <strong>${result.teamName || 'Team'}</strong> has been recorded.
-    </p>
-    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;text-align:left;font-size:13px;color:#334155;margin-bottom:24px;">
-      <div><strong>Team:</strong> ${result.teamName || ''}</div>
-      <div><strong>Coach:</strong> ${result.coachName || ''}</div>
-      <div><strong>Safeguards:</strong> Safe-Sport RED-S weight shield is active.</div>
+  <div style="max-width:520px;margin:0 auto;background:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#15803D;text-transform:uppercase;">COPPA &amp; SAFE-SPORT SAFEGUARDS</div>
+    <h2 style="margin:8px 0 12px;font-size:22px;color:#111318;">Parent / Guardian Authorization</h2>
+    <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 18px;">${escapeHtml(statusLine)}</p>
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;font-size:13px;color:#334155;margin-bottom:20px;">
+      <div><strong>Athlete:</strong> ${safeAthlete}</div>
+      <div><strong>Team:</strong> ${safeTeam}</div>
+      <div><strong>Coach:</strong> ${safeCoach}</div>
+      <div><strong>Protections:</strong> Weight &amp; W/kg masking is locked ON until age 18.</div>
     </div>
-    <a href="/" style="display:inline-block;background:#14532D;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;">Visit THRESH</a>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;">
+      <form method="POST" action="/api/teams/parent-consent" style="flex:1;">
+        <input type="hidden" name="token" value="${safeToken}" />
+        <input type="hidden" name="action" value="APPROVE" />
+        <button type="submit" style="width:100%;min-height:44px;background:#14532D;color:#FFFFFF;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 16px;">Approve &amp; Acknowledge Safeguards</button>
+      </form>
+      <form method="POST" action="/api/teams/parent-consent" style="flex:1;">
+        <input type="hidden" name="token" value="${safeToken}" />
+        <input type="hidden" name="action" value="DECLINE" />
+        <button type="submit" style="width:100%;min-height:44px;background:#FEE2E2;color:#B91C1C;border:1px solid #FECACA;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 16px;">Decline &amp; Delete Child Data</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>`);
   } catch {
-    res.status(500).send('An error occurred while confirming consent.');
+    res.status(500).send('An error occurred while loading parent consent status.');
   }
 });
 
-teamRouter.post('/api/teams/parent-consent', async (req: Request, res: Response) => {
-  try {
-    const token = String(req.body?.token || req.query.token || '').trim();
-    const result = await acknowledgeParentConsent(token);
-    if (!result.ok) {
-      res.status(400).json({ ok: false, error: result.error });
-      return;
+teamRouter.post(
+  '/api/teams/parent-consent',
+  express.urlencoded({ extended: false }),
+  async (req: Request, res: Response) => {
+    try {
+      const token = String(req.body?.token || req.query.token || '').trim();
+      const action = String(req.body?.action || req.query.action || 'APPROVE')
+        .trim()
+        .toUpperCase();
+      const wantsHtml = String(req.headers.accept || '').includes('text/html');
+
+      if (action === 'DECLINE') {
+        const decl = await declineAndPurgeParentConsent(token);
+        if (!decl.ok) {
+          res.status(400).json({ ok: false, error: decl.error });
+          return;
+        }
+        if (wantsHtml) {
+          res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2>Child Data Removed</h2><p>Membership and synced biometrics for <strong>${escapeHtml(decl.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(decl.teamName || 'Team')}</strong> have been revoked and cleared.</p><a href="/">Return to THRESH</a></body></html>`);
+          return;
+        }
+        res.json({ ...decl, declined: true });
+        return;
+      }
+
+      const result = await acknowledgeParentConsent(token);
+      if (!result.ok) {
+        res.status(400).json({ ok: false, error: result.error });
+        return;
+      }
+      if (wantsHtml) {
+        res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2 style="color:#15803D;">Safeguarding Acknowledged</h2><p>Parental acknowledgment for <strong>${escapeHtml(result.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(result.teamName || 'Team')}</strong> has been confirmed.</p><a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Visit THRESH</a></body></html>`);
+        return;
+      }
+      res.json({ ...result });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed confirming consent.',
+      });
     }
-    res.json({ ...result });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : 'Failed confirming consent.',
-    });
   }
-});
+);

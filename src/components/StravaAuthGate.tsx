@@ -36,6 +36,7 @@ import {
   calibrateThresholdsFromSeedMark,
   computeAccessibleTeamPalette,
 } from '../physiology/teamOnboardingEngine';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
 import {
   authenticateWithPasskey,
@@ -62,6 +63,7 @@ export interface FirstRunCalibrationPayload {
   cyclingFtpWatts?: number;
   thresholdPaceInput?: string;
   safeSportHideWeight?: boolean;
+  birthMonthYear?: string;
   stravaSyncPolicy?: StravaSyncPolicy;
   claimedTeams?: TeamSummaryWithRole[];
   activeTeamId?: string;
@@ -278,6 +280,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [athleteName, setAthleteName] = useState(status.stravaAthleteName || '');
   const [athleteEmail, setAthleteEmail] = useState(initialJoin.email || '');
   const [birthYear, setBirthYear] = useState<string>('');
+  const [birthMonth, setBirthMonth] = useState<string>('');
   const [parentGuardianEmail, setParentGuardianEmail] = useState<string>('');
   const [primarySport, setPrimarySport] = useState<'Cycling' | 'Running' | 'Hybrid'>('Running');
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(
@@ -340,13 +343,26 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const parsedBirthYear = parseInt(birthYear, 10);
-  const isMinorByBirthYear =
-    !isNaN(parsedBirthYear) && parsedBirthYear > 1900 && currentYear - parsedBirthYear < 18;
-  const isMinorAthlete = Boolean(
-    invitePreview?.brand?.orgType === 'HIGH_SCHOOL' ||
-      invitePreview?.membership?.isMinorU18 ||
-      isMinorByBirthYear
+  const validBirthYear = !isNaN(parsedBirthYear) && parsedBirthYear > 1900 ? parsedBirthYear : null;
+  const composedBirthMonthYear =
+    validBirthYear !== null && birthMonth ? `${validBirthYear}-${birthMonth}` : undefined;
+  const step2AgeTier = useMemo(
+    () =>
+      resolveAthleteAgeTier({
+        birthMonthYear: composedBirthMonthYear,
+        birthYear: validBirthYear ?? undefined,
+        orgType: invitePreview?.brand?.orgType,
+      }),
+    [composedBirthMonthYear, validBirthYear, invitePreview?.brand?.orgType]
   );
+  const isUnder13 = step2AgeTier.ageTier === 'U13_COPPA';
+  const isMinorAthlete =
+    validBirthYear !== null
+      ? step2AgeTier.isMinorU18
+      : Boolean(
+          invitePreview?.brand?.orgType === 'HIGH_SCHOOL' ||
+            invitePreview?.membership?.isMinorU18
+        );
 
   useEffect(() => {
     if (isMinorAthlete) {
@@ -689,7 +705,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail }),
+        body: JSON.stringify({
+          email: cleanEmail,
+          joinCode: joinCodeInput.trim() || undefined,
+          slug: joinSlug || invitePreview?.brand?.slug || undefined,
+          inviteToken: inviteToken || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
@@ -821,6 +842,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       safeSportHideWeight: isMinorAthlete
         ? true
         : Boolean(effectiveClaimed?.safeSportEnforced || safeSportHideWeight),
+      ...(composedBirthMonthYear ? { birthMonthYear: composedBirthMonthYear } : {}),
       stravaSyncPolicy: overridePolicy ?? confirmedPolicy,
       claimedTeams: effectiveClaimed?.teams,
       activeTeamId: effectiveClaimed?.activeTeamId,
@@ -871,7 +893,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       saveStravaSyncPolicyToStorage(savedPolicy);
       setConfirmedPolicy(savedPolicy);
 
-      // Youth Protection Gate (COPPA & Scholastic Safe-Sport)
+      // Youth Protection Gate (COPPA < 13 block + Scholastic Safe-Sport)
+      if (isUnder13) {
+        setJoinError(
+          'THRESH self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.'
+        );
+        return;
+      }
       if (isMinorAthlete && !activeBrand && !joinCodeInput.trim()) {
         setJoinError(
           'Scholastic Youth Protection: Athletes under 18 must join through a school or club athletic team. Please enter your team join code.'
@@ -909,8 +937,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             distanceUnit,
             sharingTier,
             stravaAthleteId: status.stravaAthleteId || undefined,
-            birthYear:
-              !isNaN(parsedBirthYear) && parsedBirthYear > 1900 ? parsedBirthYear : undefined,
+            birthYear: validBirthYear ?? undefined,
+            birthMonthYear: composedBirthMonthYear,
             parentGuardianEmail: parentGuardianEmail.trim() || undefined,
           }),
         });
@@ -938,6 +966,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           safeSportEnforced: Boolean(claimData.safeSportShieldEnforced),
         };
         setClaimedTeamsState(claimedResult);
+      }
+
+      if (composedBirthMonthYear && (localUser || currentUser)) {
+        await fetch('/api/auth/birth-month', {
+          method: 'POST',
+          credentials: 'include',
+          headers: authHeaders,
+          body: JSON.stringify({ birthMonthYear: composedBirthMonthYear }),
+        }).catch(() => {});
       }
 
       // Kick off consented Strava sync non-blockingly in the background
@@ -2092,23 +2129,61 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       htmlFor={`${formId}-birth-year`}
                       className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
                     >
-                      Birth Year <span className="text-slate-400 font-normal">(Age verification)</span>
+                      Birth Month &amp; Year <span className="text-slate-400 font-normal">(Age verification)</span>
                     </label>
-                    <input
-                      id={`${formId}-birth-year`}
-                      type="number"
-                      min={1920}
-                      max={currentYear}
-                      value={birthYear}
-                      onChange={(e) => setBirthYear(e.target.value)}
-                      placeholder={`e.g. ${currentYear - 17}`}
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                    />
+                    <div className="flex gap-2">
+                      <select
+                        aria-label="Birth month (optional)"
+                        value={birthMonth}
+                        onChange={(e) => setBirthMonth(e.target.value)}
+                        className="w-28 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      >
+                        <option value="">Month</option>
+                        <option value="01">Jan</option>
+                        <option value="02">Feb</option>
+                        <option value="03">Mar</option>
+                        <option value="04">Apr</option>
+                        <option value="05">May</option>
+                        <option value="06">Jun</option>
+                        <option value="07">Jul</option>
+                        <option value="08">Aug</option>
+                        <option value="09">Sep</option>
+                        <option value="10">Oct</option>
+                        <option value="11">Nov</option>
+                        <option value="12">Dec</option>
+                      </select>
+                      <input
+                        id={`${formId}-birth-year`}
+                        type="number"
+                        min={1920}
+                        max={currentYear}
+                        value={birthYear}
+                        onChange={(e) => setBirthYear(e.target.value)}
+                        placeholder={`e.g. ${currentYear - 17}`}
+                        className="flex-1 min-w-0 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      />
+                    </div>
                   </div>
                 </div>
 
+                {/* Under-13 COPPA Hard Block */}
+                {isUnder13 && (
+                  <div
+                    data-testid="join-coppa-u13-notice"
+                    className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 space-y-1.5 text-xs"
+                  >
+                    <div className="font-bold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
+                      <span>13+ Minimum Age Required (COPPA)</span>
+                    </div>
+                    <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
+                      THRESH self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.
+                    </p>
+                  </div>
+                )}
+
                 {/* Minor Youth Protection Gate: If under 18 and not yet attached to a team */}
-                {isMinorAthlete && !activeBrand && (
+                {!isUnder13 && isMinorAthlete && !activeBrand && (
                   <div className="ap-status-caution rounded-xl p-3.5 space-y-2.5 text-xs">
                     <div className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
                       <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -2159,8 +2234,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   </div>
                 )}
 
-                {/* Parent / Guardian Email Requirement for Minor Athletes */}
-                {isMinorAthlete && (
+                {/* Parent / Guardian Email Requirement for Minor Athletes (13-17) */}
+                {!isUnder13 && isMinorAthlete && (
                   <div className="space-y-1.5 pt-1 border-t border-slate-200/80 dark:border-white/10">
                     <label
                       htmlFor={`${formId}-parent-email`}
@@ -2451,8 +2526,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 <button
                   type="button"
                   onClick={() => void handleConfirmStep2()}
-                  disabled={busy}
-                  className="ap-btn-primary text-sm px-6 cursor-pointer"
+                  disabled={busy || isUnder13}
+                  className="ap-btn-primary text-sm px-6 cursor-pointer disabled:opacity-50"
                 >
                   {isSavingStep2 ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />

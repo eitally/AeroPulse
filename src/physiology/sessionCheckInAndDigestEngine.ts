@@ -136,6 +136,7 @@ export function evaluateSafetySwapFromCheckIn(opts: {
 
 export type DigestAttentionReason =
   | 'PAIN_FLAG'
+  | 'INJURED'
   | 'HIGH_RPE_STRAIN'
   | 'HIGH_LIFE_STRESS'
   | 'MISSED_KEY_SESSIONS'
@@ -183,10 +184,11 @@ export interface DigestFallbackAthleteInput {
 
 const ATTENTION_PRIORITY: Record<DigestAttentionReason, number> = {
   PAIN_FLAG: 0,
-  HIGH_RPE_STRAIN: 1,
-  HIGH_LIFE_STRESS: 2,
-  MISSED_KEY_SESSIONS: 3,
-  ON_TRACK: 4,
+  INJURED: 1,
+  HIGH_RPE_STRAIN: 2,
+  HIGH_LIFE_STRESS: 3,
+  MISSED_KEY_SESSIONS: 4,
+  ON_TRACK: 5,
 };
 
 function computeDigestCheckInStreak(
@@ -221,11 +223,18 @@ export function buildCoachSquadExecutionDigest(opts: {
   const windowEndIso = todayIso.slice(0, 10);
   const windowStartIso = addDaysIso(windowEndIso, -(Math.max(1, windowDays) - 1));
 
-  const connected = (roster || []).filter((r) => r.status === 'CONNECTED');
+  const connected = (roster || []).filter(
+    (r) =>
+      r.status === 'CONNECTED' &&
+      r.teamMemberStatus !== 'ALUMNI' &&
+      r.teamMemberStatus !== 'OFF_SEASON' &&
+      r.teamMemberStatus !== 'REVOKED'
+  );
   const sourceList: Array<{
     id: string;
     name: string;
     eventGroup?: CoachEventGroup;
+    teamMemberStatus?: ConnectedAthleteRecord['teamMemberStatus'];
     plannedEvents: PlannedWorkoutEvent[];
     activities: UnifiedActivity[];
     sessionCheckIns: SessionCheckInRecord[];
@@ -236,6 +245,7 @@ export function buildCoachSquadExecutionDigest(opts: {
           id: a.id,
           name: a.name,
           eventGroup: a.eventGroup,
+          teamMemberStatus: a.teamMemberStatus,
           plannedEvents: a.plannedEvents || [],
           activities: a.activities || [],
           sessionCheckIns: a.sessionCheckIns || [],
@@ -251,6 +261,7 @@ export function buildCoachSquadExecutionDigest(opts: {
   let highRpeCount = 0;
   let lifeStressCount = 0;
   let complianceSum = 0;
+  let complianceEligibleCount = 0;
   const yesterdayIso = addDaysIso(windowEndIso, -1);
   const nowMs = Date.now();
 
@@ -308,6 +319,7 @@ export function buildCoachSquadExecutionDigest(opts: {
           )
         : null;
 
+    const isInjuredMember = ath.teamMemberStatus === 'INJURED';
     if (checkedInToday) checkedInTodayCount += 1;
     if (checkedInLast24h) checkedInLast24hCount += 1;
     const hasPain = Boolean(latestCheckIn?.painFlag);
@@ -318,12 +330,18 @@ export function buildCoachSquadExecutionDigest(opts: {
     if (latestCheckIn?.autoSwappedToRecovery) swappedCount += 1;
     if (hasHighRpe) highRpeCount += 1;
     if (hasLifeStress) lifeStressCount += 1;
-    complianceSum += compliancePct;
+    if (!isInjuredMember) {
+      complianceSum += compliancePct;
+      complianceEligibleCount += 1;
+    }
 
     let attentionReason: DigestAttentionReason = 'ON_TRACK';
     let attentionSummary = 'Executing on target';
 
-    if (hasPain) {
+    if (isInjuredMember) {
+      attentionReason = 'INJURED';
+      attentionSummary = 'Injured · Rehab / Modified Training';
+    } else if (hasPain) {
       attentionReason = 'PAIN_FLAG';
       const area = latestCheckIn?.painArea || 'Soreness';
       attentionSummary = latestCheckIn?.autoSwappedToRecovery
@@ -380,7 +398,7 @@ export function buildCoachSquadExecutionDigest(opts: {
     highRpeCount,
     lifeStressCount,
     teamCompliancePct:
-      rows.length > 0 ? Math.round(complianceSum / rows.length) : 100,
+      complianceEligibleCount > 0 ? Math.round(complianceSum / complianceEligibleCount) : 100,
     rows,
   };
 }

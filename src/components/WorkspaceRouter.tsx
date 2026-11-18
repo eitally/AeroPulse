@@ -101,7 +101,7 @@ export interface WorkspaceRouterProps {
   onSelectAthleteViewport: (athleteId: string) => void;
   resendConfigured: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
   stravaSyncWindow?: StravaSyncWindow;

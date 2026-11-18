@@ -34,6 +34,7 @@ import { CircadianFirstTouchHero, type CircadianHeroMode } from './CircadianFirs
 import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
 import { EveningCloseoutCard } from './today/EveningCloseoutCard';
 import { resolveCircadianHeroMode } from '../physiology/eveningHabitEngine';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import {
   buildDayLoadSegments,
@@ -279,16 +280,24 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     return series.length > 0 ? series[series.length - 1] : null;
   }, [activities, athleteProfile]);
 
+  const isMinorAthleteContext = useMemo(() => {
+    if (!athleteProfile) return false;
+    if (athleteProfile.birthMonthYear) {
+      return resolveAthleteAgeTier({
+        birthMonthYear: athleteProfile.birthMonthYear,
+      }).isMinorU18;
+    }
+    return athleteProfile.academicDivision === 'HS_VARSITY';
+  }, [athleteProfile]);
+
   const orthopedicSummary = useMemo(() => {
     if (!athleteProfile) return null;
     const todayPlanned = plannedEvents.filter((p) => (p.date || '').slice(0, 10) === todayIso);
     return evaluateOrthopedicInterference(activities, athleteProfile, todayPlanned, todayIso, {
-      isMinorU18: Boolean(
-        athleteProfile.safeSportHideWeight || athleteProfile.academicDivision === 'HS_VARSITY'
-      ),
+      isMinorU18: isMinorAthleteContext,
       lowerLegSoreness: Math.max(shinBoneSoreness, achillesSoreness),
     });
-  }, [activities, athleteProfile, plannedEvents, todayIso, shinBoneSoreness, achillesSoreness]);
+  }, [activities, athleteProfile, plannedEvents, todayIso, shinBoneSoreness, achillesSoreness, isMinorAthleteContext]);
 
   const complianceRecords = useMemo(
     () => evaluatePlannedVsCompletedCompliance(plannedEvents, activities, todayIso),
@@ -822,7 +831,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     ledger: true,
   });
   const isStudentContext = Boolean(
-    athleteProfile?.academicDivision || athleteProfile?.safeSportHideWeight
+    athleteProfile?.academicDivision && athleteProfile.academicDivision !== 'CLUB_OPEN' ||
+      isMinorAthleteContext
   );
 
   const studentCheckIn = useMemo<StudentAthleteCheckIn>(
@@ -862,16 +872,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         activities,
         wellnessDays,
         checkIn: studentCheckIn,
-        isMinorU18: Boolean(
-          athleteProfile?.safeSportHideWeight || athleteProfile?.academicDivision === 'HS_VARSITY'
-        ),
-        hasParentGuardianCc: Boolean(
-          athleteProfile?.safeSportHideWeight || athleteProfile?.academicDivision === 'HS_VARSITY'
-        ),
+        isMinorU18: isMinorAthleteContext,
+        hasParentGuardianCc: isMinorAthleteContext,
         hasAthleticTrainer: Boolean(athleteProfile?.academicDivision),
         referenceDateIso: todayIso,
       }),
-    [activities, wellnessDays, studentCheckIn, athleteProfile, todayIso]
+    [activities, wellnessDays, studentCheckIn, athleteProfile, isMinorAthleteContext, todayIso]
   );
 
   const crossTrainEquiv = useMemo(

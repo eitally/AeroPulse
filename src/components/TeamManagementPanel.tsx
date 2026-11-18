@@ -39,6 +39,15 @@ import {
   generateQrCodeSvgMarkup,
   openPrintableTeamPosterWindow,
 } from '../utils/teamQrHelper';
+import {
+  buildThreshSessionHeaders,
+  graduateClassApi,
+  leaveOrGraduateTeamApi,
+  mergeRosterMembersApi,
+  transferHeadCoachApi,
+  updateMemberRoleApi,
+  updateMemberStatusApi,
+} from '../utils/teamLifecycleApi';
 import { AeroPulseLogo } from './AeroPulseLogo';
 
 interface TeamManagementPanelProps {
@@ -48,7 +57,7 @@ interface TeamManagementPanelProps {
   resendConfigured: boolean;
   initialShowCreateStudio?: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onOpenClipboard?: () => void;
   onOpenExternalSync?: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
@@ -185,9 +194,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     selfName && selfName !== 'Athlete' ? selfName : ''
   );
 
-  // Quick Join Second Team State
+  // Quick Join Additional Team State
   const [showJoinAnotherBar, setShowJoinAnotherBar] = useState(false);
   const [joinAnotherCode, setJoinAnotherCode] = useState('');
+  const [joinBirthYear, setJoinBirthYear] = useState('');
+  const [joinParentEmail, setJoinParentEmail] = useState('');
+  const [showJoinAgeFields, setShowJoinAgeFields] = useState(false);
+  const [isLeavingTeam, setIsLeavingTeam] = useState(false);
+  const [busyRosterMemberId, setBusyRosterMemberId] = useState<string | null>(null);
+  const [isGraduatingClass, setIsGraduatingClass] = useState(false);
 
   // Bulk Roster CSV / Paste Inviter State
   const [rawRosterInput, setRawRosterInput] = useState('');
@@ -429,21 +444,32 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const handleJoinAdditionalTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!joinAnotherCode.trim()) return;
+    const parsedYear = parseInt(joinBirthYear, 10);
     setIsJoiningTeam(true);
     setBannerMessage(null);
     try {
       const resp = await fetch('/api/teams/join-claim', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildThreshSessionHeaders(),
         body: JSON.stringify({
           origin: originUrl,
           codeOrSlug: joinAnotherCode.trim(),
           athleteName: selfName || 'Athlete',
+          ...(!isNaN(parsedYear) && parsedYear > 1900 ? { birthYear: parsedYear } : {}),
+          ...(joinParentEmail.trim() ? { parentGuardianEmail: joinParentEmail.trim() } : {}),
         }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
+        if (
+          typeof data.error === 'string' &&
+          (data.error.toLowerCase().includes('parent') ||
+            data.error.toLowerCase().includes('guardian') ||
+            data.error.toLowerCase().includes('13'))
+        ) {
+          setShowJoinAgeFields(true);
+        }
         setBannerMessage({
           tone: 'error',
           text: data.error || 'No team matched that Join Code.',
@@ -460,6 +486,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       const updatedTeams = (data.teams as TeamSummaryWithRole[]) || [];
       onTeamsUpdated(updatedTeams, data.team?.brand?.teamId);
       setJoinAnotherCode('');
+      setJoinBirthYear('');
+      setJoinParentEmail('');
+      setShowJoinAgeFields(false);
       setShowJoinAnotherBar(false);
       setBannerMessage({
         tone: 'success',
@@ -469,6 +498,82 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       setBannerMessage({ tone: 'error', text: 'Could not join team.' });
     } finally {
       setIsJoiningTeam(false);
+    }
+  };
+
+  const applyUpdatedTeamSummary = (updatedTeam: TeamSummaryWithRole) => {
+    onTeamsUpdated(
+      myTeams.map((t) =>
+        t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+      ),
+      updatedTeam.brand.teamId
+    );
+  };
+
+  const handleLeaveOrGraduateActiveTeam = async (mode: 'LEAVE' | 'GRADUATE_ALUMNI') => {
+    if (!activeTeam) return;
+    setIsLeavingTeam(true);
+    setBannerMessage(null);
+    try {
+      const data = await leaveOrGraduateTeamApi(activeTeam.brand.teamId, mode, originUrl);
+      const remaining = (data.teams as TeamSummaryWithRole[]) || [];
+      onTeamsUpdated(remaining, remaining[0]?.brand?.teamId ?? null);
+      setBannerMessage({
+        tone: 'success',
+        text:
+          mode === 'GRADUATE_ALUMNI'
+            ? `Moved to ${activeTeam.brand.shortName} Alumni. Official race marks stay credited and live sharing stopped.`
+            : `Left ${activeTeam.brand.name}. Coach-recorded splits & official marks are saved in your personal history.`,
+      });
+    } catch (err) {
+      setBannerMessage({
+        tone: 'error',
+        text: err instanceof Error ? err.message : 'Could not leave team.',
+      });
+    } finally {
+      setIsLeavingTeam(false);
+    }
+  };
+
+  const runMemberMutation = async (
+    membershipId: string,
+    fn: () => Promise<{ team?: TeamSummaryWithRole; error?: string }>,
+    successMsg?: string
+  ) => {
+    setBusyRosterMemberId(membershipId);
+    setBannerMessage(null);
+    try {
+      const data = await fn();
+      if (data.team) applyUpdatedTeamSummary(data.team);
+      if (successMsg) setBannerMessage({ tone: 'success', text: successMsg });
+    } catch (err) {
+      setBannerMessage({
+        tone: 'error',
+        text: err instanceof Error ? err.message : 'Roster update failed.',
+      });
+    } finally {
+      setBusyRosterMemberId(null);
+    }
+  };
+
+  const handleGraduateClass = async (graduationYear: number) => {
+    if (!activeTeam) return;
+    setIsGraduatingClass(true);
+    setBannerMessage(null);
+    try {
+      const data = await graduateClassApi(activeTeam.brand.teamId, graduationYear, originUrl);
+      if (data.team) applyUpdatedTeamSummary(data.team);
+      setBannerMessage({
+        tone: 'success',
+        text: `Graduated Class of ${graduationYear} (${data.graduatedCount || 0} moved to Alumni).`,
+      });
+    } catch (err) {
+      setBannerMessage({
+        tone: 'error',
+        text: err instanceof Error ? err.message : 'Could not graduate class.',
+      });
+    } finally {
+      setIsGraduatingClass(false);
     }
   };
 
@@ -624,9 +729,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               );
             })}
 
-            {activeTeamId && (
+            {activeTeam && (
               <button
                 type="button"
+                data-testid="team-personal-mode-btn"
                 onClick={() => onSelectActiveTeam(null)}
                 className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1.5 rounded-xl text-2xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
@@ -638,23 +744,54 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           {showJoinAnotherBar && (
             <form
               onSubmit={handleJoinAdditionalTeam}
-              className="pt-2 border-t border-stone-200 dark:border-slate-800 flex flex-wrap items-center gap-2"
+              className="pt-2 border-t border-stone-200 dark:border-slate-800 space-y-2"
             >
-              <input
-                type="text"
-                value={joinAnotherCode}
-                aria-label="Enter 6-character Team Join Code or slug"
-                onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
-                placeholder="Enter 6-character Team Join Code (e.g. WGHS-26)"
-                className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
-              />
-              <button
-                type="submit"
-                disabled={isJoiningTeam || !joinAnotherCode.trim()}
-                className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
-              >
-                {isJoiningTeam ? 'Joining...' : 'Join Team'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={joinAnotherCode}
+                  aria-label="Enter 6-character Team Join Code or slug"
+                  onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
+                  placeholder="Enter 6-character Team Join Code (e.g. WGHS-26)"
+                  className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowJoinAgeFields((v) => !v)}
+                  className="min-h-[44px] px-3 py-1.5 rounded-xl text-2xs font-mono text-slate-600 dark:text-slate-300 hover:bg-stone-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  {showJoinAgeFields ? 'Hide Age / Guardian' : 'Youth / Guardian?'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isJoiningTeam || !joinAnotherCode.trim()}
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
+                >
+                  {isJoiningTeam ? 'Joining...' : 'Join Team'}
+                </button>
+              </div>
+              {showJoinAgeFields && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1920}
+                    max={new Date().getFullYear()}
+                    aria-label="Birth year (optional)"
+                    value={joinBirthYear}
+                    onChange={(e) => setJoinBirthYear(e.target.value)}
+                    placeholder="Birth Year (e.g. 2009)"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="email"
+                    aria-label="Parent or guardian email (required if 13–17)"
+                    value={joinParentEmail}
+                    onChange={(e) => setJoinParentEmail(e.target.value)}
+                    placeholder="Parent/Guardian Email (if 13–17)"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              )}
             </form>
           )}
         </div>
@@ -739,23 +876,47 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={joinAnotherCode}
-                aria-label="Enter Team Join Code"
-                onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
-                placeholder="e.g. WGHS-26"
-                className="flex-1 min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
-              />
-              <button
-                type="submit"
-                disabled={isJoiningTeam || !joinAnotherCode.trim()}
-                className="min-h-[44px] px-4 ap-btn-secondary justify-center text-xs sm:text-sm font-bold cursor-pointer disabled:opacity-50"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>{isJoiningTeam ? 'Joining...' : 'Join Team'}</span>
-              </button>
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={joinAnotherCode}
+                  aria-label="Enter Team Join Code"
+                  onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. WGHS-26"
+                  className="flex-1 min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                />
+                <button
+                  type="submit"
+                  disabled={isJoiningTeam || !joinAnotherCode.trim()}
+                  className="min-h-[44px] px-4 ap-btn-secondary justify-center text-xs sm:text-sm font-bold cursor-pointer disabled:opacity-50"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>{isJoiningTeam ? 'Joining...' : 'Join Team'}</span>
+                </button>
+              </div>
+              {showJoinAgeFields && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1920}
+                    max={new Date().getFullYear()}
+                    aria-label="Birth year"
+                    value={joinBirthYear}
+                    onChange={(e) => setJoinBirthYear(e.target.value)}
+                    placeholder="Birth Year (e.g. 2009)"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="email"
+                    aria-label="Parent or guardian email"
+                    value={joinParentEmail}
+                    onChange={(e) => setJoinParentEmail(e.target.value)}
+                    placeholder="Parent/Guardian Email (if 13–17)"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -1164,6 +1325,39 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     </button>
                   )}
 
+                  {(activeTeam.myRole === 'ATHLETE' ||
+                    activeTeam.myRole === 'PARENT_FOLLOWER') && (
+                    <>
+                      {activeTeam.myRole === 'ATHLETE' &&
+                        (activeTeam.brand.orgType === 'HIGH_SCHOOL' ||
+                          activeTeam.brand.orgType === 'COLLEGIATE') &&
+                        activeTeam.memberships.find(
+                          (m) => m.membershipId === activeTeam.myMembershipId
+                        )?.status !== 'ALUMNI' && (
+                          <button
+                            type="button"
+                            data-testid="team-graduate-self-btn"
+                            disabled={isLeavingTeam}
+                            onClick={() =>
+                              void handleLeaveOrGraduateActiveTeam('GRADUATE_ALUMNI')
+                            }
+                            className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg ap-btn-secondary text-xs font-semibold cursor-pointer disabled:opacity-50"
+                          >
+                            Graduate to Alumni
+                          </button>
+                        )}
+                      <button
+                        type="button"
+                        data-testid="team-leave-btn"
+                        disabled={isLeavingTeam}
+                        onClick={() => void handleLeaveOrGraduateActiveTeam('LEAVE')}
+                        className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
+                      >
+                        Leave Team (Keep My Data)
+                      </button>
+                    </>
+                  )}
+
                   {isActiveTeamCoach && (
                     <>
                       <button
@@ -1378,18 +1572,47 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 {activeTeam.brand.name} — Roster ({activeTeam.memberships.length})
               </h4>
 
-              {isActiveTeamCoach &&
-                activeTeam.memberships.some((m) => m.status !== 'ACTIVE') && (
-                  <button
-                    type="button"
-                    disabled={isSendingBulk}
-                    onClick={() => handleResendPending('ALL_PENDING')}
-                    className="px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Nudge All Pending</span>
-                  </button>
-                )}
+              <div className="flex flex-wrap items-center gap-2">
+                {activeTeam.myRole === 'HEAD_COACH' &&
+                  (() => {
+                    const gradYears = activeTeam.memberships
+                      .filter(
+                        (m) =>
+                          typeof m.graduationYear === 'number' &&
+                          m.status !== 'ALUMNI' &&
+                          m.status !== 'REVOKED'
+                      )
+                      .map((m) => m.graduationYear as number);
+                    if (gradYears.length === 0) return null;
+                    const targetYear = Math.min(...gradYears);
+                    return (
+                      <button
+                        type="button"
+                        data-testid="team-graduate-class-btn"
+                        disabled={isGraduatingClass}
+                        onClick={() => void handleGraduateClass(targetYear)}
+                        className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer disabled:opacity-50"
+                      >
+                        {isGraduatingClass
+                          ? 'Graduating…'
+                          : `Graduate Class of ${targetYear}`}
+                      </button>
+                    );
+                  })()}
+
+                {isActiveTeamCoach &&
+                  activeTeam.memberships.some((m) => m.status !== 'ACTIVE') && (
+                    <button
+                      type="button"
+                      disabled={isSendingBulk}
+                      onClick={() => handleResendPending('ALL_PENDING')}
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Nudge All Pending</span>
+                    </button>
+                  )}
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1407,6 +1630,14 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   {activeTeam.memberships.map((m) => {
                     const joinLink = m.magicJoinUrl || activeJoinUrl;
                     const firstName = m.invitedName.split(/\s+/)[0];
+                    const isSelfRow = m.membershipId === activeTeam.myMembershipId;
+                    const isRowBusy = busyRosterMemberId === m.membershipId;
+                    const activeMergeTargets = activeTeam.memberships.filter(
+                      (other) =>
+                        other.membershipId !== m.membershipId &&
+                        other.status === 'ACTIVE' &&
+                        other.role === 'ATHLETE'
+                    );
                     const smsHref = m.invitedPhone
                       ? buildFreeNativeSmsUri(
                           m.invitedPhone,
@@ -1417,6 +1648,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       : null;
                     const mailtoHref = m.invitedEmail
                       ? `mailto:${encodeURIComponent(m.invitedEmail)}?${
+                          activeTeam.brand.enableParentGuardianCc &&
+                          m.isMinorU18 &&
                           m.parentGuardianEmail
                             ? `cc=${encodeURIComponent(m.parentGuardianEmail)}&`
                             : ''
@@ -1454,6 +1687,57 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           <div className="text-2xs font-mono uppercase text-slate-500">
                             {m.role.replace('_', ' ')}
                           </div>
+                          {activeTeam.myRole === 'HEAD_COACH' &&
+                            !isSelfRow &&
+                            m.status === 'ACTIVE' &&
+                            m.role !== 'PARENT_FOLLOWER' && (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <select
+                                  aria-label={`Role for ${m.invitedName}`}
+                                  disabled={isRowBusy}
+                                  value={
+                                    m.role === 'ASSISTANT_COACH'
+                                      ? 'ASSISTANT_COACH'
+                                      : 'ATHLETE'
+                                  }
+                                  onChange={(e) =>
+                                    void runMemberMutation(m.membershipId, () =>
+                                      updateMemberRoleApi(
+                                        activeTeam.brand.teamId,
+                                        m.membershipId,
+                                        e.target.value as 'ATHLETE' | 'ASSISTANT_COACH',
+                                        originUrl
+                                      )
+                                    )
+                                  }
+                                  className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                                >
+                                  <option value="ATHLETE">Athlete</option>
+                                  <option value="ASSISTANT_COACH">Assistant Coach</option>
+                                </select>
+                                {m.role === 'ASSISTANT_COACH' && (
+                                  <button
+                                    type="button"
+                                    disabled={isRowBusy}
+                                    onClick={() =>
+                                      void runMemberMutation(
+                                        m.membershipId,
+                                        () =>
+                                          transferHeadCoachApi(
+                                            activeTeam.brand.teamId,
+                                            m.membershipId,
+                                            originUrl
+                                          ),
+                                        'Head Coach ownership transferred successfully.'
+                                      )
+                                    }
+                                    className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-2xs font-mono cursor-pointer disabled:opacity-50"
+                                  >
+                                    Make Head Coach
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           {isActiveTeamCoach && m.role === 'ATHLETE' && (
                             <select
                               aria-label={`Event group for ${m.invitedName}`}
@@ -1499,21 +1783,56 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                             className={`px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
                               m.status === 'ACTIVE'
                                 ? 'ap-status-prime'
-                                : m.status === 'OPENED'
+                                : m.status === 'OPENED' || m.status === 'ALUMNI'
                                   ? 'ap-status-info'
-                                  : 'ap-status-caution'
+                                  : m.status === 'INJURED'
+                                    ? 'ap-status-strained'
+                                    : 'ap-status-caution'
                             }`}
                           >
                             {m.status === 'ACTIVE'
                               ? 'Joined'
                               : m.status === 'OPENED'
                                 ? 'Link Opened'
-                                : 'Invited'}
+                                : m.status === 'INJURED'
+                                  ? 'Injured'
+                                  : m.status === 'OFF_SEASON'
+                                    ? 'Off-Season'
+                                    : m.status === 'ALUMNI'
+                                      ? 'Alumni'
+                                      : 'Invited'}
                           </span>
                           {m.emailDeliveryStatus === 'SENT_RESEND' && (
                             <span className="ml-1.5 text-2xs font-mono text-emerald-600 dark:text-emerald-400">
                               · Emailed ✓
                             </span>
+                          )}
+                          {isActiveTeamCoach && !isSelfRow && (
+                            <div className="mt-1">
+                              <select
+                                aria-label={`Status for ${m.invitedName}`}
+                                disabled={isRowBusy}
+                                value={m.status}
+                                onChange={(e) =>
+                                  void runMemberMutation(m.membershipId, () =>
+                                    updateMemberStatusApi(
+                                      activeTeam.brand.teamId,
+                                      m.membershipId,
+                                      e.target.value,
+                                      originUrl
+                                    )
+                                  )
+                                }
+                                className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                              >
+                                <option value="ACTIVE">Joined</option>
+                                <option value="INVITED">Invited</option>
+                                <option value="INJURED">Injured</option>
+                                <option value="OFF_SEASON">Off-Season</option>
+                                <option value="ALUMNI">Alumni</option>
+                                <option value="REVOKED">Remove</option>
+                              </select>
+                            </div>
                           )}
                         </td>
 
@@ -1571,27 +1890,63 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 </a>
                               )}
 
-                              {m.status !== 'ACTIVE' &&
-                                (resendConfigured ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleResendPending(m.membershipId)}
-                                    className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono cursor-pointer"
-                                  >
-                                    Nudge
-                                  </button>
-                                ) : (
-                                  mailtoHref && (
-                                    <a
-                                      href={mailtoHref}
-                                      className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono inline-flex items-center gap-1"
+                                {m.status !== 'ACTIVE' &&
+                                  (resendConfigured ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResendPending(m.membershipId)}
+                                      className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono cursor-pointer"
                                     >
-                                      <ExternalLink className="w-3 h-3" />
-                                      <span>Email</span>
-                                    </a>
-                                  )
-                                ))}
-                            </div>
+                                      Nudge
+                                    </button>
+                                  ) : (
+                                    mailtoHref && (
+                                      <a
+                                        href={mailtoHref}
+                                        className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono inline-flex items-center gap-1"
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                        <span>Email</span>
+                                      </a>
+                                    )
+                                  ))}
+                                {m.status === 'INVITED' &&
+                                  activeMergeTargets.length > 0 && (
+                                    <select
+                                      aria-label={`Merge ${m.invitedName} into active athlete`}
+                                      disabled={isRowBusy}
+                                      defaultValue=""
+                                      onChange={(e) => {
+                                        const targetId = e.target.value;
+                                        if (targetId) {
+                                          void runMemberMutation(
+                                            m.membershipId,
+                                            () =>
+                                              mergeRosterMembersApi(
+                                                activeTeam.brand.teamId,
+                                                m.membershipId,
+                                                targetId,
+                                                originUrl
+                                              ),
+                                            'Merged pre-seeded profile & official marks into the claimed athlete account.'
+                                          );
+                                          e.target.value = '';
+                                        }
+                                      }}
+                                      className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-700 dark:text-slate-200"
+                                    >
+                                      <option value="">Merge into…</option>
+                                      {activeMergeTargets.map((target) => (
+                                        <option
+                                          key={target.membershipId}
+                                          value={target.membershipId}
+                                        >
+                                          {target.invitedName}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                              </div>
                           )}
                         </td>
                       </tr>

@@ -17,6 +17,7 @@ import type {
   StravaSyncPolicy,
   StravaSyncWindow,
   TeamSummaryWithRole,
+  ThreshUser,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -85,6 +86,7 @@ export interface CockpitModalsProps {
   onDisconnectPolar?: () => Promise<void>;
   onDisconnectGarmin: () => Promise<void>;
   onDisconnectStrava: () => void;
+  hasStandaloneAccount?: boolean;
   onUpdateStravaSyncPolicy?: (
     windowChoice: StravaSyncWindow,
     importProfileAndGear?: boolean
@@ -147,6 +149,9 @@ export interface CockpitModalsProps {
   rosterInitialTab: RosterTab;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
+  currentUser?: ThreshUser | null;
+  onUserUpdated?: (user: ThreshUser) => void;
+  onAccountDeleted?: () => void;
   onOpenFullScreenStopwatch?: () => void;
   onOpenCoachWorkspace?: (subTab?: CoachWorkspaceSubTab) => void;
 
@@ -198,6 +203,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
   onDisconnectPolar,
   onDisconnectGarmin,
   onDisconnectStrava,
+  hasStandaloneAccount,
   onUpdateStravaSyncPolicy,
   onSaveStravaCredentials,
   onLaunchStravaOAuth,
@@ -240,6 +246,9 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
   rosterInitialTab,
   onSelectActiveTeam,
   onTeamsUpdated,
+  currentUser,
+  onUserUpdated,
+  onAccountDeleted,
   onOpenFullScreenStopwatch,
   onOpenCoachWorkspace,
 
@@ -306,6 +315,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             onDisconnectPolar={onDisconnectPolar}
             onDisconnectGarmin={onDisconnectGarmin}
             onDisconnectStrava={onDisconnectStrava}
+            hasStandaloneAccount={hasStandaloneAccount}
             onUpdateStravaSyncPolicy={onUpdateStravaSyncPolicy}
             onSaveStravaCredentials={onSaveStravaCredentials}
             onLaunchStravaOAuth={onLaunchStravaOAuth}
@@ -369,6 +379,9 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             initialTab={rosterInitialTab}
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
+            currentUser={currentUser}
+            onUserUpdated={onUserUpdated}
+            onAccountDeleted={onAccountDeleted}
             onOpenFullScreenStopwatch={onOpenFullScreenStopwatch}
             onOpenCoachWorkspace={onOpenCoachWorkspace ? () => onOpenCoachWorkspace('ROSTER') : undefined}
           />

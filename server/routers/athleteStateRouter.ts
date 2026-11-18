@@ -17,6 +17,7 @@ import type {
   PlannedWorkoutEvent,
   SessionCheckInRecord,
   TargetGoal,
+  UnifiedActivity,
 } from '../../src/types.ts';
 
 export const athleteStateRouter = express.Router();
@@ -60,6 +61,7 @@ const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
   'thresholdPaceSecsPerKm',
   'thresholdHistory',
   'safeSportHideWeight',
+  'birthMonthYear',
   'academicDivision',
   'competitionGender',
 ];
@@ -67,16 +69,10 @@ const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
 /**
  * Resolves a device-agnostic AES-256-GCM vault key for first-party athlete plans,
  * goals, check-ins, and threshold settings.
- * Anchored to verified Strava Athlete ID first (then THRESH userId, then session sid)
- * so signing in on a second device restores the exact same plan and goals.
+ * Anchored to canonical THRESH userId (`usr_...`) FIRST so connecting Strava later
+ * never strands previously created plans/goals, then verified Strava Athlete ID, then session sid.
  */
 export function resolveCanonicalAthleteVaultKey(req: Request): string | null {
-  const store = getScopedRuntimeStore(req);
-  const stravaId = String(store?.stravaAthleteId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
-  if (stravaId) {
-    return `athlete_state_strava_${stravaId}`;
-  }
-
   const verified = getVerifiedSessionClaims(req);
   const sub = String(verified?.sub || '').trim();
   if (sub.startsWith('usr_')) {
@@ -84,6 +80,12 @@ export function resolveCanonicalAthleteVaultKey(req: Request): string | null {
     if (cleanUserId) {
       return `athlete_state_user_${cleanUserId}`;
     }
+  }
+
+  const store = getScopedRuntimeStore(req);
+  const stravaId = String(store?.stravaAthleteId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
+  if (stravaId) {
+    return `athlete_state_strava_${stravaId}`;
   }
 
   if (verified?.sid) {
@@ -179,6 +181,15 @@ export function sanitizeAthleteCloudState(
     ? input.sessionCheckIns.slice(0, 200)
     : base.sessionCheckIns;
 
+  const coachArchivedActivities: UnifiedActivity[] | undefined = Array.isArray(
+    input.coachArchivedActivities
+  )
+    ? input.coachArchivedActivities.slice(0, 150).map((act) => ({
+        ...act,
+        streams: undefined,
+      }))
+    : base.coachArchivedActivities;
+
   return {
     version: 1,
     updatedAt: new Date().toISOString(),
@@ -188,6 +199,7 @@ export function sanitizeAthleteCloudState(
     ...(athleteProfile ? { athleteProfile } : {}),
     ...(distanceUnit ? { distanceUnit } : {}),
     ...(sessionCheckIns ? { sessionCheckIns } : {}),
+    ...(coachArchivedActivities?.length ? { coachArchivedActivities } : {}),
   };
 }
 
@@ -197,11 +209,29 @@ export async function loadAthleteCloudState(req: Request): Promise<AthleteCloudS
   if (!vaultKey) return null;
 
   const existing = await loadTenantVaultAsync<AthleteCloudStateEnvelope | null>(vaultKey, null);
-  if (existing && Array.isArray(existing.plannedEvents)) {
+  if (
+    existing &&
+    (Array.isArray(existing.plannedEvents) ||
+      Array.isArray(existing.coachArchivedActivities) ||
+      Boolean(existing.athleteProfile))
+  ) {
     return existing;
   }
 
-  // Fallback migration: check session sid vault key & legacy /tmp planned events JSON
+  // Fallback migration: check legacy Strava key, session sid key & /tmp planned events JSON
+  const store = getScopedRuntimeStore(req);
+  const stravaId = String(store?.stravaAthleteId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
+  if (stravaId) {
+    const stravaKey = `athlete_state_strava_${stravaId}`;
+    if (stravaKey !== vaultKey) {
+      const stravaEnv = await loadTenantVaultAsync<AthleteCloudStateEnvelope | null>(stravaKey, null);
+      if (stravaEnv && Array.isArray(stravaEnv.plannedEvents)) {
+        await saveTenantVaultAsync(vaultKey, stravaEnv);
+        return stravaEnv;
+      }
+    }
+  }
+
   const verified = getVerifiedSessionClaims(req);
   const sidKey = verified?.sid
     ? `athlete_state_sid_${verified.sid.replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 32)}`

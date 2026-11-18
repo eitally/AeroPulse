@@ -237,11 +237,9 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 e.preventDefault();
                 setActiveTab('fitness');
               }}
-              className="flex items-center whitespace-nowrap shrink-0"
+              className="flex items-center whitespace-nowrap min-w-0 shrink"
             >
-              <span className="inline-flex scale-[0.86] origin-left sm:scale-100">
-                <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
-              </span>
+              <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
             </a>
 
             <button

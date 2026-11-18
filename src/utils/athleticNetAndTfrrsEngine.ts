@@ -1503,6 +1503,7 @@ export function applyExternalSyncLocallyToTeamSummary(
     const safeSport = Boolean(
       team.brand.defaultSafeSportShield || cand.isMinorU18 || team.brand.orgType === 'HIGH_SCHOOL'
     );
+    const isMinorImport = Boolean(cand.isMinorU18 || team.brand.orgType === 'HIGH_SCHOOL');
     const calibrated = cand.seedMarkOrFtp
       ? calibrateThresholdsFromSeedMark(cand.seedMarkOrFtp, team.brand.primarySport, 'mi')
       : undefined;
@@ -1530,8 +1531,8 @@ export function applyExternalSyncLocallyToTeamSummary(
         : 'DISTANCE',
       invitedName: cand.name,
       graduationYear: cand.graduationYear,
-      isMinorU18: safeSport,
-      parentConsentStatus: safeSport ? 'PENDING' : 'NOT_REQUIRED',
+      isMinorU18: isMinorImport,
+      parentConsentStatus: isMinorImport ? 'PENDING' : 'NOT_REQUIRED',
       seedMarkOrFtp: cand.seedMarkOrFtp,
       externalSource: cand.externalSource,
       externalAthleteId: cand.externalAthleteId,
