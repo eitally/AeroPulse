@@ -21,6 +21,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { useModalDialog } from '../hooks/useModalDialog';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
   buildCompleteAthleteProfile,
   buildHrZonesFromCeilings,
@@ -121,7 +122,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)
   );
   const [effectiveDate, setEffectiveDate] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
+    getLocalDateIso()
   );
   const [thresholdHistory, setThresholdHistory] = useState<ThresholdHistoryEntry[]>(
     athleteProfile.thresholdHistory || []
@@ -207,7 +208,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
       parsePaceInputToSecsPerKm(ltPaceInput, distanceUnit) ?? thresholdPaceSecsPerKm;
     setThresholdPaceSecsPerKm(resolvedPaceSecsPerKm);
     setLtPaceInput(formatPaceSecsForInput(resolvedPaceSecsPerKm, distanceUnit));
-    const cleanEffDate = (effectiveDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const cleanEffDate = (effectiveDate || getLocalDateIso()).slice(0, 10);
     const nextEntry: ThresholdHistoryEntry = {
       id: `th-${cleanEffDate}`,
       effectiveDate: cleanEffDate,

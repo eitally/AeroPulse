@@ -21,6 +21,7 @@ import {
   Zap,
   Download,
 } from "./icons/PhosphorIcons";
+import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 import {
   AthleteConnectionRole,
   AthletePrivacySettings,
@@ -160,11 +161,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
   // Coach Push Workout state
   const [pushTargetAthleteId, setPushTargetAthleteId] = useState<string | null>(null);
-  const [workoutDate, setWorkoutDate] = useState<string>(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().slice(0, 10);
-  });
+  const [workoutDate, setWorkoutDate] = useState<string>(() =>
+    shiftIsoDate(getLocalDateIso(), 1)
+  );
   const [workoutName, setWorkoutName] = useState('Coach Prescribed: 5x1km @ 102% Threshold');
   const [workoutSport, setWorkoutSport] = useState<'Running' | 'Cycling'>('Running');
   const [workoutDurationMins, setWorkoutDurationMins] = useState(60);

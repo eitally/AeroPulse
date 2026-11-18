@@ -11,6 +11,7 @@ import type {
   UnifiedWellnessDay,
 } from '../types';
 import { INITIAL_CHAT_MESSAGES } from '../data/mockTelemetry';
+import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 import { computeAnnualMileageSummary, formatDistance } from '../utils/formatters';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 
@@ -156,8 +157,8 @@ export function useCoachChat({
           (sleepScore > 0 && sleepScore < 65) ||
           /unbalanced|low|poor/i.test(hrvStatus));
       const wantsRun = /run|track|pace|5k|10k|marathon|threshold run/i.test(userText);
-      const todayIso = new Date().toISOString().slice(0, 10);
-      const tomorrowIso = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const todayIso = getLocalDateIso();
+      const tomorrowIso = shiftIsoDate(todayIso, 1);
 
       const primaryWorkout: PlannedWorkoutEvent = isRecoveryNeeded
         ? {

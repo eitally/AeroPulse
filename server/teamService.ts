@@ -1951,6 +1951,38 @@ export async function deleteBroadcastPlanBlockFromTeam(params: {
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
 
+export async function deleteBroadcastWorkoutFromTeam(params: {
+  callerSid: string;
+  teamId: string;
+  broadcastId: string;
+  originUrl: string;
+}): Promise<TeamSummaryWithRole | null> {
+  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+  );
+  if (
+    !callerMem ||
+    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+  ) {
+    return null;
+  }
+
+  const cleanBroadcastId = String(params.broadcastId || '').trim();
+  doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
+    (bw) => bw.broadcastId !== cleanBroadcastId
+  );
+  doc.updatedAt = new Date().toISOString();
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
+
 export async function recordCoachStopwatchActivities(params: {
   callerSid: string;
   teamId: string;
@@ -2043,8 +2075,12 @@ function buildConsentedCoachActivities(
   if (!Array.isArray(rawActivities) || sharingTier === 'LOAD_ONLY') {
     return [];
   }
+  const sortedNewestFirst = [...rawActivities].sort((a, b) =>
+    String(b?.startDateLocal || '').localeCompare(String(a?.startDateLocal || ''))
+  );
+  const newest25 = sortedNewestFirst.slice(0, 25);
   const cleanRoomPayload = sanitizeTelemetryForCleanRoom({
-    activities: rawActivities.slice(-25),
+    activities: newest25,
   });
   const cleanRoomActivities = (
     Array.isArray(cleanRoomPayload.activities) ? cleanRoomPayload.activities : []
@@ -2056,7 +2092,7 @@ function buildConsentedCoachActivities(
   // Clean-Room Firewall default: under SUMMARY_ONLY, strip Strava-only records;
   // only include Strava workout summaries when the athlete explicitly selects FULL_STREAMS.
   const sourceList =
-    sharingTier === 'FULL_STREAMS' ? rawActivities.slice(-25) : cleanRoomActivities;
+    sharingTier === 'FULL_STREAMS' ? newest25 : cleanRoomActivities;
 
   return sourceList.map((act) => {
     const isFirstParty = firstPartyIds.has(String(act.id || ''));
@@ -2170,6 +2206,21 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
             c?.painArea === 'OTHER'
               ? c.painArea
               : undefined;
+          const validLegFeel =
+            c?.legFeel === 'FRESH' || c?.legFeel === 'NORMAL' || c?.legFeel === 'HEAVY'
+              ? c.legFeel
+              : undefined;
+          const validRitualSlot =
+            c?.ritualSlot === 'MORNING' ||
+            c?.ritualSlot === 'POST_SESSION' ||
+            c?.ritualSlot === 'TONIGHT'
+              ? c.ritualSlot
+              : undefined;
+          const rawSleepTarget = Number(c?.sleepTargetHours);
+          const validSleepTarget =
+            Number.isFinite(rawSleepTarget) && rawSleepTarget >= 5 && rawSleepTarget <= 12
+              ? Number(rawSleepTarget.toFixed(1))
+              : undefined;
           return {
             id: String(c?.id || `chk-${Date.now()}`).slice(0, 64),
             date: String(c?.date || nowIso.slice(0, 10)).slice(0, 10),
@@ -2180,6 +2231,11 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
             ...(validArea ? { painArea: validArea } : {}),
             ...(c?.sorenessNote ? { sorenessNote: String(c.sorenessNote).slice(0, 140) } : {}),
             ...(c?.autoSwappedToRecovery ? { autoSwappedToRecovery: true } : {}),
+            ...(validLegFeel ? { legFeel: validLegFeel } : {}),
+            ...(c?.lifeStressFlag ? { lifeStressFlag: true } : {}),
+            ...(validSleepTarget ? { sleepTargetHours: validSleepTarget } : {}),
+            ...(c?.tomorrowLocked ? { tomorrowLocked: true } : {}),
+            ...(validRitualSlot ? { ritualSlot: validRitualSlot } : {}),
             createdAt: String(c?.createdAt || nowIso).slice(0, 40),
           };
         })

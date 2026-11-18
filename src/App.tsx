@@ -32,21 +32,16 @@ import {
   applyAthletePrivacyShield,
   buildInitialConnectedAthletes,
 } from './data/athleteRosterData';
-import {
-  StravaAuthGate,
-  type FirstRunCalibrationPayload,
-} from './components/StravaAuthGate';
+import { StravaAuthGate } from './components/StravaAuthGate';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
 import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
-import { applyTeamBrandToDocument } from './utils/teamBrandDom';
 import {
   partitionSavedStopwatchEntries,
   persistCoachStopwatchActivitiesToServer,
 } from './utils/stopwatchTeamSync';
 import {
   buildCompleteAthleteProfile,
-  clearPersistedTelemetrySnapshot,
   inferPrimarySportFromActivities,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
@@ -74,6 +69,8 @@ import { useRosterActions } from './hooks/useRosterActions';
 import { useBrandStudioRoute } from './utils/brandRoute';
 import { useShareWorkoutRoute, sharedWorkoutToPlannedEventInput } from './utils/shareWorkoutEngine';
 import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
+import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
+import { getLocalDateIso } from './physiology/stravaLoadCalibration';
 
 const BrandGuidePage = React.lazy(() => import('./components/BrandGuidePage'));
 const ShareWorkoutPage = React.lazy(() => import('./components/ShareWorkoutPage'));
@@ -1046,104 +1043,46 @@ export default function App() {
     return `TH-${codeDigits}-${cleanTag}`;
   }, [primaryAthleteDisplayName]);
 
-  const resetClientWorkspaceStateOnLogout = useCallback(async (clearAllVaultKeys: boolean) => {
-    setIsSampleDemoMode(false);
-    resetSampleDemoEphemeralState();
-    setIsSessionLoggedOut(true);
-    setHasEnteredWorkspace(false);
-    hasEnteredWorkspaceRef.current = false;
-    const activeHeaders = getSavedIntervalsHeaders();
-    try {
-      localStorage.setItem('aeropulse_logged_out', '1');
-      localStorage.removeItem('aeropulse_auth_gate_passed');
-      localStorage.removeItem('aeropulse_session_token');
-      localStorage.removeItem('aeropulse_strava_access_token');
-      localStorage.removeItem('aeropulse_strava_refresh_token');
-      localStorage.removeItem('aeropulse_strava_expires_at');
-      localStorage.removeItem('thresh_my_teams_v1');
-      localStorage.removeItem('thresh_active_team_id_v1');
-      sessionStorage.removeItem('thresh_pending_team_join_v1');
-      if (clearAllVaultKeys) {
-        localStorage.removeItem('aeropulse_calibrated_v1');
-        localStorage.removeItem('aeropulse_strava_athlete_id');
-        localStorage.removeItem('aeropulse_strava_athlete_name');
-        localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
-        localStorage.removeItem('aeropulse_strava_athlete_ftp');
-        localStorage.removeItem('aeropulse_strava_sync_policy');
-        localStorage.removeItem('aeropulse_store_owner_athlete_id');
-        localStorage.removeItem('thresh_primary_sport');
-        localStorage.removeItem('aeropulse_intervals_api_key');
-        localStorage.removeItem('aeropulse_intervals_athlete_id');
-        localStorage.removeItem('aeropulse_intervals_athlete_name');
-        localStorage.removeItem('aeropulse_strava_client_secret');
-        localStorage.removeItem('aeropulse_garmin_personal_api_key');
-        localStorage.removeItem('aeropulse_garmin_bearer_token');
-        localStorage.removeItem('aeropulse_garmin_oauth1_token');
-        localStorage.removeItem('aeropulse_garmin_oauth1_secret');
-        localStorage.removeItem('aeropulse_garmin_athlete_name');
-      }
-    } catch {
-      // ignore
-    }
-    applyTeamBrandToDocument(null);
-    setActivities([]);
-    activitiesRef.current = [];
-    setWellnessDays([]);
-    wellnessDaysRef.current = [];
-    setPlannedEvents([]);
-    plannedEventsRef.current = [];
-    setGearItems([]);
-    gearItemsRef.current = [];
-    setMyTeams([]);
-    setActiveTeamId(null);
-    setActiveViewedAthleteId('SELF');
-    setCurrentUser(null);
-    const defaultProf = buildCompleteAthleteProfile(null);
-    setAthleteProfile(defaultProf);
-    athleteProfileRef.current = defaultProf;
-    setRedactedStravaCount(0);
-    redactedStravaCountRef.current = 0;
-    setConnectionStatus((prev) => ({
-      ...prev,
-      mode: 'SANDBOX_CALIBRATION',
-      currentUser: null,
-      stravaConnected: false,
-      stravaAthleteId: undefined,
-      stravaAthleteName: undefined,
-      stravaGrantedScope: undefined,
-      stravaSyncPolicy: undefined,
-      stravaSource: 'NONE',
-      garminConnected: false,
-      garminAthleteName: undefined,
-      intervalsConnected: false,
-      intervalsAthleteId: '0',
-      intervalsAthleteName: undefined,
-      intervalsSource: 'NONE',
-    }));
-    try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...activeHeaders },
-        body: JSON.stringify({ clearCredentials: clearAllVaultKeys }),
-      });
-    } catch {
-      // ignore
-    }
-    if (clearAllVaultKeys) {
-      await clearPersistedTelemetrySnapshot();
-      setIdbSavedAt(null);
-    }
-    await fetchServerConfigStatus();
-  }, [fetchServerConfigStatus, resetSampleDemoEphemeralState]);
-
-  const handleLogoutSession = useCallback(() => {
-    void resetClientWorkspaceStateOnLogout(false);
-  }, [resetClientWorkspaceStateOnLogout]);
-
-  const handleLogoutAndClearData = useCallback(async () => {
-    await resetClientWorkspaceStateOnLogout(true);
-  }, [resetClientWorkspaceStateOnLogout]);
+  const {
+    handleLogoutSession,
+    handleLogoutAndClearData,
+    handleCompleteCalibrationEntry,
+    handleBypassToLocalSession,
+  } = useWorkspaceOnboarding({
+    activitiesRef,
+    wellnessDaysRef,
+    plannedEventsRef,
+    gearItemsRef,
+    athleteProfileRef,
+    redactedStravaCountRef,
+    hasEnteredWorkspaceRef,
+    athleteProfile,
+    setActivities,
+    setWellnessDays,
+    setPlannedEvents,
+    setGearItems,
+    setAthleteProfile,
+    setRedactedStravaCount,
+    setMyTeams,
+    setActiveTeamId,
+    setActiveViewedAthleteId,
+    setCurrentUser,
+    setConnectionStatus,
+    setIdbSavedAt,
+    setIsSampleDemoMode,
+    setIsSessionLoggedOut,
+    setHasEnteredWorkspace,
+    setDistanceUnit,
+    setActiveTab,
+    setCoachSubTab,
+    setIsDataSourcesOpen,
+    setRosterInitialTab,
+    setIsRosterModalOpen,
+    resetSampleDemoEphemeralState,
+    fetchServerConfigStatus,
+    handleTeamsUpdated,
+    handleSaveProfileOverride,
+  });
 
 
   const {
@@ -1295,7 +1234,7 @@ export default function App() {
         handlePushCoachWorkout(activeConnectedAthlete.id, {
           date: evt.date,
           name: evt.name,
-          sportCategory: evt.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+          sportCategory: evt.sportCategory,
           plannedDurationSecs: evt.plannedDurationSecs,
           plannedLoad: evt.plannedLoad,
           workoutSyntax: evt.workoutSyntax || '',
@@ -1414,116 +1353,6 @@ export default function App() {
     [combinedRoster, isSampleDemoMode, activeTeamId, setMyTeams]
   );
 
-  const handleCompleteCalibrationEntry = async (payload: FirstRunCalibrationPayload) => {
-    const cleanName = payload.athleteName.trim() || athleteProfileRef.current.name || 'Athlete';
-    const hasSeedOverride = Boolean(payload.hasCustomSeedMark);
-
-    let thresholdPaceSecsPerKm = athleteProfileRef.current.thresholdPaceSecsPerKm || 260;
-    if (hasSeedOverride && payload.thresholdPaceInput) {
-      const paceMatch = payload.thresholdPaceInput.trim().match(/^(\d{1,2}):(\d{2})$/);
-      if (paceMatch) {
-        const totalSecs = Number(paceMatch[1]) * 60 + Number(paceMatch[2]);
-        if (totalSecs >= 120 && totalSecs <= 900) {
-          thresholdPaceSecsPerKm =
-            payload.distanceUnit === 'mi'
-              ? Math.round(totalSecs / 1.609344)
-              : Math.round(totalSecs);
-        }
-      }
-    }
-
-    const customFtp =
-      hasSeedOverride && payload.cyclingFtpWatts && payload.cyclingFtpWatts > 50
-        ? Math.round(payload.cyclingFtpWatts)
-        : undefined;
-
-    const calibratedProfile = buildCompleteAthleteProfile(
-      {
-        ...athleteProfileRef.current,
-        ...(hasSeedOverride ? { source: 'CUSTOM_OVERRIDE' as const } : {}),
-        name: !isGenericAthleteName(cleanName) ? cleanName : athleteProfileRef.current.name,
-        primarySport: payload.primarySport,
-        ...(customFtp ? { ftp: customFtp, indoorFtp: customFtp } : {}),
-        ...(hasSeedOverride ? { thresholdPaceSecsPerKm } : {}),
-        safeSportHideWeight: Boolean(
-          payload.safeSportHideWeight || athleteProfileRef.current.safeSportHideWeight
-        ),
-      },
-      wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
-      activitiesRef.current
-    );
-
-    setIsSampleDemoMode(false);
-    setDistanceUnit(payload.distanceUnit);
-    try {
-      localStorage.setItem('thresh_primary_sport', payload.primarySport);
-      localStorage.setItem('thresh_distance_unit', payload.distanceUnit);
-      localStorage.setItem('thresh_distance_unit_user_set', '1');
-      localStorage.removeItem('aeropulse_logged_out');
-      localStorage.setItem('aeropulse_auth_gate_passed', '1');
-      localStorage.setItem('aeropulse_calibrated_v1', '1');
-      if (payload.sessionToken) {
-        localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-      }
-      if (
-        window.location.pathname.startsWith('/join/') ||
-        window.location.search.includes('join=')
-      ) {
-        window.history.replaceState({}, '', '/');
-      }
-    } catch {
-      // ignore storage quota errors
-    }
-
-    if (payload.stravaSyncPolicy) {
-      setConnectionStatus((prev) => ({
-        ...prev,
-        stravaSyncPolicy: payload.stravaSyncPolicy,
-      }));
-    }
-
-    if (payload.claimedTeams && payload.claimedTeams.length > 0) {
-      handleTeamsUpdated(
-        payload.claimedTeams,
-        payload.activeTeamId || payload.claimedTeams[0].brand.teamId
-      );
-    }
-
-    if (hasSeedOverride) {
-      await handleSaveProfileOverride(calibratedProfile);
-    } else {
-      setAthleteProfile(calibratedProfile);
-      athleteProfileRef.current = calibratedProfile;
-    }
-    void savePersistedTelemetrySnapshot({
-      activities: activitiesRef.current,
-      wellnessDays: wellnessDaysRef.current,
-      plannedEvents: plannedEventsRef.current,
-      gearItems: gearItemsRef.current,
-      athleteProfile: calibratedProfile,
-      redactedStravaCount: redactedStravaCountRef.current,
-    });
-
-    setIsSessionLoggedOut(false);
-    setHasEnteredWorkspace(true);
-    hasEnteredWorkspaceRef.current = true;
-
-    if (payload.entryTarget === 'DATA_SOURCES') {
-      setIsDataSourcesOpen(true);
-    } else if (payload.entryTarget === 'UPLOAD_FIT') {
-      setActiveTab('activities');
-    } else if (payload.entryTarget === 'COACH_MODE') {
-      setActiveTab('coach');
-      setCoachSubTab('CLIPBOARD');
-    } else if (payload.entryTarget === 'CREATE_TEAM') {
-      setActiveTab('fitness');
-      setRosterInitialTab('TEAMS_BRANDING');
-      setIsRosterModalOpen(true);
-    } else {
-      setActiveTab('fitness');
-    }
-  };
-
   if (isBrandRoute) {
     const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
     return (
@@ -1594,36 +1423,7 @@ export default function App() {
           existingActivities={activities}
           distanceUnit={distanceUnit}
           onOpenBrandStudio={openBrand}
-          onBypassToLocalSession={async () => {
-            try {
-              localStorage.removeItem('aeropulse_logged_out');
-              const res = await fetch('/api/auth/session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ athleteName: athleteProfile.name || 'Athlete' }),
-              });
-              if (res.ok) {
-                const data = (await res.json()) as { sessionToken?: string };
-                if (data.sessionToken) {
-                  localStorage.setItem('aeropulse_session_token', data.sessionToken);
-                }
-              } else if (!localStorage.getItem('aeropulse_session_token')) {
-                localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
-              }
-            } catch {
-              if (!localStorage.getItem('aeropulse_session_token')) {
-                localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
-              }
-            }
-            setHasEnteredWorkspace(true);
-            hasEnteredWorkspaceRef.current = true;
-            setIsSessionLoggedOut(false);
-            setConnectionStatus((prev) => ({
-              ...prev,
-              stravaConnected: true,
-              stravaAthleteName: prev.stravaAthleteName || athleteProfile.name || 'Local Athlete',
-            }));
-          }}
+          onBypassToLocalSession={handleBypassToLocalSession}
         />
       </IconContext.Provider>
     );
@@ -1853,7 +1653,7 @@ export default function App() {
           onSaveGeminiApiKey={handleSaveGeminiApiKey}
           onScheduleProposedWorkout={async (workout) => {
             await handleCreatePlannedEvent({
-              date: workout.date || new Date().toISOString().slice(0, 10),
+              date: workout.date || getLocalDateIso(),
               name: workout.name || 'Structured Workout',
               sportCategory: workout.sportCategory || 'Running',
               environmentPreference: workout.environmentPreference || 'FLEXIBLE',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AeroPulseLogo } from './AeroPulseLogo';
+import { formatPace } from '../utils/formatters';
 import { TracksideLiveHeaderPill } from './TracksideLiveHeaderPill';
 import { PWAInstallButton } from './PWAInstallButton';
 import type { RosterTab } from './AthleteRosterModal';
@@ -639,13 +640,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       </span>
                       <span className="font-mono text-2xs font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
                         {effectiveAthleteProfile.primarySport === 'Running'
-                          ? (() => {
-                              const secs = Math.max(
+                          ? formatPace(
+                              Math.max(
                                 150,
                                 Math.round(effectiveAthleteProfile.thresholdPaceSecsPerKm || 250)
-                              );
-                              return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}/km`;
-                            })()
+                              ),
+                              distanceUnit
+                            )
                           : `${effectiveAthleteProfile.ftp}W`}
                       </span>
                     </button>
@@ -769,12 +770,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     <button
                       type="button"
                       role="menuitem"
+                      aria-label="Back to Welcome / Sign Out"
                       onClick={onLogoutSession}
                       className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-semibold transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
                         <LogOut className="w-4 h-4" weight="bold" />
-                        <span>Back to Welcome / Sign Out</span>
+                        <span>Sign Out</span>
                       </span>
                     </button>
 

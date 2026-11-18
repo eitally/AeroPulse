@@ -19,6 +19,7 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { parseStructuredTrackWorkout } from '../utils/workoutParser';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
   exportWorkoutAsErg,
   exportWorkoutAsFit,
@@ -173,7 +174,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const [clipboardSport, setClipboardSport] = useState<'Running' | 'Cycling'>('Running');
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
-  const [workoutDate, setWorkoutDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [workoutDate, setWorkoutDate] = useState(() => getLocalDateIso());
   const [workoutTitle, setWorkoutTitle] = useState('Track Multi-Set');
   const [shorthandInput, setShorthandInput] = useState('');
   const [includeWarmup, setIncludeWarmup] = useState(true);
@@ -501,7 +502,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { 'x-thresh-session': token } : {}),
+              ...(token ? { 'x-session-token': token } : {}),
             },
             body: JSON.stringify({
               origin: typeof window !== 'undefined' ? window.location.origin : '',

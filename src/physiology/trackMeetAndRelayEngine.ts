@@ -10,6 +10,7 @@ import type {
 import { computeOfficialRaceTrainingLoad, formatFatTime } from '../utils/officialRaceSynthesizer.ts';
 import { generateVerifiedRacePassport } from './raceRubberBander.ts';
 import { buildTrackSpeedReserveProfile } from './trackSpeedReserveEngine.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 export type TrackRelayEventType = '4x400m' | '4x800m' | 'DMR';
 
@@ -556,7 +557,7 @@ export function batchGenerateStopwatchRacePassports(params: {
     sessionTitle,
     eventLabel,
     eventDistanceMeters,
-    raceDateIso = new Date().toISOString().slice(0, 10),
+    raceDateIso = getLocalDateIso(),
     platform = 'Official FAT',
     isHandTimed = false,
     finishers,

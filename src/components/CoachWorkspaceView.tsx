@@ -181,7 +181,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               targetSquadGroup: 'ALL',
               date: eventInput.date,
               name: eventInput.name,
-              sportCategory: eventInput.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+              sportCategory: eventInput.sportCategory,
               plannedDurationSecs: eventInput.plannedDurationSecs,
               plannedLoad: eventInput.plannedLoad,
               workoutSyntax: eventInput.workoutSyntax,
@@ -463,7 +463,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           myTeams={myTeams}
           activeTeamId={activeTeamId}
           onSaveStopwatchActivities={onSaveStopwatchActivities}
-          onOpenActivitiesTab={() => setSubTab('CLIPBOARD')}
+          onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
           onOpenRosterModal={onOpenRosterModal}
         />
       )}

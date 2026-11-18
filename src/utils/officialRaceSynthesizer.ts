@@ -11,6 +11,7 @@ import {
   buildTrackSpeedReserveProfile,
   solveTrackPaceSecsPerKmForPctVdot,
 } from '../physiology/trackSpeedReserveEngine';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 
 export interface OfficialRaceEventDefinition {
   label: string;
@@ -543,7 +544,7 @@ export function parseOfficialResultsTextDeterministically(
     : 'Athletic.net';
 
   const results: ParsedOfficialRaceCandidate[] = [];
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getLocalDateIso();
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];

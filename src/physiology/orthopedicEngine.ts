@@ -6,6 +6,7 @@ import type {
   UnifiedActivity,
 } from '../types.ts';
 import { computeHistoricalActivityLoad } from './pmc.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 export const M_SHOE_MULTIPLIERS: Record<TrackFootwearClass, number> = {
   DAILY_TRAINER: 1.0,
@@ -241,7 +242,7 @@ export function evaluateOrthopedicInterference(
     lowerLegSoreness?: number;
   }
 ): OrthopedicLoadSummary {
-  const refDateStr = (referenceDateIso || new Date().toISOString()).slice(0, 10);
+  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
   const refExactMs =
     referenceDateIso && referenceDateIso.includes('T')

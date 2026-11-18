@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import type {
   ConnectedAthleteRecord,
   PlannedWorkoutEvent,
+  SportCategory,
   TeamSummaryWithRole,
 } from '../types';
 import { createConnectedAthleteRecord } from '../data/athleteRosterData';
@@ -92,7 +93,7 @@ export function useRosterActions({
       workout: {
         date: string;
         name: string;
-        sportCategory: 'Running' | 'Cycling';
+        sportCategory: SportCategory;
         plannedDurationSecs: number;
         plannedLoad: number;
         workoutSyntax: string;

@@ -1781,7 +1781,7 @@ async function pushWorkoutToGarminConnect(session, input) {
   };
 }
 async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
-  const endDate = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const endDate = new Date(Date.now() + 86400 * 1e3).toISOString().slice(0, 10);
   const startDate = new Date(
     Date.now() - Math.min(daysToFetch, 30) * 86400 * 1e3
   ).toISOString().slice(0, 10);
@@ -3070,7 +3070,7 @@ function computeActivityThreeChannelLoads(act, profile) {
   };
 }
 function evaluateOrthopedicInterference(activities, profile, todayPlannedEvents = [], referenceDateIso, options) {
-  const refDateStr = (referenceDateIso || (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10);
+  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
   const refExactMs = referenceDateIso && referenceDateIso.includes("T") ? Date.parse(referenceDateIso) : refMs;
   const dayMs = 864e5;
@@ -4649,7 +4649,7 @@ function generateVerifiedRacePassport(input) {
     meetOrRaceName: input.meetOrRaceName || "Certified Championship Event",
     eventLabel: input.eventLabel || `${certDist}m`,
     platform: input.platform,
-    raceDate: input.raceDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+    raceDate: input.raceDate || getLocalDateIso(),
     certifiedDistanceMeters: certDist,
     rawGpsDistanceMeters: rawGpsDist,
     gpsDriftPct,
@@ -6151,7 +6151,7 @@ function evaluateSafeSportPatternWatch(params) {
     hasAthleticTrainer = false,
     referenceDateIso
   } = params;
-  const refDateStr = (referenceDateIso || (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10);
+  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
   const datedActivities = activities.map((act) => {
     const d = (act.startDateLocal || "").slice(0, 10);
@@ -8138,6 +8138,26 @@ async function deleteBroadcastPlanBlockFromTeam(params) {
   await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
+async function deleteBroadcastWorkoutFromTeam(params) {
+  const doc = await loadTenantVaultAsync(
+    teamDocVaultKey(params.teamId),
+    null
+  );
+  if (!doc) return null;
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    return null;
+  }
+  const cleanBroadcastId = String(params.broadcastId || "").trim();
+  doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
+    (bw) => bw.broadcastId !== cleanBroadcastId
+  );
+  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
 async function recordCoachStopwatchActivities(params) {
   const doc = await loadTenantVaultAsync(
     teamDocVaultKey(params.teamId),
@@ -8199,14 +8219,18 @@ function buildConsentedCoachActivities(rawActivities, sharingTier, allowGpsRoute
   if (!Array.isArray(rawActivities) || sharingTier === "LOAD_ONLY") {
     return [];
   }
+  const sortedNewestFirst = [...rawActivities].sort(
+    (a, b) => String(b?.startDateLocal || "").localeCompare(String(a?.startDateLocal || ""))
+  );
+  const newest25 = sortedNewestFirst.slice(0, 25);
   const cleanRoomPayload = sanitizeTelemetryForCleanRoom({
-    activities: rawActivities.slice(-25)
+    activities: newest25
   });
   const cleanRoomActivities = Array.isArray(cleanRoomPayload.activities) ? cleanRoomPayload.activities : [];
   const firstPartyIds = new Set(
     cleanRoomActivities.map((a) => String(a?.id || ""))
   );
-  const sourceList = sharingTier === "FULL_STREAMS" ? rawActivities.slice(-25) : cleanRoomActivities;
+  const sourceList = sharingTier === "FULL_STREAMS" ? newest25 : cleanRoomActivities;
   return sourceList.map((act) => {
     const isFirstParty = firstPartyIds.has(String(act.id || ""));
     const includeGps = sharingTier === "FULL_STREAMS" && allowGpsRoutes && isFirstParty;
@@ -8280,6 +8304,10 @@ async function syncAthleteSnapshotAcrossTeams(params) {
       params.snapshot.sessionCheckIns
     ) ? params.snapshot.sessionCheckIns.slice(0, 28).map((c) => {
       const validArea = c?.painArea === "KNEE" || c?.painArea === "SHIN" || c?.painArea === "ACHILLES" || c?.painArea === "HAMSTRING" || c?.painArea === "HIP" || c?.painArea === "FOOT" || c?.painArea === "BACK" || c?.painArea === "OTHER" ? c.painArea : void 0;
+      const validLegFeel = c?.legFeel === "FRESH" || c?.legFeel === "NORMAL" || c?.legFeel === "HEAVY" ? c.legFeel : void 0;
+      const validRitualSlot = c?.ritualSlot === "MORNING" || c?.ritualSlot === "POST_SESSION" || c?.ritualSlot === "TONIGHT" ? c.ritualSlot : void 0;
+      const rawSleepTarget = Number(c?.sleepTargetHours);
+      const validSleepTarget = Number.isFinite(rawSleepTarget) && rawSleepTarget >= 5 && rawSleepTarget <= 12 ? Number(rawSleepTarget.toFixed(1)) : void 0;
       return {
         id: String(c?.id || `chk-${Date.now()}`).slice(0, 64),
         date: String(c?.date || nowIso.slice(0, 10)).slice(0, 10),
@@ -8290,6 +8318,11 @@ async function syncAthleteSnapshotAcrossTeams(params) {
         ...validArea ? { painArea: validArea } : {},
         ...c?.sorenessNote ? { sorenessNote: String(c.sorenessNote).slice(0, 140) } : {},
         ...c?.autoSwappedToRecovery ? { autoSwappedToRecovery: true } : {},
+        ...validLegFeel ? { legFeel: validLegFeel } : {},
+        ...c?.lifeStressFlag ? { lifeStressFlag: true } : {},
+        ...validSleepTarget ? { sleepTargetHours: validSleepTarget } : {},
+        ...c?.tomorrowLocked ? { tomorrowLocked: true } : {},
+        ...validRitualSlot ? { ritualSlot: validRitualSlot } : {},
         createdAt: String(c?.createdAt || nowIso).slice(0, 40)
       };
     }) : mem.liveSnapshot?.sessionCheckIns;
@@ -8789,6 +8822,33 @@ teamRouter.delete("/api/teams/:teamId/workouts/blocks/:blockId", async (req, res
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed to recall team training block."
+    });
+  }
+});
+teamRouter.delete("/api/teams/:teamId/workouts/:broadcastId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await deleteBroadcastWorkoutFromTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      broadcastId: String(req.params.broadcastId || ""),
+      originUrl
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to delete broadcast workout."
     });
   }
 });
@@ -10171,8 +10231,8 @@ activitiesRouter.post("/api/segments/scan-more", async (req, res) => {
       return;
     }
     const resolvedId = config.athleteId || "0";
-    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${todayStr}`;
+    const newestStr = new Date(Date.now() + 86400 * 1e3).toISOString().slice(0, 10);
+    const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${newestStr}`;
     const actResp = await fetch(activitiesUrl, {
       headers: { Authorization: authHeader, Accept: "application/json" }
     });
@@ -10283,9 +10343,9 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
     let activityIds = Array.isArray(req.body?.activityIds) ? req.body.activityIds.map(String).slice(0, 32) : [];
     if (activityIds.length === 0) {
       const resolvedId = intervalsConfig.athleteId || "0";
-      const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const newestStr = new Date(Date.now() + 86400 * 1e3).toISOString().slice(0, 10);
       const actResp = await fetch(
-        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${todayStr}`,
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${newestStr}`,
         { headers: { Authorization: authHeader, Accept: "application/json" } }
       );
       if (actResp.ok) {
@@ -12315,7 +12375,7 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
     athleteId = configOrKey.athleteId || maybeAthleteId || "0";
   }
   const now = /* @__PURE__ */ new Date();
-  const newest = now.toISOString().slice(0, 10);
+  const newest = new Date(now.getTime() + 86400 * 1e3).toISOString().slice(0, 10);
   const futureEventsDate = new Date(now);
   futureEventsDate.setUTCDate(futureEventsDate.getUTCDate() + 90);
   const newestEvents = futureEventsDate.toISOString().slice(0, 10);
@@ -13112,13 +13172,14 @@ intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
     }
     const authHeader = intervalsAuth;
     const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const newestStr = new Date(Date.now() + 86400 * 1e3).toISOString().slice(0, 10);
     const oldest60d = new Date(Date.now() - 60 * 86400 * 1e3).toISOString().slice(0, 10);
     const [profileResp, wellnessResp, actsResp, garminDirect] = await Promise.all([
       fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
         headers: { Authorization: authHeader, Accept: "application/json" }
       }),
       fetch(
-        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest60d}&newest=${todayStr}`,
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest60d}&newest=${newestStr}`,
         {
           headers: { Authorization: authHeader, Accept: "application/json" }
         }

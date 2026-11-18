@@ -15,6 +15,7 @@ import {
   claimTeamJoinInvite,
   createTeamForCoach,
   deleteBroadcastPlanBlockFromTeam,
+  deleteBroadcastWorkoutFromTeam,
   isResendConfigured,
   listTeamsForUser,
   previewTeamJoinInvite,
@@ -558,6 +559,35 @@ teamRouter.delete('/api/teams/:teamId/workouts/blocks/:blockId', async (req: Req
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to recall team training block.',
+    });
+  }
+});
+
+// 11f. Recall / Delete Single Broadcast Workout from Team Calendar
+teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await deleteBroadcastWorkoutFromTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      broadcastId: String(req.params.broadcastId || ''),
+      originUrl,
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions required.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to delete broadcast workout.',
     });
   }
 });

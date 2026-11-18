@@ -65,7 +65,7 @@ describe('UX-01 & BRD-02 · S2 Redline Breach × W-A Threshold Horizon Modular B
     const logoSrc = fs.readFileSync(path.join(root, 'src', 'components', 'AeroPulseLogo.tsx'), 'utf8');
     expect(logoSrc).toContain('export const ThreshMark');
     expect(logoSrc).toContain('export const ThreshWordmark');
-    expect(logoSrc).toContain('--thresh-volt:#3F8E00');
+    expect(logoSrc).toContain('--thresh-volt:#357A00');
     expect(logoSrc).toContain('--thresh-ink:#101411');
     expect(logoSrc).toContain('--thresh-ink:#F4F7F4');
     expect(logoSrc).not.toContain('skewX(-14) scale(1.10, 1.29)');

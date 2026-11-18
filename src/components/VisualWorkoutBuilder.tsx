@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
 import {
+  Activity,
   Bike,
   ChevronDown,
   Download,
@@ -514,7 +515,9 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             ? '4x6m Threshold Cruise'
             : sport === 'Swimming'
               ? '2000m Aerobic & Threshold Pull'
-              : '45m Runner Strength & Plyos'
+              : sport === 'Multisport'
+                ? '45m Aerobic Cross-Train & Mobility'
+                : '45m Runner Strength & Plyos'
     );
   };
 
@@ -588,6 +591,22 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
           name: '5x4m VO2max Ceiling',
           trackOval: false,
           syntax: `- 15m 60% FTP Warmup\nMain Set 5x\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 10m 50% FTP Cooldown`,
+        },
+      ];
+    }
+    if (builderSport === 'Multisport') {
+      return [
+        {
+          label: 'Aqua-Jog Aerobic Flush (45m)',
+          name: '45m Aqua-Jog Low-Impact Flush',
+          trackOval: false,
+          syntax: `- 10m 58% Effort Easy Spin\nMain Set 6x\n- 4m 82% Effort Tempo Effort\n- 1m 55% Effort Float\n- 5m 52% Effort Cooldown`,
+        },
+        {
+          label: 'Row / Elliptical Threshold (50m)',
+          name: '50m Aerobic Cross-Train Threshold',
+          trackOval: false,
+          syntax: `- 12m 62% Effort Warmup\n- 30m 86% Effort Steady Aerobic Cross-Train\n- 8m 54% Effort Cooldown`,
         },
       ];
     }
@@ -735,6 +754,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             { id: 'Cycling', label: 'Cycling', trackOval: false, Icon: Bike },
             { id: 'Swimming', label: 'Swim', trackOval: false, Icon: Waves },
             { id: 'Strength', label: 'Strength', trackOval: false, Icon: Dumbbell },
+            { id: 'Multisport', label: 'Cross-Train', trackOval: false, Icon: Activity },
           ] as const
         ).map(({ id, label, trackOval, Icon }) => {
           const active =

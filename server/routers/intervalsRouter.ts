@@ -203,7 +203,7 @@ export async function syncIntervalsAllHistory(
     athleteId = configOrKey.athleteId || maybeAthleteId || '0';
   }
   const now = new Date();
-  const newest = now.toISOString().slice(0, 10);
+  const newest = new Date(now.getTime() + 86400 * 1000).toISOString().slice(0, 10);
   const futureEventsDate = new Date(now);
   futureEventsDate.setUTCDate(futureEventsDate.getUTCDate() + 90);
   const newestEvents = futureEventsDate.toISOString().slice(0, 10);
@@ -1260,6 +1260,7 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
 
     const authHeader = intervalsAuth;
     const todayStr = new Date().toISOString().slice(0, 10);
+    const newestStr = new Date(Date.now() + 86400 * 1000).toISOString().slice(0, 10);
     const oldest60d = new Date(Date.now() - 60 * 86400 * 1000).toISOString().slice(0, 10);
 
     const [profileResp, wellnessResp, actsResp, garminDirect] = await Promise.all([
@@ -1267,7 +1268,7 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
         headers: { Authorization: authHeader, Accept: 'application/json' },
       }),
       fetch(
-        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest60d}&newest=${todayStr}`,
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldest60d}&newest=${newestStr}`,
         {
           headers: { Authorization: authHeader, Accept: 'application/json' },
         }

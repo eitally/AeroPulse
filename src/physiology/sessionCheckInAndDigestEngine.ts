@@ -137,6 +137,7 @@ export function evaluateSafetySwapFromCheckIn(opts: {
 export type DigestAttentionReason =
   | 'PAIN_FLAG'
   | 'HIGH_RPE_STRAIN'
+  | 'HIGH_LIFE_STRESS'
   | 'MISSED_KEY_SESSIONS'
   | 'ON_TRACK';
 
@@ -149,6 +150,8 @@ export interface CoachDigestAthleteRow {
   compliancePct: number;
   latestCheckIn: SessionCheckInRecord | null;
   checkedInToday: boolean;
+  checkedInLast24h: boolean;
+  checkInStreakDays: number;
   avgRpe7d: number | null;
   attentionReason: DigestAttentionReason;
   attentionSummary: string;
@@ -160,9 +163,11 @@ export interface CoachSquadExecutionDigest {
   windowEndIso: string;
   totalAthletes: number;
   checkedInTodayCount: number;
+  checkedInLast24hCount: number;
   painFlagCount: number;
   swappedCount: number;
   highRpeCount: number;
+  lifeStressCount: number;
   teamCompliancePct: number;
   rows: CoachDigestAthleteRow[];
 }
@@ -179,9 +184,28 @@ export interface DigestFallbackAthleteInput {
 const ATTENTION_PRIORITY: Record<DigestAttentionReason, number> = {
   PAIN_FLAG: 0,
   HIGH_RPE_STRAIN: 1,
-  MISSED_KEY_SESSIONS: 2,
-  ON_TRACK: 3,
+  HIGH_LIFE_STRESS: 2,
+  MISSED_KEY_SESSIONS: 3,
+  ON_TRACK: 4,
 };
+
+function computeDigestCheckInStreak(
+  checkIns: SessionCheckInRecord[],
+  windowEndIso: string
+): number {
+  const dates = new Set(
+    (checkIns || []).map((c) => (c.date || '').slice(0, 10)).filter(Boolean)
+  );
+  if (dates.size === 0) return 0;
+  let cursor = dates.has(windowEndIso) ? windowEndIso : addDaysIso(windowEndIso, -1);
+  if (!dates.has(cursor)) return 0;
+  let streak = 0;
+  while (dates.has(cursor) && streak < 365) {
+    streak += 1;
+    cursor = addDaysIso(cursor, -1);
+  }
+  return streak;
+}
 
 /**
  * Aggregates athlete 7-day execution compliance alongside post-session RPE/pain check-ins
@@ -221,10 +245,14 @@ export function buildCoachSquadExecutionDigest(opts: {
         : [];
 
   let checkedInTodayCount = 0;
+  let checkedInLast24hCount = 0;
   let painFlagCount = 0;
   let swappedCount = 0;
   let highRpeCount = 0;
+  let lifeStressCount = 0;
   let complianceSum = 0;
+  const yesterdayIso = addDaysIso(windowEndIso, -1);
+  const nowMs = Date.now();
 
   const rows: CoachDigestAthleteRow[] = sourceList.map((ath) => {
     const plannedCount7d = ath.plannedEvents.filter((ev) => {
@@ -257,6 +285,19 @@ export function buildCoachSquadExecutionDigest(opts: {
     const checkedInToday = recentCheckIns.some(
       (c) => (c.date || '').slice(0, 10) === windowEndIso
     );
+    const checkedInLast24h =
+      checkedInToday ||
+      recentCheckIns.some((c) => {
+        const d = (c.date || '').slice(0, 10);
+        if (d === yesterdayIso && c.ritualSlot === 'TONIGHT') return true;
+        const createdMs = Date.parse(c.createdAt || '');
+        return (
+          d === yesterdayIso &&
+          Number.isFinite(createdMs) &&
+          nowMs - createdMs <= 26 * 3600 * 1000
+        );
+      });
+    const checkInStreakDays = computeDigestCheckInStreak(ath.sessionCheckIns || [], windowEndIso);
     const avgRpe7d =
       recentCheckIns.length > 0
         ? Number(
@@ -268,12 +309,15 @@ export function buildCoachSquadExecutionDigest(opts: {
         : null;
 
     if (checkedInToday) checkedInTodayCount += 1;
+    if (checkedInLast24h) checkedInLast24hCount += 1;
     const hasPain = Boolean(latestCheckIn?.painFlag);
     const hasHighRpe =
       (latestCheckIn?.rpe ?? 0) >= 9 || (avgRpe7d !== null && avgRpe7d >= 8.5);
+    const hasLifeStress = Boolean(latestCheckIn?.lifeStressFlag);
     if (hasPain) painFlagCount += 1;
     if (latestCheckIn?.autoSwappedToRecovery) swappedCount += 1;
     if (hasHighRpe) highRpeCount += 1;
+    if (hasLifeStress) lifeStressCount += 1;
     complianceSum += compliancePct;
 
     let attentionReason: DigestAttentionReason = 'ON_TRACK';
@@ -288,6 +332,11 @@ export function buildCoachSquadExecutionDigest(opts: {
     } else if (hasHighRpe) {
       attentionReason = 'HIGH_RPE_STRAIN';
       attentionSummary = `High RPE (${latestCheckIn?.rpe ?? avgRpe7d}/10)`;
+    } else if (hasLifeStress) {
+      attentionReason = 'HIGH_LIFE_STRESS';
+      attentionSummary = latestCheckIn?.sorenessNote
+        ? `High stress · ${latestCheckIn.sorenessNote}`
+        : `High life / exam stress (RPE ${latestCheckIn?.rpe ?? '—'}/10)`;
     } else if (plannedCount7d >= 2 && compliancePct < 50) {
       attentionReason = 'MISSED_KEY_SESSIONS';
       attentionSummary = `Missed ${plannedCount7d - completedCount7d} of ${plannedCount7d} sessions`;
@@ -304,6 +353,8 @@ export function buildCoachSquadExecutionDigest(opts: {
       compliancePct,
       latestCheckIn,
       checkedInToday,
+      checkedInLast24h,
+      checkInStreakDays,
       avgRpe7d,
       attentionReason,
       attentionSummary,
@@ -323,9 +374,11 @@ export function buildCoachSquadExecutionDigest(opts: {
     windowEndIso,
     totalAthletes: rows.length,
     checkedInTodayCount,
+    checkedInLast24hCount,
     painFlagCount,
     swappedCount,
     highRpeCount,
+    lifeStressCount,
     teamCompliancePct:
       rows.length > 0 ? Math.round(complianceSum / rows.length) : 100,
     rows,

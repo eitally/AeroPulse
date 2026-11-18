@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SportCategory } from '../types.ts';
 import { parseWorkoutSteps } from './workoutParser.ts';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
 
 export type SharedWorkoutKind = 'WORKOUT' | 'STOPWATCH';
 
@@ -478,7 +479,7 @@ export function sharedWorkoutToPlannedEventInput(
   const date =
     opts.dateIso ||
     payload.date ||
-    new Date().toISOString().slice(0, 10);
+    getLocalDateIso();
 
   return {
     date,
@@ -616,7 +617,7 @@ export async function renderShareCardPngBlob(opts: {
   ctx.font = '500 24px system-ui, -apple-system, sans-serif';
   const subParts = [
     payload.teamName || 'First-Party Session Prescription',
-    payload.date || new Date().toISOString().slice(0, 10),
+    payload.date || getLocalDateIso(),
     payload.authorLabel ? `By ${payload.authorLabel}` : null,
   ].filter(Boolean);
   ctx.fillText(subParts.join('  ·  '), 84, y + 10);

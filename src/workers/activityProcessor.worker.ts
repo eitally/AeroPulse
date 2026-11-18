@@ -731,6 +731,16 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 /**
  * Parses GPX or TCX XML strings into an ActivityStreamSet + metadata.
  */
+function formatLocalWallClockTimestamp(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
+}
+
 function parseGpxOrTcxText(
   xmlText: string,
   fileName: string
@@ -762,7 +772,7 @@ function parseGpxOrTcxText(
   const velocitySmooth: number[] = [];
 
   let firstEpochMs: number | null = null;
-  let startDateLocal = new Date().toISOString().slice(0, 19);
+  let startDateLocal = formatLocalWallClockTimestamp();
   let cumulativeDist = 0;
 
   let match: RegExpExecArray | null;
@@ -784,7 +794,7 @@ function parseGpxOrTcxText(
       if (!Number.isNaN(parsedMs)) {
         if (firstEpochMs === null) {
           firstEpochMs = parsedMs;
-          startDateLocal = new Date(parsedMs).toISOString().slice(0, 19);
+          startDateLocal = formatLocalWallClockTimestamp(new Date(parsedMs));
         }
         elapsedSecs = Math.max(0, Math.round((parsedMs - firstEpochMs) / 1000));
       }
@@ -1070,8 +1080,8 @@ export function parseFitBinaryBuffer(
 
   const startIso =
     firstTimestamp !== null
-      ? new Date((firstTimestamp + FIT_EPOCH_OFFSET_SECS) * 1000).toISOString().slice(0, 19)
-      : new Date().toISOString().slice(0, 19);
+      ? formatLocalWallClockTimestamp(new Date((firstTimestamp + FIT_EPOCH_OFFSET_SECS) * 1000))
+      : formatLocalWallClockTimestamp();
 
   return {
     name: cleanTitle || 'Imported FIT Workout',
@@ -1204,7 +1214,7 @@ if (ctx) {
       const lower = fileName.toLowerCase();
 
       let parsedName = fileName;
-      let startDateLocal = new Date().toISOString().slice(0, 19);
+      let startDateLocal = formatLocalWallClockTimestamp();
       let sportCategory: SportCategory = overrideSport || 'Cycling';
       let streams: ActivityStreamSet;
 

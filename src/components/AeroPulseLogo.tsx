@@ -41,11 +41,11 @@ function getSurfaceThemeVarsClass(
   if (surface === 'on-light') {
     return isTeamOverride
       ? '[--thresh-pine:#334155] [--thresh-ink:#101411]'
-      : '[--thresh-pine:#1C5436] [--thresh-volt:#3F8E00] [--thresh-ink:#101411]';
+      : '[--thresh-pine:#1C5436] [--thresh-volt:#357A00] [--thresh-ink:#101411]';
   }
   return isTeamOverride
     ? '[--thresh-pine:#334155] dark:[--thresh-pine:#64748B] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]'
-    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#3F8E00] dark:[--thresh-volt:#C8FF00] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]';
+    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#357A00] dark:[--thresh-volt:#C8FF00] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]';
 }
 
 /**

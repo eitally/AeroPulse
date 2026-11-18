@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
+import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 
 interface CustomChartsViewProps {
   activities: UnifiedActivity[];
@@ -155,7 +156,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
     '30D' | '90D' | '6M' | '1Y' | '2Y' | 'ALL' | 'CUSTOM'
   >('1Y');
   const [customStartDate, setCustomStartDate] = useState('2024-01-01');
-  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEndDate, setCustomEndDate] = useState(() => getLocalDateIso());
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const formId = useId();
 
@@ -239,8 +240,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
   // Compute start & end date bounds
   const { startBound, endBound } = useMemo(() => {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = getLocalDateIso();
     if (dateRangePreset === 'CUSTOM') {
       return { startBound: customStartDate, endBound: customEndDate };
     }
@@ -254,9 +254,10 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
       '1Y': 365,
       '2Y': 730,
     };
-    const d = new Date(now);
-    d.setUTCDate(d.getUTCDate() - (daysMap[dateRangePreset] || 365));
-    return { startBound: d.toISOString().slice(0, 10), endBound: today };
+    return {
+      startBound: shiftIsoDate(today, -(daysMap[dateRangePreset] || 365)),
+      endBound: today,
+    };
   }, [dateRangePreset, customStartDate, customEndDate]);
 
   // Build daily joined table of wellness + filtered activities across the selected date window
@@ -776,6 +777,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
               <option value="Running">Running Only</option>
               <option value="Strength">Strength / HIIT</option>
               <option value="Swimming">Swimming</option>
+              <option value="Multisport">Cross-Train / Multisport</option>
             </select>
           </div>
         </div>

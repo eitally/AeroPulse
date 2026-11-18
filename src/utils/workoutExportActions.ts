@@ -1,6 +1,7 @@
 import { buildFitStepsFromWorkoutSyntax, downloadGarminFitWorkoutFile, type FitWorkoutStepInput } from './fitWorkoutEncoder.ts';
 import { parseWorkoutSteps } from './workoutParser.ts';
 import type { SportCategory } from '../types.ts';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
 
 export interface WorkoutExportOptions {
   name: string;
@@ -189,7 +190,7 @@ export function exportWorkoutAsErg(opts: WorkoutExportOptions): void {
 export async function pushWorkoutDirectToGarmin(
   opts: WorkoutExportOptions
 ): Promise<{ pushed: boolean; message: string }> {
-  const dateIso = opts.dateIso || new Date().toISOString().slice(0, 10);
+  const dateIso = opts.dateIso || getLocalDateIso();
   const safeFtp = Math.max(80, Math.round(opts.ftpWatts || 250));
   const safeLthr = Math.max(110, Math.round(opts.lthrBpm || 170));
   const thresholdPace = Math.max(95, opts.thresholdPaceSecsPerKm || 250);

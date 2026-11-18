@@ -6,6 +6,7 @@ import type {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 export interface SafeSportPatternWatchParams {
   activities: UnifiedActivity[];
@@ -121,7 +122,7 @@ export function evaluateSafeSportPatternWatch(
     referenceDateIso,
   } = params;
 
-  const refDateStr = (referenceDateIso || new Date().toISOString()).slice(0, 10);
+  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
 
   const datedActivities = activities

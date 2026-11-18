@@ -6,6 +6,7 @@ import type {
   UnifiedWellnessDay,
 } from '../types';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
   getSavedIntervalsHeaders,
   buildCompleteAthleteProfile,
@@ -190,7 +191,7 @@ export function useTeamRoster({
     if (!activeTeam) return [];
     const isCoach =
       activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH';
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = getLocalDateIso();
 
     return activeTeam.memberships
       .filter(

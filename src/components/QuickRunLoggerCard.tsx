@@ -1,5 +1,6 @@
 import React, { useId, useState } from 'react';
 import { computeStravaActivityLoadV2, STRAVA_LOAD_MODEL_VERSION } from '../physiology/stravaLoadCalibration';
+import { formatLocalWallClockIso } from '../utils/stopwatchActivitySynthesizer';
 import type { AthleteProfile, DistanceUnit, TrackFootwearClass, UnifiedActivity } from '../types';
 import { CheckCircle2, Plus, Timer } from './icons/PhosphorIcons';
 
@@ -62,10 +63,10 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
 
     const speedMPerMin = movingTimeSecs > 0 ? (distanceMeters / movingTimeSecs) * 60 : 200;
     const estEf = Number((speedMPerMin / Math.max(100, estAvgHr)).toFixed(2));
-    const todayIso = new Date().toISOString();
+    const startDateLocal = formatLocalWallClockIso();
     const activity: UnifiedActivity = {
       id: `manual-run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      startDateLocal: todayIso.slice(0, 19),
+      startDateLocal,
       name: title.trim() || 'Logged Run',
       sportCategory: 'Running',
       environment: 'OUTDOOR',
@@ -93,7 +94,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
         feelRating: rpe >= 8 ? 'HEAVY' : rpe <= 4 ? 'STRONG' : 'NORMAL',
         footwearClass,
         notes: 'Logged via watchless Quick Run entry',
-        loggedAt: todayIso,
+        loggedAt: new Date().toISOString(),
       },
     };
 

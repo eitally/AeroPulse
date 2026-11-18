@@ -452,20 +452,20 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     .pod-card { background: #FFFFFF; border: 1.5px solid #B7C9BE; border-radius: 10px; padding: 10px; break-inside: avoid; }
     .pod-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid #DDE6E0; padding-bottom: 6px; margin-bottom: 6px; }
     .pod-title { font-size: 13px; font-weight: 800; color: #1C5436; }
-    .pod-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 10px; color: #43574B; font-weight: 600; }
+    .pod-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #43574B; font-weight: 600; }
     .target-pill { background: #1C5436; color: #FFFFFF; border-radius: 8px; padding: 4px 8px; text-align: right; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
-    .target-lbl { display: block; font-size: 9px; letter-spacing: 0.04em; opacity: 0.88; }
+    .target-lbl { display: block; font-size: 11px; letter-spacing: 0.04em; opacity: 0.88; }
     .target-val { display: block; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
     .split-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 7px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
     .split-cell { background: #F1F5F2; border: 1px solid #D3E0D8; border-radius: 6px; padding: 3px 4px; text-align: center; }
-    .split-lbl { display: block; font-size: 9px; color: #43574B; font-weight: 600; }
+    .split-lbl { display: block; font-size: 11px; color: #43574B; font-weight: 600; }
     .split-val { display: block; font-size: 11px; color: #0E1712; font-weight: 800; }
     .rep-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
-    .rep-table th { text-align: center; font-size: 9px; color: #43574B; border-bottom: 1px solid #C9D7CF; padding: 2px 3px; }
+    .rep-table th { text-align: center; font-size: 11px; color: #43574B; border-bottom: 1px solid #C9D7CF; padding: 2px 3px; }
     .rep-table th:first-child { text-align: left; }
     .rep-table td { border-bottom: 1px solid #E5EDE8; padding: 3px; }
     .ath-name { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; color: #0E1712; white-space: nowrap; }
-    .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #43574B; font-size: 10px; }
+    .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #43574B; font-size: 11px; }
     .rep-box { border-left: 1px solid #C9D7CF; min-width: 28px; height: 20px; }
     .no-print { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     @media print { body { background: #FFFFFF; padding: 0; } .no-print { display: none !important; } }

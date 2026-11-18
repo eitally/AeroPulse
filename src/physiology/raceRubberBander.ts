@@ -4,6 +4,7 @@ import type {
   VerifiedRacePassport,
 } from '../types.ts';
 import { estimateVdotFromRace } from './powerPaceMetrics.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 export interface RubberBanderInput {
   athleteName: string;
@@ -128,7 +129,7 @@ export function generateVerifiedRacePassport(
     meetOrRaceName: input.meetOrRaceName || 'Certified Championship Event',
     eventLabel: input.eventLabel || `${certDist}m`,
     platform: input.platform,
-    raceDate: input.raceDate || new Date().toISOString().slice(0, 10),
+    raceDate: input.raceDate || getLocalDateIso(),
     certifiedDistanceMeters: certDist,
     rawGpsDistanceMeters: rawGpsDist,
     gpsDriftPct,

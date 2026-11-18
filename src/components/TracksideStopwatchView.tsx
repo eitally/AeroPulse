@@ -34,6 +34,7 @@ import {
   synthesizeTracksideWorkoutActivity,
 } from '../utils/stopwatchActivitySynthesizer';
 import { formatFatTime } from '../utils/officialRaceSynthesizer';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
   evaluateSquadLiveAutoRegulation,
   type RunnerLiveAutoRegInput,
@@ -801,7 +802,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const dateStamp = new Date().toISOString().slice(0, 10);
+    const dateStamp = getLocalDateIso();
     const slug = (sessionType === 'RACE' ? activeRacePreset.label : activeWorkoutPreset.id)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-');
@@ -825,7 +826,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       version: 1,
       title: sessionTitle.trim() || `${presetLabel} Splits`,
       sport: 'Running',
-      date: new Date().toISOString().slice(0, 10),
+      date: getLocalDateIso(),
       description: `${presetLabel} · ${timed.length} timed ${timed.length === 1 ? 'athlete' : 'athletes'}`,
       teamName,
       referenceThresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
@@ -862,10 +863,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       }
     }
 
-    const targets =
-      writableDirect.length > 0
-        ? writableDirect
-        : fallbackToSelf.map((t) => ({ ...t, saveTargetId: 'SELF' }));
+    const targets = [
+      ...writableDirect,
+      ...fallbackToSelf.map((t) => ({ ...t, saveTargetId: 'SELF' })),
+    ];
 
     const derivedStartMs =
       sessionStartedEpochMs ?? Math.max(0, Date.now() - Math.max(0, stopwatchElapsedMs));
