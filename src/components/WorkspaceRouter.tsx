@@ -11,6 +11,7 @@ import type {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   SportCategory,
   StravaSyncWindow,
   TargetGoal,
@@ -19,6 +20,7 @@ import type {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import type { PlannedEventBatchItem } from './GoalsView';
 import type { SavedStopwatchEntry } from './TracksideStopwatchView';
 
@@ -59,6 +61,11 @@ export interface WorkspaceRouterProps {
   effectiveTargetGoals: TargetGoal[];
   effectiveAnnualMileageGoals: AnnualMileageGoal[];
   effectiveGearItems: AthleteGearItem[];
+  effectiveSessionCheckIns?: SessionCheckInRecord[];
+  onRecordSessionCheckIn?: (
+    input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
+    safetySwapEvent?: SafetySwapEventInput | null
+  ) => Promise<void> | void;
   envFilter: EnvironmentFilter;
   setEnvFilter: (env: EnvironmentFilter) => void;
   selectedSport: SportCategory | 'ALL';
@@ -165,6 +172,8 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   effectiveTargetGoals,
   effectiveAnnualMileageGoals,
   effectiveGearItems,
+  effectiveSessionCheckIns = [],
+  onRecordSessionCheckIn,
   envFilter,
   setEnvFilter,
   selectedSport,
@@ -337,6 +346,8 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
             activities={effectiveActivities}
             athleteProfile={effectiveAthleteProfile}
             distanceUnit={distanceUnit}
+            sessionCheckIns={effectiveSessionCheckIns}
+            onRecordSessionCheckIn={onRecordSessionCheckIn}
             selfName={primaryAthleteDisplayName}
             selfProfile={effectiveAthleteProfile}
             selfWellnessDays={effectiveWellnessDays}
@@ -426,6 +437,9 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           distanceUnit={distanceUnit}
           currentCtl={latestCtl}
           athleteProfile={effectiveAthleteProfile}
+          activeTeam={activeTeam}
+          connectedRoster={combinedRoster}
+          onTeamsUpdated={onTeamsUpdated}
           onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
           onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
           onDeletePlanBlock={handleDeletePlanBlock}
@@ -465,6 +479,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           primaryAthleteDisplayName={primaryAthleteDisplayName}
           selfProfile={effectiveAthleteProfile}
           athleteFtp={athleteFtp}
+          selfSessionCheckIns={effectiveSessionCheckIns}
           effectivePlannedEvents={effectivePlannedEvents}
           effectiveActivities={effectiveActivities}
           effectiveWellnessDays={effectiveWellnessDays}

@@ -14,6 +14,7 @@ import {
   CrossTrainingModality,
   DistanceUnit,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   SportCategory,
   StudentAthleteCheckIn,
   UnifiedActivity,
@@ -26,6 +27,8 @@ import {
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { CircadianFirstTouchHero } from './CircadianFirstTouchHero';
+import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
+import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import {
   buildDayLoadSegments,
   classifyActivityGarminLoad,
@@ -78,6 +81,11 @@ interface FitnessHealthViewProps {
   onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
   onQuickLogRun?: (activity: UnifiedActivity) => void;
+  sessionCheckIns?: SessionCheckInRecord[];
+  onRecordSessionCheckIn?: (
+    input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
+    safetySwapEvent?: SafetySwapEventInput | null
+  ) => Promise<void> | void;
 }
 
 type DateRangePreset =
@@ -139,6 +147,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
   onQuickLogRun,
+  sessionCheckIns = [],
+  onRecordSessionCheckIn,
 }) => {
   // Default to 42D (6-week microcycle) so daily load bars and acute fitness swings are immediately readable
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('42D');
@@ -823,6 +833,15 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onOpenCoachWithPrompt={onOpenCoachWithPrompt}
         onQuickLogRun={onQuickLogRun}
       />
+
+      {onRecordSessionCheckIn && (
+        <AthleteSessionCheckInCard
+          todayIso={todayIso}
+          plannedEvents={plannedEvents}
+          sessionCheckIns={sessionCheckIns}
+          onRecordCheckIn={onRecordSessionCheckIn}
+        />
+      )}
 
       {/* ==========================================================================
           0B. ON-DEMAND SKYLINE INTERVAL WORKBENCH & GARMIN/.FIT EXPORT DRAWER

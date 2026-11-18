@@ -277,6 +277,9 @@ export function useTeamRoster({
               targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
               workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
               ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+              ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
+              ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
+              ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
               source: 'USER',
             };
           });
@@ -316,6 +319,7 @@ export function useTeamRoster({
           ),
           plannedEvents: squadBroadcasts,
           targetGoals: [],
+          sessionCheckIns: snap?.sessionCheckIns || [],
         };
       });
   }, [activeTeam]);

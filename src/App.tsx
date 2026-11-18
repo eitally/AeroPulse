@@ -313,6 +313,7 @@ export default function App() {
     setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
     setSelectedActivity(null);
     setActiveViewedAthleteId('SELF');
+    resetDemoCheckInsRef.current?.();
     try {
       window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
       window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
@@ -663,14 +664,7 @@ export default function App() {
     setSampleDemoConnectedAthletes,
   });
 
-  useAthleteCloudSync({
-    isSampleDemoMode, hasEnteredWorkspace, isSessionLoggedOut, currentUser,
-    stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
-    targetGoals, setTargetGoals, annualMileageGoals, setAnnualMileageGoals,
-    athleteProfile, setAthleteProfile, distanceUnit, setDistanceUnit,
-    handleCreatePlannedEvent, onPendingWorkoutImported: () => setActiveTab('calendar'),
-  });
-
+  const resetDemoCheckInsRef = useRef<(() => void) | null>(null);
   const {
     handleApproveAthleteRequest,
     handleRemoveOrDeclineAthlete,
@@ -871,8 +865,11 @@ export default function App() {
     if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
     if (isSampleDemoMode) return sampleDemoPlannedEvents;
     if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
+    const isTeamCoach =
+      activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH';
     const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
       .filter((bw) => {
+        if (isTeamCoach) return true;
         if (activeTeam.myMembershipId && bw.athleteOverrides?.[activeTeam.myMembershipId]) {
           return true;
         }
@@ -910,6 +907,9 @@ export default function App() {
           targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
           workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
           ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+          ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
+          ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
+          ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
           source: 'USER',
         };
       });
@@ -960,101 +960,22 @@ export default function App() {
     : wellnessDays[wellnessDays.length - 1] || undefined;
   const latestWellness = effectiveWellnessDays[effectiveWellnessDays.length - 1] || undefined;
 
-  // Debounced Clean-Room readiness & 7d productivity sync across joined teams
-  useEffect(() => {
-    if (isSampleDemoMode || !hasEnteredWorkspace || isSessionLoggedOut || myTeams.length === 0) {
-      return;
-    }
-    if (activities.length === 0 && wellnessDays.length === 0) return;
-
-    const timer = window.setTimeout(() => {
-      const sevenDaysAgoMs = Date.now() - 7 * 86_400_000;
-      const recent7dActs = activities.filter(
-        (a) => new Date(a.startDateLocal).getTime() >= sevenDaysAgoMs
-      );
-      const acuteLoad7d = Math.round(
-        recent7dActs.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
-      );
-      const ctlVal = selfLatestWellness?.ctl ?? 0;
-      const atlVal = selfLatestWellness?.atl ?? Math.round(acuteLoad7d / 7);
-      const tsbVal = selfLatestWellness?.tsb ?? Number((ctlVal - atlVal).toFixed(1));
-      const verdictLabel =
-        selfLatestWellness?.garminTrainingStatus ||
-        (tsbVal < -20
-          ? 'Strained · Recover'
-          : acuteLoad7d > 0 && acuteLoad7d >= Math.max(120, ctlVal * 5.2)
-            ? 'Productive · Building'
-            : 'Maintaining');
-      const readinessScore =
-        selfLatestWellness?.readinessStatus === 'Strain'
-          ? 52
-          : selfLatestWellness?.readinessStatus === 'Caution'
-            ? 70
-            : 86;
-      const hasWatch = Boolean(
-        connectionStatus.garminConnected ||
-          connectionStatus.intervalsConnected ||
-          activities.length > 0
-      );
-      fetch('/api/teams/sync-snapshot', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getSavedIntervalsHeaders(),
-        },
-        body: JSON.stringify({
-          origin: window.location.origin,
-          athleteName: athleteProfile.name,
-          privacySettings: selfPrivacySettings,
-          snapshot: {
-            hasConnectedWatch: hasWatch,
-            verdictLabel,
-            readinessScore,
-            ctl: ctlVal,
-            atl: atlVal,
-            tsb: tsbVal,
-            acuteLoad7d,
-            lowAerobicPct: 76,
-            highAerobicPct: 18,
-            neuromuscularPct: 6,
-            caraHours7d: Number(
-              (
-                recent7dActs.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 3600
-              ).toFixed(1)
-            ),
-            ftpWatts: athleteProfile.ftp,
-            thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
-            safeSportHideWeight: Boolean(athleteProfile.safeSportHideWeight),
-            wellnessDays: wellnessDays.slice(-14),
-            activities: activities.slice(0, 14),
-          },
-        }),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.teams && Array.isArray(data.teams)) {
-            setMyTeams(data.teams);
-          }
-        })
-        .catch(() => {});
-    }, 1800);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    hasEnteredWorkspace,
-    isSessionLoggedOut,
-    myTeams.length,
-    activities.length,
-    wellnessDays.length,
-    athleteProfile.name,
-    athleteProfile.ftp,
-    athleteProfile.thresholdPaceSecsPerKm,
-    athleteProfile.safeSportHideWeight,
-    selfPrivacySettings,
-    connectionStatus.garminConnected,
-    connectionStatus.intervalsConnected,
-  ]);
+  const {
+    effectiveSessionCheckIns,
+    handleRecordSessionCheckIn,
+    resetDemoSessionCheckIns,
+  } = useAthleteCloudSync({
+    isSampleDemoMode, hasEnteredWorkspace, isSessionLoggedOut, currentUser,
+    stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
+    targetGoals, setTargetGoals, annualMileageGoals, setAnnualMileageGoals,
+    athleteProfile, setAthleteProfile, distanceUnit, setDistanceUnit,
+    activities, wellnessDays, selfLatestWellness, selfPrivacySettings,
+    garminConnected: Boolean(connectionStatus.garminConnected),
+    intervalsConnected: Boolean(connectionStatus.intervalsConnected),
+    myTeamsCount: myTeams.length, setMyTeams,
+    handleCreatePlannedEvent, onPendingWorkoutImported: () => setActiveTab('calendar'),
+  });
+  resetDemoCheckInsRef.current = resetDemoSessionCheckIns;
   const latestCtl = latestWellness?.ctl ?? 0;
   const latestWeightKg = effectiveAthleteProfile.weightKg || latestWellness?.weightKg || 70.0;
   const athleteFtp =
@@ -1791,6 +1712,8 @@ export default function App() {
                 effectiveTargetGoals={effectiveTargetGoals}
                 effectiveAnnualMileageGoals={effectiveAnnualMileageGoals}
                 effectiveGearItems={effectiveGearItems}
+                effectiveSessionCheckIns={effectiveSessionCheckIns}
+                onRecordSessionCheckIn={handleRecordSessionCheckIn}
                 envFilter={envFilter}
                 setEnvFilter={setEnvFilter}
                 selectedSport={selectedSport}

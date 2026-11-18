@@ -19,12 +19,14 @@ import {
   AnnualMileageGoal,
   AthleteGearItem,
   AthleteProfile,
+  ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
   SpeedReservePhenotype,
   SportCategory,
   TargetGoal,
+  TeamSummaryWithRole,
   TrackTargetEventGroup,
   TrackTrainingZoneCode,
   TrackWorkoutSpec,
@@ -74,6 +76,12 @@ import { VisualWorkoutBuilder, type VisualWorkoutSavePayload } from './VisualWor
 import { useModalDialog } from '../hooks/useModalDialog';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
 import { simulateCoursePacingAndFueling } from '../physiology/raceSimulator';
+import {
+  selectSessionsForPublishCadence,
+  type PlanPublishAudience,
+  type PlanPublishCadence,
+} from '../physiology/planPublishEngine';
+import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 
 export interface PlannedEventBatchItem {
   date: string;
@@ -106,6 +114,9 @@ interface GoalsViewProps {
   onSelectEnvFilter: (env: EnvironmentFilter) => void;
   distanceUnit: DistanceUnit;
   currentCtl: number;
+  activeTeam?: TeamSummaryWithRole | null;
+  connectedRoster?: ConnectedAthleteRecord[];
+  onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   onBatchCreatePlannedEvents?: (events: PlannedEventBatchItem[]) => Promise<void>;
   onCreatePlannedEvent?: (eventInput: {
     date: string;
@@ -230,6 +241,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   athleteProfile,
   distanceUnit,
   currentCtl,
+  activeTeam = null,
+  connectedRoster = [],
+  onTeamsUpdated,
   onBatchCreatePlannedEvents,
   onCreatePlannedEvent,
   onDeletePlanBlock,
@@ -282,6 +296,12 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   const [isPopulatingCalendar, setIsPopulatingCalendar] = useState(false);
   const [populatedSuccessMsg, setPopulatedSuccessMsg] = useState<string | null>(null);
   const [lastPopulatedBlockId, setLastPopulatedBlockId] = useState<string | null>(null);
+  const [lastPopulatedTeamBlock, setLastPopulatedTeamBlock] = useState<{
+    teamId: string;
+    blockId: string;
+  } | null>(null);
+  const [publishCadence, setPublishCadence] = useState<PlanPublishCadence>('FULL_BLOCK');
+  const [publishAudience, setPublishAudience] = useState<PlanPublishAudience>('SELF');
   const [isRemovingBlock, setIsRemovingBlock] = useState(false);
 
   useModalDialog({
@@ -554,16 +574,63 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     setPopulatedSuccessMsg(null);
     try {
       const blockId = `plan-blk-${Date.now()}`;
-      const allSessions: PlannedEventBatchItem[] = generatedPlanWeeks.flatMap((w) =>
-        w.sessions.map((s) => ({
-          ...s,
-          planBlockId: blockId,
-          planBlockName: selectedArchetype.title,
-          planWeekNum: w.weekNum,
-        }))
+      const selected = selectSessionsForPublishCadence(
+        generatedPlanWeeks,
+        publishCadence,
+        selectedPreviewWeekIdx,
+        {
+          blockId,
+          baseTitle: selectedArchetype.title,
+          audience: publishAudience,
+        }
       );
-      await onBatchCreatePlannedEvents(allSessions);
+
+      const isTeamCoach = Boolean(
+        activeTeam &&
+          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+      );
+
+      if (selected.cohort.isTeamBroadcast && isTeamCoach && activeTeam) {
+        const resp = await fetch(
+          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast-batch`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getSavedIntervalsHeaders(),
+            },
+            body: JSON.stringify({
+              origin: window.location.origin,
+              targetSquadGroup: selected.cohort.targetSquadGroup,
+              ...(selected.cohort.targetEventGroups
+                ? { targetEventGroups: selected.cohort.targetEventGroups }
+                : {}),
+              publishMode: publishCadence,
+              planBlockId: blockId,
+              planBlockName: selected.sessions[0]?.planBlockName || selectedArchetype.title,
+              replaceExistingCohortRange: true,
+              workouts: selected.sessions,
+            }),
+          }
+        );
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          if (Array.isArray(data.teams) && onTeamsUpdated) {
+            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+          }
+          setLastPopulatedTeamBlock({ teamId: activeTeam.brand.teamId, blockId });
+          setLastPopulatedBlockId(null);
+          setPopulatedSuccessMsg(
+            `Published ${selected.sessions.length} workouts (${selected.cadenceLabel}) to ${selected.cohort.cohortLabel}.`
+          );
+          return;
+        }
+      }
+
+      await onBatchCreatePlannedEvents(selected.sessions);
       setLastPopulatedBlockId(blockId);
+      setLastPopulatedTeamBlock(null);
 
       // Upsert a matching TargetGoal automatically if none exists for this block title
       const alreadyTracked = targetGoals.some(
@@ -591,7 +658,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       }
 
       setPopulatedSuccessMsg(
-        `Scheduled ${allSessions.length} workouts (${blockWeeks}-week ${selectedArchetype.title} starting ${resolvedStartMondayIso}).`
+        selected.cohort.isTeamBroadcast
+          ? `Published ${selected.sessions.length} workouts (${selected.cadenceLabel}) for ${selected.cohort.cohortLabel}.`
+          : `Scheduled ${selected.sessions.length} workouts (${selected.cadenceLabel} of ${selectedArchetype.title} starting ${resolvedStartMondayIso}).`
       );
     } finally {
       setIsPopulatingCalendar(false);
@@ -599,9 +668,28 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   };
 
   const handleUndoPopulatedBlock = async (blockIdToRemove: string) => {
-    if (!onDeletePlanBlock || !blockIdToRemove) return;
     setIsRemovingBlock(true);
     try {
+      if (lastPopulatedTeamBlock && lastPopulatedTeamBlock.blockId === blockIdToRemove) {
+        const resp = await fetch(
+          `/api/teams/${encodeURIComponent(lastPopulatedTeamBlock.teamId)}/workouts/blocks/${encodeURIComponent(blockIdToRemove)}`,
+          {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: getSavedIntervalsHeaders(),
+          }
+        );
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          if (Array.isArray(data.teams) && onTeamsUpdated) {
+            onTeamsUpdated(data.teams, lastPopulatedTeamBlock.teamId);
+          }
+        }
+        setLastPopulatedTeamBlock(null);
+        setPopulatedSuccessMsg(null);
+        return;
+      }
+      if (!onDeletePlanBlock || !blockIdToRemove) return;
       await onDeletePlanBlock(blockIdToRemove);
       if (lastPopulatedBlockId === blockIdToRemove) {
         setLastPopulatedBlockId(null);
@@ -791,15 +879,23 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <span>{populatedSuccessMsg}</span>
                 </span>
                 <div className="flex flex-wrap items-center gap-3">
-                  {lastPopulatedBlockId && onDeletePlanBlock && (
+                  {(lastPopulatedBlockId || lastPopulatedTeamBlock) && (onDeletePlanBlock || lastPopulatedTeamBlock) && (
                     <button
                       type="button"
                       data-testid="goals-undo-populated-block"
                       disabled={isRemovingBlock}
-                      onClick={() => void handleUndoPopulatedBlock(lastPopulatedBlockId)}
+                      onClick={() =>
+                        void handleUndoPopulatedBlock(
+                          lastPopulatedTeamBlock?.blockId || lastPopulatedBlockId || ''
+                        )
+                      }
                       className="min-h-[36px] px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-500/10 cursor-pointer"
                     >
-                      {isRemovingBlock ? 'Removing...' : 'Undo Block'}
+                      {isRemovingBlock
+                        ? 'Removing...'
+                        : lastPopulatedTeamBlock
+                          ? 'Recall Team Block'
+                          : 'Undo Block'}
                     </button>
                   )}
                   {onSwitchToCalendar && (
@@ -1322,6 +1418,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
                 <button
                   type="button"
+                  data-testid="goals-publish-plan-btn"
                   disabled={isPopulatingCalendar}
                   onClick={() => void handlePopulatePlanToCalendar()}
                   className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl ap-btn-primary disabled:opacity-50 text-xs font-bold shadow-xs cursor-pointer"
@@ -1329,10 +1426,105 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>
                     {isPopulatingCalendar
-                      ? 'Populating Calendar...'
-                      : `Populate ${blockWeeks}-Week Block to Calendar`}
+                      ? 'Publishing...'
+                      : (() => {
+                          const preview = selectSessionsForPublishCadence(
+                            generatedPlanWeeks,
+                            publishCadence,
+                            selectedPreviewWeekIdx,
+                            {
+                              blockId: 'preview',
+                              baseTitle: selectedArchetype.title,
+                              audience: publishAudience,
+                            }
+                          );
+                          return publishAudience === 'SELF' && publishCadence === 'FULL_BLOCK'
+                            ? `Populate ${blockWeeks}-Week Block to Calendar`
+                            : `Publish ${preview.sessions.length} Sessions (${preview.cohort.cohortLabel})`;
+                        })()}
                   </span>
                 </button>
+              </div>
+
+              {/* COACH-02: Rolling 1-2W vs Full Block Cadence & Team / Event-Group Targeting */}
+              <div
+                data-testid="plan-builder-publish-bar"
+                className="rounded-xl ap-card-inset p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-2xs font-mono font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Publish Window:
+                  </span>
+                  <div
+                    role="group"
+                    aria-label="Publish cadence window"
+                    className="inline-flex items-center gap-1 p-0.5 rounded-lg liquid-capsule-track"
+                  >
+                    {(
+                      [
+                        { id: 'ROLLING_1W', label: 'Rolling 1W' },
+                        { id: 'ROLLING_2W', label: 'Rolling 2W' },
+                        { id: 'FULL_BLOCK', label: 'Full Block' },
+                      ] as const
+                    ).map((opt) => {
+                      const active = publishCadence === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          data-testid={`plan-publish-cadence-${opt.id}`}
+                          aria-pressed={active}
+                          onClick={() => setPublishCadence(opt.id)}
+                          className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-md text-xs font-semibold cursor-pointer ${
+                            active
+                              ? 'ap-nav-volt-active'
+                              : 'text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {publishCadence !== 'FULL_BLOCK' && (
+                    <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+                      {publishCadence === 'ROLLING_1W'
+                        ? `Week ${activePreviewWeek.weekNum} of ${generatedPlanWeeks.length}`
+                        : `Weeks ${activePreviewWeek.weekNum}–${Math.min(generatedPlanWeeks.length, activePreviewWeek.weekNum + 1)} of ${generatedPlanWeeks.length}`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor={`${formId}-publish-audience`}
+                    className="text-2xs font-mono font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300"
+                  >
+                    Target Cohort:
+                  </label>
+                  <select
+                    id={`${formId}-publish-audience`}
+                    data-testid="plan-publish-audience"
+                    value={publishAudience}
+                    onChange={(e) => setPublishAudience(e.target.value as PlanPublishAudience)}
+                    className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs font-semibold text-slate-900 dark:text-white"
+                  >
+                    <option value="SELF">My Personal Calendar</option>
+                    <option value="TEAM_ALL">
+                      {activeTeam
+                        ? `Entire Team (${activeTeam.brand.shortName})`
+                        : 'Entire Team Squad'}
+                    </option>
+                    <option value="EVENT_SPRINTS">Sprints Cohort (100m–400m)</option>
+                    <option value="EVENT_MID_DISTANCE">800m / Mile Cohort</option>
+                    <option value="EVENT_DISTANCE">Distance / XC Cohort (3K–10K)</option>
+                  </select>
+                  {publishAudience !== 'SELF' && connectedRoster.length > 0 && (
+                    <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">
+                      Roster ready ({connectedRoster.length})
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">

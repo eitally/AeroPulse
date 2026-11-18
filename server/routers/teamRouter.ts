@@ -9,10 +9,12 @@ import { getUserById } from '../authService.ts';
 import {
   acknowledgeParentConsent,
   autoLinkPendingTeamInvitesByEmail,
+  broadcastWorkoutBatchToTeamSquad,
   broadcastWorkoutToTeamSquad,
   bulkCreateAndSendInvites,
   claimTeamJoinInvite,
   createTeamForCoach,
+  deleteBroadcastPlanBlockFromTeam,
   isResendConfigured,
   listTeamsForUser,
   previewTeamJoinInvite,
@@ -478,6 +480,84 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to broadcast workout.',
+    });
+  }
+});
+
+// 11d. Batch-Broadcast Rolling or Full-Block Training Plans to Team or Event-Group Cohorts
+teamRouter.post('/api/teams/:teamId/workouts/broadcast-batch', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
+      ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : undefined;
+    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
+      ? req.body.targetEventGroups.filter(
+          (g: unknown): g is CoachEventGroup =>
+            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
+        )
+      : undefined;
+    const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
+    const updated = await broadcastWorkoutBatchToTeamSquad({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      originUrl,
+      targetSquadGroup: String(req.body?.targetSquadGroup || 'ALL'),
+      targetEventGroups,
+      targetMembershipIds,
+      publishMode: req.body?.publishMode,
+      planBlockId: req.body?.planBlockId ? String(req.body.planBlockId) : undefined,
+      planBlockName: req.body?.planBlockName ? String(req.body.planBlockName) : undefined,
+      replaceExistingCohortRange:
+        typeof req.body?.replaceExistingCohortRange === 'boolean'
+          ? req.body.replaceExistingCohortRange
+          : true,
+      workouts,
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions required.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams, publishedCount: Math.min(160, workouts.length) });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to batch-broadcast training plan.',
+    });
+  }
+});
+
+// 11e. Recall / Delete Broadcast Training Block from Team Calendar
+teamRouter.delete('/api/teams/:teamId/workouts/blocks/:blockId', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const updated = await deleteBroadcastPlanBlockFromTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      blockId: String(req.params.blockId || ''),
+      originUrl,
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions required.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to recall team training block.',
     });
   }
 });

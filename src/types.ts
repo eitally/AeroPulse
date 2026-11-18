@@ -633,6 +633,7 @@ export interface ConnectedAthleteRecord {
   plannedEvents: PlannedWorkoutEvent[];
   targetGoals: TargetGoal[];
   caraHours7d?: number;
+  sessionCheckIns?: SessionCheckInRecord[];
 }
 
 export interface DualSportPmcPoint {
@@ -1288,6 +1289,7 @@ export interface TeamAthleteLiveSnapshot {
   privacySettings?: AthletePrivacySettings;
   wellnessDays?: UnifiedWellnessDay[];
   activities?: UnifiedActivity[];
+  sessionCheckIns?: SessionCheckInRecord[];
   safeSportWatch?: {
     trafficLight: 'GREEN_CLEAR' | 'AMBER_WATCH' | 'RED_MEDICAL_REVIEW';
     coachSafeSummaryLabel: string;
@@ -1352,6 +1354,10 @@ export interface TeamBroadcastWorkout {
       trackSpec?: TrackWorkoutSpec;
     }
   >;
+  planBlockId?: string;
+  planBlockName?: string;
+  planWeekNum?: number;
+  publishMode?: 'ROLLING_1W' | 'ROLLING_2W' | 'FULL_BLOCK';
   pushedByCoachName: string;
   createdAt: string;
 }
