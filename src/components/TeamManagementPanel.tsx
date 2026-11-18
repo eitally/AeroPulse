@@ -469,7 +469,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
         tone: 'success',
         text: data.emailedCount > 0
           ? `Added ${data.addedCount} athletes and dispatched ${data.emailedCount} branded invite email(s).`
-          : `Added ${data.addedCount} athletes with personalized Magic Join Links ready to copy, text (free SMS), or email!`,
+          : `Added ${data.addedCount} athletes with personalized Magic Join Links ready to copy, text (SMS), or email!`,
       });
     } catch {
       setBannerMessage({
@@ -1146,11 +1146,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           {isActiveTeamCoach && (
             <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xs font-mono uppercase tracking-widest text-[#0284C7] dark:text-[#60A5FA] font-bold">
-                      BULK ROSTER IMPORTER · EMAIL, MAGIC LINKS &amp; TAP-TO-TEXT
-                    </span>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Bulk Roster Importer · CSV, Email or SMS
+                    </h4>
                     <span
                       className={`px-2 py-0.5 rounded text-2xs font-mono font-bold ${
                         resendConfigured ? 'ap-status-prime' : 'ap-status-info'
@@ -1161,11 +1161,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         : 'Magic Link, Email & SMS Ready'}
                     </span>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
-                    Paste Spreadsheet Rows, Upload .CSV, or Enter Athlete Emails
-                  </h4>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Supports columns: <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code> (or plain email lists). When athletes sign in with Strava, THRESH automatically matches their roster spot, squad, and seed mark.
+                    Columns: <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code> (or email list).
                   </p>
                 </div>
 
@@ -1229,7 +1226,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         <tr>
                           <th className="py-2 px-3">Athlete</th>
                           <th className="py-2 px-3">Email</th>
-                          <th className="py-2 px-3">Phone (Free SMS)</th>
+                          <th className="py-2 px-3">Phone (SMS)</th>
                           <th className="py-2 px-3">Squad</th>
                           <th className="py-2 px-3">Seed Mark</th>
                           <th className="py-2 px-3">Safeguarding</th>
@@ -1497,7 +1494,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 <a
                                   href={smsHref}
                                   className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-2xs font-mono inline-flex items-center gap-1"
-                                  title="Open native Messages / SMS pre-filled with Magic Join Link ($0)"
+                                  title="Open native Messages / SMS pre-filled with Magic Join Link"
                                 >
                                   <MessageSquare className="w-3 h-3" />
                                   <span>Text</span>

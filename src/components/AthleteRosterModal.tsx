@@ -173,7 +173,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     '- 15m 65% Pace\n- 5x 4m 102% Pace / 90s 60% Pace\n- 10m 65% Pace'
   );
   const [workoutNotes, setWorkoutNotes] = useState(
-    'Focus on relaxed shoulders and even 400m splits. Pushed via Thresh Coach Desk.'
+    'Focus on relaxed shoulders and even 400m splits. Pushed via THRESH Coach Desk.'
   );
   const [pushSuccessBanner, setPushSuccessBanner] = useState<string | null>(null);
 
@@ -2066,8 +2066,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       Control which workouts, readiness, and health markers Teammates (View Only) and Coaches (Prescribe &amp; Edit) can inspect when viewing your profile.
                     </p>
                   </div>
-                  <div className="px-3 py-1.5 rounded bg-[#10B981]/10 border border-[#10B981]/30 text-xs font-mono text-emerald-700 dark:text-[#10B981]">
-                    ● Shield Active
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#059669]/10 border border-[#059669]/30 text-xs font-mono text-emerald-700 dark:text-[#059669]">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
+                    <span>Shield Active</span>
                   </div>
                 </div>
 

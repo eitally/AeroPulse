@@ -33,6 +33,7 @@ import {
   exportWorkoutAsZwo,
   pushWorkoutDirectToGarmin,
 } from '../utils/workoutExportActions';
+import { BracketedIntervalTape } from './charts/MicroGraphics';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
   inferTrackWorkoutSpecFromPlannedEvent,
@@ -1271,9 +1272,12 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             <span className="font-semibold">
               Effort Skyline · {parsedSteps.length} steps
             </span>
-            <span className="text-[#1C5436] dark:text-[#C8FF00] font-bold">
-              Est. {Math.round(summaryStats.durationSecs / 60)}m · ~{summaryStats.load} TSS
-            </span>
+            <div className="flex items-center gap-2">
+              <BracketedIntervalTape workoutSyntax={effectiveSyntax} compact className="!w-24 shrink-0" />
+              <span className="text-[#1C5436] dark:text-[#C8FF00] font-bold">
+                Est. {Math.round(summaryStats.durationSecs / 60)}m · ~{summaryStats.load} TSS
+              </span>
+            </div>
           </div>
           <div className="h-14 w-full flex items-end gap-[2px] pt-1">
             {parsedSteps.map((s, idx) => (

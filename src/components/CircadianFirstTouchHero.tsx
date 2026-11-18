@@ -14,11 +14,20 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  Timer,
   TrendingUp,
   Zap,
 } from './icons/PhosphorIcons';
 import { formatHumanReadableStepLine } from '../utils/workoutParser';
 import { QuickRunLoggerCard } from './QuickRunLoggerCard';
+import {
+  inferTrackWorkoutSpecFromPlannedEvent,
+  stageWorkoutInTracksideStopwatch,
+} from '../hooks/useTracksideStopwatch';
+import {
+  BracketedIntervalTape,
+  VitalsCorridorBulletRow,
+} from './charts/MicroGraphics';
 import type {
   AthleteProfile,
   DistanceUnit,
@@ -64,6 +73,7 @@ interface CircadianFirstTouchHeroProps {
   onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt?: (prompt: string) => void;
   onQuickLogRun?: (activity: UnifiedActivity) => void;
+  onOpenTracksideStopwatch?: () => void;
 }
 
 function toneBadgeClass(tone: 'prime' | 'info' | 'caution' | 'strained'): string {
@@ -163,6 +173,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
   onQuickLogRun,
+  onOpenTracksideStopwatch,
 }) => {
   const todayIso = useMemo(() => getLocalDateIso(), []);
 
@@ -448,11 +459,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold uppercase tracking-wide ${toneBadgeClass(
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold uppercase tracking-wide ${toneBadgeClass(
                       productivity.verdictTone
                     )}`}
                   >
-                    ● {productivity.verdictLabel}
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
+                    <span>{productivity.verdictLabel}</span>
                   </span>
                   <ChartInfoTooltip
                     title="7-Day Rolling Training Productivity & Load Focus"
@@ -649,10 +661,18 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                     <span className="font-medium">Form (TSB)</span>
                     <span className="text-2xs opacity-85">Freshness</span>
                   </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                    {productivity.tsb > 0
-                      ? `+${productivity.tsb.toFixed(0)}`
-                      : productivity.tsb.toFixed(0)}
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    <span>
+                      {productivity.tsb > 0
+                        ? `+${productivity.tsb.toFixed(0)}`
+                        : productivity.tsb.toFixed(0)}
+                    </span>
+                    <VitalsCorridorBulletRow
+                      valuePct={50 + productivity.tsb}
+                      bandStartPct={30}
+                      bandWidthPct={45}
+                      tone={productivity.tsb < -20 ? 'caution' : 'prime'}
+                    />
                   </div>
                 </div>
 
@@ -677,8 +697,18 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       {productivity.acwr.toFixed(2)}x ACWR
                     </span>
                   </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                    {productivity.acuteLoad7d} TSS
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    <span>{productivity.acuteLoad7d} TSS</span>
+                    <VitalsCorridorBulletRow
+                      valuePct={((productivity.acwr - 0.4) / 1.4) * 100}
+                      tone={
+                        productivity.acwr >= 1.35
+                          ? 'strained'
+                          : productivity.acwr >= 1.2
+                            ? 'caution'
+                            : 'prime'
+                      }
+                    />
                   </div>
                 </div>
 
@@ -703,10 +733,28 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         : 'Wearable'}
                     </span>
                   </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                    {productivity.hrvLatestMs > 0
-                      ? `${productivity.hrvLatestMs} ms`
-                      : 'Wearable needed'}
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    <span>
+                      {productivity.hrvLatestMs > 0
+                        ? `${productivity.hrvLatestMs} ms`
+                        : 'Wearable needed'}
+                    </span>
+                    {productivity.hrvLatestMs > 0 && (
+                      <VitalsCorridorBulletRow
+                        valuePct={
+                          productivity.hrv7dAvgMs > 0
+                            ? 50 + ((productivity.hrvLatestMs - productivity.hrv7dAvgMs) / Math.max(10, productivity.hrv7dAvgMs * 0.25)) * 25
+                            : 55
+                        }
+                        tone={
+                          productivity.autonomicState === 'SUPPRESSED'
+                            ? 'strained'
+                            : productivity.autonomicState === 'CAUTION'
+                              ? 'caution'
+                              : 'prime'
+                        }
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -722,12 +770,22 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         : '—'}
                     </span>
                   </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white truncate">
-                    {productivity.sleepScoreLatest > 0
-                      ? `Score ${productivity.sleepScoreLatest}`
-                      : productivity.sleepHoursLatest > 0
-                        ? `${productivity.sleepHoursLatest} hrs`
-                        : 'Awaiting sync'}
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[#101411] dark:text-white truncate">
+                    <span>
+                      {productivity.sleepScoreLatest > 0
+                        ? `Score ${productivity.sleepScoreLatest}`
+                        : productivity.sleepHoursLatest > 0
+                          ? `${productivity.sleepHoursLatest} hrs`
+                          : 'Awaiting sync'}
+                    </span>
+                    {productivity.sleepHoursLatest > 0 && (
+                      <VitalsCorridorBulletRow
+                        valuePct={(productivity.sleepHoursLatest / 9.5) * 100}
+                        bandStartPct={68}
+                        bandWidthPct={25}
+                        tone={productivity.sleepHoursLatest < 6.5 ? 'caution' : 'info'}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -742,10 +800,20 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                           : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`}
                     </span>
                   </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
-                    {productivity.rhrLatestBpm > 0
-                      ? `${productivity.rhrLatestBpm} bpm`
-                      : 'Wearable needed'}
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
+                    <span>
+                      {productivity.rhrLatestBpm > 0
+                        ? `${productivity.rhrLatestBpm} bpm`
+                        : 'Wearable needed'}
+                    </span>
+                    {productivity.rhrLatestBpm > 0 && (
+                      <VitalsCorridorBulletRow
+                        valuePct={50 + productivity.rhrDeltaBpm * 4}
+                        bandStartPct={32}
+                        bandWidthPct={36}
+                        tone={productivity.rhrDeltaBpm >= 5 ? 'caution' : 'prime'}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -840,12 +908,18 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <span>{productivity.gapPrescription.focusBadge}</span>
               </div>
 
-              <p className="text-xs text-[#35463B] dark:text-[#C5D1CA] leading-relaxed">
+              <p className="text-xs text-[#35463B] dark:text-[#C5D1CA] leading-snug">
                 {todayScheduled
                   ? todayScheduled.description ||
-                    `Scheduled ${todayScheduled.sportCategory.toLowerCase()} session on your training calendar. Open Customize & Export to inspect or modulate intervals.`
+                    `Scheduled ${todayScheduled.sportCategory.toLowerCase()} session on your calendar.`
                   : productivity.gapPrescription.rationale}
               </p>
+
+              {/* Zone Effort Tape Skyline */}
+              <BracketedIntervalTape
+                workoutSyntax={todayScheduled?.workoutSyntax || activeRxSyntax}
+                compact
+              />
 
               {/* Hairline-Divided Step Preview (Zero Nested Sub-Cards) */}
               <div className="pt-2 border-t border-[#1C5436]/12 dark:border-white/10 divide-y divide-[#1C5436]/10 dark:divide-white/10 font-mono text-2xs text-[#101411] dark:text-[#ECF2EE]">
@@ -939,6 +1013,30 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </>
                 )}
 
+                {onOpenTracksideStopwatch &&
+                  (todayScheduled?.sportCategory || rxSport) === 'Running' && (
+                    <button
+                      type="button"
+                      data-testid="today-open-stopwatch-btn"
+                      onClick={() => {
+                        if (todayScheduled) {
+                          const spec = inferTrackWorkoutSpecFromPlannedEvent(todayScheduled);
+                          if (spec) {
+                            stageWorkoutInTracksideStopwatch({
+                              title: todayScheduled.name,
+                              spec,
+                            });
+                          }
+                        }
+                        onOpenTracksideStopwatch();
+                      }}
+                      className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#1C5436] hover:bg-[#163022] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-mono font-bold cursor-pointer transition-colors"
+                    >
+                      <Timer className="w-3.5 h-3.5" weight="bold" />
+                      <span>Time on Track</span>
+                    </button>
+                  )}
+
                 {onOpenCoachWithPrompt && (
                   <button
                     type="button"
@@ -993,11 +1091,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                   <span
-                    className={`px-2.5 py-0.5 rounded-md ${toneBadgeClass(
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md ${toneBadgeClass(
                       productivity.verdictTone
                     )}`}
                   >
-                    ● {sessionReceipt.verdictAfterLabel}
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
+                    <span>{sessionReceipt.verdictAfterLabel}</span>
                   </span>
                 </div>
               </div>
