@@ -18,9 +18,16 @@ import type {
   AthleteProfile,
   DistanceUnit,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
   TrackWorkoutSpec,
+  WorkoutSessionSlot,
 } from '../types';
+import {
+  DEFAULT_PRACTICE_VENUE_PRESETS,
+  formatPracticeTime12h,
+  sanitizeScheduledTime,
+} from '../utils/workoutScheduleUtils';
 import { formatPace } from '../utils/formatters';
 import {
   computeAmplitudeHeightPct,
@@ -73,6 +80,11 @@ export interface VisualWorkoutSavePayload {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  scheduledTime?: string;
+  sessionSlot?: WorkoutSessionSlot;
+  locationName?: string;
+  locationCategory?: PracticeVenueCategory;
+  replaceExistingDate?: boolean;
   trackSpec?: TrackWorkoutSpec;
 }
 
@@ -421,6 +433,18 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   const [builderEnv, setBuilderEnv] = useState<'OUTDOOR' | 'INDOOR' | 'FLEXIBLE'>(
     initialEvent?.environmentPreference || 'FLEXIBLE'
   );
+  const [sessionSlot, setSessionSlot] = useState<WorkoutSessionSlot>(
+    initialEvent?.sessionSlot || 'SINGLE'
+  );
+  const [scheduledTime, setScheduledTime] = useState<string>(
+    initialEvent?.scheduledTime || ''
+  );
+  const [locationName, setLocationName] = useState<string>(
+    initialEvent?.locationName || ''
+  );
+  const [locationCategory, setLocationCategory] = useState<PracticeVenueCategory>(
+    initialEvent?.locationCategory || 'TRACK'
+  );
   const [warmup, setWarmup] = useState<VisualWarmupCooldownBlock>(starterBlocks.warmup);
   const [sets, setSets] = useState<VisualWorkingSetRow[]>(starterBlocks.sets);
   const [cooldown, setCooldown] = useState<VisualWarmupCooldownBlock>(starterBlocks.cooldown);
@@ -436,6 +460,10 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   useEffect(() => {
     setBuilderDate(initialEvent?.date?.slice(0, 10) || dateIso);
     if (!initialEvent) {
+      setSessionSlot('SINGLE');
+      setScheduledTime('');
+      setLocationName('');
+      setLocationCategory('TRACK');
       setRawSyntaxOverride(null);
       return;
     }
@@ -443,6 +471,10 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     setBuilderSport(sp);
     setBuilderName(initialEvent.name);
     setBuilderEnv(initialEvent.environmentPreference || 'FLEXIBLE');
+    setSessionSlot(initialEvent.sessionSlot || 'SINGLE');
+    setScheduledTime(initialEvent.scheduledTime || '');
+    setLocationName(initialEvent.locationName || '');
+    setLocationCategory(initialEvent.locationCategory || 'TRACK');
     setNotes(initialEvent.description || '');
     const hydrated = initialEvent.workoutSyntax
       ? hydrateBlocksFromSyntax(initialEvent.workoutSyntax, sp, safeThresholdPace)
@@ -627,6 +659,8 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     e.preventDefault();
     setIsSaving(true);
     try {
+      const cleanTime = sanitizeScheduledTime(scheduledTime);
+      const cleanLoc = locationName.trim().slice(0, 120) || undefined;
       await onSave({
         ...(initialEvent?.id ? { id: initialEvent.id } : {}),
         date: builderDate,
@@ -637,6 +671,10 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
         plannedLoad: summaryStats.load,
         workoutSyntax: effectiveSyntax,
         description: notes.trim() || `${builderSport} structured session`,
+        ...(cleanTime ? { scheduledTime: cleanTime } : {}),
+        sessionSlot,
+        ...(cleanLoc ? { locationName: cleanLoc, locationCategory } : {}),
+        replaceExistingDate: !initialEvent?.id ? false : undefined,
         ...(detectedTrackSpec ? { trackSpec: detectedTrackSpec } : {}),
       });
     } finally {
@@ -837,6 +875,93 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             <option value="OUTDOOR">Outdoor</option>
             <option value="INDOOR">Indoor Trainer / Treadmill</option>
           </select>
+        </div>
+
+        {/* Practice Time, Double Slot & Venue (Track vs XC) */}
+        <div className="sm:col-span-4">
+          <span className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+            Session Slot (Doubles)
+          </span>
+          <div
+            role="group"
+            aria-label="Workout session slot"
+            className="inline-flex w-full items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
+          >
+            {(
+              [
+                { id: 'SINGLE', label: 'Single' },
+                { id: 'AM', label: 'AM' },
+                { id: 'PM', label: 'PM' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                aria-pressed={sessionSlot === opt.id}
+                onClick={() => {
+                  setSessionSlot(opt.id);
+                  if (opt.id === 'AM' && !scheduledTime) setScheduledTime('06:30');
+                  if (opt.id === 'PM' && !scheduledTime) setScheduledTime('15:45');
+                }}
+                className={`flex-1 min-h-[40px] sm:min-h-[34px] px-2 py-1 rounded-md cursor-pointer ${
+                  sessionSlot === opt.id
+                    ? 'ap-nav-volt-active'
+                    : 'text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-3">
+          <label
+            htmlFor={`${formId}-time`}
+            className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+          >
+            Time {formatPracticeTime12h(scheduledTime) ? `(${formatPracticeTime12h(scheduledTime)})` : '(Optional)'}
+          </label>
+          <input
+            id={`${formId}-time`}
+            type="time"
+            value={scheduledTime}
+            onChange={(e) => setScheduledTime(e.target.value)}
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+          />
+        </div>
+
+        <div className="sm:col-span-5">
+          <label
+            htmlFor={`${formId}-location`}
+            className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+          >
+            Location (Track, XC Course, or Gym)
+          </label>
+          <input
+            id={`${formId}-location`}
+            type="text"
+            value={locationName}
+            onChange={(e) => setLocationName(e.target.value)}
+            placeholder="e.g. School Track, Woodward XC Park"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+          />
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {DEFAULT_PRACTICE_VENUE_PRESETS.map((v) => (
+              <button
+                key={v.name}
+                type="button"
+                onClick={() => {
+                  setLocationName(v.name);
+                  setLocationCategory(v.category);
+                  if (!scheduledTime && v.defaultTime) setScheduledTime(v.defaultTime);
+                }}
+                className="px-2 py-0.5 rounded-md text-2xs liquid-capsule-track text-slate-700 dark:text-slate-200 cursor-pointer"
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

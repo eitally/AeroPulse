@@ -9,12 +9,14 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Clock,
   Download,
   Dumbbell,
   FileText,
   Flame,
   Footprints,
   Heart,
+  MapPin,
   Moon,
   Plus,
   ShareNetwork,
@@ -31,14 +33,20 @@ import {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
   TargetGoal,
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutSessionSlot,
 } from '../types';
 import { formatDistance, formatPace } from '../utils/formatters';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+import {
+  formatSessionLogisticsLine,
+  sortPlannedEventsChronologically,
+} from '../utils/workoutScheduleUtils';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import {
   exportWorkoutAsErg,
@@ -82,6 +90,11 @@ interface CalendarViewProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
@@ -96,6 +109,11 @@ interface CalendarViewProps {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
     }
   ) => Promise<void>;
@@ -952,10 +970,10 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     return map;
   }, [activities, envFilter, activeSportFilter]);
 
-  // Index planned workouts by YYYY-MM-DD
+  // Index planned workouts by YYYY-MM-DD in chronological AM -> PM order
   const plannedByDate = useMemo(() => {
     const map = new Map<string, PlannedWorkoutEvent[]>();
-    for (const ev of plannedEvents) {
+    for (const ev of sortPlannedEventsChronologically(plannedEvents)) {
       if (activeSportFilter !== 'ALL' && ev.sportCategory !== activeSportFilter) continue;
       const dateStr = ev.date.slice(0, 10);
       const list = map.get(dateStr) || [];
@@ -1196,6 +1214,11 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    replaceExistingDate?: boolean;
     trackSpec?: TrackWorkoutSpec;
   }) => {
     if (payload.id && onUpdatePlannedEvent) {
@@ -1961,6 +1984,12 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                     {formatCompactDuration(ev.plannedDurationSecs)} · ~{ev.plannedLoad}{' '}
                                     TSS
                                   </div>
+                                  {formatSessionLogisticsLine(ev) && (
+                                    <div className="mt-0.5 text-2xs font-mono text-slate-600 dark:text-slate-300 inline-flex items-center gap-1 truncate">
+                                      <Clock className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">{formatSessionLogisticsLine(ev)}</span>
+                                    </div>
+                                  )}
                                 </div>
                                 {pendingDeletePlannedId === ev.id ? (
                                   <div className="flex items-center gap-1 shrink-0">
@@ -2713,6 +2742,12 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                           >
                                             {ev.name}
                                           </button>
+                                          {formatSessionLogisticsLine(ev) && (
+                                            <div className="mt-0.5 flex items-center gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300 truncate">
+                                              <MapPin className="w-3 h-3 shrink-0" />
+                                              <span className="truncate">{formatSessionLogisticsLine(ev)}</span>
+                                            </div>
+                                          )}
                                         </div>
                                         {pendingDeletePlannedId === ev.id ? (
                                           <div className="flex items-center gap-1 shrink-0">

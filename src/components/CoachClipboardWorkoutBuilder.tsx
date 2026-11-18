@@ -3,6 +3,7 @@ import type {
   AthleteProfile,
   CoachEventGroup,
   ConnectedAthleteRecord,
+  PracticeVenueCategory,
   SportCategory,
   TeamBroadcastWorkout,
   TeamSummaryWithRole,
@@ -11,7 +12,17 @@ import type {
   TrackTrainingZoneCode,
   TrackWorkoutSpec,
   VdotPodIntensity,
+  WorkoutSessionSlot,
 } from '../types';
+import {
+  DEFAULT_PRACTICE_VENUE_PRESETS,
+  formatPracticeTime12h,
+  formatSessionLogisticsLine,
+  loadSavedTeamLocations,
+  saveTeamLocation,
+  sanitizeScheduledTime,
+  type SavedPracticeVenue,
+} from '../utils/workoutScheduleUtils';
 import {
   computeMultiSetPodSplits,
   formatMultiSetPrintableSplitSheet,
@@ -33,9 +44,12 @@ import {
   Check,
   ChevronDown,
   ClipboardText,
+  Clock,
   Copy,
   Download,
+  Dumbbell,
   Footprints,
+  MapPin,
   Plus,
   Send,
   ShareNetwork,
@@ -59,6 +73,11 @@ export interface CoachClipboardWorkoutBuilderProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
@@ -171,10 +190,17 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   onCreatePlannedEvent,
   onOpenStopwatchSubTab,
 }) => {
-  const [clipboardSport, setClipboardSport] = useState<'Running' | 'Cycling'>('Running');
+  const [clipboardSport, setClipboardSport] = useState<'Running' | 'Cycling' | 'Strength'>('Running');
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
   const [workoutDate, setWorkoutDate] = useState(() => getLocalDateIso());
+  const [sessionSlot, setSessionSlot] = useState<WorkoutSessionSlot>('SINGLE');
+  const [scheduledTime, setScheduledTime] = useState<string>('15:45');
+  const [locationCategory, setLocationCategory] = useState<PracticeVenueCategory>('TRACK');
+  const [locationName, setLocationName] = useState<string>('School Track');
+  const [savedVenues, setSavedVenues] = useState<SavedPracticeVenue[]>(() =>
+    loadSavedTeamLocations(activeTeam?.brand.teamId)
+  );
   const [workoutTitle, setWorkoutTitle] = useState('Track Multi-Set');
   const [shorthandInput, setShorthandInput] = useState('');
   const [includeWarmup, setIncludeWarmup] = useState(true);
@@ -265,20 +291,23 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
   const builtWorkout = useMemo(() => {
     const isCycling = clipboardSport === 'Cycling';
+    const isStrength = clipboardSport === 'Strength';
     const lines: string[] = [];
     if (includeWarmup) {
       lines.push(
         isCycling
           ? `Warmup\n- 15m 58% FTP Warmup`
-          : `Warmup\n- ${wuPreset.syntax} Z1 Warmup`
+          : isStrength
+            ? `Warmup\n- 10m 55% Effort Dynamic Mobility & Band Activation`
+            : `Warmup\n- ${wuPreset.syntax} Z1 Warmup`
       );
     }
     sets.forEach((s, idx) => {
-      const isTime = isCycling || s.measureMode === 'TIME_MINS';
+      const isTime = isCycling || isStrength || s.measureMode === 'TIME_MINS';
       if (isTime) {
-        const mins = Math.max(1, s.durationMins || 6);
-        const pct = s.targetPctFtp || (isCycling ? 90 : 98);
-        const targetUnit = isCycling ? 'FTP' : 'Pace';
+        const mins = Math.max(1, s.durationMins || (isStrength ? 10 : 6));
+        const pct = s.targetPctFtp || (isCycling ? 90 : isStrength ? 78 : 98);
+        const targetUnit = isCycling ? 'FTP' : isStrength ? 'Effort' : 'Pace';
         const restSecs = parseRestLabelSecs(s.restLabel);
         const restTok =
           restSecs >= 120 && restSecs % 60 === 0 ? `${restSecs / 60}m` : `${restSecs}s`;
@@ -299,7 +328,9 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       lines.push(
         isCycling
           ? `Cooldown\n- 10m 54% FTP Cooldown`
-          : `Cooldown\n- ${cdPreset.syntax} Z1 Cooldown`
+          : isStrength
+            ? `Cooldown\n- 8m 50% Effort Post-Lift Stretch & Core`
+            : `Cooldown\n- ${cdPreset.syntax} Z1 Cooldown`
       );
     }
     const workoutSyntax = lines.join('\n\n');
@@ -312,32 +343,44 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       ? includeWarmup
         ? 900
         : 0
-      : includeWarmup
-        ? Math.round((wuPreset.meters / 1000) * 305)
-        : 0;
+      : isStrength
+        ? includeWarmup
+          ? 600
+          : 0
+        : includeWarmup
+          ? Math.round((wuPreset.meters / 1000) * 305)
+          : 0;
     const cdSecs = isCycling
       ? includeCooldown
         ? 600
         : 0
-      : includeCooldown
-        ? Math.round((cdPreset.meters / 1000) * 310)
-        : 0;
+      : isStrength
+        ? includeCooldown
+          ? 480
+          : 0
+        : includeCooldown
+          ? Math.round((cdPreset.meters / 1000) * 310)
+          : 0;
     const workRestSecs = sets.reduce((acc, s) => {
       const restS = parseRestLabelSecs(s.restLabel);
-      const isTime = isCycling || s.measureMode === 'TIME_MINS';
+      const isTime = isCycling || isStrength || s.measureMode === 'TIME_MINS';
       const repSecs = isTime
-        ? Math.max(1, s.durationMins || 6) * 60
+        ? Math.max(1, s.durationMins || (isStrength ? 10 : 6)) * 60
         : Math.round((s.repDistanceMeters / 1000) * 215);
       return acc + s.repCount * (repSecs + restS) + (s.setRestAfterSecs || 0);
     }, 0);
     const plannedDurationSecs = Math.max(900, wuSecs + workRestSecs + cdSecs);
-    const hasOnlyDistance = !isCycling && sets.every((s) => s.measureMode !== 'TIME_MINS');
+    const hasOnlyDistance =
+      !isCycling && !isStrength && sets.every((s) => s.measureMode !== 'TIME_MINS');
     const plannedLoad = hasOnlyDistance
       ? Math.max(
           20,
           Math.min(130, Math.round((totalWorkMeters / 1000) * 11 + (wuSecs + cdSecs) / 90))
         )
-      : Math.max(25, Math.min(160, Math.round((plannedDurationSecs / 3600) * 78)));
+      : Math.max(
+          20,
+          Math.min(160, Math.round((plannedDurationSecs / 3600) * (isStrength ? 58 : 78)))
+        );
 
     const trackSets: TrackSetSpec[] = sets.map((s, idx) => ({
       repCount: s.repCount,
@@ -366,8 +409,8 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
     const setsSummary = sets
       .map((s) =>
-        isCycling || s.measureMode === 'TIME_MINS'
-          ? `${s.repCount}×${s.durationMins || 6}m @ ${s.targetPctFtp || (isCycling ? 90 : 98)}% ${isCycling ? 'FTP' : 'Pace'}`
+        isCycling || isStrength || s.measureMode === 'TIME_MINS'
+          ? `${s.repCount}×${s.durationMins || (isStrength ? 10 : 6)}m @ ${s.targetPctFtp || (isCycling ? 90 : isStrength ? 78 : 98)}% ${isCycling ? 'FTP' : isStrength ? 'Effort' : 'Pace'}`
           : `${s.repCount}×${s.repDistanceMeters}m @ ${INTENSITY_SHORT_LABEL[s.intensity]}`
       )
       .join(' + ');
@@ -476,7 +519,26 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     const title = workoutTitle.trim() || builtWorkout.setsSummary || 'Track Session';
     const wuLabel = includeWarmup ? `${wuPreset.label} WU` : '';
     const cdLabel = includeCooldown ? `${cdPreset.label} CD` : '';
-    const description = [wuLabel, builtWorkout.setsSummary, cdLabel].filter(Boolean).join(' · ');
+    const cleanTime = sanitizeScheduledTime(scheduledTime);
+    const cleanLoc = locationName.trim().slice(0, 120) || undefined;
+    const logisticsBadge = formatSessionLogisticsLine({
+      sessionSlot,
+      scheduledTime: cleanTime,
+      locationName: cleanLoc,
+    });
+    const description = [wuLabel, builtWorkout.setsSummary, cdLabel, logisticsBadge]
+      .filter(Boolean)
+      .join(' · ');
+
+    if (cleanLoc) {
+      setSavedVenues(
+        saveTeamLocation(activeTeam?.brand.teamId, {
+          name: cleanLoc,
+          category: locationCategory,
+          defaultTime: cleanTime,
+        })
+      );
+    }
 
     try {
       const audienceLabel =
@@ -516,10 +578,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               plannedLoad: builtWorkout.plannedLoad,
               workoutSyntax: builtWorkout.workoutSyntax,
               description,
+              ...(cleanTime ? { scheduledTime: cleanTime } : {}),
+              sessionSlot,
+              ...(cleanLoc ? { locationName: cleanLoc, locationCategory } : {}),
               trackSpec: clipboardSport === 'Running' ? builtWorkout.trackSpec : undefined,
               athleteOverrides:
                 Object.keys(athleteOverrides).length > 0 ? athleteOverrides : undefined,
-              replaceSameDateTarget: true,
+              replaceSameDateTarget: sessionSlot === 'SINGLE',
             }),
           }
         );
@@ -539,16 +604,26 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         date: workoutDate,
         name: title,
         sportCategory: clipboardSport,
-        environmentPreference: clipboardSport === 'Cycling' ? 'FLEXIBLE' : 'OUTDOOR',
+        environmentPreference:
+          clipboardSport === 'Strength'
+            ? 'INDOOR'
+            : clipboardSport === 'Cycling'
+              ? 'FLEXIBLE'
+              : 'OUTDOOR',
         plannedDurationSecs: builtWorkout.plannedDurationSecs,
         plannedLoad: builtWorkout.plannedLoad,
         workoutSyntax: builtWorkout.workoutSyntax,
         description: `${audienceLabel}: ${description}`,
+        ...(cleanTime ? { scheduledTime: cleanTime } : {}),
+        sessionSlot,
+        ...(cleanLoc ? { locationName: cleanLoc, locationCategory } : {}),
         ...(clipboardSport === 'Running' ? { trackSpec: builtWorkout.trackSpec } : {}),
         replaceExistingDate: false,
       });
 
-      setAssignFeedback(`Assigned "${title}" to ${audienceLabel} for ${workoutDate}.`);
+      setAssignFeedback(
+        `Assigned "${title}" to ${audienceLabel} for ${workoutDate}${logisticsBadge ? ` (${logisticsBadge})` : ''}.`
+      );
     } finally {
       setIsAssigning(false);
     }
@@ -667,6 +742,35 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             >
               <Bike className="w-3 h-3" />
               <span>Cycling</span>
+            </button>
+            <button
+              type="button"
+              data-testid="clipboard-sport-strength"
+              aria-pressed={clipboardSport === 'Strength'}
+              onClick={() => {
+                setClipboardSport('Strength');
+                setLocationCategory('GYM_WEIGHTS');
+                setLocationName('Weight Room');
+                if (workoutTitle === 'Track Multi-Set') {
+                  setWorkoutTitle('Weight Room + Mobility');
+                }
+                setSets((prev) =>
+                  prev.map((s) => ({
+                    ...s,
+                    measureMode: 'TIME_MINS',
+                    durationMins: s.durationMins || 10,
+                    targetPctFtp: 78,
+                  }))
+                );
+              }}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                clipboardSport === 'Strength'
+                  ? 'ap-nav-volt-active'
+                  : 'text-[#43584B] dark:text-[#93A39A]'
+              }`}
+            >
+              <Dumbbell className="w-3 h-3" />
+              <span>Gym / Lift</span>
             </button>
           </div>
         </div>
@@ -876,7 +980,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </div>
       </div>
 
-      {/* Title, Date, Warm-up & Cooldown (1-line summary on <640px mobile) */}
+      {/* Title, Date, Time, Practice Location & Warm-up / Cooldown */}
       <div className="space-y-2">
         <button
           type="button"
@@ -884,11 +988,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
           className="sm:hidden w-full min-h-[44px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
         >
           <span className="truncate font-mono text-2xs">
-            {workoutDate} · WU {includeWarmup ? wuPreset.label : 'Off'} · CD{' '}
-            {includeCooldown ? cdPreset.label : 'Off'}
+            {workoutDate}
+            {formatPracticeTime12h(scheduledTime) ? ` · ${formatPracticeTime12h(scheduledTime)}` : ''}
+            {locationName ? ` · ${locationName}` : ''}
           </span>
           <span className="inline-flex items-center gap-1 text-2xs text-[#1C5436] dark:text-[#C8FF00] shrink-0">
-            <span>Details</span>
+            <span>Schedule &amp; Venue</span>
             <ChevronDown
               className={`w-3.5 h-3.5 transition-transform ${showMetaDetailsMobile ? 'rotate-180' : ''}`}
             />
@@ -896,76 +1001,181 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </button>
 
         {showMetaDetailsMobile && (
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
-            <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-              <span>Session Name</span>
-              <input
-                type="text"
-                value={workoutTitle}
-                onChange={(e) => setWorkoutTitle(e.target.value)}
-                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans font-semibold text-[#101411] dark:text-[#F4F7F4]"
-              />
-            </label>
-
-            <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-              <span>Date</span>
-              <input
-                type="date"
-                aria-label="Workout Date"
-                value={workoutDate}
-                onChange={(e) => setWorkoutDate(e.target.value)}
-                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
-              />
-            </label>
-
-            <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+          <div className="space-y-2.5 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <span>Session Name</span>
                 <input
-                  type="checkbox"
-                  checked={includeWarmup}
-                  onChange={(e) => setIncludeWarmup(e.target.checked)}
-                  className="rounded border-[#2B5B3F]/40"
+                  type="text"
+                  value={workoutTitle}
+                  onChange={(e) => setWorkoutTitle(e.target.value)}
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans font-semibold text-[#101411] dark:text-[#F4F7F4]"
                 />
-                <span>Warm-up</span>
               </label>
-              <select
-                aria-label="Warm-up distance"
-                disabled={!includeWarmup}
-                value={warmupDistanceMeters}
-                onChange={(e) => setWarmupDistanceMeters(Number(e.target.value))}
-                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
-              >
-                {WARMUP_COOLDOWN_PRESETS.map((p) => (
-                  <option key={`wu-${p.meters}`} value={p.meters}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+
+              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <span>Date</span>
+                <input
+                  type="date"
+                  aria-label="Workout Date"
+                  value={workoutDate}
+                  onChange={(e) => setWorkoutDate(e.target.value)}
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                />
+              </label>
+
+              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeWarmup}
+                    onChange={(e) => setIncludeWarmup(e.target.checked)}
+                    className="rounded border-[#2B5B3F]/40"
+                  />
+                  <span>Warm-up</span>
+                </label>
+                <select
+                  aria-label="Warm-up distance"
+                  disabled={!includeWarmup}
+                  value={warmupDistanceMeters}
+                  onChange={(e) => setWarmupDistanceMeters(Number(e.target.value))}
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+                >
+                  {WARMUP_COOLDOWN_PRESETS.map((p) => (
+                    <option key={`wu-${p.meters}`} value={p.meters}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeCooldown}
+                    onChange={(e) => setIncludeCooldown(e.target.checked)}
+                    className="rounded border-[#2B5B3F]/40"
+                  />
+                  <span>Cooldown</span>
+                </label>
+                <select
+                  aria-label="Cooldown distance"
+                  disabled={!includeCooldown}
+                  value={cooldownDistanceMeters}
+                  onChange={(e) => setCooldownDistanceMeters(Number(e.target.value))}
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+                >
+                  {WARMUP_COOLDOWN_PRESETS.map((p) => (
+                    <option key={`cd-${p.meters}`} value={p.meters}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            {/* Practice Slot (Doubles), Call Time & Track / XC Venue */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+              <div className="sm:col-span-4 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <span>Session Slot (Doubles)</span>
+                <div
+                  role="group"
+                  aria-label="Daily session slot"
+                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
+                >
+                  {(
+                    [
+                      { id: 'SINGLE', label: 'Single' },
+                      { id: 'AM', label: 'AM Double' },
+                      { id: 'PM', label: 'PM Double' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      data-testid={`clipboard-slot-${opt.id}`}
+                      aria-pressed={sessionSlot === opt.id}
+                      onClick={() => {
+                        setSessionSlot(opt.id);
+                        if (opt.id === 'AM' && (!scheduledTime || scheduledTime === '15:45')) {
+                          setScheduledTime('06:30');
+                        } else if (
+                          opt.id === 'PM' &&
+                          (!scheduledTime || scheduledTime === '06:30')
+                        ) {
+                          setScheduledTime('15:45');
+                        }
+                      }}
+                      className={`flex-1 min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md cursor-pointer ${
+                        sessionSlot === opt.id
+                          ? 'ap-nav-volt-active'
+                          : 'text-[#43584B] dark:text-[#93A39A]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  <span>Practice Time</span>
+                </span>
                 <input
-                  type="checkbox"
-                  checked={includeCooldown}
-                  onChange={(e) => setIncludeCooldown(e.target.checked)}
-                  className="rounded border-[#2B5B3F]/40"
+                  type="time"
+                  data-testid="clipboard-time-input"
+                  aria-label="Practice Time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                 />
-                <span>Cooldown</span>
               </label>
-              <select
-                aria-label="Cooldown distance"
-                disabled={!includeCooldown}
-                value={cooldownDistanceMeters}
-                onChange={(e) => setCooldownDistanceMeters(Number(e.target.value))}
-                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
-              >
-                {WARMUP_COOLDOWN_PRESETS.map((p) => (
-                  <option key={`cd-${p.meters}`} value={p.meters}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+
+              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  <span>Practice Location (Track / XC Park / Gym)</span>
+                </span>
+                <input
+                  type="text"
+                  data-testid="clipboard-location-input"
+                  aria-label="Practice Location"
+                  value={locationName}
+                  onChange={(e) => setLocationName(e.target.value)}
+                  placeholder="e.g. School Track, Foothills XC Park, Weight Room"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans text-[#101411] dark:text-[#F4F7F4]"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-2xs">
+              <span className="font-mono text-[#43584B] dark:text-[#93A39A]">Venues:</span>
+              {[...DEFAULT_PRACTICE_VENUE_PRESETS, ...savedVenues].map((venue) => {
+                const active = locationName.trim().toLowerCase() === venue.name.toLowerCase();
+                return (
+                  <button
+                    key={`${venue.category}-${venue.name}`}
+                    type="button"
+                    onClick={() => {
+                      setLocationName(venue.name);
+                      setLocationCategory(venue.category);
+                      if (!scheduledTime && venue.defaultTime) {
+                        setScheduledTime(venue.defaultTime);
+                      }
+                    }}
+                    className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-0.5 rounded-md cursor-pointer ${
+                      active
+                        ? 'ap-nav-volt-active'
+                        : 'liquid-capsule-track text-[#1F3528] dark:text-[#C8D8CE]'
+                    }`}
+                  >
+                    {venue.name}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1032,7 +1242,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
               <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                 <div className="flex items-center justify-between gap-1">
-                  <span>{clipboardSport === 'Cycling' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
+                  <span>{clipboardSport === 'Cycling' || clipboardSport === 'Strength' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
                   {clipboardSport === 'Running' && (
                     <button
                       type="button"
@@ -1055,7 +1265,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     </button>
                   )}
                 </div>
-                {clipboardSport === 'Cycling' || row.measureMode === 'TIME_MINS' ? (
+                {clipboardSport === 'Cycling' || clipboardSport === 'Strength' || row.measureMode === 'TIME_MINS' ? (
                   <input
                     type="number"
                     min={1}

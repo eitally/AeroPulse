@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Bell,
   CheckCircle2,
+  Download,
   Flame,
   Moon,
   Shield,
@@ -13,6 +15,16 @@ import {
   evaluateTodayTrainingReceipt,
   evaluateTomorrowLockIn,
 } from '../../physiology/eveningHabitEngine';
+import {
+  checkAndFireBedtimeReminder,
+  downloadBedtimeReminderIcs,
+  getBedtimeNotificationPermission,
+  loadBedtimeReminderPrefs,
+  requestBedtimeNotificationPermission,
+  saveBedtimeReminderPrefs,
+  type BedtimeReminderPrefs,
+} from '../../utils/bedtimeReminderEngine';
+import { formatPracticeTime12h } from '../../utils/workoutScheduleUtils';
 import type { SafetySwapEventInput } from '../../physiology/sessionCheckInAndDigestEngine';
 import type {
   PlannedWorkoutEvent,
@@ -104,6 +116,10 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
   const [sorenessNote, setSorenessNote] = useState<string>(existingToday?.sorenessNote || '');
   const [isSaving, setIsSaving] = useState(false);
   const [lastSwapFeedback, setLastSwapFeedback] = useState<string | null>(null);
+  const [reminderPrefs, setReminderPrefs] = useState<BedtimeReminderPrefs>(() =>
+    loadBedtimeReminderPrefs()
+  );
+  const [reminderStatus, setReminderStatus] = useState<string | null>(null);
 
   const todayReceipt = useMemo(
     () => evaluateTodayTrainingReceipt({ todayIso, activities, plannedEvents }),
@@ -131,6 +147,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
         latestWellness,
         safeSportHideWeight,
         tomorrowEvent: lockIn.plannedEvent,
+        tomorrowEvents: lockIn.tomorrowEvents,
         rpe: selectedRpe,
         legFeel,
         lifeStressFlag,
@@ -140,11 +157,46 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
       latestWellness,
       safeSportHideWeight,
       lockIn.plannedEvent,
+      lockIn.tomorrowEvents,
       selectedRpe,
       legFeel,
       lifeStressFlag,
     ]
   );
+
+  useEffect(() => {
+    if (!reminderPrefs.enabled || existingToday) return;
+    const run = () => {
+      checkAndFireBedtimeReminder({
+        prefs: reminderPrefs,
+        todayIso,
+        hasLoggedToday: Boolean(existingToday),
+        tomorrowSummary: overnightRx.tomorrowHeadline,
+      });
+    };
+    run();
+    const id = window.setInterval(run, 60_000);
+    return () => window.clearInterval(id);
+  }, [reminderPrefs, todayIso, existingToday, overnightRx.tomorrowHeadline]);
+
+  const handleToggleBedtimeReminder = async () => {
+    if (reminderPrefs.enabled) {
+      const next = saveBedtimeReminderPrefs({ ...reminderPrefs, enabled: false });
+      setReminderPrefs(next);
+      setReminderStatus('Bedtime alert paused.');
+      return;
+    }
+    const perm = await requestBedtimeNotificationPermission();
+    const next = saveBedtimeReminderPrefs({ ...reminderPrefs, enabled: true });
+    setReminderPrefs(next);
+    if (perm === 'granted') {
+      setReminderStatus(`Alert armed for ${formatPracticeTime12h(next.timeHhMm) || '9:15 PM'}.`);
+    } else if (perm === 'denied') {
+      setReminderStatus('Browser notifications blocked — use Calendar (.ics) alarm.');
+    } else {
+      setReminderStatus(`Saved for ${formatPracticeTime12h(next.timeHhMm) || '9:15 PM'} (add .ics alarm for lock-screen alert).`);
+    }
+  };
 
   const streakDays = useMemo(
     () => computeCheckInStreak(sessionCheckIns, todayIso),
@@ -281,19 +333,76 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
             </span>
           )}
         </div>
-        <button
-          type="button"
-          data-testid="toggle-circadian-dusk-btn"
-          aria-pressed={isDuskMode}
-          onClick={onToggleDuskMode}
-          className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
-            isDuskMode ? 'ap-nav-volt-active' : 'ap-btn-secondary'
-          }`}
-        >
-          <Moon className="w-3.5 h-3.5" />
-          <span>{isDuskMode ? 'Circadian Dusk On' : 'Circadian Dusk'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="toggle-bedtime-reminder-btn"
+            aria-pressed={reminderPrefs.enabled}
+            onClick={() => void handleToggleBedtimeReminder()}
+            className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+              reminderPrefs.enabled ? 'ap-nav-volt-active' : 'ap-btn-secondary'
+            }`}
+            title={
+              getBedtimeNotificationPermission() === 'granted'
+                ? 'Nightly browser reminder armed'
+                : 'Enable nightly closeout notification'
+            }
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>
+              {reminderPrefs.enabled
+                ? `Remind ${formatPracticeTime12h(reminderPrefs.timeHhMm) || '9:15 PM'}`
+                : '9:15 PM Reminder'}
+            </span>
+          </button>
+
+          {reminderPrefs.enabled && (
+            <>
+              <input
+                type="time"
+                aria-label="Bedtime reminder time"
+                value={reminderPrefs.timeHhMm}
+                onChange={(e) => {
+                  const next = saveBedtimeReminderPrefs({
+                    ...reminderPrefs,
+                    timeHhMm: e.target.value,
+                  });
+                  setReminderPrefs(next);
+                }}
+                className="min-h-[44px] sm:min-h-[34px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => downloadBedtimeReminderIcs(reminderPrefs.timeHhMm)}
+                className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-xl ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+                title="Download daily calendar alarm (.ics) for phone lock-screen reminders"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>.ICS Alarm</span>
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            data-testid="toggle-circadian-dusk-btn"
+            aria-pressed={isDuskMode}
+            onClick={onToggleDuskMode}
+            className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+              isDuskMode ? 'ap-nav-volt-active' : 'ap-btn-secondary'
+            }`}
+          >
+            <Moon className="w-3.5 h-3.5" />
+            <span>{isDuskMode ? 'Circadian Dusk On' : 'Circadian Dusk'}</span>
+          </button>
+        </div>
       </div>
+
+      {reminderStatus && (
+        <div className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+          {reminderStatus}
+        </div>
+      )}
 
       {/* 3-Column Bento Summary: Today Receipt / Overnight Rx / Tomorrow Lock-In */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">

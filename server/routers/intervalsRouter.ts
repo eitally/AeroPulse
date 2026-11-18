@@ -1752,6 +1752,11 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
         `- 10m 60% FTP\n- ${Math.max(15, Math.round(plannedDurationSecs / 60) - 20)}m 85% FTP\n- 10m 55% FTP`
     );
 
+    const scheduledTime = typeof body.scheduledTime === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(body.scheduledTime.trim()) ? body.scheduledTime.trim().padStart(5, '0') : undefined;
+    const sessionSlot = body.sessionSlot === 'AM' || body.sessionSlot === 'PM' || body.sessionSlot === 'SINGLE' ? body.sessionSlot : undefined;
+    const locationName = typeof body.locationName === 'string' && body.locationName.trim() ? body.locationName.trim().slice(0, 120) : undefined;
+    const locationCategory = typeof body.locationCategory === 'string' && body.locationCategory.trim() ? body.locationCategory.trim().slice(0, 32) : undefined;
+    const meetingNotes = typeof body.meetingNotes === 'string' && body.meetingNotes.trim() ? body.meetingNotes.trim().slice(0, 240) : undefined;
     const newEvent = {
       id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       date,
@@ -1763,6 +1768,11 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
       plannedDurationSecs,
       targetZoneSummary: String(body.targetZoneSummary || `${plannedLoad} TSS Planned`),
       workoutSyntax,
+      ...(scheduledTime ? { scheduledTime } : {}),
+      ...(sessionSlot ? { sessionSlot } : {}),
+      ...(locationName ? { locationName } : {}),
+      ...(locationCategory ? { locationCategory } : {}),
+      ...(meetingNotes ? { meetingNotes } : {}),
       structuredSteps:
         Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0
           ? body.structuredSteps
@@ -1810,7 +1820,7 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
             },
             body: JSON.stringify({
               category: 'WORKOUT',
-              start_date_local: `${date}T08:00:00`,
+              start_date_local: `${date}T${scheduledTime ? `${scheduledTime}:00` : '08:00:00'}`,
               name,
               type: icuType,
               description: workoutSyntax,

@@ -9,6 +9,10 @@ import type {
 } from '../types.ts';
 import { applyMeetMicroPeriodizationToGitDiff } from './trackMeetAndRelayEngine.ts';
 import { getLocalDateIso } from './stravaLoadCalibration.ts';
+import {
+  inferEventSortMinutes,
+  sortPlannedEventsChronologically,
+} from '../utils/workoutScheduleUtils.ts';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -39,8 +43,48 @@ export function evaluatePlannedVsCompletedCompliance(
 
   const usedActIds = new Set<string>();
   const results: PlannedWorkoutCompliance[] = [];
+  const orderedPlans = sortPlannedEventsChronologically(plannedEvents);
 
-  for (const ev of plannedEvents) {
+  const pickBestActivityCandidate = (
+    ev: PlannedWorkoutEvent,
+    candidates: UnifiedActivity[]
+  ): UnifiedActivity | null => {
+    if (candidates.length === 0) return null;
+    const exactSport = candidates.filter((a) => a.sportCategory === ev.sportCategory);
+    const pool = exactSport.length > 0 ? exactSport : candidates;
+    if (pool.length === 1) return pool[0];
+
+    const plannedMinutes = inferEventSortMinutes(ev);
+    const plannedIsAm = plannedMinutes < 12 * 60;
+    const plannedLoad = Math.max(10, ev.plannedLoad || 55);
+
+    const scored = [...pool].sort((a, b) => {
+      const aHourMatch = a.startDateLocal?.match(/T(\d{2}):(\d{2})/);
+      const bHourMatch = b.startDateLocal?.match(/T(\d{2}):(\d{2})/);
+      const aAmPenalty =
+        ev.sessionSlot === 'AM' || ev.sessionSlot === 'PM' || ev.scheduledTime
+          ? aHourMatch
+            ? Number(aHourMatch[1]) < 12 === plannedIsAm
+              ? 0
+              : 1.5
+            : 0.4
+          : 0;
+      const bAmPenalty =
+        ev.sessionSlot === 'AM' || ev.sessionSlot === 'PM' || ev.scheduledTime
+          ? bHourMatch
+            ? Number(bHourMatch[1]) < 12 === plannedIsAm
+              ? 0
+              : 1.5
+            : 0.4
+          : 0;
+      const aLoadErr = Math.abs((a.trainingLoad || plannedLoad) - plannedLoad) / plannedLoad;
+      const bLoadErr = Math.abs((b.trainingLoad || plannedLoad) - plannedLoad) / plannedLoad;
+      return aAmPenalty + aLoadErr - (bAmPenalty + bLoadErr);
+    });
+    return scored[0] || null;
+  };
+
+  for (const ev of orderedPlans) {
     const d = (ev.date || '').slice(0, 10);
     const plannedDurationMins = Math.max(
       15,
@@ -49,9 +93,7 @@ export function evaluatePlannedVsCompletedCompliance(
     const plannedTss = Math.max(10, Math.round(ev.plannedLoad || 55));
 
     const candidates = (actsByDate.get(d) || []).filter((a) => !usedActIds.has(a.id));
-    // Prefer exact sport match first, then any completed workout on that day
-    const matched =
-      candidates.find((a) => a.sportCategory === ev.sportCategory) || candidates[0] || null;
+    const matched = pickBestActivityCandidate(ev, candidates);
 
     if (!matched) {
       const isUpcoming = d > todayIso;

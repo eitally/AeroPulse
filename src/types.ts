@@ -323,6 +323,16 @@ export interface StructuredWorkoutStep {
   targetZoneOrOutput: string;
 }
 
+export type WorkoutSessionSlot = 'SINGLE' | 'AM' | 'PM';
+
+export type PracticeVenueCategory =
+  | 'TRACK'
+  | 'XC_COURSE'
+  | 'ROAD_CAMPUS'
+  | 'GYM_WEIGHTS'
+  | 'POOL_CROSS'
+  | 'OTHER';
+
 export interface PlannedWorkoutEvent {
   id: string;
   date: string; // YYYY-MM-DD
@@ -333,6 +343,11 @@ export interface PlannedWorkoutEvent {
   plannedLoad: number;
   plannedDurationSecs: number;
   targetZoneSummary: string;
+  scheduledTime?: string; // HH:mm (24h), e.g. '15:45'
+  sessionSlot?: WorkoutSessionSlot;
+  locationName?: string;
+  locationCategory?: PracticeVenueCategory;
+  meetingNotes?: string;
   workoutSyntax?: string;
   structuredSteps?: StructuredWorkoutStep[];
   trackSpec?: TrackWorkoutSpec;
@@ -1371,6 +1386,11 @@ export interface TeamBroadcastWorkout {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  scheduledTime?: string;
+  sessionSlot?: WorkoutSessionSlot;
+  locationName?: string;
+  locationCategory?: PracticeVenueCategory;
+  meetingNotes?: string;
   trackSpec?: TrackWorkoutSpec;
   athleteOverrides?: Record<
     string,
@@ -1380,6 +1400,11 @@ export interface TeamBroadcastWorkout {
       description?: string;
       plannedDurationSecs?: number;
       plannedLoad?: number;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
     }
   >;

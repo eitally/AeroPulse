@@ -9,6 +9,10 @@ import {
   evaluateSafetySwapFromCheckIn,
   type SafetySwapEvaluation,
 } from './sessionCheckInAndDigestEngine.ts';
+import {
+  formatSessionLogisticsLine,
+  sortPlannedEventsChronologically,
+} from '../utils/workoutScheduleUtils.ts';
 
 export type CircadianHeroMode = 'MORNING' | 'POST_SESSION' | 'TONIGHT';
 
@@ -20,6 +24,8 @@ export interface TodayTrainingReceipt {
   totalDistanceKm: number;
   headline: string;
   plannedName?: string;
+  plannedCount: number;
+  plannedNames: string[];
 }
 
 export interface OvernightRecoveryPrescription {
@@ -32,6 +38,7 @@ export interface OvernightRecoveryPrescription {
 export interface TomorrowLockInSummary {
   tomorrowIso: string;
   plannedEvent: PlannedWorkoutEvent | null;
+  tomorrowEvents: PlannedWorkoutEvent[];
   swapEvaluation: SafetySwapEvaluation;
   statusLabel: string;
   actionSummary: string;
@@ -62,15 +69,18 @@ export function evaluateTodayTrainingReceipt(params: {
   const todayActs = (params.activities || []).filter(
     (a) => (a.startDateLocal || '').slice(0, 10) === todayIso
   );
-  const todayPlan = (params.plannedEvents || []).find(
-    (p) => (p.date || '').slice(0, 10) === todayIso
+  const todayPlans = sortPlannedEventsChronologically(
+    (params.plannedEvents || []).filter(
+      (p) => (p.date || '').slice(0, 10) === todayIso
+    )
   );
+  const todayPlan = todayPlans[0];
 
   const totalLoadTss = Math.round(
     todayActs.reduce((sum, a) => sum + (a.trainingLoad || 0), 0)
   );
   const totalDurationMins = Math.round(
-    todayActs.reduce((sum, a) => sum + (a.movingTimeSecs || 0), 0) / 60
+    todayActs.reduce((sum, a) => sum + (a.movingTimeSecs || 0) / 60, 0)
   );
   const totalDistanceKm = Number(
     (todayActs.reduce((sum, a) => sum + (a.distanceMeters || 0), 0) / 1000).toFixed(1)
@@ -78,9 +88,14 @@ export function evaluateTodayTrainingReceipt(params: {
 
   let headline = 'Rest or recovery day banked';
   if (todayActs.length === 1) {
-    headline = `${todayActs[0].name} · ${totalLoadTss} TSS`;
+    headline =
+      todayPlans.length > 1
+        ? `${todayActs[0].name} (1 of ${todayPlans.length} planned · ${totalLoadTss} TSS)`
+        : `${todayActs[0].name} · ${totalLoadTss} TSS`;
   } else if (todayActs.length > 1) {
     headline = `${todayActs.length} sessions completed · ${totalLoadTss} TSS`;
+  } else if (todayPlans.length > 1) {
+    headline = `Planned double: ${todayPlans.map((p) => p.name).join(' + ')} (unlogged)`;
   } else if (todayPlan) {
     headline = `Planned: ${todayPlan.name} (unlogged)`;
   }
@@ -93,6 +108,8 @@ export function evaluateTodayTrainingReceipt(params: {
     totalDistanceKm,
     headline,
     plannedName: todayPlan?.name,
+    plannedCount: todayPlans.length,
+    plannedNames: todayPlans.map((p) => p.name),
   };
 }
 
@@ -105,6 +122,7 @@ export function computeOvernightRecoveryPrescription(params: {
   latestWellness?: UnifiedWellnessDay | null;
   safeSportHideWeight?: boolean;
   tomorrowEvent?: PlannedWorkoutEvent | null;
+  tomorrowEvents?: PlannedWorkoutEvent[];
   rpe?: number;
   legFeel?: 'FRESH' | 'NORMAL' | 'HEAVY';
   lifeStressFlag?: boolean;
@@ -114,10 +132,20 @@ export function computeOvernightRecoveryPrescription(params: {
     latestWellness,
     safeSportHideWeight = false,
     tomorrowEvent,
+    tomorrowEvents,
     rpe = 5,
     legFeel = 'NORMAL',
     lifeStressFlag = false,
   } = params;
+
+  const list =
+    tomorrowEvents && tomorrowEvents.length > 0
+      ? tomorrowEvents
+      : tomorrowEvent
+        ? [tomorrowEvent]
+        : [];
+  const primaryTomorrow = list[0] || null;
+  const combinedTomorrowLoad = list.reduce((sum, e) => sum + (e.plannedLoad || 0), 0);
 
   let baseSleep = 8.0;
   if (todayLoadTss >= 95 || rpe >= 8 || legFeel === 'HEAVY') baseSleep += 0.75;
@@ -127,10 +155,11 @@ export function computeOvernightRecoveryPrescription(params: {
   }
   const sleepTargetHours = Number(Math.min(9.5, Math.max(7.5, baseSleep)).toFixed(1));
 
-  const isHardTomorrow =
-    Boolean(tomorrowEvent) &&
-    ((tomorrowEvent?.plannedLoad || 0) >= 70 ||
-      /threshold|interval|tempo|track|vo2|race|long/i.test(tomorrowEvent?.name || ''));
+  const isHardTomorrow = list.some(
+    (ev) =>
+      (ev.plannedLoad || 0) >= 70 ||
+      /threshold|interval|tempo|track|vo2|race|long/i.test(ev.name || '')
+  );
 
   const hydrationLitersLabel =
     todayLoadTss >= 80
@@ -145,9 +174,19 @@ export function computeOvernightRecoveryPrescription(params: {
       ? 'Glycogen reload tonight + complex carbs tomorrow morning'
       : 'Standard balanced recovery plate + casein/protein before sleep';
 
-  const tomorrowHeadline = tomorrowEvent
-    ? `${tomorrowEvent.name} (~${tomorrowEvent.plannedLoad} TSS)`
-    : 'Open schedule — ready for active recovery or base aerobic';
+  const formatOneTomorrow = (ev: PlannedWorkoutEvent) => {
+    const logi = formatSessionLogisticsLine(ev);
+    return logi
+      ? `${ev.name} (~${ev.plannedLoad} TSS · ${logi})`
+      : `${ev.name} (~${ev.plannedLoad} TSS)`;
+  };
+
+  const tomorrowHeadline =
+    list.length > 1
+      ? `Double Day (${combinedTomorrowLoad} TSS): ${list.map(formatOneTomorrow).join(' + ')}`
+      : primaryTomorrow
+        ? formatOneTomorrow(primaryTomorrow)
+        : 'Open schedule — ready for active recovery or base aerobic';
 
   return {
     sleepTargetHours,
@@ -193,8 +232,12 @@ export function evaluateTomorrowLockIn(params: {
   const todayIso = (params.todayIso || getLocalDateIso()).slice(0, 10);
   const tomorrowIso = shiftIsoDate(todayIso, 1);
 
-  const tomorrowEvent =
-    (params.plannedEvents || []).find((p) => (p.date || '').slice(0, 10) === tomorrowIso) || null;
+  const tomorrowEvents = sortPlannedEventsChronologically(
+    (params.plannedEvents || []).filter(
+      (p) => (p.date || '').slice(0, 10) === tomorrowIso
+    )
+  );
+  const tomorrowEvent = tomorrowEvents[0] || null;
 
   const swapEvaluation = evaluateSafetySwapFromCheckIn({
     checkIn: {
@@ -211,6 +254,7 @@ export function evaluateTomorrowLockIn(params: {
     return {
       tomorrowIso,
       plannedEvent: swapEvaluation.targetEvent || tomorrowEvent,
+      tomorrowEvents,
       swapEvaluation,
       statusLabel: 'Auto-Morph Armed',
       actionSummary: `Swapping ${swapEvaluation.targetEvent?.name || 'tomorrow'} to ${swapEvaluation.replacementEventInput.name}`,
@@ -220,11 +264,15 @@ export function evaluateTomorrowLockIn(params: {
   return {
     tomorrowIso,
     plannedEvent: tomorrowEvent,
+    tomorrowEvents,
     swapEvaluation,
     statusLabel: tomorrowEvent ? 'Locked As Planned' : 'Open Day',
-    actionSummary: tomorrowEvent
-      ? `${tomorrowEvent.name} confirmed for ${tomorrowIso}`
-      : `No structured workout scheduled for ${tomorrowIso}`,
+    actionSummary:
+      tomorrowEvents.length > 1
+        ? `Double Day (${tomorrowEvents.map((e) => e.name).join(' + ')}) confirmed for ${tomorrowIso}`
+        : tomorrowEvent
+          ? `${tomorrowEvent.name}${formatSessionLogisticsLine(tomorrowEvent) ? ` (${formatSessionLogisticsLine(tomorrowEvent)})` : ''} confirmed for ${tomorrowIso}`
+          : `No structured workout scheduled for ${tomorrowIso}`,
   };
 }
 

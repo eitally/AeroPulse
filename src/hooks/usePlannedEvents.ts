@@ -2,11 +2,50 @@ import React, { useCallback } from 'react';
 import type {
   ConnectedAthleteRecord,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
+  WorkoutSessionSlot,
 } from '../types';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
+import { sortPlannedEventsChronologically } from '../utils/workoutScheduleUtils';
+
+interface EventLogisticsFields {
+  scheduledTime?: string;
+  sessionSlot?: WorkoutSessionSlot;
+  locationName?: string;
+  locationCategory?: PracticeVenueCategory;
+  meetingNotes?: string;
+}
+
+function buildLogisticsFields(input: EventLogisticsFields): Partial<PlannedWorkoutEvent> {
+  return {
+    ...(input.scheduledTime ? { scheduledTime: input.scheduledTime } : {}),
+    ...(input.sessionSlot ? { sessionSlot: input.sessionSlot } : {}),
+    ...(input.locationName ? { locationName: input.locationName } : {}),
+    ...(input.locationCategory ? { locationCategory: input.locationCategory } : {}),
+    ...(input.meetingNotes ? { meetingNotes: input.meetingNotes } : {}),
+  };
+}
+
+function filterEventsForSlotReplace(
+  events: PlannedWorkoutEvent[],
+  target: { date: string; sportCategory: SportCategory; sessionSlot?: WorkoutSessionSlot },
+  replaceExistingDate?: boolean
+): PlannedWorkoutEvent[] {
+  if (!replaceExistingDate) return events;
+  const targetDate = target.date.slice(0, 10);
+  const targetSlot = target.sessionSlot || 'SINGLE';
+  return events.filter(
+    (e) =>
+      !(
+        e.date.slice(0, 10) === targetDate &&
+        e.sportCategory === target.sportCategory &&
+        (e.sessionSlot || 'SINGLE') === targetSlot
+      )
+  );
+}
 
 interface UsePlannedEventsParams {
   activeConnectedAthlete: ConnectedAthleteRecord | null;
@@ -41,12 +80,18 @@ export function usePlannedEvents({
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
       replaceExistingDate?: boolean;
       planBlockId?: string;
       planBlockName?: string;
       planWeekNum?: number;
     }) => {
+      const logistics = buildLogisticsFields(eventInput);
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'schedule workouts');
@@ -75,6 +120,10 @@ export function usePlannedEvents({
                   plannedLoad: eventInput.plannedLoad,
                   workoutSyntax: eventInput.workoutSyntax,
                   description: eventInput.description,
+                  ...logistics,
+                  replaceSameDateTarget: Boolean(
+                    eventInput.replaceExistingDate && (eventInput.sessionSlot || 'SINGLE') === 'SINGLE'
+                  ),
                 }),
               }
             );
@@ -100,6 +149,7 @@ export function usePlannedEvents({
           plannedDurationSecs: eventInput.plannedDurationSecs,
           targetZoneSummary: 'Coach Prescribed Session',
           workoutSyntax: eventInput.workoutSyntax,
+          ...logistics,
           ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
           ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
           ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
@@ -111,18 +161,14 @@ export function usePlannedEvents({
         const applyCoachEvt = (prev: ConnectedAthleteRecord[]) =>
           prev.map((a) => {
             if (a.id !== activeConnectedAthlete.id) return a;
-            const base = eventInput.replaceExistingDate
-              ? a.plannedEvents.filter(
-                  (e) =>
-                    !(
-                      e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
-                      e.sportCategory === eventInput.sportCategory
-                    )
-                )
-              : a.plannedEvents;
+            const base = filterEventsForSlotReplace(
+              a.plannedEvents,
+              eventInput,
+              eventInput.replaceExistingDate
+            );
             return {
               ...a,
-              plannedEvents: [...base, coachEvt].sort((x, y) => x.date.localeCompare(y.date)),
+              plannedEvents: sortPlannedEventsChronologically([...base, coachEvt]),
             };
           });
         if (isSampleDemoMode) {
@@ -135,16 +181,12 @@ export function usePlannedEvents({
 
       if (isSampleDemoMode) {
         setSampleDemoPlannedEvents((prev) => {
-          const base = eventInput.replaceExistingDate
-            ? prev.filter(
-                (e) =>
-                  !(
-                    e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
-                    e.sportCategory === eventInput.sportCategory
-                  )
-              )
-            : prev;
-          return [
+          const base = filterEventsForSlotReplace(
+            prev,
+            eventInput,
+            eventInput.replaceExistingDate
+          );
+          return sortPlannedEventsChronologically([
             ...base,
             {
               id: `sample-local-${Date.now()}`,
@@ -157,6 +199,7 @@ export function usePlannedEvents({
               plannedDurationSecs: eventInput.plannedDurationSecs,
               targetZoneSummary: 'Sample Planned Session',
               workoutSyntax: eventInput.workoutSyntax,
+              ...logistics,
               ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
               ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
               ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
@@ -164,7 +207,7 @@ export function usePlannedEvents({
                 ? { planWeekNum: eventInput.planWeekNum }
                 : {}),
             },
-          ].sort((a, b) => a.date.localeCompare(b.date));
+          ]);
         });
         return;
       }
@@ -182,16 +225,12 @@ export function usePlannedEvents({
           const data = await resp.json();
           if (data.event) {
             setPlannedEvents((prev) => {
-              const base = eventInput.replaceExistingDate
-                ? prev.filter(
-                    (e) =>
-                      !(
-                        e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
-                        e.sportCategory === eventInput.sportCategory
-                      )
-                  )
-                : prev;
-              return [...base, data.event];
+              const base = filterEventsForSlotReplace(
+                prev,
+                eventInput,
+                eventInput.replaceExistingDate
+              );
+              return sortPlannedEventsChronologically([...base, data.event]);
             });
             return;
           }
@@ -200,16 +239,12 @@ export function usePlannedEvents({
         // Fallback to local state
       }
       setPlannedEvents((prev) => {
-        const base = eventInput.replaceExistingDate
-          ? prev.filter(
-              (e) =>
-                !(
-                  e.date.slice(0, 10) === eventInput.date.slice(0, 10) &&
-                  e.sportCategory === eventInput.sportCategory
-                )
-            )
-          : prev;
-        return [
+        const base = filterEventsForSlotReplace(
+          prev,
+          eventInput,
+          eventInput.replaceExistingDate
+        );
+        return sortPlannedEventsChronologically([
           ...base,
           {
             id: `local-${Date.now()}`,
@@ -222,6 +257,7 @@ export function usePlannedEvents({
             plannedDurationSecs: eventInput.plannedDurationSecs,
             targetZoneSummary: 'Structured Workout',
             workoutSyntax: eventInput.workoutSyntax,
+            ...logistics,
             ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
             ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
             ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
@@ -229,7 +265,7 @@ export function usePlannedEvents({
               ? { planWeekNum: eventInput.planWeekNum }
               : {}),
           },
-        ];
+        ]);
       });
     },
     [
@@ -351,6 +387,11 @@ export function usePlannedEvents({
         plannedLoad: number;
         workoutSyntax: string;
         description: string;
+        scheduledTime?: string;
+        sessionSlot?: WorkoutSessionSlot;
+        locationName?: string;
+        locationCategory?: PracticeVenueCategory;
+        meetingNotes?: string;
         trackSpec?: TrackWorkoutSpec;
       }
     ) => {
@@ -366,6 +407,11 @@ export function usePlannedEvents({
               plannedLoad: patch.plannedLoad,
               workoutSyntax: patch.workoutSyntax,
               description: patch.description,
+              scheduledTime: patch.scheduledTime,
+              sessionSlot: patch.sessionSlot,
+              locationName: patch.locationName,
+              locationCategory: patch.locationCategory,
+              meetingNotes: patch.meetingNotes,
               ...(patch.trackSpec ? { trackSpec: patch.trackSpec } : {}),
             }
           : e;

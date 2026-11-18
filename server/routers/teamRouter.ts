@@ -465,6 +465,11 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
       plannedLoad: Number(req.body?.plannedLoad || 65),
       workoutSyntax: String(req.body?.workoutSyntax || ''),
       description: String(req.body?.description || ''),
+      scheduledTime: req.body?.scheduledTime,
+      sessionSlot: req.body?.sessionSlot,
+      locationName: req.body?.locationName,
+      locationCategory: req.body?.locationCategory,
+      meetingNotes: req.body?.meetingNotes,
       trackSpec: req.body?.trackSpec,
       athleteOverrides: req.body?.athleteOverrides,
       replaceSameDateTarget:
@@ -476,7 +481,8 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
       res.status(403).json({ ok: false, error: 'Coach permissions required.' });
       return;
     }
-    res.json({ ok: true, team: updated });
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
   } catch (err) {
     res.status(400).json({
       ok: false,

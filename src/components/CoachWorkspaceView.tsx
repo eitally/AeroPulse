@@ -68,6 +68,11 @@ export interface CoachWorkspaceViewProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: import('../types').WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: import('../types').PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
@@ -82,6 +87,11 @@ export interface CoachWorkspaceViewProps {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      scheduledTime?: string;
+      sessionSlot?: import('../types').WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: import('../types').PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
     }
   ) => Promise<void>;

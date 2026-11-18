@@ -11,6 +11,7 @@ import type {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SessionCheckInRecord,
   SportCategory,
   StravaSyncWindow,
@@ -19,6 +20,7 @@ import type {
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutSessionSlot,
 } from '../types';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import type { PlannedEventBatchItem } from './GoalsView';
@@ -105,6 +107,11 @@ export interface WorkspaceRouterProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
     planBlockId?: string;
@@ -122,6 +129,11 @@ export interface WorkspaceRouterProps {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
     }
   ) => Promise<void>;
@@ -143,6 +155,11 @@ export interface WorkspaceRouterProps {
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
