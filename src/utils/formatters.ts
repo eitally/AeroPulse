@@ -26,6 +26,24 @@ export function formatPace(secsPerKm: number | undefined, unit: DistanceUnit): s
   return `${mins}:${rem.toString().padStart(2, '0')} /${unit}`;
 }
 
+export function formatMultiSportPace(
+  secsPerKm: number | undefined,
+  unit: DistanceUnit,
+  sportCategory?: string,
+  subType?: string
+): string {
+  if (!secsPerKm || secsPerKm <= 0) return '—';
+  if (sportCategory === 'Swimming') {
+    const secs = Math.max(10, Math.round(secsPerKm / 10));
+    return `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')} /100m`;
+  }
+  if (subType === 'Rowing') {
+    const secs = Math.max(20, Math.round(secsPerKm / 2));
+    return `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')} /500m`;
+  }
+  return formatPace(secsPerKm, unit);
+}
+
 export function formatPaceDelta(diffSecsPerKm: number, unit: DistanceUnit): string {
   const scaled = unit === 'mi' ? Math.round(diffSecsPerKm * 1.609344) : Math.round(diffSecsPerKm);
   const sign = scaled > 0 ? '+' : '';

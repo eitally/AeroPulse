@@ -71,7 +71,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
         <div className="flex flex-wrap items-center gap-2">
           <ShieldCheck className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
           <span className="text-xs font-bold text-slate-900 dark:text-white">
-            NFHS Hand-to-FAT &amp; Verified Race Passport Batch Mint
+            Official Hand-Time Rounding &amp; Race Passports
           </span>
           {previewSample && (
             <span className="px-2 py-0.5 rounded ap-status-info font-mono text-2xs font-bold tabular-nums">
@@ -89,7 +89,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
               onChange={(e) => setIsHandTimedNfhs(e.target.checked)}
               className="accent-[#65A30D] w-4 h-4"
             />
-            <span>NFHS Hand→FAT (+0.24 / +0.14s)</span>
+            <span>Hand-Time Rounding (+0.24s)</span>
           </label>
 
           <button

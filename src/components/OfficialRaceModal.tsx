@@ -463,20 +463,20 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
             <div
               role="tablist"
               aria-label="Official race logging mode"
-              className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+              className="grid grid-cols-1 sm:inline-flex w-full sm:w-auto rounded-xl p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 gap-1 sm:gap-0"
             >
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeTab === 'IMPORT_PARSE'}
                 onClick={() => setActiveTab('IMPORT_PARSE')}
-                className={`min-h-[44px] px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                className={`min-h-[44px] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center sm:justify-start gap-2 ${
                   activeTab === 'IMPORT_PARSE'
                     ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Globe className="w-3.5 h-3.5" />
+                <Globe className="w-3.5 h-3.5 shrink-0" />
                 <span>Import from URL or Table</span>
               </button>
               <button
@@ -484,13 +484,13 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 role="tab"
                 aria-selected={activeTab === 'QUICK_FAT_LOGGER'}
                 onClick={() => setActiveTab('QUICK_FAT_LOGGER')}
-                className={`min-h-[44px] px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                className={`min-h-[44px] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center sm:justify-start gap-2 ${
                   activeTab === 'QUICK_FAT_LOGGER'
                     ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Timer className="w-3.5 h-3.5" />
+                <Timer className="w-3.5 h-3.5 shrink-0" />
                 <span>Log Track / Road Race (Splits)</span>
               </button>
             </div>

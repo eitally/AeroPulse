@@ -1,6 +1,10 @@
 import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine.ts';
 import { escapeTextForSafeAttr } from './teamQrHelper.ts';
 import { getThreshThemePalette } from './themeTokens.ts';
+import {
+  buildS2SymbolInnerSvg,
+  buildWAWordmarkInnerSvg,
+} from './brandVectors.ts';
 
 export type BrandAssetCategory = 'LOCKUPS' | 'STENCILS' | 'ICONS' | 'WORDMARK_AND_SOCIAL';
 
@@ -46,435 +50,24 @@ export interface BrandAssetDefinition {
   svgMarkup: string;
 }
 
-const NEEDLE_DEG = 313;
-const DEG_TO_RAD = Math.PI / 180;
-const RAD_TO_DEG = 180 / Math.PI;
-const TAN_14 = Math.tan(14 * DEG_TO_RAD);
-
-function fmt(n: number): number {
-  return Number(n.toFixed(2));
-}
-
-function polar(cx: number, cy: number, r: number, deg: number): [number, number] {
-  const rad = deg * DEG_TO_RAD;
-  return [fmt(cx + r * Math.cos(rad)), fmt(cy + r * Math.sin(rad))];
-}
-
-function localOffsetToPolar(
-  cx: number,
-  cy: number,
-  u: number,
-  v: number,
-  baseDeg = NEEDLE_DEG
-): [number, number] {
-  const rad = baseDeg * DEG_TO_RAD;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return [fmt(cx + u * cos - v * sin), fmt(cy + u * sin + v * cos)];
-}
-
-/**
- * Watertight circular stadium lane with exact radial gauge cut at `endDeg`
- * and `-14°` velocity-sheared straightaway termination at `rightX`.
- */
-function buildStadiumShearedLanePath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  endDeg: number,
-  rightX: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const yTop = fmt(cy + rIn);
-  const yBot = fmt(cy + rOut);
-  const xTopR = fmt(rightX + hw * TAN_14);
-  const xBotR = fmt(rightX - hw * TAN_14);
-  const [ox, oy] = polar(cx, cy, rOut, endDeg);
-  const [ix, iy] = polar(cx, cy, rIn, endDeg);
-  const delta = (((endDeg - 90) % 360) + 360) % 360;
-  const largeArc = delta > 180 ? 1 : 0;
-  return `M ${xBotR} ${yBot} L ${cx} ${yBot} A ${rOut} ${rOut} 0 ${largeArc} 1 ${ox} ${oy} L ${ix} ${iy} A ${rIn} ${rIn} 0 ${largeArc} 0 ${cx} ${yTop} L ${xTopR} ${yTop} Z`;
-}
-
-/**
- * Watertight radial gauge sector from `startDeg` clockwise to `endDeg`.
- */
-function buildRadialSectorPath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  startDeg: number,
-  endDeg: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const [ox1, oy1] = polar(cx, cy, rOut, startDeg);
-  const [ox2, oy2] = polar(cx, cy, rOut, endDeg);
-  const [ix2, iy2] = polar(cx, cy, rIn, endDeg);
-  const [ix1, iy1] = polar(cx, cy, rIn, startDeg);
-  const delta = (((endDeg - startDeg) % 360) + 360) % 360;
-  const largeArc = delta > 180 ? 1 : 0;
-  return `M ${ox1} ${oy1} A ${rOut} ${rOut} 0 ${largeArc} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rIn} ${rIn} 0 ${largeArc} 0 ${ix1} ${iy1} Z`;
-}
-
-function solveWedgeMoatPhi(
-  radius: number,
-  needleLength: number,
-  baseHalfWidth: number,
-  moatWidth: number
-): number {
-  const D = Math.hypot(needleLength, baseHalfWidth);
-  const c = baseHalfWidth * needleLength + moatWidth * D;
-  const amp = Math.hypot(baseHalfWidth, needleLength) * radius;
-  const clamped = Math.max(-1, Math.min(1, c / amp));
-  const phase = Math.atan2(baseHalfWidth, needleLength);
-  return Math.asin(clamped) - phase;
-}
-
-/**
- * Splits a radial gauge sector around the angled needle moat so 1-ink vinyl/screen-print
- * stencils require zero painted masking strokes (`stroke="#FFFFFF"`).
- */
-function buildKnockoutRadialSectorPair(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  startDeg: number,
-  endDeg: number,
-  needleLength: number,
-  baseHalfWidth: number,
-  moatWidth: number
-): string[] {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const phiOut = solveWedgeMoatPhi(rOut, needleLength, baseHalfWidth, moatWidth) * RAD_TO_DEG;
-  const phiIn = solveWedgeMoatPhi(rIn, needleLength, baseHalfWidth, moatWidth) * RAD_TO_DEG;
-
-  const leftEndOut = fmt(NEEDLE_DEG - phiOut);
-  const leftEndIn = fmt(NEEDLE_DEG - phiIn);
-  const rightStartOut = fmt(NEEDLE_DEG + phiOut);
-  const rightStartIn = fmt(NEEDLE_DEG + phiIn);
-
-  const paths: string[] = [];
-  if (leftEndOut > startDeg + 1 && leftEndIn > startDeg + 1) {
-    const [ox1, oy1] = polar(cx, cy, rOut, startDeg);
-    const [ox2, oy2] = polar(cx, cy, rOut, leftEndOut);
-    const [ix2, iy2] = polar(cx, cy, rIn, leftEndIn);
-    const [ix1, iy1] = polar(cx, cy, rIn, startDeg);
-    const la = leftEndOut - startDeg > 180 ? 1 : 0;
-    const laIn = leftEndIn - startDeg > 180 ? 1 : 0;
-    paths.push(
-      `M ${ox1} ${oy1} A ${rOut} ${rOut} 0 ${la} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rIn} ${rIn} 0 ${laIn} 0 ${ix1} ${iy1} Z`
-    );
-  }
-  if (endDeg > rightStartOut + 1 && endDeg > rightStartIn + 1) {
-    const [ox1, oy1] = polar(cx, cy, rOut, rightStartOut);
-    const [ox2, oy2] = polar(cx, cy, rOut, endDeg);
-    const [ix2, iy2] = polar(cx, cy, rIn, endDeg);
-    const [ix1, iy1] = polar(cx, cy, rIn, rightStartIn);
-    const la = endDeg - rightStartOut > 180 ? 1 : 0;
-    const laIn = endDeg - rightStartIn > 180 ? 1 : 0;
-    paths.push(
-      `M ${ox1} ${oy1} A ${rOut} ${rOut} 0 ${la} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rIn} ${rIn} 0 ${laIn} 0 ${ix1} ${iy1} Z`
-    );
-  }
-  return paths;
-}
-
-/**
- * Watertight full-curve outer Lane-4 arrow starting radially at `endDeg` (348°),
- * wrapping 258° counter-clockwise around the stadium turn, and shooting straight
- * underneath THRESH into the V1 right-pointing spearhead.
- */
-function buildFullWrapOuterArrowPath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  endDeg: number,
-  shaftEndX: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const [ox, oy] = polar(cx, cy, rOut, endDeg);
-  const [ix, iy] = polar(cx, cy, rIn, endDeg);
-  const yTop = fmt(cy + rIn);
-  const yBot = fmt(cy + rOut);
-  return [
-    `M ${ox} ${oy}`,
-    `A ${rOut} ${rOut} 0 1 0 ${cx} ${yBot}`,
-    `H ${shaftEndX}`,
-    `L ${shaftEndX - 5.5} ${fmt(cy + r + 11.8)}`,
-    `L ${shaftEndX + 21} ${cy + r}`,
-    `L ${shaftEndX - 5.5} ${fmt(cy + r - 11.8)}`,
-    `L ${shaftEndX} ${yTop}`,
-    `H ${cx}`,
-    `A ${rIn} ${rIn} 0 1 1 ${ix} ${iy}`,
-    'Z',
-  ].join(' ');
-}
-
-/**
- * Same outer Lane-4 arrow with the inner rim carved cleanly as a rounded notch
- * around the gauge needle tip (`needleLength + tipMoat < rOut`), yielding a single
- * pure compound contour with zero masking strokes.
- */
-function buildKnockoutFullWrapOuterArrowPath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  endDeg: number,
-  shaftEndX: number,
-  needleLength: number,
-  baseHalfWidth: number,
-  moatWidth: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const [ox, oy] = polar(cx, cy, rOut, endDeg);
-  const [ix, iy] = polar(cx, cy, rIn, endDeg);
-  const yTop = fmt(cy + rIn);
-  const yBot = fmt(cy + rOut);
-
-  const phiIn = solveWedgeMoatPhi(rIn, needleLength, baseHalfWidth, moatWidth) * RAD_TO_DEG;
-  const notchPlusDeg = fmt(NEEDLE_DEG + phiIn);
-  const notchMinusDeg = fmt(NEEDLE_DEG - phiIn);
-  const [nxPlus, nyPlus] = polar(cx, cy, rIn, notchPlusDeg);
-  const [nxMinus, nyMinus] = polar(cx, cy, rIn, notchMinusDeg);
-
-  // Tangent points on rounded cap of radius `moatWidth` around needle tip `(needleLength, 0)`
-  const D = Math.hypot(needleLength, baseHalfWidth);
-  const tipTanU = needleLength + (moatWidth * baseHalfWidth) / D;
-  const tipTanV = (moatWidth * needleLength) / D;
-  const [txPlus, tyPlus] = localOffsetToPolar(cx, cy, tipTanU, tipTanV);
-  const [txMinus, tyMinus] = localOffsetToPolar(cx, cy, tipTanU, -tipTanV);
-
-  const arcBackLarge = notchMinusDeg - 90 > 180 ? 1 : 0;
-
-  return [
-    `M ${ox} ${oy}`,
-    `A ${rOut} ${rOut} 0 1 0 ${cx} ${yBot}`,
-    `H ${shaftEndX}`,
-    `L ${shaftEndX - 5.5} ${fmt(cy + r + 11.8)}`,
-    `L ${shaftEndX + 21} ${cy + r}`,
-    `L ${shaftEndX - 5.5} ${fmt(cy + r - 11.8)}`,
-    `L ${shaftEndX} ${yTop}`,
-    `H ${cx}`,
-    `A ${rIn} ${rIn} 0 ${arcBackLarge} 1 ${nxMinus} ${nyMinus}`,
-    `L ${txMinus} ${tyMinus}`,
-    `A ${moatWidth} ${moatWidth} 0 0 1 ${txPlus} ${tyPlus}`,
-    `L ${nxPlus} ${nyPlus}`,
-    `A ${rIn} ${rIn} 0 0 1 ${ix} ${iy}`,
-    'Z',
-  ].join(' ');
-}
-
-/**
- * Unites the center circular hub and tapered wedge needle into one watertight outer contour,
- * punched with an opposite-winding inner pinhole (`fill-rule="evenodd"`).
- */
-function buildUnifiedHubAndNeedleCompoundPath(
-  cx: number,
-  cy: number,
-  needleLength: number,
-  baseHalfWidth: number,
-  hubRadius: number,
-  pinholeRadius: number
-): string {
-  // Solve `(L * (1 - s))^2 + (b * s)^2 = hubRadius^2` from tip T (`s=0`) toward base B (`s=1`)
-  const aCoeff = needleLength * needleLength + baseHalfWidth * baseHalfWidth;
-  const bCoeff = -2 * needleLength * needleLength;
-  const cCoeff = needleLength * needleLength - hubRadius * hubRadius;
-  const disc = Math.max(0, bCoeff * bCoeff - 4 * aCoeff * cCoeff);
-  const s = (-bCoeff - Math.sqrt(disc)) / (2 * aCoeff);
-
-  const exitU = needleLength * (1 - s);
-  const exitV = baseHalfWidth * s;
-  const [tx, ty] = localOffsetToPolar(cx, cy, needleLength, 0);
-  const [pPlusX, pPlusY] = localOffsetToPolar(cx, cy, exitU, exitV);
-  const [pMinusX, pMinusY] = localOffsetToPolar(cx, cy, exitU, -exitV);
-
-  const outerHubPlusNeedle = [
-    `M ${pMinusX} ${pMinusY}`,
-    `L ${tx} ${ty}`,
-    `L ${pPlusX} ${pPlusY}`,
-    `A ${hubRadius} ${hubRadius} 0 1 1 ${pMinusX} ${pMinusY}`,
-    'Z',
-  ].join(' ');
-
-  // Counter-clockwise inner pinhole loop inside clockwise hub contour for evenodd cutout
-  const pxLeft = fmt(cx - pinholeRadius);
-  const pxRight = fmt(cx + pinholeRadius);
-  const pinholeLoop = `M ${pxLeft} ${cy} A ${pinholeRadius} ${pinholeRadius} 0 1 0 ${pxRight} ${cy} A ${pinholeRadius} ${pinholeRadius} 0 1 0 ${pxLeft} ${cy} Z`;
-  return `${outerHubPlusNeedle} ${pinholeLoop}`;
-}
-
-/**
- * Outlined capsule path for a rounded stroke boundary tick (zero `<line stroke=...>` needed).
- */
-function buildRoundedCapsulePath(
-  cx: number,
-  cy: number,
-  rStart: number,
-  rEnd: number,
-  deg: number,
-  strokeWidth: number
-): string {
-  const rCap = strokeWidth / 2;
-  const [p1x, p1y] = localOffsetToPolar(cx, cy, rStart, -rCap, deg);
-  const [p2x, p2y] = localOffsetToPolar(cx, cy, rEnd, -rCap, deg);
-  const [p3x, p3y] = localOffsetToPolar(cx, cy, rEnd, rCap, deg);
-  const [p4x, p4y] = localOffsetToPolar(cx, cy, rStart, rCap, deg);
-  return `M ${p1x} ${p1y} L ${p2x} ${p2y} A ${rCap} ${rCap} 0 0 1 ${p3x} ${p3y} L ${p4x} ${p4y} A ${rCap} ${rCap} 0 0 1 ${p1x} ${p1y} Z`;
-}
-
 // =============================================================================
-// Shared Vector Coordinates (Exact Parity with src/components/AeroPulseLogo.tsx)
-// =============================================================================
-const LOCKUP_CX = 64;
-const LOCKUP_CY = 58;
-const LOCKUP_PINE_LANES = [
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 19.0, 7.2, 241, 133.5),
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 30.0, 7.2, 259, 130.8),
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 41.0, 7.2, 277, 421.0),
-];
-const LOCKUP_INNER_SECTORS = [
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 19.0, 7.5, 248, 348),
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 30.0, 7.5, 266, 348),
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 41.0, 7.5, 284, 348),
-];
-const LOCKUP_ARROW_FULL = buildFullWrapOuterArrowPath(LOCKUP_CX, LOCKUP_CY, 52.0, 7.5, 348, 444);
-
-const LOCKUP_KNOCKOUT_SECTORS = [
-  ...buildKnockoutRadialSectorPair(LOCKUP_CX, LOCKUP_CY, 19.0, 7.5, 248, 348, 51.8, 5.8, 2.8),
-  ...buildKnockoutRadialSectorPair(LOCKUP_CX, LOCKUP_CY, 30.0, 7.5, 266, 348, 51.8, 5.8, 2.8),
-  ...buildKnockoutRadialSectorPair(LOCKUP_CX, LOCKUP_CY, 41.0, 7.5, 284, 348, 51.8, 5.8, 2.8),
-];
-const LOCKUP_KNOCKOUT_ARROW = buildKnockoutFullWrapOuterArrowPath(
-  LOCKUP_CX,
-  LOCKUP_CY,
-  52.0,
-  7.5,
-  348,
-  444,
-  51.8,
-  5.8,
-  2.8
-);
-const LOCKUP_KNOCKOUT_HUB_NEEDLE = buildUnifiedHubAndNeedleCompoundPath(
-  LOCKUP_CX,
-  LOCKUP_CY,
-  51.8,
-  5.8,
-  9.8,
-  3.6
-);
-const LOCKUP_KNOCKOUT_TICK = buildRoundedCapsulePath(LOCKUP_CX, LOCKUP_CY, 14, 56, 355, 3.2);
-
-const [NEEDLE_TX, NEEDLE_TY] = polar(LOCKUP_CX, LOCKUP_CY, 51.8, 313);
-const [NEEDLE_BX1, NEEDLE_BY1] = polar(LOCKUP_CX, LOCKUP_CY, 5.8, 223);
-const [NEEDLE_BX2, NEEDLE_BY2] = polar(LOCKUP_CX, LOCKUP_CY, 5.8, 43);
-const LOCKUP_NEEDLE_TRIANGLE = `M ${NEEDLE_BX1} ${NEEDLE_BY1} L ${NEEDLE_TX} ${NEEDLE_TY} L ${NEEDLE_BX2} ${NEEDLE_BY2} Z`;
-const [TICK_X1, TICK_Y1] = polar(LOCKUP_CX, LOCKUP_CY, 14, 355);
-const [TICK_X2, TICK_Y2] = polar(LOCKUP_CX, LOCKUP_CY, 56, 355);
-
-const W1_WORDMARK_PATHS = [
-  'M -6 0 H 39 L 36.2 13.8 H 26 V 64 H 12 V 13.8 H -8.8 Z',
-  'M 43 0 H 57 V 25.2 H 69 V 0 H 83 V 64 H 69 V 38.4 H 57 V 64 H 43 Z',
-  'M 90 0 H 118.5 C 128.4 0 133.5 5.8 133.5 16.8 C 133.5 25.4 129.2 31.2 121.6 33.6 L 134.2 64 H 118.8 L 107.6 35.6 H 104 V 64 H 90 Z M 104 11.2 V 24.2 H 115.2 C 118.2 24.2 119.6 22.0 119.6 17.7 C 119.6 13.4 118.2 11.2 115.2 11.2 Z',
-  'M 139 0 H 177 L 174.4 13.0 H 153 V 25.4 H 173 L 170.6 37.8 H 153 V 51.0 H 176.5 L 174.0 64 H 139 Z',
-  'M 181 17.2 C 181 6.4 188.0 0 200.6 0 H 208.6 C 217.8 0 222.5 5.2 222.5 14.2 V 17.5 H 208.6 V 14.4 C 208.6 11.8 206.8 10.6 203.4 10.6 H 199.4 C 196.2 10.6 194.6 12.2 194.6 15.6 C 194.6 19.6 197.4 21.8 209.6 26.2 C 218.8 29.5 222.8 34.8 222.8 45.8 C 222.8 57.6 215.8 64 203.2 64 H 195.2 C 185.8 64 181 58.6 181 49.2 V 45.8 H 194.8 V 49.2 C 194.8 52.0 196.6 53.4 200.0 53.4 H 204.2 C 207.4 53.4 209.0 51.6 209.0 47.6 C 209.0 43.2 206.2 40.8 194.0 36.4 C 184.8 33.0 181 27.6 181 17.2 Z',
-  'M 228 0 H 242 V 25.2 H 254 V 0 H 268 V 64 H 254 V 38.4 H 242 V 64 H 228 Z',
-];
-
-function renderW1WordmarkPaths(fillAttr: string, transform = 'translate(144, 8) skewX(-14) scale(1.10, 1.29)'): string {
-  const pathEls = W1_WORDMARK_PATHS.map((d, idx) =>
-    idx === 2
-      ? `<path d="${d}" fill-rule="evenodd" clip-rule="evenodd"/>`
-      : `<path d="${d}"/>`
-  ).join('');
-  return `<g transform="${transform}" fill="${fillAttr}">${pathEls}</g>`;
-}
-
-// =============================================================================
-// Square Icon / Gauge Symbol Geometry (128x128 viewBox)
-// =============================================================================
-const ICON_CX = 64;
-const ICON_CY = 71.5;
-const ICON_PINE_SECTORS = [
-  buildRadialSectorPath(ICON_CX, ICON_CY, 19.5, 7.6, 134, 238),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 31.5, 7.6, 134, 258),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 43.5, 7.6, 134, 278),
-];
-const ICON_VOLT_SECTORS = [
-  buildRadialSectorPath(ICON_CX, ICON_CY, 19.5, 7.8, 246, 348),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 31.5, 7.8, 266, 348),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 43.5, 7.8, 286, 348),
-  buildRadialSectorPath(ICON_CX, ICON_CY, 55.5, 8.0, 134, 348),
-];
-const [ICON_NTX, ICON_NTY] = polar(ICON_CX, ICON_CY, 56.0, 313);
-const [ICON_NBX1, ICON_NBY1] = polar(ICON_CX, ICON_CY, 6.8, 223);
-const [ICON_NBX2, ICON_NBY2] = polar(ICON_CX, ICON_CY, 6.8, 43);
-const ICON_NEEDLE_TRI = `M ${ICON_NBX1} ${ICON_NBY1} L ${ICON_NTX} ${ICON_NTY} L ${ICON_NBX2} ${ICON_NBY2} Z`;
-const [ICON_TX1, ICON_TY1] = polar(ICON_CX, ICON_CY, 14.5, 356);
-
-// True 1-ink knockout gauge symbol sectors (splits 19.5, 31.5, 43.5, and outer 55.5 around 313° needle moat)
-const ICON_KNOCKOUT_SECTORS = [
-  ...buildKnockoutRadialSectorPair(ICON_CX, ICON_CY, 19.5, 7.8, 246, 348, 56.0, 6.8, 3.2),
-  ...buildKnockoutRadialSectorPair(ICON_CX, ICON_CY, 31.5, 7.8, 266, 348, 56.0, 6.8, 3.2),
-  ...buildKnockoutRadialSectorPair(ICON_CX, ICON_CY, 43.5, 7.8, 286, 348, 56.0, 6.8, 3.2),
-  ...buildKnockoutRadialSectorPair(ICON_CX, ICON_CY, 55.5, 8.0, 134, 348, 56.0, 6.8, 3.2),
-];
-const ICON_KNOCKOUT_HUB_NEEDLE = buildUnifiedHubAndNeedleCompoundPath(
-  ICON_CX,
-  ICON_CY,
-  56.0,
-  6.8,
-  11.8,
-  4.5
-);
-const ICON_KNOCKOUT_TICK = buildRoundedCapsulePath(ICON_CX, ICON_CY, 14.5, 57.5, 356, 4.2);
-
-// =============================================================================
-// SVG Builders (Namespaced Gradients + True Compound Knockouts)
+// Shared S2 × W-A SVG Builders (True Boolean Knockouts, Zero Matrix Distortion)
 // =============================================================================
 
 export function buildMultiToneLockupSvg(opts: {
-  gradId: string;
   pineColor: string;
   accentColor: string;
-  casingColor: string;
-  pinColor: string;
-  gradStops: Array<[string, string]>;
+  inkColor: string;
   backgroundRect?: { fill: string; rx?: number };
 }): string {
   const bg = opts.backgroundRect
     ? `<rect x="0" y="0" width="472" height="124"${opts.backgroundRect.rx ? ` rx="${opts.backgroundRect.rx}"` : ''} fill="${opts.backgroundRect.fill}"/>`
     : '';
-  const stops = opts.gradStops
-    .map(([offset, color]) => `<stop offset="${offset}" stop-color="${color}"/>`)
-    .join('');
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472 124" fill="none">`,
     bg,
-    `<defs><linearGradient id="${opts.gradId}" gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0">${stops}</linearGradient></defs>`,
-    `<g fill="${opts.pineColor}">${LOCKUP_PINE_LANES.map((d) => `<path d="${d}"/>`).join('')}</g>`,
-    `<g fill="${opts.accentColor}">${LOCKUP_INNER_SECTORS.map((d) => `<path d="${d}"/>`).join('')}<path d="${LOCKUP_ARROW_FULL}"/></g>`,
-    `<line x1="${TICK_X1}" y1="${TICK_Y1}" x2="${TICK_X2}" y2="${TICK_Y2}" stroke="${opts.accentColor}" stroke-width="3.2" stroke-linecap="round"/>`,
-    `<path d="${LOCKUP_NEEDLE_TRIANGLE}" fill="${opts.accentColor}" stroke="${opts.casingColor}" stroke-width="6" stroke-linejoin="round" style="paint-order:stroke fill"/>`,
-    `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="9.8" fill="${opts.accentColor}" stroke="${opts.casingColor}" stroke-width="3.8" style="paint-order:stroke fill"/>`,
-    `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="3.6" fill="${opts.pinColor}"/>`,
-    renderW1WordmarkPaths(`url(#${opts.gradId})`),
+    buildS2SymbolInnerSvg(opts.pineColor, opts.accentColor, 'translate(6, -5.5) scale(0.98)'),
+    buildWAWordmarkInnerSvg(opts.inkColor, opts.accentColor, 'translate(134, 34) scale(0.89)'),
     `</svg>`,
   ].join('');
 }
@@ -486,33 +79,9 @@ export function buildMultiToneLockupSvg(opts: {
 export function buildOneInkKnockoutLockupSvg(inkColor: string): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472 124" fill="none">`,
-    `<g fill="${inkColor}">`,
-    LOCKUP_PINE_LANES.map((d) => `<path d="${d}"/>`).join(''),
-    LOCKUP_KNOCKOUT_SECTORS.map((d) => `<path d="${d}"/>`).join(''),
-    `<path d="${LOCKUP_KNOCKOUT_ARROW}"/>`,
-    `<path d="${LOCKUP_KNOCKOUT_TICK}"/>`,
-    `<path d="${LOCKUP_KNOCKOUT_HUB_NEEDLE}" fill-rule="evenodd" clip-rule="evenodd"/>`,
-    `</g>`,
-    renderW1WordmarkPaths(inkColor),
+    buildS2SymbolInnerSvg(inkColor, inkColor, 'translate(6, -5.5) scale(0.98)'),
+    buildWAWordmarkInnerSvg(inkColor, inkColor, 'translate(134, 34) scale(0.89)'),
     `</svg>`,
-  ].join('');
-}
-
-function buildMultiToneGaugeInnerGroup(opts: {
-  pineColor: string;
-  accentColor: string;
-  casingColor: string;
-  pinColor: string;
-}): string {
-  return [
-    `<g transform="translate(64 66) scale(0.84) translate(-64 -70)">`,
-    `<g fill="${opts.pineColor}">${ICON_PINE_SECTORS.map((d) => `<path d="${d}"/>`).join('')}</g>`,
-    `<g fill="${opts.accentColor}">${ICON_VOLT_SECTORS.map((d) => `<path d="${d}"/>`).join('')}</g>`,
-    `<line x1="${ICON_TX1}" y1="${ICON_TY1}" x2="120.5" y2="67.55" stroke="${opts.accentColor}" stroke-width="4.2" stroke-linecap="round"/>`,
-    `<path d="${ICON_NEEDLE_TRI}" fill="${opts.accentColor}" stroke="${opts.casingColor}" stroke-width="7.4" stroke-linejoin="round" style="paint-order:stroke fill"/>`,
-    `<circle cx="${ICON_CX}" cy="${ICON_CY}" r="11.8" fill="${opts.accentColor}" stroke="${opts.casingColor}" stroke-width="4.6" style="paint-order:stroke fill"/>`,
-    `<circle cx="${ICON_CX}" cy="${ICON_CY}" r="4.5" fill="${opts.pinColor}"/>`,
-    `</g>`,
   ].join('');
 }
 
@@ -520,38 +89,36 @@ export function buildGaugeIconSvg(opts: {
   tile?: { fill: string; stroke?: string; rx?: number };
   pineColor: string;
   accentColor: string;
-  casingColor: string;
-  pinColor: string;
 }): string {
   const tileEl = opts.tile
     ? `<rect x="${opts.tile.stroke ? 2 : 0}" y="${opts.tile.stroke ? 2 : 0}" width="${opts.tile.stroke ? 124 : 128}" height="${opts.tile.stroke ? 124 : 128}"${opts.tile.rx ? ` rx="${opts.tile.rx}"` : ''} fill="${opts.tile.fill}"${opts.tile.stroke ? ` stroke="${opts.tile.stroke}" stroke-width="3.5"` : ''}/>`
     : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">${tileEl}${buildMultiToneGaugeInnerGroup(opts)}</svg>`;
+  const scaleTransform = opts.tile
+    ? 'translate(64 64) scale(0.86) translate(-60.8 -69.15)'
+    : 'translate(64 64) scale(1.06) translate(-60.8 -69.15)';
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">`,
+    tileEl,
+    buildS2SymbolInnerSvg(opts.pineColor, opts.accentColor, scaleTransform),
+    `</svg>`,
+  ].join('');
 }
 
 export function buildOneInkKnockoutGaugeSvg(inkColor: string): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">`,
-    `<g transform="translate(64 66) scale(0.84) translate(-64 -70)" fill="${inkColor}">`,
-    ICON_PINE_SECTORS.map((d) => `<path d="${d}"/>`).join(''),
-    ICON_KNOCKOUT_SECTORS.map((d) => `<path d="${d}"/>`).join(''),
-    `<path d="${ICON_KNOCKOUT_TICK}"/>`,
-    `<path d="${ICON_KNOCKOUT_HUB_NEEDLE}" fill-rule="evenodd" clip-rule="evenodd"/>`,
-    `</g></svg>`,
+    buildS2SymbolInnerSvg(inkColor, inkColor, 'translate(64 64) scale(1.06) translate(-60.8 -69.15)'),
+    `</svg>`,
   ].join('');
 }
 
 export function buildStandaloneWordmarkSvg(opts: {
-  gradId: string;
-  gradStops: Array<[string, string]>;
+  inkColor: string;
+  accentColor: string;
 }): string {
-  const stops = opts.gradStops
-    .map(([offset, color]) => `<stop offset="${offset}" stop-color="${color}"/>`)
-    .join('');
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 328 96" fill="none">`,
-    `<defs><linearGradient id="${opts.gradId}" gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0">${stops}</linearGradient></defs>`,
-    renderW1WordmarkPaths(`url(#${opts.gradId})`, 'translate(22, 6) skewX(-14) scale(1.10, 1.29)'),
+    buildWAWordmarkInnerSvg(opts.inkColor, opts.accentColor, 'translate(16, 22) scale(0.81)'),
     `</svg>`,
   ].join('');
 }
@@ -570,14 +137,8 @@ export function buildWatermarkTurnSvg(): string {
 export function buildSocialOgBannerSvg(): string {
   const heroLockupInner = [
     `<g transform="translate(88, 178) scale(1.75)">`,
-    `<defs><linearGradient id="thresh-grad-og-lockup" gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0"><stop offset="0%" stop-color="#F6FBF7"/><stop offset="38%" stop-color="#E8FFD1"/><stop offset="72%" stop-color="#D4FF38"/><stop offset="100%" stop-color="#C8FF00"/></linearGradient></defs>`,
-    `<g fill="#399663">${LOCKUP_PINE_LANES.map((d) => `<path d="${d}"/>`).join('')}</g>`,
-    `<g fill="#C8FF00">${LOCKUP_INNER_SECTORS.map((d) => `<path d="${d}"/>`).join('')}<path d="${LOCKUP_ARROW_FULL}"/></g>`,
-    `<line x1="${TICK_X1}" y1="${TICK_Y1}" x2="${TICK_X2}" y2="${TICK_Y2}" stroke="#C8FF00" stroke-width="3.2" stroke-linecap="round"/>`,
-    `<path d="${LOCKUP_NEEDLE_TRIANGLE}" fill="#C8FF00" stroke="#0B120E" stroke-width="6" stroke-linejoin="round" style="paint-order:stroke fill"/>`,
-    `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="9.8" fill="#C8FF00" stroke="#0B120E" stroke-width="3.8" style="paint-order:stroke fill"/>`,
-    `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="3.6" fill="#0B120E"/>`,
-    renderW1WordmarkPaths('url(#thresh-grad-og-lockup)'),
+    buildS2SymbolInnerSvg('#399663', '#C8FF00', 'translate(6, -5.5) scale(0.98)'),
+    buildWAWordmarkInnerSvg('#F4F7F4', '#C8FF00', 'translate(134, 34) scale(0.89)'),
     `</g>`,
   ].join('');
 
@@ -621,7 +182,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'thresh-lockup-dark',
     title: 'Primary Lockup — Dark Stage',
-    subtitle: 'Track Volt (#C8FF00) + Pine (#399663) full horizontal lockup',
+    subtitle: 'S2 Redline Breach + W-A Threshold Horizon (#C8FF00 / #F4F7F4)',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -633,26 +194,18 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (944×248)', width: 944, height: 248 },
       { key: '4x', label: '4x Print (1888×496)', width: 1888, height: 496 },
     ],
-    recommendedFor: 'Obsidian-Pine surfaces, dark-mode broadcasts, night track tents',
+    recommendedFor: 'Obsidian-Pine surfaces, dark footers, night track tents',
     minPhysicalSpec: 'Min print 0.5 in (13 mm) tall · Min web 28 px tall',
     svgMarkup: buildMultiToneLockupSvg({
-      gradId: 'thresh-grad-lockup-dark',
       pineColor: '#399663',
       accentColor: '#C8FF00',
-      casingColor: '#101814',
-      pinColor: '#0E1912',
-      gradStops: [
-        ['0%', '#F6FBF7'],
-        ['38%', '#E8FFD1'],
-        ['72%', '#D4FF38'],
-        ['100%', '#C8FF00'],
-      ],
+      inkColor: '#F4F7F4',
     }),
   },
   {
     id: 'thresh-lockup-light',
     title: 'Primary Lockup — Light Stage',
-    subtitle: 'Stadium Pine (#1C5436) + Turf Lime (#56BA00) light-ground lockup',
+    subtitle: 'S2 Redline Breach + W-A Threshold Horizon (#1C5436 / #3F8E00 / #101411)',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -667,17 +220,9 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Chalk/white slides, CMYK meet programs, locker-room QR headers',
     minPhysicalSpec: 'Min print 0.5 in (13 mm) tall · CMYK-safe Pine/Lime inks',
     svgMarkup: buildMultiToneLockupSvg({
-      gradId: 'thresh-grad-lockup-light',
       pineColor: '#1C5436',
-      accentColor: '#56BA00',
-      casingColor: '#FFFFFF',
-      pinColor: '#FFFFFF',
-      gradStops: [
-        ['0%', '#0E2619'],
-        ['38%', '#185230'],
-        ['72%', '#2E801E'],
-        ['100%', '#4BA800'],
-      ],
+      accentColor: '#3F8E00',
+      inkColor: '#101411',
     }),
   },
   {
@@ -698,18 +243,10 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Sunlit concrete race photos, die-cut stickers, scoreboard bugs',
     minPhysicalSpec: 'Self-framed rx=24 pill · safe on busy backgrounds',
     svgMarkup: buildMultiToneLockupSvg({
-      gradId: 'thresh-grad-sticker-diecut',
       pineColor: '#399663',
       accentColor: '#C8FF00',
-      casingColor: '#0B1911',
-      pinColor: '#0E1912',
+      inkColor: '#F4F7F4',
       backgroundRect: { fill: '#0B1911', rx: 24 },
-      gradStops: [
-        ['0%', '#F6FBF7'],
-        ['38%', '#E8FFD1'],
-        ['72%', '#D4FF38'],
-        ['100%', '#C8FF00'],
-      ],
     }),
   },
   {
@@ -773,8 +310,8 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   },
   {
     id: 'thresh-gauge-symbol-dark',
-    title: 'Gauge Symbol — Transparent (Dark)',
-    subtitle: 'Unframed 4-lane gauge mark for circular avatars & overlays',
+    title: 'S2 Redline Symbol — Transparent (Dark)',
+    subtitle: 'Standalone 1:1 chronometer + arrow mark for dark avatars & overlays',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -785,19 +322,17 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (512×512)', width: 512, height: 512 },
       { key: '4x', label: '4x (1024×1024)', width: 1024, height: 1024 },
     ],
-    recommendedFor: 'Dark circular club avatars, dark slides, badge stamps',
-    minPhysicalSpec: 'Min print 0.35 in (9 mm) · Min UI 20 px',
+    recommendedFor: 'Dark circular club avatars, dark slides, compact mobile headers',
+    minPhysicalSpec: 'Min print 0.35 in (9 mm) · Min UI 16 px favicon',
     svgMarkup: buildGaugeIconSvg({
       pineColor: '#399663',
       accentColor: '#C8FF00',
-      casingColor: '#0B120E',
-      pinColor: '#0B120E',
     }),
   },
   {
     id: 'thresh-gauge-symbol-light',
-    title: 'Gauge Symbol — Transparent (Light)',
-    subtitle: 'Unframed Stadium Pine & Turf Lime mark for white/chalk surfaces',
+    title: 'S2 Redline Symbol — Transparent (Light)',
+    subtitle: 'Standalone Stadium Pine & Volt Olive mark for white/chalk surfaces',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -809,17 +344,15 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (1024×1024)', width: 1024, height: 1024 },
     ],
     recommendedFor: 'Light circular avatars, clipboards, stationery corner marks',
-    minPhysicalSpec: 'Min print 0.35 in (9 mm) · WCAG AA Pine/Lime',
+    minPhysicalSpec: 'Min print 0.35 in (9 mm) · WCAG AA Pine/Olive',
     svgMarkup: buildGaugeIconSvg({
       pineColor: '#1C5436',
-      accentColor: '#56BA00',
-      casingColor: '#FFFFFF',
-      pinColor: '#FFFFFF',
+      accentColor: '#3F8E00',
     }),
   },
   {
     id: 'thresh-gauge-symbol-1ink-black',
-    title: 'Gauge Symbol — 1-Ink Black Knockout',
+    title: 'S2 Redline Symbol — 1-Ink Black Knockout',
     subtitle: 'Unframed monochrome knockout symbol for embroidery & laser etch',
     category: 'ICONS',
     width: 128,
@@ -838,7 +371,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   },
   {
     id: 'thresh-gauge-symbol-1ink-white',
-    title: 'Gauge Symbol — 1-Ink White Knockout',
+    title: 'S2 Redline Symbol — 1-Ink White Knockout',
     subtitle: 'Unframed reversed #FFFFFF knockout symbol for dark kits & bottles',
     category: 'ICONS',
     width: 128,
@@ -858,7 +391,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'thresh-icon-tile-dark',
     title: 'App Tile Icon — Obsidian Rounded',
-    subtitle: 'Canonical rx=28 #0B1911 rounded-square tile with #399663 border',
+    subtitle: 'Canonical rx=28 #0B1911 rounded-square tile with S2 Redline Breach mark',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -875,8 +408,6 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       tile: { fill: '#0B1911', stroke: '#399663', rx: 28 },
       pineColor: '#399663',
       accentColor: '#C8FF00',
-      casingColor: '#0B1911',
-      pinColor: '#0B1911',
     }),
   },
   {
@@ -898,9 +429,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     svgMarkup: buildGaugeIconSvg({
       tile: { fill: '#F4F7F2', stroke: '#1C5436', rx: 28 },
       pineColor: '#1C5436',
-      accentColor: '#56BA00',
-      casingColor: '#F4F7F2',
-      pinColor: '#F4F7F2',
+      accentColor: '#3F8E00',
     }),
   },
   {
@@ -924,14 +453,12 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       tile: { fill: '#0B1911' },
       pineColor: '#399663',
       accentColor: '#C8FF00',
-      casingColor: '#0B1911',
-      pinColor: '#0B1911',
     }),
   },
   {
     id: 'thresh-wordmark-dark',
-    title: 'Wordmark Only (W1) — Dark Stage',
-    subtitle: 'Standalone -14° THRESH letterforms for strips under 22px height',
+    title: 'Standalone Wordmark (W-A) — Dark Stage',
+    subtitle: 'Upright 0° optical THRESH letterforms + #C8FF00 threshold E-bar',
     category: 'WORDMARK_AND_SOCIAL',
     width: 328,
     height: 96,
@@ -942,22 +469,17 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (656×192)', width: 656, height: 192 },
       { key: '4x', label: '4x (1312×384)', width: 1312, height: 384 },
     ],
-    recommendedFor: 'Compact dark partner footers & jersey collar tape (< 22px height)',
-    minPhysicalSpec: 'Use only when gauge sectors drop below crisp legibility',
+    recommendedFor: 'Compact dark footers, jersey collar tape & narrow co-brand strips',
+    minPhysicalSpec: 'True optical caliper paths · zero skew distortion',
     svgMarkup: buildStandaloneWordmarkSvg({
-      gradId: 'thresh-grad-wordmark-dark',
-      gradStops: [
-        ['0%', '#F6FBF7'],
-        ['38%', '#E8FFD1'],
-        ['72%', '#D4FF38'],
-        ['100%', '#C8FF00'],
-      ],
+      inkColor: '#F4F7F4',
+      accentColor: '#C8FF00',
     }),
   },
   {
     id: 'thresh-wordmark-light',
-    title: 'Wordmark Only (W1) — Light Stage',
-    subtitle: 'Standalone -14° THRESH letterforms tuned for bright paper strips',
+    title: 'Standalone Wordmark (W-A) — Light Stage',
+    subtitle: 'Upright 0° optical THRESH letterforms + #3F8E00 threshold E-bar',
     category: 'WORDMARK_AND_SOCIAL',
     width: 328,
     height: 96,
@@ -969,15 +491,10 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (1312×384)', width: 1312, height: 384 },
     ],
     recommendedFor: 'Compact white header strips & dense meet timing tables',
-    minPhysicalSpec: 'Deep Pine → Turf Lime W1 sweep on crisp chalk/white',
+    minPhysicalSpec: 'Obsidian #101411 + Olive #3F8E00 E-bar on crisp chalk/white',
     svgMarkup: buildStandaloneWordmarkSvg({
-      gradId: 'thresh-grad-wordmark-light',
-      gradStops: [
-        ['0%', '#0E2619'],
-        ['38%', '#185230'],
-        ['72%', '#2E801E'],
-        ['100%', '#4BA800'],
-      ],
+      inkColor: '#101411',
+      accentColor: '#3F8E00',
     }),
   },
   {
@@ -1307,20 +824,14 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
   let threshMarkup = '';
 
   if (isOneInk) {
-    // True single-ink knockout crest (hollow rounded square via evenodd compound path is tricky for text;
-    // render solid filled pill? Avoid text color flip: stroke box cleanly without filling background!)
     crestMarkup = [
       `<rect x="${crestX + 2}" y="26" width="${crestSize - 4}" height="${crestSize - 4}" rx="18" fill="none" stroke="${monoInk}" stroke-width="5"/>`,
       `<text x="${crestX + crestSize / 2}" y="71" text-anchor="middle" fill="${monoInk}" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="26" font-weight="800" letter-spacing="-0.5">${cleanMono}</text>`,
     ].join('');
     threshMarkup = [
-      `<g transform="translate(${lockupX}, 0)" fill="${monoInk}">`,
-      LOCKUP_PINE_LANES.map((d) => `<path d="${d}"/>`).join(''),
-      LOCKUP_KNOCKOUT_SECTORS.map((d) => `<path d="${d}"/>`).join(''),
-      `<path d="${LOCKUP_KNOCKOUT_ARROW}"/>`,
-      `<path d="${LOCKUP_KNOCKOUT_TICK}"/>`,
-      `<path d="${LOCKUP_KNOCKOUT_HUB_NEEDLE}" fill-rule="evenodd" clip-rule="evenodd"/>`,
-      renderW1WordmarkPaths(monoInk),
+      `<g transform="translate(${lockupX}, 0)">`,
+      buildS2SymbolInnerSvg(monoInk, monoInk, 'translate(6, -5.5) scale(0.98)'),
+      buildWAWordmarkInnerSvg(monoInk, monoInk, 'translate(134, 34) scale(0.89)'),
       `</g>`,
     ].join('');
   } else {
@@ -1329,10 +840,8 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
     const secondary = isDark ? palette.secondaryOnDark : palette.secondaryOnLight;
     const onPrimary = isDark ? palette.textOnPrimaryDark : palette.textOnPrimaryLight;
     const slatePine = isDark ? '#64748B' : '#334155';
-    const casing = isDark ? '#101B15' : '#FFFFFF';
-    const pin = isDark ? '#0B120E' : '#FFFFFF';
-    const wordmarkStart = isDark ? '#F6FBF7' : '#0E1912';
-    nameColor = isDark ? '#F4F7F4' : '#101411';
+    const inkColor = isDark ? '#F4F7F4' : '#101411';
+    nameColor = inkColor;
     crossColor = isDark ? '#93A39A' : '#43584B';
 
     crestMarkup = [
@@ -1343,14 +852,8 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
 
     threshMarkup = [
       `<g transform="translate(${lockupX}, 0)">`,
-      `<defs><linearGradient id="${gradId}-word" gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0"><stop offset="0%" stop-color="${wordmarkStart}"/><stop offset="52%" stop-color="${wordmarkStart}"/><stop offset="100%" stop-color="${accent}"/></linearGradient></defs>`,
-      `<g fill="${slatePine}">${LOCKUP_PINE_LANES.map((d) => `<path d="${d}"/>`).join('')}</g>`,
-      `<g fill="${accent}">${LOCKUP_INNER_SECTORS.map((d) => `<path d="${d}"/>`).join('')}<path d="${LOCKUP_ARROW_FULL}"/></g>`,
-      `<line x1="${TICK_X1}" y1="${TICK_Y1}" x2="${TICK_X2}" y2="${TICK_Y2}" stroke="${accent}" stroke-width="3.2" stroke-linecap="round"/>`,
-      `<path d="${LOCKUP_NEEDLE_TRIANGLE}" fill="${accent}" stroke="${casing}" stroke-width="6" stroke-linejoin="round" style="paint-order:stroke fill"/>`,
-      `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="9.8" fill="${accent}" stroke="${casing}" stroke-width="3.8" style="paint-order:stroke fill"/>`,
-      `<circle cx="${LOCKUP_CX}" cy="${LOCKUP_CY}" r="3.6" fill="${pin}"/>`,
-      renderW1WordmarkPaths(`url(#${gradId}-word)`),
+      buildS2SymbolInnerSvg(slatePine, accent, 'translate(6, -5.5) scale(0.98)'),
+      buildWAWordmarkInnerSvg(inkColor, accent, 'translate(134, 34) scale(0.89)'),
       `</g>`,
     ].join('');
   }
@@ -1514,7 +1017,7 @@ export const BRAND_KIT_README_MD = `# THRESH Official Brand Kit & Permissions
 
 - **Canonical Name:** THRESH (always ALL-CAPS in running copy; retire legacy AeroPulse naming in public materials).
 - **Canonical Tagline:** THRESH — Run & Ride Readiness.
-- **Included Vectors (\`/svg/\`):** Primary Light/Dark lockups, Die-Cut Badge Pill, True Compound-Path 1-Ink Stencils (Obsidian Black, Reversed White, Track Volt), Unframed & Tiled Gauge Icons, W1 Wordmarks, 4-Lane Turn Watermark, and 1200x630 OpenGraph Card.
+- **Included Vectors (\`/svg/\`):** Primary Light/Dark lockups (S2 × W-A), Die-Cut Badge Pill, True Compound-Path 1-Ink Stencils (Obsidian Black, Reversed White, Track Volt), Standalone S2 Symbols & Tiled App Icons, Standalone W-A Wordmarks, 4-Lane Turn Watermark, and 1200x630 OpenGraph Card.
 - **Usage & Print Policy:**
   - **Permitted:** Unmodified editorial coverage, podcasts, race meet heat sheets & programs, API partner directories, and active team tent banners, warm-ups, & roster posters using \`Team × THRESH\` co-branding (following NFHS/NCAA competition uniform area limits <= 2.25 sq in on race singlets without implied institutional sponsorship).
   - **Prohibited:** Commercial merchandise resale, altering Z1–Z6 / Banister CTL-ATL-TSB physiological colors, placing raw #C8FF00 text on white paper, or fusing third-party hardware/platform logos into a combined THRESH mark.

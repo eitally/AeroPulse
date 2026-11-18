@@ -50,6 +50,7 @@ import { computeIntervalsSegmentEfforts } from './activitiesRouter.ts';
 import { resolveStravaAthleteIdentity, ensureValidStravaAccessToken } from './stravaRouter.ts';
 import { connectServiceToUser, disconnectServiceFromUser } from '../authService.ts';
 import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
+import { classifyMultiSportActivity } from '../../src/physiology/stravaLoadCalibration.ts';
 
 export function getEffectiveIntervalsConfig(req?: Request) {
   const activeReq = req ?? requestContext.getStore();
@@ -598,23 +599,6 @@ export async function syncIntervalsAllHistory(
       const rawDevice = String(a.device_name || '').trim();
       const combinedMeta = `${rawType} ${rawSubType} ${rawName} ${rawDevice}`;
 
-      let sportCategory: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport' = 'Strength';
-      if (
-        /ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|trackride|cyclocross|zwift|trainerroad|peloton|rouvy|mywhoosh|wahoo|kickr|tacx/i.test(
-          combinedMeta
-        )
-      ) {
-        sportCategory = 'Cycling';
-      } else if (/run|trailrun|virtualrun|treadmill/i.test(combinedMeta)) {
-        sportCategory = 'Running';
-      } else if (/swim|openwater/i.test(combinedMeta)) {
-        sportCategory = 'Swimming';
-      } else if (/triathlon|multisport|brick|transition/i.test(combinedMeta)) {
-        sportCategory = 'Multisport';
-      } else {
-        sportCategory = 'Strength';
-      }
-
       const rawStartLatLng =
         Array.isArray(a.start_latlng) && a.start_latlng.length >= 2
           ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])]
@@ -633,49 +617,19 @@ export async function syncIntervalsAllHistory(
         a.stream_types.length > 0 &&
         !a.stream_types.includes('latlng');
 
-      const isZeroGpsStationaryRide =
-        sportCategory === 'Cycling' &&
-        !rawStartLatLng &&
-        (hasNoLatLngStream || Number(a.total_elevation_gain ?? 0) === 0);
-
       const isVirtualPlatform =
         /virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
           combinedMeta
         ) || Boolean(isWatopiaOrMakuriGps);
 
-      const isIndoor =
-        Boolean(a.trainer) ||
-        Boolean(isVirtualPlatform) ||
-        Boolean(isZeroGpsStationaryRide) ||
-        /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(
-          combinedMeta
-        );
-
-      let subType:
-        | 'Road'
-        | 'Trail'
-        | 'Gravel'
-        | 'Virtual Cycling'
-        | 'Smart Trainer'
-        | 'Treadmill'
-        | 'Pool'
-        | 'Open Water'
-        | 'Gym' = 'Road';
-      if (sportCategory === 'Cycling') {
-        if (isVirtualPlatform) subType = 'Virtual Cycling';
-        else if (isIndoor) subType = 'Smart Trainer';
-        else if (/gravel/i.test(combinedMeta)) subType = 'Gravel';
-        else if (/mountain|mtb|trail/i.test(combinedMeta)) subType = 'Trail';
-        else subType = 'Road';
-      } else if (sportCategory === 'Running') {
-        if (isIndoor) subType = 'Treadmill';
-        else if (/trail/i.test(combinedMeta)) subType = 'Trail';
-        else subType = 'Road';
-      } else if (sportCategory === 'Swimming') {
-        subType = /open/i.test(rawType) ? 'Open Water' : 'Pool';
-      } else {
-        subType = 'Gym';
-      }
+      const classified = classifyMultiSportActivity(rawType || rawSubType, `${rawSubType} ${rawName}`, {
+        trainer: Boolean(a.trainer) || isVirtualPlatform || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(combinedMeta),
+        hasGps: Boolean(rawStartLatLng) && !hasNoLatLngStream,
+        isVirtualPlatform,
+      });
+      const sportCategory = classified.sportCategory;
+      const isIndoor = classified.environment === 'INDOOR';
+      const subType = classified.subType;
 
       const movingTimeSecs = Number(a.moving_time ?? a.elapsed_time ?? 0);
       const distanceMeters = Number(a.distance ?? 0);

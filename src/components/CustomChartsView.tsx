@@ -10,6 +10,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface CustomChartsViewProps {
   activities: UnifiedActivity[];
@@ -116,6 +117,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
   distanceUnit = 'mi',
   onOpenCoachWithPrompt,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [savedCharts, setSavedCharts] = useState<CustomChartConfig[]>(() => {
     try {
       const raw = localStorage.getItem('aeropulse_custom_charts');
@@ -779,36 +781,30 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         </div>
 
         {/* Date Range Presets & Environment Filter Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-500 font-medium">Time Period:</span>
-            <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono">
-              {(
-                [
-                  { id: '30D', label: '30d' },
-                  { id: '90D', label: '90d' },
-                  { id: '6M', label: '6m' },
-                  { id: '1Y', label: '1y' },
-                  { id: '2Y', label: '2y' },
-                  { id: 'ALL', label: 'All-Time' },
-                  { id: 'CUSTOM', label: 'Custom Dates' },
-                ] as const
-              ).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  aria-pressed={dateRangePreset === p.id}
-                  onClick={() => setDateRangePreset(p.id)}
-                  className={`min-h-[38px] px-2.5 py-1 rounded-md transition-colors ${
-                    dateRangePreset === p.id
-                      ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] font-semibold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <label htmlFor={`${formId}-time-period`} className="text-slate-500 font-medium">
+              Time Period:
+            </label>
+            <select
+              id={`${formId}-time-period`}
+              aria-label="Chart time period"
+              value={dateRangePreset}
+              onChange={(e) =>
+                setDateRangePreset(
+                  e.target.value as '30D' | '90D' | '6M' | '1Y' | '2Y' | 'ALL' | 'CUSTOM'
+                )
+              }
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-mono font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="30D">30d</option>
+              <option value="90D">90d</option>
+              <option value="6M">6m</option>
+              <option value="1Y">1y</option>
+              <option value="2Y">2y</option>
+              <option value="ALL">All-Time</option>
+              <option value="CUSTOM">Custom Dates</option>
+            </select>
 
             {dateRangePreset === 'CUSTOM' && (
               <div className="flex flex-wrap items-center gap-1.5 font-mono">
@@ -817,7 +813,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                   value={customStartDate}
                   aria-label="Custom chart start date"
                   onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
                 />
                 <span>to</span>
                 <input
@@ -825,29 +821,27 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                   value={customEndDate}
                   aria-label="Custom chart end date"
                   onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1"
                 />
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-slate-500 font-medium">Environment:</span>
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              {(['COMBINED', 'OUTDOOR', 'INDOOR'] as const).map((env) => (
-                <button
-                  key={env}
-                  onClick={() => setEnvironmentFilter(env)}
-                  className={`min-h-[30px] px-2.5 py-1 rounded-md transition-colors ${
-                    environmentFilter === env
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold shadow-xs'
-                      : 'text-slate-500'
-                  }`}
-                >
-                  {env === 'COMBINED' ? 'Combined' : env === 'OUTDOOR' ? 'Outdoor' : 'Indoor'}
-                </button>
-              ))}
-            </div>
+            <label htmlFor={`${formId}-env-filter`} className="text-slate-500 font-medium">
+              Environment:
+            </label>
+            <select
+              id={`${formId}-env-filter`}
+              aria-label="Chart environment filter"
+              value={environmentFilter}
+              onChange={(e) => setEnvironmentFilter(e.target.value as EnvironmentFilter)}
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="COMBINED">Combined</option>
+              <option value="OUTDOOR">Outdoor</option>
+              <option value="INDOOR">Indoor</option>
+            </select>
           </div>
         </div>
 
@@ -887,320 +881,347 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
 
         {/* SVG Chart Canvas with Full X & Y Axis Titles and Larger Tick Labels */}
         <div
-          className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 select-none"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 p-2 sm:p-4 select-none"
           onMouseLeave={() => setHoverIdx(null)}
         >
-          {chartType === 'TIME_SERIES' ? (
-            <svg viewBox="0 0 940 295" className="w-full h-80">
-              {(() => {
-                const len = Math.max(1, dailyJoinedPoints.length);
-                const v1Vals = dailyJoinedPoints
-                  .map((p) => p.val1)
-                  .filter((v): v is number => v !== null);
-                const v2Vals = dailyJoinedPoints
-                  .map((p) => p.val2)
-                  .filter((v): v is number => v !== null);
+          {(() => {
+            const svgW = isMobile ? 360 : 940;
+            const svgH = isMobile ? 225 : 295;
+            const plotTop = isMobile ? 16 : 30;
+            const plotBottom = isMobile ? 190 : 235;
+            const plotH = plotBottom - plotTop;
 
-                const min1 = v1Vals.length > 0 ? Math.min(...v1Vals) * 0.9 : 0;
-                const max1 = v1Vals.length > 0 ? Math.max(...v1Vals) * 1.05 || 100 : 100;
-                const span1 = Math.max(1, max1 - min1);
+            if (chartType === 'TIME_SERIES') {
+              const plotLeft = isMobile ? 36 : 64;
+              const plotRight = isMobile ? (secondaryDef ? 324 : 350) : 860;
+              const plotW = plotRight - plotLeft;
+              return (
+                <svg
+                  viewBox={`0 0 ${svgW} ${svgH}`}
+                  className={isMobile ? 'w-full h-auto' : 'w-full h-80'}
+                >
+                  {(() => {
+                    const len = Math.max(1, dailyJoinedPoints.length);
+                    const v1Vals = dailyJoinedPoints
+                      .map((p) => p.val1)
+                      .filter((v): v is number => v !== null);
+                    const v2Vals = dailyJoinedPoints
+                      .map((p) => p.val2)
+                      .filter((v): v is number => v !== null);
 
-                const min2 = v2Vals.length > 0 ? Math.min(...v2Vals) * 0.9 : 0;
-                const max2 = v2Vals.length > 0 ? Math.max(...v2Vals) * 1.05 || 100 : 100;
-                const span2 = Math.max(1, max2 - min2);
+                    const min1 = v1Vals.length > 0 ? Math.min(...v1Vals) * 0.9 : 0;
+                    const max1 = v1Vals.length > 0 ? Math.max(...v1Vals) * 1.05 || 100 : 100;
+                    const span1 = Math.max(1, max1 - min1);
 
-                const toY1 = (v: number) => 235 - ((v - min1) / span1) * 205;
-                const toY2 = (v: number) => 235 - ((v - min2) / span2) * 205;
+                    const min2 = v2Vals.length > 0 ? Math.min(...v2Vals) * 0.9 : 0;
+                    const max2 = v2Vals.length > 0 ? Math.max(...v2Vals) * 1.05 || 100 : 100;
+                    const span2 = Math.max(1, max2 - min2);
 
-                const line1Pts = dailyJoinedPoints
-                  .map((p, i) => {
-                    if (p.val1 === null) return null;
-                    const x = 64 + (i / Math.max(1, len - 1)) * 796;
-                    return `${x},${Math.max(18, Math.min(240, toY1(p.val1)))}`;
-                  })
-                  .filter(Boolean)
-                  .join(' ');
+                    const toY1 = (v: number) => plotBottom - ((v - min1) / span1) * plotH;
+                    const toY2 = (v: number) => plotBottom - ((v - min2) / span2) * plotH;
 
-                const line2Pts = secondaryDef
-                  ? dailyJoinedPoints
+                    const line1Pts = dailyJoinedPoints
                       .map((p, i) => {
-                        if (p.val2 === null) return null;
-                        const x = 64 + (i / Math.max(1, len - 1)) * 796;
-                        return `${x},${Math.max(18, Math.min(240, toY2(p.val2)))}`;
+                        if (p.val1 === null) return null;
+                        const x = plotLeft + (i / Math.max(1, len - 1)) * plotW;
+                        return `${x},${Math.max(plotTop, Math.min(plotBottom, toY1(p.val1)))}`;
                       })
                       .filter(Boolean)
-                      .join(' ')
-                  : '';
+                      .join(' ');
 
-                return (
-                  <>
-                    {/* Left Y-Axis Title */}
-                    <text
-                      x={15}
-                      y={128}
-                      transform="rotate(-90 15 128)"
-                      textAnchor="middle"
-                      fill={primaryDef.color}
-                      className="text-2xs font-sans font-bold"
-                    >
-                      {primaryDef.label} ({primaryDef.unit})
-                    </text>
+                    const line2Pts = secondaryDef
+                      ? dailyJoinedPoints
+                          .map((p, i) => {
+                            if (p.val2 === null) return null;
+                            const x = plotLeft + (i / Math.max(1, len - 1)) * plotW;
+                            return `${x},${Math.max(plotTop, Math.min(plotBottom, toY2(p.val2)))}`;
+                          })
+                          .filter(Boolean)
+                          .join(' ')
+                      : '';
 
-                    {/* Right Y-Axis Title */}
-                    {secondaryDef && (
-                      <text
-                        x={926}
-                        y={128}
-                        transform="rotate(90 926 128)"
-                        textAnchor="middle"
-                        fill={secondaryDef.color}
-                        className="text-2xs font-sans font-bold"
-                      >
-                        {secondaryDef.label} ({secondaryDef.unit})
-                      </text>
-                    )}
-
-                    {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                      const y = 235 - f * 205;
-                      const valLeft = (min1 + f * span1).toFixed(span1 < 10 ? 1 : 0);
-                      const valRight = (min2 + f * span2).toFixed(span2 < 10 ? 1 : 0);
-                      return (
-                        <g key={idx}>
-                          <line
-                            x1={64}
-                            y1={y}
-                            x2={860}
-                            y2={y}
-                            stroke="currentColor"
-                            className="text-slate-200 dark:text-slate-800"
-                            strokeDasharray="3 3"
-                          />
+                    return (
+                      <>
+                        {/* Left Y-Axis Title */}
+                        {!isMobile && (
                           <text
-                            x={58}
-                            y={y + 4}
-                            textAnchor="end"
-                            fill={primaryDef.color}
-                            className="text-2xs font-mono font-semibold"
-                          >
-                            {valLeft}
-                          </text>
-                          {secondaryDef && (
-                            <text
-                              x={866}
-                              y={y + 4}
-                              fill={secondaryDef.color}
-                              className="text-2xs font-mono font-semibold"
-                            >
-                              {valRight}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-
-                    {/* Primary Series */}
-                    {primaryDef.aggMode === 'SUM' && aggregation !== 'DAILY' ? (
-                      dailyJoinedPoints.map((p, i) => {
-                        if (p.val1 === null) return null;
-                        const x = 64 + (i / Math.max(1, len - 1)) * 796;
-                        const y = Math.max(18, Math.min(235, toY1(p.val1)));
-                        const barW = Math.max(4, Math.min(20, 600 / len));
-                        return (
-                          <rect
-                            key={i}
-                            x={x - barW / 2}
-                            y={y}
-                            width={barW}
-                            height={235 - y}
-                            fill={primaryDef.color}
-                            opacity={0.7}
-                            rx={2}
-                          />
-                        );
-                      })
-                    ) : (
-                      <polyline
-                        fill="none"
-                        stroke={primaryDef.color}
-                        strokeWidth="2.5"
-                        points={line1Pts}
-                      />
-                    )}
-
-                    {/* Secondary Series */}
-                    {secondaryDef && line2Pts && (
-                      <polyline
-                        fill="none"
-                        stroke={secondaryDef.color}
-                        strokeWidth="2.25"
-                        points={line2Pts}
-                      />
-                    )}
-
-                    {/* X-Axis Date Ticks & Title */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                      const ptIdx = Math.min(len - 1, Math.floor(f * (len - 1)));
-                      const pt = dailyJoinedPoints[ptIdx];
-                      if (!pt) return null;
-                      const x = 64 + f * 796;
-                      return (
-                        <text
-                          key={idx}
-                          x={x}
-                          y={258}
-                          textAnchor="middle"
-                          className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                        >
-                          {pt.date}
-                        </text>
-                      );
-                    })}
-                    <text
-                      x={462}
-                      y={282}
-                      textAnchor="middle"
-                      className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
-                    >
-                      Time Period ({aggregation} Aggregation · {startBound} to {endBound})
-                    </text>
-
-                    {/* Hover Columns */}
-                    {dailyJoinedPoints.map((_, i) => {
-                      const x = 64 + (i / Math.max(1, len - 1)) * 796;
-                      const colW = 796 / len;
-                      return (
-                        <g key={i}>
-                          {hoverIdx === i && (
-                            <line
-                              x1={x}
-                              y1={18}
-                              x2={x}
-                              y2={238}
-                              stroke="#3B82F6"
-                              strokeWidth="1.5"
-                              strokeDasharray="3 2"
-                            />
-                          )}
-                          <rect
-                            x={x - colW / 2}
-                            y={0}
-                            width={colW}
-                            height={270}
-                            fill="transparent"
-                            className="cursor-crosshair"
-                            onMouseEnter={() => setHoverIdx(i)}
-                            onMouseMove={() => setHoverIdx(i)}
-                          />
-                        </g>
-                      );
-                    })}
-                  </>
-                );
-              })()}
-            </svg>
-          ) : (
-            /* SCATTER / CORRELATION PLOTTER */
-            <svg viewBox="0 0 940 295" className="w-full h-80">
-              {(() => {
-                const { pairs, slope, intercept } = regressionStats;
-                if (pairs.length === 0) {
-                  return (
-                    <text
-                      x={470}
-                      y={145}
-                      textAnchor="middle"
-                      className="fill-slate-400 text-sm font-sans"
-                    >
-                      No overlapping data points for these two metrics in the selected date window.
-                    </text>
-                  );
-                }
-
-                const xs = pairs.map((p) => p.val1);
-                const ys = pairs.map((p) => p.val2);
-                const minX = Math.min(...xs) * 0.95;
-                const maxX = Math.max(...xs) * 1.05 || 100;
-                const spanX = Math.max(1, maxX - minX);
-
-                const minY = Math.min(...ys) * 0.95;
-                const maxY = Math.max(...ys) * 1.05 || 100;
-                const spanY = Math.max(1, maxY - minY);
-
-                const toX = (x: number) => 68 + ((x - minX) / spanX) * 810;
-                const toY = (y: number) => 235 - ((y - minY) / spanY) * 200;
-
-                const regY1 = slope * minX + intercept;
-                const regY2 = slope * maxX + intercept;
-
-                return (
-                  <>
-                    {/* Left Y-Axis Title */}
-                    <text
-                      x={16}
-                      y={135}
-                      transform="rotate(-90 16 135)"
-                      textAnchor="middle"
-                      fill={secondaryDef?.color || '#3B82F6'}
-                      className="text-2xs font-sans font-bold"
-                    >
-                      {secondaryDef?.label || 'Y Metric'} ({secondaryDef?.unit || ''})
-                    </text>
-
-                    {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                      const y = 235 - f * 200;
-                      const x = 68 + f * 810;
-                      return (
-                        <g key={idx}>
-                          <line
-                            x1={68}
-                            y1={y}
-                            x2={878}
-                            y2={y}
-                            stroke="currentColor"
-                            className="text-slate-200 dark:text-slate-800"
-                            strokeDasharray="3 3"
-                          />
-                          <text
-                            x={60}
-                            y={y + 4}
-                            textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                          >
-                            {(minY + f * spanY).toFixed(spanY < 10 ? 1 : 0)}
-                          </text>
-                          <text
-                            x={x}
-                            y={256}
+                            x={15}
+                            y={128}
+                            transform="rotate(-90 15 128)"
                             textAnchor="middle"
-                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
+                            fill={primaryDef.color}
+                            className="text-2xs font-sans font-bold"
                           >
-                            {(minX + f * spanX).toFixed(spanX < 10 ? 1 : 0)}
+                            {primaryDef.label} ({primaryDef.unit})
                           </text>
-                        </g>
-                      );
-                    })}
+                        )}
 
-                    {/* X-Axis Title */}
-                    <text
-                      x={473}
-                      y={282}
-                      textAnchor="middle"
-                      fill={primaryDef.color}
-                      className="text-xs font-sans font-bold"
-                    >
-                      {primaryDef.label} ({primaryDef.unit})
-                    </text>
+                        {/* Right Y-Axis Title */}
+                        {!isMobile && secondaryDef && (
+                          <text
+                            x={926}
+                            y={128}
+                            transform="rotate(90 926 128)"
+                            textAnchor="middle"
+                            fill={secondaryDef.color}
+                            className="text-2xs font-sans font-bold"
+                          >
+                            {secondaryDef.label} ({secondaryDef.unit})
+                          </text>
+                        )}
 
-                    {/* Linear Regression Trendline */}
-                    <line
-                      x1={toX(minX)}
-                      y1={Math.max(20, Math.min(235, toY(regY1)))}
-                      x2={toX(maxX)}
-                      y2={Math.max(20, Math.min(235, toY(regY2)))}
-                      stroke="#10B981"
-                      strokeWidth="2.25"
-                      strokeDasharray="6 4"
-                    />
+                        {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
+                          const y = plotBottom - f * plotH;
+                          const valLeft = (min1 + f * span1).toFixed(span1 < 10 ? 1 : 0);
+                          const valRight = (min2 + f * span2).toFixed(span2 < 10 ? 1 : 0);
+                          return (
+                            <g key={idx}>
+                              <line
+                                x1={plotLeft}
+                                y1={y}
+                                x2={plotRight}
+                                y2={y}
+                                stroke="currentColor"
+                                className="text-slate-200 dark:text-slate-800"
+                                strokeDasharray="3 3"
+                              />
+                              <text
+                                x={plotLeft - 6}
+                                y={y + 4}
+                                textAnchor="end"
+                                fill={primaryDef.color}
+                                className="text-2xs font-mono font-semibold"
+                              >
+                                {valLeft}
+                              </text>
+                              {secondaryDef && (
+                                <text
+                                  x={plotRight + 6}
+                                  y={y + 4}
+                                  fill={secondaryDef.color}
+                                  className="text-2xs font-mono font-semibold"
+                                >
+                                  {valRight}
+                                </text>
+                              )}
+                            </g>
+                          );
+                        })}
+
+                        {/* Primary Series */}
+                        {primaryDef.aggMode === 'SUM' && aggregation !== 'DAILY' ? (
+                          dailyJoinedPoints.map((p, i) => {
+                            if (p.val1 === null) return null;
+                            const x = plotLeft + (i / Math.max(1, len - 1)) * plotW;
+                            const y = Math.max(plotTop, Math.min(plotBottom, toY1(p.val1)));
+                            const barW = Math.max(4, Math.min(20, (plotW * 0.75) / len));
+                            return (
+                              <rect
+                                key={i}
+                                x={x - barW / 2}
+                                y={y}
+                                width={barW}
+                                height={plotBottom - y}
+                                fill={primaryDef.color}
+                                opacity={0.7}
+                                rx={2}
+                              />
+                            );
+                          })
+                        ) : (
+                          <polyline
+                            fill="none"
+                            stroke={primaryDef.color}
+                            strokeWidth="2.5"
+                            points={line1Pts}
+                          />
+                        )}
+
+                        {/* Secondary Series */}
+                        {secondaryDef && line2Pts && (
+                          <polyline
+                            fill="none"
+                            stroke={secondaryDef.color}
+                            strokeWidth="2.25"
+                            points={line2Pts}
+                          />
+                        )}
+
+                        {/* X-Axis Date Ticks & Title */}
+                        {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
+                          const ptIdx = Math.min(len - 1, Math.floor(f * (len - 1)));
+                          const pt = dailyJoinedPoints[ptIdx];
+                          if (!pt) return null;
+                          const x = plotLeft + f * plotW;
+                          return (
+                            <text
+                              key={idx}
+                              x={x}
+                              y={plotBottom + (isMobile ? 16 : 23)}
+                              textAnchor="middle"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
+                            >
+                              {isMobile ? pt.date.slice(5) : pt.date}
+                            </text>
+                          );
+                        })}
+                        <text
+                          x={plotLeft + plotW / 2}
+                          y={svgH - 6}
+                          textAnchor="middle"
+                          className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
+                        >
+                          Time Period ({aggregation} · {startBound} to {endBound})
+                        </text>
+
+                        {/* Hover Columns */}
+                        {dailyJoinedPoints.map((_, i) => {
+                          const x = plotLeft + (i / Math.max(1, len - 1)) * plotW;
+                          const colW = plotW / len;
+                          return (
+                            <g key={i}>
+                              {hoverIdx === i && (
+                                <line
+                                  x1={x}
+                                  y1={plotTop}
+                                  x2={x}
+                                  y2={plotBottom}
+                                  stroke="#3B82F6"
+                                  strokeWidth="1.5"
+                                  strokeDasharray="3 2"
+                                />
+                              )}
+                              <rect
+                                x={x - colW / 2}
+                                y={0}
+                                width={colW}
+                                height={plotBottom + 20}
+                                fill="transparent"
+                                className="cursor-crosshair"
+                                onMouseEnter={() => setHoverIdx(i)}
+                                onMouseMove={() => setHoverIdx(i)}
+                              />
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              );
+            }
+
+            /* SCATTER / CORRELATION PLOTTER */
+            const plotLeft = isMobile ? 36 : 68;
+            const plotRight = isMobile ? 350 : 878;
+            const plotW = plotRight - plotLeft;
+            return (
+              <svg
+                viewBox={`0 0 ${svgW} ${svgH}`}
+                className={isMobile ? 'w-full h-auto' : 'w-full h-80'}
+              >
+                {(() => {
+                  const { pairs, slope, intercept } = regressionStats;
+                  if (pairs.length === 0) {
+                    return (
+                      <text
+                        x={svgW / 2}
+                        y={svgH / 2}
+                        textAnchor="middle"
+                        className="fill-slate-400 text-xs sm:text-sm font-sans"
+                      >
+                        No overlapping data points for these two metrics in the selected date window.
+                      </text>
+                    );
+                  }
+
+                  const xs = pairs.map((p) => p.val1);
+                  const ys = pairs.map((p) => p.val2);
+                  const minX = Math.min(...xs) * 0.95;
+                  const maxX = Math.max(...xs) * 1.05 || 100;
+                  const spanX = Math.max(1, maxX - minX);
+
+                  const minY = Math.min(...ys) * 0.95;
+                  const maxY = Math.max(...ys) * 1.05 || 100;
+                  const spanY = Math.max(1, maxY - minY);
+
+                  const toX = (x: number) => plotLeft + ((x - minX) / spanX) * plotW;
+                  const toY = (y: number) => plotBottom - ((y - minY) / spanY) * plotH;
+
+                  const regY1 = slope * minX + intercept;
+                  const regY2 = slope * maxX + intercept;
+
+                  return (
+                    <>
+                      {/* Left Y-Axis Title */}
+                      {!isMobile && (
+                        <text
+                          x={16}
+                          y={135}
+                          transform="rotate(-90 16 135)"
+                          textAnchor="middle"
+                          fill={secondaryDef?.color || '#3B82F6'}
+                          className="text-2xs font-sans font-bold"
+                        >
+                          {secondaryDef?.label || 'Y Metric'} ({secondaryDef?.unit || ''})
+                        </text>
+                      )}
+
+                      {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
+                        const y = plotBottom - f * plotH;
+                        const x = plotLeft + f * plotW;
+                        return (
+                          <g key={idx}>
+                            <line
+                              x1={plotLeft}
+                              y1={y}
+                              x2={plotRight}
+                              y2={y}
+                              stroke="currentColor"
+                              className="text-slate-200 dark:text-slate-800"
+                              strokeDasharray="3 3"
+                            />
+                            <text
+                              x={plotLeft - 6}
+                              y={y + 4}
+                              textAnchor="end"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
+                            >
+                              {(minY + f * spanY).toFixed(spanY < 10 ? 1 : 0)}
+                            </text>
+                            <text
+                              x={x}
+                              y={plotBottom + (isMobile ? 16 : 21)}
+                              textAnchor="middle"
+                              className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
+                            >
+                              {(minX + f * spanX).toFixed(spanX < 10 ? 1 : 0)}
+                            </text>
+                          </g>
+                        );
+                      })}
+
+                      {/* X-Axis Title */}
+                      <text
+                        x={plotLeft + plotW / 2}
+                        y={svgH - 6}
+                        textAnchor="middle"
+                        fill={primaryDef.color}
+                        className="text-2xs sm:text-xs font-sans font-bold"
+                      >
+                        {primaryDef.label} ({primaryDef.unit})
+                      </text>
+
+                      {/* Linear Regression Trendline */}
+                      <line
+                        x1={toX(minX)}
+                        y1={Math.max(plotTop, Math.min(plotBottom, toY(regY1)))}
+                        x2={toX(maxX)}
+                        y2={Math.max(plotTop, Math.min(plotBottom, toY(regY2)))}
+                        stroke="#10B981"
+                        strokeWidth="2.25"
+                        strokeDasharray="6 4"
+                      />
 
                     {/* Scatter Dots */}
                     {pairs.map((p, idx) => (
@@ -1222,7 +1243,8 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                 );
               })()}
             </svg>
-          )}
+            );
+          })()}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">

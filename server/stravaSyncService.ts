@@ -10,8 +10,8 @@ import { buildServerAthleteProfile, isGenericName } from './physiologyEngine.ts'
 import { decodeGooglePolyline } from './routers/activitiesRouter.ts';
 import {
   STRAVA_LOAD_MODEL_VERSION,
+  classifyMultiSportActivity,
   computeStravaActivityLoadV2,
-  isEBikeActivityText,
   isVirtualCyclingText,
 } from '../src/physiology/stravaLoadCalibration.ts';
 
@@ -55,28 +55,6 @@ export function normalizeRawStravaActivity(
 
   const sportType = String(a.sport_type || a.type || '').trim();
   const actName = String(a.name || '');
-  const isEBike = isEBikeActivityText(sportType, actName);
-  const explicitNonCycleType =
-    /walk|hike|yoga|golf|pilates|weighttraining|run|trailrun|virtualrun|swim|alpineski|backcountryski|nordicski|snowshoe|standuppaddling|kayak|canoeing|rowing|stretch|mobility|meditation|breathwork|surfing|sailing/i.test(
-      sportType
-    );
-
-  let sportCategory: 'Cycling' | 'Running' | 'Swimming' | 'Strength' | 'Multisport' = 'Strength';
-  if (
-    !explicitNonCycleType &&
-    (/ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|peloton|zwift/i.test(
-      sportType + ' ' + actName
-    ) ||
-      isEBike)
-  ) {
-    sportCategory = 'Cycling';
-  } else if (/run|trailrun|virtualrun|treadmill/i.test(sportType)) {
-    sportCategory = 'Running';
-  } else if (/swim|openwater/i.test(sportType)) {
-    sportCategory = 'Swimming';
-  } else {
-    sportCategory = 'Strength';
-  }
 
   const rawStartLatLng: [number, number] | undefined =
     Array.isArray(a.start_latlng) && a.start_latlng.length === 2
@@ -94,46 +72,38 @@ export function normalizeRawStravaActivity(
   const hasSummaryPolyline = Boolean(
     (detail.map?.summary_polyline || a.map?.summary_polyline || '').length > 4
   );
-  const isStationaryZeroGpsCycling =
-    sportCategory === 'Cycling' && !hasSummaryPolyline && !rawStartLatLng;
+  const hasAnyGps = Boolean(hasSummaryPolyline || rawStartLatLng);
 
   const combinedStravaMeta = `${sportType} ${actName} ${a.device_name || ''} ${detail.device_name || ''}`;
   const isVirtualPlatform =
     isVirtualCyclingText(combinedStravaMeta) || Boolean(isWatopiaOrMakuriGps);
 
-  const isIndoor =
-    Boolean(a.trainer) ||
-    Boolean(isVirtualPlatform) ||
-    Boolean(isStationaryZeroGpsCycling) ||
-    /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga/i.test(
-      combinedStravaMeta
-    );
+  const classified = classifyMultiSportActivity(sportType, actName, {
+    trainer: Boolean(a.trainer),
+    hasGps: hasAnyGps,
+    isVirtualPlatform,
+  });
+  const sportCategory = classified.sportCategory;
+  let subType = classified.subType;
+  let environment = classified.environment;
 
-  let subType:
-    | 'Road'
-    | 'Trail'
-    | 'Gravel'
-    | 'Virtual Cycling'
-    | 'Smart Trainer'
-    | 'Treadmill'
-    | 'Pool'
-    | 'Open Water'
-    | 'Gym' = 'Road';
-  if (sportCategory === 'Cycling') {
-    if (isVirtualPlatform) subType = 'Virtual Cycling';
-    else if (isIndoor) subType = 'Smart Trainer';
-    else if (/gravel/i.test(combinedStravaMeta)) subType = 'Gravel';
-    else if (/mountain|mtb|trail/i.test(combinedStravaMeta)) subType = 'Trail';
-    else subType = 'Road';
-  } else if (sportCategory === 'Running') {
-    if (isIndoor) subType = 'Treadmill';
-    else if (/trail/i.test(combinedStravaMeta)) subType = 'Trail';
-    else subType = 'Road';
-  } else if (sportCategory === 'Swimming') {
-    subType = 'Pool';
-  } else {
-    subType = 'Gym';
+  // Fallback check if combined device metadata reveals indoor virtual platform
+  if (
+    environment === 'OUTDOOR' &&
+    (isVirtualPlatform ||
+      /treadmill|trainer|zwift|peloton|wattbike|stages|erg mode|smart_trainer/i.test(
+        combinedStravaMeta
+      ))
+  ) {
+    environment = 'INDOOR';
+    if (sportCategory === 'Cycling' && subType !== 'EBike') {
+      subType = isVirtualPlatform ? 'Virtual Cycling' : 'Smart Trainer';
+    } else if (sportCategory === 'Running') {
+      subType = 'Treadmill';
+    }
   }
+  const isEBike = subType === 'EBike';
+  const isIndoor = environment === 'INDOOR';
 
   const rawMoving = Number(a.moving_time || 0);
   const rawElapsed = Number(a.elapsed_time || 0);
@@ -141,8 +111,15 @@ export function normalizeRawStravaActivity(
   const distanceMeters = Number(a.distance || 0);
   const elevationGainMeters = Math.round(Number(a.total_elevation_gain || 0));
 
+  const supportsMeteredWatts =
+    !isEBike &&
+    (sportCategory === 'Cycling' ||
+      subType === 'Rowing' ||
+      subType === 'Nordic Ski' ||
+      sportCategory === 'Running');
   const hasRealDeviceWatts =
-    !isEBike && (a.device_watts === true || (Boolean(isVirtualPlatform) && a.device_watts !== false));
+    supportsMeteredWatts &&
+    (a.device_watts === true || (Boolean(isVirtualPlatform) && a.device_watts !== false));
   const avgPower =
     hasRealDeviceWatts && a.average_watts ? Math.round(Number(a.average_watts)) : undefined;
   const normalizedPower =
@@ -151,8 +128,15 @@ export function normalizeRawStravaActivity(
       : avgPower;
   const avgHr = Math.round(Number(a.average_heartrate || 0));
   const maxHr = Math.round(Number(a.max_heartrate || 0));
+  const supportsPaceDisplay =
+    sportCategory === 'Running' ||
+    sportCategory === 'Swimming' ||
+    subType === 'Hiking' ||
+    subType === 'Walking' ||
+    subType === 'Rowing' ||
+    subType === 'Nordic Ski';
   const avgPaceSecsPerKm =
-    sportCategory === 'Running' && distanceMeters > 0 && movingTimeSecs > 0
+    supportsPaceDisplay && distanceMeters > 0 && movingTimeSecs > 0
       ? Math.round(movingTimeSecs / (distanceMeters / 1000))
       : undefined;
 
@@ -284,7 +268,8 @@ export async function syncStravaAllHistory(
   forceFull = false,
   deltaOnly = false,
   explicitWindow?: string,
-  clientAfterEpoch = 0
+  clientAfterEpoch = 0,
+  beforeEpoch = 0
 ) {
   let activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
@@ -296,7 +281,7 @@ export async function syncStravaAllHistory(
   const effectiveWindow = (
     explicitWindow && validWindows.has(explicitWindow)
       ? explicitWindow
-      : forceFull
+      : forceFull || beforeEpoch > 0
         ? 'all'
         : runtimeStore.stravaSyncPolicy?.window || '90d'
   ) as '90d' | '180d' | '365d' | 'all' | 'none';
@@ -313,6 +298,9 @@ export async function syncStravaAllHistory(
       starredSegments: [],
       syncPaused: true,
       syncWindow: 'none' as const,
+      hasMoreHistory: false,
+      nextBeforeEpoch: null,
+      rateLimitPaused: false,
       stravaTokens: getStravaTokenRotationPayload(req),
     };
   }
@@ -328,6 +316,9 @@ export async function syncStravaAllHistory(
       activities: [],
       starredSegments: [],
       missingActivityScope: true,
+      hasMoreHistory: false,
+      nextBeforeEpoch: null,
+      rateLimitPaused: false,
       stravaTokens: getStravaTokenRotationPayload(req),
     };
   }
@@ -341,20 +332,39 @@ export async function syncStravaAllHistory(
           ? 365
           : 0;
   const afterEpoch =
-    windowDays > 0 ? Math.floor((Date.now() - windowDays * 86400 * 1000) / 1000) : 0;
+    windowDays > 0 && beforeEpoch === 0
+      ? Math.floor((Date.now() - windowDays * 86400 * 1000) / 1000)
+      : 0;
   const effectiveAfterEpoch =
-    !forceFull && deltaOnly && clientAfterEpoch > 0
+    !forceFull && beforeEpoch === 0 && deltaOnly && clientAfterEpoch > 0
       ? Math.max(afterEpoch, Math.floor(clientAfterEpoch))
       : afterEpoch;
   const afterQuery = effectiveAfterEpoch > 0 ? `&after=${effectiveAfterEpoch}` : '';
+  const beforeQuery = beforeEpoch > 0 ? `&before=${Math.floor(beforeEpoch)}` : '';
+  const cursorQuery = `${afterQuery}${beforeQuery}`;
 
   let headers = { Authorization: `Bearer ${activeAccessToken}` };
   let rawActivitiesMap = new Map<string, Record<string, any>>();
+  const fetchedThisCallMap = new Map<string, Record<string, any>>();
   let scopedArchiveFile = '';
+  let rateLimitPaused = false;
+  let reachedNaturalEnd = false;
+  let oldestFetchedEpoch = 0;
+
+  const trackFetchedItem = (item: Record<string, any>) => {
+    const itemId = extractStravaId(item);
+    if (!item || !itemId) return;
+    rawActivitiesMap.set(itemId, item);
+    fetchedThisCallMap.set(itemId, item);
+    const epoch = Math.floor(new Date(item.start_date || item.start_date_local || 0).getTime() / 1000);
+    if (Number.isFinite(epoch) && epoch > 0 && (oldestFetchedEpoch === 0 || epoch < oldestFetchedEpoch)) {
+      oldestFetchedEpoch = epoch;
+    }
+  };
 
   // Probe page 1 first so if the token was stale after a Vercel cold start, we immediately refresh once and retry
   let firstPageResp = await fetch(
-    `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${afterQuery}`,
+    `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${cursorQuery}`,
     { headers }
   );
   const { refreshToken: callerRefreshToken } = getEffectiveStravaClientConfig(req);
@@ -362,7 +372,7 @@ export async function syncStravaAllHistory(
     activeAccessToken = await ensureValidStravaAccessToken(req, true);
     headers = { Authorization: `Bearer ${activeAccessToken}` };
     firstPageResp = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${afterQuery}`,
+      `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${cursorQuery}`,
       { headers }
     );
   }
@@ -382,6 +392,9 @@ export async function syncStravaAllHistory(
           activities: [],
           starredSegments: [],
           missingActivityScope: true,
+          hasMoreHistory: false,
+          nextBeforeEpoch: null,
+          rateLimitPaused: false,
           stravaTokens: getStravaTokenRotationPayload(req),
         };
       }
@@ -403,7 +416,7 @@ export async function syncStravaAllHistory(
         for (const item of cachedArchive) {
           const itemId = extractStravaId(item);
           if (!item || !itemId) continue;
-          if (afterEpoch > 0) {
+          if (afterEpoch > 0 && beforeEpoch === 0) {
             const itemEpoch = Math.floor(
               new Date(item.start_date || item.start_date_local || 0).getTime() / 1000
             );
@@ -412,74 +425,117 @@ export async function syncStravaAllHistory(
           rawActivitiesMap.set(itemId, item);
         }
       }
-      const existingCachedCount = rawActivitiesMap.size;
       for (const item of firstPageItems) {
-        const itemId = extractStravaId(item);
-        if (item && itemId) rawActivitiesMap.set(itemId, item);
+        trackFetchedItem(item);
       }
-      const shouldPaginateAll = forceFull || (!deltaOnly && existingCachedCount <= 200);
-      // Guard Strava global 100 req / 15m quota: cap cold-start pagination and inspect X-RateLimit-Usage
+      if (firstPageItems.length < 200) {
+        reachedNaturalEnd = true;
+      }
+
+      const shouldPaginateAll = forceFull || beforeEpoch > 0 || !deltaOnly;
+      // Guard Strava 15m/daily rate limits using response headers while allowing multi-thousand archive pulls
       const isStravaRateLimited = (resp: globalThis.Response): boolean => {
         const usage = resp.headers.get('x-ratelimit-usage') || '';
-        const shortWindow = Number(usage.split(',')[0] || 0);
-        return shortWindow >= 80;
+        const limit = resp.headers.get('x-ratelimit-limit') || '';
+        const [shortUsage = 0, dailyUsage = 0] = usage.split(',').map(Number);
+        const [shortLimit = 100, dailyLimit = 1000] = limit.split(',').map((n) => Number(n) || 0);
+        const effectiveShortCap = shortLimit > 0 ? Math.max(40, shortLimit - 15) : 85;
+        const effectiveDailyCap = dailyLimit > 0 ? Math.max(200, dailyLimit - 25) : 975;
+        return shortUsage >= effectiveShortCap || dailyUsage >= effectiveDailyCap;
       };
-      const maxPageToFetch = effectiveWindow === 'all' ? 10 : 3;
-      if (
-        shouldPaginateAll &&
-        firstPageItems.length === 200 &&
-        !isStravaRateLimited(firstPageResp)
-      ) {
+      if (isStravaRateLimited(firstPageResp)) {
+        rateLimitPaused = true;
+      }
+
+      const maxPageToFetch =
+        effectiveWindow === 'all'
+          ? 20
+          : effectiveWindow === '365d'
+            ? 8
+            : effectiveWindow === '180d'
+              ? 5
+              : 3;
+
+      if (shouldPaginateAll && !reachedNaturalEnd && !rateLimitPaused) {
         for (let page = 2; page <= maxPageToFetch; page += 2) {
           const pages = page + 1 <= maxPageToFetch ? [page, page + 1] : [page];
           const batchResps = await Promise.all(
             pages.map((p) =>
               fetch(
-                `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}${afterQuery}`,
+                `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}${cursorQuery}`,
                 { headers }
               )
             )
           );
-          let reachedEnd = false;
+          let stopLoop = false;
           for (const r of batchResps) {
-            if (!r.ok || isStravaRateLimited(r)) {
-              reachedEnd = true;
+            if (!r.ok) {
+              if (r.status === 429) rateLimitPaused = true;
+              stopLoop = true;
               break;
             }
             const pageItems = await readStravaResponseJson<Record<string, any>[]>(r);
             if (!Array.isArray(pageItems) || pageItems.length === 0) {
-              reachedEnd = true;
-            } else {
-              for (const item of pageItems) {
-                const itemId = extractStravaId(item);
-                if (item && itemId) rawActivitiesMap.set(itemId, item);
-              }
-              if (pageItems.length < 200) reachedEnd = true;
+              reachedNaturalEnd = true;
+              stopLoop = true;
+              break;
+            }
+            for (const item of pageItems) {
+              trackFetchedItem(item);
+            }
+            if (pageItems.length < 200) {
+              reachedNaturalEnd = true;
+              stopLoop = true;
+              break;
+            }
+            if (isStravaRateLimited(r)) {
+              rateLimitPaused = true;
+              stopLoop = true;
+              break;
             }
           }
-          if (reachedEnd) break;
+          if (stopLoop) break;
         }
       }
     }
   }
 
-  const activitiesList = Array.from(rawActivitiesMap.values()).sort(
+  const allArchiveList = Array.from(rawActivitiesMap.values()).sort(
     (a, b) =>
       new Date(b.start_date_local || 0).getTime() - new Date(a.start_date_local || 0).getTime()
   );
-  if (activitiesList.length > 0 && scopedArchiveFile) {
-    saveJsonFile(scopedArchiveFile, activitiesList);
+  if (allArchiveList.length > 0 && scopedArchiveFile) {
+    saveJsonFile(scopedArchiveFile, allArchiveList);
   }
+  const activitiesList =
+    beforeEpoch > 0
+      ? Array.from(fetchedThisCallMap.values()).sort(
+          (a, b) =>
+            new Date(b.start_date_local || 0).getTime() -
+            new Date(a.start_date_local || 0).getTime()
+        )
+      : allArchiveList;
 
-  const [starredResp, stravaProfileResp, stravaZonesResp] = await Promise.all([
-    firstPageResp.ok
-      ? fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', { headers })
-      : Promise.resolve(null),
-    fetch('https://www.strava.com/api/v3/athlete', { headers }),
-    importProfileAndGear
-      ? fetch('https://www.strava.com/api/v3/athlete/zones', { headers })
-      : Promise.resolve(null),
-  ]);
+  const hasMoreHistory =
+    !deltaOnly &&
+    effectiveWindow === 'all' &&
+    !reachedNaturalEnd &&
+    oldestFetchedEpoch > 0 &&
+    (fetchedThisCallMap.size >= 200 || rateLimitPaused);
+  const nextBeforeEpoch = hasMoreHistory ? oldestFetchedEpoch + 1 : null;
+
+  const isCursorContinuation = beforeEpoch > 0;
+  const [starredResp, stravaProfileResp, stravaZonesResp] = isCursorContinuation
+    ? [null, null, null]
+    : await Promise.all([
+        firstPageResp.ok
+          ? fetch('https://www.strava.com/api/v3/segments/starred?per_page=15', { headers })
+          : Promise.resolve(null),
+        fetch('https://www.strava.com/api/v3/athlete', { headers }),
+        importProfileAndGear
+          ? fetch('https://www.strava.com/api/v3/athlete/zones', { headers })
+          : Promise.resolve(null),
+      ]);
   const starredSegments =
     starredResp && starredResp.ok
       ? await readStravaResponseJson<Record<string, any>[]>(starredResp)
@@ -575,20 +631,25 @@ export async function syncStravaAllHistory(
   );
   const calibratedRestingHr = Math.max(38, Math.min(78, prelimAthleteProfile.restingHr || 54));
 
-  // Fetch detailed activity payloads for at most top 2 recent activities to conserve Strava quota
-  const topIds = activitiesList
-    .slice(0, 2)
-    .map((a) => extractStravaId(a))
-    .filter(Boolean);
-  const detailedPayloads = await Promise.all(
-    topIds.map(async (id) => {
-      const dResp = await fetch(
-        `https://www.strava.com/api/v3/activities/${encodeURIComponent(id)}?include_all_efforts=true`,
-        { headers }
-      );
-      return dResp.ok ? await readStravaResponseJson<Record<string, any>>(dResp) : null;
-    })
-  );
+  // Fetch detailed activity payloads for at most top 2 recent activities to conserve Strava quota (skip on cursor backfill passes)
+  const topIds = isCursorContinuation
+    ? []
+    : activitiesList
+        .slice(0, 2)
+        .map((a) => extractStravaId(a))
+        .filter(Boolean);
+  const detailedPayloads =
+    topIds.length > 0
+      ? await Promise.all(
+          topIds.map(async (id) => {
+            const dResp = await fetch(
+              `https://www.strava.com/api/v3/activities/${encodeURIComponent(id)}?include_all_efforts=true`,
+              { headers }
+            );
+            return dResp.ok ? await readStravaResponseJson<Record<string, any>>(dResp) : null;
+          })
+        )
+      : [];
   const detailById = new Map<string, Record<string, any>>();
   for (const d of detailedPayloads) {
     const did = extractStravaId(d);
@@ -608,12 +669,14 @@ export async function syncStravaAllHistory(
     >
   >(STRAVA_KUDOS_CACHE_FILE, {});
 
-  const recentKudoCandidates = activitiesList
-    .filter((a) => {
-      const aid = extractStravaId(a);
-      return Boolean(aid && Number(a.kudos_count || 0) > 0 && !kudosCache[aid]?.kudoers);
-    })
-    .slice(0, 2);
+  const recentKudoCandidates = isCursorContinuation
+    ? []
+    : activitiesList
+        .filter((a) => {
+          const aid = extractStravaId(a);
+          return Boolean(aid && Number(a.kudos_count || 0) > 0 && !kudosCache[aid]?.kudoers);
+        })
+        .slice(0, 2);
 
   if (recentKudoCandidates.length > 0) {
     await Promise.all(
@@ -702,13 +765,17 @@ export async function syncStravaAllHistory(
     measurementPreference:
       stravaMeasurementPreference || runtimeStore.stravaMeasurementPreference || undefined,
     syncWindow: effectiveWindow,
-    athleteProfile: importProfileAndGear
-      ? {
-          ...stravaAthleteProfile,
-          gearItems: stravaGearItems,
-        }
-      : undefined,
-    gearItems: stravaGearItems,
+    hasMoreHistory,
+    nextBeforeEpoch,
+    rateLimitPaused,
+    athleteProfile:
+      !isCursorContinuation && importProfileAndGear
+        ? {
+            ...stravaAthleteProfile,
+            gearItems: stravaGearItems,
+          }
+        : undefined,
+    gearItems: isCursorContinuation ? [] : stravaGearItems,
     activities: normalizedStravaActivities,
     stravaTokens: getStravaTokenRotationPayload(req),
     starredSegments: starredSegments.map((s) => ({

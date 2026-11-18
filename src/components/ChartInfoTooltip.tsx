@@ -78,16 +78,19 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
       }
     };
     const handleWindowChange = () => updateCoords();
+    const handleGlobalClose = () => setIsOpen(false);
 
     document.addEventListener('pointerdown', handlePointerDownOutside);
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('scroll', handleWindowChange, true);
     window.addEventListener('resize', handleWindowChange);
+    window.addEventListener('thresh-close-popovers', handleGlobalClose);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDownOutside);
       document.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('scroll', handleWindowChange, true);
       window.removeEventListener('resize', handleWindowChange);
+      window.removeEventListener('thresh-close-popovers', handleGlobalClose);
     };
   }, [isOpen, updateCoords]);
 

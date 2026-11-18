@@ -7,6 +7,7 @@ import type {
   UnifiedActivity,
 } from '../types';
 import { autoDetectUnstructuredIntervals } from '../physiology/scholasticEngine';
+import { computeStravaActivityLoadV2 } from '../physiology/stravaLoadCalibration';
 
 export interface WorkerAthleteThresholds {
   ftp: number;
@@ -636,17 +637,32 @@ export function runStreamAnalyticsPipeline(
   const powerZones7 =
     validWatts.length > 0 ? computePowerZones7(time, watts, safeFtp) : undefined;
 
-  // TSS: Prefer Power TSS when power exists, otherwise Running Pace rTSS or HR-based hrTSS
+  // TSS: Prefer Power TSS when power exists, otherwise Running Pace rTSS, HR TRIMP, or Multi-Sport v4 fallback
   let tss = 0;
-  if (normalizedPower && intensityFactor && movingTimeSecs > 0) {
+  if (normalizedPower && intensityFactor && movingTimeSecs > 0 && sportCategory !== 'Running') {
     tss = Math.round(((movingTimeSecs * normalizedPower * intensityFactor) / (safeFtp * 3600)) * 100);
-  } else if (avgPaceSecsPerKm && thresholds.thresholdPaceSecsPerKm && movingTimeSecs > 0) {
+  } else if (avgPaceSecsPerKm && thresholds.thresholdPaceSecsPerKm && movingTimeSecs > 0 && sportCategory === 'Running') {
     const paceIf = thresholds.thresholdPaceSecsPerKm / Math.max(120, avgPaceSecsPerKm);
     tss = Math.round((movingTimeSecs / 3600) * paceIf * paceIf * 100);
   } else if (trimpBanister > 0) {
     tss = Math.round(trimpBanister * 0.88);
   } else {
-    tss = Math.round((movingTimeSecs / 3600) * 65);
+    tss = computeStravaActivityLoadV2({
+      sportCategory,
+      movingTimeSecs,
+      distanceMeters,
+      avgPower,
+      normalizedPower,
+      hasRealDeviceWatts: validWatts.length > 0,
+      avgHr: avgHr || undefined,
+      maxHr: maxHr || undefined,
+      avgPaceSecsPerKm,
+      calibratedFtp: safeFtp,
+      calibratedBikeLthr: thresholds.lthr || 165,
+      calibratedRunLthr: (thresholds.lthr || 165) + 4,
+      calibratedThresholdPaceSecsPerKm: thresholds.thresholdPaceSecsPerKm || 255,
+      restingHr: thresholds.restingHr || 52,
+    }).trainingLoad;
   }
 
   const intervals = (() => {

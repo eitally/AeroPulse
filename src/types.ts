@@ -222,6 +222,32 @@ export interface StopwatchFusionMetadata {
   optimalLagSecs?: number;
 }
 
+export type ActivitySubType =
+  | 'Road'
+  | 'Track'
+  | 'Cross Country'
+  | 'Trail'
+  | 'Gravel'
+  | 'Virtual Cycling'
+  | 'Smart Trainer'
+  | 'Treadmill'
+  | 'Pool'
+  | 'Open Water'
+  | 'Gym'
+  | 'Hiking'
+  | 'Walking'
+  | 'Rowing'
+  | 'Elliptical'
+  | 'Stair Stepper'
+  | 'HIIT & Circuit'
+  | 'Nordic Ski'
+  | 'Alpine & Backcountry Ski'
+  | 'Paddling & Water'
+  | 'Yoga & Mobility'
+  | 'Climbing'
+  | 'Court & Field'
+  | 'EBike';
+
 export interface UnifiedActivity {
   id: string;
   intervalsId?: string;
@@ -232,18 +258,7 @@ export interface UnifiedActivity {
   name: string;
   sportCategory: SportCategory;
   environment: ActivityEnvironment; // 'OUTDOOR' | 'INDOOR'
-  subType:
-    | 'Road'
-    | 'Track'
-    | 'Cross Country'
-    | 'Trail'
-    | 'Gravel'
-    | 'Virtual Cycling'
-    | 'Smart Trainer'
-    | 'Treadmill'
-    | 'Pool'
-    | 'Open Water'
-    | 'Gym';
+  subType: ActivitySubType;
   movingTimeSecs: number;
   distanceMeters: number;
   elevationGainMeters: number;

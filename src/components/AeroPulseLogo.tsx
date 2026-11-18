@@ -1,168 +1,170 @@
-import React, { useId } from 'react';
+import React from 'react';
 import type { TeamBrandConfig } from '../types';
 import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine';
+import {
+  S2_ARROW_NEEDLE_PATH,
+  S2_PINE_ARC_PATH,
+  S2_VOLT_ARC_PATH,
+  WA_THRESHOLD_BAR_PATH,
+  WA_WORDMARK_INK_PATHS,
+} from '../utils/brandVectors';
+
+export {
+  S2_ARROW_NEEDLE_PATH,
+  S2_PINE_ARC_PATH,
+  S2_VOLT_ARC_PATH,
+  WA_THRESHOLD_BAR_PATH,
+  WA_WORDMARK_INK_PATHS,
+};
+
+export type BrandSurfaceMode = 'auto' | 'on-light' | 'on-dark';
 
 interface AeroPulseLogoProps {
   size?: 'sm' | 'md' | 'lg';
+  mode?: 'horizontal' | 'mark-only' | 'wordmark-only';
+  surface?: BrandSurfaceMode;
   showTagline?: boolean;
   badgeText?: string;
   badgeTone?: 'volt' | 'cyan' | 'orange' | 'emerald';
   teamBrand?: TeamBrandConfig | null;
 }
 
-function polar(cx: number, cy: number, r: number, deg: number): [number, number] {
-  const rad = (deg * Math.PI) / 180;
-  return [Number((cx + r * Math.cos(rad)).toFixed(2)), Number((cy + r * Math.sin(rad)).toFixed(2))];
-}
-
-/**
- * Watertight circular stadium lane with exact radial gauge cut at `endDeg`
- * and `-14°` velocity-sheared straightaway termination at `rightX`.
- */
-function buildStadiumShearedLanePath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  endDeg: number,
-  rightX: number
+function getSurfaceThemeVarsClass(
+  surface: BrandSurfaceMode,
+  isTeamOverride: boolean
 ): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const shear = 0.2493; // tan(14°)
-  const yTop = Number((cy + rIn).toFixed(2));
-  const yBot = Number((cy + rOut).toFixed(2));
-  const xTopR = Number((rightX + hw * shear).toFixed(2));
-  const xBotR = Number((rightX - hw * shear).toFixed(2));
-  const [ox, oy] = polar(cx, cy, rOut, endDeg);
-  const [ix, iy] = polar(cx, cy, rIn, endDeg);
-  const delta = (((endDeg - 90) % 360) + 360) % 360;
-  const largeArc = delta > 180 ? 1 : 0;
-  return `M ${xBotR} ${yBot} L ${cx} ${yBot} A ${rOut} ${rOut} 0 ${largeArc} 1 ${ox} ${oy} L ${ix} ${iy} A ${rIn} ${rIn} 0 ${largeArc} 0 ${cx} ${yTop} L ${xTopR} ${yTop} Z`;
+  if (surface === 'on-dark') {
+    return isTeamOverride
+      ? '[--thresh-pine:#64748B] [--thresh-ink:#F4F7F4]'
+      : '[--thresh-pine:#399663] [--thresh-volt:#C8FF00] [--thresh-ink:#F4F7F4]';
+  }
+  if (surface === 'on-light') {
+    return isTeamOverride
+      ? '[--thresh-pine:#334155] [--thresh-ink:#101411]'
+      : '[--thresh-pine:#1C5436] [--thresh-volt:#3F8E00] [--thresh-ink:#101411]';
+  }
+  return isTeamOverride
+    ? '[--thresh-pine:#334155] dark:[--thresh-pine:#64748B] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]'
+    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#3F8E00] dark:[--thresh-volt:#C8FF00] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]';
 }
 
 /**
- * Watertight radial gauge sector from `startDeg` clockwise to `endDeg`.
+ * Standalone 1:1 THRESH Symbol Mark (`S2 Redline Breach`, 128×128).
+ * Chronometer precision ring broken at 45° by a piercing threshold arrow-needle.
  */
-function buildRadialSectorPath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  startDeg: number,
-  endDeg: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const [ox1, oy1] = polar(cx, cy, rOut, startDeg);
-  const [ox2, oy2] = polar(cx, cy, rOut, endDeg);
-  const [ix2, iy2] = polar(cx, cy, rIn, endDeg);
-  const [ix1, iy1] = polar(cx, cy, rIn, startDeg);
-  const delta = (((endDeg - startDeg) % 360) + 360) % 360;
-  const largeArc = delta > 180 ? 1 : 0;
-  return `M ${ox1} ${oy1} A ${rOut} ${rOut} 0 ${largeArc} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rIn} ${rIn} 0 ${largeArc} 0 ${ix1} ${iy1} Z`;
-}
+export const ThreshMark: React.FC<{
+  className?: string;
+  surface?: BrandSurfaceMode;
+  accentColor?: string;
+  isTeamOverride?: boolean;
+  oneInkColor?: string;
+  ariaLabel?: string;
+}> = ({
+  className = 'w-9 h-9',
+  surface = 'auto',
+  accentColor = '#C8FF00',
+  isTeamOverride = false,
+  oneInkColor,
+  ariaLabel = 'THRESH mark',
+}) => {
+  const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
+  const pineFill = oneInkColor ?? 'var(--thresh-pine)';
+  const voltFill = oneInkColor ?? (isTeamOverride ? accentColor : 'var(--thresh-volt)');
+
+  return (
+    <svg
+      viewBox="0 0 128 128"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${oneInkColor ? '' : themeVarsClass} ${className}`}
+      role="img"
+      aria-label={ariaLabel}
+    >
+      <path d={S2_PINE_ARC_PATH} fill={pineFill} />
+      <path d={S2_VOLT_ARC_PATH} fill={voltFill} />
+      <path
+        d={S2_ARROW_NEEDLE_PATH}
+        fill={voltFill}
+        fillRule="evenodd"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+};
 
 /**
- * Watertight full-curve outer Lane-4 arrow starting radially at `endDeg` (348°),
- * wrapping 258° counter-clockwise around the stadium turn, and shooting straight
- * underneath THRESH into the V1 right-pointing spearhead.
+ * Standalone Custom Vector THRESH Wordmark (`W-A Threshold Horizon`, 364×64).
+ * True 0° optical caliper geometry (zero CSS/SVG skew distortion) with floating threshold E-bar.
  */
-function buildFullWrapOuterArrowPath(
-  cx: number,
-  cy: number,
-  r: number,
-  width: number,
-  endDeg: number,
-  shaftEndX: number
-): string {
-  const hw = width / 2;
-  const rOut = r + hw;
-  const rIn = r - hw;
-  const [ox, oy] = polar(cx, cy, rOut, endDeg);
-  const [ix, iy] = polar(cx, cy, rIn, endDeg);
-  const yTop = Number((cy + rIn).toFixed(2));
-  const yBot = Number((cy + rOut).toFixed(2));
-  return [
-    `M ${ox} ${oy}`,
-    `A ${rOut} ${rOut} 0 1 0 ${cx} ${yBot}`,
-    `H ${shaftEndX}`,
-    `L ${shaftEndX - 5.5} ${Number((cy + r + 11.8).toFixed(2))}`,
-    `L ${shaftEndX + 21} ${cy + r}`,
-    `L ${shaftEndX - 5.5} ${Number((cy + r - 11.8).toFixed(2))}`,
-    `L ${shaftEndX} ${yTop}`,
-    `H ${cx}`,
-    `A ${rIn} ${rIn} 0 1 1 ${ix} ${iy}`,
-    'Z',
-  ].join(' ');
-}
+export const ThreshWordmark: React.FC<{
+  className?: string;
+  surface?: BrandSurfaceMode;
+  accentColor?: string;
+  showVoltBar?: boolean;
+  isTeamOverride?: boolean;
+  oneInkColor?: string;
+  ariaLabel?: string;
+}> = ({
+  className = 'h-6 w-auto',
+  surface = 'auto',
+  accentColor = '#C8FF00',
+  showVoltBar = true,
+  isTeamOverride = false,
+  oneInkColor,
+  ariaLabel = 'THRESH',
+}) => {
+  const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
+  const inkFill = oneInkColor ?? 'var(--thresh-ink)';
+  const barFill = oneInkColor
+    ? oneInkColor
+    : showVoltBar
+      ? isTeamOverride
+        ? accentColor
+        : 'var(--thresh-volt)'
+      : inkFill;
 
-// Precomputed B3-3A + W1 Lockup Geometry (cx=64, cy=58, radii=[19, 30, 41, 52])
-const LOCKUP_CX = 64;
-const LOCKUP_CY = 58;
-const LOCKUP_PINE_LANE_PATHS = [
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 19.0, 7.2, 241, 133.5),
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 30.0, 7.2, 259, 130.8),
-  buildStadiumShearedLanePath(LOCKUP_CX, LOCKUP_CY, 41.0, 7.2, 277, 421.0),
-];
-
-const LOCKUP_INNER_THRESHOLD_PATHS = [
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 19.0, 7.5, 248, 348),
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 30.0, 7.5, 266, 348),
-  buildRadialSectorPath(LOCKUP_CX, LOCKUP_CY, 41.0, 7.5, 284, 348),
-];
-
-const LOCKUP_FULL_LANE_4_ARROW_PATH = buildFullWrapOuterArrowPath(
-  LOCKUP_CX,
-  LOCKUP_CY,
-  52.0,
-  7.5,
-  348,
-  444
-);
-
-const [NEEDLE_TX, NEEDLE_TY] = polar(LOCKUP_CX, LOCKUP_CY, 51.8, 313);
-const [NEEDLE_BX1, NEEDLE_BY1] = polar(LOCKUP_CX, LOCKUP_CY, 5.8, 223);
-const [NEEDLE_BX2, NEEDLE_BY2] = polar(LOCKUP_CX, LOCKUP_CY, 5.8, 43);
-const LOCKUP_GAUGE_WEDGE_PATH = `M ${NEEDLE_BX1} ${NEEDLE_BY1} L ${NEEDLE_TX} ${NEEDLE_TY} L ${NEEDLE_BX2} ${NEEDLE_BY2} Z`;
-const [TICK_X1, TICK_Y1] = polar(LOCKUP_CX, LOCKUP_CY, 14, 355);
-const [TICK_X2, TICK_Y2] = polar(LOCKUP_CX, LOCKUP_CY, 56, 355);
-
-// W1 Nested Track-Grid Wordmark Paths (0px vertical split offset, overhanging aero T, stadium R & S)
-const W1_WORDMARK_PATHS = [
-  'M -6 0 H 39 L 36.2 13.8 H 26 V 64 H 12 V 13.8 H -8.8 Z',
-  'M 43 0 H 57 V 25.2 H 69 V 0 H 83 V 64 H 69 V 38.4 H 57 V 64 H 43 Z',
-  'M 90 0 H 118.5 C 128.4 0 133.5 5.8 133.5 16.8 C 133.5 25.4 129.2 31.2 121.6 33.6 L 134.2 64 H 118.8 L 107.6 35.6 H 104 V 64 H 90 Z M 104 11.2 V 24.2 H 115.2 C 118.2 24.2 119.6 22.0 119.6 17.7 C 119.6 13.4 118.2 11.2 115.2 11.2 Z',
-  'M 139 0 H 177 L 174.4 13.0 H 153 V 25.4 H 173 L 170.6 37.8 H 153 V 51.0 H 176.5 L 174.0 64 H 139 Z',
-  'M 181 17.2 C 181 6.4 188.0 0 200.6 0 H 208.6 C 217.8 0 222.5 5.2 222.5 14.2 V 17.5 H 208.6 V 14.4 C 208.6 11.8 206.8 10.6 203.4 10.6 H 199.4 C 196.2 10.6 194.6 12.2 194.6 15.6 C 194.6 19.6 197.4 21.8 209.6 26.2 C 218.8 29.5 222.8 34.8 222.8 45.8 C 222.8 57.6 215.8 64 203.2 64 H 195.2 C 185.8 64 181 58.6 181 49.2 V 45.8 H 194.8 V 49.2 C 194.8 52.0 196.6 53.4 200.0 53.4 H 204.2 C 207.4 53.4 209.0 51.6 209.0 47.6 C 209.0 43.2 206.2 40.8 194.0 36.4 C 184.8 33.0 181 27.6 181 17.2 Z',
-  'M 228 0 H 242 V 25.2 H 254 V 0 H 268 V 64 H 254 V 38.4 H 242 V 64 H 228 Z',
-];
+  return (
+    <svg
+      viewBox="0 0 364 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${oneInkColor ? '' : themeVarsClass} ${className}`}
+      role="img"
+      aria-label={ariaLabel}
+    >
+      <g fill={inkFill}>
+        {WA_WORDMARK_INK_PATHS.map((item, idx) => (
+          <path
+            key={idx}
+            d={item.d}
+            fillRule={item.evenOdd ? 'evenodd' : undefined}
+            clipRule={item.evenOdd ? 'evenodd' : undefined}
+          />
+        ))}
+      </g>
+      <path d={WA_THRESHOLD_BAR_PATH} fill={barFill} />
+    </svg>
+  );
+};
 
 /**
- * Full Custom THRESH Vector Lockup SVG:
- * B3-3A Smooth 4-Lane Stadium Gauge (1 visible darker Pine straightaway lane + full-wrap outer Volt arrow lane
- * + prominent cased B3 wedge needle) × W1 Nested Track-Grid Wordmark with G1 White→Volt Velocity Sweep.
+ * Full Custom THRESH Vector Lockup SVG (`S2 Redline Breach` × `W-A Threshold Horizon`).
+ * Accepts `surface="on-dark"` so footer / dark-surround placements stay high contrast in Light Mode.
  */
 export const ThreshFullVectorLockup: React.FC<{
   className?: string;
+  surface?: BrandSurfaceMode;
   accentColor?: string;
   isTeamOverride?: boolean;
   ariaLabel?: string;
 }> = ({
   className = 'h-9 w-auto',
+  surface = 'auto',
   accentColor = '#C8FF00',
   isTeamOverride = false,
   ariaLabel = 'THRESH',
 }) => {
-  const rawId = useId();
-  const gradId = `thresh-g1-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-
-  const themeVarsClass = isTeamOverride
-    ? '[--thresh-pine:#334155] dark:[--thresh-pine:#64748B] [--thresh-casing:#FFFFFF] dark:[--thresh-casing:#101814] [--thresh-pin:#FFFFFF] dark:[--thresh-pin:#0E1912] [--thresh-g1-start:#0E1912] dark:[--thresh-g1-start:#F6FBF7]'
-    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#3F8E00] dark:[--thresh-volt:#C8FF00] [--thresh-casing:#FFFFFF] dark:[--thresh-casing:#101814] [--thresh-pin:#FFFFFF] dark:[--thresh-pin:#0E1912] [--thresh-g1-0:#0E2619] [--thresh-g1-1:#143D26] [--thresh-g1-2:#1C5436] [--thresh-g1-3:#2D6A00] dark:[--thresh-g1-0:#F6FBF7] dark:[--thresh-g1-1:#E8FFD1] dark:[--thresh-g1-2:#D4FF38] dark:[--thresh-g1-3:#C8FF00]';
-
+  const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
   const activeGaugeColor = isTeamOverride ? accentColor : 'var(--thresh-volt)';
 
   return (
@@ -174,84 +176,38 @@ export const ThreshFullVectorLockup: React.FC<{
       role="img"
       aria-label={ariaLabel}
     >
-      <defs>
-        {isTeamOverride ? (
-          <linearGradient id={gradId} gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0">
-            <stop offset="0%" style={{ stopColor: 'var(--thresh-g1-start)' }} />
-            <stop offset="52%" style={{ stopColor: 'var(--thresh-g1-start)' }} />
-            <stop offset="100%" style={{ stopColor: accentColor }} />
-          </linearGradient>
-        ) : (
-          <linearGradient id={gradId} gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="268" y2="0">
-            <stop offset="0%" style={{ stopColor: 'var(--thresh-g1-0)' }} />
-            <stop offset="38%" style={{ stopColor: 'var(--thresh-g1-1)' }} />
-            <stop offset="72%" style={{ stopColor: 'var(--thresh-g1-2)' }} />
-            <stop offset="100%" style={{ stopColor: 'var(--thresh-g1-3)' }} />
-          </linearGradient>
-        )}
-      </defs>
-
-      {/* Darker Stadium Pine Base Lanes (Lanes 1 & 2 tuck beside T; Lane 3 runs full-width under THRESH) */}
-      <g fill="var(--thresh-pine)">
-        {LOCKUP_PINE_LANE_PATHS.map((d, i) => (
-          <path key={i} d={d} />
-        ))}
+      {/* Standalone S2 Redline Breach Symbol */}
+      <g transform="translate(6, -5.5) scale(0.98)">
+        <path d={S2_PINE_ARC_PATH} fill="var(--thresh-pine)" />
+        <path d={S2_VOLT_ARC_PATH} fill={activeGaugeColor} />
+        <path
+          d={S2_ARROW_NEEDLE_PATH}
+          fill={activeGaugeColor}
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
       </g>
 
-      {/* Stepped Inner Threshold Sectors + Continuous Full-Wrap Outer Lane-4 Arrow */}
-      <g fill={activeGaugeColor}>
-        {LOCKUP_INNER_THRESHOLD_PATHS.map((d, i) => (
-          <path key={i} d={d} />
-        ))}
-        <path d={LOCKUP_FULL_LANE_4_ARROW_PATH} />
-      </g>
-
-      {/* Calibrated 355° Boundary Tick + Prominent Cased B3 Gauge Wedge Needle */}
-      <line
-        x1={TICK_X1}
-        y1={TICK_Y1}
-        x2={TICK_X2}
-        y2={TICK_Y2}
-        stroke={activeGaugeColor}
-        strokeWidth="3.2"
-        strokeLinecap="round"
-      />
-      <path
-        d={LOCKUP_GAUGE_WEDGE_PATH}
-        fill={activeGaugeColor}
-        stroke="var(--thresh-casing)"
-        strokeWidth="6"
-        strokeLinejoin="round"
-        style={{ paintOrder: 'stroke fill' }}
-      />
-      <circle
-        cx={LOCKUP_CX}
-        cy={LOCKUP_CY}
-        r="9.8"
-        fill={activeGaugeColor}
-        stroke="var(--thresh-casing)"
-        strokeWidth="3.8"
-        style={{ paintOrder: 'stroke fill' }}
-      />
-      <circle cx={LOCKUP_CX} cy={LOCKUP_CY} r="3.6" fill="var(--thresh-pin)" />
-
-      {/* W1 Nested Track-Grid Wordmark with G1 Horizontal Velocity Gradient */}
-      <g transform="translate(144, 8) skewX(-14) scale(1.10, 1.29)" fill={`url(#${gradId})`}>
-        {W1_WORDMARK_PATHS.map((d, i) => (
-          <path
-            key={i}
-            d={d}
-            fillRule={i === 2 ? 'evenodd' : undefined}
-            clipRule={i === 2 ? 'evenodd' : undefined}
-          />
-        ))}
+      {/* Standalone W-A Threshold Horizon Custom Vector Wordmark */}
+      <g transform="translate(134, 34) scale(0.89)">
+        <g fill="var(--thresh-ink)">
+          {WA_WORDMARK_INK_PATHS.map((item, idx) => (
+            <path
+              key={idx}
+              d={item.d}
+              fillRule={item.evenOdd ? 'evenodd' : undefined}
+              clipRule={item.evenOdd ? 'evenodd' : undefined}
+            />
+          ))}
+        </g>
+        <path d={WA_THRESHOLD_BAR_PATH} fill={activeGaugeColor} />
       </g>
     </svg>
   );
 };
 
 /**
- * Compact 32x32 THRESH Option E "Volt Beacon" Icon Mark for favicons, PWA tiles, and square avatars.
+ * Compact 32x32 THRESH S2 "Redline Breach" Squircle Icon Mark for favicons, PWA tiles, and avatars.
  */
 export const ThreshSquareTrackIcon: React.FC<{
   className?: string;
@@ -264,8 +220,10 @@ export const ThreshSquareTrackIcon: React.FC<{
   inkColor = '#080A09',
   isTeamOverride = false,
 }) => {
-  const tileFill = isTeamOverride ? accentColor : '#C8FF00';
-  const tileInk = isTeamOverride ? inkColor : '#080A09';
+  const tileFill = isTeamOverride ? accentColor : '#0B1911';
+  const tileBorder = isTeamOverride ? '#163022' : '#399663';
+  const primaryMark = isTeamOverride ? inkColor : '#C8FF00';
+  const secondaryMark = isTeamOverride ? inkColor : '#399663';
 
   return (
     <svg
@@ -275,20 +233,39 @@ export const ThreshSquareTrackIcon: React.FC<{
       className={className}
       aria-hidden="true"
     >
-      <rect x="1" y="1" width="30" height="30" rx="6" fill={tileFill} stroke="#163022" strokeWidth="2" />
-      <path d="M 7 6 H 27 L 26 10 H 6 Z" fill={tileInk} />
-      <path d="M 12.5 12 H 18.5 L 15 26 H 9 Z" fill={tileInk} />
+      <rect
+        x="1"
+        y="1"
+        width="30"
+        height="30"
+        rx="6"
+        fill={tileFill}
+        stroke={tileBorder}
+        strokeWidth="1.75"
+      />
+      <g transform="translate(1.6, -0.2) scale(0.235)">
+        <path d={S2_PINE_ARC_PATH} fill={secondaryMark} fillOpacity={isTeamOverride ? '0.45' : '1'} />
+        <path d={S2_VOLT_ARC_PATH} fill={primaryMark} />
+        <path
+          d={S2_ARROW_NEEDLE_PATH}
+          fill={primaryMark}
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </g>
     </svg>
   );
 };
 
 /**
- * THRESH — Sitewide Brand Lockup & Dynamic Team Co-Branded Header
- * - Standalone: Renders the B3-3A × W1 Nested Track-Grid × G1 Velocity-Sweep lockup.
- * - Active Team: Renders `[Team Crest / Monogram] <SHORT NAME> × [Team-Colored THRESH Lockup]`
+ * THRESH — Modular Sitewide Brand Lockup & Dynamic Team Co-Branded Header
+ * - Supports decoupled `mode`: `'horizontal'` (Symbol + Wordmark), `'mark-only'`, or `'wordmark-only'`.
+ * - Supports explicit `surface` (`'auto' | 'on-light' | 'on-dark'`) so footers and dark chrome stay AAA contrast.
  */
 export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
   size = 'md',
+  mode = 'horizontal',
+  surface = 'auto',
   showTagline = false,
   badgeText,
   badgeTone = 'volt',
@@ -300,6 +277,20 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
       : size === 'lg'
         ? 'h-12 sm:h-14 w-auto'
         : 'h-10 sm:h-11 w-auto';
+
+  const markOnlyClass =
+    size === 'sm'
+      ? 'w-7 h-7 sm:w-8 sm:h-8'
+      : size === 'lg'
+        ? 'w-11 h-11 sm:w-12 sm:h-12'
+        : 'w-9 h-9 sm:w-10 sm:h-10';
+
+  const wordmarkOnlyClass =
+    size === 'sm'
+      ? 'h-4 sm:h-[18px] w-auto'
+      : size === 'lg'
+        ? 'h-7 sm:h-8 w-auto'
+        : 'h-5 sm:h-6 w-auto';
 
   const cobrandSvgHeightClass =
     size === 'sm'
@@ -350,12 +341,66 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
       } as React.CSSProperties)
     : undefined;
 
+  const teamTextColorClass =
+    surface === 'on-dark'
+      ? 'text-[#F4F7F4]'
+      : surface === 'on-light'
+        ? 'text-[#101411]'
+        : 'text-[#101411] dark:text-[#F4F7F4]';
+
+  const teamVarSelectorClass =
+    surface === 'on-dark'
+      ? '[--team-logo-accent:var(--team-logo-dark)]'
+      : surface === 'on-light'
+        ? '[--team-logo-accent:var(--team-logo-light)]'
+        : '[--team-logo-accent:var(--team-logo-light)] dark:[--team-logo-accent:var(--team-logo-dark)]';
+
+  const renderStandaloneMark = (isTeam = false) => {
+    const accent = isTeam ? 'var(--team-logo-accent)' : '#C8FF00';
+    const label =
+      isTeam && teamBrand
+        ? `${teamBrand.shortName || teamBrand.name} on THRESH`
+        : 'THRESH';
+
+    if (mode === 'mark-only') {
+      return (
+        <ThreshMark
+          className={`${markOnlyClass} shrink-0`}
+          surface={surface}
+          accentColor={accent}
+          isTeamOverride={isTeam}
+          ariaLabel={label}
+        />
+      );
+    }
+    if (mode === 'wordmark-only') {
+      return (
+        <ThreshWordmark
+          className={`${wordmarkOnlyClass} shrink-0`}
+          surface={surface}
+          accentColor={accent}
+          isTeamOverride={isTeam}
+          ariaLabel={label}
+        />
+      );
+    }
+    return (
+      <ThreshFullVectorLockup
+        className={`${isTeam ? cobrandSvgHeightClass : standaloneSvgHeightClass} shrink-0`}
+        surface={surface}
+        accentColor={accent}
+        isTeamOverride={isTeam}
+        ariaLabel={label}
+      />
+    );
+  };
+
   return (
     <div
-      className="inline-flex flex-col justify-center select-none min-w-0 [--team-logo-accent:var(--team-logo-light)] dark:[--team-logo-accent:var(--team-logo-dark)]"
+      className={`inline-flex flex-col justify-center select-none min-w-0 ${teamVarSelectorClass}`}
       style={teamCssVars}
     >
-      <div className="inline-flex items-center gap-2 text-[#101411] dark:text-[#F4F7F4] min-w-0">
+      <div className={`inline-flex items-center gap-2 ${teamTextColorClass} min-w-0`}>
         {teamBrand && teamPalette ? (
           <>
             {teamBrand.logoDataUrl ? (
@@ -382,22 +427,19 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
             >
               {teamBrand.shortName || teamBrand.name}
             </span>
-            <span className="text-slate-600 dark:text-slate-400 font-normal text-xs shrink-0">
+            <span
+              className={`font-normal text-xs shrink-0 ${
+                surface === 'on-dark'
+                  ? 'text-emerald-200/75'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
               ×
             </span>
-            <ThreshFullVectorLockup
-              className={`${cobrandSvgHeightClass} shrink-0`}
-              accentColor="var(--team-logo-accent)"
-              isTeamOverride
-              ariaLabel={`${teamBrand.shortName || teamBrand.name} on THRESH`}
-            />
+            {renderStandaloneMark(true)}
           </>
         ) : (
-          <ThreshFullVectorLockup
-            className={`${standaloneSvgHeightClass} shrink-0`}
-            accentColor="#C8FF00"
-            ariaLabel="THRESH"
-          />
+          renderStandaloneMark(false)
         )}
 
         {badgeText && (
@@ -410,7 +452,13 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
       </div>
 
       {showTagline && (
-        <span className="block text-2xs font-mono text-[#3F6212] dark:text-[#C8FF00] font-semibold mt-1 tracking-wider uppercase truncate">
+        <span
+          className={`block text-2xs font-mono font-semibold mt-1 tracking-wider uppercase truncate ${
+            surface === 'on-dark'
+              ? 'text-[#C8FF00]'
+              : 'text-[#3F6212] dark:text-[#C8FF00]'
+          }`}
+        >
           {teamBrand?.mascotOrMotto ? teamBrand.mascotOrMotto : 'RUN & RIDE READINESS'}
         </span>
       )}
@@ -419,6 +467,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 };
 
 export const ThreshLogo = AeroPulseLogo;
+export const ThreshLockup = AeroPulseLogo;
 
 /**
  * Signature #1 Stadium Track 4-Lane Concentric Banking-Turn Watermark for hero & workout cards.

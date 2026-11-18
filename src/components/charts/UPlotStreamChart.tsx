@@ -191,7 +191,8 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const initialWidth = Math.max(320, container.clientWidth || 760);
+    const initialWidth = Math.max(240, container.clientWidth || 760);
+    const isNarrow = initialWidth < 520;
     const sync = getUPlotSync(syncKey);
     const isDark = document.documentElement.classList.contains('dark');
     const axisStroke = isDark ? '#94A3B8' : '#475569';
@@ -204,7 +205,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
     const opts: uPlot.Options = {
       width: initialWidth,
       height,
-      padding: [12, 14, 0, 6],
+      padding: isNarrow ? [8, 6, 0, 2] : [12, 14, 0, 6],
       legend: {
         show: false,
       },
@@ -262,8 +263,10 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
           stroke: '#0284C7',
           grid: { stroke: gridStroke, width: 1 },
           ticks: { stroke: gridStroke, width: 1 },
-          size: 52,
-          font: '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          size: isNarrow ? 34 : 52,
+          font: isNarrow
+            ? '10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+            : '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
           values: (_u, splits) =>
             splits.map((v) =>
               preparedData.hasWatts ? `${Math.round(v)}W` : `${v.toFixed(1)}`
@@ -275,8 +278,10 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
           stroke: '#DC2626',
           grid: { show: false },
           ticks: { stroke: gridStroke, width: 1 },
-          size: 48,
-          font: '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          size: isNarrow ? 32 : 48,
+          font: isNarrow
+            ? '10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+            : '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
           values: (_u, splits) => splits.map((v) => `${Math.round(v)}♥`),
         },
       ],

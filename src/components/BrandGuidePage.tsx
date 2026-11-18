@@ -342,15 +342,15 @@ export default function BrandGuidePage({
                   </div>
                 </div>
 
-                {/* Live B3-3A × W1 Geometric Construction Specimen */}
+                {/* Live S2 × W-A Geometric Construction Specimen */}
                 <div className="lg:col-span-6 ap-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-2xs font-bold uppercase text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5">
                       <Gauge className="w-4 h-4 ap-text-brand" />
-                      <span>B3-3A × W1 Lockup Architecture</span>
+                      <span>S2 × W-A Modular Architecture</span>
                     </span>
                     <span className="font-mono text-2xs font-bold ap-telemetry-label">
-                      472 × 124 · -14° SHEAR
+                      472 × 124 · 0° OPTICAL CALIPER
                     </span>
                   </div>
 
@@ -386,29 +386,29 @@ export default function BrandGuidePage({
                             strokeWidth="1"
                             strokeDasharray="4 3"
                           />
-                          {/* Concentric 4-Lane Turn Reference Circles (cx=64, cy=58) */}
+                          {/* S2 Concentric Chronometer Rings (cx=64.8, cy=63.1, rIn=30.4, rOut=44.1) */}
                           <circle
-                            cx="64"
-                            cy="58"
-                            r="52"
+                            cx="64.8"
+                            cy="63.1"
+                            r="44.1"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.45"
                             strokeWidth="0.9"
                             strokeDasharray="3 3"
                           />
                           <circle
-                            cx="64"
-                            cy="58"
-                            r="19"
+                            cx="64.8"
+                            cy="63.1"
+                            r="30.4"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.4"
                             strokeWidth="0.8"
                           />
-                          {/* Center Crosshair + 313deg Needle Ray + 355deg Boundary */}
+                          {/* Center Crosshair + 315deg Piercing Threshold Breach Axis */}
                           <line
-                            x1="64"
+                            x1="64.8"
                             y1="6"
-                            x2="64"
+                            x2="64.8"
                             y2="118"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.5"
@@ -416,19 +416,19 @@ export default function BrandGuidePage({
                           />
                           <line
                             x1="12"
-                            y1="58"
-                            x2="128"
-                            y2="58"
+                            y1="63.1"
+                            x2="122"
+                            y2="63.1"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.5"
                             strokeWidth="0.9"
                           />
-                          {/* -14deg Velocity Shear Line at W1 Wordmark Entry */}
+                          {/* Vertical Separation Axis at W-A Threshold Horizon Entry */}
                           <line
-                            x1="145"
-                            y1="2"
-                            x2="127"
-                            y2="98"
+                            x1="134"
+                            y1="10"
+                            x2="134"
+                            y2="114"
                             stroke={isDark ? '#FBBF24' : '#D97706'}
                             strokeOpacity="0.85"
                             strokeWidth="1.2"
@@ -442,10 +442,10 @@ export default function BrandGuidePage({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>
                       {showBlueprint
-                        ? 'cx=64 cy=58 · r=[19,30,41,52] · 313° · shear=-14° · 1R clear frame'
-                        : 'Minimum clear space: 0.5× gauge height (26px on 124px viewBox)'}
+                        ? 'S2 cx=60 cy=70 r=[31,45] 315° · W-A stem=13.5 bar=11.2 · gap=0.26×'
+                        : 'Minimum clear space: 0.5× symbol height (decoupled S2 + W-A)'}
                     </span>
-                    <span className="ap-telemetry-label">Vector paths — zero font dependency</span>
+                    <span className="ap-telemetry-label">Pure vector paths — zero skew/font distortion</span>
                   </div>
                 </div>
               </div>

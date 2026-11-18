@@ -455,7 +455,7 @@ export const BRAND_DO_DONT_RULES = [
     doTitle: 'Counter-Skew -14° Chrome Labels',
     doDetail: 'Always nest .ap-track-tab-inner (skewX(+14°)) inside -14° tabs and preserve at least 1R clear space around marks.',
     dontTitle: 'Never Distort or Combine Partner Logos',
-    dontDetail: 'Never stretch the aspect ratio, warp the W1 wordmark, or lock Strava/Garmin logos directly onto the THRESH badge.',
+    dontDetail: 'Never stretch the aspect ratio, skew W-A letterforms, or lock Strava/Garmin logos directly onto the THRESH badge.',
   },
 ];
 

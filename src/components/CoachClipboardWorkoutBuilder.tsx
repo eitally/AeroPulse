@@ -27,7 +27,6 @@ import {
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
-import { PodStaggerLaneMatrix } from './charts/MicroGraphics';
 import {
   Bike,
   Check,
@@ -201,6 +200,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const [showMetaDetailsMobile, setShowMetaDetailsMobile] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 640 : true
   );
+  const [showManualSetRows, setShowManualSetRows] = useState<boolean>(false);
   const [stopwatchWaveMode, setStopwatchWaveMode] = useState<'MASS' | 'POD_10S' | 'PURSUIT'>('POD_10S');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignFeedback, setAssignFeedback] = useState<string | null>(null);
@@ -446,6 +446,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
     if (parsedSets.length > 0) {
       setSets(parsedSets);
+      setShowManualSetRows(true);
       setWorkoutTitle(
         parsedSets.map((s) => `${s.repCount}×${s.repDistanceMeters}m`).join(' + ')
       );
@@ -454,6 +455,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   };
 
   const handleAddSet = () => {
+    setShowManualSetRows(true);
     setSets((prev) => [
       ...prev,
       {
@@ -968,23 +970,42 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         )}
       </div>
 
-      {/* Structured Working Sets */}
+      {/* Structured Working Sets (Collapsible summary bar; auto-expands on shorthand parse or Add Set) */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
-            Working Sets ({sets.length})
-          </span>
-          <button
-            type="button"
-            data-testid="clipboard-add-set-btn"
-            onClick={handleAddSet}
-            className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Set</span>
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold shrink-0">
+              Working Sets ({sets.length})
+            </span>
+            <span className="text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] truncate">
+              {builtWorkout.setsSummary}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              aria-expanded={showManualSetRows}
+              onClick={() => setShowManualSetRows((prev) => !prev)}
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-1 cursor-pointer"
+            >
+              <span>{showManualSetRows ? 'Hide Sets' : 'Edit Sets'}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform ${showManualSetRows ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <button
+              type="button"
+              data-testid="clipboard-add-set-btn"
+              onClick={handleAddSet}
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Set</span>
+            </button>
+          </div>
         </div>
 
+        {showManualSetRows && (
         <div className="space-y-2">
           {sets.map((row, idx) => (
             <div
@@ -1128,25 +1149,27 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 </select>
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
-                <span>Set Rest After</span>
-                <select
-                  aria-label={`Set ${idx + 1} Rest After`}
-                  value={row.setRestAfterSecs}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setSets((prev) =>
-                      prev.map((s) => (s.id === row.id ? { ...s, setRestAfterSecs: v } : s))
-                    );
-                  }}
-                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
-                >
-                  <option value={0}>None</option>
-                  <option value={120}>2:00 rest</option>
-                  <option value={180}>3:00 rest</option>
-                  <option value={240}>4:00 rest</option>
-                </select>
-              </label>
+              {idx < sets.length - 1 && (
+                <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+                  <span>Set Rest After</span>
+                  <select
+                    aria-label={`Set ${idx + 1} Rest After`}
+                    value={row.setRestAfterSecs}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setSets((prev) =>
+                        prev.map((s) => (s.id === row.id ? { ...s, setRestAfterSecs: v } : s))
+                      );
+                    }}
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                  >
+                    <option value={0}>None</option>
+                    <option value={120}>2:00 rest</option>
+                    <option value={180}>3:00 rest</option>
+                    <option value={240}>4:00 rest</option>
+                  </select>
+                </label>
+              )}
 
               <div className="sm:col-span-1 flex items-end justify-end h-full">
                 {sets.length > 1 && (
@@ -1163,6 +1186,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Optional Athlete Tweak Disclosure */}
@@ -1250,19 +1274,8 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
         <div
           data-testid="clipboard-pod-preview"
-          className="space-y-2"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
         >
-          {multiSetPreview.length > 0 && (
-            <div className="rounded-xl ap-card-inset px-3 py-2">
-              <PodStaggerLaneMatrix
-                pods={multiSetPreview.slice(0, 3).map((p, idx) => ({
-                  podLabel: p.podName.split(' — ')[0] || `Pod ${idx + 1}`,
-                  offsetSecs: idx * 10,
-                }))}
-              />
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
         {multiSetPreview.map((pod) => (
           <div
             key={pod.podId}
@@ -1272,7 +1285,6 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               <span className="font-bold text-slate-900 dark:text-white truncate">
                 {pod.podName} · {pod.athletes.length} runners
               </span>
-              <span className="text-2xs font-mono text-slate-500">VDOT ~{pod.centerVdot}</span>
             </div>
             <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
               {pod.athletes.map((a) => a.name).join(', ')}
@@ -1289,7 +1301,6 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </div>
           </div>
         ))}
-          </div>
         </div>
       </div>
 

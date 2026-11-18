@@ -23,6 +23,7 @@ import {
   BANISTER_ATL_DECAY,
   BANISTER_CTL_DECAY,
   STRAVA_LOAD_MODEL_VERSION,
+  classifyMultiSportActivity,
   computeStravaActivityLoadV2,
   deriveObservedPhysiologyMetrics,
   getLocalDateIso,
@@ -271,8 +272,21 @@ export function recalibrateStravaActivityLoadClient(
   act: UnifiedActivity,
   profile?: Partial<AthleteProfile> | null
 ): UnifiedActivity {
-  if (!act || act.officialRaceData || act.quickLog) return act;
+  if (!act || act.officialRaceData) return act;
   if ((act.loadModelVersion || 0) >= CURRENT_PMC_MODEL_VERSION) return act;
+
+  if (act.quickLog?.rpe && act.movingTimeSecs > 0) {
+    const hrs = act.movingTimeSecs / 3600;
+    const rpeIf = Math.max(0.4, Math.min(1.18, 0.32 + act.quickLog.rpe * 0.082));
+    const rpeLoad = Math.round(hrs * 100 * rpeIf * rpeIf);
+    const resolvedLoad = Math.max(act.trainingLoad || 0, rpeLoad);
+    return {
+      ...act,
+      trainingLoad: resolvedLoad,
+      intensityFactor: act.intensityFactor || Number(rpeIf.toFixed(2)),
+      loadModelVersion: CURRENT_PMC_MODEL_VERSION,
+    };
+  }
 
   const isGarminSourced =
     act.id.startsWith('garmin-') ||
@@ -290,24 +304,48 @@ export function recalibrateStravaActivityLoadClient(
   if (hasAuthoritativeIntervals && !isGarminSourced) return act;
   if (!isGarminSourced && !isStravaSourced) return act;
 
-  const isEBike = isEBikeActivityText(act.rawSportType, act.name);
+  const hasAnyGps =
+    Boolean(act.summaryPolyline && act.summaryPolyline.length > 4) ||
+    (Array.isArray(act.routeLatLngs) && act.routeLatLngs.length > 2) ||
+    (Array.isArray(act.startLatLng) && act.startLatLng.length === 2);
+
+  // Re-classify legacy coerced 'Strength' / 'Gym' records (hikes, rows, elliptical, yoga, HIIT) when rawSportType exists
+  const reclassified = act.rawSportType
+    ? classifyMultiSportActivity(act.rawSportType, act.name, {
+        trainer: act.environment === 'INDOOR',
+        hasGps: hasAnyGps,
+        isVirtualPlatform: act.subType === 'Virtual Cycling',
+      })
+    : null;
+  const resolvedSportCategory = reclassified ? reclassified.sportCategory : act.sportCategory;
+  const resolvedSubType = reclassified ? reclassified.subType : act.subType;
+  const resolvedEnvironment = reclassified ? reclassified.environment : act.environment;
+
+  const isEBike = resolvedSubType === 'EBike' || isEBikeActivityText(act.rawSportType, act.name);
   // Treat legacy Strava outdoor rides without deviceWatts metadata and identical NP/AvgP as un-metered
   const hasLegacyEstimatedWatts =
     !isGarminSourced &&
-    act.sportCategory === 'Cycling' &&
+    resolvedSportCategory === 'Cycling' &&
     act.deviceWatts === undefined &&
-    act.environment !== 'INDOOR' &&
+    resolvedEnvironment !== 'INDOOR' &&
     (act.normalizedPower || 0) === (act.avgPower || 0);
   const hasRealCyclingWatts =
     !isEBike &&
-    act.sportCategory === 'Cycling' &&
+    resolvedSportCategory === 'Cycling' &&
     act.deviceWatts !== false &&
     !hasLegacyEstimatedWatts &&
     (act.normalizedPower || act.avgPower || 0) > 0;
+  const hasRealErgOrRunWatts =
+    !isEBike &&
+    (resolvedSportCategory === 'Running' ||
+      resolvedSubType === 'Rowing' ||
+      resolvedSubType === 'Nordic Ski') &&
+    act.deviceWatts === true &&
+    (act.normalizedPower || act.avgPower || 0) > 0;
 
-  // Preserve Running power fields for obsRunFtp estimation while never dividing by bike FTP
+  // Preserve Running/Rowing/Ski power fields while stripping un-metered Strava/Garmin cycling estimates
   const nextAvgPower =
-    act.sportCategory === 'Cycling'
+    resolvedSportCategory === 'Cycling'
       ? hasRealCyclingWatts
         ? act.avgPower
         : undefined
@@ -315,7 +353,7 @@ export function recalibrateStravaActivityLoadClient(
         ? undefined
         : act.avgPower;
   const nextNp =
-    act.sportCategory === 'Cycling'
+    resolvedSportCategory === 'Cycling'
       ? hasRealCyclingWatts
         ? act.normalizedPower
         : undefined
@@ -325,16 +363,16 @@ export function recalibrateStravaActivityLoadClient(
 
   const safeProfile = sanitizeStaleCollapsedProfile(profile);
   const loadResult = computeStravaActivityLoadV2({
-    sportCategory: act.sportCategory,
+    sportCategory: resolvedSportCategory,
     rawSportType: act.rawSportType,
     name: act.name,
-    environment: act.environment,
+    environment: resolvedEnvironment,
     movingTimeSecs: act.movingTimeSecs,
     distanceMeters: act.distanceMeters,
     elevationGainMeters: act.elevationGainMeters,
     normalizedPower: nextNp,
     avgPower: nextAvgPower,
-    hasRealDeviceWatts: hasRealCyclingWatts,
+    hasRealDeviceWatts: hasRealCyclingWatts || hasRealErgOrRunWatts,
     avgHr: act.avgHr,
     maxHr: act.maxHr,
     avgPaceSecsPerKm: act.avgPaceSecsPerKm,
@@ -349,10 +387,10 @@ export function recalibrateStravaActivityLoadClient(
   });
 
   let nextEf = act.efficiencyFactor;
-  if (!hasRealCyclingWatts && act.sportCategory === 'Cycling') {
+  if (!hasRealCyclingWatts && resolvedSportCategory === 'Cycling') {
     nextEf = 0;
   } else if (
-    act.sportCategory === 'Running' &&
+    resolvedSportCategory === 'Running' &&
     (act.efficiencyFactor || 0) > 2.5 &&
     act.distanceMeters > 0 &&
     act.movingTimeSecs > 0 &&
@@ -363,9 +401,12 @@ export function recalibrateStravaActivityLoadClient(
 
   return {
     ...act,
+    sportCategory: resolvedSportCategory,
+    subType: resolvedSubType,
+    environment: resolvedEnvironment,
     avgPower: nextAvgPower,
     normalizedPower: nextNp,
-    deviceWatts: act.sportCategory === 'Cycling' ? hasRealCyclingWatts : act.deviceWatts,
+    deviceWatts: resolvedSportCategory === 'Cycling' ? hasRealCyclingWatts : act.deviceWatts,
     intensityFactor: loadResult.intensityFactor,
     trainingLoad: loadResult.trainingLoad,
     loadModelVersion: CURRENT_PMC_MODEL_VERSION,
@@ -694,6 +735,7 @@ export function reclassifyActivityEnvironment(act: UnifiedActivity): UnifiedActi
     (Array.isArray(act.streams?.latlng) && act.streams!.latlng!.length > 2);
 
   if (act.sportCategory === 'Cycling') {
+    if (act.subType === 'EBike') return act;
     const isStationaryZeroGpsRide =
       !hasAnyGps &&
       (act.elevationGainMeters === 0 || (act.avgPower || 0) > 0 || act.movingTimeSecs > 300);
@@ -1356,7 +1398,20 @@ export function mergeActivitiesNonDestructive(
     const inc = reclassifyActivityEnvironment(rawInc);
 
     let proximityMatchKey: string | undefined;
+    const incIntervalsId =
+      inc.intervalsId || (inc as { intervalsActivityId?: string }).intervalsActivityId;
     for (const existingAct of byId.values()) {
+      // Never proximity-merge two distinct records from the same remote provider (e.g., warmup + main lift/race)
+      const exIntervalsId =
+        existingAct.intervalsId || (existingAct as { intervalsActivityId?: string }).intervalsActivityId;
+      if (
+        (existingAct.stravaId && inc.stravaId && String(existingAct.stravaId) !== String(inc.stravaId)) ||
+        (exIntervalsId && incIntervalsId && String(exIntervalsId) !== String(incIntervalsId)) ||
+        (existingAct.wahooId && inc.wahooId && String(existingAct.wahooId) !== String(inc.wahooId)) ||
+        (existingAct.polarId && inc.polarId && String(existingAct.polarId) !== String(inc.polarId))
+      ) {
+        continue;
+      }
       if (isStopwatchWearableSameSessionMatch(existingAct, inc)) {
         proximityMatchKey = existingAct.id;
         break;

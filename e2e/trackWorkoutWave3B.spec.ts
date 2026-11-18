@@ -109,6 +109,10 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
       const coachView = page.getByTestId('coach-workspace-view');
       await expect(coachView).toBeVisible({ timeout: 10000 });
 
+      const relayToggle = page.getByRole('button', { name: /Relay Optimizer & NFHS FAT Top Times/i });
+      if ((await relayToggle.getAttribute('aria-expanded')) === 'false') {
+        await relayToggle.click();
+      }
       const relayPanel = page.getByTestId('relay-optimizer-panel');
       await relayPanel.scrollIntoViewIfNeeded();
       await expect(relayPanel).toBeVisible();

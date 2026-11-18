@@ -519,7 +519,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Optional external telemetry connector. Automatically syncs your run &amp; ride GPS activities and workouts.
+                  Full-archive telemetry connector. Syncs all Strava activity types (runs, rides, swims, hikes, rowing, strength, HIIT &amp; cross-training) with sport-accurate TSS.
                 </p>
               </div>
 

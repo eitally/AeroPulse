@@ -225,11 +225,18 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }));
   }, [connectedAthletesOnly, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
 
-  const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
-  );
+  const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
 
   const todayIso = getLocalDateIso();
+
+  const teamPlanEvents = useMemo(() => {
+    if (!activeTeam) return effectivePlannedEvents;
+    const broadcastIds = new Set(
+      (activeTeam.broadcastWorkouts || []).map((bw) => bw.broadcastId)
+    );
+    const scoped = effectivePlannedEvents.filter((ev) => broadcastIds.has(ev.id));
+    return scoped.length > 0 ? scoped : effectivePlannedEvents;
+  }, [activeTeam, effectivePlannedEvents]);
 
   const flaggedTriageCount = useMemo(() => {
     const digest = buildCoachSquadExecutionDigest({
@@ -302,27 +309,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   {myTeams.map((t) => (
                     <option key={t.brand.teamId} value={t.brand.teamId}>
                       {t.brand.shortName || t.brand.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {connectedAthletesOnly.length > 0 && (
-                <select
-                  value={activeViewedAthleteId}
-                  onChange={(e) => {
-                    onSelectAthleteViewport(e.target.value);
-                    if (e.target.value !== 'SELF') {
-                      onOpenAthleteToday();
-                    }
-                  }}
-                  aria-label="Inspect Individual Athlete Cockpit"
-                  className="hidden md:block min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
-                >
-                  <option value="SELF">Inspect Athlete…</option>
-                  {connectedAthletesOnly.map((ath) => (
-                    <option key={ath.id} value={ath.id}>
-                      {ath.name}
                     </option>
                   ))}
                 </select>
@@ -445,7 +431,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         <CalendarView
           activities={effectiveActivities}
           wellnessDays={effectiveWellnessDays}
-          plannedEvents={effectivePlannedEvents}
+          plannedEvents={teamPlanEvents}
           targetGoals={effectiveTargetGoals}
           envFilter={envFilter}
           selectedSport={selectedSport}

@@ -16,6 +16,7 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { loadAllActivityStreamsMapFromDexie } from '../db/workoutStore';
 import { buildEmpiricalMmpSummary } from '../physiology/mmpCurves';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 const AthletePerformanceRadar = lazy(() =>
   import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar }))
@@ -51,6 +52,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
   onOpenActivitiesSegments,
   onOpenCoachWithPrompt,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [streamMap, setStreamMap] = useState<ReadonlyMap<string, ActivityStreamSet>>(
@@ -403,7 +405,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
           </div>
         ) : (
         <div
-          className="rounded-xl liquid-glass-subtle p-4 space-y-2 select-none"
+          className="rounded-xl liquid-glass-subtle p-2.5 sm:p-4 space-y-2 select-none"
           onMouseLeave={() => setHoverIdx(null)}
         >
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-mono tabular-nums">
@@ -413,7 +415,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                 : `Mean Maximal Running Velocity Curve (Outdoor Blue · Treadmill Emerald · Season Best Amber)`}
             </span>
             {activeCurveHover && (
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-bold text-slate-900 dark:text-slate-100">
                   Duration: {activeCurveHover.durationLabel}
                 </span>
@@ -443,30 +445,42 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
             )}
           </div>
 
-          <svg viewBox="0 0 920 240" className="w-full h-60">
-            {(() => {
-              const len = calibratedCurves.length;
-              const xForIdx = (i: number) => 68 + (i / Math.max(1, len - 1)) * 816;
+          {(() => {
+            const svgW = isMobile ? 360 : 920;
+            const svgH = isMobile ? 215 : 240;
+            const plotLeft = isMobile ? 38 : 68;
+            const plotRight = isMobile ? 348 : 884;
+            const plotW = plotRight - plotLeft;
+            const plotTop = isMobile ? 16 : 25;
+            const plotBottom = isMobile ? 182 : 190;
+            const plotH = plotBottom - plotTop;
+            const len = calibratedCurves.length;
+            const xForIdx = (i: number) => plotLeft + (i / Math.max(1, len - 1)) * plotW;
+            const hitColW = plotW / Math.max(1, len);
 
-              if (curveDiscipline === 'Cycling') {
-                const maxW = Math.max(
-                  1100,
-                  ...calibratedCurves.map((c) => c.cyclingSeasonBestWatts)
-                );
-                const toY = (w: number) => 190 - (w / maxW) * 165;
+            if (curveDiscipline === 'Cycling') {
+              const maxW = Math.max(
+                1100,
+                ...calibratedCurves.map((c) => c.cyclingSeasonBestWatts)
+              );
+              const toY = (w: number) => plotBottom - (w / maxW) * plotH;
 
-                const outPts = calibratedCurves
-                  .map((c, i) => `${xForIdx(i)},${toY(c.cyclingOutdoorWatts)}`)
-                  .join(' ');
-                const inPts = calibratedCurves
-                  .map((c, i) => `${xForIdx(i)},${toY(c.cyclingIndoorWatts)}`)
-                  .join(' ');
-                const bestPts = calibratedCurves
-                  .map((c, i) => `${xForIdx(i)},${toY(c.cyclingSeasonBestWatts)}`)
-                  .join(' ');
+              const outPts = calibratedCurves
+                .map((c, i) => `${xForIdx(i)},${toY(c.cyclingOutdoorWatts)}`)
+                .join(' ');
+              const inPts = calibratedCurves
+                .map((c, i) => `${xForIdx(i)},${toY(c.cyclingIndoorWatts)}`)
+                .join(' ');
+              const bestPts = calibratedCurves
+                .map((c, i) => `${xForIdx(i)},${toY(c.cyclingSeasonBestWatts)}`)
+                .join(' ');
 
-                return (
-                  <>
+              return (
+                <svg
+                  viewBox={`0 0 ${svgW} ${svgH}`}
+                  className={isMobile ? 'w-full h-auto' : 'w-full h-60'}
+                >
+                  {!isMobile && (
                     <text
                       x={16}
                       y={108}
@@ -476,130 +490,28 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                     >
                       Power Output (Watts)
                     </text>
+                  )}
 
-                    {[0.25, 0.5, 0.75, 1].map((f, idx) => {
-                      const y = 190 - f * 165;
-                      return (
-                        <g key={idx}>
-                          <line
-                            x1={68}
-                            y1={y}
-                            x2={884}
-                            y2={y}
-                            stroke="currentColor"
-                            className="text-slate-200 dark:text-slate-800"
-                            strokeDasharray="3 3"
-                          />
-                          <text
-                            x={60}
-                            y={y + 4}
-                            textAnchor="end"
-                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
-                          >
-                            {Math.round(f * maxW)}W
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    <polyline
-                      fill="none"
-                      stroke="#F59E0B"
-                      strokeWidth="2"
-                      strokeDasharray="5 3"
-                      points={bestPts}
-                    />
-                    <polyline fill="none" stroke="#10B981" strokeWidth="2.25" points={inPts} />
-                    <polyline fill="none" stroke="#3B82F6" strokeWidth="2.5" points={outPts} />
-
-                    {calibratedCurves.map((c, i) => {
-                      const x = xForIdx(i);
-                      return (
-                        <g key={c.durationLabel}>
-                          <circle cx={x} cy={toY(c.cyclingOutdoorWatts)} r={4.5} fill="#3B82F6" />
-                          <circle cx={x} cy={toY(c.cyclingIndoorWatts)} r={4} fill="#10B981" />
-                          <text
-                            x={x}
-                            y={210}
-                            textAnchor="middle"
-                            className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono font-semibold"
-                          >
-                            {c.durationLabel}
-                          </text>
-                          <rect
-                            x={x - 60}
-                            y={0}
-                            width={120}
-                            height={215}
-                            fill="transparent"
-                            className="cursor-pointer"
-                            onMouseEnter={() => setHoverIdx(i)}
-                          />
-                        </g>
-                      );
-                    })}
-
-                    <text
-                      x={476}
-                      y={232}
-                      textAnchor="middle"
-                      className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
-                    >
-                      Effort Duration (Logarithmic Intervals: 5 sec → 2 hours)
-                    </text>
-                  </>
-                );
-              }
-
-              // Running Pace Curve (faster pace = lower secs/km = higher on chart)
-              const minSecs = 150;
-              const maxSecs = 310;
-              const toY = (secs: number) =>
-                190 - ((maxSecs - Math.min(maxSecs, Math.max(minSecs, secs))) / (maxSecs - minSecs)) * 165;
-
-              const outPts = calibratedCurves
-                .map((c, i) => `${xForIdx(i)},${toY(c.runningOutdoorPaceSecsKm)}`)
-                .join(' ');
-              const inPts = calibratedCurves
-                .map((c, i) => `${xForIdx(i)},${toY(c.runningIndoorPaceSecsKm)}`)
-                .join(' ');
-              const bestPts = calibratedCurves
-                .map((c, i) => `${xForIdx(i)},${toY(c.runningSeasonBestPaceSecsKm)}`)
-                .join(' ');
-
-              return (
-                <>
-                  <text
-                    x={16}
-                    y={108}
-                    transform="rotate(-90 16 108)"
-                    textAnchor="middle"
-                    className="fill-orange-500 text-2xs font-sans font-bold"
-                  >
-                    Running Pace (/{distanceUnit})
-                  </text>
-
-                  {[0.2, 0.5, 0.8, 1].map((f, idx) => {
-                    const y = 190 - f * 165;
-                    const secs = Math.round(maxSecs - f * (maxSecs - minSecs));
+                  {[0.25, 0.5, 0.75, 1].map((f, idx) => {
+                    const y = plotBottom - f * plotH;
                     return (
                       <g key={idx}>
                         <line
-                          x1={68}
+                          x1={plotLeft}
                           y1={y}
-                          x2={884}
+                          x2={plotRight}
                           y2={y}
                           stroke="currentColor"
                           className="text-slate-200 dark:text-slate-800"
                           strokeDasharray="3 3"
                         />
                         <text
-                          x={62}
+                          x={plotLeft - 6}
                           y={y + 4}
                           textAnchor="end"
                           className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                         >
-                          {formatPace(secs, distanceUnit).replace(`/${distanceUnit}`, '')}
+                          {Math.round(f * maxW)}W
                         </text>
                       </g>
                     );
@@ -619,31 +531,21 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                     const x = xForIdx(i);
                     return (
                       <g key={c.durationLabel}>
-                        <circle
-                          cx={x}
-                          cy={toY(c.runningOutdoorPaceSecsKm)}
-                          r={4.5}
-                          fill="#3B82F6"
-                        />
-                        <circle
-                          cx={x}
-                          cy={toY(c.runningIndoorPaceSecsKm)}
-                          r={4}
-                          fill="#10B981"
-                        />
+                        <circle cx={x} cy={toY(c.cyclingOutdoorWatts)} r={4.5} fill="#3B82F6" />
+                        <circle cx={x} cy={toY(c.cyclingIndoorWatts)} r={4} fill="#10B981" />
                         <text
                           x={x}
-                          y={210}
+                          y={plotBottom + 16}
                           textAnchor="middle"
                           className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono font-semibold"
                         >
                           {c.durationLabel}
                         </text>
                         <rect
-                          x={x - 60}
+                          x={x - hitColW / 2}
                           y={0}
-                          width={120}
-                          height={215}
+                          width={hitColW}
+                          height={plotBottom + 20}
                           fill="transparent"
                           className="cursor-pointer"
                           onMouseEnter={() => setHoverIdx(i)}
@@ -653,17 +555,138 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                   })}
 
                   <text
-                    x={476}
-                    y={232}
+                    x={plotLeft + plotW / 2}
+                    y={svgH - 6}
                     textAnchor="middle"
-                    className="fill-slate-600 dark:fill-slate-300 text-xs font-sans font-bold"
+                    className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
                   >
-                    Effort Duration (Logarithmic Intervals: 5 sec → 2 hours)
+                    {isMobile
+                      ? 'Effort Duration (5s → 2h)'
+                      : 'Effort Duration (Logarithmic Intervals: 5 sec → 2 hours)'}
                   </text>
-                </>
+                </svg>
               );
-            })()}
-          </svg>
+            }
+
+            // Running Pace Curve (faster pace = lower secs/km = higher on chart)
+            const minSecs = 150;
+            const maxSecs = 310;
+            const toY = (secs: number) =>
+              plotBottom - ((maxSecs - Math.min(maxSecs, Math.max(minSecs, secs))) / (maxSecs - minSecs)) * plotH;
+
+            const outPts = calibratedCurves
+              .map((c, i) => `${xForIdx(i)},${toY(c.runningOutdoorPaceSecsKm)}`)
+              .join(' ');
+            const inPts = calibratedCurves
+              .map((c, i) => `${xForIdx(i)},${toY(c.runningIndoorPaceSecsKm)}`)
+              .join(' ');
+            const bestPts = calibratedCurves
+              .map((c, i) => `${xForIdx(i)},${toY(c.runningSeasonBestPaceSecsKm)}`)
+              .join(' ');
+
+            return (
+              <svg
+                viewBox={`0 0 ${svgW} ${svgH}`}
+                className={isMobile ? 'w-full h-auto' : 'w-full h-60'}
+              >
+                {!isMobile && (
+                  <text
+                    x={16}
+                    y={108}
+                    transform="rotate(-90 16 108)"
+                    textAnchor="middle"
+                    className="fill-orange-500 text-2xs font-sans font-bold"
+                  >
+                    Running Pace (/{distanceUnit})
+                  </text>
+                )}
+
+                {[0.2, 0.5, 0.8, 1].map((f, idx) => {
+                  const y = plotBottom - f * plotH;
+                  const secs = Math.round(maxSecs - f * (maxSecs - minSecs));
+                  return (
+                    <g key={idx}>
+                      <line
+                        x1={plotLeft}
+                        y1={y}
+                        x2={plotRight}
+                        y2={y}
+                        stroke="currentColor"
+                        className="text-slate-200 dark:text-slate-800"
+                        strokeDasharray="3 3"
+                      />
+                      <text
+                        x={plotLeft - 6}
+                        y={y + 4}
+                        textAnchor="end"
+                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
+                      >
+                        {formatPace(secs, distanceUnit).replace(`/${distanceUnit}`, '')}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                <polyline
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth="2"
+                  strokeDasharray="5 3"
+                  points={bestPts}
+                />
+                <polyline fill="none" stroke="#10B981" strokeWidth="2.25" points={inPts} />
+                <polyline fill="none" stroke="#3B82F6" strokeWidth="2.5" points={outPts} />
+
+                {calibratedCurves.map((c, i) => {
+                  const x = xForIdx(i);
+                  return (
+                    <g key={c.durationLabel}>
+                      <circle
+                        cx={x}
+                        cy={toY(c.runningOutdoorPaceSecsKm)}
+                        r={4.5}
+                        fill="#3B82F6"
+                      />
+                      <circle
+                        cx={x}
+                        cy={toY(c.runningIndoorPaceSecsKm)}
+                        r={4}
+                        fill="#10B981"
+                      />
+                      <text
+                        x={x}
+                        y={plotBottom + 16}
+                        textAnchor="middle"
+                        className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono font-semibold"
+                      >
+                        {c.durationLabel}
+                      </text>
+                      <rect
+                        x={x - hitColW / 2}
+                        y={0}
+                        width={hitColW}
+                        height={plotBottom + 20}
+                        fill="transparent"
+                        className="cursor-pointer"
+                        onMouseEnter={() => setHoverIdx(i)}
+                      />
+                    </g>
+                  );
+                })}
+
+                <text
+                  x={plotLeft + plotW / 2}
+                  y={svgH - 6}
+                  textAnchor="middle"
+                  className="fill-slate-600 dark:fill-slate-300 text-2xs sm:text-xs font-sans font-bold"
+                >
+                  {isMobile
+                    ? 'Effort Duration (5s → 2h)'
+                    : 'Effort Duration (Logarithmic Intervals: 5 sec → 2 hours)'}
+                </text>
+              </svg>
+            );
+          })()}
         </div>
         )}
 

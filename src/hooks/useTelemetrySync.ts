@@ -721,6 +721,80 @@ export function useTelemetrySync({
           });
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
+            const stravaBackfillKey = `aeropulse_strava_backfill_v4_${stravaData.athleteId || 'self'}`;
+            const oldestStravaMs = stravaActs.reduce((minMs, a) => {
+              const t = new Date(a.startDateLocal || 0).getTime();
+              return Number.isFinite(t) && t > 0 && t < minMs ? t : minMs;
+            }, Number.POSITIVE_INFINITY);
+            let cursorBeforeEpoch =
+              stravaData.hasMoreHistory && stravaData.nextBeforeEpoch
+                ? Number(stravaData.nextBeforeEpoch)
+                : useDelta &&
+                    stravaActs.length >= 1950 &&
+                    Number.isFinite(oldestStravaMs) &&
+                    typeof localStorage !== 'undefined' &&
+                    localStorage.getItem(stravaBackfillKey) !== '1'
+                  ? Math.floor(oldestStravaMs / 1000) + 60
+                  : 0;
+            if (cursorBeforeEpoch > 0 && !stravaData.rateLimitPaused) {
+              const seenStravaIds = new Set<string>(
+                Array.isArray(stravaData.activities)
+                  ? stravaData.activities.map((a: any) => String(a.stravaId))
+                  : []
+              );
+              const collectedActs: any[] = Array.isArray(stravaData.activities)
+                ? [...stravaData.activities]
+                : [];
+              let lastHasMore = Boolean(stravaData.hasMoreHistory);
+              let lastRatePaused = Boolean(stravaData.rateLimitPaused);
+              for (let pass = 0; pass < 4 && cursorBeforeEpoch > 0; pass += 1) {
+                const backfillQs = new URLSearchParams({
+                  window: 'all',
+                  full: 'true',
+                  beforeEpoch: String(cursorBeforeEpoch),
+                });
+                const passResp = await fetch(`/api/strava/sync?${backfillQs.toString()}`, {
+                  credentials: 'include',
+                  headers: activeHeaders,
+                });
+                if (!passResp.ok) break;
+                const passData = await passResp.json();
+                const passActs = Array.isArray(passData.activities) ? passData.activities : [];
+                let addedCount = 0;
+                for (const pa of passActs) {
+                  const sid = String(pa.stravaId);
+                  if (!seenStravaIds.has(sid)) {
+                    seenStravaIds.add(sid);
+                    collectedActs.push(pa);
+                    addedCount += 1;
+                  }
+                }
+                lastHasMore = Boolean(passData.hasMoreHistory);
+                lastRatePaused = Boolean(passData.rateLimitPaused);
+                const nextCursor = Number(passData.nextBeforeEpoch || 0);
+                if (
+                  !lastHasMore ||
+                  lastRatePaused ||
+                  nextCursor <= 0 ||
+                  nextCursor >= cursorBeforeEpoch ||
+                  addedCount === 0
+                ) {
+                  cursorBeforeEpoch = 0;
+                  break;
+                }
+                cursorBeforeEpoch = nextCursor;
+              }
+              stravaData.activities = collectedActs;
+              stravaData.hasMoreHistory = lastHasMore;
+              stravaData.rateLimitPaused = lastRatePaused;
+              if (!lastHasMore && !lastRatePaused && typeof localStorage !== 'undefined') {
+                try {
+                  localStorage.setItem(stravaBackfillKey, '1');
+                } catch {
+                  // Ignore storage quota errors
+                }
+              }
+            }
             if (stravaData.missingActivityScope) {
               setConnectionStatus((prev) => ({
                 ...prev,
@@ -922,7 +996,7 @@ export function useTelemetrySync({
                 }
                 mergedActivities = mergedActivities.map((act) => {
                   let matched = act.stravaId ? byStravaId.get(String(act.stravaId)) : undefined;
-                  if (!matched) {
+                  if (!matched && !act.stravaId) {
                     const actNorm = String(act.startDateLocal || '').replace(/Z$/i, '');
                     const actTime = new Date(actNorm).getTime();
                     for (const [sid, sa] of byStravaId.entries()) {

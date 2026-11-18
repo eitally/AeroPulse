@@ -1403,12 +1403,14 @@ stravaRouter.get('/api/strava/sync', async (req: Request, res: Response) => {
     const deltaOnly = req.query.deltaOnly === 'true';
     const explicitWindow = typeof req.query.window === 'string' ? req.query.window.trim() : undefined;
     const afterEpochParam = Number(req.query.afterEpoch || 0);
+    const beforeEpochParam = Number(req.query.beforeEpoch || 0);
     const data = await syncStravaAllHistory(
       req,
       forceFull,
       deltaOnly,
       explicitWindow,
-      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0
+      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0,
+      Number.isFinite(beforeEpochParam) && beforeEpochParam > 0 ? beforeEpochParam : 0
     );
     await saveSessionCacheAsync(req, res);
     res.json(data);

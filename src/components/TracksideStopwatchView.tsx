@@ -23,7 +23,6 @@ import {
   computeTrackEnvironmentSplitAdjustment,
   computeWorldAthleticsOvalLaneGeometry,
   deriveThresholdPaceFromVdot,
-  estimateVdotFromThresholdPace,
   formatTrackMark,
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
@@ -41,7 +40,6 @@ import {
 } from '../physiology/trackLiveAutoRegulationEngine';
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
-import { SplitTrendSparkline } from './charts/MicroGraphics';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
   ArrowCounterClockwise,
@@ -174,9 +172,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   } = useTracksideStopwatch(50);
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
-  const [isFocusMode, setIsFocusMode] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
-  );
+  const [showToolsDrawer, setShowToolsDrawer] = useState<boolean>(false);
   const [lastTappedRunnerId, setLastTappedRunnerId] = useState<string | null>(null);
   const tapFlashTimerRef = useRef<number | null>(null);
 
@@ -190,7 +186,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const [includeSelfRunner, setIncludeSelfRunner] = useState<boolean>(!isCoachingTeam);
   const [selectedPodFilter, setSelectedPodFilter] = useState<string>('ALL');
   const [walkOnName, setWalkOnName] = useState<string>('');
-  const [walkOnVdot, setWalkOnVdot] = useState<string>('56.0');
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
   const [copiedCsv, setCopiedCsv] = useState<boolean>(false);
   const [includeWarmupCooldown, setIncludeWarmupCooldown] = useState<boolean>(true);
@@ -755,7 +750,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     e.preventDefault();
     const cleanName = walkOnName.trim();
     if (!cleanName) return;
-    const numericVdot = Math.max(30, Math.min(84, Number(walkOnVdot) || 56));
+    const numericVdot = 50;
     const walkOn: VdotPodRosterInput = {
       id: `walkon-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       name: cleanName,
@@ -1561,7 +1556,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         autoRegSummary={squadAutoRegSummary}
         pivotHistory={autoRegPivotHistory}
         endedEarlyStimulusRatio={endedEarlyStimulusRatio}
-        isFloatingFocusMode={isFocusMode && stopwatchRunning}
+        isFloatingFocusMode={false}
         onExtendRest30s={() => {
           extendWorkoutRestPlus30s(30);
           playFeedback('BELL');
@@ -1582,535 +1577,249 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     ) : null;
 
   return (
-    <div className={isFocusMode ? 'space-y-2.5' : 'space-y-4'}>
+    <div className="space-y-3">
       <div className="sr-only" role="status" aria-live="polite">
         {liveAnnouncement}
       </div>
 
-      {isFocusMode ? (
-        <>
-          {/* Focus Mode Top Header Bar */}
-          <div className="rounded-xl ap-card px-2 py-1 flex items-center justify-between gap-1.5">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <button
-                type="button"
-                data-testid="stopwatch-back-to-log-btn"
-                onClick={onOpenActivitiesTab}
-                aria-label="Back to Activities"
-                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-1.5 rounded-lg liquid-capsule-track text-xs font-mono font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
-              >
-                ←
-              </button>
-              <h1 className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight whitespace-nowrap">
-                Trackside Stopwatch
-              </h1>
-              {!isOnline && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-2xs font-bold ap-status-caution shrink-0">
-                  <WifiSlash className="w-3 h-3" weight="bold" />
-                  <span>Offline</span>
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {renderModeRadioGroup(true)}
-            </div>
+      {/* 1. Unified Trackside Top Header & Sticky Control Deck */}
+      <div className="rounded-xl ap-card px-2.5 sm:px-3.5 py-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            data-testid="stopwatch-back-to-log-btn"
+            onClick={onOpenActivitiesTab}
+            aria-label="Back to Activities"
+            className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center px-2 rounded-lg liquid-capsule-track text-xs font-mono font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
+          >
+            ←
+          </button>
+          <h1 className="text-sm sm:text-base font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight whitespace-nowrap truncate">
+            Trackside Stopwatch
+          </h1>
+          {!isOnline ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-2xs font-bold ap-status-caution shrink-0">
+              <WifiSlash className="w-3 h-3" weight="bold" />
+              <span>Offline</span>
+            </span>
+          ) : (
+            <span className="hidden md:inline-flex px-2 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-[#43584B] dark:text-[#93A39A] shrink-0">
+              Saved on Device (Offline Ready)
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {renderModeRadioGroup(true)}
+        </div>
+      </div>
+
+      <section className="sticky top-[56px] z-30 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
+        {/* HUD Row 1: Clock + Gun + Undo + Chute */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            data-testid="stopwatch-master-clock"
+            className="rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
+          >
+            {formatStopwatchClockMs(stopwatchElapsedMs)}
           </div>
 
-          {/* Sticky High-Contrast Sunlight Timing HUD */}
-          <section className="sticky top-[56px] z-30 rounded-2xl ap-card p-2.5 space-y-2">
-            {/* HUD Row 1: Clock + Gun + Undo + Chute */}
-            <div className="flex items-center justify-between gap-1.5">
-              <div
-                data-testid="stopwatch-master-clock"
-                className="rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] px-3 py-2 font-mono text-2xl font-extrabold tabular-nums tracking-tight shrink-0"
-              >
-                {formatStopwatchClockMs(stopwatchElapsedMs)}
-              </div>
-
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                <button
-                  type="button"
-                  data-testid="stopwatch-gun-btn"
-                  onClick={handleGunToggle}
-                  className={
-                    stopwatchRunning
-                      ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
-                      : 'ap-btn-primary min-h-[44px] px-3.5 text-xs cursor-pointer'
-                  }
-                >
-                  {stopwatchRunning ? (
-                    <>
-                      <Pause className="w-4 h-4" weight="fill" />
-                      <span>Pause</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" weight="fill" />
-                      <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="stopwatch-undo-btn"
-                  onClick={handleUndo}
-                  disabled={tapHistory.length === 0}
-                  className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
-                  <span>Undo</span>
-                </button>
-
-                {(showChuteBar || sessionType === 'RACE') && (
-                  <button
-                    type="button"
-                    data-testid="stopwatch-chute-tap"
-                    onClick={handleChuteTap}
-                    className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" weight="fill" />
-                    <span>Chute</span>
-                    {chuteQueueSecs.length > 0 && (
-                      <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
-                        {chuteQueueSecs.length}
-                      </span>
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {chuteQueueStripNode}
-
-            {/* HUD Row 2: Preset + Env + Pod Filters + Cards/Matrix */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-emerald-900/10 dark:border-white/10">
-              {renderPresetSelect(true)}
-
-              <button
-                type="button"
-                data-testid="stopwatch-toggle-env-physics"
-                aria-expanded={showEnvPhysicsPanel}
-                onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
-                className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
-                  hasCustomEnvOrLane
-                    ? 'ap-status-caution font-bold'
-                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                }`}
-              >
-                <Waves className="w-3.5 h-3.5" weight="bold" />
-                <span>
-                  {trackLane > 1
-                    ? `L${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
-                    : 'Lane / Env'}
-                </span>
-              </button>
-
-              {sessionType === 'WORKOUT' && (
-                <button
-                  type="button"
-                  data-testid="stopwatch-toggle-chute"
-                  aria-pressed={showChuteBar}
-                  onClick={() => setShowChuteBar(!showChuteBar)}
-                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
-                    showChuteBar
-                      ? 'ap-status-info font-bold'
-                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                  }`}
-                >
-                  <Lightning className="w-3.5 h-3.5" weight="bold" />
-                  <span>Chute</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSelectedPodFilter('ALL')}
-                className={`min-h-[44px] px-2.5 rounded-xl text-2xs font-mono font-semibold cursor-pointer shrink-0 ${
-                  selectedPodFilter === 'ALL'
-                    ? 'liquid-capsule-active'
-                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                }`}
-              >
-                All ({runnerTelemetries.length})
-              </button>
-              {activePodKeys.map((podKey) => {
-                const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
-                return (
-                  <button
-                    key={podKey}
-                    type="button"
-                    onClick={() => setSelectedPodFilter(podKey)}
-                    className={`min-h-[44px] px-2.5 rounded-xl text-2xs font-mono font-semibold cursor-pointer shrink-0 ${
-                      selectedPodFilter === podKey
-                        ? 'liquid-capsule-active'
-                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                    }`}
-                  >
-                    {podKey} ({count})
-                  </button>
-                );
-              })}
-
-              <div
-                role="group"
-                aria-label="Stopwatch Split Layout"
-                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track shrink-0 ml-auto"
-              >
-                <button
-                  type="button"
-                  data-testid="stopwatch-view-cards"
-                  aria-pressed={viewMode === 'CARDS'}
-                  onClick={() => setViewMode('CARDS')}
-                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
-                    viewMode === 'CARDS'
-                      ? 'liquid-capsule-active'
-                      : 'text-[#43584B] dark:text-[#93A39A]'
-                  }`}
-                >
-                  <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
-                  <span>Cards</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="stopwatch-view-matrix"
-                  aria-pressed={viewMode === 'MATRIX'}
-                  onClick={() => setViewMode('MATRIX')}
-                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
-                    viewMode === 'MATRIX'
-                      ? 'liquid-capsule-active'
-                      : 'text-[#43584B] dark:text-[#93A39A]'
-                  }`}
-                >
-                  <Table className="w-3.5 h-3.5" weight="duotone" />
-                  <span>Matrix</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                data-testid="stopwatch-focus-mode-toggle"
-                onClick={() => setIsFocusMode(false)}
-                className="min-h-[44px] px-2.5 rounded-xl ap-card-inset font-mono text-2xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
-                title="Expand full desktop session configuration"
-              >
-                Full Deck
-              </button>
-            </div>
-
-            {heatAbortBannerNode}
-            {multiSetPlanStripNode}
-            {envPhysicsPanelNode}
-          </section>
-
-          {autoRegBannerNode}
-        </>
-      ) : (
-        <>
-          {/* 1. Desktop Full Top Session Control Deck & WORKOUT / RACE Flag */}
-          <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-                <button
-                  type="button"
-                  data-testid="stopwatch-back-to-log-btn"
-                  onClick={onOpenActivitiesTab}
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-capsule-track text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
-                >
-                  <span>← Back</span>
-                </button>
-                <h1 className="text-lg sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight">
-                  Trackside Stopwatch
-                </h1>
-                <span
-                  className={`px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold uppercase ${
-                    stopwatchRunning ? 'ap-status-prime' : 'ap-status-info'
-                  }`}
-                >
-                  {stopwatchRunning ? 'Live Timing · 0.01s' : 'Ready · 0.01s FAT Precision'}
-                </span>
-                {!isOnline ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold ap-status-caution">
-                    <WifiSlash className="w-3.5 h-3.5" weight="bold" />
-                    <span>Offline · Local Storage Active</span>
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-[#43584B] dark:text-[#93A39A]">
-                    Saved on Device (Offline Ready)
-                  </span>
-                )}
-                <button
-                  type="button"
-                  data-testid="stopwatch-focus-mode-toggle"
-                  onClick={() => setIsFocusMode(true)}
-                  className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
-                  title="Switch to high-density Trackside Focus HUD"
-                >
-                  Focus HUD
-                </button>
-              </div>
-
-              {renderModeRadioGroup(false)}
-            </div>
-
-            {/* Context Row: Presets, Rest/Meet Title, Wake Lock & Audio Beep */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-2 border-t border-emerald-900/10 dark:border-white/10">
-              {sessionType === 'WORKOUT' ? (
+          <div className="flex flex-wrap items-center gap-1.5 justify-end">
+            <button
+              type="button"
+              data-testid="stopwatch-gun-btn"
+              onClick={handleGunToggle}
+              className={
+                stopwatchRunning
+                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
+                  : 'ap-btn-primary min-h-[44px] px-3.5 text-xs cursor-pointer'
+              }
+            >
+              {stopwatchRunning ? (
                 <>
-                  <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
-                    <span>Workout Preset</span>
-                    {renderPresetSelect(false)}
-                  </label>
-                  {recoverySelectNode}
+                  <Pause className="w-4 h-4" weight="fill" />
+                  <span>Pause</span>
                 </>
               ) : (
                 <>
-                  <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
-                    <span>Race Event &amp; Finish Lock</span>
-                    {renderPresetSelect(false)}
-                  </label>
-
-                  <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
-                    <span>Race Lap Rules</span>
-                    <div className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 flex items-center gap-2 text-xs text-[#101411] dark:text-[#F4F7F4]">
-                      <BellRinging className="w-4 h-4 text-[#D97706] shrink-0" weight="duotone" />
-                      <span className="truncate">
-                        {activeRacePreset.targetLaps
-                          ? `Bell Lap ${Math.max(1, activeRacePreset.targetLaps - 1)} · Lock @ Lap ${activeRacePreset.targetLaps}`
-                          : 'Unlimited open split taps'}
-                      </span>
-                    </div>
-                  </div>
+                  <Play className="w-4 h-4" weight="fill" />
+                  <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
                 </>
               )}
+            </button>
 
+            <button
+              type="button"
+              data-testid="stopwatch-undo-btn"
+              onClick={handleUndo}
+              disabled={tapHistory.length === 0}
+              className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+            >
+              <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
+              <span>Undo</span>
+            </button>
+
+            {(showChuteBar || sessionType === 'RACE') && (
+              <button
+                type="button"
+                data-testid="stopwatch-chute-tap"
+                onClick={handleChuteTap}
+                className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
+              >
+                <Lightning className="w-4 h-4 shrink-0" weight="fill" />
+                <span>Chute</span>
+                {chuteQueueSecs.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
+                    {chuteQueueSecs.length}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {chuteQueueStripNode}
+
+        {/* HUD Row 2: Preset + Recovery + Pod Select + View Switcher + Env/Tools */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10">
+          <div className="min-w-[140px] flex-1 sm:flex-initial sm:w-52">
+            {renderPresetSelect(false)}
+          </div>
+
+          {sessionType === 'WORKOUT' && (
+            <div className="w-40 sm:w-48 shrink-0">
+              {recoverySelectNode}
+            </div>
+          )}
+
+          <select
+            aria-label="Filter runners by pacing pod"
+            value={selectedPodFilter}
+            onChange={(e) => setSelectedPodFilter(e.target.value)}
+            className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+          >
+            <option value="ALL">All ({runnerTelemetries.length})</option>
+            {activePodKeys.map((podKey) => {
+              const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
+              return (
+                <option key={podKey} value={podKey}>
+                  {podKey} ({count})
+                </option>
+              );
+            })}
+          </select>
+
+          <div
+            role="group"
+            aria-label="Stopwatch Split Layout"
+            className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track shrink-0"
+          >
+            <button
+              type="button"
+              data-testid="stopwatch-view-cards"
+              aria-pressed={viewMode === 'CARDS'}
+              onClick={() => setViewMode('CARDS')}
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                viewMode === 'CARDS'
+                  ? 'liquid-capsule-active'
+                  : 'text-[#43584B] dark:text-[#93A39A]'
+              }`}
+            >
+              <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              data-testid="stopwatch-view-matrix"
+              aria-pressed={viewMode === 'MATRIX'}
+              onClick={() => setViewMode('MATRIX')}
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                viewMode === 'MATRIX'
+                  ? 'liquid-capsule-active'
+                  : 'text-[#43584B] dark:text-[#93A39A]'
+              }`}
+            >
+              <Table className="w-3.5 h-3.5" weight="duotone" />
+              <span>Matrix</span>
+            </button>
+          </div>
+
+          {sessionType === 'WORKOUT' && (
+            <button
+              type="button"
+              data-testid="stopwatch-toggle-chute"
+              aria-pressed={showChuteBar}
+              onClick={() => setShowChuteBar(!showChuteBar)}
+              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
+                showChuteBar
+                  ? 'ap-status-info font-bold'
+                  : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+              }`}
+            >
+              <Lightning className="w-3.5 h-3.5" weight="bold" />
+              <span>Chute</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            data-testid="stopwatch-toggle-env-physics"
+            aria-expanded={showEnvPhysicsPanel}
+            onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
+            className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
+              hasCustomEnvOrLane
+                ? 'ap-status-caution font-bold'
+                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+            }`}
+          >
+            <Waves className="w-3.5 h-3.5" weight="bold" />
+            <span>
+              {trackLane > 1
+                ? `L${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
+                : 'Lane / Env'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="stopwatch-tools-btn"
+            aria-expanded={showToolsDrawer}
+            onClick={() => setShowToolsDrawer((prev) => !prev)}
+            className={`min-h-[44px] sm:min-h-[38px] px-2.5 rounded-xl font-mono text-2xs font-semibold cursor-pointer shrink-0 ml-auto ${
+              showToolsDrawer
+                ? 'ap-status-info font-bold'
+                : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
+            }`}
+          >
+            Tools ▾
+          </button>
+        </div>
+
+        {showToolsDrawer && (
+          <div className="pt-2.5 space-y-3 border-t border-emerald-900/10 dark:border-white/10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {sessionTitleInputNode}
               {hardwareTogglesNode}
             </div>
-
-            {multiSetPlanStripNode}
-          </section>
-
-          {/* 2. Master Clock, Gun Controls, Wave Mode & View Switcher */}
-          <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div
-                  data-testid="stopwatch-master-clock"
-                  className="rounded-2xl bg-[#0B120E] text-[#C8FF00] border-2 border-[#2B5B3F] px-5 py-3 font-mono text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight shadow-sm"
-                >
-                  {formatStopwatchClockMs(stopwatchElapsedMs)}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    data-testid="stopwatch-gun-btn"
-                    onClick={handleGunToggle}
-                    className={
-                      stopwatchRunning
-                        ? 'min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl ap-status-caution font-bold text-xs cursor-pointer transition-all'
-                        : 'ap-btn-primary cursor-pointer'
-                    }
-                  >
-                    {stopwatchRunning ? (
-                      <>
-                        <Pause className="w-4 h-4" weight="fill" />
-                        <span>Pause Gun</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4" weight="fill" />
-                        <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="stopwatch-undo-btn"
-                    onClick={handleUndo}
-                    disabled={tapHistory.length === 0}
-                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
-                    <span>Undo Last</span>
-                  </button>
-
-                  {resetButtonNode}
-                </div>
-              </div>
-
-              {/* Right Toolbar: Cards | Matrix Switcher, Pack Chute Toggle, Wave Toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  role="group"
-                  aria-label="Stopwatch Split Layout"
-                  className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-                >
-                  <button
-                    type="button"
-                    data-testid="stopwatch-view-cards"
-                    aria-pressed={viewMode === 'CARDS'}
-                    onClick={() => setViewMode('CARDS')}
-                    className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      viewMode === 'CARDS'
-                        ? 'liquid-capsule-active'
-                        : 'text-[#43584B] dark:text-[#93A39A]'
-                    }`}
-                  >
-                    <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
-                    <span>Cards</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="stopwatch-view-matrix"
-                    aria-pressed={viewMode === 'MATRIX'}
-                    onClick={() => setViewMode('MATRIX')}
-                    className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      viewMode === 'MATRIX'
-                        ? 'liquid-capsule-active'
-                        : 'text-[#43584B] dark:text-[#93A39A]'
-                    }`}
-                  >
-                    <Table className="w-3.5 h-3.5" weight="duotone" />
-                    <span>Matrix</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  data-testid="stopwatch-toggle-chute"
-                  aria-pressed={showChuteBar}
-                  onClick={() => setShowChuteBar(!showChuteBar)}
-                  className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
-                    showChuteBar
-                      ? 'ap-status-info font-bold'
-                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                  }`}
-                >
-                  <Lightning className="w-3.5 h-3.5" weight="bold" />
-                  <span>Chute Bar</span>
-                  {chuteQueueSecs.length > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-[#0B120E] text-[#C8FF00] font-mono text-2xs">
-                      {chuteQueueSecs.length}
-                    </span>
-                  )}
-                </button>
-
-                {waveModeButtonsNode}
-
-                <button
-                  type="button"
-                  data-testid="stopwatch-toggle-env-physics"
-                  aria-expanded={showEnvPhysicsPanel}
-                  onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
-                  className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
-                    hasCustomEnvOrLane
-                      ? 'ap-status-caution font-bold'
-                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                  }`}
-                >
-                  <Waves className="w-3.5 h-3.5" weight="bold" />
-                  <span>
-                    {trackLane > 1
-                      ? `Lane ${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
-                      : 'Lane, Env & Spikes'}
-                  </span>
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {waveModeButtonsNode}
+              {resetButtonNode}
             </div>
-
-            {heatAbortBannerNode}
-            {envPhysicsPanelNode}
             {waveOffsetsPanelNode}
-            {autoRegBannerNode}
-          </section>
-
-          {/* 3. Blind-Tap Pack / Chute Queue Bar (F1) */}
-          {showChuteBar && (
-            <section className="ap-card rounded-2xl p-4 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <button
-                  type="button"
-                  data-testid="stopwatch-chute-tap"
-                  onClick={handleChuteTap}
-                  className={
-                    stopwatchRunning
-                      ? 'ap-btn-primary w-full sm:flex-1 min-h-[58px] text-sm cursor-pointer'
-                      : 'w-full sm:flex-1 min-h-[58px] inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#163022] hover:bg-[#1C5436] text-white dark:bg-[#0B1911] dark:text-[#C8FF00] border-2 border-[#2B5B3F] text-sm font-bold cursor-pointer'
-                  }
-                >
-                  <Lightning className="w-5 h-5 shrink-0" weight="fill" />
-                  <span>Chute Tap — Queue Pack Timestamp (Key: C)</span>
-                  {chuteQueueSecs.length > 0 && (
-                    <span className="px-2 py-0.5 rounded-md bg-[#080A09] text-[#C8FF00] font-mono text-xs">
-                      {chuteQueueSecs.length} Queued
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {chuteQueueSecs.length > 0 ? (
-                chuteQueueStripNode
-              ) : (
-                <p className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
-                  Tap Chute Tap rapidly as a pack crosses the line, then tap runners in finish order.
-                </p>
-              )}
-            </section>
-          )}
-        </>
-      )}
-
-      {/* 4. Pod Filter Strip (Desktop) + Unified Hybrid Runner Area (Cards OR Matrix) */}
-      <section className="space-y-3">
-        {!isFocusMode && (
-          <div className="ap-card rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedPodFilter('ALL')}
-                className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
-                  selectedPodFilter === 'ALL'
-                    ? 'liquid-capsule-active'
-                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                }`}
-              >
-                All Runners ({runnerTelemetries.length})
-              </button>
-              {activePodKeys.map((podKey) => {
-                const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
-                return (
-                  <button
-                    key={podKey}
-                    type="button"
-                    onClick={() => setSelectedPodFilter(podKey)}
-                    className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
-                      selectedPodFilter === podKey
-                        ? 'liquid-capsule-active'
-                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                    }`}
-                  >
-                    {podKey} ({count})
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="hidden md:block text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
-              Keys: Space Gun · 1–9 Split Lane · C Chute · Z Undo
-            </div>
           </div>
         )}
 
+        {heatAbortBannerNode}
+        {multiSetPlanStripNode}
+        {envPhysicsPanelNode}
+      </section>
+
+      {autoRegBannerNode}
+
+      {/* 2. Unified Clean Runner Tap Area (4-Datum Cards OR Matrix) */}
+      <section className="space-y-3">
         {viewMode === 'CARDS' ? (
           <div
-            className={
-              isFocusMode
-                ? `grid ${filteredTelemetries.length >= 4 ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2'} md:grid-cols-2 xl:grid-cols-3`
-                : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'
-            }
+            className={`grid ${filteredTelemetries.length >= 4 ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2.5'} md:grid-cols-2 xl:grid-cols-3`}
           >
             {filteredTelemetries.map((telemetry, idx) => {
               const podMeta = runnerPodLookup.get(telemetry.runnerId);
@@ -2123,9 +1832,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   type="button"
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
-                  className={`${
-                    isFocusMode ? 'min-h-[82px] rounded-xl p-2.5 gap-1.5' : 'min-h-[96px] rounded-2xl p-3.5 gap-2.5'
-                  } w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
+                  className={`min-h-[88px] rounded-2xl p-3 gap-2 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
                     isJustTapped ? 'ring-2 ring-[#C8FF00]' : ''
                   } ${
                     telemetry.isFinishedLocked
@@ -2135,7 +1842,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                         : 'ap-card hover:border-[#2B5B3F] dark:hover:border-[#C8FF00]/60 active:scale-[0.98]'
                   }`}
                 >
-                  {/* Top Row: Lane + Athlete + Status Badge */}
+                  {/* Row 1: Athlete Name + Target Pod & Right Status Pill */}
                   <div className="flex items-start justify-between gap-1.5 w-full">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="ap-lane-badge shrink-0">
@@ -2144,11 +1851,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                         </span>
                       </span>
                       <div className="min-w-0">
-                        <div
-                          className={`${
-                            isFocusMode ? 'text-xs' : 'text-sm'
-                          } font-bold text-[#101411] dark:text-[#F4F7F4] truncate`}
-                        >
+                        <div className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
                           {telemetry.runnerName}
                         </div>
                         <div className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] truncate">
@@ -2163,7 +1866,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Dynamic Right Badge */}
                     <div className="shrink-0 flex items-center gap-1">
                       {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
                         <span className="px-1.5 py-0.5 rounded-lg bg-[#0B120E] text-[#C8FF00] font-mono text-2xs font-bold">
@@ -2209,14 +1911,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Middle Telemetry Readout */}
-                  <div className="flex items-baseline justify-between gap-2 w-full pt-1 border-t border-emerald-900/10 dark:border-white/10">
+                  {/* Row 2: Last Split (+ Target Delta) & Total Elapsed */}
+                  <div className="flex items-baseline justify-between gap-2 w-full pt-1.5 border-t border-emerald-900/10 dark:border-white/10">
                     <div className="flex items-baseline gap-1.5 min-w-0">
-                      <span
-                        className={`font-mono ${
-                          isFocusMode ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'
-                        } font-extrabold tabular-nums text-[#101411] dark:text-[#F4F7F4]`}
-                      >
+                      <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-[#101411] dark:text-[#F4F7F4]">
                         {telemetry.lastLapSecs !== null
                           ? formatTrackMark(telemetry.lastLapSecs, 2)
                           : 'Tap Split'}
@@ -2235,7 +1933,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       )}
                     </div>
 
-                    <div className="text-right font-mono text-2xs sm:text-xs tabular-nums text-[#43584B] dark:text-[#93A39A] shrink-0">
+                    <div className="text-right font-mono text-xs tabular-nums text-[#43584B] dark:text-[#93A39A] shrink-0">
                       <span className="font-bold text-[#101411] dark:text-[#F4F7F4]">
                         {telemetry.netTotalSecs !== null
                           ? formatFatTime(telemetry.netTotalSecs)
@@ -2243,46 +1941,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       </span>
                     </div>
                   </div>
-
-                  {/* Bottom Recent Splits Trail & Live D'/Fade Strip */}
-                  {telemetry.lapSplitsSecs.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-1 w-full">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {telemetry.lapSplitsSecs
-                          .slice(isFocusMode ? -2 : -4)
-                          .map((lapSecs, lapIdx, arr) => {
-                            const globalLapNum =
-                              telemetry.lapSplitsSecs.length - arr.length + lapIdx + 1;
-                            return (
-                              <span
-                                key={`trail-${globalLapNum}`}
-                                className="px-1.5 py-0.5 rounded ap-card-inset font-mono text-2xs tabular-nums text-[#43584B] dark:text-[#93A39A]"
-                              >
-                                L{globalLapNum} {formatTrackMark(lapSecs, 2)}
-                              </span>
-                            );
-                          })}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                        {telemetry.lapSplitsSecs.length >= 2 && (
-                          <SplitTrendSparkline splitsSecs={telemetry.lapSplitsSecs} />
-                        )}
-                        {sessionType === 'WORKOUT' && squadAutoRegSummary.byRunnerId[telemetry.runnerId] && (
-                          <span
-                            className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold tabular-nums ${
-                              squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType === 'NEURO_STOP_RULE'
-                                ? 'ap-status-strained'
-                                : squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType !== 'NONE'
-                                  ? 'ap-status-caution'
-                                  : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                            }`}
-                          >
-                            D&apos; {squadAutoRegSummary.byRunnerId[telemetry.runnerId].dPrimeBalancePct}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </button>
               );
             })}
@@ -2425,16 +2083,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               aria-label="Walk-On Runner Name"
               className="w-56 sm:w-60 min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
             />
-            <input
-              type="number"
-              step="0.5"
-              min="30"
-              max="84"
-              value={walkOnVdot}
-              onChange={(e) => setWalkOnVdot(e.target.value)}
-              aria-label="Walk-On Runner VDOT"
-              className="w-20 min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-2.5 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
-            />
             <button
               type="submit"
               className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-card-inset hover:border-[#28573B] text-xs font-semibold text-slate-900 dark:text-white cursor-pointer"
@@ -2472,10 +2120,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 key={w.id}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ap-card-inset text-2xs font-mono text-slate-700 dark:text-slate-200"
               >
-                <span>
-                  {w.name} (VDOT{' '}
-                  {w.vdotOverride || estimateVdotFromThresholdPace(w.thresholdPaceSecsPerKm)})
-                </span>
+                <span>{w.name}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveWalkOn(w.id)}
@@ -2594,34 +2239,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           </div>
         )}
       </section>
-
-      {isFocusMode && (
-        <details className="ap-card rounded-2xl p-3 space-y-3">
-          <summary className="min-h-[44px] flex items-center justify-between gap-2 text-xs font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer select-none">
-            <span>Session, Recovery &amp; Wave Settings</span>
-            <span className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-              {restDurationSecs > 0 ? `${restDurationSecs}s rest` : 'Open'} · {waveMode === 'MASS' ? 'Mass' : waveMode === 'POD_STAGGER' ? 'Pod +10s' : 'Pursuit'}
-            </span>
-          </summary>
-          <div className="pt-2 space-y-3 border-t border-emerald-900/10 dark:border-white/10">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {sessionType === 'WORKOUT' && recoverySelectNode}
-              {sessionTitleInputNode}
-              {hardwareTogglesNode}
-            </div>
-            <div className="space-y-1">
-              <div className="text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
-                Start Wave Mode
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {waveModeButtonsNode}
-                {resetButtonNode}
-              </div>
-            </div>
-            {waveOffsetsPanelNode}
-          </div>
-        </details>
-      )}
     </div>
   );
 };

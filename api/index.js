@@ -697,7 +697,7 @@ async function deleteTenantVault(tenantId) {
 }
 
 // src/physiology/stravaLoadCalibration.ts
-var STRAVA_LOAD_MODEL_VERSION = 3;
+var STRAVA_LOAD_MODEL_VERSION = 4;
 var BANISTER_CTL_DECAY = Math.exp(-1 / 42);
 var BANISTER_ATL_DECAY = Math.exp(-1 / 7);
 function getLocalDateIso(date = /* @__PURE__ */ new Date()) {
@@ -716,12 +716,192 @@ function shiftIsoDate(isoDate, deltaDays) {
 }
 function isEBikeActivityText(rawSportType, name) {
   const combined = `${rawSportType || ""} ${name || ""}`;
-  return /e[-_]?bike|e[-_]?mtb|emountainbike|velomobile/i.test(combined);
+  return /e[-_]?bike|e[-_]?mtb|emountainbike/i.test(combined);
 }
 function isVirtualCyclingText(text) {
-  return /virtualride|virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|\brgt\b/i.test(
+  return /virtualride|virtual_ride|virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|\brgt\b/i.test(
     text || ""
   );
+}
+function classifyMultiSportActivity(rawSportType, name, opts) {
+  const rawType = String(rawSportType || "").trim();
+  const actName = String(name || "").trim();
+  const combined = `${rawType} ${actName}`.trim();
+  const hasGps = Boolean(opts?.hasGps);
+  const trainer = Boolean(opts?.trainer);
+  const isVirtual = Boolean(opts?.isVirtualPlatform) || isVirtualCyclingText(combined);
+  if (/^(ebikeride|emountainbikeride)$/i.test(rawType) || isEBikeActivityText(rawType, "") && !/run|walk|hike/i.test(rawType)) {
+    return {
+      sportCategory: "Cycling",
+      subType: "EBike",
+      environment: trainer ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/^(hike|hiking|snowshoe)$/i.test(rawType)) {
+    return { sportCategory: "Multisport", subType: "Hiking", environment: "OUTDOOR" };
+  }
+  if (/^(walk|casual_walking|speed_walking)$/i.test(rawType)) {
+    return {
+      sportCategory: "Multisport",
+      subType: "Walking",
+      environment: trainer ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/^(rowing|virtualrow|indoor_rowing)$/i.test(rawType)) {
+    const indoor = trainer || /virtualrow|indoor_rowing/i.test(rawType) || !hasGps;
+    return {
+      sportCategory: "Multisport",
+      subType: "Rowing",
+      environment: indoor ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/^elliptical$/i.test(rawType)) {
+    return { sportCategory: "Multisport", subType: "Elliptical", environment: "INDOOR" };
+  }
+  if (/^(stairstepper|stair_climbing|floor_climbing)$/i.test(rawType)) {
+    return { sportCategory: "Multisport", subType: "Stair Stepper", environment: "INDOOR" };
+  }
+  if (/^(nordicski|rollerski|cross_country_skiing|xc_ski)$/i.test(rawType)) {
+    const indoor = trainer || /skierg/i.test(actName) && !hasGps;
+    return {
+      sportCategory: "Multisport",
+      subType: "Nordic Ski",
+      environment: indoor ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/^(alpineski|backcountryski|snowboard|resort_skiing_snowboarding)$/i.test(rawType)) {
+    return {
+      sportCategory: "Multisport",
+      subType: "Alpine & Backcountry Ski",
+      environment: "OUTDOOR"
+    };
+  }
+  if (/^(kayaking|canoeing|standuppaddling|stand_up_paddleboarding|surfing|windsurf|kitesurf|sailing)$/i.test(rawType)) {
+    return {
+      sportCategory: "Multisport",
+      subType: "Paddling & Water",
+      environment: "OUTDOOR"
+    };
+  }
+  if (/^(soccer|tennis|pickleball|basketball|golf|iceskate|inlineskate|skateboard|badminton|squash|racquetball|tabletennis)$/i.test(rawType)) {
+    return {
+      sportCategory: "Multisport",
+      subType: "Court & Field",
+      environment: /badminton|squash|racquetball|tabletennis/i.test(rawType) && !hasGps ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/^hiit$/i.test(rawType)) {
+    return { sportCategory: "Strength", subType: "HIIT & Circuit", environment: "INDOOR" };
+  }
+  if (/^(rockclimbing|bouldering)$/i.test(rawType)) {
+    return {
+      sportCategory: "Strength",
+      subType: "Climbing",
+      environment: hasGps ? "OUTDOOR" : "INDOOR"
+    };
+  }
+  if (/^(yoga|pilates|stretching|stretch|mobility|meditation|breathwork)$/i.test(rawType)) {
+    return { sportCategory: "Strength", subType: "Yoga & Mobility", environment: "INDOOR" };
+  }
+  if (/^(weighttraining|crossfit|workout|strength_training)$/i.test(rawType)) {
+    const isHiitText = /hiit|crossfit|circuit|metcon|bootcamp|interval/i.test(combined);
+    return {
+      sportCategory: "Strength",
+      subType: isHiitText ? "HIIT & Circuit" : "Gym",
+      environment: "INDOOR"
+    };
+  }
+  if (/swim|open_water|openwaterswim/i.test(rawType)) {
+    const isOpenWater = /open[\s_-]*water|ocean|lake|sea/i.test(combined) || hasGps;
+    return {
+      sportCategory: "Swimming",
+      subType: isOpenWater ? "Open Water" : "Pool",
+      environment: isOpenWater ? "OUTDOOR" : "INDOOR"
+    };
+  }
+  if (/^(run|trailrun|virtualrun|running|treadmill_running|trail_running|track_running|virtual_run)$/i.test(rawType) || /run|treadmill/i.test(rawType) && !/ride|cycle|bike/i.test(rawType)) {
+    const isIndoorRun = trainer || /virtualrun|virtual_run|treadmill|indoor/i.test(combined);
+    if (isIndoorRun) {
+      return { sportCategory: "Running", subType: "Treadmill", environment: "INDOOR" };
+    }
+    if (/trail/i.test(combined)) {
+      return { sportCategory: "Running", subType: "Trail", environment: "OUTDOOR" };
+    }
+    if (/\b(track|400m|200m)\b/i.test(actName)) {
+      return { sportCategory: "Running", subType: "Track", environment: "OUTDOOR" };
+    }
+    if (/\b(xc|cross country)\b/i.test(actName)) {
+      return { sportCategory: "Running", subType: "Cross Country", environment: "OUTDOOR" };
+    }
+    return { sportCategory: "Running", subType: "Road", environment: "OUTDOOR" };
+  }
+  if (/^(ride|virtualride|gravelride|mountainbikeride|handcycle|velomobile|cycling|virtual_ride|indoor_cycling|road_biking|gravel_cycling|mountain_biking)$/i.test(rawType) || /ride|cycling|bike|virtualride|gravel|mountainbike|handcycle|velomobile/i.test(rawType)) {
+    const isEBike = isEBikeActivityText(rawType, actName);
+    if (isEBike) {
+      return {
+        sportCategory: "Cycling",
+        subType: "EBike",
+        environment: trainer ? "INDOOR" : "OUTDOOR"
+      };
+    }
+    const isIndoorBike = trainer || isVirtual || /indoor|trainer|spinning|peloton/i.test(combined) || !hasGps;
+    if (isVirtual) {
+      return { sportCategory: "Cycling", subType: "Virtual Cycling", environment: "INDOOR" };
+    }
+    if (isIndoorBike) {
+      return { sportCategory: "Cycling", subType: "Smart Trainer", environment: "INDOOR" };
+    }
+    if (/gravel/i.test(combined)) {
+      return { sportCategory: "Cycling", subType: "Gravel", environment: "OUTDOOR" };
+    }
+    if (/mountain|mtb|trail/i.test(combined)) {
+      return { sportCategory: "Cycling", subType: "Trail", environment: "OUTDOOR" };
+    }
+    return { sportCategory: "Cycling", subType: "Road", environment: "OUTDOOR" };
+  }
+  if (/triathlon|duathlon|multisport/i.test(rawType)) {
+    return { sportCategory: "Multisport", subType: "Road", environment: "OUTDOOR" };
+  }
+  if (/\b(hike|hiking|snowshoe)\b/i.test(actName)) {
+    return { sportCategory: "Multisport", subType: "Hiking", environment: "OUTDOOR" };
+  }
+  if (/\b(walk|walking)\b/i.test(actName)) {
+    return { sportCategory: "Multisport", subType: "Walking", environment: trainer ? "INDOOR" : "OUTDOOR" };
+  }
+  if (/\b(row|rowing|erg|concept2)\b/i.test(actName)) {
+    return { sportCategory: "Multisport", subType: "Rowing", environment: trainer || !hasGps ? "INDOOR" : "OUTDOOR" };
+  }
+  if (/\belliptical\b/i.test(actName)) {
+    return { sportCategory: "Multisport", subType: "Elliptical", environment: "INDOOR" };
+  }
+  if (/\b(yoga|pilates|mobility|stretch)\b/i.test(actName)) {
+    return { sportCategory: "Strength", subType: "Yoga & Mobility", environment: "INDOOR" };
+  }
+  if (/\b(hiit|crossfit|circuit)\b/i.test(actName)) {
+    return { sportCategory: "Strength", subType: "HIIT & Circuit", environment: "INDOOR" };
+  }
+  if (/ride|cycling|bike|zwift|peloton|spin/i.test(actName)) {
+    return {
+      sportCategory: "Cycling",
+      subType: isVirtual ? "Virtual Cycling" : trainer || !hasGps ? "Smart Trainer" : "Road",
+      environment: trainer || isVirtual || !hasGps ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/\b(run|treadmill|jog|marathon|5k|10k)\b/i.test(actName)) {
+    return {
+      sportCategory: "Running",
+      subType: trainer || /treadmill/i.test(actName) ? "Treadmill" : "Road",
+      environment: trainer || /treadmill/i.test(actName) ? "INDOOR" : "OUTDOOR"
+    };
+  }
+  if (/\b(swim|pool)\b/i.test(actName)) {
+    return {
+      sportCategory: "Swimming",
+      subType: hasGps ? "Open Water" : "Pool",
+      environment: hasGps ? "OUTDOOR" : "INDOOR"
+    };
+  }
+  return { sportCategory: "Strength", subType: "Gym", environment: "INDOOR" };
 }
 function deriveObservedPhysiologyMetrics(activities, weightKg = 70) {
   let maxBikeWatts20m = 0;
@@ -840,15 +1020,18 @@ function computeHrrRatio(avgBpm, lthrBpm, restingHr = 54) {
 function computeStravaActivityLoadV2(input) {
   const rawType = String(input.rawSportType || "").trim();
   const actName = String(input.name || "").trim();
+  const combinedMeta = `${rawType} ${actName}`.trim();
   const isEBike = isEBikeActivityText(rawType, actName);
-  const isLowImpactCasual = !isEBike && (/^(walk|casual_walking|speed_walking|golf|yoga|pilates|stretch|mobility|meditation|breathwork|sailing|skateboard)/i.test(
-    rawType
-  ) || input.sportCategory === "Strength" && /\b(walk|walking|stroll|golf|yoga|pilates|stretch|stretching|mobility|meditation|breathwork|sauna)\b/i.test(
-    actName
-  ));
-  const isModerateOutdoor = !isEBike && !isLowImpactCasual && (/^(hike|hiking|snowshoe|stand_up_paddleboarding|standuppaddling|kayaking|canoeing|indoor_rowing|rowing|resort_skiing_snowboarding|alpineski|backcountryski|nordicski|surfing)/i.test(
-    rawType
-  ) || input.sportCategory === "Strength" && /\b(hike|hiking|snowshoe|paddle|kayak|canoe|ski|snowboard|rowing)\b/i.test(actName));
+  const isMeditation = /^(meditation|breathwork|sauna)$/i.test(rawType) || /\b(meditation|breathwork|sauna)\b/i.test(actName);
+  const isYogaOrMobility = !isEBike && !isMeditation && (/^(yoga|pilates|stretching|stretch|mobility)$/i.test(rawType) || /\b(yoga|pilates|stretching|stretch|mobility)\b/i.test(actName));
+  const isWalk = !isEBike && /^(walk|casual_walking|speed_walking|golf|sailing|skateboard)$/i.test(rawType);
+  const isLowImpactCasual = !isEBike && (isMeditation || isYogaOrMobility || isWalk);
+  const isHike = !isEBike && /^(hike|hiking|snowshoe)$/i.test(rawType);
+  const isAerobicCrossTrain = !isEBike && /^(rowing|virtualrow|indoor_rowing|nordicski|rollerski|cross_country_skiing|xc_ski|elliptical|stairstepper|stair_climbing|floor_climbing|kayaking|canoeing|standuppaddling|stand_up_paddleboarding)$/i.test(rawType);
+  const isBackcountrySki = !isEBike && /^backcountryski$/i.test(rawType);
+  const isAlpineSki = !isEBike && /^(alpineski|snowboard|resort_skiing_snowboarding)$/i.test(rawType);
+  const isHiitOrCourt = !isEBike && (/^(hiit|crossfit|soccer|tennis|pickleball|basketball|badminton|squash|racquetball|tabletennis)$/i.test(rawType) || /^(workout)$/i.test(rawType) && /\b(hiit|crossfit|circuit|metcon|bootcamp)\b/i.test(actName));
+  const isModerateOutdoor = !isEBike && !isLowImpactCasual && (isHike || isBackcountrySki || isAlpineSki || isAerobicCrossTrain);
   const movingTimeSecs = Math.max(0, Number(input.movingTimeSecs || 0));
   const hrs = movingTimeSecs / 3600;
   if (hrs <= 0.01) {
@@ -862,100 +1045,142 @@ function computeStravaActivityLoadV2(input) {
   }
   const restHr = Math.max(38, Math.min(78, Number(input.restingHr || 54)));
   const avgHr = Math.round(Number(input.avgHr || 0));
+  const maxHr = Math.round(Number(input.maxHr || 0));
   const bikeLthr = Math.max(135, Number(input.calibratedBikeLthr || 163));
   const runLthr = Math.max(140, Number(input.calibratedRunLthr || 168));
   const ftp = Math.max(120, Number(input.calibratedFtp || 250));
   const thresholdPace = Math.max(155, Number(input.calibratedThresholdPaceSecsPerKm || 255));
   const distMeters = Math.max(0, Number(input.distanceMeters || 0));
   const elevGain = Math.max(0, Number(input.elevationGainMeters || 0));
+  const buildResult = (trainingLoad, intensityFactor) => ({
+    trainingLoad: Math.max(0, Math.round(trainingLoad)),
+    intensityFactor: intensityFactor !== void 0 ? Number(intensityFactor.toFixed(2)) : void 0,
+    isEBike,
+    isLowImpactCasual,
+    isModerateOutdoor
+  });
   if (isEBike) {
     if (avgHr > 60) {
       const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.min(Math.round(hrs * 40), Math.round(hrs * 65 * hrr * hrr)),
-        intensityFactor: Number(Math.min(0.95, 0.35 + hrr * 0.5).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      return buildResult(
+        Math.min(Math.round(hrs * 40), Math.round(hrs * 65 * hrr * hrr)),
+        Math.min(0.95, 0.35 + hrr * 0.5)
+      );
     }
-    return {
-      trainingLoad: Math.round(hrs * 18),
-      intensityFactor: 0.42,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    return buildResult(hrs * 18, 0.42);
   }
-  if (isLowImpactCasual) {
+  if (isMeditation) {
+    return buildResult(hrs * 3, 0.2);
+  }
+  if (isYogaOrMobility) {
+    const isPilates = /pilates/i.test(combinedMeta);
     if (avgHr > 60) {
       const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.min(Math.round(hrs * 32), Math.round(hrs * 65 * hrr * hrr)),
-        intensityFactor: Number(Math.min(0.85, 0.3 + hrr * 0.48).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      const cap = isPilates ? 32 : 22;
+      const coeff = isPilates ? 58 : 48;
+      return buildResult(
+        Math.min(Math.round(hrs * cap), Math.round(hrs * coeff * hrr * hrr)),
+        Math.min(0.78, 0.28 + hrr * 0.45)
+      );
     }
-    return {
-      trainingLoad: Math.round(hrs * 14),
-      intensityFactor: 0.38,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    return buildResult(hrs * (isPilates ? 18 : 10), isPilates ? 0.42 : 0.32);
   }
-  if (isModerateOutdoor) {
+  if (isWalk) {
+    const isGolf = /^golf$/i.test(rawType);
+    if (isGolf) {
+      return buildResult(hrs * 14, 0.37);
+    }
+    const grade = distMeters > 200 ? elevGain / distMeters : 0;
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      const hrCap = grade >= 0.03 ? 55 : 30;
+      return buildResult(
+        Math.min(Math.round(hrs * hrCap), Math.round(hrs * 65 * hrr * hrr)),
+        Math.min(0.85, 0.3 + hrr * 0.48)
+      );
+    }
+    const baseRate = grade >= 0.03 ? Math.min(46, 18 + Math.round(grade * 260)) : 15;
+    return buildResult(hrs * baseRate, Math.sqrt(baseRate / 100));
+  }
+  if (isHike || isBackcountrySki) {
+    const grade = distMeters > 200 ? Math.max(0, elevGain / distMeters) : 0;
+    const speedKph = distMeters > 200 && hrs > 0 ? distMeters / 1e3 / hrs : 4.2;
+    const eqSpeedKph = speedKph * (1 + Math.min(1.6, grade * 9.5 + grade * grade * 28));
+    const mechIf = Math.max(0.46, Math.min(1.04, eqSpeedKph / 12.2));
+    const mechLoad = Math.round(hrs * 88 * mechIf * mechIf);
     if (avgHr > 60) {
       const hrr = computeHrrRatio(avgHr, runLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 78 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.05, 0.4 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      const hrLoad = Math.round(hrs * 85 * hrr * hrr);
+      const combined = Math.round(0.55 * hrLoad + 0.45 * mechLoad);
+      return buildResult(
+        combined,
+        Math.min(1.1, Math.sqrt(Math.max(0.1, combined / Math.max(0.1, hrs * 100))))
+      );
     }
-    return {
-      trainingLoad: Math.round(hrs * 24),
-      intensityFactor: 0.5,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    return buildResult(isBackcountrySki && distMeters < 300 ? hrs * 48 : mechLoad, mechIf);
+  }
+  if (isAlpineSki) {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
+      return buildResult(
+        Math.min(Math.round(hrs * 38), Math.round(hrs * 60 * hrr * hrr)),
+        Math.min(0.85, 0.35 + hrr * 0.45)
+      );
+    }
+    return buildResult(hrs * 22, 0.47);
+  }
+  if (isAerobicCrossTrain) {
+    const np = Number(input.normalizedPower || input.avgPower || 0);
+    const rowFtp = Math.max(110, ftp * 0.88);
+    const hasErgWatts = Boolean(input.hasRealDeviceWatts && np > 0);
+    const powerIf = hasErgWatts ? Math.max(0.35, Math.min(1.3, np / rowFtp)) : 0;
+    const powerLoad = hasErgWatts ? Math.round(movingTimeSecs * np * powerIf / (rowFtp * 3600) * 100) : 0;
+    const hrr = avgHr > 60 ? computeHrrRatio(avgHr, runLthr, restHr) : 0;
+    const hrLoad = avgHr > 60 ? Math.min(Math.round(hrs * 115), Math.round(hrs * 92 * hrr * hrr)) : 0;
+    if (powerLoad > 0 && hrLoad > 0) {
+      const blended = Math.round(0.5 * powerLoad + 0.5 * hrLoad);
+      return buildResult(
+        blended,
+        Math.min(1.22, Math.sqrt(Math.max(0.1, blended / Math.max(0.1, hrs * 100))))
+      );
+    }
+    if (powerLoad > 0) return buildResult(powerLoad, powerIf);
+    if (hrLoad > 0) return buildResult(hrLoad, Math.min(1.18, 0.42 + hrr * 0.58));
+    if (/row/i.test(combinedMeta) && distMeters >= 500 && hrs > 0) {
+      const secsPer500 = movingTimeSecs / (distMeters / 500);
+      const rowIf = Math.max(0.45, Math.min(1.15, 118 / secsPer500));
+      return buildResult(hrs * 95 * rowIf * rowIf, rowIf);
+    }
+    return buildResult(hrs * 46, 0.68);
+  }
+  if (isHiitOrCourt) {
+    if (avgHr > 60) {
+      const hrr = computeHrrRatio(avgHr, runLthr, restHr);
+      const peakBoost = maxHr >= 172 ? 1.1 : 1;
+      const load = Math.min(Math.round(hrs * 95), Math.round(hrs * 88 * hrr * hrr * peakBoost));
+      return buildResult(load, Math.min(1.12, 0.45 + hrr * 0.55));
+    }
+    const isPickle = /pickleball/i.test(rawType);
+    const isHiit = /hiit|crossfit|workout|circuit|bootcamp/i.test(combinedMeta);
+    const rate = isHiit ? 52 : isPickle ? 34 : 45;
+    return buildResult(hrs * rate, Math.sqrt(rate / 100));
   }
   if (input.sportCategory === "Cycling") {
     const np = Number(input.normalizedPower || input.avgPower || 0);
     if (input.hasRealDeviceWatts && np > 0) {
       const ifVal = Math.max(0.25, Math.min(1.35, np / ftp));
-      return {
-        trainingLoad: Math.round(movingTimeSecs * np * ifVal / (ftp * 3600) * 100),
-        intensityFactor: Number(ifVal.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      return buildResult(
+        movingTimeSecs * np * ifVal / (ftp * 3600) * 100,
+        ifVal
+      );
     }
     if (avgHr > 60) {
       const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 92 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.18, 0.45 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      return buildResult(hrs * 92 * hrr * hrr, Math.min(1.18, 0.45 + hrr * 0.55));
     }
     const speedKph = distMeters > 0 && hrs > 0 ? distMeters / 1e3 / hrs : 18;
     const rate = speedKph < 16 ? 20 : speedKph < 22 ? 28 : 35;
-    return {
-      trainingLoad: Math.round(hrs * rate),
-      intensityFactor: Number(Math.sqrt(rate / 100).toFixed(2)),
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    return buildResult(hrs * rate, Math.sqrt(rate / 100));
   }
   if (input.sportCategory === "Running") {
     const hrrRun = avgHr > 60 ? computeHrrRatio(avgHr, runLthr, restHr) : 0;
@@ -982,80 +1207,43 @@ function computeStravaActivityLoadV2(input) {
         1.22,
         Math.sqrt(Math.max(0.1, resolvedLoad / Math.max(0.1, hrs * 100)))
       );
-      return {
-        trainingLoad: resolvedLoad,
-        intensityFactor: Number(effIf.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+      return buildResult(resolvedLoad, effIf);
     }
-    if (paceLoad > 0) {
-      return {
-        trainingLoad: paceLoad,
-        intensityFactor: Number(paceIf.toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    if (hrLoad > 0) {
-      return {
-        trainingLoad: hrLoad,
-        intensityFactor: Number(Math.min(1.18, 0.45 + hrrRun * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
-    }
-    return {
-      trainingLoad: Math.round(hrs * 38),
-      intensityFactor: 0.62,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    if (paceLoad > 0) return buildResult(paceLoad, paceIf);
+    if (hrLoad > 0) return buildResult(hrLoad, Math.min(1.18, 0.45 + hrrRun * 0.55));
+    return buildResult(hrs * 38, 0.62);
   }
   if (input.sportCategory === "Swimming") {
-    if (avgHr > 60) {
-      const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
-      return {
-        trainingLoad: Math.round(hrs * 88 * hrr * hrr),
-        intensityFactor: Number(Math.min(1.15, 0.45 + hrr * 0.55).toFixed(2)),
-        isEBike,
-        isLowImpactCasual,
-        isModerateOutdoor
-      };
+    let sTss = 0;
+    let swimIf = 0;
+    if (distMeters >= 100 && movingTimeSecs > 0) {
+      const pace100 = movingTimeSecs / (distMeters / 100);
+      swimIf = Math.max(0.45, Math.min(1.22, 115 / Math.max(55, pace100)));
+      sTss = Math.round(hrs * 100 * Math.pow(swimIf, 3));
     }
-    return {
-      trainingLoad: Math.round(hrs * 36),
-      intensityFactor: 0.6,
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    const swimLthr = Math.max(130, bikeLthr - 5);
+    const hrr = avgHr > 65 ? computeHrrRatio(avgHr, swimLthr, restHr) : 0;
+    const hrSwimLoad = avgHr > 65 ? Math.round(hrs * 90 * hrr * hrr) : 0;
+    if (sTss > 0 && hrSwimLoad > 0) {
+      const blended = Math.round(0.65 * sTss + 0.35 * hrSwimLoad);
+      return buildResult(
+        blended,
+        Math.min(1.18, Math.cbrt(Math.max(0.1, blended / Math.max(0.1, hrs * 100))))
+      );
+    }
+    if (sTss > 0) return buildResult(sTss, swimIf);
+    if (hrSwimLoad > 0) return buildResult(hrSwimLoad, Math.min(1.15, 0.45 + hrr * 0.55));
+    return buildResult(hrs * 42, 0.65);
   }
   if (avgHr > 60) {
     const hrr = computeHrrRatio(avgHr, bikeLthr, restHr);
     const load = Math.min(
-      Math.round(hrs * 65),
-      Math.max(Math.round(hrs * 16), Math.round(hrs * 76 * hrr * hrr))
+      Math.round(hrs * 58),
+      Math.max(Math.round(hrs * 24), Math.round(hrs * (22 + 52 * hrr * hrr)))
     );
-    return {
-      trainingLoad: load,
-      intensityFactor: Number(Math.min(1, 0.35 + hrr * 0.55).toFixed(2)),
-      isEBike,
-      isLowImpactCasual,
-      isModerateOutdoor
-    };
+    return buildResult(load, Math.min(0.95, 0.4 + hrr * 0.45));
   }
-  return {
-    trainingLoad: Math.round(hrs * 28),
-    intensityFactor: 0.53,
-    isEBike,
-    isLowImpactCasual,
-    isModerateOutdoor
-  };
+  return buildResult(hrs * 30, 0.55);
 }
 
 // server/garminConnectService.ts
@@ -2045,43 +2233,20 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250, cal
     ).toLowerCase();
     const name = String(a.activityName || a.name || typeKey || "Garmin Activity");
     const combined = `${typeKey} ${name}`.toLowerCase();
-    const isEBike = isEBikeActivityText(typeKey, name);
-    const isExplicitCasualOrOtherType = /walk|hiking|hike|yoga|pilates|golf|strength|elliptical|stair|breathwork|meditation|rowing|stand_up_paddle|kayak|ski|snowshoe/i.test(
-      typeKey
-    );
-    let sportCategory = "Strength";
-    if (!isExplicitCasualOrOtherType && (/cycling|ride|biking|virtual_ride|indoor_cycling|road_biking|gravel|mountain_biking|zwift|peloton|spin/i.test(
-      combined
-    ) || isEBike)) {
-      sportCategory = "Cycling";
-    } else if (!isExplicitCasualOrOtherType && /running|run|treadmill|trail_running|track_running|virtual_run/i.test(combined)) {
-      sportCategory = "Running";
-    } else if (/swimming|swim|lap_swimming|open_water/i.test(combined)) {
-      sportCategory = "Swimming";
-    } else if (/multi_sport|triathlon|duathlon/i.test(combined)) {
-      sportCategory = "Multisport";
-    }
     const startLat = Number(a.startLatitude ?? 0);
     const startLng = Number(a.startLongitude ?? 0);
+    const hasGps = Boolean((startLat || startLng) && !(startLat === 0 && startLng === 0));
     const isWatopiaOrMakuri = startLat >= -12.6 && startLat <= -9.8 && startLng >= 164.8 && startLng <= 168;
     const isVirtualPlatform = isWatopiaOrMakuri || /virtual_ride|virtual|zwift|watopia|makuri|rouvy|mywhoosh|trainerroad/i.test(combined);
-    const isIndoor = isVirtualPlatform || /indoor|treadmill|virtual|trainer|spin|peloton|gym|strength|yoga/i.test(combined) || sportCategory === "Cycling" && !startLat && !startLng;
-    let subType = "Road";
-    if (sportCategory === "Cycling") {
-      if (isVirtualPlatform) subType = "Virtual Cycling";
-      else if (isIndoor) subType = "Smart Trainer";
-      else if (/gravel/i.test(combined)) subType = "Gravel";
-      else if (/mountain|mtb|trail/i.test(combined)) subType = "Trail";
-      else subType = "Road";
-    } else if (sportCategory === "Running") {
-      if (isIndoor) subType = "Treadmill";
-      else if (/trail/i.test(combined)) subType = "Trail";
-      else subType = "Road";
-    } else if (sportCategory === "Swimming") {
-      subType = /open_water/i.test(combined) ? "Open Water" : "Pool";
-    } else {
-      subType = "Gym";
-    }
+    const classified = classifyMultiSportActivity(typeKey, name, {
+      trainer: isVirtualPlatform || /indoor|treadmill|virtual|trainer|spin|peloton|gym|strength|yoga/i.test(combined),
+      hasGps,
+      isVirtualPlatform
+    });
+    const sportCategory = classified.sportCategory;
+    const isEBike = classified.subType === "EBike";
+    const isIndoor = classified.environment === "INDOOR";
+    const subType = classified.subType;
     const movingTimeSecs = Math.round(
       Number(a.movingDuration ?? a.duration ?? a.elapsedDuration ?? 0)
     );
@@ -2847,6 +3012,55 @@ function computeActivityThreeChannelLoads(act, profile) {
       eccentricImpact: 0,
       // Zero ground-reaction impact!
       concentricTorque: Math.round(concentricTorque * 10) / 10
+    };
+  }
+  const rawMeta = `${act.rawSportType || ""} ${act.subType || ""} ${act.name || ""}`.toLowerCase();
+  if (act.sportCategory === "Swimming" || act.subType === "Pool" || act.subType === "Open Water" || act.subType === "Rowing" || act.subType === "Elliptical" || act.subType === "Paddling & Water" || act.subType === "Yoga & Mobility" || /\b(swim|row|elliptical|kayak|canoe|paddle|surf|yoga|pilates|stretch|mobility|meditation)\b/.test(
+    rawMeta
+  )) {
+    const torqueMult = act.subType === "Rowing" || act.subType === "Paddling & Water" ? 0.65 : act.subType === "Elliptical" ? 0.45 : 0;
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: 0,
+      concentricTorque: Math.round(baseLoad * torqueMult * 10) / 10
+    };
+  }
+  if (act.subType === "Stair Stepper" || act.subType === "Nordic Ski" || /\b(stair|nordic|rollerski|xc ski|skierg)\b/.test(rawMeta)) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.05 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.75 * 10) / 10
+    };
+  }
+  if (act.subType === "Hiking" || /\b(hike|hiking|snowshoe)\b/.test(rawMeta)) {
+    const steepFactor = (act.elevationGainMeters || 0) > 400 ? 1.25 : 1;
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.3 * steepFactor * 10) / 10,
+      concentricTorque: Math.round(((act.elevationGainMeters || 0) * 0.08 + baseLoad * 0.45) * 10) / 10
+    };
+  }
+  if (act.subType === "Walking" || /\bwalk\b/.test(rawMeta)) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.12 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.25 * 10) / 10
+    };
+  }
+  if (act.subType === "HIIT & Circuit" || act.subType === "Court & Field" || act.subType === "Alpine & Backcountry Ski" || /\b(hiit|crossfit|soccer|tennis|pickleball|basketball|alpine|snowboard|backcountry)\b/.test(
+    rawMeta
+  )) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.42 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.55 * 10) / 10
+    };
+  }
+  if (act.sportCategory === "Strength" || act.subType === "Climbing" || act.subType === "Gym") {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.12 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.85 * 10) / 10
     };
   }
   return {
@@ -10174,60 +10388,47 @@ function normalizeRawStravaActivity(a, calibration, options) {
   const activityStravaId = extractStravaId(a) || extractStravaId(detail);
   const sportType = String(a.sport_type || a.type || "").trim();
   const actName = String(a.name || "");
-  const isEBike = isEBikeActivityText(sportType, actName);
-  const explicitNonCycleType = /walk|hike|yoga|golf|pilates|weighttraining|run|trailrun|virtualrun|swim|alpineski|backcountryski|nordicski|snowshoe|standuppaddling|kayak|canoeing|rowing|stretch|mobility|meditation|breathwork|surfing|sailing/i.test(
-    sportType
-  );
-  let sportCategory = "Strength";
-  if (!explicitNonCycleType && (/ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|peloton|zwift/i.test(
-    sportType + " " + actName
-  ) || isEBike)) {
-    sportCategory = "Cycling";
-  } else if (/run|trailrun|virtualrun|treadmill/i.test(sportType)) {
-    sportCategory = "Running";
-  } else if (/swim|openwater/i.test(sportType)) {
-    sportCategory = "Swimming";
-  } else {
-    sportCategory = "Strength";
-  }
   const rawStartLatLng = Array.isArray(a.start_latlng) && a.start_latlng.length === 2 ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])] : void 0;
   const isWatopiaOrMakuriGps = rawStartLatLng && Number.isFinite(rawStartLatLng[0]) && Number.isFinite(rawStartLatLng[1]) && rawStartLatLng[0] >= -12.6 && rawStartLatLng[0] <= -9.8 && rawStartLatLng[1] >= 164.8 && rawStartLatLng[1] <= 168;
   const hasSummaryPolyline = Boolean(
     (detail.map?.summary_polyline || a.map?.summary_polyline || "").length > 4
   );
-  const isStationaryZeroGpsCycling = sportCategory === "Cycling" && !hasSummaryPolyline && !rawStartLatLng;
+  const hasAnyGps = Boolean(hasSummaryPolyline || rawStartLatLng);
   const combinedStravaMeta = `${sportType} ${actName} ${a.device_name || ""} ${detail.device_name || ""}`;
   const isVirtualPlatform = isVirtualCyclingText(combinedStravaMeta) || Boolean(isWatopiaOrMakuriGps);
-  const isIndoor = Boolean(a.trainer) || Boolean(isVirtualPlatform) || Boolean(isStationaryZeroGpsCycling) || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga/i.test(
+  const classified = classifyMultiSportActivity(sportType, actName, {
+    trainer: Boolean(a.trainer),
+    hasGps: hasAnyGps,
+    isVirtualPlatform
+  });
+  const sportCategory = classified.sportCategory;
+  let subType = classified.subType;
+  let environment = classified.environment;
+  if (environment === "OUTDOOR" && (isVirtualPlatform || /treadmill|trainer|zwift|peloton|wattbike|stages|erg mode|smart_trainer/i.test(
     combinedStravaMeta
-  );
-  let subType = "Road";
-  if (sportCategory === "Cycling") {
-    if (isVirtualPlatform) subType = "Virtual Cycling";
-    else if (isIndoor) subType = "Smart Trainer";
-    else if (/gravel/i.test(combinedStravaMeta)) subType = "Gravel";
-    else if (/mountain|mtb|trail/i.test(combinedStravaMeta)) subType = "Trail";
-    else subType = "Road";
-  } else if (sportCategory === "Running") {
-    if (isIndoor) subType = "Treadmill";
-    else if (/trail/i.test(combinedStravaMeta)) subType = "Trail";
-    else subType = "Road";
-  } else if (sportCategory === "Swimming") {
-    subType = "Pool";
-  } else {
-    subType = "Gym";
+  ))) {
+    environment = "INDOOR";
+    if (sportCategory === "Cycling" && subType !== "EBike") {
+      subType = isVirtualPlatform ? "Virtual Cycling" : "Smart Trainer";
+    } else if (sportCategory === "Running") {
+      subType = "Treadmill";
+    }
   }
+  const isEBike = subType === "EBike";
+  const isIndoor = environment === "INDOOR";
   const rawMoving = Number(a.moving_time || 0);
   const rawElapsed = Number(a.elapsed_time || 0);
   const movingTimeSecs = rawMoving > 0 ? rawMoving : Math.min(rawElapsed, 5400);
   const distanceMeters = Number(a.distance || 0);
   const elevationGainMeters = Math.round(Number(a.total_elevation_gain || 0));
-  const hasRealDeviceWatts = !isEBike && (a.device_watts === true || Boolean(isVirtualPlatform) && a.device_watts !== false);
+  const supportsMeteredWatts = !isEBike && (sportCategory === "Cycling" || subType === "Rowing" || subType === "Nordic Ski" || sportCategory === "Running");
+  const hasRealDeviceWatts = supportsMeteredWatts && (a.device_watts === true || Boolean(isVirtualPlatform) && a.device_watts !== false);
   const avgPower = hasRealDeviceWatts && a.average_watts ? Math.round(Number(a.average_watts)) : void 0;
   const normalizedPower = hasRealDeviceWatts && a.weighted_average_watts ? Math.round(Number(a.weighted_average_watts)) : avgPower;
   const avgHr = Math.round(Number(a.average_heartrate || 0));
   const maxHr = Math.round(Number(a.max_heartrate || 0));
-  const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
+  const supportsPaceDisplay = sportCategory === "Running" || sportCategory === "Swimming" || subType === "Hiking" || subType === "Walking" || subType === "Rowing" || subType === "Nordic Ski";
+  const avgPaceSecsPerKm = supportsPaceDisplay && distanceMeters > 0 && movingTimeSecs > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
   const loadResult = computeStravaActivityLoadV2({
     sportCategory,
     rawSportType: sportType,
@@ -10325,13 +10526,13 @@ function normalizeRawStravaActivity(a, calibration, options) {
     segmentEfforts
   };
 }
-async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, explicitWindow, clientAfterEpoch = 0) {
+async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, explicitWindow, clientAfterEpoch = 0, beforeEpoch = 0) {
   let activeAccessToken = await ensureValidStravaAccessToken(req, false);
   if (!activeAccessToken) {
     throw new Error("Strava is not connected via OAuth yet.");
   }
   const validWindows = /* @__PURE__ */ new Set(["90d", "180d", "365d", "all", "none"]);
-  const effectiveWindow = explicitWindow && validWindows.has(explicitWindow) ? explicitWindow : forceFull ? "all" : runtimeStore.stravaSyncPolicy?.window || "90d";
+  const effectiveWindow = explicitWindow && validWindows.has(explicitWindow) ? explicitWindow : forceFull || beforeEpoch > 0 ? "all" : runtimeStore.stravaSyncPolicy?.window || "90d";
   const importProfileAndGear = runtimeStore.stravaSyncPolicy?.importProfileAndGear !== false;
   if (effectiveWindow === "none") {
     const identity = await resolveStravaAthleteIdentity(req);
@@ -10343,6 +10544,9 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
       starredSegments: [],
       syncPaused: true,
       syncWindow: "none",
+      hasMoreHistory: false,
+      nextBeforeEpoch: null,
+      rateLimitPaused: false,
       stravaTokens: getStravaTokenRotationPayload(req)
     };
   }
@@ -10356,18 +10560,37 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
       activities: [],
       starredSegments: [],
       missingActivityScope: true,
+      hasMoreHistory: false,
+      nextBeforeEpoch: null,
+      rateLimitPaused: false,
       stravaTokens: getStravaTokenRotationPayload(req)
     };
   }
   const windowDays = effectiveWindow === "90d" ? 90 : effectiveWindow === "180d" ? 180 : effectiveWindow === "365d" ? 365 : 0;
-  const afterEpoch = windowDays > 0 ? Math.floor((Date.now() - windowDays * 86400 * 1e3) / 1e3) : 0;
-  const effectiveAfterEpoch = !forceFull && deltaOnly && clientAfterEpoch > 0 ? Math.max(afterEpoch, Math.floor(clientAfterEpoch)) : afterEpoch;
+  const afterEpoch = windowDays > 0 && beforeEpoch === 0 ? Math.floor((Date.now() - windowDays * 86400 * 1e3) / 1e3) : 0;
+  const effectiveAfterEpoch = !forceFull && beforeEpoch === 0 && deltaOnly && clientAfterEpoch > 0 ? Math.max(afterEpoch, Math.floor(clientAfterEpoch)) : afterEpoch;
   const afterQuery = effectiveAfterEpoch > 0 ? `&after=${effectiveAfterEpoch}` : "";
+  const beforeQuery = beforeEpoch > 0 ? `&before=${Math.floor(beforeEpoch)}` : "";
+  const cursorQuery = `${afterQuery}${beforeQuery}`;
   let headers = { Authorization: `Bearer ${activeAccessToken}` };
   let rawActivitiesMap = /* @__PURE__ */ new Map();
+  const fetchedThisCallMap = /* @__PURE__ */ new Map();
   let scopedArchiveFile = "";
+  let rateLimitPaused = false;
+  let reachedNaturalEnd = false;
+  let oldestFetchedEpoch = 0;
+  const trackFetchedItem = (item) => {
+    const itemId = extractStravaId(item);
+    if (!item || !itemId) return;
+    rawActivitiesMap.set(itemId, item);
+    fetchedThisCallMap.set(itemId, item);
+    const epoch = Math.floor(new Date(item.start_date || item.start_date_local || 0).getTime() / 1e3);
+    if (Number.isFinite(epoch) && epoch > 0 && (oldestFetchedEpoch === 0 || epoch < oldestFetchedEpoch)) {
+      oldestFetchedEpoch = epoch;
+    }
+  };
   let firstPageResp = await fetch(
-    `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${afterQuery}`,
+    `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${cursorQuery}`,
     { headers }
   );
   const { refreshToken: callerRefreshToken } = getEffectiveStravaClientConfig(req);
@@ -10375,7 +10598,7 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
     activeAccessToken = await ensureValidStravaAccessToken(req, true);
     headers = { Authorization: `Bearer ${activeAccessToken}` };
     firstPageResp = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${afterQuery}`,
+      `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=1${cursorQuery}`,
       { headers }
     );
   }
@@ -10393,6 +10616,9 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
           activities: [],
           starredSegments: [],
           missingActivityScope: true,
+          hasMoreHistory: false,
+          nextBeforeEpoch: null,
+          rateLimitPaused: false,
           stravaTokens: getStravaTokenRotationPayload(req)
         };
       }
@@ -10410,7 +10636,7 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
         for (const item of cachedArchive) {
           const itemId = extractStravaId(item);
           if (!item || !itemId) continue;
-          if (afterEpoch > 0) {
+          if (afterEpoch > 0 && beforeEpoch === 0) {
             const itemEpoch = Math.floor(
               new Date(item.start_date || item.start_date_local || 0).getTime() / 1e3
             );
@@ -10419,58 +10645,82 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
           rawActivitiesMap.set(itemId, item);
         }
       }
-      const existingCachedCount = rawActivitiesMap.size;
       for (const item of firstPageItems) {
-        const itemId = extractStravaId(item);
-        if (item && itemId) rawActivitiesMap.set(itemId, item);
+        trackFetchedItem(item);
       }
-      const shouldPaginateAll = forceFull || !deltaOnly && existingCachedCount <= 200;
+      if (firstPageItems.length < 200) {
+        reachedNaturalEnd = true;
+      }
+      const shouldPaginateAll = forceFull || beforeEpoch > 0 || !deltaOnly;
       const isStravaRateLimited = (resp) => {
         const usage = resp.headers.get("x-ratelimit-usage") || "";
-        const shortWindow = Number(usage.split(",")[0] || 0);
-        return shortWindow >= 80;
+        const limit = resp.headers.get("x-ratelimit-limit") || "";
+        const [shortUsage = 0, dailyUsage = 0] = usage.split(",").map(Number);
+        const [shortLimit = 100, dailyLimit = 1e3] = limit.split(",").map((n) => Number(n) || 0);
+        const effectiveShortCap = shortLimit > 0 ? Math.max(40, shortLimit - 15) : 85;
+        const effectiveDailyCap = dailyLimit > 0 ? Math.max(200, dailyLimit - 25) : 975;
+        return shortUsage >= effectiveShortCap || dailyUsage >= effectiveDailyCap;
       };
-      const maxPageToFetch = effectiveWindow === "all" ? 10 : 3;
-      if (shouldPaginateAll && firstPageItems.length === 200 && !isStravaRateLimited(firstPageResp)) {
+      if (isStravaRateLimited(firstPageResp)) {
+        rateLimitPaused = true;
+      }
+      const maxPageToFetch = effectiveWindow === "all" ? 20 : effectiveWindow === "365d" ? 8 : effectiveWindow === "180d" ? 5 : 3;
+      if (shouldPaginateAll && !reachedNaturalEnd && !rateLimitPaused) {
         for (let page = 2; page <= maxPageToFetch; page += 2) {
           const pages = page + 1 <= maxPageToFetch ? [page, page + 1] : [page];
           const batchResps = await Promise.all(
             pages.map(
               (p) => fetch(
-                `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}${afterQuery}`,
+                `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${p}${cursorQuery}`,
                 { headers }
               )
             )
           );
-          let reachedEnd = false;
+          let stopLoop = false;
           for (const r of batchResps) {
-            if (!r.ok || isStravaRateLimited(r)) {
-              reachedEnd = true;
+            if (!r.ok) {
+              if (r.status === 429) rateLimitPaused = true;
+              stopLoop = true;
               break;
             }
             const pageItems = await readStravaResponseJson(r);
             if (!Array.isArray(pageItems) || pageItems.length === 0) {
-              reachedEnd = true;
-            } else {
-              for (const item of pageItems) {
-                const itemId = extractStravaId(item);
-                if (item && itemId) rawActivitiesMap.set(itemId, item);
-              }
-              if (pageItems.length < 200) reachedEnd = true;
+              reachedNaturalEnd = true;
+              stopLoop = true;
+              break;
+            }
+            for (const item of pageItems) {
+              trackFetchedItem(item);
+            }
+            if (pageItems.length < 200) {
+              reachedNaturalEnd = true;
+              stopLoop = true;
+              break;
+            }
+            if (isStravaRateLimited(r)) {
+              rateLimitPaused = true;
+              stopLoop = true;
+              break;
             }
           }
-          if (reachedEnd) break;
+          if (stopLoop) break;
         }
       }
     }
   }
-  const activitiesList = Array.from(rawActivitiesMap.values()).sort(
+  const allArchiveList = Array.from(rawActivitiesMap.values()).sort(
     (a, b) => new Date(b.start_date_local || 0).getTime() - new Date(a.start_date_local || 0).getTime()
   );
-  if (activitiesList.length > 0 && scopedArchiveFile) {
-    saveJsonFile(scopedArchiveFile, activitiesList);
+  if (allArchiveList.length > 0 && scopedArchiveFile) {
+    saveJsonFile(scopedArchiveFile, allArchiveList);
   }
-  const [starredResp, stravaProfileResp, stravaZonesResp] = await Promise.all([
+  const activitiesList = beforeEpoch > 0 ? Array.from(fetchedThisCallMap.values()).sort(
+    (a, b) => new Date(b.start_date_local || 0).getTime() - new Date(a.start_date_local || 0).getTime()
+  ) : allArchiveList;
+  const hasMoreHistory = !deltaOnly && effectiveWindow === "all" && !reachedNaturalEnd && oldestFetchedEpoch > 0 && (fetchedThisCallMap.size >= 200 || rateLimitPaused);
+  const nextBeforeEpoch = hasMoreHistory ? oldestFetchedEpoch + 1 : null;
+  const isCursorContinuation = beforeEpoch > 0;
+  const [starredResp, stravaProfileResp, stravaZonesResp] = isCursorContinuation ? [null, null, null] : await Promise.all([
     firstPageResp.ok ? fetch("https://www.strava.com/api/v3/segments/starred?per_page=15", { headers }) : Promise.resolve(null),
     fetch("https://www.strava.com/api/v3/athlete", { headers }),
     importProfileAndGear ? fetch("https://www.strava.com/api/v3/athlete/zones", { headers }) : Promise.resolve(null)
@@ -10553,8 +10803,8 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
     prelimAthleteProfile.thresholdPaceSecsPerKm || 255
   );
   const calibratedRestingHr = Math.max(38, Math.min(78, prelimAthleteProfile.restingHr || 54));
-  const topIds = activitiesList.slice(0, 2).map((a) => extractStravaId(a)).filter(Boolean);
-  const detailedPayloads = await Promise.all(
+  const topIds = isCursorContinuation ? [] : activitiesList.slice(0, 2).map((a) => extractStravaId(a)).filter(Boolean);
+  const detailedPayloads = topIds.length > 0 ? await Promise.all(
     topIds.map(async (id) => {
       const dResp = await fetch(
         `https://www.strava.com/api/v3/activities/${encodeURIComponent(id)}?include_all_efforts=true`,
@@ -10562,14 +10812,14 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
       );
       return dResp.ok ? await readStravaResponseJson(dResp) : null;
     })
-  );
+  ) : [];
   const detailById = /* @__PURE__ */ new Map();
   for (const d of detailedPayloads) {
     const did = extractStravaId(d);
     if (d && did) detailById.set(did, d);
   }
   const kudosCache = loadJsonFile(STRAVA_KUDOS_CACHE_FILE, {});
-  const recentKudoCandidates = activitiesList.filter((a) => {
+  const recentKudoCandidates = isCursorContinuation ? [] : activitiesList.filter((a) => {
     const aid = extractStravaId(a);
     return Boolean(aid && Number(a.kudos_count || 0) > 0 && !kudosCache[aid]?.kudoers);
   }).slice(0, 2);
@@ -10648,11 +10898,14 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
     athleteName: stravaAthleteProfile.name !== "Athlete" ? stravaAthleteProfile.name : void 0,
     measurementPreference: stravaMeasurementPreference || runtimeStore.stravaMeasurementPreference || void 0,
     syncWindow: effectiveWindow,
-    athleteProfile: importProfileAndGear ? {
+    hasMoreHistory,
+    nextBeforeEpoch,
+    rateLimitPaused,
+    athleteProfile: !isCursorContinuation && importProfileAndGear ? {
       ...stravaAthleteProfile,
       gearItems: stravaGearItems
     } : void 0,
-    gearItems: stravaGearItems,
+    gearItems: isCursorContinuation ? [] : stravaGearItems,
     activities: normalizedStravaActivities,
     stravaTokens: getStravaTokenRotationPayload(req),
     starredSegments: starredSegments.map((s) => ({
@@ -11678,12 +11931,14 @@ stravaRouter.get("/api/strava/sync", async (req, res) => {
     const deltaOnly = req.query.deltaOnly === "true";
     const explicitWindow = typeof req.query.window === "string" ? req.query.window.trim() : void 0;
     const afterEpochParam = Number(req.query.afterEpoch || 0);
+    const beforeEpochParam = Number(req.query.beforeEpoch || 0);
     const data = await syncStravaAllHistory(
       req,
       forceFull,
       deltaOnly,
       explicitWindow,
-      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0
+      Number.isFinite(afterEpochParam) && afterEpochParam > 0 ? afterEpochParam : 0,
+      Number.isFinite(beforeEpochParam) && beforeEpochParam > 0 ? beforeEpochParam : 0
     );
     await saveSessionCacheAsync(req, res);
     res.json(data);
@@ -12354,46 +12609,20 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
     const rawName = String(a.name || "").trim();
     const rawDevice = String(a.device_name || "").trim();
     const combinedMeta = `${rawType} ${rawSubType} ${rawName} ${rawDevice}`;
-    let sportCategory = "Strength";
-    if (/ride|cycling|bike|virtualride|gravel|mountainbike|ebike|velomobile|handcycle|spinning|trackride|cyclocross|zwift|trainerroad|peloton|rouvy|mywhoosh|wahoo|kickr|tacx/i.test(
-      combinedMeta
-    )) {
-      sportCategory = "Cycling";
-    } else if (/run|trailrun|virtualrun|treadmill/i.test(combinedMeta)) {
-      sportCategory = "Running";
-    } else if (/swim|openwater/i.test(combinedMeta)) {
-      sportCategory = "Swimming";
-    } else if (/triathlon|multisport|brick|transition/i.test(combinedMeta)) {
-      sportCategory = "Multisport";
-    } else {
-      sportCategory = "Strength";
-    }
     const rawStartLatLng = Array.isArray(a.start_latlng) && a.start_latlng.length >= 2 ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])] : void 0;
     const isWatopiaOrMakuriGps = rawStartLatLng && Number.isFinite(rawStartLatLng[0]) && Number.isFinite(rawStartLatLng[1]) && rawStartLatLng[0] >= -12.6 && rawStartLatLng[0] <= -9.8 && rawStartLatLng[1] >= 164.8 && rawStartLatLng[1] <= 168;
     const hasNoLatLngStream = Array.isArray(a.stream_types) && a.stream_types.length > 0 && !a.stream_types.includes("latlng");
-    const isZeroGpsStationaryRide = sportCategory === "Cycling" && !rawStartLatLng && (hasNoLatLngStream || Number(a.total_elevation_gain ?? 0) === 0);
     const isVirtualPlatform = /virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
       combinedMeta
     ) || Boolean(isWatopiaOrMakuriGps);
-    const isIndoor = Boolean(a.trainer) || Boolean(isVirtualPlatform) || Boolean(isZeroGpsStationaryRide) || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(
-      combinedMeta
-    );
-    let subType = "Road";
-    if (sportCategory === "Cycling") {
-      if (isVirtualPlatform) subType = "Virtual Cycling";
-      else if (isIndoor) subType = "Smart Trainer";
-      else if (/gravel/i.test(combinedMeta)) subType = "Gravel";
-      else if (/mountain|mtb|trail/i.test(combinedMeta)) subType = "Trail";
-      else subType = "Road";
-    } else if (sportCategory === "Running") {
-      if (isIndoor) subType = "Treadmill";
-      else if (/trail/i.test(combinedMeta)) subType = "Trail";
-      else subType = "Road";
-    } else if (sportCategory === "Swimming") {
-      subType = /open/i.test(rawType) ? "Open Water" : "Pool";
-    } else {
-      subType = "Gym";
-    }
+    const classified = classifyMultiSportActivity(rawType || rawSubType, `${rawSubType} ${rawName}`, {
+      trainer: Boolean(a.trainer) || isVirtualPlatform || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(combinedMeta),
+      hasGps: Boolean(rawStartLatLng) && !hasNoLatLngStream,
+      isVirtualPlatform
+    });
+    const sportCategory = classified.sportCategory;
+    const isIndoor = classified.environment === "INDOOR";
+    const subType = classified.subType;
     const movingTimeSecs = Number(a.moving_time ?? a.elapsed_time ?? 0);
     const distanceMeters = Number(a.distance ?? 0);
     const avgPower = a.icu_average_watts ?? a.average_watts ?? void 0;

@@ -605,8 +605,8 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
   ) => {
     const size = 340;
     const cx = size / 2;
-    const cy = size / 2 + 6;
-    const maxR = 112;
+    const cy = size / 2 + 4;
+    const maxR = 122;
     const count = axes.length;
     const rings = [25, 50, 75, 100];
 
@@ -672,7 +672,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
             const angle = -Math.PI / 2 + (idx * 2 * Math.PI) / count;
             const xEnd = cx + maxR * Math.cos(angle);
             const yEnd = cy + maxR * Math.sin(angle);
-            const labelR = maxR + 24;
+            const labelR = maxR + 18;
             const xLabel = cx + labelR * Math.cos(angle);
             const yLabel = cy + labelR * Math.sin(angle);
 

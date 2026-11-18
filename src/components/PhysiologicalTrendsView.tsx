@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { formatDistance } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface PhysiologicalTrendsViewProps {
   activities: UnifiedActivity[];
@@ -142,6 +143,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   athleteWeightKg,
   onOpenCoachWithPrompt,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [trendSpan, setTrendSpan] = useState<TrendSpan>('1Y');
   // Default to just 2 clean, complementary series so the chart is immediately legible and uncluttered
   const [selectedMetrics, setSelectedMetrics] = useState<TrendMetricKey[]>([
@@ -428,12 +430,18 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
     activeMetaList.find((m) => m.key !== primaryLeftMeta?.key) || primaryLeftMeta;
 
   // Chart Geometry
-  const svgW = 1100;
-  const svgH = 440;
-  const plotLeft = 64;
-  const plotRight = 1026;
-  const plotTop = 26;
-  const plotBottom = 382;
+  const svgW = isMobile ? 360 : 1100;
+  const svgH = isMobile ? 245 : 440;
+  const plotLeft = isMobile ? 36 : 64;
+  const plotRight = isMobile
+    ? secondaryRightMeta &&
+      secondaryRightMeta.key !== primaryLeftMeta?.key &&
+      scaleMode === 'RAW'
+      ? 324
+      : 350
+    : 1026;
+  const plotTop = isMobile ? 16 : 26;
+  const plotBottom = isMobile ? 212 : 382;
   const plotW = plotRight - plotLeft;
   const plotH = plotBottom - plotTop;
 
@@ -495,56 +503,28 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Scale Mode Switcher: Raw Normalized vs % Delta */}
-            <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-xs">
-              <button
-                type="button"
-                onClick={() => setScaleMode('RAW')}
-                className={`min-h-[30px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                  scaleMode === 'RAW'
-                    ? 'liquid-capsule-active text-slate-900 dark:text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                Auto-Scaled Units
-              </button>
-              <button
-                type="button"
-                onClick={() => setScaleMode('PCT_CHANGE')}
-                className={`min-h-[30px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                  scaleMode === 'PCT_CHANGE'
-                    ? 'liquid-capsule-active text-blue-600 dark:text-sky-300'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                % Change vs Start
-              </button>
-            </div>
+            {/* Scale Mode & Time Horizon Dropdowns */}
+            <select
+              value={scaleMode}
+              aria-label="Scale mode"
+              onChange={(e) => setScaleMode(e.target.value as 'RAW' | 'PCT_CHANGE')}
+              className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="RAW">Auto-Scaled Units</option>
+              <option value="PCT_CHANGE">% Change vs Start</option>
+            </select>
 
-            {/* Time Horizon Selector */}
-            <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track text-xs font-mono">
-              {(
-                [
-                  { id: '6M', label: '6 Months' },
-                  { id: '1Y', label: '1 Year' },
-                  { id: '2Y', label: '2 Years' },
-                  { id: 'ALL', label: 'All-Time' },
-                ] as const
-              ).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTrendSpan(t.id)}
-                  className={`min-h-[30px] px-2.5 py-1 rounded-lg transition-all ${
-                    trendSpan === t.id
-                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            <select
+              value={trendSpan}
+              aria-label="Physiological trends horizon"
+              onChange={(e) => setTrendSpan(e.target.value as TrendSpan)}
+              className="min-h-[44px] sm:min-h-[34px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-mono font-semibold text-slate-900 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="6M">6 Months</option>
+              <option value="1Y">1 Year</option>
+              <option value="2Y">2 Years</option>
+              <option value="ALL">All-Time</option>
+            </select>
 
             <button
               type="button"
@@ -716,10 +696,14 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         </div>
 
         {/* Large Unified SVG Multi-Metric Canvas */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-[#15231B]/45 p-3">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-[#15231B]/45 p-2 sm:p-3">
           <svg
             viewBox={`0 0 ${svgW} ${svgH}`}
-            className="w-full h-[380px] sm:h-[440px] select-none overflow-visible"
+            className={
+              isMobile
+                ? 'w-full h-auto select-none overflow-visible'
+                : 'w-full h-[440px] select-none overflow-visible'
+            }
             onMouseLeave={() => setHoverIdx(null)}
           >
             <defs>
@@ -839,7 +823,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               })()}
 
             {/* Left & Right Y-Axis Titles */}
-            {primaryLeftMeta && (
+            {!isMobile && primaryLeftMeta && (
               <text
                 x={16}
                 y={plotTop + plotH / 2}
@@ -853,7 +837,8 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   : `${primaryLeftMeta.label} (${primaryLeftMeta.unit})`}
               </text>
             )}
-            {secondaryRightMeta &&
+            {!isMobile &&
+              secondaryRightMeta &&
               secondaryRightMeta.key !== primaryLeftMeta?.key &&
               scaleMode === 'RAW' && (
                 <text
@@ -921,7 +906,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
             />
 
             {/* X-Axis Date Ticks */}
-            {[0, 0.2, 0.4, 0.6, 0.8, 1].map((frac, idx) => {
+            {[0, 0.25, 0.5, 0.75, 1].map((frac, idx) => {
               const i = Math.min(
                 trendSeries.length - 1,
                 Math.round(frac * Math.max(0, trendSeries.length - 1))
@@ -932,20 +917,20 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                 <text
                   key={idx}
                   x={xFor(i)}
-                  y={plotBottom + 22}
+                  y={plotBottom + (isMobile ? 16 : 22)}
                   textAnchor="middle"
                   className="fill-slate-500 dark:fill-slate-400 text-2xs font-mono"
                 >
-                  {pt.date}
+                  {isMobile ? pt.date.slice(5) : pt.date}
                 </text>
               );
             })}
 
             <text
               x={plotLeft + plotW / 2}
-              y={svgH - 8}
+              y={svgH - 6}
               textAnchor="middle"
-              className="fill-slate-500 dark:fill-slate-400 text-xs font-sans font-semibold"
+              className="fill-slate-500 dark:fill-slate-400 text-2xs sm:text-xs font-sans font-semibold"
             >
               Timeline ({trendSpan} Window · {firstPoint.date} → {latestPoint.date})
             </text>

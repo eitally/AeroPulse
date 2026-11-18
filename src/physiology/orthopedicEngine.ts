@@ -139,6 +139,91 @@ export function computeActivityThreeChannelLoads(
     };
   }
 
+  // Sport-accurate mechanical & tendon loading for cross-training modalities
+  const rawMeta = `${act.rawSportType || ''} ${act.subType || ''} ${act.name || ''}`.toLowerCase();
+
+  // Zero-impact endurance & mobility: 100% systemic fitness credit, 0 tibial/Achilles ground impact
+  if (
+    act.sportCategory === 'Swimming' ||
+    act.subType === 'Pool' ||
+    act.subType === 'Open Water' ||
+    act.subType === 'Rowing' ||
+    act.subType === 'Elliptical' ||
+    act.subType === 'Paddling & Water' ||
+    act.subType === 'Yoga & Mobility' ||
+    /\b(swim|row|elliptical|kayak|canoe|paddle|surf|yoga|pilates|stretch|mobility|meditation)\b/.test(
+      rawMeta
+    )
+  ) {
+    const torqueMult =
+      act.subType === 'Rowing' || act.subType === 'Paddling & Water'
+        ? 0.65
+        : act.subType === 'Elliptical'
+          ? 0.45
+          : 0;
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: 0,
+      concentricTorque: Math.round(baseLoad * torqueMult * 10) / 10,
+    };
+  }
+
+  // Concentric-dominant low-impact vertical/gliding endurance
+  if (
+    act.subType === 'Stair Stepper' ||
+    act.subType === 'Nordic Ski' ||
+    /\b(stair|nordic|rollerski|xc ski|skierg)\b/.test(rawMeta)
+  ) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.05 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.75 * 10) / 10,
+    };
+  }
+
+  // Hiking & Walking: steep mountain hikes create real quad/calf downhill eccentric demand
+  if (act.subType === 'Hiking' || /\b(hike|hiking|snowshoe)\b/.test(rawMeta)) {
+    const steepFactor = (act.elevationGainMeters || 0) > 400 ? 1.25 : 1.0;
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.3 * steepFactor * 10) / 10,
+      concentricTorque: Math.round(((act.elevationGainMeters || 0) * 0.08 + baseLoad * 0.45) * 10) / 10,
+    };
+  }
+
+  if (act.subType === 'Walking' || /\bwalk\b/.test(rawMeta)) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.12 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.25 * 10) / 10,
+    };
+  }
+
+  // Multi-directional cutting / plyometric / alpine eccentric loads
+  if (
+    act.subType === 'HIIT & Circuit' ||
+    act.subType === 'Court & Field' ||
+    act.subType === 'Alpine & Backcountry Ski' ||
+    /\b(hiit|crossfit|soccer|tennis|pickleball|basketball|alpine|snowboard|backcountry)\b/.test(
+      rawMeta
+    )
+  ) {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.42 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.55 * 10) / 10,
+    };
+  }
+
+  // Heavy Resistance Strength & Climbing: high muscular torque, low bone-impact shock
+  if (act.sportCategory === 'Strength' || act.subType === 'Climbing' || act.subType === 'Gym') {
+    return {
+      central: Math.round(central * 10) / 10,
+      eccentricImpact: Math.round(baseLoad * 0.12 * 10) / 10,
+      concentricTorque: Math.round(baseLoad * 0.85 * 10) / 10,
+    };
+  }
+
   return {
     central: Math.round(central * 10) / 10,
     eccentricImpact: Math.round(baseLoad * 0.15 * 10) / 10,

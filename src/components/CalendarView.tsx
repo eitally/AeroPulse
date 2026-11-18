@@ -1352,29 +1352,23 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 max-w-full">
-            {/* Sport Category Filter Pills */}
-            <div className="flex items-center gap-0.5 p-1 rounded-xl liquid-capsule-track overflow-x-auto no-scrollbar max-w-full">
-              {(['ALL', 'Cycling', 'Running', 'Swimming', 'Strength'] as const).map((sp) => {
-                const active = activeSportFilter === sp;
-                return (
-                  <button
-                    key={sp}
-                    type="button"
-                    onClick={() => {
-                      setSportFilter(sp);
-                      onSelectSport?.(sp);
-                    }}
-                    className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
-                      active
-                        ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE] font-semibold'
-                        : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
-                    }`}
-                  >
-                    {sp === 'ALL' ? 'All Sports' : sp}
-                  </button>
-                );
-              })}
-            </div>
+            <select
+              value={activeSportFilter}
+              aria-label="Filter calendar by sport"
+              onChange={(e) => {
+                const sp = e.target.value as SportCategory | 'ALL';
+                setSportFilter(sp);
+                onSelectSport?.(sp);
+              }}
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-3 py-1 text-xs font-semibold text-[#101411] dark:text-[#ECF2EE] cursor-pointer"
+            >
+              <option value="ALL">All Sports</option>
+              <option value="Cycling">Cycling</option>
+              <option value="Running">Running</option>
+              <option value="Swimming">Swimming</option>
+              <option value="Strength">Strength</option>
+              <option value="Multisport">Cross-Train / Multisport</option>
+            </select>
 
             {/* Month Switcher */}
             <div className="flex items-center gap-1 rounded-xl liquid-capsule-track p-1">
@@ -1436,7 +1430,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 {isActionsOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 sm:left-0 sm:right-auto mt-2 z-30 w-56 rounded-2xl liquid-glass p-1.5 space-y-0.5 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10"
+                    className="absolute right-0 sm:left-0 sm:right-auto mt-2 z-30 w-[min(14rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-1.5 space-y-0.5 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10"
                   >
                     <button
                       type="button"
@@ -2283,7 +2277,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                       return (
                         <div
                           key={cell.dateStr}
-                          className={`p-2 border-r last:border-r-0 border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors group ${
+                          className={`p-2 min-w-0 overflow-hidden border-r last:border-r-0 border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors group ${
                             !cell.isCurrentMonth
                               ? 'bg-slate-200/55 dark:bg-[#15231B]/80'
                               : isToday
