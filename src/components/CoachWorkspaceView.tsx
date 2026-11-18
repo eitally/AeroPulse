@@ -65,7 +65,22 @@ export interface CoachWorkspaceViewProps {
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
+  onUpdatePlannedEvent?: (
+    id: string,
+    patch: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  ) => Promise<void>;
   onDeletePlannedEvent: (id: string) => Promise<void>;
+  onDeletePlanBlock?: (planBlockId: string) => Promise<void>;
   onBatchCreatePlannedEvents: (
     events: {
       date: string;
@@ -114,7 +129,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onTeamsUpdated,
   onSelectActivityAndOpenTab,
   onCreatePlannedEvent,
+  onUpdatePlannedEvent,
   onDeletePlannedEvent,
+  onDeletePlanBlock,
   onBatchCreatePlannedEvents,
   onOpenProfileModal,
   onOpenGoalsTab,
@@ -417,7 +434,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           athleteProfile={selfProfile}
           onSelectActivity={onSelectActivityAndOpenTab}
           onCreatePlannedEvent={handleTeamPlanCreate}
+          onUpdatePlannedEvent={onUpdatePlannedEvent}
           onDeletePlannedEvent={onDeletePlannedEvent}
+          onDeletePlanBlock={onDeletePlanBlock}
           onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
           onOpenTodayWorkout={onOpenAthleteToday}
           onOpenAthleteProfileModal={onOpenProfileModal}

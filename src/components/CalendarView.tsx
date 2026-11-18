@@ -38,9 +38,11 @@ import {
 import { formatDistance, formatPace } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import {
-  buildFitStepsFromWorkoutSyntax,
-  downloadGarminFitWorkoutFile,
-} from '../utils/fitWorkoutEncoder';
+  exportWorkoutAsErg,
+  exportWorkoutAsFit,
+  exportWorkoutAsZwo,
+} from '../utils/workoutExportActions';
+import { VisualWorkoutBuilder } from './VisualWorkoutBuilder';
 import {
   inferTrackWorkoutSpecFromPlannedEvent,
   stageWorkoutInTracksideStopwatch,
@@ -79,7 +81,22 @@ interface CalendarViewProps {
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => Promise<void>;
+  onUpdatePlannedEvent?: (
+    id: string,
+    patch: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  ) => Promise<void>;
   onDeletePlannedEvent: (id: string) => Promise<void>;
+  onDeletePlanBlock?: (planBlockId: string) => Promise<void>;
   onBatchCreatePlannedEvents?: (
     events: {
       date: string;
@@ -152,6 +169,7 @@ function formatHeaderDate(dateStr: string): string {
 
 export interface DayPlannedEffortStripe {
   source: 'SCHEDULED';
+  primaryEvent: PlannedWorkoutEvent;
   workoutName: string;
   description: string;
   sportCategory: SportCategory;
@@ -283,6 +301,7 @@ function buildDayPlannedEffortStripe(
 
   return {
     source: 'SCHEDULED',
+    primaryEvent: primary,
     workoutName:
       dayPlanned.length > 1
         ? `${primary.name} (+${dayPlanned.length - 1})`
@@ -717,7 +736,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   athleteProfile,
   onSelectActivity,
   onCreatePlannedEvent,
+  onUpdatePlannedEvent,
   onDeletePlannedEvent,
+  onDeletePlanBlock,
   onBatchCreatePlannedEvents,
   onOpenTodayWorkout,
   onOpenAthleteProfileModal,
@@ -743,29 +764,61 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     width: number;
   } | null>(null);
 
-  // Default to the month of the most recent activity or wellness entry
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  // Default to the month of the most recent activity, or the upcoming planBlock month if activities lie in an earlier month
   const initialDate = useMemo(() => {
+    const firstUpcomingBlock = plannedEvents
+      .filter((e) => Boolean(e.planBlockId) && e.date.slice(0, 10) >= todayIso)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
     if (activities.length > 0) {
       const latestStr = activities[0].startDateLocal.slice(0, 10);
       const [y, m] = latestStr.split('-').map(Number);
-      if (y && m) return { year: y, month: m - 1 };
+      if (y && m) {
+        const latestYm = `${y}-${String(m).padStart(2, '0')}`;
+        const hasPlannedInLatestMonth = plannedEvents.some(
+          (e) => Boolean(e.planBlockId) && e.date.slice(0, 7) === latestYm
+        );
+        if (firstUpcomingBlock && !hasPlannedInLatestMonth) {
+          const [by, bm] = firstUpcomingBlock.date.slice(0, 10).split('-').map(Number);
+          if (by && bm) return { year: by, month: bm - 1 };
+        }
+        return { year: y, month: m - 1 };
+      }
+    }
+    if (firstUpcomingBlock) {
+      const [by, bm] = firstUpcomingBlock.date.slice(0, 10).split('-').map(Number);
+      if (by && bm) return { year: by, month: bm - 1 };
     }
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
-  }, [activities]);
+  }, [activities, plannedEvents, todayIso]);
 
   const [viewYear, setViewYear] = useState(initialDate.year);
   const [viewMonth, setViewMonth] = useState(initialDate.month);
 
   // Workout Builder Modal State
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+  const [editingPlannedEvent, setEditingPlannedEvent] = useState<PlannedWorkoutEvent | null>(null);
+  const [pendingClearBlockConfirm, setPendingClearBlockConfirm] = useState(false);
+  const [isClearingBlock, setIsClearingBlock] = useState(false);
   const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
   const viewOptionsRef = useRef<HTMLDivElement>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePlannedId, setPendingDeletePlannedId] = useState<string | null>(null);
   const builderDialogRef = useRef<HTMLDivElement>(null);
-  const builderFormId = useId();
+
+  const activePlanBlock = useMemo(() => {
+    const found = plannedEvents.find((e) => Boolean(e.planBlockId));
+    if (!found?.planBlockId) return null;
+    const count = plannedEvents.filter((e) => e.planBlockId === found.planBlockId).length;
+    return {
+      id: found.planBlockId,
+      name: found.planBlockName || 'Training Plan Block',
+      count,
+    };
+  }, [plannedEvents]);
 
   const handleLaunchPlannedInStopwatch = (ev: PlannedWorkoutEvent) => {
     const spec = inferTrackWorkoutSpecFromPlannedEvent(ev);
@@ -776,18 +829,47 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
 
   const handleExportPlannedFit = (ev: PlannedWorkoutEvent) => {
     if (!ev.workoutSyntax) return;
-    const sport: 'Running' | 'Cycling' = ev.sportCategory === 'Cycling' ? 'Cycling' : 'Running';
-    const steps = buildFitStepsFromWorkoutSyntax(ev.workoutSyntax, {
-      sport,
+    exportWorkoutAsFit({
+      name: ev.name,
+      sport: ev.sportCategory,
+      workoutSyntax: ev.workoutSyntax,
       ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
       lthrBpm: athleteProfile?.lthr || 170,
       thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 250,
+      dateIso: ev.date,
     });
-    downloadGarminFitWorkoutFile({ name: ev.name, sport, steps }, ev.date);
   };
+
+  const handleExportPlannedZwo = (ev: PlannedWorkoutEvent) => {
+    if (!ev.workoutSyntax) return;
+    exportWorkoutAsZwo({
+      name: ev.name,
+      sport: ev.sportCategory,
+      workoutSyntax: ev.workoutSyntax,
+      description: ev.description,
+      ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
+      thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 250,
+      dateIso: ev.date,
+    });
+  };
+
+  const handleExportPlannedErg = (ev: PlannedWorkoutEvent) => {
+    if (!ev.workoutSyntax) return;
+    exportWorkoutAsErg({
+      name: ev.name,
+      sport: ev.sportCategory,
+      workoutSyntax: ev.workoutSyntax,
+      ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
+      dateIso: ev.date,
+    });
+  };
+
   useModalDialog({
     isOpen: isBuilderOpen,
-    onClose: () => setIsBuilderOpen(false),
+    onClose: () => {
+      setIsBuilderOpen(false);
+      setEditingPlannedEvent(null);
+    },
     dialogRef: builderDialogRef,
   });
 
@@ -815,45 +897,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     };
   }, [isViewOptionsOpen, isActionsOpen]);
 
-  const [builderDate, setBuilderDate] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
-  );
-  const defaultIsRunner = athleteProfile?.primarySport === 'Running';
-  const [builderName, setBuilderName] = useState(() =>
-    defaultIsRunner ? '4x6m Cruise Threshold + 2m Float' : '4x8m Sweet Spot Progression'
-  );
-  const [builderSport, setBuilderSport] = useState<SportCategory>(() =>
-    defaultIsRunner ? 'Running' : 'Cycling'
-  );
-  const [builderEnv, setBuilderEnv] = useState<'OUTDOOR' | 'INDOOR' | 'FLEXIBLE'>('FLEXIBLE');
-  const [builderSyntax, setBuilderSyntax] = useState(() =>
-    defaultIsRunner
-      ? `- 15m 68% Pace Warmup\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 2m 65% Pace Float\n- 6m 98% Pace Threshold\n- 10m 65% Pace Cooldown`
-      : `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`
-  );
-  const [builderNotes, setBuilderNotes] = useState(
-    'Maintain smooth 90+ rpm cadence. Abort final interval if cardiac decoupling exceeds 5%.'
-  );
-  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
-
-  const parsedBuilderSteps = useMemo(() => parseWorkoutSteps(builderSyntax), [builderSyntax]);
-
-  const computedBuilderSummary = useMemo(() => {
-    if (parsedBuilderSteps.length === 0) {
-      return { durationSecs: 3600, load: 65 };
-    }
-    const totalMins = parsedBuilderSteps.reduce((acc, s) => acc + s.durationMins, 0);
-    const weightedIf =
-      parsedBuilderSteps.reduce(
-        (acc, s) => acc + s.durationMins * Math.pow(s.intensityPct / 100, 2),
-        0
-      ) / Math.max(1, totalMins);
-    const estimatedTss = Math.round((totalMins / 60) * weightedIf * 100);
-    return {
-      durationSecs: Math.round(totalMins * 60),
-      load: Math.max(10, estimatedTss),
-    };
-  }, [parsedBuilderSteps]);
+  const [builderDate, setBuilderDate] = useState<string>(() => todayIso);
 
   // Index wellness by date
   const wellnessByDate = useMemo(() => {
@@ -1123,42 +1167,33 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
 
   const handleOpenBuilderForDate = (
     dateStr: string,
-    prefill?: {
-      name: string;
-      sportCategory: SportCategory;
-      workoutSyntax: string;
-    }
+    existingEvent?: PlannedWorkoutEvent | null
   ) => {
     setBuilderDate(dateStr);
-    if (prefill) {
-      setBuilderName(prefill.name);
-      setBuilderSport(prefill.sportCategory);
-      setBuilderSyntax(prefill.workoutSyntax);
-    }
+    setEditingPlannedEvent(existingEvent ?? null);
     setIsBuilderOpen(true);
   };
 
-  const handleSubmitWorkoutBuilder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingWorkout(true);
-    try {
-      await onCreatePlannedEvent({
-        date: builderDate,
-        name: builderName,
-        sportCategory: builderSport,
-        environmentPreference: builderEnv,
-        plannedDurationSecs: computedBuilderSummary.durationSecs,
-        plannedLoad: computedBuilderSummary.load,
-        workoutSyntax: builderSyntax,
-        description: builderNotes,
-      });
-      setIsBuilderOpen(false);
-    } finally {
-      setIsSavingWorkout(false);
+  const handleSaveVisualBuilderWorkout = async (payload: {
+    id?: string;
+    date: string;
+    name: string;
+    sportCategory: SportCategory;
+    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+    plannedDurationSecs: number;
+    plannedLoad: number;
+    workoutSyntax: string;
+    description: string;
+    trackSpec?: TrackWorkoutSpec;
+  }) => {
+    if (payload.id && onUpdatePlannedEvent) {
+      await onUpdatePlannedEvent(payload.id, payload);
+    } else {
+      await onCreatePlannedEvent(payload);
     }
+    setIsBuilderOpen(false);
+    setEditingPlannedEvent(null);
   };
-
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const getSportHeaderColor = (sport: SportCategory) => {
     if (sport === 'Cycling') return 'bg-[#0066CC] text-white';
@@ -1612,7 +1647,47 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
             </div>
           </div>
 
-          {/* Group 4: Primary Solid Track Volt CTA */}
+          {/* Group 4: Active Plan Block Undo & Schedule CTA */}
+          {activePlanBlock && onDeletePlanBlock && (
+            pendingClearBlockConfirm ? (
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="calendar-confirm-clear-block"
+                  disabled={isClearingBlock}
+                  onClick={async () => {
+                    setIsClearingBlock(true);
+                    try {
+                      await onDeletePlanBlock(activePlanBlock.id);
+                      setPendingClearBlockConfirm(false);
+                    } finally {
+                      setIsClearingBlock(false);
+                    }
+                  }}
+                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  {isClearingBlock ? 'Clearing...' : `Clear (${activePlanBlock.count})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingClearBlockConfirm(false)}
+                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                >
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                data-testid="calendar-clear-plan-block"
+                onClick={() => setPendingClearBlockConfirm(true)}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl border border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-500/10 text-xs font-semibold whitespace-nowrap cursor-pointer"
+                title={`Remove all ${activePlanBlock.count} workouts from ${activePlanBlock.name}`}
+              >
+                Clear Block ({activePlanBlock.count})
+              </button>
+            )
+          )}
           <button
             type="button"
             onClick={() => handleOpenBuilderForDate(todayIso)}
@@ -1783,19 +1858,13 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                             onClick={() =>
                               handleOpenBuilderForDate(
                                 day.dateStr,
-                                dayStripe
-                                  ? {
-                                      name: dayStripe.workoutName,
-                                      sportCategory: dayStripe.sportCategory,
-                                      workoutSyntax: dayStripe.workoutSyntax,
-                                    }
-                                  : undefined
+                                dayStripe ? dayStripe.primaryEvent : null
                               )
                             }
                             className="min-h-[44px] inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold"
                           >
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Plan</span>
+                            <span>{dayStripe ? 'Edit' : 'Plan'}</span>
                           </button>
                         </div>
 
@@ -1804,11 +1873,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           <button
                             type="button"
                             onClick={() =>
-                              handleOpenBuilderForDate(day.dateStr, {
-                                name: dayStripe.workoutName,
-                                sportCategory: dayStripe.sportCategory,
-                                workoutSyntax: dayStripe.workoutSyntax,
-                              })
+                              handleOpenBuilderForDate(day.dateStr, dayStripe.primaryEvent)
                             }
                             className="w-full text-left rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-2 space-y-1"
                           >
@@ -1983,6 +2048,36 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                       <span>.FIT</span>
                                     </button>
                                   )}
+                                  {ev.workoutSyntax && (
+                                    <button
+                                      type="button"
+                                      data-testid="calendar-export-zwo"
+                                      onClick={() => handleExportPlannedZwo(ev)}
+                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                    >
+                                      <Download className="w-3.5 h-3.5" weight="bold" />
+                                      <span>.ZWO</span>
+                                    </button>
+                                  )}
+                                  {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
+                                    <button
+                                      type="button"
+                                      data-testid="calendar-export-erg"
+                                      onClick={() => handleExportPlannedErg(ev)}
+                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                    >
+                                      <Download className="w-3.5 h-3.5" weight="bold" />
+                                      <span>.ERG</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    data-testid="calendar-edit-planned-workout"
+                                    onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
+                                    className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                  >
+                                    <span>Edit</span>
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -2234,13 +2329,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                   onClick={() =>
                                     handleOpenBuilderForDate(
                                       cell.dateStr,
-                                      plannedStripe
-                                        ? {
-                                            name: plannedStripe.workoutName,
-                                            sportCategory: plannedStripe.sportCategory,
-                                            workoutSyntax: plannedStripe.workoutSyntax,
-                                          }
-                                        : undefined
+                                      plannedStripe ? plannedStripe.primaryEvent : null
                                     )
                                   }
                                   aria-label={`Schedule or edit planned workout on ${cell.dateStr}`}
@@ -2256,11 +2345,10 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    handleOpenBuilderForDate(cell.dateStr, {
-                                      name: plannedStripe.workoutName,
-                                      sportCategory: plannedStripe.sportCategory,
-                                      workoutSyntax: plannedStripe.workoutSyntax,
-                                    })
+                                    handleOpenBuilderForDate(
+                                      cell.dateStr,
+                                      plannedStripe.primaryEvent
+                                    )
                                   }
                                   onMouseEnter={(e) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
@@ -2630,9 +2718,14 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                               {evStripe.dominantZone.code}
                                             </span>
                                           </div>
-                                          <div className="text-2xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
+                                            className="text-left text-2xs font-bold text-slate-900 dark:text-slate-100 hover:underline truncate cursor-pointer"
+                                            title="Click to edit workout in place"
+                                          >
                                             {ev.name}
-                                          </div>
+                                          </button>
                                         </div>
                                         {pendingDeletePlannedId === ev.id ? (
                                           <div className="flex items-center gap-1 shrink-0">
@@ -2720,6 +2813,39 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                               <span>.FIT</span>
                                             </button>
                                           )}
+                                          {ev.workoutSyntax && (
+                                            <button
+                                              type="button"
+                                              data-testid="calendar-export-zwo"
+                                              onClick={() => handleExportPlannedZwo(ev)}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                              title="Download Zwift .ZWO workout file"
+                                            >
+                                              <Download className="w-3 h-3" weight="bold" />
+                                              <span>.ZWO</span>
+                                            </button>
+                                          )}
+                                          {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
+                                            <button
+                                              type="button"
+                                              data-testid="calendar-export-erg"
+                                              onClick={() => handleExportPlannedErg(ev)}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                              title="Download TrainerRoad .ERG workout file"
+                                            >
+                                              <Download className="w-3 h-3" weight="bold" />
+                                              <span>.ERG</span>
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            data-testid="calendar-edit-planned-workout"
+                                            onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                            title="Edit workout in place"
+                                          >
+                                            <span>Edit</span>
+                                          </button>
                                         </div>
                                       ) : null}
                                     </div>
@@ -2741,11 +2867,14 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
         </div>
       </section>
 
-      {/* Structured Workout Builder Modal */}
+      {/* Structured Visual Workout Builder Modal */}
       {isBuilderOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setIsBuilderOpen(false)}
+          onClick={() => {
+            setIsBuilderOpen(false);
+            setEditingPlannedEvent(null);
+          }}
         >
           <div
             ref={builderDialogRef}
@@ -2753,246 +2882,61 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
             aria-modal="true"
             aria-labelledby="thresh-workout-builder-title"
             tabIndex={-1}
-            className="w-full max-w-2xl rounded-2xl liquid-glass p-6 space-y-5 shadow-2xl focus:outline-none"
+            className="w-full max-w-2xl rounded-2xl liquid-glass p-5 sm:p-6 space-y-4 shadow-2xl focus:outline-none my-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-3.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 id="thresh-workout-builder-title" className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                  Schedule Planned Session for {builderDate}
+                <h2
+                  id="thresh-workout-builder-title"
+                  className="text-lg font-bold text-slate-900 dark:text-slate-100"
+                >
+                  {editingPlannedEvent
+                    ? `Edit Session · ${editingPlannedEvent.name}`
+                    : `Schedule Session for ${builderDate}`}
                 </h2>
                 <span className="px-2 py-0.5 rounded-md ap-status-info text-2xs font-mono uppercase font-semibold">
-                  Workout Builder
+                  Visual Builder
                 </span>
               </div>
               <button
                 type="button"
-                onClick={() => setIsBuilderOpen(false)}
+                onClick={() => {
+                  setIsBuilderOpen(false);
+                  setEditingPlannedEvent(null);
+                }}
                 aria-label="Close workout builder"
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitWorkoutBuilder} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor={`${builderFormId}-title`}
-                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
-                  >
-                    Workout Title
-                  </label>
-                  <input
-                    id={`${builderFormId}-title`}
-                    type="text"
-                    required
-                    value={builderName}
-                    onChange={(e) => setBuilderName(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor={`${builderFormId}-date`}
-                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
-                  >
-                    Date
-                  </label>
-                  <input
-                    id={`${builderFormId}-date`}
-                    type="date"
-                    required
-                    value={builderDate}
-                    onChange={(e) => setBuilderDate(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor={`${builderFormId}-sport`}
-                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
-                  >
-                    Sport Category
-                  </label>
-                  <select
-                    id={`${builderFormId}-sport`}
-                    value={builderSport}
-                    onChange={(e) => setBuilderSport(e.target.value as SportCategory)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="Cycling">Cycling</option>
-                    <option value="Running">Running</option>
-                    <option value="Swimming">Swimming</option>
-                    <option value="Strength">Strength</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor={`${builderFormId}-env`}
-                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
-                  >
-                    Environment Preference
-                  </label>
-                  <select
-                    id={`${builderFormId}-env`}
-                    value={builderEnv}
-                    onChange={(e) =>
-                      setBuilderEnv(e.target.value as 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE')
-                    }
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="FLEXIBLE">Flexible (Outdoor or Indoor)</option>
-                    <option value="OUTDOOR">Outdoor Only</option>
-                    <option value="INDOOR">Indoor (Smart Trainer / Treadmill)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Quick Workout Templates (Sport-Aware: Cycling % FTP vs Running Pace & Track) */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-2xs text-slate-500">Presets:</span>
-                {(builderSport === 'Running'
-                  ? [
-                      {
-                        label: 'Easy Aerobic Run (45m)',
-                        name: '45m Easy Aerobic Base',
-                        syntax: `- 10m 62% Pace Warm-up\n- 25m 75% Pace Z2 Easy\n- 10m 60% Pace Cool-down`,
-                      },
-                      {
-                        label: 'Threshold Cruise (4x1mi)',
-                        name: '4x1mi Threshold Cruise Intervals',
-                        syntax: `- 15m Z2 Warm-up\n- 4x 1600m @ threshold pace w/ 60s jog\n- 10m Z1 Cool-down`,
-                      },
-                      {
-                        label: 'Track 800m / Mile (6x400m)',
-                        name: '6x400m Mile-Pace Track Session',
-                        syntax: `- 12m Z1 Warm-up\n- 6x 400m @ mile pace w/ 200m jog\n- 10m Z1 Cool-down`,
-                      },
-                    ]
-                  : [
-                      {
-                        label: 'Z2 Aerobic Endurance (90m)',
-                        name: '90m Z2 Aerobic Base',
-                        syntax: `- 10m 55% FTP Warmup\n- 70m 70% FTP Z2 Endurance\n- 10m 55% FTP Cooldown`,
-                      },
-                      {
-                        label: '4x8m Sweet Spot',
-                        name: '4x8m Sweet Spot Progression',
-                        syntax: `- 15m 60% FTP Warmup\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 90% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 4m 55% FTP Recovery\n- 8m 92% FTP Sweet Spot\n- 10m 55% FTP Cooldown`,
-                      },
-                      {
-                        label: '5x4m VO2max Intervals',
-                        name: '5x4m VO2max Ceiling',
-                        syntax: `- 15m 60% FTP Warmup\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 112% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 114% FTP VO2max\n- 4m 50% FTP Recovery\n- 4m 115% FTP VO2max\n- 10m 50% FTP Cooldown`,
-                      },
-                    ]
-                ).map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      setBuilderName(preset.name);
-                      setBuilderSyntax(preset.syntax);
-                    }}
-                    className="min-h-[38px] px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-2xs font-medium text-slate-700 dark:text-slate-300 transition-colors"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label
-                    htmlFor={`${builderFormId}-syntax`}
-                    className="text-xs font-medium text-slate-600 dark:text-slate-400"
-                  >
-                    Workout Steps (one step per line starting with <code>-</code>)
-                  </label>
-                  <span className="text-2xs font-mono text-blue-600 dark:text-sky-400">
-                    Est. {Math.round(computedBuilderSummary.durationSecs / 60)}m ·{' '}
-                    {computedBuilderSummary.load} TSS (
-                    {builderSport === 'Running'
-                      ? `LT2 ${formatPace(athleteProfile?.thresholdPaceSecsPerKm || 250, distanceUnit)}`
-                      : `FTP ${athleteFtp}W`}
-                    )
-                  </span>
-                </div>
-                <textarea
-                  id={`${builderFormId}-syntax`}
-                  rows={6}
-                  value={builderSyntax}
-                  onChange={(e) => setBuilderSyntax(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#15231B] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              {/* Live Visual Step Profile Preview */}
-              {parsedBuilderSteps.length > 0 && (
-                <div className="rounded-xl bg-slate-50 dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-3 space-y-2">
-                  <div className="text-2xs font-mono text-slate-500 flex items-center justify-between">
-                    <span>Live Effort Zone Skyline Preview</span>
-                    <span>
-                      {parsedBuilderSteps.length} steps ·{' '}
-                      {Math.round(computedBuilderSummary.durationSecs / 60)} min total
-                    </span>
-                  </div>
-                  <div className="h-16 w-full flex items-end gap-1 pt-2">
-                    {parsedBuilderSteps.map((s, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          flex: s.durationMins,
-                          height: `${Math.min(100, Math.max(20, (s.intensityPct / 130) * 100))}%`,
-                          backgroundColor: s.zoneColor,
-                        }}
-                        className="rounded-t transition-all relative group"
-                        title={`${s.label} (${s.durationMins}m @ ${s.intensityPct}%)`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label
-                  htmlFor={`${builderFormId}-notes`}
-                  className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
-                >
-                  Execution &amp; Pacing Notes
-                </label>
-                <input
-                  id={`${builderFormId}-notes`}
-                  type="text"
-                  value={builderNotes}
-                  onChange={(e) => setBuilderNotes(e.target.value)}
-                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsBuilderOpen(false)}
-                  className="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingWorkout}
-                  className="min-h-[44px] px-4 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-white dark:text-[#080A09] text-xs font-semibold transition-colors"
-                >
-                  {isSavingWorkout ? 'Saving...' : 'Save to Calendar'}
-                </button>
-              </div>
-            </form>
+            <VisualWorkoutBuilder
+              dateIso={builderDate}
+              defaultSport={
+                selectedSport !== 'ALL'
+                  ? selectedSport
+                  : athleteProfile?.primarySport === 'Running'
+                    ? 'Running'
+                    : 'Cycling'
+              }
+              athleteProfile={athleteProfile}
+              athleteFtp={athleteFtp}
+              distanceUnit={distanceUnit}
+              initialEvent={editingPlannedEvent}
+              submitLabel={editingPlannedEvent ? 'Save Changes' : 'Save to Calendar'}
+              onSave={handleSaveVisualBuilderWorkout}
+              onCancel={() => {
+                setIsBuilderOpen(false);
+                setEditingPlannedEvent(null);
+              }}
+              onOpenTracksideStopwatch={() => {
+                setIsBuilderOpen(false);
+                setEditingPlannedEvent(null);
+                onOpenTracksideStopwatch?.();
+              }}
+            />
           </div>
         </div>
       )}

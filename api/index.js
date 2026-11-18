@@ -12914,6 +12914,9 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
       workoutSyntax,
       structuredSteps: Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0 ? body.structuredSteps : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs),
       ...body.trackSpec && typeof body.trackSpec === "object" ? { trackSpec: body.trackSpec } : {},
+      ...body.planBlockId ? { planBlockId: String(body.planBlockId) } : {},
+      ...body.planBlockName ? { planBlockName: String(body.planBlockName) } : {},
+      ...typeof body.planWeekNum === "number" ? { planWeekNum: body.planWeekNum } : {},
       source: body.source || "USER"
     };
     const scopedFile = getScopedPlannedEventsFile(req);
@@ -12992,6 +12995,42 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
       error: error instanceof Error ? error.message : "Failed to schedule workout event"
     });
   }
+});
+intervalsRouter.put("/api/calendar/events/:id", (req, res) => {
+  const id = req.params.id;
+  const body = req.body || {};
+  const scopedFile = getScopedPlannedEventsFile(req);
+  const nextSyntax = typeof body.workoutSyntax === "string" ? body.workoutSyntax : void 0;
+  const nextDurationSecs = typeof body.plannedDurationSecs === "number" ? body.plannedDurationSecs : 3600;
+  if (!scopedFile) {
+    res.json({ updated: true, event: { id, ...body } });
+    return;
+  }
+  const existing = loadJsonFile(scopedFile, []);
+  const idx = existing.findIndex((e) => e.id === id);
+  const patched = {
+    ...idx >= 0 ? existing[idx] : {},
+    ...body,
+    id,
+    ...nextSyntax ? {
+      structuredSteps: Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0 ? body.structuredSteps : parseWorkoutSyntaxToSteps(nextSyntax, nextDurationSecs)
+    } : {}
+  };
+  const updated = idx >= 0 ? existing.map((e, i) => i === idx ? patched : e) : [patched, ...existing];
+  saveJsonFile(scopedFile, updated);
+  res.json({ updated: true, event: patched, events: updated });
+});
+intervalsRouter.delete("/api/calendar/blocks/:blockId", (req, res) => {
+  const scopedFile = getScopedPlannedEventsFile(req);
+  if (!scopedFile) {
+    res.json({ deleted: true, events: [] });
+    return;
+  }
+  const blockId = req.params.blockId;
+  const existing = loadJsonFile(scopedFile, []);
+  const updated = existing.filter((e) => e.planBlockId !== blockId);
+  saveJsonFile(scopedFile, updated);
+  res.json({ deleted: true, events: updated });
 });
 intervalsRouter.delete("/api/calendar/events/:id", (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);

@@ -51,8 +51,11 @@ describe('UX-04, UX-05 & UX-06 Simplification, Deduplication & Palette Complianc
     expect(calendarView).toContain('const [showCellWellness, setShowCellWellness] = useState<boolean>(false)');
     expect(calendarView).toContain('Daily Wellness (HRV / Sleep)');
     expect(calendarView).toContain('calendar-open-block-builder');
-    expect(calendarView).toContain("builderSport === 'Running'");
-    expect(calendarView).toContain('Track 800m / Mile (6x400m)');
+    expect(calendarView).toContain('<VisualWorkoutBuilder');
+
+    const visualBuilder = readComponent('src/components/VisualWorkoutBuilder.tsx');
+    expect(visualBuilder).toContain("builderSport === 'Running'");
+    expect(visualBuilder).toContain('Track 800m / Mile (6x400m)');
   });
 
   it('UX-06: deduplicates Roster stopwatch, organizes Activity Inspector into 3 clean tabs with 1 HR zone chart, and wires real Lab AI coach prompt', () => {

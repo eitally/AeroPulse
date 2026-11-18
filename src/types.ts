@@ -312,6 +312,9 @@ export interface PlannedWorkoutEvent {
   trackFacility?: NcaaTrackFacilityType;
   meetPriorityTier?: MeetPriorityTier;
   source?: 'USER' | 'AI_COACH' | 'INTERVALS_ICU';
+  planBlockId?: string;
+  planBlockName?: string;
+  planWeekNum?: number;
 }
 
 export interface AnnualMileageGoal {

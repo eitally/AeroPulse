@@ -43,6 +43,9 @@ export function usePlannedEvents({
       description: string;
       trackSpec?: TrackWorkoutSpec;
       replaceExistingDate?: boolean;
+      planBlockId?: string;
+      planBlockName?: string;
+      planWeekNum?: number;
     }) => {
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
@@ -99,6 +102,11 @@ export function usePlannedEvents({
           targetZoneSummary: 'Coach Prescribed Session',
           workoutSyntax: eventInput.workoutSyntax,
           ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+          ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
+          ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
+          ...(typeof eventInput.planWeekNum === 'number'
+            ? { planWeekNum: eventInput.planWeekNum }
+            : {}),
           source: 'USER',
         };
         const applyCoachEvt = (prev: ConnectedAthleteRecord[]) =>
@@ -151,6 +159,11 @@ export function usePlannedEvents({
               targetZoneSummary: 'Sample Planned Session',
               workoutSyntax: eventInput.workoutSyntax,
               ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+              ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
+              ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
+              ...(typeof eventInput.planWeekNum === 'number'
+                ? { planWeekNum: eventInput.planWeekNum }
+                : {}),
             },
           ].sort((a, b) => a.date.localeCompare(b.date));
         });
@@ -211,6 +224,11 @@ export function usePlannedEvents({
             targetZoneSummary: 'Structured Workout',
             workoutSyntax: eventInput.workoutSyntax,
             ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+            ...(eventInput.planBlockId ? { planBlockId: eventInput.planBlockId } : {}),
+            ...(eventInput.planBlockName ? { planBlockName: eventInput.planBlockName } : {}),
+            ...(typeof eventInput.planWeekNum === 'number'
+              ? { planWeekNum: eventInput.planWeekNum }
+              : {}),
           },
         ];
       });
@@ -242,10 +260,13 @@ export function usePlannedEvents({
         workoutSyntax: string;
         trackSpec?: TrackWorkoutSpec;
         replaceExistingDate?: boolean;
+        planBlockId?: string;
+        planBlockName?: string;
+        planWeekNum?: number;
       }>
     ) => {
       const nowTs = Date.now();
-      const createdEvents = items.map((item, idx) => ({
+      const createdEvents: PlannedWorkoutEvent[] = items.map((item, idx) => ({
         id: `plan-block-${nowTs}-${idx}`,
         date: item.date,
         name: item.name,
@@ -257,6 +278,9 @@ export function usePlannedEvents({
         targetZoneSummary: item.targetZoneSummary || 'Structured Workout',
         workoutSyntax: item.workoutSyntax,
         ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
+        ...(item.planBlockId ? { planBlockId: item.planBlockId } : {}),
+        ...(item.planBlockName ? { planBlockName: item.planBlockName } : {}),
+        ...(typeof item.planWeekNum === 'number' ? { planWeekNum: item.planWeekNum } : {}),
       }));
 
       if (activeConnectedAthlete) {
@@ -316,6 +340,95 @@ export function usePlannedEvents({
     ]
   );
 
+  const handleUpdatePlannedEvent = useCallback(
+    async (
+      id: string,
+      patch: {
+        date: string;
+        name: string;
+        sportCategory: SportCategory;
+        environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+        plannedDurationSecs: number;
+        plannedLoad: number;
+        workoutSyntax: string;
+        description: string;
+        trackSpec?: TrackWorkoutSpec;
+      }
+    ) => {
+      const mergeEvent = (e: PlannedWorkoutEvent): PlannedWorkoutEvent =>
+        e.id === id
+          ? {
+              ...e,
+              date: patch.date,
+              name: patch.name,
+              sportCategory: patch.sportCategory,
+              environmentPreference: patch.environmentPreference,
+              plannedDurationSecs: patch.plannedDurationSecs,
+              plannedLoad: patch.plannedLoad,
+              workoutSyntax: patch.workoutSyntax,
+              description: patch.description,
+              ...(patch.trackSpec ? { trackSpec: patch.trackSpec } : {}),
+            }
+          : e;
+
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'edit planned workouts');
+          return;
+        }
+        const updateRoster = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? {
+                  ...a,
+                  plannedEvents: a.plannedEvents
+                    .map(mergeEvent)
+                    .sort((x, y) => x.date.localeCompare(y.date)),
+                }
+              : a
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(updateRoster);
+        } else {
+          setConnectedAthletes(updateRoster);
+        }
+        return;
+      }
+
+      if (isSampleDemoMode) {
+        setSampleDemoPlannedEvents((prev) =>
+          prev.map(mergeEvent).sort((a, b) => a.date.localeCompare(b.date))
+        );
+        return;
+      }
+
+      setPlannedEvents((prev) =>
+        prev.map(mergeEvent).sort((a, b) => a.date.localeCompare(b.date))
+      );
+      try {
+        await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getSavedIntervalsHeaders(),
+          },
+          body: JSON.stringify(patch),
+        });
+      } catch {
+        // Optimistic local state already updated cleanly
+      }
+    },
+    [
+      activeConnectedAthlete,
+      isSampleDemoMode,
+      triggerReadOnlyAlert,
+      setConnectedAthletes,
+      setPlannedEvents,
+      setSampleDemoConnectedAthletes,
+      setSampleDemoPlannedEvents,
+    ]
+  );
+
   const handleDeletePlannedEvent = useCallback(
     async (id: string) => {
       if (activeConnectedAthlete) {
@@ -363,9 +476,64 @@ export function usePlannedEvents({
     ]
   );
 
+  const handleDeletePlanBlock = useCallback(
+    async (planBlockId: string) => {
+      if (!planBlockId) return;
+      if (activeConnectedAthlete) {
+        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
+          triggerReadOnlyAlert(activeConnectedAthlete.name, 'clear training plan blocks');
+          return;
+        }
+        const clearFromRoster = (prev: ConnectedAthleteRecord[]) =>
+          prev.map((a) =>
+            a.id === activeConnectedAthlete.id
+              ? {
+                  ...a,
+                  plannedEvents: a.plannedEvents.filter((e) => e.planBlockId !== planBlockId),
+                }
+              : a
+          );
+        if (isSampleDemoMode) {
+          setSampleDemoConnectedAthletes(clearFromRoster);
+        } else {
+          setConnectedAthletes(clearFromRoster);
+        }
+        return;
+      }
+
+      if (isSampleDemoMode) {
+        setSampleDemoPlannedEvents((prev) =>
+          prev.filter((e) => e.planBlockId !== planBlockId)
+        );
+        return;
+      }
+
+      setPlannedEvents((prev) => prev.filter((e) => e.planBlockId !== planBlockId));
+      try {
+        await fetch(`/api/calendar/blocks/${encodeURIComponent(planBlockId)}`, {
+          method: 'DELETE',
+          headers: getSavedIntervalsHeaders(),
+        });
+      } catch {
+        // ignore
+      }
+    },
+    [
+      activeConnectedAthlete,
+      isSampleDemoMode,
+      triggerReadOnlyAlert,
+      setConnectedAthletes,
+      setPlannedEvents,
+      setSampleDemoConnectedAthletes,
+      setSampleDemoPlannedEvents,
+    ]
+  );
+
   return {
     handleCreatePlannedEvent,
     handleBatchCreatePlannedEvents,
+    handleUpdatePlannedEvent,
     handleDeletePlannedEvent,
+    handleDeletePlanBlock,
   };
 }
