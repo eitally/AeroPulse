@@ -2,6 +2,7 @@ import React from 'react';
 import type { TeamBrandConfig } from '../types';
 import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine';
 import {
+  FAV_F_SHIELD_T_PATH,
   S2_ARROW_NEEDLE_PATH,
   S2_PINE_ARC_PATH,
   S2_VOLT_ARC_PATH,
@@ -10,6 +11,7 @@ import {
 } from '../utils/brandVectors';
 
 export {
+  FAV_F_SHIELD_T_PATH,
   S2_ARROW_NEEDLE_PATH,
   S2_PINE_ARC_PATH,
   S2_VOLT_ARC_PATH,
@@ -207,7 +209,7 @@ export const ThreshFullVectorLockup: React.FC<{
 };
 
 /**
- * Compact 32x32 THRESH S2 "Redline Breach" Squircle Icon Mark for favicons, PWA tiles, and avatars.
+ * Compact 32x32 THRESH FAV-F "High-Vis Volt Shield" Squircle Icon Mark for 16px/32px browser favicons and small tiles.
  */
 export const ThreshSquareTrackIcon: React.FC<{
   className?: string;
@@ -220,10 +222,8 @@ export const ThreshSquareTrackIcon: React.FC<{
   inkColor = '#080A09',
   isTeamOverride = false,
 }) => {
-  const tileFill = isTeamOverride ? accentColor : '#0B1911';
-  const tileBorder = isTeamOverride ? '#163022' : '#399663';
-  const primaryMark = isTeamOverride ? inkColor : '#C8FF00';
-  const secondaryMark = isTeamOverride ? inkColor : '#399663';
+  const tileFill = isTeamOverride ? accentColor : '#C8FF00';
+  const primaryMark = isTeamOverride ? inkColor : '#080A09';
 
   return (
     <svg
@@ -233,26 +233,13 @@ export const ThreshSquareTrackIcon: React.FC<{
       className={className}
       aria-hidden="true"
     >
-      <rect
-        x="1"
-        y="1"
-        width="30"
-        height="30"
-        rx="6"
-        fill={tileFill}
-        stroke={tileBorder}
-        strokeWidth="1.75"
+      <rect width="32" height="32" rx="7" fill={tileFill} />
+      <path
+        d={FAV_F_SHIELD_T_PATH}
+        fill={primaryMark}
+        fillRule="evenodd"
+        clipRule="evenodd"
       />
-      <g transform="translate(1.6, -0.2) scale(0.235)">
-        <path d={S2_PINE_ARC_PATH} fill={secondaryMark} fillOpacity={isTeamOverride ? '0.45' : '1'} />
-        <path d={S2_VOLT_ARC_PATH} fill={primaryMark} />
-        <path
-          d={S2_ARROW_NEEDLE_PATH}
-          fill={primaryMark}
-          fillRule="evenodd"
-          clipRule="evenodd"
-        />
-      </g>
     </svg>
   );
 };

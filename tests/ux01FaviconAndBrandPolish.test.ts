@@ -2,6 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildTeamFaviconDataUri } from '../src/utils/teamBrandDom';
+import {
+  FAV_F_SHIELD_T_PATH,
+  S2_ARROW_NEEDLE_PATH,
+  S2_PINE_ARC_PATH,
+  S2_VOLT_ARC_PATH,
+} from '../src/utils/brandVectors';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -15,29 +21,42 @@ function readPngDimensions(filePath: string): { width: number; height: number } 
   };
 }
 
-describe('UX-01 & BRD-02 · S2 Redline Breach × W-A Threshold Horizon Modular Brand, Favicon & PWA Icons', () => {
+describe('UX-01 & BRD-03 · TL-2P1 Parallel-Breach Track-Lane × W-A Lockup & FAV-F 16px Favicon', () => {
   const root = process.cwd();
 
-  it('ships the unified 32x32 S2 Redline Breach squircle in public/icon.svg (true evenodd knockout)', () => {
+  it('ships TL-2P1 collinear 315-degree parallel breach + inside track lane in brandVectors.ts', () => {
+    // Inner track lane present in both Pine and Volt compound paths
+    expect(S2_PINE_ARC_PATH).toContain('M 42.32 87.68 A 25 25');
+    expect(S2_VOLT_ARC_PATH).toContain('M 83.19 60.67 A 25 25');
+    // Collinear 315° parallel chord endpoints on outer & inner Pine walls (dx === dy)
+    expect(S2_PINE_ARC_PATH).toContain('84.13 31.99 L 73.87 42.27');
+    expect(S2_VOLT_ARC_PATH).toContain('M 97.99 45.87');
+    expect(S2_VOLT_ARC_PATH).toContain('87.73 56.13');
+    // Center pinhole + +2.5px extended arrow tip preserved
+    expect(S2_ARROW_NEEDLE_PATH).toContain('108.44 21.56');
+    expect(S2_ARROW_NEEDLE_PATH).toContain('A 3.8 3.8 0 1 0 56.20 70.00');
+  });
+
+  it('ships the dedicated 32x32 FAV-F High-Vis Volt Shield in public/icon.svg (crisp at 16px)', () => {
     const svg = fs.readFileSync(path.join(root, 'public', 'icon.svg'), 'utf8');
     expect(svg).toContain('viewBox="0 0 32 32"');
-    expect(svg).toContain('fill="#0B1911"');
-    expect(svg).toContain('stroke="#399663"');
     expect(svg).toContain('fill="#C8FF00"');
+    expect(svg).toContain('fill="#080A09"');
+    expect(svg).toContain(FAV_F_SHIELD_T_PATH);
     expect(svg).toContain('fill-rule="evenodd"');
     expect(svg).not.toContain('paint-order:stroke fill');
   });
 
-  it('links favicon and apple-touch-icon across app and docs HTML', () => {
+  it('links cache-busted v=5 FAV-F favicon and apple-touch-icon across app and docs HTML', () => {
     const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     const docsHtml = fs.readFileSync(path.join(root, 'public', 'docs', 'index.html'), 'utf8');
 
-    expect(appHtml).toContain('href="/icon.svg?v=4"');
-    expect(appHtml).toContain('href="/apple-touch-icon.png?v=4"');
-    expect(docsHtml).toContain('href="/icon.svg?v=4"');
+    expect(appHtml).toContain('href="/icon.svg?v=5"');
+    expect(appHtml).toContain('href="/apple-touch-icon.png?v=5"');
+    expect(docsHtml).toContain('href="/icon.svg?v=5"');
   });
 
-  it('builds dynamic team favicons using the 32x32 S2 Redline Breach geometry with encoded team palette', () => {
+  it('builds dynamic team favicons using the 32x32 FAV-F Volt Shield geometry with encoded team palette', () => {
     const dataUri = buildTeamFaviconDataUri('#1E3A8A', '#FFFFFF', '#0F172A');
     expect(dataUri.startsWith('data:image/svg+xml,')).toBe(true);
     expect(dataUri).toContain('viewBox%3D%220%200%2032%2032%22');
