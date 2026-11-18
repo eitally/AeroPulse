@@ -45,9 +45,11 @@ import {
 export interface UserGuideModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialChapter?: UserGuideChapterId;
   onNavigateTab: (
     tab: 'fitness' | 'calendar' | 'activities' | 'totals' | 'curves' | 'trends' | 'charts'
   ) => void;
+  onOpenCoachWorkspace?: (subTab?: import('../types').CoachWorkspaceSubTab) => void;
   onOpenDataSources: () => void;
   onOpenRosterModal: () => void;
   onOpenProfileModal: () => void;
@@ -55,7 +57,7 @@ export interface UserGuideModalProps {
   onOpenAICoach: (prompt?: string) => void;
 }
 
-type ChapterId =
+export type UserGuideChapterId =
   | 'ch1-quickstart'
   | 'ch2-sync'
   | 'ch3-pmc'
@@ -66,6 +68,8 @@ type ChapterId =
   | 'ch8-scholastic'
   | 'glossary';
 
+type ChapterId = UserGuideChapterId;
+
 interface GuideFeatureCard {
   id: string;
   chapterId: Exclude<ChapterId, 'glossary'>;
@@ -75,6 +79,8 @@ interface GuideFeatureCard {
   summary: string;
   bullets: string[];
   formulaOrSyntax?: string;
+  figureSrc?: string;
+  figureCaption?: string;
   ctaLabel: string;
   onAction: () => void;
 }
@@ -235,20 +241,28 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   isOpen,
   onClose,
+  initialChapter,
   onNavigateTab,
+  onOpenCoachWorkspace,
   onOpenDataSources,
   onOpenRosterModal,
   onOpenProfileModal,
   onOpenOfficialRaceModal,
   onOpenAICoach,
 }) => {
-  const [activeChapter, setActiveChapter] = useState<ChapterId>('ch1-quickstart');
+  const [activeChapter, setActiveChapter] = useState<ChapterId>(initialChapter || 'ch1-quickstart');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [completedChecklist, setCompletedChecklist] = useState<Record<string, boolean>>({
     step1: false,
     step2: false,
     step3: false,
   });
+
+  useEffect(() => {
+    if (isOpen && initialChapter) {
+      setActiveChapter(initialChapter);
+    }
+  }, [isOpen, initialChapter]);
 
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -646,71 +660,129 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         onAction: () => triggerAndClose(() => onNavigateTab('trends')),
       },
 
-      // Chapter 7
+      // Chapter 7: Team Onboarding, Triage, Workouts, Stopwatch & Sync (Coach Workflow)
       {
         id: 'c7-1',
         chapterId: 'ch7-coaching',
-        badge: 'COACHING ROSTER & PRIVACY SHIELD',
-        badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
-        title: 'Coach-Edit vs. Friend-View Connections & Strava Compliance Shield',
+        badge: 'STEP 1 · ONBOARD A TEAM',
+        badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
+        title: 'Create Team Workspace, Locker-Room QR & CSV Invites in 3 Fields',
         summary:
-          'Connect with coaches, teammates, or training partners using invite codes while retaining granular control over your wellness, PMC, and GPS route visibility.',
+          'Open Coach Workspace → Roster, select High School, Collegiate, or Club, enter your team name, and immediately share your Join Code or printable QR poster.',
         bullets: [
-          'COACH_EDIT Role: Allows trusted coaches to inspect your readiness and push structured workouts or multi-week blocks directly to your calendar.',
-          'FRIEND_VIEW Role: Read-only peer benchmarking for dual-athlete radar and PMC comparisons.',
-          'Strava Compliance Shield: Automatically redacts raw Strava-only GPS coordinates for third-party viewers while preserving aggregate load and official FAT race marks.',
+          'High School teams automatically enable U18 Safe-Sport Weight Shield and Parent CC defaults.',
+          'Invite or import rosters via spreadsheet paste, .CSV upload, or native SMS/Email links—or let athletes join themselves with your 6-character Team Code.',
+          'Assign Event Groups (Sprints, 800m/Mile, 3000m/3200m+) so daily workouts scale per runner.',
         ],
-        ctaLabel: 'Try It Live: Open Roster & Privacy Settings →',
-        onAction: () => triggerAndClose(() => onOpenRosterModal()),
+        figureSrc: '/docs/figures/coach-fig-01-team-onboarding.png',
+        figureCaption: 'Simplified Team Setup, Join Code, QR Poster, and Roster table in Coach Roster.',
+        ctaLabel: 'Open Coach Roster & Setup →',
+        onAction: () =>
+          triggerAndClose(() =>
+            onOpenCoachWorkspace ? onOpenCoachWorkspace('ROSTER') : onOpenRosterModal()
+          ),
       },
       {
         id: 'c7-2',
         chapterId: 'ch7-coaching',
-        badge: 'GEMINI AI TRAINING COACH',
+        badge: 'STEP 2 · PERFORMANCE & SAFETY',
         badgeColor: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/25',
-        title: 'Context-Aware AI Workout Generator & Physiological Chat',
+        title: '2-Tap Athlete Check-Ins, Morning Squad Triage & Safe-Sport Protection',
         summary:
-          'Powered by Google Gemini and grounded in your live CTL/ATL/TSB, 14-day HRV ledger, recent decoupling, and upcoming A-Race milestones.',
+          'Catch shin splints, illness, and high strain early without scrolling spreadsheet logs. Any athlete flagging pain auto-swaps to low-impact recovery and surfaces in Squad Triage.',
         bullets: [
-          'Generates 3 daily workout tiers (Optimal Progression, Modulated Aerobic, Active Recovery) with one-click Calendar push.',
-          'Multi-turn physiological chat cites your exact metrics (`CTL`, `TSB`, `HRV rMSSD`, `eFTP`, `VDOT`) in every answer.',
-          'Works seamlessly in both Live Gemini API mode and deterministic offline physiological fallback mode.',
+          'Review 7-day compliance dots, RPE check-ins, and Safe-Sport traffic lights in Squad Triage (7d).',
+          'Click Inspect on any flagged runner to review readiness & recent load, then click Back to Coach Roster.',
+          'Collegiate teams also see rolling 7-day 20-Hour Weekly / 3.0-Hour Comp Day CARA compliance cards.',
         ],
-        ctaLabel: 'Try It Live: Open Gemini AI Coach Drawer →',
-        onAction: () => triggerAndClose(() => onOpenAICoach()),
+        figureSrc: '/docs/figures/coach-fig-02-safety-squad-triage.png',
+        figureCaption: 'Morning Squad Triage showing shin pain safety swap, 7d adherence dots, and Inspect.',
+        ctaLabel: 'Open Squad Triage →',
+        onAction: () =>
+          triggerAndClose(() =>
+            onOpenCoachWorkspace ? onOpenCoachWorkspace('ROSTER') : onOpenRosterModal()
+          ),
+      },
+      {
+        id: 'c7-3',
+        chapterId: 'ch7-coaching',
+        badge: 'STEP 3 · WORKOUTS & PLANS',
+        badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
+        title: 'Clipboard Multi-Set Shorthand, VDOT Pace Pods & Cohort Plans',
+        summary:
+          'Type practice shorthand once to auto-generate Warm-up, Cooldown, and VDOT Pace Pods across Sprints, Mid-Distance, Distance, or Individual runners.',
+        bullets: [
+          'Expand Schedule, Time & Venue to set AM/PM doubles or practice locations (School Track, XC Park, Weight Room).',
+          'Use Build Cohort Plan to publish Rolling 1W, Rolling 2W, or Full Block schedules straight to event groups.',
+          'Export any Clipboard session cleanly to .FIT, .ZWO, or .ERG, or stage straight into Trackside Stopwatch.',
+        ],
+        formulaOrSyntax: '2x200m R + 4x800m CV + 2x200m R',
+        figureSrc: '/docs/figures/coach-fig-03-clipboard-workout-pods.png',
+        figureCaption: 'Coach Clipboard shorthand parser building Pods A–C targets and calendar pushes.',
+        ctaLabel: 'Open Coach Clipboard →',
+        onAction: () =>
+          triggerAndClose(() =>
+            onOpenCoachWorkspace ? onOpenCoachWorkspace('CLIPBOARD') : onNavigateTab('totals')
+          ),
+      },
+      {
+        id: 'c7-4',
+        chapterId: 'ch7-coaching',
+        badge: 'STEP 4 · POST-WORKOUT REVIEW',
+        badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
+        title: 'Watchless 0.01s Trackside Splits, Strain (ATL/TSB) & NFHS Record Boards',
+        summary:
+          'Capture official spiked splits when athletes leave watches in their bag, then inspect post-workout Fitness (CTL), Strain (ATL), and Form (TSB) in one click.',
+        bullets: [
+          'Trackside Stopwatch saves splits and training load straight to team members even offline.',
+          'Inspect any runner to examine 1Hz stream decoupling (Pa:Hr), aerobic efficiency, and Banister load curves.',
+          'Expand Relay Optimizer & NFHS FAT Top Times inside Clipboard for DMR / 4x400m lineups.',
+        ],
+        figureSrc: '/docs/figures/coach-fig-05-trackside-stopwatch.png',
+        figureCaption: 'Watchless Trackside Stopwatch capturing 0.01s splits against VDOT pod targets.',
+        ctaLabel: 'Open Trackside Stopwatch →',
+        onAction: () =>
+          triggerAndClose(() =>
+            onOpenCoachWorkspace ? onOpenCoachWorkspace('STOPWATCH') : onOpenRosterModal()
+          ),
       },
 
-      // Chapter 8: High School & Collegiate Team Pack (v2.3)
+      // Chapter 8: Athletic.net, TFRRS, NCAA Conversions & Parent Hub
       {
         id: 'c8-0',
         chapterId: 'ch8-scholastic',
-        badge: 'TEAM ONBOARDING · QR, CSV & SHARING TIERS',
+        badge: 'STEP 5 · ATHLETIC.NET & TFRRS',
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
-        title: 'School & Club Workspace Studio, Locker-Room QR Posters & Athlete Sharing Tiers',
+        title: 'Athletic.net / TFRRS Sync (.ics Feeds, Paste Import & 1-Click Bookmarklet)',
         summary:
-          'Create a branded High School, Collegiate, or Club workspace in 60 seconds or join an existing team via 6-character Team Code or /join/<slug> magic link using Strava Sign-In.',
+          'Import High School XC/Track or Collegiate TFRRS rosters, non-5K XC course schedules, and whole-team meet results cleanly into THRESH.',
         bullets: [
-          'Print Locker-Room QR Sheets or import a roster CSV (Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark); THRESH auto-matches athletes when they sign in with Strava.',
-          'Athletes choose their Coach Sharing Tier during onboarding: Readiness & Training Summary (Recommended), Full Coach Telemetry, or Load Only.',
-          'High School programs default U18 Safe-Sport Weight Shield ON; Collegiate rosters preserve adult visibility while auditing NCAA 20-Hour CARA caps.',
+          'Connect a live .ics / webcal:// calendar URL or paste roster/meet tables from Athletic.net, TFRRS CSV, or Hy-Tek.',
+          'Resolves non-5K California HS XC courses automatically (Crystal Springs 2.95 mi → 4,748m, Montgomery Hill 2.74 mi → 4,410m).',
+          'Filter multi-school meet results to your team keyword and match "Last, First" athletes to calibrate VDOT.',
         ],
-        ctaLabel: 'Try It Live: Open Team Studio & Roster →',
-        onAction: () => triggerAndClose(() => onOpenRosterModal()),
+        figureSrc: '/docs/figures/coach-fig-07-athleticnet-parent-hub.png',
+        figureCaption: 'Clean-Room Public Parent Hub sharing meet schedules and official marks without private telemetry.',
+        ctaLabel: 'Open Athletic.net / TFRRS Sync →',
+        onAction: () =>
+          triggerAndClose(() =>
+            onOpenCoachWorkspace ? onOpenCoachWorkspace('ROSTER') : onOpenRosterModal()
+          ),
       },
       {
         id: 'c8-1',
         chapterId: 'ch8-scholastic',
-        badge: 'AUTO-SCALED SQUAD PACING PODS',
+        badge: 'GOOGLE GEMINI AI & CONNECTIONS',
         badgeColor: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/25',
-        title: 'VDOT Pacing Pod Generator, Printable Clipboard Sheet & Watchless Split Pad',
+        title: 'Clean-Room Parent Hub (/team/<slug>) & 1:1 Invite Connections',
         summary:
-          'Write one team workout once: THRESH clusters your varsity and developmental squad into Pods A–D (±2s/400m) with exact 200m–1600m splits and a live 0.01s Spikes-On Split Stopwatch.',
+          'Share meet schedules and official FAT marks with parents while strictly hiding emails, phone numbers, GPS routes, HRV, sleep, RPE, pain flags, and weight.',
         bullets: [
-          'Auto-calculates 200m, 400m, 800m, 1000m, and 1600m target splits across Easy, Marathon, Threshold/CV, VO2max, and Mile Repetition intensities.',
-          '1-Click Push to Pod schedules the auto-scaled workout directly onto every coached athlete’s calendar in that pod.',
-          'Trackside Watchless Split Pad lets coaches or managers tap 0.01s splits for athletes racing or repping in spikes without GPS watches.',
+          'Generate your read-only /team/<slug> Parent Hub link inside Athletic.net / TFRRS Sync or Roster.',
+          'Use Connections & Privacy in the account menu for 1:1 personal invite codes and outbound Strava visibility tiers.',
+          'Ask Gemini AI Coach anytime for physiological modulation or split strategy grounded in your team or personal data.',
         ],
-        ctaLabel: 'Try It Live: Open HS & College Coach Deck →',
+        ctaLabel: 'Open Connections & Privacy →',
         onAction: () => triggerAndClose(() => onOpenRosterModal()),
       },
       {
@@ -732,34 +804,17 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c8-3',
         chapterId: 'ch8-scholastic',
-        badge: 'SAFE-SPORT, BSI GUARDRAIL & 20H CARA',
-        badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
-        title: 'Safe-Sport Weight Shield, Shin BSI / Ferritin Check-In & Cross-Training Miles',
-        summary:
-          'Protects student-athletes from RED-S and Bone Stress Injuries (BSI) while translating training-room cross-training into virtual running miles.',
-        bullets: [
-          'Safe-Sport Mode masks body weight (kg/lbs) and W/kg across student-athlete views while keeping power/pace zones calibrated.',
-          '5-Second Student-Athlete Check-In flags focal shin/metatarsal bone pain (>= 2/3), low serum ferritin (< 30 ng/mL), and Midterm/Finals exam stress.',
-          'Converts Aqua Jogging, AlterG, Elliptical, Arc Trainer, and Spin Bike minutes + RPE into Virtual Running Miles and audits NCAA 20-Hour CARA caps.',
-        ],
-        ctaLabel: 'Try It Live: Open Student-Athlete Check-In →',
-        onAction: () => triggerAndClose(() => onNavigateTab('fitness')),
-      },
-      {
-        id: 'c8-4',
-        chapterId: 'ch8-scholastic',
-        badge: 'FORGOT-TO-LAP 1HZ REP RECOVERY',
+        badge: '1HZ NO-LAP RECOVERY & AI COACH',
         badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
-        title: '1Hz Unstructured Track & Fartlek Interval Auto-Detection',
+        title: '1Hz Unstructured Interval Auto-Detection & AI Coaching Drawer',
         summary:
-          'Recovers crisp WORK and float reps from 1Hz velocity or power streams even when the athlete forgot to press the watch Lap button.',
+          'Recovers crisp work and float reps from 1Hz streams even when an athlete forgot to press Lap, or ask Gemini AI Coach to explain post-session trends.',
         bullets: [
-          'Bimodal quantile hysteresis detector extracts work reps down to 18s (capturing fast 200m repeats) and overrides 1-mile auto-laps.',
-          'Snaps standard track distances (~200m, ~400m, ~800m, ~1000m, ~1600m) automatically.',
-          'Click any recovered rep in the Activity Inspector to zoom the 1Hz stream canvas to that exact window.',
+          'Detects unstructured reps down to 18s (200m–3200m) and zooms the Activity Inspector straight to that rep.',
+          'AI Coach drawer grounds answers in CTL, TSB, HRV rMSSD, eFTP, and VDOT using Clean-Room privacy isolation.',
         ],
-        ctaLabel: 'Try It Live: Open Activity Inspector →',
-        onAction: () => triggerAndClose(() => onNavigateTab('activities')),
+        ctaLabel: 'Ask AI Coach →',
+        onAction: () => triggerAndClose(() => onOpenAICoach()),
       },
     ],
     []
@@ -870,12 +925,20 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
 
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
               <a
+                href="/docs/coach.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-bold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
+              >
+                Illustrated Coach Guide ↗
+              </a>
+              <a
                 href="/docs/index.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-lg text-2xs font-semibold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-medium bg-stone-200/80 dark:bg-slate-800 text-slate-800 dark:text-slate-100 whitespace-nowrap transition-colors"
               >
-                Open Online Docs (/docs) ↗
+                Physiology Docs ↗
               </a>
               <button
                 type="button"
@@ -1394,6 +1457,22 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           <pre className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-sky-300 font-mono text-2xs sm:text-xs overflow-x-auto border border-slate-800">
                             {card.formulaOrSyntax}
                           </pre>
+                        )}
+
+                        {card.figureSrc && (
+                          <figure className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-[#244331] bg-white dark:bg-[#101B15]">
+                            <img
+                              src={card.figureSrc}
+                              alt={card.figureCaption || card.title}
+                              loading="lazy"
+                              className="w-full h-auto block border-b border-stone-200/80 dark:border-[#244331]"
+                            />
+                            {card.figureCaption && (
+                              <figcaption className="px-3 py-2 text-2xs text-slate-600 dark:text-slate-300">
+                                {card.figureCaption}
+                              </figcaption>
+                            )}
+                          </figure>
                         )}
 
                         <ul className="space-y-1.5 pt-1">

@@ -237,7 +237,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 e.preventDefault();
                 setActiveTab('fitness');
               }}
-              className="flex items-center whitespace-nowrap min-w-0 shrink overflow-hidden"
+              className="flex items-center whitespace-nowrap shrink-0"
             >
               <span className="inline-flex scale-[0.86] origin-left sm:scale-100">
                 <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
@@ -254,7 +254,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     ? `Open Coach Workspace (${activeTeam.brand.shortName || activeTeam.brand.name})`
                     : 'Open Coach Workspace'
               }
-              onClick={() => setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach')}
+              onClick={() => {
+                if (activeTab !== 'coach' && activeViewedAthleteId !== 'SELF') {
+                  setActiveViewedAthleteId('SELF');
+                  setSelectedActivity(null);
+                }
+                setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach');
+              }}
               className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                 activeTab === 'coach'
                   ? 'ap-nav-volt-active'
@@ -275,20 +281,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               ) : (
                 <>
                   <Users className="w-3.5 h-3.5 ap-text-brand" />
-                  <span>
-                    Coach
-                    {activeTeam ? (
-                      <span className="hidden sm:inline">
-                        {` · ${activeTeam.brand.shortName || activeTeam.brand.name}`}
-                      </span>
-                    ) : null}
-                  </span>
+                  <span>Coach</span>
                 </>
               )}
             </button>
 
-            {myTeams.length > 0 && (
-              <div className="hidden xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
+            {myTeams.length > 1 && activeTab !== 'coach' && (
+              <div className="hidden 2xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{
@@ -327,7 +326,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               type="button"
               onClick={() => syncLiveTelemetry(true)}
               disabled={isSyncing}
-              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer shrink-0"
               title="Sync connected telemetry sources in the background"
             >
               <RefreshCw
@@ -477,8 +476,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </div>
             )}
 
-            {/* Athlete Context Switcher — shown only when part of a team or viewing a teammate */}
-            {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
+            {/* Athlete Context Switcher — shown only in Personal mode when inspecting another athlete */}
+            {activeViewedAthleteId !== 'SELF' && activeTab !== 'coach' && (
               <div className="hidden xl:flex min-h-[36px] items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-emerald-800/25 dark:border-emerald-700/40 min-w-0">
                 <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                 <select
@@ -668,24 +667,45 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       </span>
                     </button>
 
+                    {onSelectCoachSubTab && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setActiveTab('coach');
+                          onSelectCoachSubTab('ROSTER');
+                          setIsAccountMenuOpen(false);
+                        }}
+                        className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <ClipboardText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Coach &amp; Team Setup</span>
+                        </span>
+                        <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
+                          {myTeams.length > 0
+                            ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
+                            : 'Open'}
+                        </span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       role="menuitem"
                       data-testid="open-roster-modal"
                       onClick={() => {
-                        onOpenRosterModalWithTab('TEAMS_BRANDING');
+                        onOpenRosterModalWithTab('CONNECT_INVITE');
                         setIsAccountMenuOpen(false);
                       }}
                       className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-2 font-medium">
                         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Teams, Bulk Invites &amp; Roster</span>
+                        <span>Connections &amp; Privacy</span>
                       </span>
                       <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
-                        {myTeams.length > 0
-                          ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
-                          : 'Manage'}
+                        1:1
                       </span>
                     </button>
 
@@ -906,7 +926,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 />
               </div>
             )}
-            {myTeams.length > 0 && (
+            {myTeams.length > 0 && activeTab !== 'coach' && (
               <div className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -942,7 +962,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </div>
             )}
 
-            {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && (
+            {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && activeTab !== 'coach' && (
               <div className="min-h-[44px] inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
                 <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                 <select

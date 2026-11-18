@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH — Coach User Guide</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap"
+    rel="stylesheet"
+  />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('thresh_theme_dark');
+        var isDark =
+          saved === '1'
+            ? true
+            : saved === '0'
+              ? false
+              : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    :root {
+      --bg-outer: #163022;
+      --bg-canvas: #F4F7F2;
+      --bg-surface: #FFFFFF;
+      --bg-recessed: #E9EFE9;
+      --content-border: #2B5B3F;
+      --text-primary: #101411;
+      --text-secondary: #1F3528;
+      --text-muted: #43584B;
+      --border-hairline: rgba(38, 88, 58, 0.19);
+      --accent-cobalt: #1C5436;
+      --code-bg: #101411;
+      --code-fg: #F4F7F4;
+    }
+    html.dark {
+      --bg-outer: #0C1D14;
+      --bg-canvas: #0B120E;
+      --bg-surface: #101B15;
+      --bg-recessed: #15231B;
+      --content-border: #2B543B;
+      --text-primary: #F4F7F4;
+      --text-secondary: #C8D8CE;
+      --text-muted: #93A39A;
+      --border-hairline: rgba(57, 150, 99, 0.34);
+      --accent-cobalt: #C8FF00;
+      --code-bg: #070B09;
+      --code-fg: #E6EFEA;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-outer);
+      background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.12), transparent 52%);
+      color: var(--text-primary);
+      line-height: 1.65;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .doc-logo-dark { display: none; }
+    .doc-logo-light { display: block; height: 34px; width: auto; }
+    html.dark .doc-logo-dark { display: block; height: 34px; width: auto; }
+    html.dark .doc-logo-light { display: none; }
+    code, .mono {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background-color: var(--bg-surface);
+      background-image: linear-gradient(to right, #b8f200, #b8f200);
+      background-size: 100% 4px;
+      background-repeat: no-repeat;
+      background-position: top left;
+      border-bottom: 2px solid var(--content-border);
+      padding: calc(0.75rem + 4px) 1.25rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    html.dark header { background-image: linear-gradient(to right, #c8ff00, #c8ff00); }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+      min-width: 0;
+    }
+    .brand-subtitle { font-size: 0.75rem; color: var(--text-muted); }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex: 1;
+      max-width: 660px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 190px;
+      min-height: 2.75rem;
+      padding: 0.5rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-recessed);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.9375rem;
+    }
+    .btn {
+      min-height: 2.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-recessed);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: #C8FF00;
+      color: #080A09;
+      border-color: #4D7C0F;
+      font-weight: 700;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 270px minmax(0, 1fr);
+      align-items: start;
+      max-width: 1320px;
+      width: calc(100% - 2rem);
+      margin: 1.25rem auto 2rem;
+      background: var(--bg-canvas);
+      border: 2px solid var(--content-border);
+      border-radius: 20px;
+      flex: 1;
+    }
+    aside {
+      border-right: 1px solid var(--border-hairline);
+      border-top-left-radius: 18px;
+      border-bottom-left-radius: 18px;
+      padding: 1.25rem 1rem;
+      position: sticky;
+      top: 72px;
+      background: var(--bg-surface);
+    }
+    .nav-group-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin: 0.2rem 0 0.5rem 0.5rem;
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      min-height: 2.5rem;
+      padding: 0.45rem 0.7rem;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    .nav-link:hover, .nav-link.active {
+      background: var(--bg-recessed);
+      color: var(--accent-cobalt);
+      font-weight: 700;
+    }
+    .mobile-toc {
+      display: none;
+      margin-bottom: 1.25rem;
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      background: var(--bg-surface);
+      padding: 0.5rem 0.85rem;
+    }
+    .mobile-toc summary {
+      min-height: 2.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    main {
+      padding: 2rem 2.5rem 4rem;
+      min-width: 0;
+      max-width: 960px;
+    }
+    .doc-section {
+      margin-bottom: 3rem;
+      padding-bottom: 2.25rem;
+      border-bottom: 1px solid var(--border-hairline);
+      scroll-margin-top: 90px;
+    }
+    .doc-section:last-child { border-bottom: none; margin-bottom: 0; }
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+      margin-bottom: 0.65rem;
+    }
+    h2 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+      line-height: 1.28;
+      margin-bottom: 0.65rem;
+    }
+    p {
+      color: var(--text-secondary);
+      font-size: 0.975rem;
+      max-width: 70ch;
+      margin-bottom: 0.85rem;
+    }
+    ol, ul {
+      padding-left: 1.35rem;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      max-width: 70ch;
+      margin-bottom: 1rem;
+    }
+    li { margin-bottom: 0.45rem; }
+    li strong { color: var(--text-primary); }
+    .step-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 0.85rem;
+      margin: 1rem 0 1.25rem;
+    }
+    .step-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .step-card h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+      color: var(--text-primary);
+    }
+    .step-card p {
+      font-size: 0.875rem;
+      margin-bottom: 0;
+    }
+    .doc-figure {
+      margin: 1.1rem 0 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(10, 20, 14, 0.08);
+    }
+    .doc-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    .doc-figure figcaption {
+      padding: 0.7rem 1rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+    .formula-box {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      font-size: 0.8125rem;
+      overflow-x: auto;
+      margin: 0.5rem 0 1rem;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: minmax(0, 1fr); width: calc(100% - 1.25rem); }
+      aside { display: none; }
+      .mobile-toc { display: block; }
+      main { padding: 1.25rem 1rem 3rem; }
+      .header-controls { max-width: none; width: 100%; }
+      .search-input { min-width: 100%; order: 4; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">
+      <img src="/brand/thresh-lockup-light.svg" alt="THRESH" class="doc-logo-light" />
+      <img src="/brand/thresh-lockup-dark.svg" alt="THRESH" class="doc-logo-dark" />
+      <span class="brand-subtitle">Coach User Guide</span>
+    </a>
+    <div class="header-controls">
+      <input
+        id="coachDocSearch"
+        type="search"
+        class="search-input"
+        placeholder="Search onboarding, safety, workouts, TFRRS..."
+        aria-label="Search Coach User Guide"
+      />
+      <button id="themeBtn" type="button" class="btn mono" aria-pressed="false">Dark Mode</button>
+      <a href="/docs/index.html" class="btn">Physiology Reference</a>
+      <a href="/?demo=1#coach" class="btn btn-primary">Try Coach Demo →</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Coach Guide chapters">
+      <div class="nav-group-title">Coach Playbook</div>
+      <a href="#ch1-onboard" class="nav-link active">1. Onboard Your Team</a>
+      <a href="#ch2-safety" class="nav-link">2. Performance &amp; Safety</a>
+      <a href="#ch3-workouts" class="nav-link">3. Workouts &amp; Season Plans</a>
+      <a href="#ch4-review" class="nav-link">4. Post-Workout &amp; Strain Review</a>
+      <a href="#ch5-integrations" class="nav-link">5. Athletic.net &amp; TFRRS Sync</a>
+    </aside>
+
+    <main id="coachDocMain">
+      <details class="mobile-toc" id="mobileToc">
+        <summary>
+          <span>Jump to Chapter (1–5)</span>
+          <span class="mono" aria-hidden="true">▾</span>
+        </summary>
+        <div>
+          <a href="#ch1-onboard" class="nav-link">1. Onboard Your Team</a>
+          <a href="#ch2-safety" class="nav-link">2. Performance &amp; Safety</a>
+          <a href="#ch3-workouts" class="nav-link">3. Workouts &amp; Season Plans</a>
+          <a href="#ch4-review" class="nav-link">4. Post-Workout &amp; Strain Review</a>
+          <a href="#ch5-integrations" class="nav-link">5. Athletic.net &amp; TFRRS Sync</a>
+        </div>
+      </details>
+
+      <section class="doc-section">
+        <h1>THRESH Coach User Guide</h1>
+        <p>
+          Everything a high school, collegiate, or club coach needs to set up a roster in two minutes, protect student-athlete health every morning, prescribe workouts at any venue, time track splits without GPS watches, and sync directly with Athletic.net or TFRRS.
+        </p>
+      </section>
+
+      <!-- CHAPTER 1 -->
+      <section id="ch1-onboard" class="doc-section">
+        <h2>1. How to Onboard Your Team</h2>
+        <p>
+          Open Coach Mode from the top bar (click <strong>Coach</strong> next to the logo) and switch to the <strong>Roster</strong> tab. Creating your workspace takes three inputs.
+        </p>
+
+        <div class="step-grid">
+          <div class="step-card">
+            <h3>Step 1 — Pick Type &amp; Name</h3>
+            <p>
+              Click <strong>Create Team</strong>, select <em>High School XC / Track</em>, <em>Collegiate</em>, or <em>Running Club</em>, and enter your School or Club Name. High School programs automatically enable the <strong>U18 Safe-Sport Weight Shield</strong> and <strong>Parent CC</strong>. Colors and crest uploads stay tucked behind an optional toggle.
+            </p>
+          </div>
+          <div class="step-card">
+            <h3>Step 2 — Share QR or Code</h3>
+            <p>
+              THRESH immediately creates your 6-character Team Code (e.g. <code>WGHS-26</code>) and printable <strong>Locker-Room QR Poster</strong>. Athletes scan the poster or enter the code once during Strava sign-in to claim their spot.
+            </p>
+          </div>
+          <div class="step-card">
+            <h3>Step 3 — Invite or Assign Groups</h3>
+            <p>
+              Paste names/emails or upload a <code>.CSV</code> in <strong>Invite or Import Athletes</strong> (optional <code>SeedMark</code> auto-places everyone into VDOT pace pods before day one). Set each runner&apos;s Event Group (<em>Sprints</em>, <em>800m / Mile</em>, <em>3000m / 3200m+</em>) in the Roster table.
+            </p>
+          </div>
+        </div>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-01-team-onboarding.png"
+            alt="THRESH Coach Roster tab displaying Willow Glen HS team card, Join Code, QR Poster action, CSV importer, and roster table"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 1 — Coach <strong>Roster</strong> view showing the active team card, Copy Join Link / Print QR Poster / Parent Hub actions, CSV &amp; SMS/Email importer, and event-group roster table.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- CHAPTER 2 -->
+      <section id="ch2-safety" class="doc-section">
+        <h2>2. How to Assess Athlete Performance &amp; Safety</h2>
+        <p>
+          Instead of chasing spreadsheet logs or text messages before practice, coaches get an automatic daily exception scan on every connected athlete.
+        </p>
+
+        <ol>
+          <li>
+            <strong>2-Tap Athlete Check-In &amp; Automatic Recovery Swaps:</strong> After training, athletes tap their RPE (<code>1–10</code>) and flag any sore area (e.g. <em>Shin</em>, <em>Achilles</em>, <em>Knee</em>). If they mark a flag, THRESH automatically swaps their next run into a <em>Low-Impact Recovery Flush</em> and alerts the coach.
+          </li>
+          <li>
+            <strong>Morning Squad Triage Banner:</strong> Whenever any athlete logs pain or high strain, a yellow alert bar appears right at the top of Coach <strong>Clipboard</strong>. Click it to jump straight into <strong>Squad Triage (7d)</strong>.
+          </li>
+          <li>
+            <strong>Inspect Safely &amp; Return in 1 Click:</strong> In Squad Triage, compare 7-day compliance dots, last RPE, and Safe-Sport traffic lights. Click <strong>Inspect</strong> to open an athlete&apos;s personal readiness view, then click <strong>Back to Coach Roster</strong> at the top bar when done. High school rosters mask body weight and <code>W/kg</code> automatically; collegiate rosters show <strong>Weekly Practice Hours (20h Cap)</strong>.
+          </li>
+        </ol>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-02-safety-squad-triage.png"
+            alt="Squad Triage panel highlighting an athlete shin pain flag, automatic recovery swap, 7-day compliance dots, RPE, and Inspect button"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 2 — <strong>Squad Triage (7d)</strong> surfaces flagged athletes first (pain area, auto-swapped recovery status, RPE, and 7-day completion dots) with a 1-click <strong>Inspect</strong> action.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- CHAPTER 3 -->
+      <section id="ch3-workouts" class="doc-section">
+        <h2>3. How to Create Workouts &amp; Season Plans</h2>
+        <p>
+          Write a single day&apos;s multi-set practice in seconds on the <strong>Clipboard</strong>, or publish multi-week training blocks to specific event cohorts.
+        </p>
+
+        <div class="step-grid">
+          <div class="step-card">
+            <h3>Clipboard Quick Shorthand</h3>
+            <p>
+              Select <em>Track / Run</em>, <em>Cycling</em>, or <em>Gym / Lift</em>, tap an audience pill (e.g. <em>800m / Mile</em>), and type natural shorthand like the example below. Tap <strong>Parse</strong> to build structured sets and auto-scaled <strong>Pace Pods</strong> immediately.
+            </p>
+          </div>
+          <div class="step-card">
+            <h3>Venues &amp; Doubles (AM / PM)</h3>
+            <p>
+              Tap the summary bar <strong>Schedule, Time &amp; Venue</strong> when you need to change practice time, set an <strong>AM / PM</strong> doubles slot, or pick a school location (e.g. <em>School Track</em>, <em>Foothills XC Park</em>, <em>Weight Room</em>).
+            </p>
+          </div>
+        </div>
+
+        <div class="formula-box mono">2x200m R + 4x800m CV + 2x200m R</div>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-03-clipboard-workout-pods.png"
+            alt="Coach Clipboard multi-set shorthand parser with auto-scaled Pods A, B, C split targets and Assign Workout button"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 3 — <strong>Coach Clipboard</strong> turns one line of shorthand into warm-up, cooldown, exact <code>Pods A–C</code> split targets, calendar pushes (<strong>Assign Workout</strong>), and stopwatch staging.
+          </figcaption>
+        </figure>
+
+        <p style="margin-top: 1.25rem;">
+          To lay out a full season or 2-week block, click <strong>Build Cohort Plan</strong> in the Coach header, choose your archetype (<em>800m</em>, <em>1500m / Mile</em>, <em>3200m</em>, <em>5000m</em>, or Cycling), pick a <strong>Rolling 1W</strong>, <strong>Rolling 2W</strong>, or <strong>Full Block</strong> publish window plus <strong>Target Cohort</strong>, and click publish. Use <strong>Back to Coach Workspace</strong> in the top bar anytime to return to <strong>Team Plan</strong>.
+        </p>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-04-cohort-plan-builder.png"
+            alt="Plan Builder set to Rolling 2W cadence targeting the 800m / Mile Cohort with Back to Coach Workspace button"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 4 — <strong>Plan Builder</strong> in Coach cohort mode publishing a <code>Rolling 2W</code> window directly to an event group calendar.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- CHAPTER 4 -->
+      <section id="ch4-review" class="doc-section">
+        <h2>4. Review Performance, Fitness &amp; Strain After Workouts</h2>
+        <p>
+          Athletes don&apos;t need GPS watches on track days or race nights. Capture live trackside splits in THRESH, or review synced Strava/wearable fitness and strain after every session.
+        </p>
+
+        <ul>
+          <li>
+            <strong>Watchless 0.01s Trackside Stopwatch:</strong> From Clipboard (<strong>Launch in Stopwatch</strong>) or the top <strong>Stopwatch</strong> tab, tap runner cards as athletes cross the line. THRESH compares each lap to that runner&apos;s VDOT pod target and warns on heat/humidity or sudden late-rep slowdowns. Tap <strong>Save Workout Splits to THRESH</strong> when finished to post splits and training load straight onto each athlete&apos;s log.
+          </li>
+          <li>
+            <strong>Inspect Post-Workout Fitness, Strain &amp; Streams:</strong> In Coach <strong>Roster</strong> -&gt; click <strong>Inspect</strong> on any athlete to inspect their <strong>Today Readiness</strong>, 1Hz activity breakdown, Aerobic Decoupling (<code>Pa:Hr</code>), <strong>42-day Fitness (CTL)</strong>, <strong>7-day Strain (ATL)</strong>, and <strong>Form (TSB)</strong>. For school record boards and DMR / 4x400m lineups, expand <strong>Relay Optimizer &amp; NFHS FAT Top Times</strong> inside Clipboard.
+          </li>
+        </ul>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-05-trackside-stopwatch.png"
+            alt="Trackside 0.01s split stopwatch showing live runner cards, split times, and Save Workout Splits to THRESH"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 5 — <strong>Trackside Stopwatch</strong> captures <code>0.01s</code> multi-athlete splits trackside, works offline, and saves workout load straight to roster logs.
+          </figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-06-post-workout-pmc.png"
+            alt="Athlete Today view opened via Coach Inspect showing Back to Coach Roster bar, readiness score, and Performance Management Chart"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 6 — Inspecting an athlete displays overnight readiness, Fitness (<code>CTL</code>), Strain (<code>ATL</code>), Form (<code>TSB</code>), and a 1-click <strong>Back to Coach Roster</strong> return button.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- CHAPTER 5 -->
+      <section id="ch5-integrations" class="doc-section">
+        <h2>5. Integrate With Athletic.net, TFRRS &amp; Parent Hub</h2>
+        <p>
+          Click <strong>Athletic.net / TFRRS</strong> in the Coach Workspace header to keep your THRESH roster, meet calendar, and official marks aligned with public systems of record—even when sites block automated server bots.
+        </p>
+
+        <div class="step-grid">
+          <div class="step-card">
+            <h3>Team URL &amp; .ics Calendar</h3>
+            <p>
+              Paste your Athletic.net <code>/team/&lt;id&gt;/xc</code> or TFRRS team link and connect a live <code>.ics</code> / <code>webcal://</code> meet feed (or drop a downloaded <code>.ics</code> file). Classic Bay Area &amp; NCAA distances like <em>Crystal Springs 2.95 mi (4,748m)</em> and <em>NCAA 8K</em> convert automatically.
+            </p>
+          </div>
+          <div class="step-card">
+            <h3>Select-All Paste, CSV &amp; Hy-Tek</h3>
+            <p>
+              Copy any roster table, TFRRS CSV (<code>FR-1..SR-4</code>), Hy-Tek <code>;</code> export, or multi-school meet results page and paste it straight in. Enter your school name in <em>Team Filter</em> so only your runners import, matching <em>&quot;Last, First&quot;</em> names to VDOT zones automatically.
+            </p>
+          </div>
+          <div class="step-card">
+            <h3>1-Click Clipper &amp; Parent Hub</h3>
+            <p>
+              Drag the <strong>Send to THRESH</strong> bookmarklet to your bookmarks bar to capture Athletic.net or TFRRS tables from an open browser tab in one tap. Enable the <strong>Clean-Room Parent Hub</strong> link (<code>/team/&lt;slug&gt;</code>) to share meet dates and official FAT marks with families—never emails, GPS routes, HRV, RPE, or weight.
+            </p>
+          </div>
+        </div>
+
+        <figure class="doc-figure">
+          <img
+            src="/docs/figures/coach-fig-07-athleticnet-parent-hub.png"
+            alt="Safe-Sport Clean-Room Public Parent and Supporter Team Hub displaying Willow Glen HS XC meet schedule and official FAT marks"
+            loading="lazy"
+          />
+          <figcaption>
+            Figure 7 — <strong>Safe-Sport Clean-Room Parent Hub</strong> at <code>/team/&lt;slug&gt;</code> displays upcoming meets, course distances, and official marks publicly while isolating all private athlete telemetry.
+          </figcaption>
+        </figure>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('coachDocSearch');
+    const sections = Array.from(document.querySelectorAll('.doc-section'));
+    const navLinks = Array.from(document.querySelectorAll('.nav-link'));
+    const themeBtn = document.getElementById('themeBtn');
+    const mobileToc = document.getElementById('mobileToc');
+
+    function syncThemeBtn() {
+      const isDark = document.documentElement.classList.contains('dark');
+      themeBtn.setAttribute('aria-pressed', String(isDark));
+      themeBtn.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+    }
+    syncThemeBtn();
+
+    themeBtn.addEventListener('click', () => {
+      const nextDark = !document.documentElement.classList.contains('dark');
+      document.documentElement.classList.toggle('dark', nextDark);
+      try {
+        localStorage.setItem('thresh_theme_dark', nextDark ? '1' : '0');
+      } catch (e) {}
+      syncThemeBtn();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      sections.forEach((sec) => {
+        const match = !q || sec.textContent.toLowerCase().includes(q);
+        sec.classList.toggle('hidden', !match);
+      });
+    });
+
+    navLinks.forEach((link) => {
+      link.addEventListener('click', () => {
+        const href = link.getAttribute('href');
+        navLinks.forEach((l) => l.classList.toggle('active', l.getAttribute('href') === href));
+        if (mobileToc && mobileToc.open) mobileToc.open = false;
+      });
+    });
+  </script>
+</body>
+</html>

@@ -3,6 +3,7 @@ import {
   CalendarPlus,
   Check,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Download,
   ExternalLink,
@@ -121,6 +122,20 @@ async function downscaleLogoFileToDataUrl(file: File): Promise<string> {
   });
 }
 
+export function deriveShortNameFromTeamName(name: string): string {
+  const clean = name.trim();
+  if (!clean) return 'TEAM';
+  if (clean.length <= 12) return clean.toUpperCase();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const compacted = words
+      .map((w) => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase()))
+      .join('');
+    if (compacted.length >= 2 && compacted.length <= 10) return compacted;
+  }
+  return clean.slice(0, 10).trim().toUpperCase();
+}
+
 export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   selfName,
   myTeams,
@@ -143,10 +158,12 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
   const [showCreateOrEditStudio, setShowCreateOrEditStudio] = useState<boolean>(initialShowCreateStudio);
   const [studioMode, setStudioMode] = useState<'CREATE' | 'EDIT'>('CREATE');
+  const [showAdvancedBranding, setShowAdvancedBranding] = useState<boolean>(false);
 
   React.useEffect(() => {
     if (initialShowCreateStudio) {
       setStudioMode('CREATE');
+      setShowAdvancedBranding(false);
       setShowCreateOrEditStudio(true);
     }
   }, [initialShowCreateStudio]);
@@ -216,6 +233,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     setDefaultSafeSportShield(b.defaultSafeSportShield);
     setEnableParentGuardianCc(b.enableParentGuardianCc);
     setCoachDisplayName(b.coachDisplayName);
+    setShowAdvancedBranding(true);
     setShowCreateOrEditStudio(true);
   };
 
@@ -226,6 +244,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     setShortName('');
     setMascotOrMotto('');
     setLogoDataUrl('');
+    setShowAdvancedBranding(false);
     setShowCreateOrEditStudio(true);
   };
 
@@ -353,6 +372,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           text: `Updated branding & safeguarding settings for ${updatedTeam.brand.name}.`,
         });
       } else {
+        const resolvedShortName =
+          shortName.trim() || deriveShortNameFromTeamName(teamName);
         const resp = await fetch('/api/teams', {
           method: 'POST',
           credentials: 'include',
@@ -360,7 +381,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           body: JSON.stringify({
             origin: originUrl,
             name: teamName.trim(),
-            shortName: shortName.trim() || undefined,
+            shortName: resolvedShortName,
             mascotOrMotto: mascotOrMotto.trim() || undefined,
             orgType,
             primarySport,
@@ -380,12 +401,19 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           });
           return;
         }
+        if (data.sessionToken && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+          } catch {
+            // ignore storage failures
+          }
+        }
         const created = data.team as TeamSummaryWithRole;
         onTeamsUpdated([...myTeams, created], created.brand.teamId);
         setShowCreateOrEditStudio(false);
         setBannerMessage({
           tone: 'success',
-          text: `Created ${created.brand.name} (Join Code ${created.brand.joinCode}). Paste your roster below to invite athletes!`,
+          text: `Created ${created.brand.name} (Join Code ${created.brand.joinCode}). Share the Join Code or paste your roster below.`,
         });
       }
     } catch {
@@ -421,6 +449,13 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           text: data.error || 'No team matched that Join Code.',
         });
         return;
+      }
+      if (data.sessionToken && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+        } catch {
+          // ignore storage failures
+        }
       }
       const updatedTeams = (data.teams as TeamSummaryWithRole[]) || [];
       onTeamsUpdated(updatedTeams, data.team?.brand?.teamId);
@@ -527,67 +562,36 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Multi-Team Switcher & Quick Actions Bar */}
-      <div className="rounded-2xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+      {/* Multi-Team Switcher Bar (only shown once at least one team exists) */}
+      {myTeams.length > 0 && (
+        <div className="rounded-2xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-3.5 sm:p-4 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              {myTeams.length === 0
-                ? 'Launch Your High School, Collegiate, or Club Team Hub'
-                : `Your Active School & Club Teams (${myTeams.length})`}
+              Your Teams ({myTeams.length})
             </h3>
-            <span className="ap-lane-badge">
-              <span>Multi-Team Hub</span>
-            </span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowJoinAnotherBar((prev) => !prev)}
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-[#0D9488]" />
+                <span>Join Team</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={openCreateNewTeam}
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create New Team</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {onOpenExternalSync && (
-              <button
-                type="button"
-                data-testid="panel-open-external-sync-btn"
-                onClick={onOpenExternalSync}
-                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Globe className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
-                <span>Athletic.net / TFRRS Sync</span>
-              </button>
-            )}
-
-            {activeTeam && onOpenPublicTeamHub && (
-              <button
-                type="button"
-                data-testid="panel-open-public-hub-btn"
-                onClick={() => onOpenPublicTeamHub(activeTeam.brand.slug)}
-                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <ShareNetwork className="w-3.5 h-3.5 text-[#0D9488]" />
-                <span>Parent Hub</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setShowJoinAnotherBar((prev) => !prev)}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-blue-500/50 inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5 text-[#0D9488]" />
-              <span>Join Team w/ Code</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openCreateNewTeam}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] text-white dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create New Team</span>
-            </button>
-          </div>
-        </div>
-
-        {myTeams.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 pt-1">
             {myTeams.map((t) => {
               const isSelected = activeTeamId === t.brand.teamId;
               return (
@@ -598,7 +602,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     onSelectActiveTeam(t.brand.teamId);
                     setShowCreateOrEditStudio(false);
                   }}
-                  className={`px-3 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer ${
+                  className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-white dark:bg-[#15231B] border-slate-900/30 dark:border-emerald-400/40 shadow-xs text-slate-900 dark:text-white'
                       : 'bg-white/60 dark:bg-[#101B15] border-stone-200 dark:border-emerald-400/20 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -624,37 +628,37 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectActiveTeam(null)}
-                className="px-2.5 py-2 rounded-xl text-2xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1.5 rounded-xl text-2xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
-                Neutral THRESH Chrome
+                Personal Mode
               </button>
             )}
           </div>
-        )}
 
-        {showJoinAnotherBar && (
-          <form
-            onSubmit={handleJoinAdditionalTeam}
-            className="pt-2 border-t border-stone-200 dark:border-slate-800 flex flex-wrap items-center gap-2"
-          >
-            <input
-              type="text"
-              value={joinAnotherCode}
-              aria-label="Enter 6-character Team Join Code or slug"
-              onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
-              placeholder="Enter 6-character Team Join Code (e.g. PAXC-26) or slug"
-              className="flex-1 min-w-[220px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
-            />
-            <button
-              type="submit"
-              disabled={isJoiningTeam || !joinAnotherCode.trim()}
-              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
+          {showJoinAnotherBar && (
+            <form
+              onSubmit={handleJoinAdditionalTeam}
+              className="pt-2 border-t border-stone-200 dark:border-slate-800 flex flex-wrap items-center gap-2"
             >
-              {isJoiningTeam ? 'Joining...' : 'Claim Multi-Team Membership'}
-            </button>
-          </form>
-        )}
-      </div>
+              <input
+                type="text"
+                value={joinAnotherCode}
+                aria-label="Enter 6-character Team Join Code or slug"
+                onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
+                placeholder="Enter 6-character Team Join Code (e.g. WGHS-26)"
+                className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+              />
+              <button
+                type="submit"
+                disabled={isJoiningTeam || !joinAnotherCode.trim()}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-semibold cursor-pointer"
+              >
+                {isJoiningTeam ? 'Joining...' : 'Join Team'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
 
       {bannerMessage && (
         <div
@@ -683,120 +687,122 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       )}
 
       {/* ====================================================================
-          EMPTY STATE 2-CARD CHOOSER: JOIN EXISTING TEAM vs CREATE COACH HUB
+          EMPTY STATE 2-CARD CHOOSER: CREATE TEAM vs JOIN WITH CODE
          ==================================================================== */}
       {myTeams.length === 0 && !showCreateOrEditStudio && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 min-w-0">
-          {/* Card 1: Athlete / Assistant Joining w/ Team Code */}
+          {/* Card 1: Head Coach Creating New Team */}
+          <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm min-w-0">
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Create a Team Workspace
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Get a 6-character Join Code, printable locker-room QR sheet, and automatic VDOT pace pods in one step.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="team-empty-create-btn"
+                onClick={openCreateNewTeam}
+                className="flex-1 min-h-[44px] ap-btn-primary justify-center text-xs sm:text-sm font-bold cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Team</span>
+              </button>
+              {onOpenExternalSync && (
+                <button
+                  type="button"
+                  onClick={onOpenExternalSync}
+                  className="min-h-[44px] px-3.5 ap-btn-secondary justify-center text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Globe className="w-4 h-4 ap-text-brand" />
+                  <span>Import Athletic.net / TFRRS</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Card 2: Athlete / Assistant Joining w/ Team Code */}
           <form
             onSubmit={handleJoinAdditionalTeam}
             className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm min-w-0"
           >
             <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Join a School or Club Team
-                </h3>
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-prime">
-                  <UserPlus className="w-3 h-3" />
-                  <span>Athlete or Assistant</span>
-                </span>
-              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Join With a Team Code
+              </h3>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Have a 6-character Team Join Code or magic link slug from your coach? Enter it below to link your Strava identity and sync squad workouts.
+                Have a 6-character code from your head coach? Enter it below to join the squad.
               </p>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={joinAnotherCode}
                 aria-label="Enter Team Join Code"
                 onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
-                placeholder="Enter Team Code (e.g. PAXC-26)"
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                placeholder="e.g. WGHS-26"
+                className="flex-1 min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
               />
               <button
                 type="submit"
                 disabled={isJoiningTeam || !joinAnotherCode.trim()}
-                className="w-full min-h-[44px] ap-btn-primary justify-center text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+                className="min-h-[44px] px-4 ap-btn-secondary justify-center text-xs sm:text-sm font-bold cursor-pointer disabled:opacity-50"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>{isJoiningTeam ? 'Joining Team...' : 'Join Team With Code'}</span>
+                <span>{isJoiningTeam ? 'Joining...' : 'Join Team'}</span>
               </button>
             </div>
           </form>
-
-          {/* Card 2: Head Coach / Club Captain Creating New Team */}
-          <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm min-w-0">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Create a Coach &amp; Team Workspace
-                </h3>
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ap-status-info">
-                  <Users className="w-3 h-3" />
-                  <span>Head Coach / Director</span>
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Set up school or club colors, U18 Safe-Sport weight shielding, printable locker-room QR sheets, CSV roster invites, and VDOT pacing pods.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={openCreateNewTeam}
-              className="w-full min-h-[44px] ap-btn-secondary justify-center text-xs sm:text-sm font-bold cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Launch Team Branding Studio</span>
-            </button>
-          </div>
         </div>
       )}
 
       {/* ====================================================================
-          TEAM BRANDING & HIGH SCHOOL SAFEGUARDING STUDIO (CREATE / EDIT)
+          TEAM CREATION & OPTIONAL BRANDING / SAFEGUARDING (PROGRESSIVE)
          ==================================================================== */}
       {showCreateOrEditStudio && (
         <form
           onSubmit={handleSaveTeamStudio}
-          className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 space-y-5 shadow-md"
+          data-testid="team-studio-form"
+          className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 space-y-4 shadow-md"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 dark:border-slate-800 pb-3.5">
-            <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-slate-800 pb-3">
+            <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {studioMode === 'EDIT'
-                  ? `Customize ${activeTeam?.brand.name}`
-                  : 'Create Branded School, Collegiate, or Club Workspace'}
+                  ? `Edit ${activeTeam?.brand.name}`
+                  : 'Create Team Workspace'}
               </h3>
-              <span className="ap-lane-badge">
-                <span>
-                  {studioMode === 'EDIT'
-                    ? 'Edit Identity & Safeguarding'
-                    : 'Step 1 · Branding & Safeguarding'}
-                </span>
-              </span>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Choose your program type and enter your team name to get your Join Code right away.
+              </p>
             </div>
-            {myTeams.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowCreateOrEditStudio(false)}
-                className="text-xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-              >
-                Cancel
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowCreateOrEditStudio(false)}
+              className="min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-mono text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
 
           {/* Organization Type Cards */}
-          <div>
-            <div
-              id={`${formId}-org-type-label`}
-              className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2"
-            >
-              Program Type (Automatically Configures Safeguarding Defaults)
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div
+                id={`${formId}-org-type-label`}
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                Program Type
+              </div>
+              <span className="text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00]">
+                Auto-defaults: {defaultSafeSportShield ? 'Safe-Sport Shield ON' : 'Standard Weight View'}
+                {enableParentGuardianCc ? ' · Parent CC ON' : ''}
+              </span>
             </div>
             <div
               role="group"
@@ -827,41 +833,24 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             </div>
           </div>
 
-          {/* Name, Short Lockup, Motto, Coach Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="lg:col-span-2">
+          {/* Essential 2-Field Row: Team Name + Coach Display Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
               <label
                 htmlFor={`${formId}-team-name`}
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
               >
-                Full School / Club Name
+                School or Club Team Name
               </label>
               <input
                 id={`${formId}-team-name`}
+                data-testid="team-name-input"
                 type="text"
                 required
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                placeholder="e.g. Palo Alto High Varsity XC"
+                placeholder="e.g. Willow Glen High School XC"
                 className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor={`${formId}-short-name`}
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
-              >
-                Header Short Name
-              </label>
-              <input
-                id={`${formId}-short-name`}
-                type="text"
-                value={shortName}
-                onChange={(e) => setShortName(e.target.value.toUpperCase())}
-                placeholder="e.g. PALY XC"
-                maxLength={18}
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
               />
             </div>
 
@@ -883,183 +872,219 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             </div>
           </div>
 
-          {/* Colors, Presets, Crest Upload & Live Co-Branded Preview */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            <div className="lg:col-span-7 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div
-                  id={`${formId}-palette-label`}
-                  className="text-xs font-semibold text-slate-700 dark:text-slate-300"
-                >
-                  School / Club Palette (WCAG 2.1 AA Contrast-Clamped)
-                </div>
-                <span className="text-2xs font-mono text-emerald-700 dark:text-emerald-300">
-                  Light {lightRatio}:1 · Dark {darkRatio}:1 · Zones Z1–Z7 Protected
-                </span>
-              </div>
+          {/* Progressive Disclosure: Optional Short Name, Colors, Crest & Safeguarding Overrides */}
+          <div className="rounded-xl ap-card-inset overflow-hidden">
+            <button
+              type="button"
+              data-testid="team-toggle-advanced-branding"
+              aria-expanded={showAdvancedBranding}
+              onClick={() => setShowAdvancedBranding((prev) => !prev)}
+              className="w-full min-h-[44px] px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer"
+            >
+              <span>Customize Short Name, Colors, Crest &amp; Safeguarding (Optional)</span>
+              <ChevronDown
+                className={`w-4 h-4 text-slate-500 transition-transform ${
+                  showAdvancedBranding ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
 
-              <div
-                role="group"
-                aria-labelledby={`${formId}-palette-label`}
-                className="flex flex-wrap gap-1.5"
-              >
-                {CURATED_TEAM_PALETTE_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => {
-                      setPrimaryHex(preset.primaryHex);
-                      setSecondaryHex(preset.secondaryHex);
-                    }}
-                    className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] hover:border-slate-400 text-2xs font-medium cursor-pointer"
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: preset.primaryHex }}
-                    />
-                    <span
-                      className="w-3 h-3 rounded-full -ml-1"
-                      style={{ backgroundColor: preset.secondaryHex }}
-                    />
-                    <span>{preset.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
-                  <input
-                    id={`${formId}-primary-color`}
-                    type="color"
-                    value={primaryHex}
-                    aria-label="Primary school or club color"
-                    onChange={(e) => setPrimaryHex(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-                  />
-                  <label htmlFor={`${formId}-primary-color`} className="text-xs cursor-pointer">
-                    <span className="block font-semibold">Primary</span>
-                    <span className="block font-mono text-2xs text-slate-500">{primaryHex}</span>
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
-                  <input
-                    id={`${formId}-secondary-color`}
-                    type="color"
-                    value={secondaryHex}
-                    aria-label="Secondary school or club color"
-                    onChange={(e) => setSecondaryHex(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-                  />
-                  <label htmlFor={`${formId}-secondary-color`} className="text-xs cursor-pointer">
-                    <span className="block font-semibold">Secondary</span>
-                    <span className="block font-mono text-2xs text-slate-500">
-                      {secondaryHex}
-                    </span>
-                  </label>
-                </div>
-
-                <div>
-                  <input
-                    ref={logoFileInputRef}
-                    type="file"
-                    aria-label="Upload team crest or logo image"
-                    accept="image/svg+xml,image/png,image/webp,image/jpeg"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      try {
-                        const resized = await downscaleLogoFileToDataUrl(f);
-                        setLogoDataUrl(resized);
-                      } catch {
-                        setBannerMessage({
-                          tone: 'error',
-                          text: 'Could not process crest image.',
-                        });
+            {showAdvancedBranding && (
+              <div className="px-3.5 pb-4 pt-2 border-t border-stone-200/80 dark:border-[#244331] grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                <div className="lg:col-span-7 space-y-3">
+                  <div>
+                    <label
+                      htmlFor={`${formId}-short-name`}
+                      className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+                    >
+                      Header Short Name
+                    </label>
+                    <input
+                      id={`${formId}-short-name`}
+                      type="text"
+                      value={shortName}
+                      onChange={(e) => setShortName(e.target.value.toUpperCase())}
+                      placeholder={
+                        teamName.trim()
+                          ? deriveShortNameFromTeamName(teamName)
+                          : 'Auto-generated from Team Name'
                       }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => logoFileInputRef.current?.click()}
-                    className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
+                      maxLength={18}
+                      className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div
+                      id={`${formId}-palette-label`}
+                      className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                    >
+                      School / Club Palette (WCAG 2.1 AA Contrast-Safe)
+                    </div>
+                    <span className="text-2xs font-mono text-emerald-700 dark:text-emerald-300">
+                      Light {lightRatio}:1 · Dark {darkRatio}:1 · Zones Z1–Z6 Protected
+                    </span>
+                  </div>
+
+                  <div
+                    role="group"
+                    aria-labelledby={`${formId}-palette-label`}
+                    className="flex flex-wrap gap-1.5"
                   >
-                    <Upload className="w-3.5 h-3.5 text-[#0284C7]" />
-                    <span>{logoDataUrl ? 'Replace Crest' : 'Upload Crest / Logo'}</span>
-                  </button>
+                    {CURATED_TEAM_PALETTE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setPrimaryHex(preset.primaryHex);
+                          setSecondaryHex(preset.secondaryHex);
+                        }}
+                        className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] hover:border-slate-400 text-2xs font-medium cursor-pointer"
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: preset.primaryHex }}
+                        />
+                        <span
+                          className="w-3 h-3 rounded-full -ml-1"
+                          style={{ backgroundColor: preset.secondaryHex }}
+                        />
+                        <span>{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
+                      <input
+                        id={`${formId}-primary-color`}
+                        type="color"
+                        value={primaryHex}
+                        aria-label="Primary school or club color"
+                        onChange={(e) => setPrimaryHex(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
+                      />
+                      <label htmlFor={`${formId}-primary-color`} className="text-xs cursor-pointer">
+                        <span className="block font-semibold">Primary</span>
+                        <span className="block font-mono text-2xs text-slate-500">{primaryHex}</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
+                      <input
+                        id={`${formId}-secondary-color`}
+                        type="color"
+                        value={secondaryHex}
+                        aria-label="Secondary school or club color"
+                        onChange={(e) => setSecondaryHex(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
+                      />
+                      <label htmlFor={`${formId}-secondary-color`} className="text-xs cursor-pointer">
+                        <span className="block font-semibold">Secondary</span>
+                        <span className="block font-mono text-2xs text-slate-500">
+                          {secondaryHex}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        aria-label="Upload team crest or logo image"
+                        accept="image/svg+xml,image/png,image/webp,image/jpeg"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          try {
+                            const resized = await downscaleLogoFileToDataUrl(f);
+                            setLogoDataUrl(resized);
+                          } catch {
+                            setBannerMessage({
+                              tone: 'error',
+                              text: 'Could not process crest image.',
+                            });
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-[#0284C7]" />
+                        <span>{logoDataUrl ? 'Replace Crest' : 'Upload Crest'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-200 dark:border-emerald-400/20 p-3.5 space-y-3">
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Header Lockup Preview
+                  </div>
+                  <div className="rounded-xl bg-white dark:bg-[#15231B] border border-stone-200 dark:border-emerald-400/20 p-3 relative overflow-hidden">
+                    <div
+                      className="absolute top-0 left-0 right-0 h-[3px]"
+                      style={{ background: livePalette.hairlineGradientLight }}
+                    />
+                    <AeroPulseLogo size="md" showTagline teamBrand={previewBrand} />
+                  </div>
+
+                  <div className="space-y-2 pt-1 text-xs">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={defaultSafeSportShield}
+                        onChange={(e) => setDefaultSafeSportShield(e.target.checked)}
+                        className="mt-0.5 rounded"
+                      />
+                      <span>
+                        <strong className="text-slate-900 dark:text-white">
+                          Safe-Sport Weight Shield
+                        </strong>
+                        <span className="block text-2xs text-slate-500 dark:text-slate-400">
+                          Hides body weight and W/kg across youth team views.
+                        </span>
+                      </span>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enableParentGuardianCc}
+                        onChange={(e) => setEnableParentGuardianCc(e.target.checked)}
+                        className="mt-0.5 rounded"
+                      />
+                      <span>
+                        <strong className="text-slate-900 dark:text-white">
+                          Parent / Guardian CC on Invites
+                        </strong>
+                        <span className="block text-2xs text-slate-500 dark:text-slate-400">
+                          Automatically copies parent emails on U18 invites.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {/* Live Header & Safeguarding Preview */}
-            <div className="lg:col-span-5 rounded-xl liquid-glass-subtle p-4 space-y-3">
-              <div className="text-2xs font-mono uppercase tracking-wider text-slate-500">
-                LIVE CO-BRANDED HEADER PREVIEW
-              </div>
-              <div className="rounded-xl bg-white dark:bg-[#101B15] border border-stone-200 dark:border-emerald-400/20 p-3 relative overflow-hidden">
-                <div
-                  className="absolute top-0 left-0 right-0 h-[3px]"
-                  style={{ background: livePalette.hairlineGradientLight }}
-                />
-                <AeroPulseLogo size="md" showTagline teamBrand={previewBrand} />
-              </div>
-
-              {/* Youth Safeguarding Checkboxes */}
-              <div className="space-y-2 pt-1 text-xs">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={defaultSafeSportShield}
-                    onChange={(e) => setDefaultSafeSportShield(e.target.checked)}
-                    className="mt-0.5 rounded"
-                  />
-                  <span>
-                    <strong className="text-slate-900 dark:text-white">
-                      Safe-Sport Weight Shield (Default ON for High School)
-                    </strong>
-                    <span className="block text-2xs text-slate-500 dark:text-slate-400">
-                      Masks body weight &amp; W/kg across team views to protect youth athletes.
-                    </span>
-                  </span>
-                </label>
-
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enableParentGuardianCc}
-                    onChange={(e) => setEnableParentGuardianCc(e.target.checked)}
-                    className="mt-0.5 rounded"
-                  />
-                  <span>
-                    <strong className="text-slate-900 dark:text-white">
-                      Parent / Guardian CC on Roster Invites
-                    </strong>
-                    <span className="block text-2xs text-slate-500 dark:text-slate-400">
-                      Automatically CCs parent emails on youth team invites.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </div>
+            )}
           </div>
 
-          <div className="flex justify-end gap-2.5 pt-2 border-t border-stone-200 dark:border-slate-800">
+          <div className="flex justify-end gap-2.5 pt-1">
             <button
               type="submit"
+              data-testid="team-studio-submit-btn"
               disabled={isSavingStudio || !teamName.trim()}
-              className="ap-btn-primary text-xs sm:text-sm cursor-pointer"
+              className="ap-btn-primary text-xs sm:text-sm font-bold cursor-pointer"
             >
               {isSavingStudio ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
               ) : (
                 <Check className="w-4 h-4" />
               )}
-              <span>
-                {studioMode === 'EDIT'
-                  ? 'Save Branding & Safeguarding'
-                  : 'Create Team & Generate Join Code'}
-              </span>
+              <span>{studioMode === 'EDIT' ? 'Save Team Settings' : 'Create Team'}</span>
             </button>
           </div>
         </form>
@@ -1101,7 +1126,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => copyTextWithFeedback('team-url', activeJoinUrl)}
-                    className="px-2.5 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedId === 'team-url' ? (
                       <>
@@ -1111,7 +1136,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     ) : (
                       <>
                         <Link2 className="w-3.5 h-3.5" />
-                        <span>Copy Magic Join Link</span>
+                        <span>Copy Join Link</span>
                       </>
                     )}
                   </button>
@@ -1121,20 +1146,32 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     onClick={() =>
                       openPrintableTeamPosterWindow(activeTeam.brand, activeJoinUrl)
                     }
-                    className="px-2.5 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#0284C7]" />
-                    <span>Print Locker-Room QR Sheet</span>
+                    <span>Print QR Poster</span>
                   </button>
+
+                  {onOpenPublicTeamHub && (
+                    <button
+                      type="button"
+                      data-testid="panel-open-public-hub-btn"
+                      onClick={() => onOpenPublicTeamHub(activeTeam.brand.slug)}
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ShareNetwork className="w-3.5 h-3.5 text-[#0D9488]" />
+                      <span>Parent Hub</span>
+                    </button>
+                  )}
 
                   {isActiveTeamCoach && (
                     <>
                       <button
                         type="button"
                         onClick={openEditForActiveTeam}
-                        className="px-2.5 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold cursor-pointer"
+                        className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold cursor-pointer"
                       >
-                        Edit Branding &amp; Colors
+                        Edit Team
                       </button>
 
                       {onOpenClipboard && (
@@ -1144,7 +1181,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg ap-btn-primary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                         >
                           <CalendarPlus className="w-3.5 h-3.5" />
-                          <span>Assign Workout in Clipboard →</span>
+                          <span>Open Clipboard →</span>
                         </button>
                       )}
                     </>
@@ -1176,31 +1213,36 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             </div>
           </div>
 
-          {/* Coach-Only Bulk Roster CSV / Spreadsheet / Resend Email Inviter */}
+          {/* Coach-Only Athlete Importer */}
           {isActiveTeamCoach && (
-            <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-5 space-y-4">
+            <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 p-4 sm:p-5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                      Bulk Roster Importer · CSV, Email or SMS
-                    </h4>
-                    <span
-                      className={`px-2 py-0.5 rounded text-2xs font-mono font-bold ${
-                        resendConfigured ? 'ap-status-prime' : 'ap-status-info'
-                      }`}
-                    >
-                      {resendConfigured
-                        ? 'Direct Branded Email Active'
-                        : 'Magic Link, Email & SMS Ready'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Columns: <code>Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark</code> (or email list).
-                  </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Invite or Import Athletes (CSV, Email or SMS)
+                  </h4>
+                  <span
+                    className={`px-2 py-0.5 rounded text-2xs font-mono font-bold ${
+                      resendConfigured ? 'ap-status-prime' : 'ap-status-info'
+                    }`}
+                  >
+                    {resendConfigured
+                      ? 'Direct Email Active'
+                      : 'Magic Link, Email & SMS Ready'}
+                  </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {onOpenExternalSync && (
+                    <button
+                      type="button"
+                      onClick={onOpenExternalSync}
+                      className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#244331] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
+                      <span>Athletic.net / TFRRS Sync</span>
+                    </button>
+                  )}
                   <input
                     ref={csvFileInputRef}
                     type="file"
@@ -1218,7 +1260,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => csvFileInputRef.current?.click()}
-                    className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Upload .CSV</span>
@@ -1236,15 +1278,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         ].join('\n')
                       )
                     }
-                    className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-mono cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl bg-stone-200/70 dark:bg-slate-800 text-xs font-mono cursor-pointer"
                   >
-                    Load Sample CSV
+                    Sample CSV
                   </button>
                 </div>
               </div>
 
               <textarea
-                rows={4}
+                rows={3}
                 value={rawRosterInput}
                 aria-label="Paste spreadsheet rows or athlete email list for roster import"
                 onChange={(e) => setRawRosterInput(e.target.value)}
@@ -1331,16 +1373,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
           {/* Live Team Roster & Onboarding Funnel Status Table */}
           <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-stone-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {activeTeam.brand.name} — Roster &amp; Onboarding Funnel (
-                  {activeTeam.memberships.length})
-                </h4>
-                <p className="text-2xs text-slate-500 dark:text-slate-400">
-                  Track who has opened their invite, claimed their spot, and synced their morning readiness.
-                </p>
-              </div>
+            <div className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                {activeTeam.brand.name} — Roster ({activeTeam.memberships.length})
+              </h4>
 
               {isActiveTeamCoach &&
                 activeTeam.memberships.some((m) => m.status !== 'ACTIVE') && (

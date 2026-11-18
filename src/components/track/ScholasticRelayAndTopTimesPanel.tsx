@@ -82,6 +82,12 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
     [relayEvent, candidates]
   );
 
+  const usingSampleMarks = useMemo(
+    () =>
+      !roster.some((ath) => (ath.activities || []).some((act) => Boolean(act.officialRaceData))),
+    [roster]
+  );
+
   const combinedLeaderboardMarks = useMemo<SquadLeaderboardMarkInput[]>(() => {
     const derived: SquadLeaderboardMarkInput[] = [];
     for (const ath of roster) {
@@ -218,6 +224,11 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
             <span className="ap-status-caution px-2 py-0.5 rounded font-mono text-2xs font-bold uppercase">
               +0.24s / +0.14s Rule
             </span>
+            {usingSampleMarks && (
+              <span className="px-2 py-0.5 rounded font-mono text-2xs font-semibold ap-card-inset text-slate-600 dark:text-slate-300">
+                Sample Preview
+              </span>
+            )}
           </div>
 
           <div className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">

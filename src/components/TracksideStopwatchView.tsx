@@ -83,6 +83,7 @@ export interface TracksideStopwatchViewProps {
   activeTeamId: string | null;
   onSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
   onOpenActivitiesTab: () => void;
+  postSaveActionLabel?: string;
   onOpenRosterModal: () => void;
 }
 
@@ -101,6 +102,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   activeTeamId,
   onSaveStopwatchActivities,
   onOpenActivitiesTab,
+  postSaveActionLabel = 'View in Activities',
   onOpenRosterModal,
 }) => {
   const {
@@ -2235,7 +2237,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               onClick={onOpenActivitiesTab}
               className="underline font-bold cursor-pointer"
             >
-              View in Activities
+              {postSaveActionLabel}
             </button>
           </div>
         )}

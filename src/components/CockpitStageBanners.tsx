@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ArrowLeft,
   RefreshCw,
   Database,
   CalendarPlus,
@@ -9,6 +10,7 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  Users,
   X,
 } from './icons/PhosphorIcons';
 import type {
@@ -64,6 +66,8 @@ interface CockpitStageBannersProps {
   onOpenProfileModal?: () => void;
   onOpenPlanBuilder?: () => void;
   onExploreFitness?: () => void;
+  onReturnToCoachWorkspace?: () => void;
+  onOpenCoachWorkspace?: () => void;
 }
 
 export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
@@ -96,6 +100,8 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
   onOpenProfileModal,
   onOpenPlanBuilder,
   onExploreFitness,
+  onReturnToCoachWorkspace,
+  onOpenCoachWorkspace,
 }) => {
   const [dismissedWelcomeFork, setDismissedWelcomeFork] = useState<boolean>(() => {
     try {
@@ -116,7 +122,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
 
   const activeBannerSlot = readOnlyNotice
     ? 'READ_ONLY'
-    : activeConnectedAthlete
+    : activeConnectedAthlete && !isCoachMode
       ? 'CONNECTED_ATHLETE'
       : pendingUrlJoinOffer
         ? 'JOIN_OFFER'
@@ -258,18 +264,29 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onReturnToCoachWorkspace && (
+              <button
+                type="button"
+                data-testid="banner-back-to-coach-roster"
+                onClick={onReturnToCoachWorkspace}
+                className="ap-btn-primary min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Coach Roster</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onOpenRosterModal}
               className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-300 flex items-center gap-1.5 cursor-pointer"
             >
               <Shield className="w-3.5 h-3.5" />
-              <span>Manage Roster &amp; Coach Push</span>
+              <span>Connections &amp; Privacy</span>
             </button>
             <button
               type="button"
               onClick={onReturnToMyProfile}
-              className="ap-btn-primary min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs font-mono cursor-pointer"
+              className={`${onReturnToCoachWorkspace ? 'ap-btn-secondary' : 'ap-btn-primary'} min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs font-mono cursor-pointer`}
             >
               Return to My Profile
             </button>
@@ -470,6 +487,16 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               <Target className="w-3.5 h-3.5" />
               <span>Build a Workout or Plan</span>
             </button>
+            {myTeamsCount === 0 && onOpenCoachWorkspace && (
+              <button
+                type="button"
+                onClick={onOpenCoachWorkspace}
+                className="ap-btn-secondary !min-h-[44px] sm:!min-h-[32px] px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Coach a Team</span>
+              </button>
+            )}
             <button
               type="button"
               aria-label="Dismiss welcome quick start"

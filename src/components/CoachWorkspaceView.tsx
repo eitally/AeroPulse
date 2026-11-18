@@ -32,6 +32,7 @@ import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   ChevronDown,
   Globe,
+  HelpCircle,
   Shield,
   Users,
 } from './icons/PhosphorIcons';
@@ -121,6 +122,7 @@ export interface CoachWorkspaceViewProps {
   onOpenAthleteToday: () => void;
   onOpenRosterModal: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
+  onOpenCoachGuide?: () => void;
 }
 
 export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
@@ -161,6 +163,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenAthleteToday,
   onOpenRosterModal,
   onOpenPublicTeamHub,
+  onOpenCoachGuide,
 }) => {
   const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
   const [isExternalSyncOpen, setIsExternalSyncOpen] = useState<boolean>(() => {
@@ -354,13 +357,14 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   value={activeTeamId || ''}
                   onChange={(e) => onSelectActiveTeam(e.target.value || null)}
                   aria-label="Select Team in Coach Workspace"
-                  className="hidden md:block min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
                 >
                   {myTeams.map((t) => (
                     <option key={t.brand.teamId} value={t.brand.teamId}>
                       {t.brand.shortName || t.brand.name}
                     </option>
                   ))}
+                  <option value="">Personal Mode</option>
                 </select>
               )}
 
@@ -388,6 +392,17 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 <Globe className="w-3.5 h-3.5" weight="duotone" />
                 <span>Athletic.net / TFRRS</span>
               </button>
+              {onOpenCoachGuide && (
+                <button
+                  type="button"
+                  data-testid="coach-open-guide-btn"
+                  onClick={onOpenCoachGuide}
+                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>Coach Guide</span>
+                </button>
+              )}
             </div>
           </div>
         </section>
@@ -396,7 +411,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       {/* 1. CLIPBOARD (COACH HOME — Opens at 0px scroll directly on Workout Builder) */}
       {subTab === 'CLIPBOARD' && (
         <div className="space-y-3">
-          {flaggedTriageCount > 0 && (
+          {flaggedTriageCount > 0 ? (
             <button
               type="button"
               data-testid="clipboard-flagged-triage-btn"
@@ -414,6 +429,21 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 Review Squad Triage →
               </span>
             </button>
+          ) : (
+            connectedAthletesOnly.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSubTab('ROSTER')}
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+              >
+                <span className="truncate">
+                  All {connectedAthletesOnly.length} connected athletes clear for full training today
+                </span>
+                <span className="font-mono text-2xs ap-text-brand shrink-0 underline">
+                  Open 7d Squad Triage →
+                </span>
+              </button>
+            )
           )}
 
           {myTeams.length === 0 && connectedAthletesOnly.length === 0 && (
@@ -424,35 +454,17 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   No team roster connected yet
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="coach-empty-setup-btn"
-                  onClick={() => {
-                    setOpenCreateTeamOnSwitch(true);
-                    setSubTab('ROSTER');
-                  }}
-                  className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-bold cursor-pointer"
-                >
-                  Create Team or Import CSV
-                </button>
-                <button
-                  type="button"
-                  data-testid="coach-empty-external-sync-btn"
-                  onClick={() => setIsExternalSyncOpen(true)}
-                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Globe className="w-3.5 h-3.5" weight="duotone" />
-                  <span>Sync Athletic.net / TFRRS</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSubTab('STOPWATCH')}
-                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-semibold cursor-pointer"
-                >
-                  Open Stopwatch
-                </button>
-              </div>
+              <button
+                type="button"
+                data-testid="coach-empty-setup-btn"
+                onClick={() => {
+                  setOpenCreateTeamOnSwitch(true);
+                  setSubTab('ROSTER');
+                }}
+                className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+              >
+                Set Up Team or Import Roster
+              </button>
             </section>
           )}
 
@@ -532,7 +544,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           activeTeamId={activeTeamId}
           onSaveStopwatchActivities={onSaveStopwatchActivities}
           onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
-          onOpenRosterModal={onOpenRosterModal}
+          postSaveActionLabel="View Team Plan"
+          onOpenRosterModal={() => setSubTab('ROSTER')}
         />
       )}
 

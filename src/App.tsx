@@ -39,6 +39,7 @@ import {
 import { StravaAuthGate } from './components/StravaAuthGate';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
+import type { UserGuideChapterId } from './components/UserGuideModal';
 import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
 import {
   partitionSavedStopwatchEntries,
@@ -174,8 +175,11 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
-  const [rosterInitialTab, setRosterInitialTab] = useState<RosterTab>('TEAMS_BRANDING');
+  const [rosterInitialTab, setRosterInitialTab] = useState<RosterTab>('CONNECT_INVITE');
   const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
+  const [guideInitialChapter, setGuideInitialChapter] =
+    useState<UserGuideChapterId>('ch1-quickstart');
+  const [inspectedFromCoach, setInspectedFromCoach] = useState<boolean>(false);
 
   const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(() => {
     try {
@@ -339,6 +343,7 @@ export default function App() {
     setSampleDemoActiveTeamId(null);
     setSelectedActivity(null);
     setActiveViewedAthleteId('SELF');
+    setInspectedFromCoach(false);
     resetDemoCheckInsRef.current?.();
     try {
       window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
@@ -1348,6 +1353,12 @@ export default function App() {
   }, [closeAllGlobalModals]);
   const handleOpenMetricsGuideModal = useCallback(() => {
     closeAllGlobalModals();
+    setGuideInitialChapter(activeTab === 'coach' ? 'ch7-coaching' : 'ch1-quickstart');
+    setShowMetricsGuide(true);
+  }, [closeAllGlobalModals, activeTab]);
+  const handleOpenCoachGuideModal = useCallback(() => {
+    closeAllGlobalModals();
+    setGuideInitialChapter('ch7-coaching');
     setShowMetricsGuide(true);
   }, [closeAllGlobalModals]);
 
@@ -1614,8 +1625,24 @@ export default function App() {
               shieldedConnectedTelemetry={shieldedConnectedTelemetry}
               onOpenRosterModal={handleOpenRosterModal}
               onReturnToMyProfile={() => {
+                setInspectedFromCoach(false);
                 setActiveViewedAthleteId('SELF');
                 setSelectedActivity(null);
+              }}
+              onReturnToCoachWorkspace={
+                inspectedFromCoach
+                  ? () => {
+                      setInspectedFromCoach(false);
+                      setActiveViewedAthleteId('SELF');
+                      setSelectedActivity(null);
+                      setActiveTab('coach');
+                      setCoachSubTab('ROSTER');
+                    }
+                  : undefined
+              }
+              onOpenCoachWorkspace={() => {
+                setActiveTab('coach');
+                setCoachSubTab('ROSTER');
               }}
               readOnlyNotice={readOnlyNotice}
               onDismissReadOnlyNotice={() => setReadOnlyNotice(null)}
@@ -1665,6 +1692,7 @@ export default function App() {
                 activeTeam={effectiveActiveTeam}
                 activeViewedAthleteId={activeViewedAthleteId}
                 onSelectAthleteViewport={(id) => {
+                  setInspectedFromCoach(activeTab === 'coach' && id !== 'SELF');
                   setActiveViewedAthleteId(id);
                   setSelectedActivity(null);
                 }}
@@ -1672,6 +1700,7 @@ export default function App() {
                 onSelectActiveTeam={effectiveOnSelectActiveTeam}
                 onTeamsUpdated={effectiveOnTeamsUpdated}
                 onOpenPublicTeamHub={openPublicTeamHub}
+                onOpenCoachGuide={handleOpenCoachGuideModal}
                 effectiveActivities={effectiveActivities}
                 effectiveWellnessDays={effectiveWellnessDays}
                 effectivePlannedEvents={effectivePlannedEvents}
@@ -1853,7 +1882,15 @@ export default function App() {
             }
           }}
           showMetricsGuide={showMetricsGuide}
+          guideInitialChapter={guideInitialChapter}
           onCloseMetricsGuide={() => setShowMetricsGuide(false)}
+          onOpenCoachWorkspace={(subTab) => {
+            setInspectedFromCoach(false);
+            setActiveViewedAthleteId('SELF');
+            setSelectedActivity(null);
+            setActiveTab('coach');
+            if (subTab) setCoachSubTab(subTab);
+          }}
           onNavigateTab={(tab) => setActiveTab(tab)}
           onOpenDataSourcesFromGuide={handleOpenDataSourcesModal}
           onOpenRosterModalFromGuide={handleOpenRosterModal}
