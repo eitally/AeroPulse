@@ -67,13 +67,15 @@ import { useTelemetrySync, hasStravaClientCredentials, type CompleteStravaAuthFn
 import { useTelemetryConnectors } from './hooks/useTelemetryConnectors';
 import { useRouteStreams } from './hooks/useRouteStreams';
 import { usePlannedEvents } from './hooks/usePlannedEvents';
-import { useTeamRoster } from './hooks/useTeamRoster';
+import { useTeamRoster, buildConnectedRosterFromTeam } from './hooks/useTeamRoster';
 import { useCoachChat } from './hooks/useCoachChat';
 import { useRosterActions } from './hooks/useRosterActions';
 import { useBrandStudioRoute } from './utils/brandRoute';
+import { usePublicTeamHubRoute } from './utils/publicTeamHubRoute';
 import { useShareWorkoutRoute, sharedWorkoutToPlannedEventInput } from './utils/shareWorkoutEngine';
 import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
 import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
+import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
 import { getLocalDateIso } from './physiology/stravaLoadCalibration';
 import {
   consumeRestoredTabAfterChunkReload,
@@ -88,6 +90,9 @@ const BrandGuidePage = lazyWithRetry(() => import('./components/BrandGuidePage')
 const ShareWorkoutPage = lazyWithRetry(() => import('./components/ShareWorkoutPage'), {
   chunkKey: 'ShareWorkoutPage',
 });
+const PublicTeamHubPage = lazyWithRetry(() => import('./components/PublicTeamHubPage'), {
+  chunkKey: 'PublicTeamHubPage',
+});
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
@@ -95,6 +100,7 @@ const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-w
 export default function App() {
   const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
   const { isShareRoute, sharedWorkout, closeShareWorkout } = useShareWorkoutRoute();
+  const { publicTeamSlug, openPublicTeamHub, closePublicTeamHub } = usePublicTeamHubRoute();
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const restoredTab = consumeRestoredTabAfterChunkReload();
     if (restoredTab) return restoredTab;
@@ -102,6 +108,7 @@ export default function App() {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.replace(/^#/, '');
         if (hash === 'plan-builder') return 'totals';
+        if (hash === 'coach-sync') return 'coach';
         if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
           return hash as ActiveTab;
         }
@@ -119,6 +126,10 @@ export default function App() {
         const hash = window.location.hash.replace(/^#/, '');
         if (hash === 'plan-builder') {
           setActiveTab('totals');
+          return;
+        }
+        if (hash === 'coach-sync') {
+          setActiveTab('coach');
           return;
         }
         if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
@@ -312,6 +323,8 @@ export default function App() {
   const [sampleDemoConnectedAthletes, setSampleDemoConnectedAthletes] = useState<
     ConnectedAthleteRecord[]
   >(() => buildInitialConnectedAthletes());
+  const [sampleDemoTeams, setSampleDemoTeams] = useState<TeamSummaryWithRole[]>([]);
+  const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(null);
 
   const resetSampleDemoEphemeralState = useCallback(() => {
     const fresh = buildSampleDemoDataset();
@@ -322,6 +335,8 @@ export default function App() {
     setSampleDemoTargetGoals(fresh.targetGoals);
     setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
     setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
+    setSampleDemoTeams([]);
+    setSampleDemoActiveTeamId(null);
     setSelectedActivity(null);
     setActiveViewedAthleteId('SELF');
     resetDemoCheckInsRef.current?.();
@@ -524,6 +539,44 @@ export default function App() {
     isSessionLoggedOut,
   });
 
+  const effectiveTeams = isSampleDemoMode ? sampleDemoTeams : myTeams;
+  const effectiveActiveTeamId = isSampleDemoMode ? sampleDemoActiveTeamId : activeTeamId;
+  const effectiveActiveTeam = useMemo(() => {
+    if (!effectiveTeams.length) return null;
+    if (effectiveActiveTeamId) {
+      const match = effectiveTeams.find((t) => t.brand.teamId === effectiveActiveTeamId);
+      if (match) return match;
+    }
+    return effectiveTeams[0];
+  }, [effectiveTeams, effectiveActiveTeamId]);
+
+  const effectiveOnTeamsUpdated = useCallback(
+    (nextTeams: TeamSummaryWithRole[], nextActiveId?: string | null) => {
+      if (isSampleDemoMode) {
+        setSampleDemoTeams(nextTeams);
+        if (nextActiveId !== undefined) {
+          setSampleDemoActiveTeamId(nextActiveId || (nextTeams[0]?.brand.teamId ?? null));
+        } else if (nextTeams.length > 0 && !sampleDemoActiveTeamId) {
+          setSampleDemoActiveTeamId(nextTeams[0].brand.teamId);
+        }
+        return;
+      }
+      handleTeamsUpdated(nextTeams, nextActiveId);
+    },
+    [isSampleDemoMode, sampleDemoActiveTeamId, handleTeamsUpdated]
+  );
+
+  const effectiveOnSelectActiveTeam = useCallback(
+    (nextId: string | null) => {
+      if (isSampleDemoMode) {
+        setSampleDemoActiveTeamId(nextId);
+        return;
+      }
+      handleSelectActiveTeam(nextId);
+    },
+    [isSampleDemoMode, handleSelectActiveTeam]
+  );
+
   const completeStravaAuthHandshakeRef = useRef<CompleteStravaAuthFn | null>(null);
   const { reconcileStoreOwnerAthleteId, fetchServerConfigStatus, syncLiveTelemetry } =
     useTelemetrySync({
@@ -617,21 +670,28 @@ export default function App() {
     reRankActivitiesSegments,
   });
 
-  const combinedRoster = useMemo(
-    () =>
-      isSampleDemoMode
-        ? sampleDemoConnectedAthletes
-        : myTeams.length > 0
-          ? cloudTeamRosterAthletes
-          : connectedAthletes,
-    [
-      isSampleDemoMode,
-      sampleDemoConnectedAthletes,
-      myTeams.length,
-      cloudTeamRosterAthletes,
-      connectedAthletes,
-    ]
-  );
+  const combinedRoster = useMemo(() => {
+    if (isSampleDemoMode) {
+      if (sampleDemoTeams.length > 0) {
+        const syncedRoster = buildConnectedRosterFromTeam(effectiveActiveTeam);
+        const existingIds = new Set(syncedRoster.map((a) => a.id));
+        return [
+          ...syncedRoster,
+          ...sampleDemoConnectedAthletes.filter((a) => !existingIds.has(a.id)),
+        ];
+      }
+      return sampleDemoConnectedAthletes;
+    }
+    return myTeams.length > 0 ? cloudTeamRosterAthletes : connectedAthletes;
+  }, [
+    isSampleDemoMode,
+    sampleDemoTeams.length,
+    effectiveActiveTeam,
+    sampleDemoConnectedAthletes,
+    myTeams.length,
+    cloudTeamRosterAthletes,
+    connectedAthletes,
+  ]);
 
   // Multi-Athlete Context Resolution & Privacy Shield Enforcement
   const activeConnectedAthlete = useMemo(
@@ -650,8 +710,8 @@ export default function App() {
     handleDeletePlanBlock,
   } = usePlannedEvents({
     activeConnectedAthlete,
-    activeTeam,
-    handleTeamsUpdated,
+    activeTeam: effectiveActiveTeam,
+    handleTeamsUpdated: effectiveOnTeamsUpdated,
     isSampleDemoMode,
     triggerReadOnlyAlert,
     setPlannedEvents,
@@ -669,8 +729,8 @@ export default function App() {
     handlePushCoachWorkout,
   } = useRosterActions({
     isSampleDemoMode,
-    activeTeam,
-    handleTeamsUpdated,
+    activeTeam: effectiveActiveTeam,
+    handleTeamsUpdated: effectiveOnTeamsUpdated,
     setConnectedAthletes,
     setSampleDemoConnectedAthletes,
     setActiveViewedAthleteId,
@@ -859,37 +919,38 @@ export default function App() {
 
   const effectivePlannedEvents = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.plannedEvents;
-    if (isSampleDemoMode) return sampleDemoPlannedEvents;
-    if (!activeTeam || !Array.isArray(activeTeam.broadcastWorkouts)) return plannedEvents;
+    const baseEvents = isSampleDemoMode ? sampleDemoPlannedEvents : plannedEvents;
+    const teamSource = effectiveActiveTeam;
+    if (!teamSource || !Array.isArray(teamSource.broadcastWorkouts)) return baseEvents;
     const isTeamCoach =
-      activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH';
-    const teamEvents: PlannedWorkoutEvent[] = activeTeam.broadcastWorkouts
+      teamSource.myRole === 'HEAD_COACH' || teamSource.myRole === 'ASSISTANT_COACH';
+    const teamEvents: PlannedWorkoutEvent[] = teamSource.broadcastWorkouts
       .filter((bw) => {
         if (isTeamCoach) return true;
-        if (activeTeam.myMembershipId && bw.athleteOverrides?.[activeTeam.myMembershipId]) {
+        if (teamSource.myMembershipId && bw.athleteOverrides?.[teamSource.myMembershipId]) {
           return true;
         }
         if (
-          Boolean(activeTeam.myMembershipId) &&
+          Boolean(teamSource.myMembershipId) &&
           Array.isArray(bw.targetMembershipIds) &&
           bw.targetMembershipIds.length > 0
         ) {
-          return bw.targetMembershipIds.includes(activeTeam.myMembershipId);
+          return bw.targetMembershipIds.includes(teamSource.myMembershipId);
         }
         const squadMatch =
-          bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === activeTeam.mySquadGroup;
+          bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === teamSource.mySquadGroup;
         if (!squadMatch) return false;
         if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
           return (
-            Boolean(activeTeam.myEventGroup) &&
-            bw.targetEventGroups.includes(activeTeam.myEventGroup!)
+            Boolean(teamSource.myEventGroup) &&
+            bw.targetEventGroups.includes(teamSource.myEventGroup!)
           );
         }
         return true;
       })
       .map((bw) => {
-        const ov = activeTeam.myMembershipId
-          ? bw.athleteOverrides?.[activeTeam.myMembershipId]
+        const ov = teamSource.myMembershipId
+          ? bw.athleteOverrides?.[teamSource.myMembershipId]
           : undefined;
         return {
           id: bw.broadcastId,
@@ -900,7 +961,7 @@ export default function App() {
           description: ov?.description || bw.description,
           plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
           plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
-          targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
+          targetZoneSummary: `${teamSource.brand.shortName} Squad Session`,
           workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
           ...(ov?.scheduledTime || bw.scheduledTime ? { scheduledTime: ov?.scheduledTime || bw.scheduledTime } : {}),
           ...(ov?.sessionSlot || bw.sessionSlot ? { sessionSlot: ov?.sessionSlot || bw.sessionSlot } : {}),
@@ -914,19 +975,19 @@ export default function App() {
           source: 'USER',
         };
       });
-    const existingIds = new Set(plannedEvents.map((e) => e.id));
+    const existingIds = new Set(baseEvents.map((e) => e.id));
     return sortPlannedEventsChronologically([
-      ...plannedEvents,
+      ...baseEvents,
       ...teamEvents.filter((te) => !existingIds.has(te.id)),
     ]);
-  }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoPlannedEvents, plannedEvents, activeTeam]);
+  }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoPlannedEvents, plannedEvents, effectiveActiveTeam]);
 
   const effectiveAthleteProfile = useMemo(() => {
     if (activeConnectedAthlete) return activeConnectedAthlete.athleteProfile;
     if (isSampleDemoMode) return sampleDemoProfile;
     const inferredSport = !athleteProfile.primarySport ? inferPrimarySportFromActivities(effectiveActivities) : undefined;
     const withSafeSport =
-      activeTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight
+      effectiveActiveTeam?.brand.defaultSafeSportShield && !athleteProfile.safeSportHideWeight
         ? { ...athleteProfile, safeSportHideWeight: true }
         : athleteProfile;
     return inferredSport ? { ...withSafeSport, primarySport: inferredSport } : withSafeSport;
@@ -935,7 +996,7 @@ export default function App() {
     isSampleDemoMode,
     sampleDemoProfile,
     athleteProfile,
-    activeTeam,
+    effectiveActiveTeam,
     effectiveActivities,
   ]);
 
@@ -1367,6 +1428,34 @@ export default function App() {
     [combinedRoster, isSampleDemoMode, activeTeamId, setMyTeams]
   );
 
+  if (publicTeamSlug) {
+    return (
+      <IconContext.Provider value={{ weight: 'duotone' }}>
+        <WorkspaceErrorBoundary
+          resetKey={`public-team-hub-${publicTeamSlug}`}
+          fallbackTitle="Team Hub Needs Recovery"
+        >
+          <React.Suspense
+            fallback={
+              <div className="min-h-screen flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading THRESH Team Hub…
+              </div>
+            }
+          >
+            <PublicTeamHubPage
+              slugOrCode={publicTeamSlug}
+              isDark={isDark}
+              onToggleDark={toggleQuickLightDark}
+              localTeamsFallback={effectiveTeams}
+              onFollowedTeam={effectiveOnTeamsUpdated}
+              onExitHub={() => closePublicTeamHub(activeTab)}
+            />
+          </React.Suspense>
+        </WorkspaceErrorBoundary>
+      </IconContext.Provider>
+    );
+  }
+
   if (isBrandRoute) {
     const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
     return (
@@ -1463,10 +1552,10 @@ export default function App() {
           setActiveTab={setActiveTab}
           coachSubTab={coachSubTab}
           onSelectCoachSubTab={setCoachSubTab}
-          activeTeam={activeTeam}
-          myTeams={myTeams}
-          activeTeamId={activeTeamId}
-          onSelectActiveTeam={handleSelectActiveTeam}
+          activeTeam={effectiveActiveTeam}
+          myTeams={effectiveTeams}
+          activeTeamId={effectiveActiveTeamId}
+          onSelectActiveTeam={effectiveOnSelectActiveTeam}
           onOpenRosterModalWithTab={(tab) => {
             closeAllGlobalModals();
             setRosterInitialTab(tab);
@@ -1552,7 +1641,7 @@ export default function App() {
               }}
               dismissedQuickConnectBanner={dismissedQuickConnectBanner}
               onDismissQuickConnectBanner={() => setDismissedQuickConnectBanner(true)}
-              myTeamsCount={isSampleDemoMode ? 0 : myTeams.length}
+              myTeamsCount={effectiveTeams.length}
               isCoachMode={activeTab === 'coach'}
               isStopwatchMode={
                 activeTab === 'stopwatch' ||
@@ -1573,15 +1662,16 @@ export default function App() {
                 onOpenDataSources={handleOpenDataSourcesModal}
                 coachSubTab={coachSubTab}
                 setCoachSubTab={setCoachSubTab}
-                activeTeam={isSampleDemoMode ? null : activeTeam}
+                activeTeam={effectiveActiveTeam}
                 activeViewedAthleteId={activeViewedAthleteId}
                 onSelectAthleteViewport={(id) => {
                   setActiveViewedAthleteId(id);
                   setSelectedActivity(null);
                 }}
                 resendConfigured={resendConfigured}
-                onSelectActiveTeam={handleSelectActiveTeam}
-                onTeamsUpdated={handleTeamsUpdated}
+                onSelectActiveTeam={effectiveOnSelectActiveTeam}
+                onTeamsUpdated={effectiveOnTeamsUpdated}
+                onOpenPublicTeamHub={openPublicTeamHub}
                 effectiveActivities={effectiveActivities}
                 effectiveWellnessDays={effectiveWellnessDays}
                 effectivePlannedEvents={effectivePlannedEvents}
@@ -1601,8 +1691,8 @@ export default function App() {
                 effectiveAthleteProfile={effectiveAthleteProfile}
                 primaryAthleteDisplayName={primaryAthleteDisplayName}
                 combinedRoster={combinedRoster}
-                myTeams={isSampleDemoMode ? [] : myTeams}
-                activeTeamId={isSampleDemoMode ? null : activeTeamId}
+                myTeams={effectiveTeams}
+                activeTeamId={effectiveActiveTeamId}
                 selectedActivity={selectedActivity}
                 benchmarkSegments={benchmarkSegments}
                 isScanningSegments={isScanningSegments}
@@ -1748,12 +1838,12 @@ export default function App() {
           onToggleAthleteRole={handleToggleAthleteRole}
           onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
           onPushCoachWorkout={handlePushCoachWorkout}
-          myTeams={isSampleDemoMode ? [] : myTeams}
-          activeTeamId={isSampleDemoMode ? null : activeTeamId}
+          myTeams={effectiveTeams}
+          activeTeamId={effectiveActiveTeamId}
           resendConfigured={resendConfigured}
           rosterInitialTab={rosterInitialTab}
-          onSelectActiveTeam={handleSelectActiveTeam}
-          onTeamsUpdated={handleTeamsUpdated}
+          onSelectActiveTeam={effectiveOnSelectActiveTeam}
+          onTeamsUpdated={effectiveOnTeamsUpdated}
           onOpenFullScreenStopwatch={() => {
             setIsRosterModalOpen(false);
             if (activeTab === 'coach') {

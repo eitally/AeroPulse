@@ -190,6 +190,7 @@ teamRouter.post('/api/teams', async (req: Request, res: Response) => {
       enableParentGuardianCc: req.body?.enableParentGuardianCc,
       coachDisplayName: req.body?.coachDisplayName,
       coachEmail: req.body?.coachEmail,
+      externalSync: req.body?.externalSync,
     });
     res.json({
       ok: true,

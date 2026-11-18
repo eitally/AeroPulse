@@ -1,4 +1,4 @@
-import {
+import type {
   ActivityInterval,
   ActivityStreamSet,
   OfficialRaceMetadata,
@@ -6,12 +6,12 @@ import {
   OfficialTrackSurface,
   SpeedReservePhenotype,
   UnifiedActivity,
-} from '../types';
+} from '../types.ts';
 import {
   buildTrackSpeedReserveProfile,
   solveTrackPaceSecsPerKmForPctVdot,
-} from '../physiology/trackSpeedReserveEngine';
-import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+} from '../physiology/trackSpeedReserveEngine.ts';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
 
 export interface OfficialRaceEventDefinition {
   label: string;

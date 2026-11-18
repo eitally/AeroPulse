@@ -212,7 +212,8 @@ function detectDemoSession(): boolean {
 
 function detectBrandRoute(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.location.pathname.replace(/\/+$/, '') === '/brand';
+  const clean = window.location.pathname.replace(/\/+$/, '');
+  return clean === '/brand' || clean.startsWith('/team/');
 }
 
 function readLegacyDarkFlag(): '0' | '1' | null {
