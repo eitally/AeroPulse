@@ -82,6 +82,20 @@
     --ap-thresh-vermilion: #c8ff00;
   }
 
+  html.dark.ap-midnight-slate {
+    --ap-outer-bg: #06080b;
+    --ap-inset-bg: #0a0d12;
+    --ap-canvas-bg: #0e1318;
+    --ap-card-bg: #151c24;
+    --ap-content-border: #2a3644;
+    --ap-card-border: rgba(148, 163, 184, 0.22);
+    --ap-inset-border: rgba(148, 163, 184, 0.16);
+    --ap-brand-volt: #d4ff33;
+    --ap-brand-primary: #d4ff33;
+    --ap-action-cobalt: #d4ff33;
+    --ap-thresh-vermilion: #d4ff33;
+  }
+
   html.dark.ap-dusk {
     --ap-outer-bg: #070605;
     --ap-inset-bg: #090806;
@@ -114,6 +128,12 @@
     color: #e6ece8;
   }
 
+  html.dark.ap-midnight-slate body {
+    background-color: var(--ap-outer-bg);
+    background-image: radial-gradient(circle at 12% 0%, rgba(212, 255, 51, 0.05), transparent 52%);
+    color: #eef2f6;
+  }
+
   html.dark.ap-dusk body {
     background-color: var(--ap-outer-bg);
     background-image: radial-gradient(circle at 12% 0%, rgba(217, 119, 6, 0.05), transparent 50%);
@@ -142,6 +162,10 @@
 
 .dark .ap-brand-hairline {
   background: linear-gradient(90deg, #c8ff00 0%, #84cc16 60%, #25573a 100%);
+}
+
+html.dark.ap-midnight-slate .ap-brand-hairline {
+  background: linear-gradient(90deg, #d4ff33 0%, #94a3b8 60%, #2a3644 100%);
 }
 
 .ap-content-stage {
@@ -230,6 +254,17 @@
 .dark .ap-track-tab-idle:hover {
   background-color: #1c3125;
   color: #f4f7f4;
+}
+
+html.dark.ap-midnight-slate .ap-track-tab-idle {
+  background-color: #151c24;
+  color: #cbd5e1;
+  border: 1px solid #2a3644;
+}
+
+html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
+  background-color: #1e2936;
+  color: #eef2f6;
 }
 
 .ap-lane-badge {
@@ -359,6 +394,22 @@
   border: 1.5px solid rgba(200, 255, 0, 0.6);
   box-shadow:
     inset 0 -2.5px 0 0 #c8ff00,
+    0 2px 6px 0 rgba(0, 0, 0, 0.5);
+}
+
+html.dark.ap-midnight-slate .liquid-capsule-track,
+html.dark.ap-midnight-slate .ap-pill-track {
+  background: #0a0d12;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+html.dark.ap-midnight-slate .liquid-capsule-active,
+html.dark.ap-midnight-slate .ap-pill-active {
+  background: #1b2430;
+  color: #eef2f6;
+  border: 1.5px solid rgba(212, 255, 51, 0.65);
+  box-shadow:
+    inset 0 -2.5px 0 0 #d4ff33,
     0 2px 6px 0 rgba(0, 0, 0, 0.5);
 }
 

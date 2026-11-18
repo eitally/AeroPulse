@@ -2,8 +2,10 @@ import React, { useCallback } from 'react';
 import type {
   ConnectedAthleteRecord,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
   TeamSummaryWithRole,
+  WorkoutSessionSlot,
 } from '../types';
 import { createConnectedAthleteRecord } from '../data/athleteRosterData';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
@@ -98,8 +100,20 @@ export function useRosterActions({
         plannedLoad: number;
         workoutSyntax: string;
         description: string;
+        scheduledTime?: string;
+        sessionSlot?: WorkoutSessionSlot;
+        locationName?: string;
+        locationCategory?: PracticeVenueCategory;
+        meetingNotes?: string;
       }
     ) => {
+      const logistics = {
+        ...(workout.scheduledTime ? { scheduledTime: workout.scheduledTime } : {}),
+        ...(workout.sessionSlot ? { sessionSlot: workout.sessionSlot } : {}),
+        ...(workout.locationName ? { locationName: workout.locationName } : {}),
+        ...(workout.locationCategory ? { locationCategory: workout.locationCategory } : {}),
+        ...(workout.meetingNotes ? { meetingNotes: workout.meetingNotes } : {}),
+      };
       if (!isSampleDemoMode && athleteId.startsWith('team-mem-') && activeTeam) {
         const targetMemId = athleteId.replace(/^team-mem-/, '');
         fetch(`/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`, {
@@ -120,6 +134,8 @@ export function useRosterActions({
             plannedLoad: workout.plannedLoad,
             workoutSyntax: workout.workoutSyntax,
             description: workout.description,
+            ...logistics,
+            replaceSameDateTarget: (workout.sessionSlot || 'SINGLE') === 'SINGLE',
           }),
         })
           .then((r) => (r.ok ? r.json() : null))
@@ -142,6 +158,7 @@ export function useRosterActions({
         plannedDurationSecs: workout.plannedDurationSecs,
         targetZoneSummary: 'Coach Prescribed Session',
         workoutSyntax: workout.workoutSyntax,
+        ...logistics,
         source: 'USER',
       };
       const applyPush = (prev: ConnectedAthleteRecord[]) =>

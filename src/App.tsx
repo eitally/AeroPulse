@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconContext } from './components/icons/PhosphorIcons';
+import { useSundownTheme } from './utils/sundownThemeEngine';
 import type {
   ActiveTab,
   AnnualMileageGoal,
@@ -13,6 +14,7 @@ import type {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
   StravaSyncWindow,
   TargetGoal,
@@ -21,7 +23,9 @@ import type {
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutSessionSlot,
 } from './types';
+import { sortPlannedEventsChronologically } from './utils/workoutScheduleUtils';
 import type { PlannedEventBatchItem } from './components/GoalsView';
 import {
   INITIAL_ANNUAL_MILEAGE_GOALS,
@@ -115,16 +119,16 @@ export default function App() {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('thresh_theme_dark');
-      if (saved === '1') return true;
-      if (saved === '0') return false;
-      return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    } catch {
-      return false;
-    }
-  });
+  const {
+    isDark,
+    activeVariant: activeThemeVariant,
+    daytimePalette,
+    setDaytimePalette,
+    sundownPolicy,
+    setSundownPolicy,
+    sunsetLabel12h,
+    toggleQuickLightDark,
+  } = useSundownTheme();
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() => {
     try {
       const saved = localStorage.getItem('thresh_distance_unit');
@@ -438,21 +442,6 @@ export default function App() {
     athleteProfile,
     redactedStravaCount,
   ]);
-
-  // Sync Dark Mode class with <html>
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    try {
-      localStorage.setItem('thresh_theme_dark', isDark ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, [isDark]);
 
   // Save goals & privacy/roster preferences to localStorage (never during ephemeral Sample Demo Mode)
   useEffect(() => {
@@ -903,6 +892,11 @@ export default function App() {
           plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
           targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
           workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+          ...(ov?.scheduledTime || bw.scheduledTime ? { scheduledTime: ov?.scheduledTime || bw.scheduledTime } : {}),
+          ...(ov?.sessionSlot || bw.sessionSlot ? { sessionSlot: ov?.sessionSlot || bw.sessionSlot } : {}),
+          ...(ov?.locationName || bw.locationName ? { locationName: ov?.locationName || bw.locationName } : {}),
+          ...(ov?.locationCategory || bw.locationCategory ? { locationCategory: ov?.locationCategory || bw.locationCategory } : {}),
+          ...(ov?.meetingNotes || bw.meetingNotes ? { meetingNotes: ov?.meetingNotes || bw.meetingNotes } : {}),
           ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
           ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
           ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
@@ -911,10 +905,10 @@ export default function App() {
         };
       });
     const existingIds = new Set(plannedEvents.map((e) => e.id));
-    return [
+    return sortPlannedEventsChronologically([
       ...plannedEvents,
       ...teamEvents.filter((te) => !existingIds.has(te.id)),
-    ].sort((a, b) => a.date.localeCompare(b.date));
+    ]);
   }, [activeConnectedAthlete, isSampleDemoMode, sampleDemoPlannedEvents, plannedEvents, activeTeam]);
 
   const effectiveAthleteProfile = useMemo(() => {
@@ -1227,6 +1221,11 @@ export default function App() {
       plannedLoad: number;
       workoutSyntax: string;
       description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
       replaceExistingDate?: boolean;
     }) => {
@@ -1239,6 +1238,11 @@ export default function App() {
           plannedLoad: evt.plannedLoad,
           workoutSyntax: evt.workoutSyntax || '',
           description: evt.description,
+          scheduledTime: evt.scheduledTime,
+          sessionSlot: evt.sessionSlot,
+          locationName: evt.locationName,
+          locationCategory: evt.locationCategory,
+          meetingNotes: evt.meetingNotes,
         });
       } else {
         await handleCreatePlannedEvent(evt);
@@ -1358,7 +1362,7 @@ export default function App() {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">Loading THRESH Brand Studio…</div>}>
-          <BrandGuidePage isDark={isDark} onToggleDark={() => setIsDark((d) => !d)} hasActiveWorkspace={hasWorkspace} onExitBrand={() => closeBrand(hasWorkspace ? activeTab : undefined)} />
+          <BrandGuidePage isDark={isDark} onToggleDark={toggleQuickLightDark} hasActiveWorkspace={hasWorkspace} onExitBrand={() => closeBrand(hasWorkspace ? activeTab : undefined)} />
         </React.Suspense>
       </IconContext.Provider>
     );
@@ -1370,7 +1374,7 @@ export default function App() {
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono">Loading THRESH Share…</div>}>
           <ShareWorkoutPage
-            sharedWorkout={sharedWorkout} isDark={isDark} onToggleDark={() => setIsDark((d) => !d)} hasActiveWorkspace={hasWorkspace}
+            sharedWorkout={sharedWorkout} isDark={isDark} onToggleDark={toggleQuickLightDark} hasActiveWorkspace={hasWorkspace}
             initialFtpWatts={athleteProfile.ftp} initialThresholdPaceSecsPerKm={athleteProfile.thresholdPaceSecsPerKm} initialUnit={distanceUnit}
             onImportToWorkspace={async (p, f, pace, u) => { await handleCreatePlannedEvent(sharedWorkoutToPlannedEventInput(p, { ftpWatts: f, thresholdPaceSecsPerKm: pace, unit: u })); closeShareWorkout(); setActiveTab('calendar'); }}
             onExitToSignIn={closeShareWorkout} onExitToWorkspace={closeShareWorkout}
@@ -1413,7 +1417,7 @@ export default function App() {
           isSyncing={isSyncing}
           errorMessage={syncError}
           isDark={isDark}
-          onToggleDark={() => setIsDark((d) => !d)}
+          onToggleDark={toggleQuickLightDark}
           onEnterSampleDemo={() => {
             resetSampleDemoEphemeralState();
             setIsSampleDemoMode(true);
@@ -1479,7 +1483,13 @@ export default function App() {
           onOpenDataSources={handleOpenDataSourcesModal}
           onOpenCoach={handleOpenCoachDrawerModal}
           isDark={isDark}
-          onToggleDark={() => setIsDark((prev) => !prev)}
+          onToggleDark={toggleQuickLightDark}
+          activeThemeVariant={activeThemeVariant}
+          daytimePalette={daytimePalette}
+          onSelectDaytimePalette={setDaytimePalette}
+          sundownPolicy={sundownPolicy}
+          onSelectSundownPolicy={setSundownPolicy}
+          sunsetLabel12h={sunsetLabel12h}
           currentUser={currentUser}
           effectiveActivities={effectiveActivities}
           effectiveAthleteProfile={effectiveAthleteProfile}

@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import { formatPace } from '../utils/formatters';
+import type {
+  DaytimePalette,
+  EffectiveThemeVariant,
+  SundownPolicy,
+} from '../utils/sundownThemeEngine';
 import { TracksideLiveHeaderPill } from './TracksideLiveHeaderPill';
 import { PWAInstallButton } from './PWAInstallButton';
 import type { RosterTab } from './AthleteRosterModal';
@@ -65,6 +70,12 @@ export interface CockpitHeaderProps {
   onOpenCoach: () => void;
   isDark: boolean;
   onToggleDark: () => void;
+  activeThemeVariant?: EffectiveThemeVariant;
+  daytimePalette?: DaytimePalette;
+  onSelectDaytimePalette?: (palette: DaytimePalette) => void;
+  sundownPolicy?: SundownPolicy;
+  onSelectSundownPolicy?: (policy: SundownPolicy) => void;
+  sunsetLabel12h?: string;
   currentUser: ThreshUser | null;
   effectiveActivities: UnifiedActivity[];
   effectiveAthleteProfile: AthleteProfile;
@@ -103,12 +114,18 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   setSelectedActivity,
   primaryAthleteDisplayName,
   primaryAthleteInitials,
+  isDark,
+  onToggleDark,
+  activeThemeVariant = isDark ? 'TRACK_PINE' : 'DAYLIGHT',
+  daytimePalette = isDark ? 'TRACK_PINE' : 'DAYLIGHT',
+  onSelectDaytimePalette,
+  sundownPolicy = 'AUTO_MIDNIGHT_SLATE',
+  onSelectSundownPolicy,
+  sunsetLabel12h = '6:00 PM',
   combinedRoster,
   anySourceConnected,
   onOpenDataSources,
   onOpenCoach,
-  isDark,
-  onToggleDark,
   currentUser,
   effectiveActivities,
   effectiveAthleteProfile,
@@ -759,6 +776,84 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         ))}
                       </div>
                     </div>
+
+                    {/* Daytime & Sundown P2 Midnight Slate Appearance */}
+                    {onSelectDaytimePalette && onSelectSundownPolicy && (
+                      <div className="px-2 pt-1.5 space-y-2 border-t border-slate-200/70 dark:border-white/10">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-600 dark:text-slate-300 font-medium">
+                            Daytime Theme
+                          </span>
+                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
+                            {(
+                              [
+                                { id: 'DAYLIGHT', label: 'Daylight' },
+                                { id: 'TRACK_PINE', label: 'Track Pine' },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={daytimePalette === opt.id}
+                                onClick={() => onSelectDaytimePalette(opt.id)}
+                                className={`min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md transition-all cursor-pointer ${
+                                  daytimePalette === opt.id
+                                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className="text-slate-600 dark:text-slate-300 font-medium"
+                            title={`Automatically transitions to Midnight Slate (P2) around local sunset (~${sunsetLabel12h})`}
+                          >
+                            Sundown ({sunsetLabel12h})
+                          </span>
+                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
+                            {(
+                              [
+                                { id: 'AUTO_MIDNIGHT_SLATE', label: 'Auto P2' },
+                                { id: 'ALWAYS_MIDNIGHT_SLATE', label: 'P2 Now' },
+                                { id: 'DAYTIME_ONLY', label: 'Off' },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={sundownPolicy === opt.id}
+                                onClick={() => onSelectSundownPolicy(opt.id)}
+                                className={`min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md transition-all cursor-pointer ${
+                                  sundownPolicy === opt.id
+                                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                          <span>Active palette</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {activeThemeVariant === 'MIDNIGHT_SLATE'
+                              ? 'Midnight Slate (P2)'
+                              : activeThemeVariant === 'TRACK_PINE'
+                                ? 'Track Pine'
+                                : 'Daylight'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="px-2 pt-0.5">
                       <PWAInstallButton variant="compact" />

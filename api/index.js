@@ -6825,6 +6825,25 @@ function calibrateThresholdsFromSeedMark(seedInput, primarySport = "Running", di
   };
 }
 
+// src/utils/workoutScheduleUtils.ts
+function sanitizeScheduledTime(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim();
+  const m = trimmed.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return void 0;
+  return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+}
+function sanitizeSessionSlot(raw) {
+  if (raw === "AM" || raw === "PM" || raw === "SINGLE") return raw;
+  return void 0;
+}
+function sanitizePracticeVenueCategory(raw) {
+  if (raw === "TRACK" || raw === "XC_COURSE" || raw === "ROAD_CAMPUS" || raw === "GYM_WEIGHTS" || raw === "POOL_CROSS" || raw === "OTHER") {
+    return raw;
+  }
+  return void 0;
+}
+
 // server/teamService.ts
 function inferEventGroupFromSeedMark(seed) {
   if (!seed || !seed.trim()) return void 0;
@@ -8022,6 +8041,11 @@ async function broadcastWorkoutToTeamSquad(params) {
   ) : void 0;
   const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
   const targetSquadGroup = String(params.targetSquadGroup || "ALL").trim() || "ALL";
+  const scheduledTime = sanitizeScheduledTime(params.scheduledTime);
+  const sessionSlot = sanitizeSessionSlot(params.sessionSlot);
+  const locationName = params.locationName ? String(params.locationName).trim().slice(0, 120) : void 0;
+  const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
+  const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
   const workout = {
     broadcastId: `bw_${crypto6.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
@@ -8035,6 +8059,11 @@ async function broadcastWorkoutToTeamSquad(params) {
     plannedLoad: Math.max(5, Number(params.plannedLoad) || 65),
     workoutSyntax: String(params.workoutSyntax || "").slice(0, 3e3),
     description: String(params.description || "").slice(0, 1e3),
+    ...scheduledTime ? { scheduledTime } : {},
+    ...sessionSlot ? { sessionSlot } : {},
+    ...locationName ? { locationName } : {},
+    ...locationCategory ? { locationCategory } : {},
+    ...meetingNotes ? { meetingNotes } : {},
     ...params.trackSpec ? { trackSpec: params.trackSpec } : {},
     ...params.athleteOverrides && Object.keys(params.athleteOverrides).length > 0 ? { athleteOverrides: params.athleteOverrides } : {},
     ...params.planBlockId ? { planBlockId: String(params.planBlockId).slice(0, 80) } : {},
@@ -8045,13 +8074,16 @@ async function broadcastWorkoutToTeamSquad(params) {
     createdAt: nowIso
   };
   const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
+  const nextSlot = workout.sessionSlot || "SINGLE";
   const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
     if (params.replaceSameDateTarget === false) return true;
     const sameDate = bw.date === dateStr;
     const sameSquad = bw.targetSquadGroup === targetSquadGroup;
     const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
     const sameMembers = JSON.stringify((bw.targetMembershipIds || []).slice().sort()) === JSON.stringify((cleanTargets || []).slice().sort());
-    return !(sameDate && sameSquad && sameGroups && sameMembers);
+    const sameSlot = (bw.sessionSlot || "SINGLE") === nextSlot;
+    const sameSport = (bw.sportCategory || "Running") === workout.sportCategory;
+    return !(sameDate && sameSquad && sameGroups && sameMembers && sameSlot && sameSport);
   });
   doc.broadcastWorkouts = [workout, ...existingFiltered].slice(0, 400);
   doc.updatedAt = nowIso;
@@ -8079,27 +8111,39 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
   const cleanBlockId = params.planBlockId ? String(params.planBlockId).slice(0, 80) : `tm-blk-${Date.now()}`;
   const cleanBlockName = params.planBlockName ? String(params.planBlockName).slice(0, 120) : void 0;
   const publishMode = params.publishMode === "ROLLING_1W" || params.publishMode === "ROLLING_2W" || params.publishMode === "FULL_BLOCK" ? params.publishMode : "FULL_BLOCK";
-  const createdWorkouts = (params.workouts || []).slice(0, 160).map((w) => ({
-    broadcastId: `bw_${crypto6.randomBytes(6).toString("hex")}`,
-    teamId: doc.brand.teamId,
-    targetSquadGroup,
-    ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
-    ...cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {},
-    date: String(w.date || nowIso.slice(0, 10)).slice(0, 10),
-    name: String(w.name || "Team Prescribed Session").trim().slice(0, 100),
-    sportCategory: w.sportCategory || "Running",
-    plannedDurationSecs: Math.max(300, Number(w.plannedDurationSecs) || 3600),
-    plannedLoad: Math.max(5, Number(w.plannedLoad) || 65),
-    workoutSyntax: String(w.workoutSyntax || "").slice(0, 3e3),
-    description: String(w.description || "").slice(0, 1e3),
-    ...w.trackSpec ? { trackSpec: w.trackSpec } : {},
-    planBlockId: cleanBlockId,
-    ...cleanBlockName ? { planBlockName: cleanBlockName } : {},
-    ...typeof w.planWeekNum === "number" ? { planWeekNum: w.planWeekNum } : {},
-    publishMode,
-    pushedByCoachName: doc.brand.coachDisplayName,
-    createdAt: nowIso
-  }));
+  const createdWorkouts = (params.workouts || []).slice(0, 160).map((w) => {
+    const scheduledTime = sanitizeScheduledTime(w.scheduledTime);
+    const sessionSlot = sanitizeSessionSlot(w.sessionSlot);
+    const locationName = w.locationName ? String(w.locationName).trim().slice(0, 120) : void 0;
+    const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
+    const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
+    return {
+      broadcastId: `bw_${crypto6.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      targetSquadGroup,
+      ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
+      ...cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {},
+      date: String(w.date || nowIso.slice(0, 10)).slice(0, 10),
+      name: String(w.name || "Team Prescribed Session").trim().slice(0, 100),
+      sportCategory: w.sportCategory || "Running",
+      plannedDurationSecs: Math.max(300, Number(w.plannedDurationSecs) || 3600),
+      plannedLoad: Math.max(5, Number(w.plannedLoad) || 65),
+      workoutSyntax: String(w.workoutSyntax || "").slice(0, 3e3),
+      description: String(w.description || "").slice(0, 1e3),
+      ...scheduledTime ? { scheduledTime } : {},
+      ...sessionSlot ? { sessionSlot } : {},
+      ...locationName ? { locationName } : {},
+      ...locationCategory ? { locationCategory } : {},
+      ...meetingNotes ? { meetingNotes } : {},
+      ...w.trackSpec ? { trackSpec: w.trackSpec } : {},
+      planBlockId: cleanBlockId,
+      ...cleanBlockName ? { planBlockName: cleanBlockName } : {},
+      ...typeof w.planWeekNum === "number" ? { planWeekNum: w.planWeekNum } : {},
+      publishMode,
+      pushedByCoachName: doc.brand.coachDisplayName,
+      createdAt: nowIso
+    };
+  });
   const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
   const membersSignature = JSON.stringify((cleanTargets || []).slice().sort());
   const dates = createdWorkouts.map((c) => c.date).sort();
@@ -8743,6 +8787,11 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
       plannedLoad: Number(req.body?.plannedLoad || 65),
       workoutSyntax: String(req.body?.workoutSyntax || ""),
       description: String(req.body?.description || ""),
+      scheduledTime: req.body?.scheduledTime,
+      sessionSlot: req.body?.sessionSlot,
+      locationName: req.body?.locationName,
+      locationCategory: req.body?.locationCategory,
+      meetingNotes: req.body?.meetingNotes,
       trackSpec: req.body?.trackSpec,
       athleteOverrides: req.body?.athleteOverrides,
       replaceSameDateTarget: typeof req.body?.replaceSameDateTarget === "boolean" ? req.body.replaceSameDateTarget : true
@@ -8751,7 +8800,8 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
       res.status(403).json({ ok: false, error: "Coach permissions required." });
       return;
     }
-    res.json({ ok: true, team: updated });
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
   } catch (err) {
     res.status(400).json({
       ok: false,
@@ -13567,6 +13617,11 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
 - ${Math.max(15, Math.round(plannedDurationSecs / 60) - 20)}m 85% FTP
 - 10m 55% FTP`
     );
+    const scheduledTime = typeof body.scheduledTime === "string" && /^([01]?\d|2[0-3]):[0-5]\d$/.test(body.scheduledTime.trim()) ? body.scheduledTime.trim().padStart(5, "0") : void 0;
+    const sessionSlot = body.sessionSlot === "AM" || body.sessionSlot === "PM" || body.sessionSlot === "SINGLE" ? body.sessionSlot : void 0;
+    const locationName = typeof body.locationName === "string" && body.locationName.trim() ? body.locationName.trim().slice(0, 120) : void 0;
+    const locationCategory = typeof body.locationCategory === "string" && body.locationCategory.trim() ? body.locationCategory.trim().slice(0, 32) : void 0;
+    const meetingNotes = typeof body.meetingNotes === "string" && body.meetingNotes.trim() ? body.meetingNotes.trim().slice(0, 240) : void 0;
     const newEvent = {
       id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       date,
@@ -13578,6 +13633,11 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
       plannedDurationSecs,
       targetZoneSummary: String(body.targetZoneSummary || `${plannedLoad} TSS Planned`),
       workoutSyntax,
+      ...scheduledTime ? { scheduledTime } : {},
+      ...sessionSlot ? { sessionSlot } : {},
+      ...locationName ? { locationName } : {},
+      ...locationCategory ? { locationCategory } : {},
+      ...meetingNotes ? { meetingNotes } : {},
       structuredSteps: Array.isArray(body.structuredSteps) && body.structuredSteps.length > 0 ? body.structuredSteps : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs),
       ...body.trackSpec && typeof body.trackSpec === "object" ? { trackSpec: body.trackSpec } : {},
       ...body.planBlockId ? { planBlockId: String(body.planBlockId) } : {},
@@ -13613,7 +13673,7 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
             },
             body: JSON.stringify({
               category: "WORKOUT",
-              start_date_local: `${date}T08:00:00`,
+              start_date_local: `${date}T${scheduledTime ? `${scheduledTime}:00` : "08:00:00"}`,
               name,
               type: icuType,
               description: workoutSyntax,

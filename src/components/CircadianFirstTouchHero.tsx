@@ -10,6 +10,7 @@ import {
   Clock,
   Footprints,
   HeartPulse,
+  MapPin,
   Moon,
   Sliders,
   Sparkles,
@@ -45,6 +46,11 @@ import {
   resolveCircadianHeroMode,
   type CircadianHeroMode,
 } from '../physiology/eveningHabitEngine';
+import {
+  formatPracticeTime12h,
+  formatSessionLogisticsLine,
+  sortPlannedEventsChronologically,
+} from '../utils/workoutScheduleUtils';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import {
   evaluateRollingTrainingProductivity,
@@ -287,17 +293,31 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   };
   const [isSavingRx, setIsSavingRx] = useState<boolean>(false);
   const [rxToast, setRxToast] = useState<string | null>(null);
+  const [selectedTodayIdx, setSelectedTodayIdx] = useState<number>(0);
 
-  const todayScheduled = useMemo(
+  const todayScheduledList = useMemo(
     () =>
-      plannedEvents.find(
-        (ev) =>
-          (ev.date || '').slice(0, 10) === todayIso &&
-          (ev.sportCategory === rxSport || ev.sportCategory === 'Multisport')
-      ) ||
-      plannedEvents.find((ev) => (ev.date || '').slice(0, 10) === todayIso) ||
-      null,
-    [plannedEvents, todayIso, rxSport]
+      sortPlannedEventsChronologically(
+        plannedEvents.filter((ev) => (ev.date || '').slice(0, 10) === todayIso)
+      ),
+    [plannedEvents, todayIso]
+  );
+
+  const todayScheduled = useMemo(() => {
+    if (todayScheduledList.length === 0) return null;
+    if (selectedTodayIdx > 0 && selectedTodayIdx < todayScheduledList.length) {
+      return todayScheduledList[selectedTodayIdx];
+    }
+    const sportMatched =
+      todayScheduledList.find(
+        (ev) => ev.sportCategory === rxSport || ev.sportCategory === 'Multisport'
+      ) || todayScheduledList[0];
+    return sportMatched || null;
+  }, [todayScheduledList, selectedTodayIdx, rxSport]);
+
+  const todayCombinedPlannedTss = useMemo(
+    () => todayScheduledList.reduce((acc, ev) => acc + (ev.plannedLoad || 0), 0),
+    [todayScheduledList]
   );
 
   const activeRxTitle =
@@ -957,7 +977,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
               <div className="flex flex-wrap items-center gap-1.5 text-2xs font-mono tabular-nums text-[#35463B] dark:text-[#C5D1CA]">
                 <span className="px-2 py-0.5 rounded-md ap-status-info font-bold">
-                  {todayScheduled ? 'Scheduled Today' : 'Recommended'}
+                  {todayScheduled
+                    ? todayScheduledList.length > 1
+                      ? `Double Day (${todayScheduledList.length} sessions · ${todayCombinedPlannedTss} TSS)`
+                      : 'Scheduled Today'
+                    : 'Recommended'}
                 </span>
                 <span>
                   {todayScheduled
@@ -981,6 +1005,50 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </>
                 )}
               </div>
+
+              {todayScheduled && formatSessionLogisticsLine(todayScheduled) && (
+                <div
+                  data-testid="hero-session-logistics-badge"
+                  className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#1C5436]/20 dark:border-[#2B543B] text-2xs font-mono font-semibold text-[#1C5436] dark:text-[#C8FF00]"
+                >
+                  {todayScheduled.scheduledTime && <Clock className="w-3 h-3 shrink-0" />}
+                  {todayScheduled.locationName && <MapPin className="w-3 h-3 shrink-0" />}
+                  <span>{formatSessionLogisticsLine(todayScheduled)}</span>
+                </div>
+              )}
+
+              {todayScheduledList.length > 1 && (
+                <div
+                  role="group"
+                  aria-label="Today's multiple sessions"
+                  data-testid="hero-double-day-switcher"
+                  className="flex flex-wrap items-center gap-1"
+                >
+                  {todayScheduledList.map((ev, idx) => {
+                    const active = todayScheduled?.id === ev.id;
+                    const slotTag =
+                      ev.sessionSlot && ev.sessionSlot !== 'SINGLE'
+                        ? ev.sessionSlot
+                        : formatPracticeTime12h(ev.scheduledTime) || `#${idx + 1}`;
+                    return (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setSelectedTodayIdx(idx)}
+                        className={`min-h-[34px] px-2.5 py-1 rounded-lg text-2xs font-mono font-semibold truncate max-w-[200px] cursor-pointer ${
+                          active
+                            ? 'ap-nav-volt-active'
+                            : 'liquid-capsule-track text-[#1F3528] dark:text-[#C8D8CE]'
+                        }`}
+                        title={formatSessionLogisticsLine(ev) || ev.name}
+                      >
+                        {slotTag} · {ev.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-mono ap-status-caution">
                 <Zap className="w-3 h-3 shrink-0" weight="fill" />
