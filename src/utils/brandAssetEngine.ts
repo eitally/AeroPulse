@@ -391,7 +391,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'thresh-icon-tile-dark',
     title: 'App Tile Icon — Obsidian Rounded',
-    subtitle: 'Canonical rx=28 #0B1911 rounded-square tile with S2 Redline Breach mark',
+    subtitle: 'Canonical rx=28 #0B1911 rounded-square tile with TL-2P1 Twin-Lane symbol',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -402,8 +402,8 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (512×512)', width: 512, height: 512 },
       { key: '4x', label: '4x (1024×1024)', width: 1024, height: 1024 },
     ],
-    recommendedFor: 'Favicon parity, PWA tiles, desktop launcher badges',
-    minPhysicalSpec: 'Matches /icon.svg · self-contained Pine casing',
+    recommendedFor: 'App launcher tiles, PWA splash/home icons (desktop/mobile browser 16px tabs use FAV-F /icon.svg)',
+    minPhysicalSpec: 'App & PWA tile · Browser 16px tab uses decoupled FAV-F Volt Shield (/icon.svg)',
     svgMarkup: buildGaugeIconSvg({
       tile: { fill: '#0B1911', stroke: '#399663', rx: 28 },
       pineColor: '#399663',

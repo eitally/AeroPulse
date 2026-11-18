@@ -3,9 +3,7 @@ import {
   escapeTextForSafeAttr,
 } from './teamQrHelper';
 import {
-  S2_ARROW_NEEDLE_PATH,
-  S2_PINE_ARC_PATH,
-  S2_VOLT_ARC_PATH,
+  FAV_F_SHIELD_T_PATH,
 } from './brandVectors';
 import type { TeamBrandConfig } from '../types';
 
@@ -23,12 +21,12 @@ export function getTeamMonogramInitials(shortName?: string, fullName?: string): 
 export function buildTeamFaviconDataUri(
   tileFill: string,
   inkFill: string,
-  borderStroke = '#0B1911'
+  borderStroke = '#080A09'
 ): string {
   const safeTile = escapeTextForSafeAttr(tileFill);
   const safeInk = escapeTextForSafeAttr(inkFill);
   const safeBorder = escapeTextForSafeAttr(borderStroke);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"><rect x="1" y="1" width="30" height="30" rx="6" fill="${safeTile}" stroke="${safeBorder}" stroke-width="2"/><g transform="translate(1.6, -0.2) scale(0.235)"><path d="${S2_PINE_ARC_PATH}" fill="${safeInk}" fill-opacity="0.45"/><path d="${S2_VOLT_ARC_PATH}" fill="${safeInk}"/><path d="${S2_ARROW_NEEDLE_PATH}" fill="${safeInk}" fill-rule="evenodd" clip-rule="evenodd"/></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"><rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.5" fill="${safeTile}" stroke="${safeBorder}" stroke-width="1.5"/><path d="${FAV_F_SHIELD_T_PATH}" fill="${safeInk}" fill-rule="evenodd" clip-rule="evenodd"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
@@ -46,8 +44,8 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
 
   if (!brand) {
     if (existing) existing.remove();
-    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=4') {
-      faviconEl.setAttribute('href', '/icon.svg?v=4');
+    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=5') {
+      faviconEl.setAttribute('href', '/icon.svg?v=5');
     }
     return;
   }

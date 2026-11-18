@@ -404,6 +404,15 @@ export default function BrandGuidePage({
                             strokeOpacity="0.4"
                             strokeWidth="0.8"
                           />
+                          <circle
+                            cx="64.8"
+                            cy="63.1"
+                            r="24.5"
+                            stroke={isDark ? '#C8FF00' : '#357A00'}
+                            strokeOpacity="0.45"
+                            strokeWidth="0.7"
+                            strokeDasharray="2 2"
+                          />
                           {/* Center Crosshair + 315deg Piercing Threshold Breach Axis */}
                           <line
                             x1="64.8"
@@ -442,8 +451,8 @@ export default function BrandGuidePage({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>
                       {showBlueprint
-                        ? 'S2 cx=60 cy=70 r=[31,45] 315° · W-A stem=13.5 bar=11.2 · gap=0.26×'
-                        : 'Minimum clear space: 0.5× symbol height (decoupled S2 + W-A)'}
+                        ? 'TL-2P1 (60,70) r=[22.2..25, 31..45] 315°∥ · FAV-F 16px · W-A stem=13.5 bar=11.2'
+                        : 'Minimum clear space: 0.5× symbol height (TL-2P1 + W-A)'}
                     </span>
                     <span className="ap-telemetry-label">Pure vector paths — zero skew/font distortion</span>
                   </div>
