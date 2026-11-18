@@ -27,6 +27,7 @@ import {
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
+import { PodStaggerLaneMatrix } from './charts/MicroGraphics';
 import {
   Bike,
   Check,
@@ -1249,8 +1250,19 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
         <div
           data-testid="clipboard-pod-preview"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
+          className="space-y-2"
         >
+          {multiSetPreview.length > 0 && (
+            <div className="rounded-xl ap-card-inset px-3 py-2">
+              <PodStaggerLaneMatrix
+                pods={multiSetPreview.slice(0, 3).map((p, idx) => ({
+                  podLabel: p.podName.split(' — ')[0] || `Pod ${idx + 1}`,
+                  offsetSecs: idx * 10,
+                }))}
+              />
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
         {multiSetPreview.map((pod) => (
           <div
             key={pod.podId}
@@ -1277,6 +1289,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </div>
           </div>
         ))}
+          </div>
         </div>
       </div>
 

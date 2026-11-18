@@ -43,6 +43,7 @@ import {
   registerPasskey,
 } from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
+import { LoginCapabilitySparkStrip, SyncScopeTimelineBar } from './charts/MicroGraphics';
 import {
   getSavedIntervalsHeaders,
   saveStravaSyncPolicyToStorage,
@@ -1268,6 +1269,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
                     : 'Sign in with Strava in one click—or continue with Google, Passkey, or Magic Link.'}
                 </p>
+                {!activeBrand && <LoginCapabilitySparkStrip />}
               </div>
 
               {/* Pending Shared Workout Stash Banner (PLG-01) */}
@@ -1606,7 +1608,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         <span>Preview Before Connecting</span>
                       </div>
                       <p className="text-2xs text-slate-600 dark:text-slate-400">
-                        Inspect live Banister PMC curves, 1Hz streams, adaptive daily prescriptions, and trackside split timing with illustrative sample data.
+                        Explore readiness, 1Hz streams &amp; track splits with demo data.
                       </p>
                     </div>
                     <button
@@ -1630,7 +1632,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <span>No Strava Account? Import Training Archive</span>
                     </div>
                     <p className="text-2xs text-slate-600 dark:text-slate-400">
-                      Drag &amp; drop Garmin or Strava bulk export ZIPs, FIT, or GPX files. All telemetry is unpacked client-side in your browser. Zero API permissions required.
+                      Unpack Garmin/Strava ZIP, FIT, or GPX files locally in your browser.
                     </p>
                   </div>
                   <button
@@ -1947,10 +1949,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </div>
                   )}
 
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
                       Choose What Syncs From Strava
                     </h1>
+                    <SyncScopeTimelineBar days={syncWindow === 'all' || syncWindow === '180d' ? 365 : 90} />
                   </div>
 
                   {/* 1. Sync Window Radio Cards */}

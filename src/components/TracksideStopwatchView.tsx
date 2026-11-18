@@ -41,6 +41,7 @@ import {
 } from '../physiology/trackLiveAutoRegulationEngine';
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
+import { SplitTrendSparkline } from './charts/MicroGraphics';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
   ArrowCounterClockwise,
@@ -2262,19 +2263,24 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                             );
                           })}
                       </div>
-                      {sessionType === 'WORKOUT' && squadAutoRegSummary.byRunnerId[telemetry.runnerId] && (
-                        <span
-                          className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold tabular-nums ${
-                            squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType === 'NEURO_STOP_RULE'
-                              ? 'ap-status-strained'
-                              : squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType !== 'NONE'
-                                ? 'ap-status-caution'
-                                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
-                          }`}
-                        >
-                          D&apos; {squadAutoRegSummary.byRunnerId[telemetry.runnerId].dPrimeBalancePct}%
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                        {telemetry.lapSplitsSecs.length >= 2 && (
+                          <SplitTrendSparkline splitsSecs={telemetry.lapSplitsSecs} />
+                        )}
+                        {sessionType === 'WORKOUT' && squadAutoRegSummary.byRunnerId[telemetry.runnerId] && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold tabular-nums ${
+                              squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType === 'NEURO_STOP_RULE'
+                                ? 'ap-status-strained'
+                                : squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType !== 'NONE'
+                                  ? 'ap-status-caution'
+                                  : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                            }`}
+                          >
+                            D&apos; {squadAutoRegSummary.byRunnerId[telemetry.runnerId].dPrimeBalancePct}%
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </button>

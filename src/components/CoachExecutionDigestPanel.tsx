@@ -11,6 +11,7 @@ import {
 } from '../physiology/sessionCheckInAndDigestEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import type { ConnectedAthleteRecord } from '../types';
+import { Adherence7dDots } from './charts/MicroGraphics';
 
 export interface CoachExecutionDigestPanelProps {
   roster: ConnectedAthleteRecord[];
@@ -240,6 +241,10 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0 font-mono">
+                  <Adherence7dDots
+                    completedCount={row.completedCount7d}
+                    hasPainFlag={row.attentionReason === 'PAIN_FLAG'}
+                  />
                   <div className="text-right tabular-nums">
                     <div className="font-bold text-slate-900 dark:text-white">
                       {row.completedCount7d}/{row.plannedCount7d} ({row.compliancePct}%)

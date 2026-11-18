@@ -25,6 +25,10 @@ import {
   getIntervalsFormZone,
 } from './FourteenDayReadinessLedger';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import {
+  AcwrThreeChannelBullets,
+  SpikeBudgetSegmentedMeter,
+} from './charts/MicroGraphics';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { CircadianFirstTouchHero } from './CircadianFirstTouchHero';
 import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
@@ -81,6 +85,7 @@ interface FitnessHealthViewProps {
   onOpenAthleteProfileModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
   onQuickLogRun?: (activity: UnifiedActivity) => void;
+  onOpenTracksideStopwatch?: () => void;
   sessionCheckIns?: SessionCheckInRecord[];
   onRecordSessionCheckIn?: (
     input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
@@ -147,6 +152,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   onOpenAthleteProfileModal,
   onOpenCoachWithPrompt,
   onQuickLogRun,
+  onOpenTracksideStopwatch,
   sessionCheckIns = [],
   onRecordSessionCheckIn,
 }) => {
@@ -833,6 +839,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onOpenAthleteProfileModal={onOpenAthleteProfileModal}
         onOpenCoachWithPrompt={onOpenCoachWithPrompt}
         onQuickLogRun={onQuickLogRun}
+        onOpenTracksideStopwatch={onOpenTracksideStopwatch}
       />
 
       {onRecordSessionCheckIn &&
@@ -1185,8 +1192,18 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         : `${orthopedicSummary.spikeAcwr.toFixed(2)}x Spike`}
                     </span>
                   </div>
+                  <SpikeBudgetSegmentedMeter
+                    usedMeters={orthopedicSummary.spikedMeters7d}
+                    capMeters={orthopedicSummary.spikedMetersWeeklyCap}
+                  />
                 </div>
               </div>
+
+              <AcwrThreeChannelBullets
+                cardioAcwr={orthopedicSummary.centralAcwr}
+                impactAcwr={orthopedicSummary.impactAcwr}
+                torqueAcwr={orthopedicSummary.torqueAcwr}
+              />
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-slate-600 dark:text-slate-300 flex-1 min-w-[240px]">

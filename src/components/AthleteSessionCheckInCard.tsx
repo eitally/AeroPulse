@@ -304,10 +304,17 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
             <div className="flex items-start gap-2 text-xs min-w-0">
               <Shield className="w-4 h-4 ap-text-brand shrink-0 mt-0.5" weight="duotone" />
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-900 dark:text-white">
-                  {swapEval.shouldSwap && swapEval.targetEvent
-                    ? `Auto Safety Swap Ready (${swapEval.targetEvent.date.slice(0, 10)})`
-                    : 'Coach Safety Flag Ready'}
+                <div className="font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5">
+                  <span>
+                    {swapEval.shouldSwap && swapEval.targetEvent
+                      ? `Auto Safety Swap Ready (${swapEval.targetEvent.date.slice(0, 10)})`
+                      : 'Coach Safety Flag Ready'}
+                  </span>
+                  {swapEval.shouldSwap && swapEval.replacementEventInput && (
+                    <span className="px-1.5 py-0.5 rounded font-mono text-2xs ap-status-prime">
+                      Run → Z2
+                    </span>
+                  )}
                 </div>
                 <div className="text-2xs text-slate-600 dark:text-slate-300">
                   {swapEval.shouldSwap && swapEval.replacementEventInput

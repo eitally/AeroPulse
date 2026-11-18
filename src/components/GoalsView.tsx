@@ -72,6 +72,11 @@ import {
   stageWorkoutInTracksideStopwatch,
 } from '../hooks/useTracksideStopwatch';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import {
+  ArchetypeProgressionSparkline,
+  BracketedIntervalTape,
+  PublishWindowTimelineBracket,
+} from './charts/MicroGraphics';
 import { VisualWorkoutBuilder, type VisualWorkoutSavePayload } from './VisualWorkoutBuilder';
 import { useModalDialog } from '../hooks/useModalDialog';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
@@ -1010,14 +1015,26 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           <span className="text-2xs font-mono px-1.5 py-0.5 rounded bg-emerald-900/10 dark:bg-[#C8FF00]/15 text-[#1C5436] dark:text-[#C8FF00] font-bold">
                             {arch.badge}
                           </span>
-                          <span className="text-2xs font-mono text-slate-500">
-                            {arch.defaultWeeks}w
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <ArchetypeProgressionSparkline
+                              active={active}
+                              levels={
+                                arch.category === 'TRACK'
+                                  ? [45, 58, 72, 82, 92, 48]
+                                  : arch.category === 'ROAD'
+                                    ? [40, 52, 66, 78, 88, 44]
+                                    : [44, 56, 68, 74, 84, 50]
+                              }
+                            />
+                            <span className="text-2xs font-mono text-slate-500">
+                              {arch.defaultWeeks}w
+                            </span>
+                          </div>
                         </div>
                         <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
                           {arch.title}
                         </div>
-                        <p className="text-2xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug">
+                        <p className="text-2xs text-slate-600 dark:text-slate-300 line-clamp-1 leading-snug">
                           {arch.subtitle}
                         </p>
                       </div>
@@ -1508,6 +1525,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         : `Weeks ${activePreviewWeek.weekNum}–${Math.min(generatedPlanWeeks.length, activePreviewWeek.weekNum + 1)} of ${generatedPlanWeeks.length}`}
                     </span>
                   )}
+                  <PublishWindowTimelineBracket
+                    totalWeeks={generatedPlanWeeks.length}
+                    cadence={publishCadence}
+                  />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -2061,10 +2082,14 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <span className="ap-status-info px-2.5 py-0.5 rounded-full text-2xs font-mono font-semibold">
                 {isImperial ? 'mi / ft / °F' : 'km / m / °C'}
               </span>
+              <ChartInfoTooltip
+                title="Race Physics & Fueling Simulator"
+                subtitle="Grade, Thermal & Altitude Split Derating"
+                whatItMeasures="Derates target splits for elevation grade, heat index, altitude hypoxia, and late-race durability while sizing carbs (g/hr), sodium, and fluids."
+                benchmarks="60–110 g/hr carbs (1:0.8 glucose:fructose) · 600–1,000 mg/hr Na+."
+                coachingAction="Cap early hills inside Target Cap to protect negative-split finish reserves."
+              />
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Adjusts pacing &amp; carb/sodium targets for climb grade, heat, altitude, and fatigue fade.
-            </p>
           </div>
 
           <div className="flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">

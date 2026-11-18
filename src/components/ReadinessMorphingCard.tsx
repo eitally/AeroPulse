@@ -23,6 +23,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { GhostDiffSkyline } from './charts/MicroGraphics';
 import { downloadGarminFitWorkoutFile } from '../utils/fitWorkoutEncoder';
 import {
   EffortZoneCode,
@@ -849,7 +850,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
 
     const zwoContent = `<?xml version="1.0" encoding="UTF-8"?>
 <workout_file>
-  <author>Thresh Readiness Engine</author>
+  <author>THRESH Readiness Engine</author>
   <name>${morphedWorkout.title.replace(/[<>&"]/g, '')}</name>
   <description>${morphedWorkout.rationale.replace(/[<>&"]/g, '')} (${sportCalibrationLabel})</description>
   <sportType>${sportMode === 'Cycling' ? 'bike' : 'run'}</sportType>
@@ -1245,7 +1246,7 @@ ${dataLines.join('\n')}
           {/* Side-by-Side Comparison Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* LEFT PANEL: ORIGINAL / SCHEDULED WORKOUT SKYLINE */}
-            <div className="rounded-xl bg-slate-50/85 dark:bg-slate-900/75 border border-slate-200/90 dark:border-slate-800 p-4 flex flex-col justify-between space-y-3">
+            <div className="hidden lg:flex rounded-xl bg-slate-50/85 dark:bg-slate-900/75 border border-slate-200/90 dark:border-slate-800 p-4 flex-col justify-between space-y-3">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1">
@@ -1296,7 +1297,7 @@ ${dataLines.join('\n')}
                         }
                       />
                     ))}
-                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]/75" />
+                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0D9488]/75" />
                   </div>
                 </div>
 
@@ -1363,6 +1364,26 @@ ${dataLines.join('\n')}
                   </div>
                 </div>
 
+                {/* Mobile/Tablet Unified Ghost-Overlay Diff Skyline (dashed scheduled vs adapted fill) */}
+                <div className="lg:hidden rounded-lg bg-white dark:bg-[#15231B]/90 border border-emerald-500/30 p-2.5 space-y-1">
+                  <div className="flex items-center justify-between text-2xs font-mono text-emerald-800 dark:text-emerald-300">
+                    <span>Baseline (Dashed) vs Adapted (Z1–Z6+)</span>
+                    <span>
+                      {baselineWorkout.tss} → {morphedWorkout.tss} TSS
+                    </span>
+                  </div>
+                  <GhostDiffSkyline
+                    baselineHeightsPct={baselineWorkout.steps.map(
+                      (s) => ZONE_META[s.zoneCode].heightPct
+                    )}
+                    morphedBars={morphedWorkout.steps.map((s) => ({
+                      heightPct: ZONE_META[s.zoneCode].heightPct,
+                      zoneCode: s.zoneCode,
+                      label: s.label,
+                    }))}
+                  />
+                </div>
+
                 {/* Morphed Effort Zone Skyline */}
                 <div className="rounded-lg bg-white dark:bg-[#15231B]/90 border border-emerald-500/30 p-2.5 space-y-1.5">
                   <div className="flex items-center justify-between text-2xs font-mono text-emerald-800 dark:text-emerald-300">
@@ -1394,7 +1415,7 @@ ${dataLines.join('\n')}
                         }
                       />
                     ))}
-                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2A9D8F]" />
+                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0D9488]" />
                   </div>
                 </div>
 
@@ -1549,7 +1570,7 @@ ${dataLines.join('\n')}
               }
               className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold ap-text-brand hover:underline"
             >
-              <span>Ask Thresh Coach</span>
+              <span>Ask THRESH Coach</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
             </div>

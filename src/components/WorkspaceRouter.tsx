@@ -358,6 +358,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
             onOpenAthleteProfileModal={handleOpenProfileModal}
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             onQuickLogRun={handleImportSingleParsedActivity}
+            onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
           />
 
           <TodayPhysiologyDeepDive

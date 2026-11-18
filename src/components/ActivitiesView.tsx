@@ -3844,7 +3844,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                     >
                       <ThumbsUp className="w-3.5 h-3.5" />
                       <span>
-                        {selectedActivity.hasKudoed ? 'Kudoed on Thresh / Strava' : 'Give Kudos'}{' '}
+                        {selectedActivity.hasKudoed ? 'Kudoed on THRESH / Strava' : 'Give Kudos'}{' '}
                         (
                         {Math.max(
                           selectedActivity.kudosCount || 0,
