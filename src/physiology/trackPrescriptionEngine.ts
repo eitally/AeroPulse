@@ -23,6 +23,10 @@ export interface GenerateTrackPlanInput {
   goalTimeSecs?: number;
   weeklyBaselineDistanceKm?: number;
   athleticDays?: number;
+  /** Optional weekday offsets (0=Mon .. 6=Sun). Defaults to [1, 2, 4, 6]. */
+  selectedWeekdays?: number[];
+  /** Optional long run weekday offset (5=Sat | 6=Sun). Defaults to 6. */
+  longDayOffset?: number;
 }
 
 export interface GeneratedTrackWeekPlan {
@@ -653,7 +657,33 @@ export function generatePeriodizedTrackPlan(
     phenotypeOverride = 'AUTO',
     goalTimeSecs,
     weeklyBaselineDistanceKm,
+    selectedWeekdays,
+    longDayOffset,
   } = input;
+
+  const cleanWeekdays =
+    Array.isArray(selectedWeekdays) && selectedWeekdays.length > 0
+      ? Array.from(
+          new Set(selectedWeekdays.map((d) => Math.max(0, Math.min(6, Math.round(d)))))
+        ).sort((a, b) => a - b)
+      : [1, 2, 4, 6];
+  const resolvedLongOffset =
+    typeof longDayOffset === 'number' && cleanWeekdays.includes(longDayOffset)
+      ? longDayOffset
+      : cleanWeekdays.includes(6)
+        ? 6
+        : cleanWeekdays.includes(5)
+          ? 5
+          : cleanWeekdays[cleanWeekdays.length - 1] ?? 6;
+  const nonLongDays = cleanWeekdays.filter((d) => d !== resolvedLongOffset);
+  const q1Offset = nonLongDays[0] ?? 1;
+  const q2Offset =
+    nonLongDays.length >= 3
+      ? nonLongDays[nonLongDays.length - 1]
+      : nonLongDays.length >= 2
+        ? nonLongDays[1]
+        : 4;
+  const easyOffsets = nonLongDays.filter((d) => d !== q1Offset && d !== q2Offset);
 
   const phenotype: SpeedReservePhenotype =
     phenotypeOverride && phenotypeOverride !== 'AUTO'
@@ -792,18 +822,22 @@ export function generatePeriodizedTrackPlan(
       };
     };
 
-    const q1Session = buildSessionFromTemplate(pair[0], 1); // Tuesday Track Session
-    const q2Session = buildSessionFromTemplate(pair[1], 4); // Friday Track Session
+    const q1Session = buildSessionFromTemplate(pair[0], q1Offset);
+    const q2Session = buildSessionFromTemplate(pair[1], q2Offset);
 
     // Supporting Easy Aerobic + Long Endurance sessions calibrated strictly to Date E Pace
     const easyPaceToken = formatTrackSplitToken(blended.zones.E.paceSecsPerKm);
     const easyDurationMins = isFinalRaceWeek ? 30 : isTaper ? 38 : isDeload ? 40 : 48;
     const longDurationMins = isFinalRaceWeek ? 45 : isTaper ? 60 : isDeload ? 65 : 85;
 
-    const easyMidWeek: PlannedWorkoutEvent = {
-      id: `trk-plan-w${w}-2-easy`,
-      date: addDaysIso(startDateIso, (w - 1) * 7 + 2),
-      name: `Aerobic Recovery + 4×100m Strides`,
+    const easyDaySlots = easyOffsets.length > 0 ? easyOffsets : [2];
+    const easySessions: PlannedWorkoutEvent[] = easyDaySlots.map((dayOff, idx) => ({
+      id: `trk-plan-w${w}-${dayOff}-easy-${idx}`,
+      date: addDaysIso(startDateIso, (w - 1) * 7 + dayOff),
+      name:
+        idx === 0
+          ? `Aerobic Recovery + 4×100m Strides`
+          : `Easy Aerobic Volume + 4×100m Strides`,
       sportCategory: 'Running',
       environmentPreference: 'FLEXIBLE',
       description: `Relaxed E-pace flushing (~${easyPaceToken}/km) followed by 4 relaxed 100m strides.`,
@@ -812,11 +846,11 @@ export function generatePeriodizedTrackPlan(
       targetZoneSummary: 'E · Z2 Aerobic',
       workoutSyntax: `- ${easyDurationMins}m 68% Pace Easy Aerobic\nMain Set 4x\n- 100m 110% Pace Fast Stride\n- 60s 55% Pace Walk/Jog`,
       source: 'AI_COACH',
-    };
+    }));
 
     const longEndurance: PlannedWorkoutEvent = {
-      id: `trk-plan-w${w}-6-long`,
-      date: addDaysIso(startDateIso, (w - 1) * 7 + 6),
+      id: `trk-plan-w${w}-${resolvedLongOffset}-long`,
+      date: addDaysIso(startDateIso, (w - 1) * 7 + resolvedLongOffset),
       name: isFinalRaceWeek
         ? 'Pre-Meet Easy Long Flush'
         : `${longDurationMins}m Aerobic Long Run`,
@@ -830,7 +864,9 @@ export function generatePeriodizedTrackPlan(
       source: 'AI_COACH',
     };
 
-    const weekSessions = [q1Session, easyMidWeek, q2Session, longEndurance];
+    const weekSessions = [q1Session, ...easySessions, q2Session, longEndurance].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
     const totalSecs = weekSessions.reduce((acc, s) => acc + s.plannedDurationSecs, 0);
     const totalTss = weekSessions.reduce((acc, s) => acc + s.plannedLoad, 0);
 

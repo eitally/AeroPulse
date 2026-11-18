@@ -19,6 +19,7 @@ import {
   Timer,
   Trophy,
   Zap,
+  Download,
 } from "./icons/PhosphorIcons";
 import {
   AthleteConnectionRole,
@@ -46,6 +47,11 @@ import {
   useTracksideStopwatch,
 } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
+import {
+  exportWorkoutAsErg,
+  exportWorkoutAsFit,
+  exportWorkoutAsZwo,
+} from '../utils/workoutExportActions';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import { TeamManagementPanel } from './TeamManagementPanel';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
@@ -1144,12 +1150,73 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             className="w-16 min-h-[38px] bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-slate-100"
                           />
                         </label>
-                        <button
-                          type="submit"
-                          className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-primary text-xs font-mono font-semibold cursor-pointer"
-                        >
-                          Push Workout to Athlete Calendar
-                        </button>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetAth = roster.find((r) => r.id === pushTargetAthleteId);
+                              exportWorkoutAsFit({
+                                name: workoutName,
+                                sport: workoutSport,
+                                workoutSyntax,
+                                ftpWatts: targetAth?.athleteProfile.ftp || 250,
+                                lthrBpm: targetAth?.athleteProfile.lthr || 170,
+                                thresholdPaceSecsPerKm:
+                                  targetAth?.athleteProfile.thresholdPaceSecsPerKm || 250,
+                                dateIso: workoutDate,
+                              });
+                            }}
+                            className="min-h-[44px] px-2.5 py-1.5 rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] text-xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>.FIT</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetAth = roster.find((r) => r.id === pushTargetAthleteId);
+                              exportWorkoutAsZwo({
+                                name: workoutName,
+                                sport: workoutSport,
+                                workoutSyntax,
+                                description: workoutNotes,
+                                ftpWatts: targetAth?.athleteProfile.ftp || 250,
+                                thresholdPaceSecsPerKm:
+                                  targetAth?.athleteProfile.thresholdPaceSecsPerKm || 250,
+                                dateIso: workoutDate,
+                              });
+                            }}
+                            className="min-h-[44px] px-2.5 py-1.5 rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] text-xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>.ZWO</span>
+                          </button>
+                          {workoutSport === 'Cycling' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetAth = roster.find((r) => r.id === pushTargetAthleteId);
+                                exportWorkoutAsErg({
+                                  name: workoutName,
+                                  sport: workoutSport,
+                                  workoutSyntax,
+                                  ftpWatts: targetAth?.athleteProfile.ftp || 250,
+                                  dateIso: workoutDate,
+                                });
+                              }}
+                              className="min-h-[44px] px-2.5 py-1.5 rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] text-xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>.ERG</span>
+                            </button>
+                          )}
+                          <button
+                            type="submit"
+                            className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-primary text-xs font-mono font-semibold cursor-pointer"
+                          >
+                            Push Workout to Athlete Calendar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

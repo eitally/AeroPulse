@@ -644,7 +644,9 @@ export default function App() {
   const {
     handleCreatePlannedEvent,
     handleBatchCreatePlannedEvents,
+    handleUpdatePlannedEvent,
     handleDeletePlannedEvent,
+    handleDeletePlanBlock,
   } = usePlannedEvents({
     activeConnectedAthlete,
     activeTeam,
@@ -1780,7 +1782,9 @@ export default function App() {
                 isHydratingRoutes={isHydratingRoutes}
                 handleSelectActivityAndOpenTab={handleSelectActivityAndOpenTab}
                 handleCalendarCreatePlannedEvent={handleCalendarCreatePlannedEvent}
+                handleUpdatePlannedEvent={handleUpdatePlannedEvent}
                 handleDeletePlannedEvent={handleDeletePlannedEvent}
+                handleDeletePlanBlock={handleDeletePlanBlock}
                 handleBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
                 handleOpenTodayTab={handleOpenTodayTab}
                 handleOpenProfileModal={handleOpenProfileModal}

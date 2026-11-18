@@ -100,8 +100,26 @@ export interface WorkspaceRouterProps {
     description: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
+    planBlockId?: string;
+    planBlockName?: string;
+    planWeekNum?: number;
   }) => Promise<void>;
+  handleUpdatePlannedEvent: (
+    id: string,
+    patch: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  ) => Promise<void>;
   handleDeletePlannedEvent: (id: string) => Promise<void>;
+  handleDeletePlanBlock: (planBlockId: string) => Promise<void>;
   handleBatchCreatePlannedEvents: (batch: PlannedEventBatchItem[]) => Promise<void>;
   handleOpenTodayTab: () => void;
   handleOpenProfileModal: () => void;
@@ -177,7 +195,9 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
 
   handleSelectActivityAndOpenTab,
   handleCalendarCreatePlannedEvent,
+  handleUpdatePlannedEvent,
   handleDeletePlannedEvent,
+  handleDeletePlanBlock,
   handleBatchCreatePlannedEvents,
   handleOpenTodayTab,
   handleOpenProfileModal,
@@ -293,7 +313,9 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           athleteProfile={effectiveAthleteProfile}
           onSelectActivity={handleSelectActivityAndOpenTab}
           onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
+          onUpdatePlannedEvent={handleUpdatePlannedEvent}
           onDeletePlannedEvent={handleDeletePlannedEvent}
+          onDeletePlanBlock={handleDeletePlanBlock}
           onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
           onOpenTodayWorkout={handleOpenTodayTab}
           onOpenAthleteProfileModal={handleOpenProfileModal}
@@ -405,6 +427,8 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           currentCtl={latestCtl}
           athleteProfile={effectiveAthleteProfile}
           onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
+          onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
+          onDeletePlanBlock={handleDeletePlanBlock}
           onSaveProfileOverride={handleSaveProfileOverride}
           onSelectActivity={handleSelectActivityAndOpenTab}
           onSwitchToCalendar={handleSwitchToCalendarTab}
@@ -453,7 +477,9 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onTeamsUpdated={onTeamsUpdated}
           onSelectActivityAndOpenTab={handleSelectActivityAndOpenTab}
           onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
+          onUpdatePlannedEvent={handleUpdatePlannedEvent}
           onDeletePlannedEvent={handleDeletePlannedEvent}
+          onDeletePlanBlock={handleDeletePlanBlock}
           onBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
           onOpenProfileModal={handleOpenProfileModal}
           onOpenGoalsTab={handleOpenGoalsTab}

@@ -20,16 +20,19 @@ import {
 } from '../physiology/scholasticEngine';
 import { parseStructuredTrackWorkout } from '../utils/workoutParser';
 import {
-  buildFitStepsFromWorkoutSyntax,
-  downloadGarminFitWorkoutFile,
-} from '../utils/fitWorkoutEncoder';
+  exportWorkoutAsErg,
+  exportWorkoutAsFit,
+  exportWorkoutAsZwo,
+} from '../utils/workoutExportActions';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import {
+  Bike,
   Check,
   ClipboardText,
   Copy,
   Download,
+  Footprints,
   Plus,
   Send,
   Timer,
@@ -64,6 +67,9 @@ interface BuilderSetRow {
   id: string;
   repCount: number;
   repDistanceMeters: TrackRepDistanceMeters;
+  measureMode?: 'DISTANCE_M' | 'TIME_MINS';
+  durationMins?: number;
+  targetPctFtp?: number;
   intensity: VdotPodIntensity;
   restLabel: string;
   setRestAfterSecs: number;
@@ -161,6 +167,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   onCreatePlannedEvent,
   onOpenStopwatchSubTab,
 }) => {
+  const [clipboardSport, setClipboardSport] = useState<'Running' | 'Cycling'>('Running');
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
   const [workoutDate, setWorkoutDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -247,21 +254,43 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     WARMUP_COOLDOWN_PRESETS[2];
 
   const builtWorkout = useMemo(() => {
+    const isCycling = clipboardSport === 'Cycling';
     const lines: string[] = [];
     if (includeWarmup) {
-      lines.push(`Warmup\n- ${wuPreset.syntax} Z1 Warmup`);
+      lines.push(
+        isCycling
+          ? `Warmup\n- 15m 58% FTP Warmup`
+          : `Warmup\n- ${wuPreset.syntax} Z1 Warmup`
+      );
     }
     sets.forEach((s, idx) => {
-      const paceLabel = INTENSITY_SHORT_LABEL[s.intensity] || 'CV pace';
-      lines.push(
-        `Main Set ${idx + 1}\n- ${s.repCount}x${s.repDistanceMeters}m at ${paceLabel} (${s.restLabel})`
-      );
+      const isTime = isCycling || s.measureMode === 'TIME_MINS';
+      if (isTime) {
+        const mins = Math.max(1, s.durationMins || 6);
+        const pct = s.targetPctFtp || (isCycling ? 90 : 98);
+        const targetUnit = isCycling ? 'FTP' : 'Pace';
+        const restSecs = parseRestLabelSecs(s.restLabel);
+        const restTok =
+          restSecs >= 120 && restSecs % 60 === 0 ? `${restSecs / 60}m` : `${restSecs}s`;
+        lines.push(
+          `Main Set ${idx + 1}\n- ${s.repCount}x ${mins}m ${pct}% ${targetUnit} (${restTok} recovery)`
+        );
+      } else {
+        const paceLabel = INTENSITY_SHORT_LABEL[s.intensity] || 'CV pace';
+        lines.push(
+          `Main Set ${idx + 1}\n- ${s.repCount}x${s.repDistanceMeters}m at ${paceLabel} (${s.restLabel})`
+        );
+      }
       if (s.setRestAfterSecs > 0 && idx < sets.length - 1) {
         lines.push(`- ${Math.round(s.setRestAfterSecs / 60)}m set rest`);
       }
     });
     if (includeCooldown) {
-      lines.push(`Cooldown\n- ${cdPreset.syntax} Z1 Cooldown`);
+      lines.push(
+        isCycling
+          ? `Cooldown\n- 10m 54% FTP Cooldown`
+          : `Cooldown\n- ${cdPreset.syntax} Z1 Cooldown`
+      );
     }
     const workoutSyntax = lines.join('\n\n');
 
@@ -269,18 +298,36 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       (acc, s) => acc + s.repCount * s.repDistanceMeters,
       0
     );
-    const wuSecs = includeWarmup ? Math.round((wuPreset.meters / 1000) * 305) : 0;
-    const cdSecs = includeCooldown ? Math.round((cdPreset.meters / 1000) * 310) : 0;
+    const wuSecs = isCycling
+      ? includeWarmup
+        ? 900
+        : 0
+      : includeWarmup
+        ? Math.round((wuPreset.meters / 1000) * 305)
+        : 0;
+    const cdSecs = isCycling
+      ? includeCooldown
+        ? 600
+        : 0
+      : includeCooldown
+        ? Math.round((cdPreset.meters / 1000) * 310)
+        : 0;
     const workRestSecs = sets.reduce((acc, s) => {
       const restS = parseRestLabelSecs(s.restLabel);
-      const repSecs = Math.round((s.repDistanceMeters / 1000) * 215);
+      const isTime = isCycling || s.measureMode === 'TIME_MINS';
+      const repSecs = isTime
+        ? Math.max(1, s.durationMins || 6) * 60
+        : Math.round((s.repDistanceMeters / 1000) * 215);
       return acc + s.repCount * (repSecs + restS) + (s.setRestAfterSecs || 0);
     }, 0);
     const plannedDurationSecs = Math.max(900, wuSecs + workRestSecs + cdSecs);
-    const plannedLoad = Math.max(
-      20,
-      Math.min(130, Math.round((totalWorkMeters / 1000) * 11 + (wuSecs + cdSecs) / 90))
-    );
+    const hasOnlyDistance = !isCycling && sets.every((s) => s.measureMode !== 'TIME_MINS');
+    const plannedLoad = hasOnlyDistance
+      ? Math.max(
+          20,
+          Math.min(130, Math.round((totalWorkMeters / 1000) * 11 + (wuSecs + cdSecs) / 90))
+        )
+      : Math.max(25, Math.min(160, Math.round((plannedDurationSecs / 3600) * 78)));
 
     const trackSets: TrackSetSpec[] = sets.map((s, idx) => ({
       repCount: s.repCount,
@@ -308,11 +355,15 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     };
 
     const setsSummary = sets
-      .map((s) => `${s.repCount}×${s.repDistanceMeters}m @ ${INTENSITY_SHORT_LABEL[s.intensity]}`)
+      .map((s) =>
+        isCycling || s.measureMode === 'TIME_MINS'
+          ? `${s.repCount}×${s.durationMins || 6}m @ ${s.targetPctFtp || (isCycling ? 90 : 98)}% ${isCycling ? 'FTP' : 'Pace'}`
+          : `${s.repCount}×${s.repDistanceMeters}m @ ${INTENSITY_SHORT_LABEL[s.intensity]}`
+      )
       .join(' + ');
 
     return { workoutSyntax, plannedDurationSecs, plannedLoad, trackSpec, setsSummary };
-  }, [includeWarmup, includeCooldown, wuPreset, cdPreset, sets, multiSetPreview]);
+  }, [clipboardSport, includeWarmup, includeCooldown, wuPreset, cdPreset, sets, multiSetPreview]);
 
   const applyShorthandText = (rawText: string) => {
     const clean = rawText.trim();
@@ -439,12 +490,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               targetMembershipIds,
               date: workoutDate,
               name: title,
-              sportCategory: 'Running',
+              sportCategory: clipboardSport,
               plannedDurationSecs: builtWorkout.plannedDurationSecs,
               plannedLoad: builtWorkout.plannedLoad,
               workoutSyntax: builtWorkout.workoutSyntax,
               description,
-              trackSpec: builtWorkout.trackSpec,
+              trackSpec: clipboardSport === 'Running' ? builtWorkout.trackSpec : undefined,
               athleteOverrides:
                 Object.keys(athleteOverrides).length > 0 ? athleteOverrides : undefined,
               replaceSameDateTarget: true,
@@ -466,13 +517,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       await onCreatePlannedEvent({
         date: workoutDate,
         name: title,
-        sportCategory: 'Running',
-        environmentPreference: 'OUTDOOR',
+        sportCategory: clipboardSport,
+        environmentPreference: clipboardSport === 'Cycling' ? 'FLEXIBLE' : 'OUTDOOR',
         plannedDurationSecs: builtWorkout.plannedDurationSecs,
         plannedLoad: builtWorkout.plannedLoad,
         workoutSyntax: builtWorkout.workoutSyntax,
         description: `${audienceLabel}: ${description}`,
-        trackSpec: builtWorkout.trackSpec,
+        ...(clipboardSport === 'Running' ? { trackSpec: builtWorkout.trackSpec } : {}),
         replaceExistingDate: false,
       });
 
@@ -492,15 +543,37 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   };
 
   const handleExportFit = () => {
-    const steps = buildFitStepsFromWorkoutSyntax(builtWorkout.workoutSyntax, {
-      sport: 'Running',
-      thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+    exportWorkoutAsFit({
+      name: workoutTitle.trim() || (clipboardSport === 'Cycling' ? 'Coach Cycling Workout' : 'Coach Track Workout'),
+      sport: clipboardSport,
+      workoutSyntax: builtWorkout.workoutSyntax,
+      ftpWatts: selfProfile.ftp || 250,
       lthrBpm: selfProfile.runLthr || selfProfile.lthr || 172,
+      thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+      dateIso: workoutDate,
     });
-    downloadGarminFitWorkoutFile(
-      { name: workoutTitle.trim() || 'Coach Track Workout', sport: 'Running', steps },
-      workoutDate
-    );
+  };
+
+  const handleExportZwo = () => {
+    exportWorkoutAsZwo({
+      name: workoutTitle.trim() || 'Coach Workout',
+      sport: clipboardSport,
+      workoutSyntax: builtWorkout.workoutSyntax,
+      description: builtWorkout.setsSummary,
+      ftpWatts: selfProfile.ftp || 250,
+      thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+      dateIso: workoutDate,
+    });
+  };
+
+  const handleExportErg = () => {
+    exportWorkoutAsErg({
+      name: workoutTitle.trim() || 'Coach Cycling Workout',
+      sport: 'Cycling',
+      workoutSyntax: builtWorkout.workoutSyntax,
+      ftpWatts: selfProfile.ftp || 250,
+      dateIso: workoutDate,
+    });
   };
 
   const handleCopySheet = () => {
@@ -525,12 +598,42 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-4"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-            Clipboard Workout Builder &amp; Pace Groups
-          </h2>
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+              Clipboard Workout Builder &amp; Pace Groups
+            </h2>
+            <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
+              <button
+                type="button"
+                aria-pressed={clipboardSport === 'Running'}
+                onClick={() => setClipboardSport('Running')}
+                className={`min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                  clipboardSport === 'Running'
+                    ? 'ap-nav-volt-active'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                <Footprints className="w-3 h-3" />
+                <span>Track / Run</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={clipboardSport === 'Cycling'}
+                onClick={() => setClipboardSport('Cycling')}
+                className={`min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                  clipboardSport === 'Cycling'
+                    ? 'ap-nav-volt-active'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                <Bike className="w-3 h-3" />
+                <span>Cycling</span>
+              </button>
+            </div>
+          </div>
           <p className="text-2xs text-slate-600 dark:text-slate-300">
-            Build multi-set track sessions for the team, an event group, or specific athletes.
+            Build multi-set distance or time-based workouts for the team, an event group, or specific athletes.
           </p>
         </div>
 
@@ -575,6 +678,26 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             <Download className="w-3.5 h-3.5" />
             <span>.FIT</span>
           </button>
+
+          <button
+            type="button"
+            onClick={handleExportZwo}
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>.ZWO</span>
+          </button>
+
+          {clipboardSport === 'Cycling' && (
+            <button
+              type="button"
+              onClick={handleExportErg}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>.ERG</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -798,46 +921,104 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               </label>
 
               <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
-                <span>Distance</span>
-                <select
-                  aria-label={`Set ${idx + 1} Distance`}
-                  value={row.repDistanceMeters}
-                  onChange={(e) => {
-                    const v = Number(e.target.value) as TrackRepDistanceMeters;
-                    setSets((prev) =>
-                      prev.map((s) => (s.id === row.id ? { ...s, repDistanceMeters: v } : s))
-                    );
-                  }}
-                  className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
-                >
-                  {VALID_REP_DISTS.map((dist) => (
-                    <option key={`set-${idx}-d-${dist}`} value={dist}>
-                      {dist}m
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between gap-1">
+                  <span>{clipboardSport === 'Cycling' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
+                  {clipboardSport === 'Running' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSets((prev) =>
+                          prev.map((s) =>
+                            s.id === row.id
+                              ? {
+                                  ...s,
+                                  measureMode: s.measureMode === 'TIME_MINS' ? 'DISTANCE_M' : 'TIME_MINS',
+                                  durationMins: s.durationMins || 6,
+                                }
+                              : s
+                          )
+                        )
+                      }
+                      className="text-3xs underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer"
+                    >
+                      {row.measureMode === 'TIME_MINS' ? 'Use m' : 'Use min'}
+                    </button>
+                  )}
+                </div>
+                {clipboardSport === 'Cycling' || row.measureMode === 'TIME_MINS' ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    aria-label={`Set ${idx + 1} Minutes`}
+                    value={row.durationMins || 6}
+                    onChange={(e) => {
+                      const v = Math.max(1, Number(e.target.value) || 1);
+                      setSets((prev) =>
+                        prev.map((s) => (s.id === row.id ? { ...s, durationMins: v } : s))
+                      );
+                    }}
+                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  />
+                ) : (
+                  <select
+                    aria-label={`Set ${idx + 1} Distance`}
+                    value={row.repDistanceMeters}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) as TrackRepDistanceMeters;
+                      setSets((prev) =>
+                        prev.map((s) => (s.id === row.id ? { ...s, repDistanceMeters: v } : s))
+                      );
+                    }}
+                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  >
+                    {VALID_REP_DISTS.map((dist) => (
+                      <option key={`set-${idx}-d-${dist}`} value={dist}>
+                        {dist}m
+                      </option>
+                    ))}
+                  </select>
+                )}
               </label>
 
               <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
-                <span>Target Pace</span>
-                <select
-                  aria-label={`Set ${idx + 1} Pace`}
-                  value={row.intensity}
-                  onChange={(e) => {
-                    const v = e.target.value as VdotPodIntensity;
-                    setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, intensity: v } : s)));
-                  }}
-                  className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
-                >
-                  <option value="RACE_400M">400m Pace</option>
-                  <option value="RACE_800M">800m Pace</option>
-                  <option value="RACE_1600M">Mile / 1600m Pace</option>
-                  <option value="RACE_3200M">3200m / 2-Mile Pace</option>
-                  <option value="INTERVAL_VO2">5K Pace (VO2)</option>
-                  <option value="THRESHOLD_CV">Threshold / CV</option>
-                  <option value="SUB_THRESHOLD">Sub-Threshold</option>
-                  <option value="EASY">Easy / Stride</option>
-                </select>
+                <span>{clipboardSport === 'Cycling' ? 'Target % FTP' : 'Target Pace'}</span>
+                {clipboardSport === 'Cycling' ? (
+                  <select
+                    aria-label={`Set ${idx + 1} Cycling Intensity`}
+                    value={row.targetPctFtp || 90}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, targetPctFtp: v } : s)));
+                    }}
+                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  >
+                    <option value={70}>Z2 Endurance (70% FTP)</option>
+                    <option value={88}>Z3 Sweet Spot (88% FTP)</option>
+                    <option value={98}>Z4 Threshold (98% FTP)</option>
+                    <option value={112}>Z5 VO2max (112% FTP)</option>
+                    <option value={125}>Z6 Anaerobic (125% FTP)</option>
+                  </select>
+                ) : (
+                  <select
+                    aria-label={`Set ${idx + 1} Pace`}
+                    value={row.intensity}
+                    onChange={(e) => {
+                      const v = e.target.value as VdotPodIntensity;
+                      setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, intensity: v } : s)));
+                    }}
+                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  >
+                    <option value="RACE_400M">400m Pace</option>
+                    <option value="RACE_800M">800m Pace</option>
+                    <option value="RACE_1600M">Mile / 1600m Pace</option>
+                    <option value="RACE_3200M">3200m / 2-Mile Pace</option>
+                    <option value="INTERVAL_VO2">5K Pace (VO2)</option>
+                    <option value="THRESHOLD_CV">Threshold / CV</option>
+                    <option value="SUB_THRESHOLD">Sub-Threshold</option>
+                    <option value="EASY">Easy / Stride</option>
+                  </select>
+                )}
               </label>
 
               <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
