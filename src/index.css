@@ -304,9 +304,9 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
 }
 
 .dark .ap-badge-volt {
-  background-color: rgba(200, 255, 0, 0.18);
-  color: #c8ff00;
-  border: 1px solid rgba(200, 255, 0, 0.5);
+  background-color: #c8ff00;
+  color: #080a09;
+  border: 1px solid #a3e635;
   font-weight: 700;
 }
 
