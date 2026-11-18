@@ -207,14 +207,15 @@ describe('UX-09 & UX-10 · Visual Workout Builder, Export Actions & 15-Plan Peri
     expect(calendarSrc).toContain('calendar-export-zwo');
     expect(calendarSrc).toContain('onUpdatePlannedEvent');
 
-    const detectorOut = execFileSync(
-      'node',
-      [
-        '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs',
-        'src/components',
-      ],
-      { encoding: 'utf8' }
-    );
-    expect(detectorOut).not.toMatch(/anti-patterns found/i);
+    const detectorPath =
+      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+    if (fs.existsSync(detectorPath)) {
+      const detectorOut = execFileSync(
+        'node',
+        [detectorPath, path.join(ROOT, 'src/components')],
+        { encoding: 'utf8' }
+      );
+      expect(detectorOut).not.toMatch(/anti-patterns found/i);
+    }
   });
 });
