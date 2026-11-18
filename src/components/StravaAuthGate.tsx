@@ -47,6 +47,10 @@ import {
   getSavedIntervalsHeaders,
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
+import {
+  clearPendingSharedWorkout,
+  peekPendingSharedWorkout,
+} from '../utils/shareWorkoutEngine';
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
@@ -236,6 +240,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       return 'ATHLETE';
     }
   });
+  const [pendingSharedWorkout, setPendingSharedWorkout] = useState(() =>
+    peekPendingSharedWorkout()
+  );
 
   const selectOnboardingRole = (nextRole: 'ATHLETE' | 'COACH') => {
     setOnboardingRole(nextRole);
@@ -1262,6 +1269,33 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     : 'Sign in with Strava in one click—or continue with Google, Passkey, or Magic Link.'}
                 </p>
               </div>
+
+              {/* Pending Shared Workout Stash Banner (PLG-01) */}
+              {pendingSharedWorkout && (
+                <div
+                  data-testid="pending-shared-workout-banner"
+                  className="rounded-2xl ap-status-prime px-4 py-3 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                      Saved for your calendar: {pendingSharedWorkout.title}
+                    </div>
+                    <div className="text-2xs text-slate-700 dark:text-slate-200">
+                      Sign in with Strava (or explore interactive demo) to add this {pendingSharedWorkout.sport} workout straight to your THRESH Calendar.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearPendingSharedWorkout();
+                      setPendingSharedWorkout(null);
+                    }}
+                    className="min-h-[36px] px-2.5 rounded-lg ap-btn-secondary text-2xs font-semibold shrink-0 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
               {/* Active or Expandable Team Invite Code Lookup */}
               {showTeamCodeDrawer && (

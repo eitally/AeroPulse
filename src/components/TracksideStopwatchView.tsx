@@ -40,6 +40,7 @@ import {
 } from '../physiology/trackLiveAutoRegulationEngine';
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
+import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
   ArrowCounterClockwise,
   BellRinging,
@@ -53,6 +54,7 @@ import {
   Pause,
   Play,
   Plus,
+  ShareNetwork,
   SpeakerHigh,
   SpeakerSlash,
   SquaresFour,
@@ -785,6 +787,32 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     document.body.removeChild(link);
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setLiveAnnouncement('Downloaded trackside splits CSV');
+  };
+
+  const handleShareStopwatchCard = () => {
+    const timed = runnerTelemetries.filter((t) => t.lapCount > 0 && t.netTotalSecs !== null);
+    if (timed.length === 0) return;
+    const teamName = myTeams.find((tm) => tm.brand.teamId === activeTeamId)?.brand.name;
+    const presetLabel =
+      sessionType === 'RACE' ? activeRacePreset.label : activeWorkoutPreset.label;
+    openShareWorkoutRoute({
+      kind: 'STOPWATCH',
+      version: 1,
+      title: sessionTitle.trim() || `${presetLabel} Splits`,
+      sport: 'Running',
+      date: new Date().toISOString().slice(0, 10),
+      description: `${presetLabel} · ${timed.length} timed ${timed.length === 1 ? 'athlete' : 'athletes'}`,
+      teamName,
+      referenceThresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+      splits: timed.slice(0, 16).map((t) => ({
+        label: `${t.runnerName} (${t.lapCount} ${t.lapCount === 1 ? 'lap' : 'laps'})`,
+        lapTime: formatStopwatchClockMs((t.netTotalSecs ?? 0) * 1000),
+        paceOrPower:
+          t.lapSplitsSecs.length > 0
+            ? `Last ${formatStopwatchClockMs(t.lapSplitsSecs[t.lapSplitsSecs.length - 1] * 1000)}`
+            : undefined,
+      })),
+    });
   };
 
   const handleSaveToThresh = () => {
@@ -2156,6 +2184,17 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             >
               <DownloadSimple className="w-4 h-4 ap-text-brand" weight="bold" />
               <span>Export .CSV</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="stopwatch-share-card"
+              onClick={handleShareStopwatchCard}
+              disabled={totalSplitCount === 0}
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-card-inset text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+            >
+              <ShareNetwork className="w-4 h-4 ap-text-brand" weight="bold" />
+              <span>Share PNG Card</span>
             </button>
 
             {sessionType === 'RACE' && (

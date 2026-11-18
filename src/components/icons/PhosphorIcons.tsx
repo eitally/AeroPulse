@@ -6,6 +6,7 @@
 import {
   IconContext,
   type IconProps,
+  ArrowLeft,
   Pulse,
   Warning,
   ArrowDownRight,
@@ -73,6 +74,7 @@ import {
   ChartScatter,
   MagnifyingGlass,
   PaperPlaneRight,
+  ShareNetwork,
   Shield,
   ShieldCheck,
   Sliders,
@@ -113,6 +115,7 @@ export {
   IconContext,
   type IconProps,
   // Canonical Phosphor exports
+  ArrowLeft,
   Pulse,
   Warning,
   ArrowDownRight,
@@ -184,6 +187,7 @@ export {
   ChartScatter,
   MagnifyingGlass,
   PaperPlaneRight,
+  ShareNetwork,
   Shield,
   ShieldCheck,
   Sliders,

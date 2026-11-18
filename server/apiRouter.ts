@@ -9,6 +9,7 @@ import {
 
 // Domain routers
 import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
+import { athleteStateRouter } from './routers/athleteStateRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
 import { teamRouter } from './routers/teamRouter.ts';
 import { authRouter } from './routers/authRouter.ts';
@@ -45,6 +46,7 @@ apiRouter.use((req: Request, res: Response, next: NextFunction) => {
 
 // Mount domain routers
 apiRouter.use(vaultAndPhysiologyRouter);
+apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
 apiRouter.use(authRouter);

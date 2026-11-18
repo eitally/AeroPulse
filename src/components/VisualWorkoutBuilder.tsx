@@ -7,6 +7,7 @@ import {
   Footprints,
   Plus,
   Send,
+  ShareNetwork,
   Sparkles,
   Timer,
   Trash2,
@@ -32,6 +33,7 @@ import {
   exportWorkoutAsZwo,
   pushWorkoutDirectToGarmin,
 } from '../utils/workoutExportActions';
+import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
   inferTrackWorkoutSpecFromPlannedEvent,
   stageWorkoutInTracksideStopwatch,
@@ -658,6 +660,23 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       dateIso: builderDate,
     });
     setStatusMessage(`Downloaded .ERG file calibrated to ${safeFtp}W FTP.`);
+  };
+
+  const handleShareWorkoutClick = () => {
+    openShareWorkoutRoute({
+      kind: 'WORKOUT',
+      version: 1,
+      title: builderName.trim() || 'THRESH Structured Workout',
+      sport: builderSport,
+      date: builderDate,
+      workoutSyntax: effectiveSyntax,
+      plannedDurationSecs: summaryStats.durationSecs,
+      plannedLoad: summaryStats.load,
+      description: notes.trim() || `${builderSport} structured session`,
+      defaultUnit: distanceUnit,
+      referenceFtpWatts: safeFtp,
+      referenceThresholdPaceSecsPerKm: safeThresholdPace,
+    });
   };
 
   const handlePushGarminClick = async () => {
@@ -1388,6 +1407,15 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
           >
             <Send className="w-3.5 h-3.5" />
             <span>Garmin Push</span>
+          </button>
+          <button
+            type="button"
+            data-testid="visual-builder-share-btn"
+            onClick={handleShareWorkoutClick}
+            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+          >
+            <ShareNetwork className="w-3.5 h-3.5" />
+            <span>Share / PNG</span>
           </button>
           {detectedTrackSpec && onOpenTracksideStopwatch && (
             <button

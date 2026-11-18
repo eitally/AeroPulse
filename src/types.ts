@@ -1247,6 +1247,8 @@ export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE';
 
 export type TeamInviteStatus = 'INVITED' | 'OPENED' | 'ACTIVE' | 'REVOKED';
 
+export type TeamPlanTier = 'SANDBOX' | 'FOUNDING_TEAM';
+
 export interface TeamBrandConfig {
   teamId: string;
   slug: string; // e.g. 'palo-alto-xc' -> /join/palo-alto-xc
@@ -1262,6 +1264,7 @@ export interface TeamBrandConfig {
   defaultSafeSportShield: boolean; // Auto-defaults to true for HIGH_SCHOOL
   enableParentGuardianCc: boolean; // Auto-defaults to true for HIGH_SCHOOL
   coachDisplayName: string;
+  planTier?: TeamPlanTier;
   createdAt: string;
 }
 
@@ -1396,6 +1399,30 @@ export type ActiveTab =
   | 'coach';
 
 export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';
+
+export interface SessionCheckInRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  plannedEventId?: string;
+  workoutName?: string;
+  rpe: number; // 1..10
+  painFlag?: boolean;
+  painArea?: 'KNEE' | 'SHIN' | 'ACHILLES' | 'HAMSTRING' | 'HIP' | 'FOOT' | 'BACK' | 'OTHER';
+  sorenessNote?: string;
+  autoSwappedToRecovery?: boolean;
+  createdAt: string;
+}
+
+export interface AthleteCloudStateEnvelope {
+  version: 1;
+  updatedAt: string;
+  plannedEvents: PlannedWorkoutEvent[];
+  targetGoals: TargetGoal[];
+  annualMileageGoals: AnnualMileageGoal[];
+  athleteProfile?: Partial<AthleteProfile>;
+  distanceUnit?: DistanceUnit;
+  sessionCheckIns?: SessionCheckInRecord[];
+}
 
 
 

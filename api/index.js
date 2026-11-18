@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express8 from "express";
+import express9 from "express";
 
 // server/apiRouter.ts
-import express7 from "express";
+import express8 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -3770,6 +3770,198 @@ vaultAndPhysiologyRouter.post("/api/physiology/debrief", (req, res) => {
   }
 });
 
+// server/routers/athleteStateRouter.ts
+import express2 from "express";
+var athleteStateRouter = express2.Router();
+async function ensureStoreSessionHydrated(req) {
+  const store = getScopedRuntimeStore(req);
+  if (store?.stravaAthleteId) return;
+  const verified = getVerifiedSessionClaims(req);
+  if (!verified?.sid) return;
+  const shortSid = verified.sid.slice(0, 24);
+  const persisted = await loadTenantVaultAsync(
+    `session_${shortSid}`,
+    null
+  ) || await loadTenantVaultAsync(
+    `session_${verified.sid}`,
+    null
+  );
+  if (persisted?.stravaAthleteId && store) {
+    store.stravaAthleteId = String(persisted.stravaAthleteId);
+  }
+}
+var SAFE_PROFILE_KEYS = [
+  "name",
+  "primarySport",
+  "weightKg",
+  "restingHr",
+  "ftp",
+  "indoorFtp",
+  "runFtp",
+  "lthr",
+  "maxHr",
+  "runLthr",
+  "runMaxHr",
+  "thresholdPaceSecsPerKm",
+  "thresholdHistory",
+  "safeSportHideWeight",
+  "academicDivision",
+  "competitionGender"
+];
+function resolveCanonicalAthleteVaultKey(req) {
+  const store = getScopedRuntimeStore(req);
+  const stravaId = String(store?.stravaAthleteId || "").trim().replace(/[^0-9a-zA-Z_-]/g, "");
+  if (stravaId) {
+    return `athlete_state_strava_${stravaId}`;
+  }
+  const verified = getVerifiedSessionClaims(req);
+  const sub = String(verified?.sub || "").trim();
+  if (sub.startsWith("usr_")) {
+    const cleanUserId = sub.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanUserId) {
+      return `athlete_state_user_${cleanUserId}`;
+    }
+  }
+  if (verified?.sid) {
+    const cleanSid = verified.sid.replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32);
+    if (cleanSid) {
+      return `athlete_state_sid_${cleanSid}`;
+    }
+  }
+  const scopeKey = resolveSessionScopeKey(req);
+  if (scopeKey) {
+    return `athlete_state_sid_${scopeKey}`;
+  }
+  return null;
+}
+function sanitizeAthleteCloudState(raw, existing) {
+  const input = raw || {};
+  const base = existing || {
+    version: 1,
+    updatedAt: "",
+    plannedEvents: [],
+    targetGoals: [],
+    annualMileageGoals: []
+  };
+  const plannedEvents = Array.isArray(input.plannedEvents) ? input.plannedEvents.slice(0, 450).map((ev) => ({
+    id: String(ev?.id || `plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+    date: String(ev?.date || "").slice(0, 10),
+    name: String(ev?.name || "Structured Workout").slice(0, 140),
+    sportCategory: ev?.sportCategory || "Running",
+    environmentPreference: ev?.environmentPreference || "FLEXIBLE",
+    description: String(ev?.description || "").slice(0, 1200),
+    plannedLoad: Number(ev?.plannedLoad || 0),
+    plannedDurationSecs: Number(ev?.plannedDurationSecs || 0),
+    targetZoneSummary: String(ev?.targetZoneSummary || "").slice(0, 140),
+    ...typeof ev?.workoutSyntax === "string" ? { workoutSyntax: ev.workoutSyntax.slice(0, 4e3) } : {},
+    ...Array.isArray(ev?.structuredSteps) ? { structuredSteps: ev.structuredSteps.slice(0, 80) } : {},
+    ...ev?.trackSpec && typeof ev.trackSpec === "object" ? { trackSpec: ev.trackSpec } : {},
+    ...ev?.footwearClass ? { footwearClass: ev.footwearClass } : {},
+    ...typeof ev?.spikedDistanceMeters === "number" ? { spikedDistanceMeters: ev.spikedDistanceMeters } : {},
+    ...ev?.trackFacility ? { trackFacility: ev.trackFacility } : {},
+    ...ev?.meetPriorityTier ? { meetPriorityTier: ev.meetPriorityTier } : {},
+    ...ev?.source ? { source: ev.source } : {},
+    ...ev?.planBlockId ? { planBlockId: String(ev.planBlockId) } : {},
+    ...ev?.planBlockName ? { planBlockName: String(ev.planBlockName) } : {},
+    ...typeof ev?.planWeekNum === "number" ? { planWeekNum: ev.planWeekNum } : {}
+  })) : base.plannedEvents;
+  const targetGoals = Array.isArray(input.targetGoals) ? input.targetGoals.slice(0, 120) : base.targetGoals;
+  const annualMileageGoals = Array.isArray(input.annualMileageGoals) ? input.annualMileageGoals.slice(0, 24) : base.annualMileageGoals;
+  let athleteProfile = base.athleteProfile;
+  if (input.athleteProfile && typeof input.athleteProfile === "object") {
+    const picked = {};
+    for (const key of SAFE_PROFILE_KEYS) {
+      if (key in input.athleteProfile && input.athleteProfile[key] !== void 0) {
+        picked[key] = input.athleteProfile[key];
+      }
+    }
+    if (Object.keys(picked).length > 0) {
+      athleteProfile = picked;
+    }
+  }
+  const distanceUnit = input.distanceUnit === "km" || input.distanceUnit === "mi" ? input.distanceUnit : base.distanceUnit;
+  const sessionCheckIns = Array.isArray(input.sessionCheckIns) ? input.sessionCheckIns.slice(0, 200) : base.sessionCheckIns;
+  return {
+    version: 1,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    plannedEvents,
+    targetGoals,
+    annualMileageGoals,
+    ...athleteProfile ? { athleteProfile } : {},
+    ...distanceUnit ? { distanceUnit } : {},
+    ...sessionCheckIns ? { sessionCheckIns } : {}
+  };
+}
+async function loadAthleteCloudState(req) {
+  await ensureStoreSessionHydrated(req);
+  const vaultKey = resolveCanonicalAthleteVaultKey(req);
+  if (!vaultKey) return null;
+  const existing = await loadTenantVaultAsync(vaultKey, null);
+  if (existing && Array.isArray(existing.plannedEvents)) {
+    return existing;
+  }
+  const verified = getVerifiedSessionClaims(req);
+  const sidKey = verified?.sid ? `athlete_state_sid_${verified.sid.replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32)}` : null;
+  if (sidKey && sidKey !== vaultKey) {
+    const sidEnvelope = await loadTenantVaultAsync(sidKey, null);
+    if (sidEnvelope && Array.isArray(sidEnvelope.plannedEvents)) {
+      await saveTenantVaultAsync(vaultKey, sidEnvelope);
+      return sidEnvelope;
+    }
+  }
+  const legacyFile = getScopedPlannedEventsFile(req);
+  const legacyEvents = legacyFile ? loadJsonFile(legacyFile, []) : [];
+  if (legacyEvents.length > 0) {
+    const migrated = sanitizeAthleteCloudState({ plannedEvents: legacyEvents });
+    await saveTenantVaultAsync(vaultKey, migrated);
+    return migrated;
+  }
+  return sanitizeAthleteCloudState({
+    plannedEvents: [],
+    targetGoals: [],
+    annualMileageGoals: []
+  });
+}
+async function saveAthleteCloudState(req, patch) {
+  await ensureStoreSessionHydrated(req);
+  const vaultKey = resolveCanonicalAthleteVaultKey(req);
+  if (!vaultKey) return null;
+  const existing = await loadAthleteCloudState(req);
+  const sanitized = sanitizeAthleteCloudState(patch, existing);
+  await saveTenantVaultAsync(vaultKey, sanitized);
+  return sanitized;
+}
+athleteStateRouter.get("/api/athlete-state", async (req, res) => {
+  try {
+    const vaultKey = resolveCanonicalAthleteVaultKey(req);
+    if (!vaultKey) {
+      res.json({ ok: true, authenticated: false, state: null });
+      return;
+    }
+    const state = await loadAthleteCloudState(req);
+    res.json({ ok: true, authenticated: true, vaultKeyScope: vaultKey.slice(0, 20), state });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to load athlete cloud state"
+    });
+  }
+});
+athleteStateRouter.put("/api/athlete-state", async (req, res) => {
+  try {
+    const vaultKey = resolveCanonicalAthleteVaultKey(req);
+    if (!vaultKey) {
+      res.status(401).json({ error: "Authentication required to persist athlete cloud state." });
+      return;
+    }
+    const saved = await saveAthleteCloudState(req, req.body || {});
+    res.json({ ok: true, authenticated: true, state: saved });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to save athlete cloud state"
+    });
+  }
+});
+
 // server/routers/webhooksAndExportRouter.ts
 import { Router } from "express";
 
@@ -5325,7 +5517,7 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 });
 
 // server/routers/teamRouter.ts
-import express2 from "express";
+import express3 from "express";
 
 // server/authService.ts
 import crypto5 from "crypto";
@@ -6896,6 +7088,12 @@ async function autoLinkPendingTeamInvitesByEmail(params) {
   }
   return linkedTeamIds;
 }
+function resolveTeamPlanTier(memberships) {
+  const activeOrInvitedAthletes = (memberships || []).filter(
+    (m) => m.status !== "REVOKED" && m.role !== "HEAD_COACH" && m.role !== "ASSISTANT_COACH"
+  ).length;
+  return activeOrInvitedAthletes <= 5 ? "SANDBOX" : "FOUNDING_TEAM";
+}
 function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const myMembership = doc.memberships.find(
     (m) => m.userSid === callerSid && m.status !== "REVOKED"
@@ -7002,7 +7200,10 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     return true;
   });
   return {
-    brand: doc.brand,
+    brand: {
+      ...doc.brand,
+      planTier: resolveTeamPlanTier(doc.memberships)
+    },
     myRole: myMembership.role,
     mySquadGroup: myMembership.squadGroup,
     ...myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {},
@@ -7069,6 +7270,7 @@ async function createTeamForCoach(params) {
     defaultSafeSportShield,
     enableParentGuardianCc,
     coachDisplayName: String(params.coachDisplayName || "").trim().slice(0, 48) || "Head Coach",
+    planTier: "SANDBOX",
     createdAt: nowIso
   };
   const coachMembership = {
@@ -7813,7 +8015,7 @@ async function syncAthleteSnapshotAcrossTeams(params) {
 }
 
 // server/routers/teamRouter.ts
-var teamRouter = express2.Router();
+var teamRouter = express3.Router();
 function resolveRequestOrigin(req) {
   const explicit = resolveSafeOrigin(
     String(req.body?.origin || req.query?.origin || "")
@@ -8325,9 +8527,9 @@ teamRouter.post("/api/teams/parent-consent", async (req, res) => {
 });
 
 // server/routers/authRouter.ts
-import express3 from "express";
+import express4 from "express";
 import crypto7 from "crypto";
-var authRouter = express3.Router();
+var authRouter = express4.Router();
 function isProductionDeployment() {
   return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 }
@@ -9433,7 +9635,7 @@ function resolvePolarCallbackUrl(req) {
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express5 from "express";
+import express6 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -9757,7 +9959,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express4 from "express";
+import express5 from "express";
 import crypto9 from "crypto";
 
 // server/stravaIdUtils.ts
@@ -10915,7 +11117,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express4.Router();
+var stravaRouter = express5.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -12443,7 +12645,7 @@ var intervalsCallbackHandler = async (req, res) => {
     );
   }
 };
-var intervalsRouter = express5.Router();
+var intervalsRouter = express6.Router();
 intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
@@ -12878,8 +13080,13 @@ intervalsRouter.get("/api/intervals/activities/:id/streams", async (req, res) =>
     });
   }
 });
-intervalsRouter.get("/api/calendar/events", (req, res) => {
+intervalsRouter.get("/api/calendar/events", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
+  const cloud = await loadAthleteCloudState(req);
+  if (cloud && cloud.plannedEvents.length > 0) {
+    res.json({ events: cloud.plannedEvents });
+    return;
+  }
   if (!scopedFile) {
     res.json({ events: [] });
     return;
@@ -12920,12 +13127,14 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
       source: body.source || "USER"
     };
     const scopedFile = getScopedPlannedEventsFile(req);
-    let updated = [newEvent];
+    const cloud = await loadAthleteCloudState(req);
+    const existingLocal = scopedFile ? loadJsonFile(scopedFile, []) : [];
+    const existing = cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
+    const updated = [newEvent, ...existing];
     if (scopedFile) {
-      const existing = loadJsonFile(scopedFile, []);
-      updated = [newEvent, ...existing];
       saveJsonFile(scopedFile, updated);
     }
+    await saveAthleteCloudState(req, { plannedEvents: updated });
     const intervalsConfig = getEffectiveIntervalsConfig(req);
     const intervalsAuth = getIntervalsAuthHeader(intervalsConfig);
     let pushedToIntervals = false;
@@ -12996,17 +13205,19 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
     });
   }
 });
-intervalsRouter.put("/api/calendar/events/:id", (req, res) => {
+intervalsRouter.put("/api/calendar/events/:id", async (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
   const scopedFile = getScopedPlannedEventsFile(req);
+  const cloud = await loadAthleteCloudState(req);
   const nextSyntax = typeof body.workoutSyntax === "string" ? body.workoutSyntax : void 0;
   const nextDurationSecs = typeof body.plannedDurationSecs === "number" ? body.plannedDurationSecs : 3600;
-  if (!scopedFile) {
+  if (!scopedFile && !cloud) {
     res.json({ updated: true, event: { id, ...body } });
     return;
   }
-  const existing = loadJsonFile(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile(scopedFile, []) : [];
+  const existing = cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const idx = existing.findIndex((e) => e.id === id);
   const patched = {
     ...idx >= 0 ? existing[idx] : {},
@@ -13017,31 +13228,44 @@ intervalsRouter.put("/api/calendar/events/:id", (req, res) => {
     } : {}
   };
   const updated = idx >= 0 ? existing.map((e, i) => i === idx ? patched : e) : [patched, ...existing];
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ updated: true, event: patched, events: updated });
 });
-intervalsRouter.delete("/api/calendar/blocks/:blockId", (req, res) => {
+intervalsRouter.delete("/api/calendar/blocks/:blockId", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
-  if (!scopedFile) {
+  const cloud = await loadAthleteCloudState(req);
+  if (!scopedFile && !cloud) {
     res.json({ deleted: true, events: [] });
     return;
   }
   const blockId = req.params.blockId;
-  const existing = loadJsonFile(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile(scopedFile, []) : [];
+  const existing = cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.planBlockId !== blockId);
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
-intervalsRouter.delete("/api/calendar/events/:id", (req, res) => {
+intervalsRouter.delete("/api/calendar/events/:id", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
-  if (!scopedFile) {
+  const cloud = await loadAthleteCloudState(req);
+  if (!scopedFile && !cloud) {
     res.json({ deleted: true, events: [] });
     return;
   }
   const id = req.params.id;
-  const existing = loadJsonFile(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile(scopedFile, []) : [];
+  const existing = cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.id !== id);
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
 
@@ -15275,7 +15499,7 @@ garminRouter.post("/api/garmin/disconnect", async (req, res) => {
 });
 
 // server/routers/webhookRouter.ts
-import express6 from "express";
+import express7 from "express";
 async function executeHourlyBackgroundPoll() {
   const results = {
     triggeredAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -15307,7 +15531,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express6.Router();
+var webhookRouter = express7.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -15374,7 +15598,7 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/apiRouter.ts
-var apiRouter = express7.Router();
+var apiRouter = express8.Router();
 apiRouter.use(securityHeadersMiddleware);
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
@@ -15391,6 +15615,7 @@ apiRouter.use((req, res, next) => {
   });
 });
 apiRouter.use(vaultAndPhysiologyRouter);
+apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
 apiRouter.use(authRouter);
@@ -15405,11 +15630,11 @@ apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
 
 // server/vercelApp.ts
-var app = express8();
+var app = express9();
 app.disable("x-powered-by");
 app.use(securityHeadersMiddleware);
 app.use(
-  express8.json({
+  express9.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver
   })

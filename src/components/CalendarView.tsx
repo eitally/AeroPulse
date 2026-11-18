@@ -16,6 +16,7 @@ import {
   Heart,
   Moon,
   Plus,
+  ShareNetwork,
   Sliders,
   Sparkles,
   Timer,
@@ -42,6 +43,7 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
 } from '../utils/workoutExportActions';
+import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { VisualWorkoutBuilder } from './VisualWorkoutBuilder';
 import {
   inferTrackWorkoutSpecFromPlannedEvent,
@@ -861,6 +863,23 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       workoutSyntax: ev.workoutSyntax,
       ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
       dateIso: ev.date,
+    });
+  };
+
+  const handleSharePlannedWorkout = (ev: PlannedWorkoutEvent) => {
+    openShareWorkoutRoute({
+      kind: 'WORKOUT',
+      version: 1,
+      title: ev.name,
+      sport: ev.sportCategory,
+      date: ev.date.slice(0, 10),
+      workoutSyntax: ev.workoutSyntax,
+      plannedDurationSecs: ev.plannedDurationSecs,
+      plannedLoad: ev.plannedLoad,
+      description: ev.description,
+      defaultUnit: distanceUnit,
+      referenceFtpWatts: athleteProfile?.ftp || athleteFtp || 260,
+      referenceThresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 245,
     });
   };
 
@@ -2078,6 +2097,15 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                   >
                                     <span>Edit</span>
                                   </button>
+                                  <button
+                                    type="button"
+                                    data-testid="calendar-share-workout"
+                                    onClick={() => handleSharePlannedWorkout(ev)}
+                                    className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                  >
+                                    <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
+                                    <span>Share</span>
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -2845,6 +2873,16 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                             title="Edit workout in place"
                                           >
                                             <span>Edit</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            data-testid="calendar-share-workout"
+                                            onClick={() => handleSharePlannedWorkout(ev)}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
+                                            title="Share interactive preview or PNG card"
+                                          >
+                                            <ShareNetwork className="w-3 h-3" weight="bold" />
+                                            <span>Share</span>
                                           </button>
                                         </div>
                                       ) : null}
