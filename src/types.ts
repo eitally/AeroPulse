@@ -1288,11 +1288,26 @@ export type TeamOrgType =
   | 'CYCLING_CLUB'
   | 'COACH_SQUAD';
 
-export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE';
+export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE' | 'PARENT_FOLLOWER';
 
 export type TeamInviteStatus = 'INVITED' | 'OPENED' | 'ACTIVE' | 'REVOKED';
 
 export type TeamPlanTier = 'SANDBOX' | 'FOUNDING_TEAM';
+
+export type ExternalTeamPlatform = 'ATHLETIC_NET' | 'TFRRS' | 'HYTEK';
+
+export interface TeamExternalSyncConfig {
+  platform?: 'ATHLETIC_NET' | 'TFRRS';
+  athleticNetSchoolId?: string;
+  athleticNetSportSlug?: 'xc' | 'track-and-field-outdoor' | 'track-and-field-indoor';
+  athleticNetUrl?: string;
+  tfrrsTeamUrl?: string;
+  tfrrsTeamCode?: string;
+  teamFilterKeyword?: string;
+  icsCalendarUrl?: string;
+  enablePublicParentHub?: boolean;
+  lastSyncedAt?: string;
+}
 
 export interface TeamBrandConfig {
   teamId: string;
@@ -1310,6 +1325,7 @@ export interface TeamBrandConfig {
   enableParentGuardianCc: boolean; // Auto-defaults to true for HIGH_SCHOOL
   coachDisplayName: string;
   planTier?: TeamPlanTier;
+  externalSync?: TeamExternalSyncConfig;
   createdAt: string;
 }
 
@@ -1363,6 +1379,10 @@ export interface TeamMembershipRecord {
   parentConsentToken?: string;
   parentConsentAt?: string;
   seedMarkOrFtp?: string;
+  externalSource?: ExternalTeamPlatform;
+  externalAthleteId?: string;
+  externalProfileUrl?: string;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
   status: TeamInviteStatus;
   emailDeliveryStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
   magicJoinUrl?: string; // Populated for coaches so they can copy or share via free sms:/mailto:
@@ -1412,8 +1432,78 @@ export interface TeamBroadcastWorkout {
   planBlockName?: string;
   planWeekNum?: number;
   publishMode?: 'ROLLING_1W' | 'ROLLING_2W' | 'FULL_BLOCK';
+  isOfficialMeet?: boolean;
+  externalSource?: ExternalTeamPlatform;
   pushedByCoachName: string;
   createdAt: string;
+}
+
+export interface PublicTeamHubMeetItem {
+  id: string;
+  date: string;
+  name: string;
+  scheduledTime?: string;
+  locationName?: string;
+  locationCategory?: PracticeVenueCategory;
+  description?: string;
+  externalSource?: ExternalTeamPlatform;
+}
+
+export interface PublicTeamHubAthleteResultItem {
+  date: string;
+  meetName: string;
+  eventLabel: string;
+  eventDistanceMeters: number;
+  displayFatTime: string;
+  fatTimeSecs: number;
+  placeFinish?: string;
+  vdotScore: number;
+  platform: OfficialRacePlatform;
+  trackType: OfficialTrackSurface;
+  sourceUrl?: string;
+}
+
+export interface PublicTeamHubRosterEntry {
+  membershipId: string;
+  name: string;
+  squadGroup: string;
+  eventGroup?: CoachEventGroup;
+  graduationYear?: number;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
+  seedMarkOrFtp?: string;
+  externalSource?: ExternalTeamPlatform;
+  externalAthleteId?: string;
+  externalProfileUrl?: string;
+  officialResults: PublicTeamHubAthleteResultItem[];
+}
+
+export interface PublicTeamHubPayload {
+  found: boolean;
+  error?: string;
+  brand?: {
+    teamId: string;
+    slug: string;
+    joinCode: string;
+    name: string;
+    shortName: string;
+    mascotOrMotto?: string;
+    orgType: TeamOrgType;
+    primarySport: 'Running' | 'Cycling' | 'Hybrid';
+    logoDataUrl?: string;
+    primaryHex: string;
+    secondaryHex: string;
+    defaultSafeSportShield: boolean;
+    coachDisplayName: string;
+    externalSync?: TeamExternalSyncConfig;
+  };
+  upcomingMeets: PublicTeamHubMeetItem[];
+  recentSchedule: PublicTeamHubMeetItem[];
+  rosterLeaderboard: PublicTeamHubRosterEntry[];
+  stats: {
+    athleteCount: number;
+    meetCount: number;
+    officialResultCount: number;
+  };
 }
 
 export interface TeamSummaryWithRole {

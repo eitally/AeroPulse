@@ -6,12 +6,14 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Globe,
   Link2,
   Lock,
   MessageSquare,
   Plus,
   RefreshCw,
   Send,
+  ShareNetwork,
   ShieldCheck,
   Sparkles,
   Upload,
@@ -47,6 +49,8 @@ interface TeamManagementPanelProps {
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   onOpenClipboard?: () => void;
+  onOpenExternalSync?: () => void;
+  onOpenPublicTeamHub?: (slugOrCode: string) => void;
 }
 
 const ORG_TYPE_OPTIONS: Array<{ id: TeamOrgType; label: string; subtitle: string }> = [
@@ -126,6 +130,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   onSelectActiveTeam,
   onTeamsUpdated,
   onOpenClipboard,
+  onOpenExternalSync,
+  onOpenPublicTeamHub,
 }) => {
   const activeTeam = useMemo(
     () =>
@@ -536,10 +542,34 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onOpenExternalSync && (
+              <button
+                type="button"
+                data-testid="panel-open-external-sync-btn"
+                onClick={onOpenExternalSync}
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Globe className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
+                <span>Athletic.net / TFRRS Sync</span>
+              </button>
+            )}
+
+            {activeTeam && onOpenPublicTeamHub && (
+              <button
+                type="button"
+                data-testid="panel-open-public-hub-btn"
+                onClick={() => onOpenPublicTeamHub(activeTeam.brand.slug)}
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ShareNetwork className="w-3.5 h-3.5 text-[#0D9488]" />
+                <span>Parent Hub</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowJoinAnotherBar((prev) => !prev)}
-              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-blue-500/50 inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-blue-500/50 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5 text-[#0D9488]" />
               <span>Join Team w/ Code</span>
@@ -548,7 +578,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             <button
               type="button"
               onClick={openCreateNewTeam}
-              className="px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] text-white dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] text-white dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Create New Team</span>
@@ -580,7 +610,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   />
                   <span>{t.brand.shortName || t.brand.name}</span>
                   <span className="text-2xs font-mono uppercase px-1.5 py-0.5 rounded bg-stone-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {t.myRole === 'ATHLETE' ? 'Athlete' : 'Coach'}
+                    {t.myRole === 'ATHLETE'
+                      ? 'Athlete'
+                      : t.myRole === 'PARENT_FOLLOWER'
+                        ? 'Parent / Fan'
+                        : 'Coach'}
                   </span>
                 </button>
               );

@@ -1,0 +1,169 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { PublicTeamHubPayload, TeamSummaryWithRole } from '../types';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+
+/**
+ * Matches `/team/<slugOrCode>`, `/team/<slugOrCode>/`, `#team/<slugOrCode>`, or `#team/<slugOrCode>/`.
+ */
+export function extractPublicTeamSlug(pathname: string, hash: string): string | null {
+  const pathMatch = (pathname || '').trim().match(/^\/team\/([^/?#]+)\/?$/i);
+  if (pathMatch?.[1]) {
+    return decodeURIComponent(pathMatch[1]).trim();
+  }
+  const cleanHash = (hash || '').trim().replace(/^#/, '');
+  const hashMatch = cleanHash.match(/^team\/([^/?#]+)\/?$/i);
+  if (hashMatch?.[1]) {
+    return decodeURIComponent(hashMatch[1]).trim();
+  }
+  return null;
+}
+
+export function openPublicTeamHubRoute(slugOrCode: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanSlug = encodeURIComponent(slugOrCode.trim());
+  const nextPath = `/team/${cleanSlug}`;
+  if (window.location.pathname !== nextPath) {
+    const preservedSearch = window.location.search || '';
+    window.history.pushState({}, '', `${nextPath}${preservedSearch}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+export function exitPublicTeamHubRoute(targetHash?: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanHash = targetHash ? targetHash.replace(/^#/, '').trim() : '';
+  const search = window.location.search || '';
+  const nextUrl = cleanHash ? `/${search}#${cleanHash}` : `/${search}`;
+  window.history.pushState({}, '', nextUrl);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+  if (cleanHash && typeof HashChangeEvent !== 'undefined') {
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+export function usePublicTeamHubRoute(): {
+  publicTeamSlug: string | null;
+  openPublicTeamHub: (slugOrCode: string) => void;
+  closePublicTeamHub: (targetHash?: string) => void;
+} {
+  const [publicTeamSlug, setPublicTeamSlug] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return extractPublicTeamSlug(window.location.pathname, window.location.hash);
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      setPublicTeamSlug(extractPublicTeamSlug(window.location.pathname, window.location.hash));
+    };
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, []);
+
+  const openPublicTeamHub = useCallback((slugOrCode: string) => {
+    openPublicTeamHubRoute(slugOrCode);
+    setPublicTeamSlug(slugOrCode.trim());
+  }, []);
+
+  const closePublicTeamHub = useCallback((targetHash?: string) => {
+    exitPublicTeamHubRoute(targetHash);
+    setPublicTeamSlug(null);
+  }, []);
+
+  return { publicTeamSlug, openPublicTeamHub, closePublicTeamHub };
+}
+
+/**
+ * Projects an in-memory TeamSummaryWithRole into a zero-PII Clean-Room PublicTeamHubPayload
+ * for offline/demo previews where the team hasn't been committed to remote Postgres yet.
+ */
+export function buildCleanRoomPublicHubFromTeamSummary(
+  team: TeamSummaryWithRole
+): PublicTeamHubPayload {
+  const todayIso = getLocalDateIso();
+  const meets = (team.broadcastWorkouts || [])
+    .filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name))
+    .map((bw) => ({
+      id: bw.broadcastId,
+      date: bw.date,
+      name: bw.name,
+      ...(bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {}),
+      ...(bw.locationName ? { locationName: bw.locationName } : {}),
+      ...(bw.locationCategory ? { locationCategory: bw.locationCategory } : {}),
+      ...(bw.description ? { description: bw.description } : {}),
+      ...(bw.externalSource ? { externalSource: bw.externalSource } : {}),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  let officialResultCount = 0;
+  const rosterLeaderboard = (team.memberships || [])
+    .filter((m) => m.status !== 'REVOKED' && m.role === 'ATHLETE')
+    .map((m) => {
+      const officialResults = (m.coachRecordedActivities || [])
+        .filter((a) => Boolean(a.officialRaceData))
+        .map((a) => {
+          const r = a.officialRaceData!;
+          return {
+            date: a.startDateLocal.slice(0, 10),
+            meetName: r.meetName,
+            eventLabel: r.eventLabel,
+            eventDistanceMeters: r.eventDistanceMeters,
+            displayFatTime: r.displayFatTime,
+            fatTimeSecs: r.fatTimeSecs,
+            ...(r.placeFinish ? { placeFinish: r.placeFinish } : {}),
+            vdotScore: r.vdotScore,
+            platform: r.platform,
+            trackType: r.trackType,
+            ...(r.sourceUrl ? { sourceUrl: r.sourceUrl } : {}),
+          };
+        })
+        .sort((a, b) => b.date.localeCompare(a.date));
+      officialResultCount += officialResults.length;
+      return {
+        membershipId: m.membershipId,
+        name: m.invitedName,
+        squadGroup: m.squadGroup,
+        ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
+        ...(m.graduationYear ? { graduationYear: m.graduationYear } : {}),
+        ...(m.genderDivision ? { genderDivision: m.genderDivision } : {}),
+        ...(m.seedMarkOrFtp ? { seedMarkOrFtp: m.seedMarkOrFtp } : {}),
+        ...(m.externalSource ? { externalSource: m.externalSource } : {}),
+        ...(m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {}),
+        ...(m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {}),
+        officialResults,
+      };
+    });
+
+  return {
+    found: true,
+    brand: {
+      teamId: team.brand.teamId,
+      slug: team.brand.slug,
+      joinCode: team.brand.joinCode,
+      name: team.brand.name,
+      shortName: team.brand.shortName,
+      ...(team.brand.mascotOrMotto ? { mascotOrMotto: team.brand.mascotOrMotto } : {}),
+      orgType: team.brand.orgType,
+      primarySport: team.brand.primarySport,
+      ...(team.brand.logoDataUrl ? { logoDataUrl: team.brand.logoDataUrl } : {}),
+      primaryHex: team.brand.primaryHex,
+      secondaryHex: team.brand.secondaryHex,
+      defaultSafeSportShield: team.brand.defaultSafeSportShield,
+      coachDisplayName: team.brand.coachDisplayName,
+      ...(team.brand.externalSync ? { externalSync: team.brand.externalSync } : {}),
+    },
+    upcomingMeets: meets.filter((m) => m.date >= todayIso),
+    recentSchedule: meets.filter((m) => m.date < todayIso).reverse(),
+    rosterLeaderboard,
+    stats: {
+      athleteCount: rosterLeaderboard.length,
+      meetCount: meets.length,
+      officialResultCount,
+    },
+  };
+}

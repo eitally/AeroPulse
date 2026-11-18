@@ -102,6 +102,7 @@ export interface WorkspaceRouterProps {
   resendConfigured: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onOpenPublicTeamHub?: (slugOrCode: string) => void;
   stravaSyncWindow?: StravaSyncWindow;
   onOpenDataSources?: () => void;
 
@@ -225,6 +226,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   resendConfigured,
   onSelectActiveTeam,
   onTeamsUpdated,
+  onOpenPublicTeamHub,
   stravaSyncWindow,
   onOpenDataSources,
 
@@ -535,6 +537,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSaveStopwatchActivities={handleSaveStopwatchActivities}
           onOpenAthleteToday={handleOpenTodayTab}
           onOpenRosterModal={handleOpenRosterModal}
+          onOpenPublicTeamHub={onOpenPublicTeamHub}
         />
       )}
 

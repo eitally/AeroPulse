@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   AthleteProfile,
   CoachWorkspaceSubTab,
@@ -23,6 +23,7 @@ import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndD
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 import { CalendarView } from './CalendarView';
 import { TeamManagementPanel } from './TeamManagementPanel';
+import { AthleticNetTfrrsSyncModal } from './AthleticNetTfrrsSyncModal';
 import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
 import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
@@ -30,6 +31,7 @@ import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   ChevronDown,
+  Globe,
   Shield,
   Users,
 } from './icons/PhosphorIcons';
@@ -118,6 +120,7 @@ export interface CoachWorkspaceViewProps {
   onSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
   onOpenAthleteToday: () => void;
   onOpenRosterModal: () => void;
+  onOpenPublicTeamHub?: (slugOrCode: string) => void;
 }
 
 export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
@@ -157,8 +160,45 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onSaveStopwatchActivities,
   onOpenAthleteToday,
   onOpenRosterModal,
+  onOpenPublicTeamHub,
 }) => {
   const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
+  const [isExternalSyncOpen, setIsExternalSyncOpen] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && window.location.hash === '#coach-sync';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const handleHashSync = () => {
+      try {
+        if (window.location.hash === '#coach-sync') {
+          setIsExternalSyncOpen(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('hashchange', handleHashSync);
+    return () => window.removeEventListener('hashchange', handleHashSync);
+  }, []);
+
+  const handleCloseExternalSync = () => {
+    setIsExternalSyncOpen(false);
+    try {
+      if (typeof window !== 'undefined' && window.location.hash === '#coach-sync') {
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${window.location.search}#coach`
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const handleTeamPlanCreate = async (eventInput: {
     date: string;
@@ -339,6 +379,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               >
                 Build Cohort Plan
               </button>
+              <button
+                type="button"
+                data-testid="coach-open-external-sync-btn"
+                onClick={() => setIsExternalSyncOpen(true)}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Globe className="w-3.5 h-3.5" weight="duotone" />
+                <span>Athletic.net / TFRRS</span>
+              </button>
             </div>
           </div>
         </section>
@@ -386,6 +435,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-bold cursor-pointer"
                 >
                   Create Team or Import CSV
+                </button>
+                <button
+                  type="button"
+                  data-testid="coach-empty-external-sync-btn"
+                  onClick={() => setIsExternalSyncOpen(true)}
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Globe className="w-3.5 h-3.5" weight="duotone" />
+                  <span>Sync Athletic.net / TFRRS</span>
                 </button>
                 <button
                   type="button"
@@ -507,6 +565,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
             onOpenClipboard={() => setSubTab('CLIPBOARD')}
+            onOpenExternalSync={() => setIsExternalSyncOpen(true)}
+            onOpenPublicTeamHub={onOpenPublicTeamHub}
           />
 
           {(!activeTeam || activeTeam.brand.orgType === 'COLLEGIATE') && (
@@ -559,6 +619,16 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           )}
         </div>
       )}
+
+      <AthleticNetTfrrsSyncModal
+        isOpen={isExternalSyncOpen}
+        onClose={handleCloseExternalSync}
+        activeTeam={activeTeam}
+        myTeams={myTeams}
+        selfName={primaryAthleteDisplayName}
+        onTeamsUpdated={onTeamsUpdated}
+        onOpenPublicHub={onOpenPublicTeamHub}
+      />
     </div>
   );
 };

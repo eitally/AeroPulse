@@ -19,6 +19,157 @@ interface UseTeamRosterParams {
   isSessionLoggedOut: boolean;
 }
 
+export function buildConnectedRosterFromTeam(
+  team: TeamSummaryWithRole | null
+): ConnectedAthleteRecord[] {
+  if (!team) return [];
+  const isCoach =
+    team.myRole === 'HEAD_COACH' || team.myRole === 'ASSISTANT_COACH';
+  const todayIso = getLocalDateIso();
+
+  return team.memberships
+    .filter((m) => {
+      if (m.status === 'REVOKED' || m.role === 'PARENT_FOLLOWER') return false;
+      if (m.membershipId === team.myMembershipId && team.myRole === 'ATHLETE') {
+        return false;
+      }
+      if (m.membershipId === team.myMembershipId && isCoach) {
+        return false;
+      }
+      return (
+        m.status === 'ACTIVE' ||
+        Boolean(m.externalSource) ||
+        (Array.isArray(m.coachRecordedActivities) && m.coachRecordedActivities.length > 0)
+      );
+    })
+    .map((m) => {
+      const snap = m.liveSnapshot;
+      const hideWeight = Boolean(
+        team.brand.defaultSafeSportShield ||
+          m.isMinorU18 ||
+          snap?.safeSportHideWeight
+      );
+      const initials =
+        m.invitedName
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((p) => p[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase() || 'TM';
+      const hasRealSummaryLoad = Boolean(
+        snap && (snap.ctl > 0 || snap.atl > 0 || snap.acuteLoad7d > 0)
+      );
+      const fallbackWellness: UnifiedWellnessDay[] =
+        snap?.wellnessDays && snap.wellnessDays.length > 0
+          ? snap.wellnessDays
+          : hasRealSummaryLoad && snap
+            ? [
+                {
+                  date: todayIso,
+                  ctl: snap.ctl,
+                  atl: snap.atl,
+                  tsb: snap.tsb,
+                  rampRate: 0,
+                  dailyLoad: Math.round((snap.acuteLoad7d || 0) / 7),
+                  restingHR: 0,
+                  hrvRMSSD: 0,
+                  hrvBaseline7d: 0,
+                  hrvStatus: 'Balanced',
+                  sleepSecs: 0,
+                  sleepScore: 0,
+                  weightKg: 0,
+                  readinessStatus:
+                    snap.readinessScore < 60
+                      ? 'Strain'
+                      : snap.readinessScore < 75
+                        ? 'Caution'
+                        : 'Optimal',
+                },
+              ]
+            : [];
+      const prof = buildCompleteAthleteProfile({
+        name: m.invitedName,
+        ftp: snap?.ftpWatts || 250,
+        thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
+        safeSportHideWeight: hideWeight,
+      });
+
+      const squadBroadcasts: PlannedWorkoutEvent[] = (team.broadcastWorkouts || [])
+        .filter((bw) => {
+          if (bw.athleteOverrides?.[m.membershipId]) return true;
+          if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
+            return bw.targetMembershipIds.includes(m.membershipId);
+          }
+          const squadMatch =
+            bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === m.squadGroup;
+          if (!squadMatch) return false;
+          if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+            return Boolean(m.eventGroup) && bw.targetEventGroups.includes(m.eventGroup!);
+          }
+          return true;
+        })
+        .map((bw) => {
+          const ov = bw.athleteOverrides?.[m.membershipId];
+          return {
+            id: bw.broadcastId,
+            date: bw.date,
+            name: ov?.name || bw.name,
+            sportCategory: bw.sportCategory,
+            environmentPreference: 'FLEXIBLE',
+            description: ov?.description || bw.description,
+            plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
+            plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
+            targetZoneSummary: `${team.brand.shortName} Squad Session`,
+            workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+            ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+            ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
+            ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
+            ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
+            source: 'USER',
+          };
+        });
+
+      return {
+        id: `team-mem-${m.membershipId}`,
+        stravaAthleteId:
+          m.externalAthleteId || m.stravaAthleteId || m.squadGroup.toUpperCase().slice(0, 8),
+        inviteCode: team.brand.joinCode,
+        name: m.invitedName,
+        avatarInitials: initials,
+        location: `${team.brand.shortName} · ${m.squadGroup}`,
+        primarySport: team.brand.primarySport === 'Cycling' ? 'Cycling' : 'Running',
+        ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
+        role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
+        status: 'CONNECTED',
+        connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),
+        primaryGoalSummary: snap?.verdictLabel || `${m.squadGroup} Roster`,
+        caraHours7d: snap?.caraHours7d,
+        privacySettings: {
+          sharePmcAndZones: m.sharingTier === 'LOAD_ONLY' ? 'COACHES_ONLY' : 'ALL_CONNECTIONS',
+          shareWellnessAndHrv:
+            m.sharingTier === 'LOAD_ONLY'
+              ? 'PRIVATE'
+              : isCoach
+                ? 'ALL_CONNECTIONS'
+                : 'COACHES_ONLY',
+          shareGpsRoutes: m.sharingTier === 'FULL_STREAMS' ? 'COACHES_ONLY' : 'PRIVATE',
+          stravaComplianceShield: m.sharingTier !== 'FULL_STREAMS',
+          allowCoachCalendarEdits: true,
+        },
+        athleteProfile: prof,
+        wellnessDays: fallbackWellness,
+        activities: mergeActivitiesNonDestructive(
+          m.coachRecordedActivities || [],
+          snap?.activities || []
+        ),
+        plannedEvents: squadBroadcasts,
+        targetGoals: [],
+        sessionCheckIns: snap?.sessionCheckIns || [],
+      };
+    });
+}
+
 export function useTeamRoster({
   isSampleDemoMode,
   hasEnteredWorkspace,
@@ -187,143 +338,10 @@ export function useTeamRoster({
     setPendingUrlJoinOffer(null);
   }, []);
 
-  const cloudTeamRosterAthletes = useMemo<ConnectedAthleteRecord[]>(() => {
-    if (!activeTeam) return [];
-    const isCoach =
-      activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH';
-    const todayIso = getLocalDateIso();
-
-    return activeTeam.memberships
-      .filter(
-        (m) => m.status === 'ACTIVE' && m.membershipId !== activeTeam.myMembershipId
-      )
-      .map((m) => {
-        const snap = m.liveSnapshot;
-        const hideWeight = Boolean(
-          activeTeam.brand.defaultSafeSportShield ||
-            m.isMinorU18 ||
-            snap?.safeSportHideWeight
-        );
-        const initials = m.invitedName
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((p) => p[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase() || 'TM';
-        const hasRealSummaryLoad = Boolean(
-          snap && (snap.ctl > 0 || snap.atl > 0 || snap.acuteLoad7d > 0)
-        );
-        const fallbackWellness: UnifiedWellnessDay[] =
-          snap?.wellnessDays && snap.wellnessDays.length > 0
-            ? snap.wellnessDays
-            : hasRealSummaryLoad && snap
-              ? [
-                  {
-                    date: todayIso,
-                    ctl: snap.ctl,
-                    atl: snap.atl,
-                    tsb: snap.tsb,
-                    rampRate: 0,
-                    dailyLoad: Math.round((snap.acuteLoad7d || 0) / 7),
-                    restingHR: 0,
-                    hrvRMSSD: 0,
-                    hrvBaseline7d: 0,
-                    hrvStatus: 'Balanced',
-                    sleepSecs: 0,
-                    sleepScore: 0,
-                    weightKg: 0,
-                    readinessStatus:
-                      snap.readinessScore < 60
-                        ? 'Strain'
-                        : snap.readinessScore < 75
-                          ? 'Caution'
-                          : 'Optimal',
-                  },
-                ]
-              : [];
-        const prof = buildCompleteAthleteProfile({
-          name: m.invitedName,
-          ftp: snap?.ftpWatts || 250,
-          thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
-          safeSportHideWeight: hideWeight,
-        });
-
-        const squadBroadcasts: PlannedWorkoutEvent[] = (
-          activeTeam.broadcastWorkouts || []
-        )
-          .filter((bw) => {
-            if (bw.athleteOverrides?.[m.membershipId]) return true;
-            if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
-              return bw.targetMembershipIds.includes(m.membershipId);
-            }
-            const squadMatch = bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === m.squadGroup;
-            if (!squadMatch) return false;
-            if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
-              return Boolean(m.eventGroup) && bw.targetEventGroups.includes(m.eventGroup!);
-            }
-            return true;
-          })
-          .map((bw) => {
-            const ov = bw.athleteOverrides?.[m.membershipId];
-            return {
-              id: bw.broadcastId,
-              date: bw.date,
-              name: ov?.name || bw.name,
-              sportCategory: bw.sportCategory,
-              environmentPreference: 'FLEXIBLE',
-              description: ov?.description || bw.description,
-              plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
-              plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
-              targetZoneSummary: `${activeTeam.brand.shortName} Squad Session`,
-              workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
-              ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
-              ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
-              ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
-              ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
-              source: 'USER',
-            };
-          });
-
-        return {
-          id: `team-mem-${m.membershipId}`,
-          stravaAthleteId: m.stravaAthleteId || m.squadGroup.toUpperCase().slice(0, 8),
-          inviteCode: activeTeam.brand.joinCode,
-          name: m.invitedName,
-          avatarInitials: initials,
-          location: `${activeTeam.brand.shortName} · ${m.squadGroup}`,
-          primarySport:
-            activeTeam.brand.primarySport === 'Cycling' ? 'Cycling' : 'Running',
-          ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
-          role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
-          status: 'CONNECTED',
-          connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),
-          primaryGoalSummary: snap?.verdictLabel || `${m.squadGroup} Roster`,
-          caraHours7d: snap?.caraHours7d,
-          privacySettings: {
-            sharePmcAndZones: m.sharingTier === 'LOAD_ONLY' ? 'COACHES_ONLY' : 'ALL_CONNECTIONS',
-            shareWellnessAndHrv:
-              m.sharingTier === 'LOAD_ONLY'
-                ? 'PRIVATE'
-                : isCoach
-                  ? 'ALL_CONNECTIONS'
-                  : 'COACHES_ONLY',
-            shareGpsRoutes: m.sharingTier === 'FULL_STREAMS' ? 'COACHES_ONLY' : 'PRIVATE',
-            stravaComplianceShield: m.sharingTier !== 'FULL_STREAMS',
-            allowCoachCalendarEdits: true,
-          },
-          athleteProfile: prof,
-          wellnessDays: fallbackWellness,
-          activities: mergeActivitiesNonDestructive(
-            m.coachRecordedActivities || [],
-            snap?.activities || []
-          ),
-          plannedEvents: squadBroadcasts,
-          targetGoals: [],
-          sessionCheckIns: snap?.sessionCheckIns || [],
-        };
-      });
-  }, [activeTeam]);
+  const cloudTeamRosterAthletes = useMemo<ConnectedAthleteRecord[]>(
+    () => buildConnectedRosterFromTeam(activeTeam),
+    [activeTeam]
+  );
 
   const myTeamRecordedActivities = useMemo(() => {
     if (!activeTeam) return [];

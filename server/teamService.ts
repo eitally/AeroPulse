@@ -15,6 +15,7 @@ import {
   computeAccessibleTeamPalette,
   generateTeamJoinCode,
   getOrgTypeSafeguardingDefaults,
+  inferEventGroupFromSeedMark,
   normalizeHexColor,
   parseBulkRosterCsvOrText,
   slugifyTeamName,
@@ -28,12 +29,14 @@ import type {
   CoachDataSharingTier,
   CoachEventGroup,
   DistanceUnit,
+  ExternalTeamPlatform,
   PracticeVenueCategory,
   SessionCheckInRecord,
   SportCategory,
   TeamAthleteLiveSnapshot,
   TeamBrandConfig,
   TeamBroadcastWorkout,
+  TeamExternalSyncConfig,
   TeamInvitePreviewPayload,
   TeamMemberRole,
   TeamMembershipRecord,
@@ -45,20 +48,7 @@ import type {
   UnifiedActivity,
 } from '../src/types.ts';
 
-export function inferEventGroupFromSeedMark(seed?: string): CoachEventGroup | undefined {
-  if (!seed || !seed.trim()) return undefined;
-  const s = seed.trim();
-  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
-    return 'DISTANCE';
-  }
-  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
-    return 'MID_DISTANCE';
-  }
-  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
-    return 'SPRINTS';
-  }
-  return undefined;
-}
+export { inferEventGroupFromSeedMark };
 
 interface TeamsDirectoryIndex {
   bySlug: Record<string, string>;
@@ -66,17 +56,68 @@ interface TeamsDirectoryIndex {
   allTeamIds: string[];
 }
 
-interface StoredMembershipInternal extends TeamMembershipRecord {
+export interface StoredMembershipInternal extends TeamMembershipRecord {
   rawInviteToken?: string;
   inviteTokenHash?: string;
 }
 
-interface StoredTeamDocument {
+export interface StoredTeamDocument {
   brand: TeamBrandConfig;
   memberships: StoredMembershipInternal[];
   broadcastWorkouts: TeamBroadcastWorkout[];
   anonymousLinkOpens?: number;
   updatedAt: string;
+}
+
+export function sanitizeExternalSyncConfig(
+  raw: Partial<TeamExternalSyncConfig> | undefined,
+  existing?: TeamExternalSyncConfig
+): TeamExternalSyncConfig | undefined {
+  if (!raw && !existing) return undefined;
+  const merged = { ...(existing || {}), ...(raw || {}) };
+  const cleanUrl = (v?: string) => {
+    if (!v) return undefined;
+    const s = String(v).trim().slice(0, 300);
+    return /^https?:\/\//i.test(s) || /^webcals?:\/\//i.test(s) ? s : undefined;
+  };
+  return {
+    ...(merged.platform === 'ATHLETIC_NET' || merged.platform === 'TFRRS'
+      ? { platform: merged.platform }
+      : {}),
+    ...(merged.athleticNetSchoolId
+      ? { athleticNetSchoolId: String(merged.athleticNetSchoolId).replace(/[^0-9]/g, '').slice(0, 12) }
+      : {}),
+    ...(merged.athleticNetSportSlug === 'xc' ||
+    merged.athleticNetSportSlug === 'track-and-field-outdoor' ||
+    merged.athleticNetSportSlug === 'track-and-field-indoor'
+      ? { athleticNetSportSlug: merged.athleticNetSportSlug }
+      : {}),
+    ...(cleanUrl(merged.athleticNetUrl) ? { athleticNetUrl: cleanUrl(merged.athleticNetUrl) } : {}),
+    ...(cleanUrl(merged.tfrrsTeamUrl) ? { tfrrsTeamUrl: cleanUrl(merged.tfrrsTeamUrl) } : {}),
+    ...(merged.tfrrsTeamCode
+      ? { tfrrsTeamCode: String(merged.tfrrsTeamCode).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) }
+      : {}),
+    ...(merged.teamFilterKeyword
+      ? { teamFilterKeyword: String(merged.teamFilterKeyword).trim().slice(0, 64) }
+      : {}),
+    ...(cleanUrl(merged.icsCalendarUrl) ? { icsCalendarUrl: cleanUrl(merged.icsCalendarUrl) } : {}),
+    enablePublicParentHub:
+      typeof merged.enablePublicParentHub === 'boolean'
+        ? merged.enablePublicParentHub
+        : true,
+    ...(merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}),
+  };
+}
+
+export async function loadTeamDocRaw(teamId: string): Promise<StoredTeamDocument | null> {
+  return loadTenantVaultAsync<StoredTeamDocument | null>(teamDocVaultKey(teamId), null);
+}
+
+export async function saveTeamDocRaw(
+  teamId: string,
+  doc: StoredTeamDocument
+): Promise<void> {
+  await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
 }
 
 interface UserTeamsIndex {
@@ -534,7 +575,7 @@ async function loadDirectory(): Promise<TeamsDirectoryIndex> {
   });
 }
 
-async function addTeamToUserIndex(
+export async function addTeamToUserIndex(
   sid: string,
   teamId: string,
   displayName?: string,
@@ -738,12 +779,13 @@ export function resolveTeamPlanTier(
     (m) =>
       m.status !== 'REVOKED' &&
       m.role !== 'HEAD_COACH' &&
-      m.role !== 'ASSISTANT_COACH'
+      m.role !== 'ASSISTANT_COACH' &&
+      m.role !== 'PARENT_FOLLOWER'
   ).length;
   return activeOrInvitedAthletes <= 5 ? 'SANDBOX' : 'FOUNDING_TEAM';
 }
 
-function projectTeamSummaryForCaller(
+export function projectTeamSummaryForCaller(
   doc: StoredTeamDocument,
   callerSid: string,
   originUrl: string
@@ -755,8 +797,13 @@ function projectTeamSummaryForCaller(
 
   const isCoach =
     myMembership.role === 'HEAD_COACH' || myMembership.role === 'ASSISTANT_COACH';
+  const isParentFollower = myMembership.role === 'PARENT_FOLLOWER';
 
-  const athleteMembers = doc.memberships.filter((m) => m.status !== 'REVOKED');
+  const athleteMembers = doc.memberships.filter(
+    (m) =>
+      m.status !== 'REVOKED' &&
+      (!isParentFollower || m.role === 'ATHLETE')
+  );
   const totalInvited = athleteMembers.length;
   const individualOpened = athleteMembers.filter(
     (m) => m.status === 'OPENED' || m.status === 'ACTIVE'
@@ -781,7 +828,7 @@ function projectTeamSummaryForCaller(
     );
 
     let projectedSnapshot: TeamAthleteLiveSnapshot | undefined;
-    if (m.liveSnapshot) {
+    if (m.liveSnapshot && !isParentFollower) {
       const rawWatch = m.liveSnapshot.safeSportWatch;
       const projectedSafeSportWatch = !rawWatch
         ? undefined
@@ -819,12 +866,24 @@ function projectTeamSummaryForCaller(
         : baseSnapshot;
     }
 
+    const officialPublicResults = Array.isArray(m.coachRecordedActivities)
+      ? m.coachRecordedActivities
+          .filter((a) => Boolean(a?.officialRaceData))
+          .map((a) => ({
+            ...a,
+            athleteWeightKg: undefined,
+            avgHr: 0,
+            maxHr: 0,
+            streams: undefined,
+          }))
+      : undefined;
+
     const base: TeamMembershipRecord = {
       membershipId: m.membershipId,
       teamId: m.teamId,
       userSid: isCoach || isSelf ? m.userSid : undefined,
       stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : undefined,
-      sharingTier: m.sharingTier,
+      sharingTier: isParentFollower ? undefined : m.sharingTier,
       role: m.role,
       squadGroup: m.squadGroup,
       ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
@@ -835,14 +894,19 @@ function projectTeamSummaryForCaller(
       parentConsentStatus: isCoach || isSelf ? m.parentConsentStatus : undefined,
       parentConsentAt: isCoach || isSelf ? m.parentConsentAt : undefined,
       seedMarkOrFtp: m.seedMarkOrFtp,
+      ...(m.externalSource ? { externalSource: m.externalSource } : {}),
+      ...(m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {}),
+      ...(m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {}),
+      ...(m.genderDivision ? { genderDivision: m.genderDivision } : {}),
       status: m.status,
-      emailDeliveryStatus: m.emailDeliveryStatus,
+      emailDeliveryStatus: isCoach || isSelf ? m.emailDeliveryStatus : undefined,
       invitedAt: m.invitedAt,
       openedAt: m.openedAt,
       joinedAt: m.joinedAt,
       liveSnapshot: projectedSnapshot,
-      coachRecordedActivities:
-        (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities)
+      coachRecordedActivities: isParentFollower
+        ? officialPublicResults
+        : (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities)
           ? safeSportShieldEnforced
             ? stripSafeSportWeightAndBodyCompFields(m.coachRecordedActivities, {
                 maskWellnessWeightKgZero: true,
@@ -867,6 +931,9 @@ function projectTeamSummaryForCaller(
 
   const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
     if (isCoach) return true;
+    if (isParentFollower) {
+      return !bw.targetMembershipIds || bw.targetMembershipIds.length === 0;
+    }
     if (bw.athleteOverrides && bw.athleteOverrides[myMembership.membershipId]) {
       return true;
     }
@@ -881,7 +948,7 @@ function projectTeamSummaryForCaller(
       return Boolean(myMembership.eventGroup) && bw.targetEventGroups.includes(myMembership.eventGroup!);
     }
     return true;
-  });
+  }).map((bw) => (isParentFollower ? { ...bw, athleteOverrides: undefined } : bw));
 
   return {
     brand: {
@@ -940,6 +1007,7 @@ export async function createTeamForCoach(params: {
   enableParentGuardianCc?: boolean;
   coachDisplayName?: string;
   coachEmail?: string;
+  externalSync?: TeamExternalSyncConfig;
 }): Promise<TeamSummaryWithRole> {
   const dir = await loadDirectory();
   const orgType: TeamOrgType = params.orgType || 'HIGH_SCHOOL';
@@ -1004,6 +1072,9 @@ export async function createTeamForCoach(params: {
     coachDisplayName:
       String(params.coachDisplayName || '').trim().slice(0, 48) || 'Head Coach',
     planTier: 'SANDBOX',
+    ...(params.externalSync
+      ? { externalSync: sanitizeExternalSyncConfig(params.externalSync) }
+      : {}),
     createdAt: nowIso,
   };
 
@@ -1063,6 +1134,7 @@ export async function updateTeamBranding(params: {
       | 'defaultSafeSportShield'
       | 'enableParentGuardianCc'
       | 'coachDisplayName'
+      | 'externalSync'
     >
   >;
 }): Promise<TeamSummaryWithRole | null> {
@@ -1102,6 +1174,9 @@ export async function updateTeamBranding(params: {
   }
   if (u.coachDisplayName) {
     doc.brand.coachDisplayName = String(u.coachDisplayName).trim().slice(0, 48);
+  }
+  if (u.externalSync) {
+    doc.brand.externalSync = sanitizeExternalSyncConfig(u.externalSync, doc.brand.externalSync);
   }
   if (u.logoDataUrl === '') {
     doc.brand.logoDataUrl = undefined;
@@ -1346,7 +1421,7 @@ export async function resendPendingTeamInvites(params: {
   };
 }
 
-async function findTeamDocumentByCodeOrSlug(
+export async function findTeamDocumentByCodeOrSlug(
   rawCodeOrSlug: string
 ): Promise<StoredTeamDocument | null> {
   const query = String(rawCodeOrSlug || '').trim();

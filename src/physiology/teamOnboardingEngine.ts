@@ -1,4 +1,5 @@
 import type {
+  CoachEventGroup,
   DistanceUnit,
   TeamBrandConfig,
   TeamOrgType,
@@ -775,4 +776,22 @@ export function buildFreeNativeSmsUri(
   const greeting = athleteFirstName ? `Hi ${athleteFirstName} — ` : '';
   const body = `${greeting}Coach ${teamBrand.coachDisplayName} invited you to join ${teamBrand.name} on THRESH. Tap to claim your spot (Code ${teamBrand.joinCode}): ${magicJoinUrl}`;
   return `sms:${phoneE164}?&body=${encodeURIComponent(body)}`;
+}
+
+/**
+ * Infers an event group (SPRINTS / MID_DISTANCE / DISTANCE) from a seed mark or event label.
+ */
+export function inferEventGroupFromSeedMark(seed?: string): CoachEventGroup | undefined {
+  if (!seed || !seed.trim()) return undefined;
+  const s = seed.trim();
+  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
+    return 'DISTANCE';
+  }
+  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
+    return 'MID_DISTANCE';
+  }
+  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
+    return 'SPRINTS';
+  }
+  return undefined;
 }

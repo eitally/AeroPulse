@@ -12,6 +12,7 @@ import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts'
 import { athleteStateRouter } from './routers/athleteStateRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
 import { teamRouter } from './routers/teamRouter.ts';
+import { teamSyncRouter } from './routers/teamSyncRouter.ts';
 import { authRouter } from './routers/authRouter.ts';
 import { configRouter } from './routers/configRouter.ts';
 import { garminRouter } from './routers/garminRouter.ts';
@@ -49,6 +50,7 @@ apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(teamSyncRouter);
 apiRouter.use(authRouter);
 apiRouter.use(configRouter);
 apiRouter.use(garminRouter);
