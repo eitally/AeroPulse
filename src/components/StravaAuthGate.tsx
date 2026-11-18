@@ -2664,11 +2664,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <span>Wahoo Cloud API</span>
                         {status.wahooConnected ? (
-                          <span className="text-3xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
                             Connected ({status.wahooAthleteName || 'Wahoo'})
                           </span>
                         ) : (
-                          <span className="text-3xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
                             Optional
                           </span>
                         )}
@@ -2704,11 +2704,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <span>Polar AccessLink</span>
                         {status.polarConnected ? (
-                          <span className="text-3xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
                             Connected ({status.polarAthleteName || 'Polar'})
                           </span>
                         ) : (
-                          <span className="text-3xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
                             Optional
                           </span>
                         )}

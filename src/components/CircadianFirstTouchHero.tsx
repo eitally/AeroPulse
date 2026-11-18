@@ -538,7 +538,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             <div className="space-y-2.5 pt-1 border-t border-[#1C5436]/12 dark:border-white/10">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
                 <span>7-Day Load Focus Mix</span>
-                <span className="text-3xs opacity-85">Dashed Box = Optimal Target</span>
+                <span className="text-2xs opacity-85">Dashed Box = Target</span>
               </div>
               {productivity.buckets.map((bucket) => (
                 <LoadFocusGaugeRow key={bucket.key} bucket={bucket} />
@@ -647,7 +647,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                   <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span className="font-medium">Form (TSB)</span>
-                    <span className="text-3xs sm:text-2xs opacity-85">Freshness</span>
+                    <span className="text-2xs opacity-85">Freshness</span>
                   </div>
                   <div className="mt-0.5 text-xs sm:text-sm font-bold text-[#101411] dark:text-white">
                     {productivity.tsb > 0
@@ -659,7 +659,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                   <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span className="font-medium">Fitness (CTL)</span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       {productivity.ctlRamp7d >= 0
                         ? `+${productivity.ctlRamp7d}/wk`
                         : `${productivity.ctlRamp7d}/wk`}
@@ -673,7 +673,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                   <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span className="font-medium">7d Acute Load</span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       {productivity.acwr.toFixed(2)}x ACWR
                     </span>
                   </div>
@@ -697,7 +697,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                       Overnight HRV
                     </span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       {productivity.hrv7dAvgMs > 0
                         ? `${productivity.hrv7dAvgMs}ms`
                         : 'Wearable'}
@@ -716,7 +716,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                       Overnight Sleep
                     </span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       {productivity.sleepHoursLatest > 0
                         ? `${productivity.sleepHoursLatest}h`
                         : '—'}
@@ -734,7 +734,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                   <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span className="font-medium">Resting HR</span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       {productivity.rhrLatestBpm === 0
                         ? 'Wearable'
                         : productivity.rhrDeltaBpm === 0
@@ -752,7 +752,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <div className="p-2 lg:p-0 lg:py-2 lg:last:pb-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
                   <div className="flex items-center justify-between text-2xs font-sans text-[#43584B] dark:text-[#93A39A]">
                     <span className="font-medium">Form (TSB)</span>
-                    <span className="text-3xs sm:text-2xs opacity-85">
+                    <span className="text-2xs opacity-85">
                       CTL {productivity.ctl.toFixed(0)}
                     </span>
                   </div>

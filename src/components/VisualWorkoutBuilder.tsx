@@ -844,7 +844,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   setRawSyntaxOverride(preset.syntax);
                 }
               }}
-              className="min-h-[38px] px-2.5 py-1 rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#2B543B] hover:border-[#1C5436] text-2xs font-medium text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#2B543B] hover:border-[#1C5436] text-2xs font-medium text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
             >
               {preset.label}
             </button>
@@ -860,8 +860,8 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             onChange={(e) => setShorthandInput(e.target.value)}
             placeholder={
               builderSport === 'Cycling'
-                ? 'Quick-type: 15m warmup, 4x8m @ 90% FTP w/ 4m easy, 10m cooldown'
-                : 'Quick-type: 2mi warm-up, 4x800m at mile pace w/ 90s jog, 2mi cooldown'
+                ? 'e.g. 15m wu, 4x8m @ 90% FTP / 4m'
+                : 'e.g. 2mi wu, 4x800m / 90s jog, 2mi cd'
             }
             className="flex-1 min-h-[44px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-white"
           />
@@ -1367,56 +1367,64 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
         </div>
       )}
 
-      {/* Footer Actions: Export (.FIT / .ZWO / .ERG / Garmin Push / Stopwatch) + Save */}
+      {/* Footer Actions: Export Menu (.FIT / .ZWO / .ERG / Garmin Push / Share) + Stopwatch + Save */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            data-testid="visual-builder-export-fit"
-            onClick={handleExportFitClick}
-            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>.FIT</span>
-          </button>
-          <button
-            type="button"
-            data-testid="visual-builder-export-zwo"
-            onClick={handleExportZwoClick}
-            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>.ZWO</span>
-          </button>
-          {builderSport === 'Cycling' && (
-            <button
-              type="button"
-              data-testid="visual-builder-export-erg"
-              onClick={handleExportErgClick}
-              className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
-            >
+          <details className="relative">
+            <summary className="list-none min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1.5 cursor-pointer select-none">
               <Download className="w-3.5 h-3.5" />
-              <span>.ERG</span>
-            </button>
-          )}
-          <button
-            type="button"
-            data-testid="visual-builder-garmin-push"
-            onClick={handlePushGarminClick}
-            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Garmin Push</span>
-          </button>
-          <button
-            type="button"
-            data-testid="visual-builder-share-btn"
-            onClick={handleShareWorkoutClick}
-            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <ShareNetwork className="w-3.5 h-3.5" />
-            <span>Share / PNG</span>
-          </button>
+              <span>Export / Push ▾</span>
+            </summary>
+            <div className="absolute left-0 bottom-full mb-1.5 z-30 w-44 rounded-xl liquid-glass p-1.5 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+              <button
+                type="button"
+                data-testid="visual-builder-export-fit"
+                onClick={handleExportFitClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .FIT</span>
+              </button>
+              <button
+                type="button"
+                data-testid="visual-builder-export-zwo"
+                onClick={handleExportZwoClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .ZWO</span>
+              </button>
+              {builderSport === 'Cycling' && (
+                <button
+                  type="button"
+                  data-testid="visual-builder-export-erg"
+                  onClick={handleExportErgClick}
+                  className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download .ERG</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="visual-builder-garmin-push"
+                onClick={handlePushGarminClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Garmin Push</span>
+              </button>
+              <button
+                type="button"
+                data-testid="visual-builder-share-btn"
+                onClick={handleShareWorkoutClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ShareNetwork className="w-3.5 h-3.5" />
+                <span>Share / PNG</span>
+              </button>
+            </div>
+          </details>
           {detectedTrackSpec && onOpenTracksideStopwatch && (
             <button
               type="button"

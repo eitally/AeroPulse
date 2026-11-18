@@ -56,8 +56,10 @@ test.describe('COACH-01 & COACH-02: 2-Tap Check-In, Safety Swap, Execution Diges
     await expect(summary).toContainText('SHIN');
     await expect(summary).toContainText(/Swapped .* to low-impact recovery/i);
 
-    // 2. Switch to Coach Workspace and verify Coach Execution Digest
+    // 2. Switch to Coach Workspace (Clipboard opens cleanly at 0px scroll; click Flagged/Roster for Squad Triage)
     await page.getByTestId('toggle-coach-workspace').click();
+    await expect(page.getByTestId('clipboard-flagged-triage-btn')).toBeVisible({ timeout: 10000 });
+    await page.getByTestId('clipboard-flagged-triage-btn').click();
     const digest = page.getByTestId('coach-execution-digest');
     await expect(digest).toBeVisible({ timeout: 15000 });
     await expect(digest).toContainText('Pain Flag');
@@ -106,8 +108,9 @@ test.describe('COACH-01 & COACH-02: 2-Tap Check-In, Safety Swap, Execution Diges
     await page.getByTestId('checkin-submit-clear').click();
     await expect(page.getByTestId('checkin-logged-summary')).toContainText('RPE 5/10');
 
-    // Open Coach Digest on mobile
+    // Open Coach Digest inside Roster via mobile dock on mobile
     await page.getByTestId('toggle-coach-workspace').click();
+    await page.locator('nav[aria-label="Mobile primary workspaces"]').getByRole('button', { name: 'Roster' }).click();
     const digest = page.getByTestId('coach-execution-digest');
     await expect(digest).toBeVisible({ timeout: 15000 });
     await expect(digest).toContainText('RPE 5/10');

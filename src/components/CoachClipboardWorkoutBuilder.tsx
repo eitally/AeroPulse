@@ -30,6 +30,7 @@ import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import {
   Bike,
   Check,
+  ChevronDown,
   ClipboardText,
   Copy,
   Download,
@@ -195,6 +196,11 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     NonNullable<TeamBroadcastWorkout['athleteOverrides']>
   >({});
   const [copiedSheet, setCopiedSheet] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showMetaDetailsMobile, setShowMetaDetailsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : true
+  );
+  const [stopwatchWaveMode, setStopwatchWaveMode] = useState<'MASS' | 'POD_10S' | 'PURSUIT'>('POD_10S');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignFeedback, setAssignFeedback] = useState<string | null>(null);
 
@@ -350,7 +356,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       podIntensity: firstSet?.podIntensity || 'THRESHOLD_CV',
       targetSplitSecs: firstSet?.targetSplitSecs,
       restDurationSecs: firstSet?.restDurationSecs ?? 60,
-      waveMode: 'POD_10S',
+      waveMode: stopwatchWaveMode,
       ...(includeWarmup ? { warmupDistanceMeters: wuPreset.meters } : {}),
       ...(includeCooldown ? { cooldownDistanceMeters: cdPreset.meters } : {}),
       sets: trackSets,
@@ -365,7 +371,16 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       .join(' + ');
 
     return { workoutSyntax, plannedDurationSecs, plannedLoad, trackSpec, setsSummary };
-  }, [clipboardSport, includeWarmup, includeCooldown, wuPreset, cdPreset, sets, multiSetPreview]);
+  }, [
+    clipboardSport,
+    includeWarmup,
+    includeCooldown,
+    wuPreset,
+    cdPreset,
+    sets,
+    multiSetPreview,
+    stopwatchWaveMode,
+  ]);
 
   const applyShorthandText = (rawText: string) => {
     const clean = rawText.trim();
@@ -615,119 +630,140 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   return (
     <section
       data-testid="coach-clipboard-builder"
-      className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-4"
+      className="rounded-2xl liquid-glass p-3 sm:p-4 space-y-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-              Clipboard Workout Builder &amp; Pace Groups
-            </h2>
-            <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
-              <button
-                type="button"
-                aria-pressed={clipboardSport === 'Running'}
-                onClick={() => setClipboardSport('Running')}
-                className={`min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
-                  clipboardSport === 'Running'
-                    ? 'ap-nav-volt-active'
-                    : 'text-slate-600 dark:text-slate-300'
-                }`}
-              >
-                <Footprints className="w-3 h-3" />
-                <span>Track / Run</span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={clipboardSport === 'Cycling'}
-                onClick={() => setClipboardSport('Cycling')}
-                className={`min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
-                  clipboardSport === 'Cycling'
-                    ? 'ap-nav-volt-active'
-                    : 'text-slate-600 dark:text-slate-300'
-                }`}
-              >
-                <Bike className="w-3 h-3" />
-                <span>Cycling</span>
-              </button>
-            </div>
-          </div>
-          <p className="text-2xs text-slate-600 dark:text-slate-300">
-            Build multi-set distance or time-based workouts for the team, an event group, or specific athletes.
-          </p>
-        </div>
-
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCopySheet}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            {copiedSheet ? (
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-            ) : (
-              <Copy className="w-3.5 h-3.5" />
-            )}
-            <span>{copiedSheet ? 'Copied' : 'Copy Sheet'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              openPrintablePodClipboardWindow({
-                workoutTitle: workoutTitle.trim() || builtWorkout.setsSummary,
-                dateStr: workoutDate,
-                repDistanceMeters: builtWorkout.trackSpec.repDistanceMeters,
-                repCount: builtWorkout.trackSpec.repCount,
-                recoveryLabel: sets[0]?.restLabel || '60s jog',
-                pods: multiSetPreview.map((p) => p.basePod),
-                teamName: activeTeam?.brand.name || 'THRESH Squad',
-              })
-            }
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <ClipboardText className="w-3.5 h-3.5" />
-            <span>Print</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportFit}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>.FIT</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportZwo}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>.ZWO</span>
-          </button>
-
-          {clipboardSport === 'Cycling' && (
+          <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-[#F4F7F4]">
+            Clipboard Builder &amp; Pods
+          </h2>
+          <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
             <button
               type="button"
-              onClick={handleExportErg}
-              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              aria-pressed={clipboardSport === 'Running'}
+              onClick={() => setClipboardSport('Running')}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                clipboardSport === 'Running'
+                  ? 'ap-nav-volt-active'
+                  : 'text-[#43584B] dark:text-[#93A39A]'
+              }`}
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>.ERG</span>
+              <Footprints className="w-3 h-3" />
+              <span>Track / Run</span>
             </button>
-          )}
+            <button
+              type="button"
+              aria-pressed={clipboardSport === 'Cycling'}
+              onClick={() => setClipboardSport('Cycling')}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                clipboardSport === 'Cycling'
+                  ? 'ap-nav-volt-active'
+                  : 'text-[#43584B] dark:text-[#93A39A]'
+              }`}
+            >
+              <Bike className="w-3 h-3" />
+              <span>Cycling</span>
+            </button>
+          </div>
+        </div>
 
+        <div className="relative">
           <button
             type="button"
-            data-testid="clipboard-share-btn"
-            onClick={handleShareWorkout}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            aria-expanded={showExportMenu}
+            onClick={() => setShowExportMenu((prev) => !prev)}
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ShareNetwork className="w-3.5 h-3.5" />
-            <span>Share</span>
+            <Download className="w-3.5 h-3.5 ap-text-brand" />
+            <span>{copiedSheet ? 'Copied Sheet' : 'Export / Print'}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
           </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 mt-1.5 w-48 rounded-xl bg-white dark:bg-[#101B15] border border-[#2B5B3F]/25 dark:border-[#2B543B] shadow-xl p-1.5 z-30 space-y-1 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  handleCopySheet();
+                  setShowExportMenu(false);
+                }}
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+              >
+                {copiedSheet ? (
+                  <Check className="w-3.5 h-3.5 text-[#059669]" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                <span>Copy Split Sheet</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  openPrintablePodClipboardWindow({
+                    workoutTitle: workoutTitle.trim() || builtWorkout.setsSummary,
+                    dateStr: workoutDate,
+                    repDistanceMeters: builtWorkout.trackSpec.repDistanceMeters,
+                    repCount: builtWorkout.trackSpec.repCount,
+                    recoveryLabel: sets[0]?.restLabel || '60s jog',
+                    pods: multiSetPreview.map((p) => p.basePod),
+                    teamName: activeTeam?.brand.name || 'THRESH Squad',
+                  });
+                  setShowExportMenu(false);
+                }}
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+              >
+                <ClipboardText className="w-3.5 h-3.5" />
+                <span>Print 4-Up Pod Sheet</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleExportFit();
+                  setShowExportMenu(false);
+                }}
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .FIT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleExportZwo();
+                  setShowExportMenu(false);
+                }}
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .ZWO</span>
+              </button>
+              {clipboardSport === 'Cycling' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportErg();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download .ERG</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="clipboard-share-btn"
+                onClick={() => {
+                  handleShareWorkout();
+                  setShowExportMenu(false);
+                }}
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+              >
+                <ShareNetwork className="w-3.5 h-3.5" />
+                <span>Share Link / PNG</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -792,21 +828,21 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             aria-label="Workout shorthand input"
             value={shorthandInput}
             onChange={(e) => setShorthandInput(e.target.value)}
-            placeholder="Type e.g. 2mi warm-up, 2x200m at 800m pace, 4x800m at mile pace, 2x200m at 400m pace, 2mi cooldown"
-            className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs text-slate-900 dark:text-white"
+            placeholder="e.g. 2mi WU, 5×800m @ CV (90s jog), 2mi CD"
+            className="flex-1 min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs text-[#101411] dark:text-[#F4F7F4]"
           />
           <button
             type="button"
             data-testid="clipboard-parse-shorthand-btn"
             onClick={() => applyShorthandText(shorthandInput)}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
           >
             Apply Shorthand
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-2xs">
-          <span className="font-mono text-slate-500 dark:text-slate-400">Templates:</span>
+          <span className="font-mono text-[#43584B] dark:text-[#93A39A]">Presets:</span>
           {[
             {
               label: '800/Mile Combo',
@@ -828,7 +864,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 setShorthandInput(tpl.text);
                 applyShorthandText(tpl.text);
               }}
-              className="min-h-[32px] px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 hover:underline cursor-pointer"
+              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-md liquid-capsule-track text-[#1F3528] dark:text-[#C8D8CE] hover:underline cursor-pointer"
             >
               {tpl.label}
             </button>
@@ -836,91 +872,112 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </div>
       </div>
 
-      {/* Title, Date, Warm-up & Cooldown */}
-      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs">
-        <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-slate-600 dark:text-slate-300">
-          <span>Session Name</span>
-          <input
-            type="text"
-            value={workoutTitle}
-            onChange={(e) => setWorkoutTitle(e.target.value)}
-            className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans font-semibold text-slate-900 dark:text-white"
-          />
-        </label>
-
-        <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-slate-600 dark:text-slate-300">
-          <span>Date</span>
-          <input
-            type="date"
-            aria-label="Workout Date"
-            value={workoutDate}
-            onChange={(e) => setWorkoutDate(e.target.value)}
-            className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-slate-900 dark:text-white"
-          />
-        </label>
-
-        <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-slate-600 dark:text-slate-300">
-          <label className="inline-flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeWarmup}
-              onChange={(e) => setIncludeWarmup(e.target.checked)}
-              className="rounded border-stone-400"
+      {/* Title, Date, Warm-up & Cooldown (1-line summary on <640px mobile) */}
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setShowMetaDetailsMobile((prev) => !prev)}
+          className="sm:hidden w-full min-h-[44px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+        >
+          <span className="truncate font-mono text-2xs">
+            {workoutDate} · WU {includeWarmup ? wuPreset.label : 'Off'} · CD{' '}
+            {includeCooldown ? cdPreset.label : 'Off'}
+          </span>
+          <span className="inline-flex items-center gap-1 text-2xs text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+            <span>Details</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform ${showMetaDetailsMobile ? 'rotate-180' : ''}`}
             />
-            <span>Warm-up</span>
-          </label>
-          <select
-            aria-label="Warm-up distance"
-            disabled={!includeWarmup}
-            value={warmupDistanceMeters}
-            onChange={(e) => setWarmupDistanceMeters(Number(e.target.value))}
-            className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
-          >
-            {WARMUP_COOLDOWN_PRESETS.map((p) => (
-              <option key={`wu-${p.meters}`} value={p.meters}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
+          </span>
+        </button>
 
-        <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-slate-600 dark:text-slate-300">
-          <label className="inline-flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeCooldown}
-              onChange={(e) => setIncludeCooldown(e.target.checked)}
-              className="rounded border-stone-400"
-            />
-            <span>Cooldown</span>
-          </label>
-          <select
-            aria-label="Cooldown distance"
-            disabled={!includeCooldown}
-            value={cooldownDistanceMeters}
-            onChange={(e) => setCooldownDistanceMeters(Number(e.target.value))}
-            className="min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
-          >
-            {WARMUP_COOLDOWN_PRESETS.map((p) => (
-              <option key={`cd-${p.meters}`} value={p.meters}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {showMetaDetailsMobile && (
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
+            <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <span>Session Name</span>
+              <input
+                type="text"
+                value={workoutTitle}
+                onChange={(e) => setWorkoutTitle(e.target.value)}
+                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans font-semibold text-[#101411] dark:text-[#F4F7F4]"
+              />
+            </label>
+
+            <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <span>Date</span>
+              <input
+                type="date"
+                aria-label="Workout Date"
+                value={workoutDate}
+                onChange={(e) => setWorkoutDate(e.target.value)}
+                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+              />
+            </label>
+
+            <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeWarmup}
+                  onChange={(e) => setIncludeWarmup(e.target.checked)}
+                  className="rounded border-[#2B5B3F]/40"
+                />
+                <span>Warm-up</span>
+              </label>
+              <select
+                aria-label="Warm-up distance"
+                disabled={!includeWarmup}
+                value={warmupDistanceMeters}
+                onChange={(e) => setWarmupDistanceMeters(Number(e.target.value))}
+                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+              >
+                {WARMUP_COOLDOWN_PRESETS.map((p) => (
+                  <option key={`wu-${p.meters}`} value={p.meters}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeCooldown}
+                  onChange={(e) => setIncludeCooldown(e.target.checked)}
+                  className="rounded border-[#2B5B3F]/40"
+                />
+                <span>Cooldown</span>
+              </label>
+              <select
+                aria-label="Cooldown distance"
+                disabled={!includeCooldown}
+                value={cooldownDistanceMeters}
+                onChange={(e) => setCooldownDistanceMeters(Number(e.target.value))}
+                className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+              >
+                {WARMUP_COOLDOWN_PRESETS.map((p) => (
+                  <option key={`cd-${p.meters}`} value={p.meters}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Structured Working Sets */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300 font-semibold">
+          <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
             Working Sets ({sets.length})
           </span>
           <button
             type="button"
             data-testid="clipboard-add-set-btn"
             onClick={handleAddSet}
-            className="min-h-[36px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+            className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Set</span>
@@ -946,11 +1003,11 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     const v = Math.max(1, Number(e.target.value) || 1);
                     setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, repCount: v } : s)));
                   }}
-                  className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                 />
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                 <div className="flex items-center justify-between gap-1">
                   <span>{clipboardSport === 'Cycling' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
                   {clipboardSport === 'Running' && (
@@ -969,7 +1026,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                           )
                         )
                       }
-                      className="text-3xs underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer"
+                      className="text-2xs underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer"
                     >
                       {row.measureMode === 'TIME_MINS' ? 'Use m' : 'Use min'}
                     </button>
@@ -988,7 +1045,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         prev.map((s) => (s.id === row.id ? { ...s, durationMins: v } : s))
                       );
                     }}
-                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                   />
                 ) : (
                   <select
@@ -1000,7 +1057,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         prev.map((s) => (s.id === row.id ? { ...s, repDistanceMeters: v } : s))
                       );
                     }}
-                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                   >
                     {VALID_REP_DISTS.map((dist) => (
                       <option key={`set-${idx}-d-${dist}`} value={dist}>
@@ -1011,7 +1068,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 )}
               </label>
 
-              <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+              <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                 <span>{clipboardSport === 'Cycling' ? 'Target % FTP' : 'Target Pace'}</span>
                 {clipboardSport === 'Cycling' ? (
                   <select
@@ -1021,7 +1078,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       const v = Number(e.target.value);
                       setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, targetPctFtp: v } : s)));
                     }}
-                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                   >
                     <option value={70}>Z2 Endurance (70% FTP)</option>
                     <option value={88}>Z3 Sweet Spot (88% FTP)</option>
@@ -1037,7 +1094,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       const v = e.target.value as VdotPodIntensity;
                       setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, intensity: v } : s)));
                     }}
-                    className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                   >
                     <option value="RACE_400M">400m Pace</option>
                     <option value="RACE_800M">800m Pace</option>
@@ -1051,7 +1108,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 )}
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                 <span>Rep Rest</span>
                 <select
                   aria-label={`Set ${idx + 1} Rep Rest`}
@@ -1060,7 +1117,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     const v = e.target.value;
                     setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, restLabel: v } : s)));
                   }}
-                  className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                 >
                   <option value="60s jog">60s jog</option>
                   <option value="90s jog">90s jog</option>
@@ -1070,7 +1127,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 </select>
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
                 <span>Set Rest After</span>
                 <select
                   aria-label={`Set ${idx + 1} Rest After`}
@@ -1081,7 +1138,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       prev.map((s) => (s.id === row.id ? { ...s, setRestAfterSecs: v } : s))
                     );
                   }}
-                  className="min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
                 >
                   <option value={0}>None</option>
                   <option value={120}>2:00 rest</option>
@@ -1096,7 +1153,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     type="button"
                     aria-label={`Remove Set ${idx + 1}`}
                     onClick={() => setSets((prev) => prev.filter((s) => s.id !== row.id))}
-                    className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-600 cursor-pointer"
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-lg text-[#43584B] hover:text-[#DC2626] cursor-pointer"
                   >
                     <Trash className="w-4 h-4" />
                   </button>
@@ -1155,11 +1212,45 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </details>
       )}
 
-      {/* Live Multi-Set Pace Pod Split Preview */}
-      <div
-        data-testid="clipboard-pod-preview"
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5"
-      >
+      {/* Wave Start Selector + Live Multi-Set Pace Pod Split Preview */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
+            Pod Splits &amp; Stopwatch Wave
+          </span>
+          <div
+            role="group"
+            aria-label="Stopwatch Wave Mode"
+            className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
+          >
+            {(
+              [
+                { id: 'MASS', label: 'Mass Gun' },
+                { id: 'POD_10S', label: 'Pod +10s' },
+                { id: 'PURSUIT', label: 'Pursuit' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                aria-pressed={stopwatchWaveMode === opt.id}
+                onClick={() => setStopwatchWaveMode(opt.id)}
+                className={`min-h-[44px] sm:min-h-[30px] px-2 rounded-md cursor-pointer ${
+                  stopwatchWaveMode === opt.id
+                    ? 'ap-nav-volt-active'
+                    : 'text-[#43584B] dark:text-[#93A39A]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          data-testid="clipboard-pod-preview"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
+        >
         {multiSetPreview.map((pod) => (
           <div
             key={pod.podId}
@@ -1186,6 +1277,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {/* Primary Action Bar */}

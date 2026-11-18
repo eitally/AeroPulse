@@ -19,6 +19,7 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
+import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 import { CalendarView } from './CalendarView';
 import { TeamManagementPanel } from './TeamManagementPanel';
@@ -28,6 +29,7 @@ import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
 import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
+  ChevronDown,
   Shield,
   Users,
 } from './icons/PhosphorIcons';
@@ -223,114 +225,159 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }));
   }, [connectedAthletesOnly, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
 
-  const triageAthletes = useMemo(() => {
-    return connectedAthletesOnly.map((ath) => {
+  const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
+
+  const todayIso = getLocalDateIso();
+
+  const flaggedTriageCount = useMemo(() => {
+    const digest = buildCoachSquadExecutionDigest({
+      roster: connectedAthletesOnly,
+      selfFallback: {
+        id: 'SELF',
+        name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
+        plannedEvents: effectivePlannedEvents,
+        activities: effectiveActivities,
+        sessionCheckIns: selfSessionCheckIns,
+      },
+      todayIso,
+      windowDays: 7,
+    });
+    const flaggedIds = new Set<string>();
+    for (const r of digest.rows) {
+      if (r.attentionReason !== 'ON_TRACK') flaggedIds.add(r.athleteId);
+    }
+    for (const ath of connectedAthletesOnly) {
       const latestW =
         ath.wellnessDays && ath.wellnessDays.length > 0
           ? ath.wellnessDays[ath.wellnessDays.length - 1]
           : null;
       const tsb = latestW?.tsb ?? 0;
       const hrv = latestW?.hrvRMSSD ?? 60;
-      const isStrained = tsb < -20 || hrv < 48;
       const watchLight = evaluateSafeSportPatternWatch({
         activities: ath.activities || [],
         wellnessDays: ath.wellnessDays || [],
         isMinorU18: Boolean(ath.athleteProfile.safeSportHideWeight),
       }).trafficLight;
-      return { ath, tsb, hrv, isStrained, watchLight };
-    });
-  }, [connectedAthletesOnly]);
+      if (tsb < -20 || hrv < 48 || watchLight !== 'GREEN_CLEAR') {
+        flaggedIds.add(ath.id);
+      }
+    }
+    return flaggedIds.size;
+  }, [
+    connectedAthletesOnly,
+    primaryAthleteDisplayName,
+    effectivePlannedEvents,
+    effectiveActivities,
+    selfSessionCheckIns,
+    todayIso,
+  ]);
 
   return (
-    <div className="space-y-4" data-testid="coach-workspace-view">
-      {/* Unified Coach Mode Context Header */}
-      <section className="rounded-2xl liquid-glass p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
-            </h1>
-            {activeTeam && (
-              <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
-                Code: {activeTeam.brand.joinCode}
-              </span>
-            )}
-          </div>
+    <div className="space-y-3" data-testid="coach-workspace-view">
+      {/* Unified Coach Mode Context Header — omitted on Stopwatch so athletes sit at 0px scroll */}
+      {subTab !== 'STOPWATCH' && (
+        <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-[#101411] dark:text-[#F4F7F4] tracking-tight truncate">
+                {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
+              </h1>
+              {activeTeam && (
+                <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                  {activeTeam.brand.joinCode}
+                </span>
+              )}
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {myTeams.length > 0 && (
-              <select
-                value={activeTeamId || ''}
-                onChange={(e) => onSelectActiveTeam(e.target.value || null)}
-                aria-label="Select Team in Coach Workspace"
-                className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100"
-              >
-                {myTeams.map((t) => (
-                  <option key={t.brand.teamId} value={t.brand.teamId}>
-                    {t.brand.shortName || t.brand.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {myTeams.length > 0 && (
+                <select
+                  value={activeTeamId || ''}
+                  onChange={(e) => onSelectActiveTeam(e.target.value || null)}
+                  aria-label="Select Team in Coach Workspace"
+                  className="hidden md:block min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
+                >
+                  {myTeams.map((t) => (
+                    <option key={t.brand.teamId} value={t.brand.teamId}>
+                      {t.brand.shortName || t.brand.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-            {connectedAthletesOnly.length > 0 && (
-              <select
-                value={activeViewedAthleteId}
-                onChange={(e) => {
-                  onSelectAthleteViewport(e.target.value);
-                  if (e.target.value !== 'SELF') {
-                    onOpenAthleteToday();
+              {connectedAthletesOnly.length > 0 && (
+                <select
+                  value={activeViewedAthleteId}
+                  onChange={(e) => {
+                    onSelectAthleteViewport(e.target.value);
+                    if (e.target.value !== 'SELF') {
+                      onOpenAthleteToday();
+                    }
+                  }}
+                  aria-label="Inspect Individual Athlete Cockpit"
+                  className="hidden md:block min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
+                >
+                  <option value="SELF">Inspect Athlete…</option>
+                  {connectedAthletesOnly.map((ath) => (
+                    <option key={ath.id} value={ath.id}>
+                      {ath.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <button
+                type="button"
+                data-testid="coach-open-cohort-plan-builder"
+                onClick={() => {
+                  try {
+                    window.sessionStorage.setItem('thresh_open_plan_cohort', 'TEAM_ALL');
+                  } catch {
+                    // ignore storage failures
                   }
+                  onOpenGoalsTab();
                 }}
-                aria-label="Inspect Individual Athlete Cockpit"
-                className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100"
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
               >
-                <option value="SELF">Inspect Athlete…</option>
-                {connectedAthletesOnly.map((ath) => (
-                  <option key={ath.id} value={ath.id}>
-                    {ath.name}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <button
-              type="button"
-              data-testid="coach-open-cohort-plan-builder"
-              onClick={onOpenGoalsTab}
-              className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
-            >
-              Build Cohort Plan
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenAthleteToday}
-              className="md:hidden min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
-            >
-              Exit Coach
-            </button>
+                Build Cohort Plan
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* 1. CLIPBOARD (COACH HOME) */}
+      {/* 1. CLIPBOARD (COACH HOME — Opens at 0px scroll directly on Workout Builder) */}
       {subTab === 'CLIPBOARD' && (
-        <div className="space-y-4">
-          {myTeams.length === 0 && connectedAthletesOnly.length === 0 ? (
-            <section className="rounded-2xl liquid-glass p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
-                  <Users className="w-5 h-5" weight="duotone" />
-                </div>
-                <div className="space-y-0.5">
-                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                    Set Up Your Team &amp; Roster
-                  </h2>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xl">
-                    Create your team workspace, import a CSV roster or QR sheet, and assign workouts across pace groups.
-                  </p>
-                </div>
+        <div className="space-y-3">
+          {flaggedTriageCount > 0 && (
+            <button
+              type="button"
+              data-testid="clipboard-flagged-triage-btn"
+              onClick={() => setSubTab('ROSTER')}
+              className="w-full min-h-[44px] rounded-xl ap-status-caution px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-bold cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <Shield className="w-4 h-4 shrink-0" weight="bold" />
+                <span className="truncate">
+                  {flaggedTriageCount}{' '}
+                  {flaggedTriageCount === 1 ? 'Athlete' : 'Athletes'} Flagged (Pain / High Strain)
+                </span>
+              </span>
+              <span className="font-mono text-2xs shrink-0 underline">
+                Review Squad Triage →
+              </span>
+            </button>
+          )}
+
+          {myTeams.length === 0 && connectedAthletesOnly.length === 0 && (
+            <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Users className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
+                <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                  No team roster connected yet
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -340,97 +387,20 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                     setOpenCreateTeamOnSwitch(true);
                     setSubTab('ROSTER');
                   }}
-                  className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-4 py-2 text-xs font-bold cursor-pointer"
+                  className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-bold cursor-pointer"
                 >
                   Create Team or Import CSV
                 </button>
                 <button
                   type="button"
                   onClick={() => setSubTab('STOPWATCH')}
-                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-4 py-2 text-xs font-semibold cursor-pointer"
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-semibold cursor-pointer"
                 >
-                  Open Trackside Stopwatch
+                  Open Stopwatch
                 </button>
               </div>
             </section>
-          ) : (
-            <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Shield className="w-4 h-4 ap-text-brand" />
-                    <span>Morning Readiness Check</span>
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setSubTab('ROSTER')}
-                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
-                  >
-                    Manage Roster ({connectedAthletesOnly.length})
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {triageAthletes.map(({ ath, tsb, hrv, isStrained, watchLight }) => (
-                    <div
-                      key={ath.id}
-                      className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            className={`px-2 py-0.5 rounded text-2xs font-mono font-bold uppercase ${
-                              isStrained || watchLight !== 'GREEN_CLEAR'
-                                ? 'ap-status-caution'
-                                : 'ap-status-prime'
-                            }`}
-                          >
-                            {watchLight === 'RED_MEDICAL_REVIEW'
-                              ? 'Medical Check'
-                              : isStrained || watchLight === 'AMBER_WATCH'
-                                ? 'Needs Review'
-                                : 'Ready'}
-                          </span>
-                          <span className="font-bold text-slate-900 dark:text-white truncate">
-                            {ath.name}
-                          </span>
-                        </div>
-                        <div className="text-2xs font-mono text-slate-500 mt-0.5">
-                          HRV {Math.round(hrv)}ms · Form {tsb >= 0 ? `+${Math.round(tsb)}` : Math.round(tsb)}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSelectAthleteViewport(ath.id);
-                          onOpenAthleteToday();
-                        }}
-                        className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-2xs font-semibold shrink-0 cursor-pointer"
-                      >
-                        Inspect
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
           )}
-
-          {/* Squad Execution & Pain/RPE Check-In Digest (COACH-01) */}
-          <CoachExecutionDigestPanel
-            roster={connectedAthletesOnly}
-            selfFallback={{
-              id: 'SELF',
-              name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
-              plannedEvents: effectivePlannedEvents,
-              activities: effectiveActivities,
-              sessionCheckIns: selfSessionCheckIns,
-            }}
-            todayIso={getLocalDateIso()}
-            onInspectAthlete={(athId) => {
-              onSelectAthleteViewport(athId);
-              onOpenAthleteToday();
-            }}
-            onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
-          />
 
           {/* Track Multi-Set Workout Builder, Event Groups & Pace Pod Splits */}
           <CoachClipboardWorkoutBuilder
@@ -444,10 +414,29 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             onOpenStopwatchSubTab={() => setSubTab('STOPWATCH')}
           />
 
-          <ScholasticRelayAndTopTimesPanel
-                candidates={podRoster}
-                roster={connectedAthletesOnly}
+          <div className="rounded-2xl liquid-glass overflow-hidden">
+            <button
+              type="button"
+              aria-expanded={showRelayAndTopTimes}
+              onClick={() => setShowRelayAndTopTimes((prev) => !prev)}
+              className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+            >
+              <span>Relay Optimizer &amp; NFHS FAT Top Times</span>
+              <ChevronDown
+                className={`w-4 h-4 text-[#43584B] dark:text-[#93A39A] transition-transform ${
+                  showRelayAndTopTimes ? 'rotate-180' : ''
+                }`}
               />
+            </button>
+            {showRelayAndTopTimes && (
+              <div className="px-3 pb-3 pt-1">
+                <ScholasticRelayAndTopTimesPanel
+                  candidates={podRoster}
+                  roster={connectedAthletesOnly}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -493,9 +482,26 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         />
       )}
 
-      {/* 4. ROSTER & TEAM SETTINGS */}
+      {/* 4. ROSTER, SQUAD TRIAGE & TEAM SETTINGS */}
       {subTab === 'ROSTER' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
+          <CoachExecutionDigestPanel
+            roster={connectedAthletesOnly}
+            selfFallback={{
+              id: 'SELF',
+              name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
+              plannedEvents: effectivePlannedEvents,
+              activities: effectiveActivities,
+              sessionCheckIns: selfSessionCheckIns,
+            }}
+            todayIso={todayIso}
+            onInspectAthlete={(athId) => {
+              onSelectAthleteViewport(athId);
+              onOpenAthleteToday();
+            }}
+            onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
+          />
+
           <TeamManagementPanel
             selfName={primaryAthleteDisplayName}
             myTeams={myTeams}
@@ -504,6 +510,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             initialShowCreateStudio={openCreateTeamOnSwitch}
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
+            onOpenClipboard={() => setSubTab('CLIPBOARD')}
           />
 
           {(!activeTeam || activeTeam.brand.orgType === 'COLLEGIATE') && (

@@ -1215,10 +1215,10 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   };
 
   const getSportHeaderColor = (sport: SportCategory) => {
-    if (sport === 'Cycling') return 'bg-[#0066CC] text-white';
-    if (sport === 'Running') return 'bg-[#15803D] text-white';
-    if (sport === 'Swimming') return 'bg-[#0E7490] text-white';
-    return 'bg-[#57534E] text-white';
+    if (sport === 'Cycling') return 'bg-[#0284C7] text-white';
+    if (sport === 'Running') return 'bg-[#059669] text-white';
+    if (sport === 'Swimming') return 'bg-[#0D9488] text-white';
+    return 'bg-[#43584B] text-white';
   };
 
   const getSportIcon = (sport: SportCategory, className = 'w-3.5 h-3.5') => {
@@ -1289,51 +1289,34 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   }, [targetGoals, athleteProfile, athleteFtp, distanceUnit]);
 
   return (
-    <div className="space-y-4">
-      {/* Primary Objective & Block Phase Ribbon */}
-      <section className="rounded-2xl liquid-glass px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                {primaryObjective.title}
-              </span>
-              <span className="px-2 py-0.5 rounded-md ap-status-prime text-2xs font-mono font-bold">
-                {primaryObjective.phase}
-              </span>
-              {primaryObjective.hasGoal && (
-                <span className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
-                  · {primaryObjective.weeksOut} wks ({primaryObjective.daysOut}d) to target
-                </span>
-              )}
-            </div>
-            {primaryObjective.hasGoal ? (
-              <div className="flex items-center gap-2 mt-1">
-                <div className="w-36 sm:w-48 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    style={{ width: `${primaryObjective.pct}%` }}
-                    className="h-full bg-[#1C5436] dark:bg-[#C8FF00] rounded-full"
-                  />
-                </div>
-                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-                  {primaryObjective.currentStr} → <strong>{primaryObjective.targetStr}</strong> (
-                  {primaryObjective.pct}%)
-                </span>
-              </div>
-            ) : (
-              <p className="text-2xs text-[#43584B] dark:text-[#93A39A] mt-0.5">
-                Baseline: <strong className="font-mono">{primaryObjective.currentStr}</strong> · Add an A-race or FTP target in Progress to unlock periodized phase countdowns.
-              </p>
-            )}
-          </div>
+    <div className="space-y-3">
+      {/* Primary Objective & Block Phase Ribbon (1-line compact) */}
+      <section className="rounded-2xl liquid-glass px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <span className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+            {primaryObjective.title}
+          </span>
+          <span className="px-2 py-0.5 rounded-md ap-status-prime text-2xs font-mono font-bold shrink-0">
+            {primaryObjective.phase}
+          </span>
+          {primaryObjective.hasGoal ? (
+            <span className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] truncate">
+              {primaryObjective.weeksOut}w · {primaryObjective.currentStr} →{' '}
+              <strong>{primaryObjective.targetStr}</strong> ({primaryObjective.pct}%)
+            </span>
+          ) : (
+            <span className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+              {primaryObjective.currentStr}
+            </span>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {onOpenTodayWorkout && (
             <button
               type="button"
               onClick={onOpenTodayWorkout}
-              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#2B5B3F] text-[#43584B] dark:text-[#93A39A] text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
             >
               <span>Today&apos;s Readiness &amp; Workout →</span>
             </button>
@@ -1342,7 +1325,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={onOpenGoalsArchitect}
-              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-semibold transition-colors whitespace-nowrap shadow-xs cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#163022] hover:bg-[#1C5436] text-white dark:bg-[#0B1911] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-semibold transition-colors whitespace-nowrap shadow-xs cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Training Block &amp; Race Goals →</span>
@@ -1352,25 +1335,25 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       </section>
 
       {/* Top Calendar Header & Controls */}
-      <section className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2.5">
+      <section className="rounded-2xl liquid-glass p-3.5 sm:p-4 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <CalendarIcon className="w-4 h-4 ap-text-brand" />
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-[#101411] dark:text-[#F4F7F4]">
               {MONTH_NAMES[viewMonth]} {viewYear}
             </h1>
             <ChartInfoTooltip
               title="Training Calendar & Activity Effort Zones"
-              subtitle="Weekly Load Architecture, Morning Readiness & Intra-Workout Zone Skyline"
-              whatItMeasures="Combines your weekly physiological summary on the left (Total Time, Training Load, Fitness CTL, Fatigue ATL, Form TSB, and Sport Breakdown) with daily morning autonomic metrics (Sleep, Resting HR, HRV) and individual activity cards displaying the effort zones (Z1–Z6+) through each workout."
-              benchmarks="Polarized / Base Weeks: 75–85% of weekly duration in Z1–Z2 (Teal-Green) and 15–20% in Z4–Z6 (Orange/Red/Purple). Threshold Weeks: >20% in Z3–Z4. Steady Z2 rides display a smooth green bar; interval, race, and track workouts display a multi-color effort skyline."
-              coachingAction="Scan down the left Week column to verify progressive overload (Ramp +2 to +5 CTL/wk), then inspect each day's Effort Zone strips to ensure easy recovery days stay strictly in Z1/Z2 green so hard interval days can hit deep Z4/Z5/Z6 peaks."
+              subtitle="Weekly Load, Morning Readiness & Effort Skyline"
+              whatItMeasures="Combines weekly load totals with daily morning vitals and intra-workout effort zones (Z1–Z6+)."
+              benchmarks="Polarized weeks: 75–85% in Z1–Z2; 15–20% in Z4–Z6."
+              coachingAction="Keep easy days in Z1/Z2 green so key sessions hit Z4–Z6 targets."
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 max-w-full">
             {/* Sport Category Filter Pills */}
-            <div className="flex items-center gap-0.5 p-1 rounded-xl liquid-capsule-track">
+            <div className="flex items-center gap-0.5 p-1 rounded-xl liquid-capsule-track overflow-x-auto no-scrollbar max-w-full">
               {(['ALL', 'Cycling', 'Running', 'Swimming', 'Strength'] as const).map((sp) => {
                 const active = activeSportFilter === sp;
                 return (
@@ -1453,12 +1436,8 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 {isActionsOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 sm:left-0 sm:right-auto mt-2 z-30 w-72 rounded-2xl liquid-glass p-2 space-y-1 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10"
+                    className="absolute right-0 sm:left-0 sm:right-auto mt-2 z-30 w-56 rounded-2xl liquid-glass p-1.5 space-y-0.5 text-xs shadow-2xl border border-slate-200/80 dark:border-white/10"
                   >
-                    <div className="px-2.5 py-1 text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
-                      Calendar Actions
-                    </div>
-
                     <button
                       type="button"
                       role="menuitem"
@@ -1468,22 +1447,15 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           `Review my ${MONTH_NAMES[viewMonth]} ${viewYear} training calendar, weekly load progression, and effort zone distribution. Propose 2 structured workouts for this week.`
                         );
                       }}
-                      className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                      className="w-full min-h-[44px] sm:min-h-[36px] flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-[#101411] dark:text-[#F4F7F4] transition-colors cursor-pointer"
                     >
-                      <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
-                        <Sparkles className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                          <span>AI Calendar Review</span>
-                          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                            Coach
-                          </span>
-                        </div>
-                        <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          Audit load progression &amp; workout suggestions
-                        </div>
-                      </div>
+                      <span className="inline-flex items-center gap-2 font-semibold">
+                        <Sparkles className="w-3.5 h-3.5 ap-text-brand shrink-0" />
+                        <span>AI Calendar Review</span>
+                      </span>
+                      <span className="text-2xs font-mono px-1.5 py-0.5 rounded ap-status-prime">
+                        Coach
+                      </span>
                     </button>
 
                     {onOpenGoalsArchitect && (
@@ -1495,22 +1467,15 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           setIsActionsOpen(false);
                           onOpenGoalsArchitect();
                         }}
-                        className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                        className="w-full min-h-[44px] sm:min-h-[36px] flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-[#101411] dark:text-[#F4F7F4] transition-colors cursor-pointer"
                       >
-                        <div className="p-1.5 rounded-lg bg-[#C8FF00]/20 border border-[#56BA00]/35 text-[#1C5436] dark:text-[#C8FF00] shrink-0 mt-0.5">
-                          <Flame className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                            <span>Build Training Block</span>
-                            <span className="text-3xs font-mono px-1.5 py-0.5 rounded ap-status-info">
-                              Periodize
-                            </span>
-                          </div>
-                          <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                            Generate multi-week track or endurance plan
-                          </div>
-                        </div>
+                        <span className="inline-flex items-center gap-2 font-semibold">
+                          <Flame className="w-3.5 h-3.5 ap-text-brand shrink-0" />
+                          <span>Build Training Block</span>
+                        </span>
+                        <span className="text-2xs font-mono px-1.5 py-0.5 rounded ap-status-info">
+                          Plan
+                        </span>
                       </button>
                     )}
 
@@ -1522,22 +1487,15 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           setIsActionsOpen(false);
                           onOpenOfficialRaceModal();
                         }}
-                        className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                        className="w-full min-h-[44px] sm:min-h-[36px] flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left hover:bg-slate-200/60 dark:hover:bg-white/10 text-[#101411] dark:text-[#F4F7F4] transition-colors cursor-pointer"
                       >
-                        <div className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
-                          <Trophy className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                            <span>Log Official Race</span>
-                            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                              Results
-                            </span>
-                          </div>
-                          <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                            Record track or road race results
-                          </div>
-                        </div>
+                        <span className="inline-flex items-center gap-2 font-semibold">
+                          <Trophy className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                          <span>Log Official Race</span>
+                        </span>
+                        <span className="text-2xs font-mono px-1.5 py-0.5 rounded ap-status-caution">
+                          Results
+                        </span>
                       </button>
                     )}
                   </div>
@@ -2056,39 +2014,6 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                       <span>Time on Track</span>
                                     </button>
                                   )}
-                                  {ev.workoutSyntax && (
-                                    <button
-                                      type="button"
-                                      data-testid="calendar-export-fit"
-                                      onClick={() => handleExportPlannedFit(ev)}
-                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                    >
-                                      <Download className="w-3.5 h-3.5" weight="bold" />
-                                      <span>.FIT</span>
-                                    </button>
-                                  )}
-                                  {ev.workoutSyntax && (
-                                    <button
-                                      type="button"
-                                      data-testid="calendar-export-zwo"
-                                      onClick={() => handleExportPlannedZwo(ev)}
-                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                    >
-                                      <Download className="w-3.5 h-3.5" weight="bold" />
-                                      <span>.ZWO</span>
-                                    </button>
-                                  )}
-                                  {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
-                                    <button
-                                      type="button"
-                                      data-testid="calendar-export-erg"
-                                      onClick={() => handleExportPlannedErg(ev)}
-                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                    >
-                                      <Download className="w-3.5 h-3.5" weight="bold" />
-                                      <span>.ERG</span>
-                                    </button>
-                                  )}
                                   <button
                                     type="button"
                                     data-testid="calendar-edit-planned-workout"
@@ -2097,15 +2022,56 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                   >
                                     <span>Edit</span>
                                   </button>
-                                  <button
-                                    type="button"
-                                    data-testid="calendar-share-workout"
-                                    onClick={() => handleSharePlannedWorkout(ev)}
-                                    className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                  >
-                                    <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
-                                    <span>Share</span>
-                                  </button>
+                                  <details className="relative inline-block">
+                                    <summary className="min-h-[44px] list-none inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer select-none">
+                                      <Download className="w-3.5 h-3.5" weight="bold" />
+                                      <span>Export ▾</span>
+                                    </summary>
+                                    <div className="absolute right-0 bottom-full mb-1 z-30 w-36 rounded-xl liquid-glass p-1 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                      {ev.workoutSyntax && (
+                                        <button
+                                          type="button"
+                                          data-testid="calendar-export-fit"
+                                          onClick={() => handleExportPlannedFit(ev)}
+                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                        >
+                                          <Download className="w-3.5 h-3.5" weight="bold" />
+                                          <span>.FIT</span>
+                                        </button>
+                                      )}
+                                      {ev.workoutSyntax && (
+                                        <button
+                                          type="button"
+                                          data-testid="calendar-export-zwo"
+                                          onClick={() => handleExportPlannedZwo(ev)}
+                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                        >
+                                          <Download className="w-3.5 h-3.5" weight="bold" />
+                                          <span>.ZWO</span>
+                                        </button>
+                                      )}
+                                      {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
+                                        <button
+                                          type="button"
+                                          data-testid="calendar-export-erg"
+                                          onClick={() => handleExportPlannedErg(ev)}
+                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                        >
+                                          <Download className="w-3.5 h-3.5" weight="bold" />
+                                          <span>.ERG</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        data-testid="calendar-share-workout"
+                                        onClick={() => handleSharePlannedWorkout(ev)}
+                                        className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                      >
+                                        <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
+                                        <span>Share</span>
+                                      </button>
+                                    </div>
+                                  </details>
                                 </div>
                               )}
                             </div>
@@ -2829,42 +2795,6 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                                 <span>Time on Track</span>
                                               </button>
                                             )}
-                                          {ev.workoutSyntax && (
-                                            <button
-                                              type="button"
-                                              data-testid="calendar-export-fit"
-                                              onClick={() => handleExportPlannedFit(ev)}
-                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                              title="Download Garmin .FIT workout file"
-                                            >
-                                              <Download className="w-3 h-3" weight="bold" />
-                                              <span>.FIT</span>
-                                            </button>
-                                          )}
-                                          {ev.workoutSyntax && (
-                                            <button
-                                              type="button"
-                                              data-testid="calendar-export-zwo"
-                                              onClick={() => handleExportPlannedZwo(ev)}
-                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                              title="Download Zwift .ZWO workout file"
-                                            >
-                                              <Download className="w-3 h-3" weight="bold" />
-                                              <span>.ZWO</span>
-                                            </button>
-                                          )}
-                                          {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
-                                            <button
-                                              type="button"
-                                              data-testid="calendar-export-erg"
-                                              onClick={() => handleExportPlannedErg(ev)}
-                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                              title="Download TrainerRoad .ERG workout file"
-                                            >
-                                              <Download className="w-3 h-3" weight="bold" />
-                                              <span>.ERG</span>
-                                            </button>
-                                          )}
                                           <button
                                             type="button"
                                             data-testid="calendar-edit-planned-workout"
@@ -2874,16 +2804,60 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                           >
                                             <span>Edit</span>
                                           </button>
-                                          <button
-                                            type="button"
-                                            data-testid="calendar-share-workout"
-                                            onClick={() => handleSharePlannedWorkout(ev)}
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer"
-                                            title="Share interactive preview or PNG card"
-                                          >
-                                            <ShareNetwork className="w-3 h-3" weight="bold" />
-                                            <span>Share</span>
-                                          </button>
+                                          <details className="relative inline-block">
+                                            <summary className="list-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] transition-colors cursor-pointer select-none">
+                                              <Download className="w-3 h-3" weight="bold" />
+                                              <span>Export ▾</span>
+                                            </summary>
+                                            <div className="absolute right-0 bottom-full mb-1 z-30 w-32 rounded-xl liquid-glass p-1 space-y-0.5 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                              {ev.workoutSyntax && (
+                                                <button
+                                                  type="button"
+                                                  data-testid="calendar-export-fit"
+                                                  onClick={() => handleExportPlannedFit(ev)}
+                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                  title="Download Garmin .FIT workout file"
+                                                >
+                                                  <Download className="w-3 h-3" weight="bold" />
+                                                  <span>.FIT</span>
+                                                </button>
+                                              )}
+                                              {ev.workoutSyntax && (
+                                                <button
+                                                  type="button"
+                                                  data-testid="calendar-export-zwo"
+                                                  onClick={() => handleExportPlannedZwo(ev)}
+                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                  title="Download Zwift .ZWO workout file"
+                                                >
+                                                  <Download className="w-3 h-3" weight="bold" />
+                                                  <span>.ZWO</span>
+                                                </button>
+                                              )}
+                                              {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
+                                                <button
+                                                  type="button"
+                                                  data-testid="calendar-export-erg"
+                                                  onClick={() => handleExportPlannedErg(ev)}
+                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                  title="Download TrainerRoad .ERG workout file"
+                                                >
+                                                  <Download className="w-3 h-3" weight="bold" />
+                                                  <span>.ERG</span>
+                                                </button>
+                                              )}
+                                              <button
+                                                type="button"
+                                                data-testid="calendar-share-workout"
+                                                onClick={() => handleSharePlannedWorkout(ev)}
+                                                className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                title="Share interactive preview or PNG card"
+                                              >
+                                                <ShareNetwork className="w-3 h-3" weight="bold" />
+                                                <span>Share</span>
+                                              </button>
+                                            </div>
+                                          </details>
                                         </div>
                                       ) : null}
                                     </div>

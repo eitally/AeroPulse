@@ -246,11 +246,11 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
     <Suspense fallback={<ViewLoadingSkeleton />}>
       {/* Contextual Sub-Switcher inside Training Calendar (Calendar | Activity Log + quick Stopwatch / Plan Builder) */}
       {(activeTab === 'calendar' || activeTab === 'activities') && (
-        <div className="rounded-2xl liquid-glass p-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="rounded-2xl liquid-glass px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2">
           <div
             role="tablist"
             aria-label="Training Calendar views"
-            className="flex items-center gap-1 p-1 bg-white/70 dark:bg-[#121B15]/80 backdrop-blur-md border border-emerald-900/15 dark:border-[#244331] rounded-xl shadow-xs"
+            className="flex items-center gap-1 p-1 bg-white/80 dark:bg-[#121B15]/90 border border-emerald-900/15 dark:border-[#244331] rounded-xl shadow-xs"
           >
             <button
               type="button"
@@ -290,7 +290,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
               type="button"
               data-testid="calendar-bar-stopwatch-btn"
               onClick={() => setActiveTab('stopwatch')}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#2B5B3F] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Timer className="w-3.5 h-3.5 ap-text-brand" />
               <span>Time Session</span>
@@ -299,7 +299,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
               type="button"
               data-testid="calendar-bar-plan-builder-btn"
               onClick={() => setActiveTab('totals')}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              className="hidden sm:inline-flex min-h-[34px] px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold items-center gap-1.5 cursor-pointer"
             >
               <Target className="w-3.5 h-3.5" />
               <span>Plan Builder</span>
@@ -339,7 +339,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
         activeTab === 'curves' ||
         activeTab === 'trends' ||
         activeTab === 'charts') && (
-        <div className="space-y-6">
+        <div className="space-y-3.5">
           <FitnessHealthView
             wellnessDays={effectiveWellnessDays}
             plannedEvents={effectivePlannedEvents}
