@@ -2,11 +2,13 @@ import React, { Suspense } from 'react';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import type { RosterTab } from './AthleteRosterModal';
+import type { UserGuideChapterId } from './UserGuideModal';
 import type {
   ActiveTab,
   AthleteProfile,
   AthletePrivacySettings,
   CoachChatMessage,
+  CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
   ConnectionStatus,
   DistanceUnit,
@@ -146,9 +148,11 @@ export interface CockpitModalsProps {
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
   onOpenFullScreenStopwatch?: () => void;
+  onOpenCoachWorkspace?: (subTab?: CoachWorkspaceSubTab) => void;
 
   // User Guide Modal
   showMetricsGuide: boolean;
+  guideInitialChapter?: UserGuideChapterId;
   onCloseMetricsGuide: () => void;
   onNavigateTab: (tab: ActiveTab) => void;
   onOpenDataSourcesFromGuide: () => void;
@@ -237,8 +241,10 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
   onSelectActiveTeam,
   onTeamsUpdated,
   onOpenFullScreenStopwatch,
+  onOpenCoachWorkspace,
 
   showMetricsGuide,
+  guideInitialChapter,
   onCloseMetricsGuide,
   onNavigateTab,
   onOpenDataSourcesFromGuide,
@@ -364,6 +370,7 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}
             onOpenFullScreenStopwatch={onOpenFullScreenStopwatch}
+            onOpenCoachWorkspace={onOpenCoachWorkspace ? () => onOpenCoachWorkspace('ROSTER') : undefined}
           />
         </Suspense>
       )}
@@ -373,7 +380,12 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
           <UserGuideModal
             isOpen={showMetricsGuide}
             onClose={onCloseMetricsGuide}
+            initialChapter={guideInitialChapter}
             onNavigateTab={onNavigateTab}
+            onOpenCoachWorkspace={(subTab) => {
+              onCloseMetricsGuide();
+              onOpenCoachWorkspace?.(subTab);
+            }}
             onOpenDataSources={() => {
               onCloseMetricsGuide();
               onOpenDataSourcesFromGuide();

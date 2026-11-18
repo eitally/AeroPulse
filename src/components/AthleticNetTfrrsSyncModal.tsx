@@ -633,7 +633,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
               )}
             </div>
             <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
-              Import High School XC/Track rosters, .ics schedules, non-5K XC course marks, and Collegiate TFRRS CSVs without fragile server bots.
+              Import rosters, .ics meet schedules, and official race marks from Athletic.net or TFRRS.
             </p>
           </div>
           <button
@@ -650,7 +650,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         {!activeTeam && (
           <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3.5 flex flex-wrap items-center justify-between gap-2.5">
             <div className="text-xs text-[#101411] dark:text-[#F4F7F4]">
-              <strong>No active team selected.</strong> Launch a pre-configured program in one click or paste below:
+              <strong>No team yet?</strong> Try a pre-configured demo program or paste your own roster below:
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -1096,7 +1096,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 </label>
               </div>
               <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
-                Shares upcoming meet schedules, course locations, and official race marks with parents and fans while strictly hiding athlete emails, GPS routes, HRV, sleep, RPE, and weight.
+                Shares meet schedules and official marks publicly; athlete emails, GPS routes, HRV, RPE, and weight stay private.
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <code className="flex-1 min-w-[200px] rounded-lg border border-stone-200 dark:border-[#244331] bg-white dark:bg-[#15231B] px-2.5 py-2 font-mono text-2xs text-[#101411] dark:text-[#F4F7F4] truncate">
@@ -1144,7 +1144,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
               </h3>
             </div>
             <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
-              Because Athletic.net (Cloudflare) and TFRRS (CloudFront WAF) block headless bots, this bookmarklet runs directly inside your already-open browser tab to extract clean roster tables, Athlete IDs, and meet results in one click.
+              One click inside any open Athletic.net or TFRRS browser tab sends that page&apos;s roster IDs or meet results straight to THRESH.
             </p>
             <ol className="list-decimal list-inside space-y-1.5 text-xs text-[#101411] dark:text-[#F4F7F4]">
               <li>

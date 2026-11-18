@@ -224,9 +224,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   >({});
   const [copiedSheet, setCopiedSheet] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showMetaDetailsMobile, setShowMetaDetailsMobile] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 640 : true
-  );
+  const [showMetaDetailsMobile, setShowMetaDetailsMobile] = useState<boolean>(false);
   const [showManualSetRows, setShowManualSetRows] = useState<boolean>(false);
   const [stopwatchWaveMode, setStopwatchWaveMode] = useState<'MASS' | 'POD_10S' | 'PURSUIT'>('POD_10S');
   const [isAssigning, setIsAssigning] = useState(false);
@@ -985,15 +983,15 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         <button
           type="button"
           onClick={() => setShowMetaDetailsMobile((prev) => !prev)}
-          className="sm:hidden w-full min-h-[44px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+          className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
         >
           <span className="truncate font-mono text-2xs">
-            {workoutDate}
+            {workoutTitle} · {workoutDate}
             {formatPracticeTime12h(scheduledTime) ? ` · ${formatPracticeTime12h(scheduledTime)}` : ''}
             {locationName ? ` · ${locationName}` : ''}
           </span>
           <span className="inline-flex items-center gap-1 text-2xs text-[#1C5436] dark:text-[#C8FF00] shrink-0">
-            <span>Schedule &amp; Venue</span>
+            <span>{showMetaDetailsMobile ? 'Hide Details' : 'Schedule, Time & Venue'}</span>
             <ChevronDown
               className={`w-3.5 h-3.5 transition-transform ${showMetaDetailsMobile ? 'rotate-180' : ''}`}
             />
@@ -1448,72 +1446,74 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </details>
       )}
 
-      {/* Wave Start Selector + Live Multi-Set Pace Pod Split Preview */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
-            Pod Splits &amp; Stopwatch Wave
-          </span>
-          <div
-            role="group"
-            aria-label="Stopwatch Wave Mode"
-            className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
-          >
-            {(
-              [
-                { id: 'MASS', label: 'Mass Gun' },
-                { id: 'POD_10S', label: 'Pod +10s' },
-                { id: 'PURSUIT', label: 'Pursuit' },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                aria-pressed={stopwatchWaveMode === opt.id}
-                onClick={() => setStopwatchWaveMode(opt.id)}
-                className={`min-h-[44px] sm:min-h-[30px] px-2 rounded-md cursor-pointer ${
-                  stopwatchWaveMode === opt.id
-                    ? 'ap-nav-volt-active'
-                    : 'text-[#43584B] dark:text-[#93A39A]'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div
-          data-testid="clipboard-pod-preview"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
-        >
-        {multiSetPreview.map((pod) => (
-          <div
-            key={pod.podId}
-            className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 space-y-1.5 text-xs"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-slate-900 dark:text-white truncate">
-                {pod.podName} · {pod.athletes.length} runners
-              </span>
-            </div>
-            <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
-              {pod.athletes.map((a) => a.name).join(', ')}
-            </div>
-            <div className="pt-1 border-t border-stone-200/70 dark:border-[#244331] space-y-0.5 font-mono text-2xs">
-              {pod.setSplits.map((sp) => (
-                <div key={`${pod.podId}-s-${sp.setIndex}`} className="flex justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300 truncate">{sp.summaryLabel}</span>
-                  <span className="font-bold text-[#1C5436] dark:text-[#C8FF00] shrink-0">
-                    {sp.formattedSplit}/rep
-                  </span>
-                </div>
+      {/* Wave Start Selector + Live Multi-Set Pace Pod Split Preview (Track & XC Running) */}
+      {clipboardSport === 'Running' && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
+              Pod Splits &amp; Stopwatch Wave
+            </span>
+            <div
+              role="group"
+              aria-label="Stopwatch Wave Mode"
+              className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
+            >
+              {(
+                [
+                  { id: 'MASS', label: 'Mass Gun' },
+                  { id: 'POD_10S', label: 'Pod +10s' },
+                  { id: 'PURSUIT', label: 'Pursuit' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  aria-pressed={stopwatchWaveMode === opt.id}
+                  onClick={() => setStopwatchWaveMode(opt.id)}
+                  className={`min-h-[44px] sm:min-h-[30px] px-2 rounded-md cursor-pointer ${
+                    stopwatchWaveMode === opt.id
+                      ? 'ap-nav-volt-active'
+                      : 'text-[#43584B] dark:text-[#93A39A]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
             </div>
           </div>
-        ))}
+
+          <div
+            data-testid="clipboard-pod-preview"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
+          >
+            {multiSetPreview.map((pod) => (
+              <div
+                key={pod.podId}
+                className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 space-y-1.5 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 dark:text-white truncate">
+                    {pod.podName} · {pod.athletes.length} runners
+                  </span>
+                </div>
+                <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
+                  {pod.athletes.map((a) => a.name).join(', ')}
+                </div>
+                <div className="pt-1 border-t border-stone-200/70 dark:border-[#244331] space-y-0.5 font-mono text-2xs">
+                  {pod.setSplits.map((sp) => (
+                    <div key={`${pod.podId}-s-${sp.setIndex}`} className="flex justify-between gap-2">
+                      <span className="text-slate-600 dark:text-slate-300 truncate">{sp.summaryLabel}</span>
+                      <span className="font-bold text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+                        {sp.formattedSplit}/rep
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Primary Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
@@ -1529,15 +1529,17 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             <span>{isAssigning ? 'Assigning…' : 'Assign Workout'}</span>
           </button>
 
-          <button
-            type="button"
-            data-testid="clipboard-launch-stopwatch-btn"
-            onClick={handleLaunchStopwatch}
-            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-4 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Timer className="w-3.5 h-3.5 ap-text-brand" />
-            <span>Launch in Stopwatch</span>
-          </button>
+          {clipboardSport === 'Running' && (
+            <button
+              type="button"
+              data-testid="clipboard-launch-stopwatch-btn"
+              onClick={handleLaunchStopwatch}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-4 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Timer className="w-3.5 h-3.5 ap-text-brand" />
+              <span>Launch in Stopwatch</span>
+            </button>
+          )}
         </div>
 
         {assignFeedback && (

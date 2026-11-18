@@ -324,9 +324,8 @@ export function useWorkspaceOnboarding({
         setActiveTab('coach');
         setCoachSubTab('CLIPBOARD');
       } else if (payload.entryTarget === 'CREATE_TEAM') {
-        setActiveTab('fitness');
-        setRosterInitialTab('TEAMS_BRANDING');
-        setIsRosterModalOpen(true);
+        setActiveTab('coach');
+        setCoachSubTab('ROSTER');
       } else {
         setActiveTab('fitness');
       }

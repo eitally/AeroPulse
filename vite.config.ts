@@ -54,7 +54,7 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
-          globIgnores: ['**/brand/*.png'],
+          globIgnores: ['**/brand/*.png', '**/docs/**/*.{png,jpg,jpeg,webp}'],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,

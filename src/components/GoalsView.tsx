@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Award,
   Calendar as CalendarIcon,
   CheckCircle2,
@@ -143,6 +144,7 @@ interface GoalsViewProps {
   onSaveProfileOverride?: (updatedProfile: AthleteProfile) => Promise<void>;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSwitchToCalendar?: () => void;
+  onBackToCoachWorkspace?: () => void;
   onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt?: (prompt: string) => void;
   onOpenTracksideStopwatch?: () => void;
@@ -255,6 +257,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   onDeletePlanBlock,
   onOpenOfficialRaceModal,
   onSwitchToCalendar,
+  onBackToCoachWorkspace,
   onOpenTracksideStopwatch,
 }) => {
   const formId = useId();
@@ -847,6 +850,18 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               </button>
             </div>
 
+            {publishAudience !== 'SELF' && onBackToCoachWorkspace && (
+              <button
+                type="button"
+                data-testid="goals-back-to-coach-btn"
+                onClick={onBackToCoachWorkspace}
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-bold whitespace-nowrap cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Coach Workspace</span>
+              </button>
+            )}
+
             {onOpenOfficialRaceModal && (
               <button
                 type="button"
@@ -945,16 +960,24 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           : 'Undo Block'}
                     </button>
                   )}
-                  {onSwitchToCalendar && (
+                  {(publishAudience !== 'SELF' && onBackToCoachWorkspace) || onSwitchToCalendar ? (
                     <button
                       type="button"
-                      onClick={onSwitchToCalendar}
+                      onClick={() =>
+                        publishAudience !== 'SELF' && onBackToCoachWorkspace
+                          ? onBackToCoachWorkspace()
+                          : onSwitchToCalendar?.()
+                      }
                       className="inline-flex items-center gap-1 font-bold underline hover:opacity-80 cursor-pointer"
                     >
-                      <span>View on Calendar</span>
+                      <span>
+                        {publishAudience !== 'SELF' && onBackToCoachWorkspace
+                          ? 'View in Team Plan'
+                          : 'View on Calendar'}
+                      </span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             ) : activeCalendarBlock && onDeletePlanBlock ? (

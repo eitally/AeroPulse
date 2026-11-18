@@ -103,6 +103,7 @@ export interface WorkspaceRouterProps {
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
+  onOpenCoachGuide?: () => void;
   stravaSyncWindow?: StravaSyncWindow;
   onOpenDataSources?: () => void;
 
@@ -227,6 +228,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   onSelectActiveTeam,
   onTeamsUpdated,
   onOpenPublicTeamHub,
+  onOpenCoachGuide,
   stravaSyncWindow,
   onOpenDataSources,
 
@@ -480,6 +482,10 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onSaveProfileOverride={handleSaveProfileOverride}
           onSelectActivity={handleSelectActivityAndOpenTab}
           onSwitchToCalendar={handleSwitchToCalendarTab}
+          onBackToCoachWorkspace={() => {
+            setActiveTab('coach');
+            setCoachSubTab('TEAM_PLAN');
+          }}
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
@@ -538,6 +544,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenAthleteToday={handleOpenTodayTab}
           onOpenRosterModal={handleOpenRosterModal}
           onOpenPublicTeamHub={onOpenPublicTeamHub}
+          onOpenCoachGuide={onOpenCoachGuide}
         />
       )}
 
