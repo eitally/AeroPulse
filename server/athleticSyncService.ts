@@ -30,6 +30,7 @@ import {
   inferEventGroupFromSeedMark,
 } from '../src/physiology/teamOnboardingEngine.ts';
 import { getLocalDateIso } from '../src/physiology/stravaLoadCalibration.ts';
+import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import { assertSafeExternalFetch } from './securityUtils.ts';
 import {
   addTeamToUserIndex,
@@ -350,6 +351,9 @@ function findOrCreateExternalMembership(
     return { mem: existing, created: false };
   }
 
+  const isMinorImport = Boolean(
+    candidate.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL'
+  );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
   const rawToken = crypto.randomBytes(12).toString('base64url');
   const createdMem: StoredMembershipInternal = {
@@ -362,8 +366,8 @@ function findOrCreateExternalMembership(
       : 'DISTANCE',
     invitedName: String(candidate.name || 'Team Athlete').trim().slice(0, 64),
     graduationYear: candidate.graduationYear,
-    isMinorU18: safeSportOn,
-    parentConsentStatus: safeSportOn ? 'PENDING' : 'NOT_REQUIRED',
+    isMinorU18: isMinorImport,
+    parentConsentStatus: isMinorImport ? 'PENDING' : 'NOT_REQUIRED',
     seedMarkOrFtp: candidate.seedMarkOrFtp,
     externalSource: candidate.externalSource,
     externalAthleteId: candidate.externalAthleteId,
@@ -494,6 +498,9 @@ export async function applyExternalTeamSyncBatch(params: {
     if (!mem.seedMarkOrFtp) {
       mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
     }
+    if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
+      await archiveCoachActivitiesForMember(mem, [activity]).catch(() => undefined);
+    }
     recordedResults += 1;
   }
 
@@ -524,7 +531,7 @@ export async function getPublicTeamHubBySlugOrCode(
   slugOrCode: string
 ): Promise<PublicTeamHubPayload> {
   const doc = await findTeamDocumentByCodeOrSlug(slugOrCode);
-  if (!doc || doc.brand.externalSync?.enablePublicParentHub === false) {
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
     return {
       found: false,
       error: 'Team Hub not found or public parent access is turned off.',
@@ -582,9 +589,19 @@ export async function getPublicTeamHubBySlugOrCode(
 
       officialResultCount += officialResults.length;
 
+      const abbreviateUnconsentedMinor = Boolean(
+        !m.externalSource && m.isMinorU18 && m.parentConsentStatus === 'PENDING'
+      );
+      let displayName = m.invitedName;
+      if (abbreviateUnconsentedMinor) {
+        const parts = m.invitedName.trim().split(/\s+/).filter(Boolean);
+        displayName =
+          parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || 'Athlete';
+      }
+
       return {
         membershipId: m.membershipId,
-        name: m.invitedName,
+        name: displayName,
         squadGroup: m.squadGroup,
         ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
         ...(m.graduationYear ? { graduationYear: m.graduationYear } : {}),
@@ -636,7 +653,7 @@ export async function followTeamAsParentOrFan(params: {
   if (!doc) {
     return { ok: false, error: 'Team not found for this code or URL.' };
   }
-  if (doc.brand.externalSync?.enablePublicParentHub === false) {
+  if (!doc.brand.externalSync?.enablePublicParentHub) {
     return { ok: false, error: 'Public parent/supporter following is disabled for this team.' };
   }
 

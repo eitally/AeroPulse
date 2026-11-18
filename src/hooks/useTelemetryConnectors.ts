@@ -576,6 +576,25 @@ export function useTelemetryConnectors({
     await fetchServerConfigStatus();
   };
 
+  const handleDisconnectStravaOnly = async () => {
+    try {
+      localStorage.removeItem('aeropulse_strava_access_token');
+      localStorage.removeItem('aeropulse_strava_refresh_token');
+      localStorage.removeItem('aeropulse_strava_expires_at');
+      localStorage.removeItem('aeropulse_strava_athlete_id');
+      localStorage.removeItem('aeropulse_strava_athlete_name');
+      localStorage.removeItem('aeropulse_strava_sync_policy');
+    } catch {
+      // ignore
+    }
+    await fetch('/api/strava/disconnect', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getSavedIntervalsHeaders(),
+    }).catch(() => null);
+    await fetchServerConfigStatus();
+  };
+
   const handleUpdateStravaSyncPolicy = async (
     windowChoice: StravaSyncWindow,
     importProfileAndGear = true
@@ -1036,6 +1055,7 @@ export function useTelemetryConnectors({
     handleDisconnectWahoo,
     handleLaunchPolarOAuth,
     handleDisconnectPolar,
+    handleDisconnectStravaOnly,
     handleUpdateStravaSyncPolicy,
     handleClearPersistedArchive,
     handleSaveStravaCredentials,

@@ -539,6 +539,7 @@ export interface AthleteProfile {
   thresholdHistory?: ThresholdHistoryEntry[];
   // Safe-Sport / Scholastic & Collegiate Athlete Settings
   safeSportHideWeight?: boolean; // RED-S protection: masks weight (kg/lbs) & W/kg in UI
+  birthMonthYear?: string; // Conservative 'YYYY-MM' month-year for U13 COPPA / U18 Safe-Sport / 18+ transitions
   academicDivision?: ScholasticDivision;
   competitionGender?: 'MEN' | 'WOMEN';
   ferritinNgMl?: number; // Optional serum ferritin lab tracking (ng/mL)
@@ -583,6 +584,7 @@ export interface ThreshUser {
   email: string;
   name: string;
   picture?: string;
+  birthMonthYear?: string;
   role: 'athlete' | 'coach' | 'admin';
   createdAt: string;
   updatedAt: string;
@@ -670,6 +672,9 @@ export interface ConnectedAthleteRecord {
   primaryGoalSummary: string;
   primarySport: SportCategory;
   eventGroup?: CoachEventGroup;
+  teamMemberStatus?: TeamInviteStatus;
+  isMinorU18?: boolean;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
   athleteProfile: AthleteProfile;
   privacySettings: AthletePrivacySettings;
   wellnessDays: UnifiedWellnessDay[];
@@ -1290,7 +1295,14 @@ export type TeamOrgType =
 
 export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE' | 'PARENT_FOLLOWER';
 
-export type TeamInviteStatus = 'INVITED' | 'OPENED' | 'ACTIVE' | 'REVOKED';
+export type TeamInviteStatus =
+  | 'INVITED'
+  | 'OPENED'
+  | 'ACTIVE'
+  | 'INJURED'
+  | 'OFF_SEASON'
+  | 'ALUMNI'
+  | 'REVOKED';
 
 export type TeamPlanTier = 'SANDBOX' | 'FOUNDING_TEAM';
 
@@ -1345,6 +1357,7 @@ export interface TeamAthleteLiveSnapshot {
   ftpWatts?: number;
   thresholdPaceSecsPerKm?: number;
   safeSportHideWeight: boolean;
+  birthMonthYear?: string;
   sharingTier?: CoachDataSharingTier;
   privacySettings?: AthletePrivacySettings;
   wellnessDays?: UnifiedWellnessDay[];
@@ -1374,6 +1387,7 @@ export interface TeamMembershipRecord {
   parentGuardianEmail?: string;
   graduationYear?: number;
   birthYear?: number;
+  birthMonthYear?: string;
   isMinorU18: boolean;
   parentConsentStatus?: ParentConsentStatus;
   parentConsentToken?: string;
@@ -1389,6 +1403,8 @@ export interface TeamMembershipRecord {
   invitedAt: string;
   openedAt?: string;
   joinedAt?: string;
+  leftAt?: string;
+  graduatedAt?: string;
   liveSnapshot?: TeamAthleteLiveSnapshot;
   coachRecordedActivities?: UnifiedActivity[];
 }
@@ -1577,6 +1593,7 @@ export interface AthleteCloudStateEnvelope {
   athleteProfile?: Partial<AthleteProfile>;
   distanceUnit?: DistanceUnit;
   sessionCheckIns?: SessionCheckInRecord[];
+  coachArchivedActivities?: UnifiedActivity[];
 }
 
 

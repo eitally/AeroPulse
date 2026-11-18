@@ -21,10 +21,17 @@ import type {
   DistanceUnit,
   PrivacyVisibilityTier,
   TeamSummaryWithRole,
+  ThreshUser,
 } from '../types';
 import { useModalDialog } from '../hooks/useModalDialog';
 import { useTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { AeroPulseLogo } from './AeroPulseLogo';
+import {
+  changePrimaryEmailApi,
+  deleteAccountApi,
+  leaveOrGraduateTeamApi,
+  revokeGuardianCcApi,
+} from '../utils/teamLifecycleApi';
 
 export type RosterTab =
   | 'TEAMS_BRANDING'
@@ -80,7 +87,10 @@ interface AthleteRosterModalProps {
   resendConfigured?: boolean;
   initialTab?: RosterTab;
   onSelectActiveTeam?: (teamId: string | null) => void;
-  onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
+  currentUser?: ThreshUser | null;
+  onUserUpdated?: (user: ThreshUser) => void;
+  onAccountDeleted?: () => void;
   onOpenFullScreenStopwatch?: () => void;
   onOpenCoachWorkspace?: () => void;
 }
@@ -101,6 +111,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   myTeams = [],
   activeTeamId = null,
   initialTab = 'CONNECT_INVITE',
+  onTeamsUpdated,
+  currentUser,
+  onUserUpdated,
+  onAccountDeleted,
   onOpenFullScreenStopwatch,
   onOpenCoachWorkspace,
 }) => {
@@ -108,6 +122,104 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     normalizeConnectionsTab(initialTab)
   );
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Team membership lifecycle, login email mobility, and account erasure state
+  const [accountEmailInput, setAccountEmailInput] = useState(currentUser?.email || '');
+  const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [privacyActionMsg, setPrivacyActionMsg] = useState<string | null>(null);
+  const [privacyActionErr, setPrivacyActionErr] = useState<string | null>(null);
+  const [busyTeamActionId, setBusyTeamActionId] = useState<string | null>(null);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.email) {
+      setAccountEmailInput(currentUser.email);
+    }
+  }, [currentUser?.email]);
+
+  const handleLeaveOrGraduateTeam = async (
+    teamId: string,
+    mode: 'LEAVE' | 'GRADUATE_ALUMNI'
+  ) => {
+    setBusyTeamActionId(teamId);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      const data = await leaveOrGraduateTeamApi(teamId, mode);
+      if (Array.isArray(data.teams)) {
+        onTeamsUpdated?.(data.teams, data.teams[0]?.brand?.teamId ?? null);
+      }
+      setPrivacyActionMsg(
+        mode === 'GRADUATE_ALUMNI'
+          ? 'Moved to Alumni. Your official race marks remain credited while live wellness sharing is stopped.'
+          : 'Left team. Coach-recorded Stopwatch splits & official meet marks are saved in your personal history.'
+      );
+    } catch (err) {
+      setPrivacyActionErr(err instanceof Error ? err.message : 'Could not update team membership.');
+    } finally {
+      setBusyTeamActionId(null);
+    }
+  };
+
+  const handleRevokeGuardianCc = async (teamId: string) => {
+    setBusyTeamActionId(teamId);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      const data = await revokeGuardianCcApi(teamId);
+      if (Array.isArray(data.teams)) {
+        onTeamsUpdated?.(data.teams, activeTeamId);
+      }
+      setPrivacyActionMsg('Parent/guardian email CC removed for this team.');
+    } catch (err) {
+      setPrivacyActionErr(err instanceof Error ? err.message : 'Could not remove parent/guardian CC.');
+    } finally {
+      setBusyTeamActionId(null);
+    }
+  };
+
+  const handleChangePrimaryEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = accountEmailInput.trim().toLowerCase();
+    if (!clean || !clean.includes('@')) {
+      setPrivacyActionErr('Enter a valid email address.');
+      return;
+    }
+    setIsUpdatingEmail(true);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      const data = await changePrimaryEmailApi(clean);
+      if (data.user) onUserUpdated?.(data.user);
+      setPrivacyActionMsg(
+        'Login email updated — your training history and connected apps stay intact.'
+      );
+    } catch (err) {
+      setPrivacyActionErr(err instanceof Error ? err.message : 'Could not update login email.');
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
+
+  const handlePermanentAccountDelete = async () => {
+    if (deleteConfirmText.trim() !== 'DELETE') return;
+    setIsDeletingAccount(true);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      await deleteAccountApi();
+      onClose();
+      onAccountDeleted?.();
+    } catch (err) {
+      setPrivacyActionErr(
+        err instanceof Error ? err.message : 'Could not permanently delete account.'
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -724,6 +836,192 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     className="mt-1 accent-[#10B981] w-4 h-4"
                   />
                 </label>
+              </div>
+
+              {privacyActionErr && (
+                <div className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-600 dark:text-rose-300">
+                  {privacyActionErr}
+                </div>
+              )}
+              {privacyActionMsg && (
+                <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                  {privacyActionMsg}
+                </div>
+              )}
+
+              {myTeams.length > 0 && (
+                <div className="border-t border-stone-200/80 dark:border-slate-800 pt-4 space-y-3">
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      Team Membership &amp; Guardian Controls
+                    </h4>
+                    <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
+                      Leaving a team stops live wellness sharing immediately while saving all coach-timed splits and official meet marks into your personal THRESH vault.
+                    </p>
+                  </div>
+                  <div className="divide-y divide-stone-200/70 dark:divide-slate-800">
+                    {myTeams.map((team) => {
+                      const mine = team.memberships.find(
+                        (m) => m.membershipId === team.myMembershipId
+                      );
+                      const isTeamBusy = busyTeamActionId === team.brand.teamId;
+                      const showGuardianRemove = Boolean(
+                        mine && !mine.isMinorU18 && mine.parentGuardianEmail
+                      );
+                      const canGraduateSelf =
+                        team.myRole === 'ATHLETE' &&
+                        (team.brand.orgType === 'HIGH_SCHOOL' ||
+                          team.brand.orgType === 'COLLEGIATE') &&
+                        mine?.status !== 'ALUMNI';
+
+                      return (
+                        <div
+                          key={team.brand.teamId}
+                          className="py-2.5 flex flex-wrap items-center justify-between gap-2.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                              {team.brand.name}
+                            </div>
+                            <div className="text-2xs font-mono text-slate-500 dark:text-slate-400">
+                              Role: {team.myRole.replace('_', ' ')}
+                              {mine?.status === 'ALUMNI' ? ' · Alumni' : ''}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {showGuardianRemove && (
+                              <button
+                                type="button"
+                                data-testid={`remove-guardian-${team.brand.teamId}`}
+                                disabled={isTeamBusy}
+                                onClick={() => void handleRevokeGuardianCc(team.brand.teamId)}
+                                className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                              >
+                                Remove Parent/Guardian CC
+                              </button>
+                            )}
+                            {canGraduateSelf && (
+                              <button
+                                type="button"
+                                data-testid={`privacy-graduate-team-${team.brand.teamId}`}
+                                disabled={isTeamBusy}
+                                onClick={() =>
+                                  void handleLeaveOrGraduateTeam(
+                                    team.brand.teamId,
+                                    'GRADUATE_ALUMNI'
+                                  )
+                                }
+                                className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                              >
+                                Graduate to Alumni
+                              </button>
+                            )}
+                            {team.myRole !== 'HEAD_COACH' && (
+                              <button
+                                type="button"
+                                data-testid={`privacy-leave-team-${team.brand.teamId}`}
+                                disabled={isTeamBusy}
+                                onClick={() =>
+                                  void handleLeaveOrGraduateTeam(team.brand.teamId, 'LEAVE')
+                                }
+                                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
+                              >
+                                Leave Team (Keep My Data)
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-stone-200/80 dark:border-slate-800 pt-4 space-y-4">
+                <form
+                  onSubmit={(e) => void handleChangePrimaryEmail(e)}
+                  className="space-y-2"
+                >
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      Login Email Mobility &amp; Account Erasure
+                    </h4>
+                    <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
+                      Switch away from a graduating school email without losing your workouts, or permanently erase your THRESH account.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="email"
+                      data-testid="account-change-email-input"
+                      aria-label="New primary login email"
+                      value={accountEmailInput}
+                      onChange={(e) => setAccountEmailInput(e.target.value)}
+                      placeholder="personal.email@example.com"
+                      className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="submit"
+                      data-testid="account-change-email-btn"
+                      disabled={isUpdatingEmail || !accountEmailInput.trim()}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    >
+                      {isUpdatingEmail ? 'Updating…' : 'Update Email'}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="pt-2 space-y-2.5">
+                  {!showDeleteAccountConfirm ? (
+                    <button
+                      type="button"
+                      data-testid="account-delete-open-btn"
+                      onClick={() => setShowDeleteAccountConfirm(true)}
+                      className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete My Account…</span>
+                    </button>
+                  ) : (
+                    <div className="space-y-2.5 pt-2 border-t border-rose-500/20">
+                      <p className="text-xs text-rose-700 dark:text-rose-300">
+                        This permanently erases your THRESH login credentials, encrypted cloud vault, connected watch/Strava tokens, and removes you from team rosters. Type <strong className="font-mono">DELETE</strong> below to confirm.
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          data-testid="account-delete-confirm-input"
+                          aria-label="Type DELETE to confirm permanent account deletion"
+                          value={deleteConfirmText}
+                          onChange={(e) => setDeleteConfirmText(e.target.value)}
+                          placeholder="Type DELETE to confirm"
+                          className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-rose-400/60 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        />
+                        <button
+                          type="button"
+                          data-testid="account-delete-submit-btn"
+                          disabled={
+                            isDeletingAccount || deleteConfirmText.trim() !== 'DELETE'
+                          }
+                          onClick={() => void handlePermanentAccountDelete()}
+                          className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer disabled:opacity-40 whitespace-nowrap"
+                        >
+                          {isDeletingAccount ? 'Deleting…' : 'Permanently Delete Account'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowDeleteAccountConfirm(false);
+                            setDeleteConfirmText('');
+                          }}
+                          className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

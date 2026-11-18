@@ -19,6 +19,114 @@ interface UseTeamRosterParams {
   isSessionLoggedOut: boolean;
 }
 
+const PERSONAL_MODE_STORAGE_KEY = 'thresh_personal_mode_v1';
+
+export function isExplicitPersonalModeSaved(): boolean {
+  try {
+    return localStorage.getItem(PERSONAL_MODE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function resolveEffectiveActiveTeam(
+  teams: TeamSummaryWithRole[],
+  activeTeamId: string | null,
+  explicitPersonalMode: boolean
+): TeamSummaryWithRole | null {
+  if (!teams.length) return null;
+  if (explicitPersonalMode) return null;
+  if (activeTeamId) {
+    const match = teams.find((t) => t.brand.teamId === activeTeamId);
+    if (match) return match;
+  }
+  return teams[0];
+}
+
+export function buildMergedTeamBroadcastEvents(
+  teams: TeamSummaryWithRole[],
+  activeTeam: TeamSummaryWithRole | null,
+  isExplicitPersonalMode: boolean
+): PlannedWorkoutEvent[] {
+  if (isExplicitPersonalMode || !teams.length) return [];
+  const sourceTeams = activeTeam
+    ? [activeTeam, ...teams.filter((t) => t.brand.teamId !== activeTeam.brand.teamId && t.myRole === 'ATHLETE')]
+    : teams;
+  const out: PlannedWorkoutEvent[] = [];
+  const seenIds = new Set<string>();
+  const isMultiTeam = sourceTeams.length > 1;
+
+  for (const teamSource of sourceTeams) {
+    if (!Array.isArray(teamSource.broadcastWorkouts)) continue;
+    const isTeamCoach =
+      teamSource.myRole === 'HEAD_COACH' || teamSource.myRole === 'ASSISTANT_COACH';
+    for (const bw of teamSource.broadcastWorkouts) {
+      if (!bw || seenIds.has(bw.broadcastId)) continue;
+      if (!isTeamCoach) {
+        const hasOv = Boolean(
+          teamSource.myMembershipId && bw.athleteOverrides?.[teamSource.myMembershipId]
+        );
+        if (!hasOv) {
+          if (
+            Boolean(teamSource.myMembershipId) &&
+            Array.isArray(bw.targetMembershipIds) &&
+            bw.targetMembershipIds.length > 0 &&
+            !bw.targetMembershipIds.includes(teamSource.myMembershipId)
+          ) {
+            continue;
+          }
+          const squadMatch =
+            bw.targetSquadGroup === 'ALL' || bw.targetSquadGroup === teamSource.mySquadGroup;
+          if (!squadMatch) continue;
+          if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+            if (!teamSource.myEventGroup || !bw.targetEventGroups.includes(teamSource.myEventGroup)) {
+              continue;
+            }
+          }
+        }
+      }
+      seenIds.add(bw.broadcastId);
+      const ov = teamSource.myMembershipId
+        ? bw.athleteOverrides?.[teamSource.myMembershipId]
+        : undefined;
+      const baseName = ov?.name || bw.name;
+      out.push({
+        id: bw.broadcastId,
+        date: bw.date,
+        name: isMultiTeam ? `[${teamSource.brand.shortName}] ${baseName}` : baseName,
+        sportCategory: bw.sportCategory,
+        environmentPreference: 'FLEXIBLE',
+        description: ov?.description || bw.description,
+        plannedLoad: ov?.plannedLoad ?? bw.plannedLoad,
+        plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
+        targetZoneSummary: `${teamSource.brand.shortName} Squad Session`,
+        workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+        ...(ov?.scheduledTime || bw.scheduledTime
+          ? { scheduledTime: ov?.scheduledTime || bw.scheduledTime }
+          : {}),
+        ...(ov?.sessionSlot || bw.sessionSlot
+          ? { sessionSlot: ov?.sessionSlot || bw.sessionSlot }
+          : {}),
+        ...(ov?.locationName || bw.locationName
+          ? { locationName: ov?.locationName || bw.locationName }
+          : {}),
+        ...(ov?.locationCategory || bw.locationCategory
+          ? { locationCategory: ov?.locationCategory || bw.locationCategory }
+          : {}),
+        ...(ov?.meetingNotes || bw.meetingNotes
+          ? { meetingNotes: ov?.meetingNotes || bw.meetingNotes }
+          : {}),
+        ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
+        ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
+        ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),
+        ...(typeof bw.planWeekNum === 'number' ? { planWeekNum: bw.planWeekNum } : {}),
+        source: 'USER',
+      });
+    }
+  }
+  return out;
+}
+
 export function buildConnectedRosterFromTeam(
   team: TeamSummaryWithRole | null
 ): ConnectedAthleteRecord[] {
@@ -29,7 +137,14 @@ export function buildConnectedRosterFromTeam(
 
   return team.memberships
     .filter((m) => {
-      if (m.status === 'REVOKED' || m.role === 'PARENT_FOLLOWER') return false;
+      if (
+        m.status === 'REVOKED' ||
+        m.role === 'PARENT_FOLLOWER' ||
+        m.role === 'HEAD_COACH' ||
+        m.role === 'ASSISTANT_COACH'
+      ) {
+        return false;
+      }
       if (m.membershipId === team.myMembershipId && team.myRole === 'ATHLETE') {
         return false;
       }
@@ -93,6 +208,12 @@ export function buildConnectedRosterFromTeam(
         ftp: snap?.ftpWatts || 250,
         thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
         safeSportHideWeight: hideWeight,
+        ...(m.birthMonthYear ? { birthMonthYear: m.birthMonthYear } : {}),
+        ...(m.genderDivision === 'M'
+          ? { competitionGender: 'MEN' }
+          : m.genderDivision === 'F'
+            ? { competitionGender: 'WOMEN' }
+            : {}),
       });
 
       const squadBroadcasts: PlannedWorkoutEvent[] = (team.broadcastWorkouts || [])
@@ -140,6 +261,9 @@ export function buildConnectedRosterFromTeam(
         location: `${team.brand.shortName} · ${m.squadGroup}`,
         primarySport: team.brand.primarySport === 'Cycling' ? 'Cycling' : 'Running',
         ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
+        teamMemberStatus: m.status,
+        isMinorU18: m.isMinorU18,
+        ...(m.genderDivision ? { genderDivision: m.genderDivision } : {}),
         role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
         status: 'CONNECTED',
         connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),
@@ -190,11 +314,16 @@ export function useTeamRoster({
 
   const [activeTeamId, setActiveTeamId] = useState<string | null>(() => {
     try {
+      if (localStorage.getItem(PERSONAL_MODE_STORAGE_KEY) === '1') return null;
       return localStorage.getItem('thresh_active_team_id_v1') || null;
     } catch {
       return null;
     }
   });
+
+  const [explicitPersonalMode, setExplicitPersonalMode] = useState<boolean>(() =>
+    isExplicitPersonalModeSaved()
+  );
 
   const [resendConfigured, setResendConfigured] = useState<boolean>(false);
   const [pendingUrlJoinOffer, setPendingUrlJoinOffer] = useState<{
@@ -206,17 +335,25 @@ export function useTeamRoster({
 
   const activeTeam = useMemo(
     () =>
-      (activeTeamId && myTeams.find((t) => t.brand.teamId === activeTeamId)) || null,
-    [myTeams, activeTeamId]
+      explicitPersonalMode
+        ? null
+        : (activeTeamId && myTeams.find((t) => t.brand.teamId === activeTeamId)) || null,
+    [myTeams, activeTeamId, explicitPersonalMode]
   );
 
   const handleSelectActiveTeam = useCallback(
     (nextId: string | null) => {
       setActiveTeamId(nextId);
+      setExplicitPersonalMode(nextId === null);
       if (isSampleDemoMode) return;
       try {
-        if (nextId) localStorage.setItem('thresh_active_team_id_v1', nextId);
-        else localStorage.removeItem('thresh_active_team_id_v1');
+        if (nextId) {
+          localStorage.setItem('thresh_active_team_id_v1', nextId);
+          localStorage.removeItem(PERSONAL_MODE_STORAGE_KEY);
+        } else {
+          localStorage.removeItem('thresh_active_team_id_v1');
+          localStorage.setItem(PERSONAL_MODE_STORAGE_KEY, '1');
+        }
       } catch {
         // ignore
       }
@@ -235,11 +372,11 @@ export function useTeamRoster({
       }
       if (nextActiveId !== undefined) {
         handleSelectActiveTeam(nextActiveId);
-      } else if (!activeTeamId && nextTeams.length > 0) {
+      } else if (!activeTeamId && !explicitPersonalMode && nextTeams.length > 0) {
         handleSelectActiveTeam(nextTeams[0].brand.teamId);
       }
     },
-    [isSampleDemoMode, activeTeamId, handleSelectActiveTeam]
+    [isSampleDemoMode, activeTeamId, explicitPersonalMode, handleSelectActiveTeam]
   );
 
   useEffect(() => {
@@ -270,7 +407,7 @@ export function useTeamRoster({
           } catch {
             // ignore
           }
-          if (!activeTeamId && data.teams.length > 0) {
+          if (!activeTeamId && !isExplicitPersonalModeSaved() && data.teams.length > 0) {
             handleSelectActiveTeam(data.teams[0].brand.teamId);
           }
         }
@@ -312,19 +449,20 @@ export function useTeamRoster({
   const handleAcceptJoinOffer = useCallback(async () => {
     if (!pendingUrlJoinOffer) return;
     try {
-      const resp = await fetch('/api/teams/join', {
+      const resp = await fetch('/api/teams/join-claim', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
         body: JSON.stringify({
+          origin: window.location.origin,
           codeOrSlug: pendingUrlJoinOffer.codeOrSlug,
-          token: pendingUrlJoinOffer.token,
+          inviteToken: pendingUrlJoinOffer.token,
         }),
       });
       if (resp.ok) {
         const data = await resp.json();
         if (Array.isArray(data.teams)) {
-          handleTeamsUpdated(data.teams, data.team?.teamId);
+          handleTeamsUpdated(data.teams, data.team?.brand?.teamId || data.team?.teamId);
         }
       }
     } catch {
@@ -357,6 +495,7 @@ export function useTeamRoster({
     activeTeamId,
     setActiveTeamId,
     activeTeam,
+    explicitPersonalMode,
     resendConfigured,
     pendingUrlJoinOffer,
     handleSelectActiveTeam,

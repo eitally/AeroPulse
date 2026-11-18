@@ -10,6 +10,7 @@ import {
   type DigestFallbackAthleteInput,
 } from '../physiology/sessionCheckInAndDigestEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import type { ConnectedAthleteRecord } from '../types';
 import { Adherence7dDots } from './charts/MicroGraphics';
 
@@ -51,7 +52,12 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
       const watchLight = evaluateSafeSportPatternWatch({
         activities: ath.activities || [],
         wellnessDays: ath.wellnessDays || [],
-        isMinorU18: Boolean(ath.athleteProfile.safeSportHideWeight),
+        isMinorU18:
+          typeof ath.isMinorU18 === 'boolean'
+            ? ath.isMinorU18
+            : resolveAthleteAgeTier({
+                birthMonthYear: ath.athleteProfile.birthMonthYear,
+              }).isMinorU18,
       }).trafficLight;
       map.set(ath.id, {
         hrv: latestW?.hrvRMSSD ?? 0,
@@ -175,7 +181,9 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
             const hasWatchAlert =
               readiness && readiness.watchLight !== 'GREEN_CLEAR';
             const badgeClass =
-              row.attentionReason === 'PAIN_FLAG' || readiness?.watchLight === 'RED_MEDICAL_REVIEW'
+              row.attentionReason === 'PAIN_FLAG' ||
+              row.attentionReason === 'INJURED' ||
+              readiness?.watchLight === 'RED_MEDICAL_REVIEW'
                 ? 'ap-status-strained'
                 : row.attentionReason === 'HIGH_RPE_STRAIN' ||
                     row.attentionReason === 'HIGH_LIFE_STRESS' ||
@@ -197,17 +205,19 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                     >
                       {row.attentionReason === 'PAIN_FLAG'
                         ? 'Pain Flag'
-                        : row.attentionReason === 'HIGH_RPE_STRAIN'
-                          ? 'High Strain'
-                          : row.attentionReason === 'HIGH_LIFE_STRESS'
-                            ? 'High Stress'
-                            : row.attentionReason === 'MISSED_KEY_SESSIONS'
-                              ? 'Missed Sessions'
-                              : readiness?.watchLight === 'RED_MEDICAL_REVIEW'
-                                ? 'Medical Check'
-                                : readiness?.watchLight === 'AMBER_WATCH'
-                                  ? 'Needs Review'
-                                  : 'On Track'}
+                        : row.attentionReason === 'INJURED'
+                          ? 'Injured'
+                          : row.attentionReason === 'HIGH_RPE_STRAIN'
+                            ? 'High Strain'
+                            : row.attentionReason === 'HIGH_LIFE_STRESS'
+                              ? 'High Stress'
+                              : row.attentionReason === 'MISSED_KEY_SESSIONS'
+                                ? 'Missed Sessions'
+                                : readiness?.watchLight === 'RED_MEDICAL_REVIEW'
+                                  ? 'Medical Check'
+                                  : readiness?.watchLight === 'AMBER_WATCH'
+                                    ? 'Needs Review'
+                                    : 'On Track'}
                     </span>
                     <span className="font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
                       {row.name}

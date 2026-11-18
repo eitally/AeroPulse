@@ -401,3 +401,27 @@ export async function deleteTenantVault(tenantId: string): Promise<void> {
     }
   }
 }
+
+const vaultOperationQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Serializes concurrent read-modify-write mutations per tenant vault key inside
+ * a single Node/Serverless runtime so simultaneous roster QR claims or snapshot syncs
+ * cannot clobber each other.
+ */
+export async function withVaultLock<T>(
+  tenantId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const safeId = sanitizeTenantId(tenantId);
+  const prev = vaultOperationQueues.get(safeId) || Promise.resolve();
+  const next = prev.catch(() => undefined).then(() => fn());
+  vaultOperationQueues.set(safeId, next);
+  try {
+    return await next;
+  } finally {
+    if (vaultOperationQueues.get(safeId) === next) {
+      vaultOperationQueues.delete(safeId);
+    }
+  }
+}

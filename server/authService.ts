@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { loadTenantVaultAsync, saveTenantVaultAsync } from './tokenVault.ts';
+import { deleteTenantVault, loadTenantVaultAsync, saveTenantVaultAsync } from './tokenVault.ts';
 
 export interface ThreshUserAuthProvider {
   provider: 'google' | 'magic_link' | 'passkey' | 'strava' | 'dev_mock';
@@ -30,6 +30,7 @@ export interface ThreshUser {
   email: string;
   name: string;
   picture?: string;
+  birthMonthYear?: string;
   role: 'athlete' | 'coach' | 'admin';
   createdAt: string;
   updatedAt: string;
@@ -39,7 +40,11 @@ export interface ThreshUser {
 }
 
 function hashKey(val: string): string {
-  return crypto.createHash('sha256').update(val.toLowerCase().trim()).digest('hex').slice(0, 32);
+  return crypto
+    .createHash('sha256')
+    .update(String(val ?? '').toLowerCase().trim())
+    .digest('hex')
+    .slice(0, 32);
 }
 
 /**
@@ -238,9 +243,79 @@ export async function unlinkProviderFromUser(
     };
   }
 
+  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
   user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
   await saveUser(user);
+  for (const removed of removedProviders) {
+    await deleteTenantVault(`auth_prov_${removed.provider}_${hashKey(removed.providerId)}`);
+  }
   return { ok: true };
+}
+
+/**
+ * Migrates a THRESH user's primary login email (e.g. graduating high school/college
+ * seniors moving off @students.district.org before summer account deactivation).
+ */
+export async function updateUserPrimaryEmail(
+  userId: string,
+  newEmail: string
+): Promise<{ ok: boolean; user?: ThreshUser; oldEmail?: string; error?: string }> {
+  const cleanNewEmail = String(newEmail || '').trim().toLowerCase();
+  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+    return { ok: false, error: 'Please enter a valid email address.' };
+  }
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: 'User not found.' };
+
+  const existingOwner = await getUserByEmail(cleanNewEmail);
+  if (existingOwner && existingOwner.id !== user.id) {
+    return {
+      ok: false,
+      error: 'That email is already linked to another THRESH account.',
+    };
+  }
+
+  const oldEmail = (user.email || '').trim().toLowerCase();
+  if (oldEmail && oldEmail !== cleanNewEmail) {
+    await deleteTenantVault(`auth_email_${hashKey(oldEmail)}`);
+  }
+
+  const existingMagicLinks = user.authProviders.filter((p) => p.provider === 'magic_link');
+  user.authProviders = user.authProviders.filter((p) => p.provider !== 'magic_link');
+  for (const ml of existingMagicLinks) {
+    if (ml.providerId && ml.providerId.toLowerCase() !== cleanNewEmail) {
+      await deleteTenantVault(`auth_prov_magic_link_${hashKey(ml.providerId)}`);
+    }
+  }
+  user.authProviders.push({
+    provider: 'magic_link',
+    providerId: cleanNewEmail,
+    email: cleanNewEmail,
+    name: user.name,
+    linkedAt: new Date().toISOString(),
+  });
+  user.email = cleanNewEmail;
+  await saveUser(user);
+  return { ok: true, user, oldEmail: oldEmail || undefined };
+}
+
+export function hashAuthLookupKey(val: string): string {
+  return hashKey(val);
+}
+
+export async function updateUserBirthMonthYear(
+  userId: string,
+  birthMonthYear: string
+): Promise<ThreshUser | null> {
+  const clean = String(birthMonthYear || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(clean)) return null;
+  const user = await getUserById(userId);
+  if (!user) return null;
+  if (user.birthMonthYear !== clean) {
+    user.birthMonthYear = clean;
+    await saveUser(user);
+  }
+  return user;
 }
 
 /**
@@ -303,12 +378,22 @@ export async function disconnectServiceFromUser(
 
 const MAGIC_LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+export interface PendingJoinContext {
+  joinCode?: string;
+  slug?: string;
+  inviteToken?: string;
+}
+
 interface MagicLinkRecord {
   email: string;
   expiresAt: number;
+  pendingJoin?: PendingJoinContext;
 }
 
-export async function createMagicLinkToken(email: string): Promise<{ token: string; expiresAt: number }> {
+export async function createMagicLinkToken(
+  email: string,
+  pendingJoin?: PendingJoinContext
+): Promise<{ token: string; expiresAt: number }> {
   const cleanEmail = email.toLowerCase().trim();
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -317,12 +402,17 @@ export async function createMagicLinkToken(email: string): Promise<{ token: stri
   await saveTenantVaultAsync(`magic_link_${tokenHash}`, {
     email: cleanEmail,
     expiresAt,
+    ...(pendingJoin?.joinCode || pendingJoin?.slug || pendingJoin?.inviteToken
+      ? { pendingJoin }
+      : {}),
   });
 
   return { token: rawToken, expiresAt };
 }
 
-export async function verifyMagicLinkToken(rawToken: string): Promise<string | null> {
+export async function verifyMagicLinkPayload(
+  rawToken: string
+): Promise<{ email: string; pendingJoin?: PendingJoinContext } | null> {
   if (!rawToken || typeof rawToken !== 'string') return null;
   const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
   const record = await loadTenantVaultAsync<MagicLinkRecord | null>(`magic_link_${tokenHash}`, null);
@@ -332,14 +422,17 @@ export async function verifyMagicLinkToken(rawToken: string): Promise<string | n
   }
 
   if (Date.now() > record.expiresAt) {
-    // Expired
     await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
     return null;
   }
 
-  // Valid single-use token: consume it
   await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
-  return record.email;
+  return { email: record.email, pendingJoin: record.pendingJoin };
+}
+
+export async function verifyMagicLinkToken(rawToken: string): Promise<string | null> {
+  const payload = await verifyMagicLinkPayload(rawToken);
+  return payload?.email ?? null;
 }
 
 export async function sendMagicLinkEmail(

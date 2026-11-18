@@ -7,6 +7,7 @@ import type {
 } from '../types.ts';
 import { computeHistoricalActivityLoad } from './pmc.ts';
 import { getLocalDateIso } from './stravaLoadCalibration.ts';
+import { resolveAthleteAgeTier } from './ageAndComplianceEngine.ts';
 
 export const M_SHOE_MULTIPLIERS: Record<TrackFootwearClass, number> = {
   DAILY_TRAINER: 1.0,
@@ -252,7 +253,10 @@ export function evaluateOrthopedicInterference(
   const hourMs = 3_600_000;
 
   const isU18Cohort =
-    options?.isMinorU18 ?? Boolean(profile.safeSportHideWeight && !profile.academicDivision);
+    options?.isMinorU18 ??
+    (profile.birthMonthYear
+      ? resolveAthleteAgeTier({ birthMonthYear: profile.birthMonthYear }).isMinorU18
+      : profile.academicDivision === 'HS_VARSITY');
   const spikedMetersWeeklyCap = isU18Cohort
     ? 2000
     : profile.academicDivision === 'NCAA_D1'

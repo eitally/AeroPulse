@@ -1,6 +1,8 @@
 import express, { type Request, type Response } from 'express';
+import fs from 'fs';
 import { runtimeStore, saveSessionCacheAsync } from '../sessionContext.ts';
-import { hasValidCronAuthorization } from '../securityUtils.ts';
+import { deriveStravaSessionSid, hasValidCronAuthorization } from '../securityUtils.ts';
+import { loadTenantVaultAsync, saveTenantVaultAsync } from '../tokenVault.ts';
 import { getEffectiveIntervalsConfig, syncIntervalsAllHistory } from './intervalsRouter.ts';
 import { syncStravaAllHistory } from './stravaRouter.ts';
 import { extractStravaId } from '../stravaIdUtils.ts';
@@ -95,13 +97,81 @@ webhookRouter.get('/api/webhooks/strava', (req: Request, res: Response) => {
 
 webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) => {
   try {
+    const aspectType = String(req.body?.aspect_type || '').toLowerCase();
+    const objectType = String(req.body?.object_type || '').toLowerCase();
+    const objectId = extractStravaId(req.body, 'object_id_str', 'object_id');
+    const ownerId = extractStravaId(req.body, 'owner_id_str', 'owner_id');
+    const updates = req.body?.updates as Record<string, unknown> | undefined;
+
+    // Compliance: Handle Strava user deauthorization (revoke tokens & purge cached archives)
+    if (
+      ownerId &&
+      objectType === 'athlete' &&
+      (String(updates?.authorized || '').toLowerCase() === 'false' || aspectType === 'delete')
+    ) {
+      const scopeKey = deriveStravaSessionSid(ownerId).slice(0, 24);
+      const vaultDoc = await loadTenantVaultAsync<Record<string, any> | null>(
+        `session_${scopeKey}`,
+        null
+      );
+      if (vaultDoc) {
+        vaultDoc.stravaAccessToken = '';
+        vaultDoc.stravaRefreshToken = '';
+        vaultDoc.stravaExpiresAt = 0;
+        vaultDoc.stravaAthleteId = undefined;
+        await saveTenantVaultAsync(`session_${scopeKey}`, vaultDoc);
+      }
+      try {
+        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
+        if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
+      } catch {
+        // ignore
+      }
+      res.json({ ok: true, source: 'strava-webhook', handled: 'athlete-deauthorize', ownerId });
+      return;
+    }
+
+    // Compliance: Handle deleted or made-private Strava activity events
+    if (ownerId && objectType === 'activity' && aspectType === 'delete' && objectId) {
+      let removedFromArchive = false;
+      try {
+        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
+        if (fs.existsSync(archivePath)) {
+          const parsed = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter(
+              (a) => String(a?.id || '') !== objectId && String(a?.stravaId || '') !== objectId
+            );
+            if (filtered.length !== parsed.length) {
+              fs.writeFileSync(archivePath, JSON.stringify(filtered), {
+                encoding: 'utf8',
+                mode: 0o600,
+              });
+              removedFromArchive = true;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      res.json({
+        ok: true,
+        source: 'strava-webhook',
+        handled: 'activity-delete',
+        objectId,
+        ownerId,
+        removedFromArchive,
+      });
+      return;
+    }
+
     const summary = await executeHourlyBackgroundPoll();
     res.json({
       ok: true,
       source: 'strava-webhook',
       aspectType: req.body?.aspect_type,
-      objectId: extractStravaId(req.body, 'object_id_str', 'object_id') || undefined,
-      ownerId: extractStravaId(req.body, 'owner_id_str', 'owner_id') || undefined,
+      objectId: objectId || undefined,
+      ownerId: ownerId || undefined,
       ...summary,
     });
   } catch (error) {

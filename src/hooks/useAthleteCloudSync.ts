@@ -20,7 +20,7 @@ import {
   consumePendingSharedWorkout,
   sharedWorkoutToPlannedEventInput,
 } from '../utils/shareWorkoutEngine.ts';
-import { getSavedIntervalsHeaders } from '../utils/telemetryStorage.ts';
+import { getSavedIntervalsHeaders, mergeActivitiesNonDestructive } from '../utils/telemetryStorage.ts';
 
 const CLOUD_UPDATED_AT_KEY = 'thresh_cloud_state_updated_at';
 const CHECKINS_STORAGE_KEY = 'thresh_session_checkins_v1';
@@ -42,6 +42,7 @@ interface UseAthleteCloudSyncParams {
   distanceUnit: DistanceUnit;
   setDistanceUnit: React.Dispatch<React.SetStateAction<DistanceUnit>>;
   activities: UnifiedActivity[];
+  setActivities?: React.Dispatch<React.SetStateAction<UnifiedActivity[]>>;
   wellnessDays: UnifiedWellnessDay[];
   selfLatestWellness?: UnifiedWellnessDay;
   selfPrivacySettings: AthletePrivacySettings;
@@ -86,6 +87,7 @@ export function useAthleteCloudSync({
   distanceUnit,
   setDistanceUnit,
   activities,
+  setActivities,
   wellnessDays,
   selfLatestWellness,
   selfPrivacySettings,
@@ -98,6 +100,7 @@ export function useAthleteCloudSync({
 }: UseAthleteCloudSyncParams) {
   const hydratedIdentityRef = useRef<string | null>(null);
   const skipNextSaveRef = useRef<boolean>(false);
+  const prevTeamsCountRef = useRef<number>(myTeamsCount);
 
   const [sessionCheckIns, setSessionCheckIns] = useState<SessionCheckInRecord[]>(() => {
     try {
@@ -112,6 +115,7 @@ export function useAthleteCloudSync({
     return [];
   });
   const [sampleDemoCheckIns, setSampleDemoCheckIns] = useState<SessionCheckInRecord[]>([]);
+  const [archivedCoachActivities, setArchivedCoachActivities] = useState<UnifiedActivity[]>([]);
 
   const effectiveSessionCheckIns = isSampleDemoMode ? sampleDemoCheckIns : sessionCheckIns;
 
@@ -268,6 +272,18 @@ export function useAthleteCloudSync({
           }
 
           if (
+            Array.isArray(cloudState.coachArchivedActivities) &&
+            cloudState.coachArchivedActivities.length > 0
+          ) {
+            setArchivedCoachActivities(cloudState.coachArchivedActivities);
+            setActivities?.((prev) =>
+              mergeActivitiesNonDestructive(prev, cloudState.coachArchivedActivities!)
+            );
+          } else {
+            setArchivedCoachActivities([]);
+          }
+
+          if (
             Array.isArray(cloudState.sessionCheckIns) &&
             cloudState.sessionCheckIns.length > 0 &&
             (serverIsNewer || sessionCheckIns.length === 0)
@@ -317,6 +333,31 @@ export function useAthleteCloudSync({
     setAthleteProfile,
   ]);
 
+  // 1b. When leaving/graduating from a team in-session, re-pull coachArchivedActivities immediately
+  useEffect(() => {
+    const prevCount = prevTeamsCountRef.current;
+    prevTeamsCountRef.current = myTeamsCount;
+    if (!hasLiveWorkspace || myTeamsCount >= prevCount) return;
+    let cancelled = false;
+    fetch('/api/athlete-state', {
+      credentials: 'include',
+      headers: getSavedIntervalsHeaders(),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const archived = data?.state?.coachArchivedActivities;
+        if (Array.isArray(archived) && archived.length > 0) {
+          setArchivedCoachActivities(archived);
+          setActivities?.((prev) => mergeActivitiesNonDestructive(prev, archived));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLiveWorkspace, myTeamsCount, setActivities]);
+
   // 2. Debounced (600ms) Clean-Room PUT /api/athlete-state on state changes
   useEffect(() => {
     if (!hasLiveWorkspace) return;
@@ -343,6 +384,7 @@ export function useAthleteCloudSync({
           thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
           thresholdHistory: athleteProfile.thresholdHistory,
           safeSportHideWeight: athleteProfile.safeSportHideWeight,
+          birthMonthYear: athleteProfile.birthMonthYear,
           academicDivision: athleteProfile.academicDivision,
           competitionGender: athleteProfile.competitionGender,
         };
@@ -443,16 +485,28 @@ export function useAthleteCloudSync({
             highAerobicPct: 18,
             neuromuscularPct: 6,
             caraHours7d: Number(
-              (
-                recent7dActs.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 3600
-              ).toFixed(1)
+              (() => {
+                // NCAA Bylaw 17.1.7.3.2: every competition day counts as 3.0 CARA hours
+                const competitionDays = new Set<string>();
+                let practiceSecs = 0;
+                for (const a of recent7dActs) {
+                  if (a.officialRaceData) {
+                    competitionDays.add(String(a.startDateLocal || '').slice(0, 10));
+                  } else {
+                    practiceSecs += a.movingTimeSecs || 0;
+                  }
+                }
+                return (practiceSecs / 3600 + competitionDays.size * 3.0).toFixed(1);
+              })()
             ),
             ftpWatts: athleteProfile.ftp,
             thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
             safeSportHideWeight: Boolean(athleteProfile.safeSportHideWeight),
+            birthMonthYear: athleteProfile.birthMonthYear,
             wellnessDays: wellnessDays.slice(-14),
             activities: activities.slice(0, 14),
             sessionCheckIns: sessionCheckIns.slice(0, 14),
+            privacySettings: selfPrivacySettings,
           },
         }),
       })
@@ -478,6 +532,7 @@ export function useAthleteCloudSync({
     athleteProfile.ftp,
     athleteProfile.thresholdPaceSecsPerKm,
     athleteProfile.safeSportHideWeight,
+    athleteProfile.birthMonthYear,
     selfPrivacySettings,
     garminConnected,
     intervalsConnected,
@@ -487,6 +542,7 @@ export function useAthleteCloudSync({
 
   return {
     effectiveSessionCheckIns,
+    archivedCoachActivities,
     handleRecordSessionCheckIn,
     resetDemoSessionCheckIns,
   };

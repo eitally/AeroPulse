@@ -34,11 +34,21 @@ import {
   resolveStravaCallbackUrl,
   resolveValidatedStravaCallbackUrl,
 } from '../oauthHelpers.ts';
-import { resolveSafeOrigin, resolveTrustedCorsOrigin } from '../securityUtils.ts';
+import {
+  deriveUserSessionSid,
+  resolveSafeOrigin,
+  resolveTrustedCorsOrigin,
+} from '../securityUtils.ts';
 import { buildServerAthleteProfile, isGenericName } from '../physiologyEngine.ts';
 import { decodeGooglePolyline } from './activitiesRouter.ts';
 import { migrateAnonymousTeamsToStravaSid } from '../teamService.ts';
-import { findOrCreateUser } from '../authService.ts';
+import {
+  connectServiceToUser,
+  disconnectServiceFromUser,
+  findOrCreateUser,
+  getUserByProvider,
+  linkProviderToUser,
+} from '../authService.ts';
 import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
 
 export interface StoredStravaSyncPolicy {
@@ -345,41 +355,76 @@ export async function activateStravaCanonicalScope(
   opts: {
     athleteId?: string;
     athleteName: string;
+    expectedSid?: string;
+    expectedUserId?: string;
   }
 ): Promise<{
   canonicalSid: string;
   scopeKey: string;
   sessionToken: string;
   store: RuntimeSessionStore;
+  linkedUserId?: string;
 }> {
   const prevClaims = getVerifiedSessionClaims(req);
   const prevStore = getScopedRuntimeStore(req);
-  const canonicalSid = opts.athleteId
-    ? deriveStravaSessionSid(opts.athleteId)
-    : prevClaims?.sid || crypto.randomBytes(16).toString('hex');
+  const prevScopeKey = (prevClaims?.sid || opts.expectedSid || '').slice(0, 24);
+  const explicitUserId = prevClaims?.sub?.startsWith('usr_')
+    ? prevClaims.sub
+    : opts.expectedUserId?.startsWith('usr_')
+      ? opts.expectedUserId
+      : undefined;
 
-  if (opts.athleteId && prevClaims?.sid && prevClaims.sid !== canonicalSid) {
-    await migrateAnonymousTeamsToStravaSid({
-      oldSid: prevClaims.sid,
-      stravaSid: canonicalSid,
-      athleteName: !isGenericName(opts.athleteName) ? opts.athleteName : undefined,
-      stravaAthleteId: opts.athleteId,
-    });
+  let canonicalUserId: string | undefined = explicitUserId;
+  if (!canonicalUserId && opts.athleteId) {
+    const existingUser = await getUserByProvider('strava', opts.athleteId);
+    if (existingUser && existingUser.authProviders.some((p) => p.provider !== 'strava')) {
+      canonicalUserId = existingUser.id;
+    }
+  }
+
+  let canonicalSid: string;
+  let sessionSubject: string;
+  if (canonicalUserId) {
+    canonicalSid =
+      (prevClaims?.sub === canonicalUserId ? prevClaims.sid : undefined) ||
+      (opts.expectedUserId === canonicalUserId ? opts.expectedSid : undefined) ||
+      deriveUserSessionSid(canonicalUserId);
+    sessionSubject = canonicalUserId;
+  } else {
+    canonicalSid = opts.athleteId
+      ? deriveStravaSessionSid(opts.athleteId)
+      : prevClaims?.sid || opts.expectedSid || crypto.randomBytes(16).toString('hex');
+    sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : 'Strava Athlete';
+  }
+
+  if (opts.athleteId) {
+    if (prevClaims?.sid && prevClaims.sid !== canonicalSid) {
+      await migrateAnonymousTeamsToStravaSid({
+        oldSid: prevClaims.sid,
+        stravaSid: canonicalSid,
+        athleteName: !isGenericName(opts.athleteName) ? opts.athleteName : undefined,
+        stravaAthleteId: opts.athleteId,
+      });
+    }
+    const legacyStravaSid = deriveStravaSessionSid(opts.athleteId);
+    if (legacyStravaSid !== canonicalSid) {
+      await migrateAnonymousTeamsToStravaSid({
+        oldSid: legacyStravaSid,
+        stravaSid: canonicalSid,
+        athleteName: !isGenericName(opts.athleteName) ? opts.athleteName : undefined,
+        stravaAthleteId: opts.athleteId,
+      });
+    }
   }
 
   const scopeKey = canonicalSid.slice(0, 24);
   await loadTenantVaultAsync(`session_${scopeKey}`, {});
   bindRequestScopeKey(req, canonicalSid);
 
-  const sessionToken = setSessionCookie(
-    req,
-    res,
-    !isGenericName(opts.athleteName) ? opts.athleteName : 'Strava Athlete',
-    canonicalSid
-  );
+  const sessionToken = setSessionCookie(req, res, sessionSubject, canonicalSid);
   const store = getScopedRuntimeStore(req);
 
-  // Carry over pre-OAuth BYO client credentials or secondary links if canonical vault is brand new
+  // Preserve pre-OAuth credentials and previously linked Garmin/Intervals/Wahoo/Polar tokens
   if (!store.stravaClientId && prevStore.stravaClientId) {
     store.stravaClientId = prevStore.stravaClientId;
   }
@@ -391,11 +436,52 @@ export async function activateStravaCanonicalScope(
     store.intervalsAthleteId = prevStore.intervalsAthleteId || '0';
     store.intervalsAthleteName = prevStore.intervalsAthleteName || '';
   }
+  if (!store.intervalsAccessToken && prevStore.intervalsAccessToken) {
+    store.intervalsAccessToken = prevStore.intervalsAccessToken;
+    store.intervalsScope = prevStore.intervalsScope;
+    store.intervalsAthleteId = prevStore.intervalsAthleteId || store.intervalsAthleteId || '0';
+    store.intervalsAthleteName = prevStore.intervalsAthleteName || store.intervalsAthleteName || '';
+  }
+  if (!store.wahooAccessToken && prevStore.wahooAccessToken) {
+    store.wahooAccessToken = prevStore.wahooAccessToken;
+    store.wahooRefreshToken = prevStore.wahooRefreshToken;
+    store.wahooExpiresAt = prevStore.wahooExpiresAt;
+    store.wahooScope = prevStore.wahooScope;
+    store.wahooUserId = prevStore.wahooUserId;
+    store.wahooAthleteName = prevStore.wahooAthleteName;
+  }
+  if (!store.polarAccessToken && prevStore.polarAccessToken) {
+    store.polarAccessToken = prevStore.polarAccessToken;
+    store.polarUserId = prevStore.polarUserId;
+    store.polarAthleteName = prevStore.polarAthleteName;
+    store.polarExpiresAt = prevStore.polarExpiresAt;
+    store.polarScope = prevStore.polarScope;
+  }
   if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
     store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
   }
 
-  return { canonicalSid, scopeKey, sessionToken, store };
+  if (prevScopeKey && prevScopeKey !== scopeKey) {
+    const existingGarmin = await loadTenantVaultAsync<Record<string, any> | null>(
+      `garmin_${prevScopeKey}`,
+      null
+    );
+    if (existingGarmin) {
+      await saveTenantVaultAsync(`garmin_${scopeKey}`, existingGarmin);
+    }
+  }
+
+  if (canonicalUserId && opts.athleteId) {
+    try {
+      const cleanName = !isGenericName(opts.athleteName) ? opts.athleteName : undefined;
+      await linkProviderToUser(canonicalUserId, 'strava', opts.athleteId, { name: cleanName });
+      await connectServiceToUser(canonicalUserId, 'strava', opts.athleteId, cleanName);
+    } catch (err) {
+      console.warn('[THRESH Auth] Linking Strava to existing ThreshUser warning:', err);
+    }
+  }
+
+  return { canonicalSid, scopeKey, sessionToken, store, linkedUserId: canonicalUserId };
 }
 
 export function buildReturnOnboardingUrl(
@@ -708,10 +794,13 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
     if (!athleteName) athleteName = 'Strava Athlete';
 
     // Canonical athlete session activation & scope binding
-    const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {
-      athleteId,
-      athleteName,
-    });
+    const { canonicalSid, sessionToken, store, linkedUserId } =
+      await activateStravaCanonicalScope(req, res, {
+        athleteId,
+        athleteName,
+        expectedSid: verifiedState?.sid,
+        expectedUserId: verifiedState?.userId,
+      });
     const hasExistingSyncPolicy = Boolean(store.stravaSyncPolicy?.confirmedAt);
 
     store.stravaAccessToken = tokenData.access_token;
@@ -737,8 +826,8 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       stravaIdentityByToken.set(tokenData.refresh_token, identityEntry);
     }
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
-    if (athleteId) {
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
@@ -940,6 +1029,7 @@ async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId
   const inviteToken =
     String(req.query.inviteToken || req.query.t || '').trim().slice(0, 96) || undefined;
 
+  const callerClaims = getVerifiedSessionClaims(req);
   const { stateToken, nonce } = issueOAuthStateToken({
     nonce: clientNonce || undefined,
     sid,
@@ -949,6 +1039,7 @@ async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId
     joinCode,
     slug,
     inviteToken,
+    userId: callerClaims?.sub?.startsWith('usr_') ? callerClaims.sub : undefined,
   });
   setOAuthStateCookie(req, res, nonce);
 
@@ -1131,10 +1222,11 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
           ? 'mi'
           : undefined;
 
-    const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {
-      athleteId,
-      athleteName,
-    });
+    const { canonicalSid, sessionToken, store, linkedUserId } =
+      await activateStravaCanonicalScope(req, res, {
+        athleteId,
+        athleteName,
+      });
     const hasExistingSyncPolicy = Boolean(store.stravaSyncPolicy?.confirmedAt);
 
     store.stravaAccessToken = tokenData.access_token;
@@ -1146,8 +1238,8 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
-    if (athleteId) {
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
@@ -1287,10 +1379,11 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
       else if (athlete.measurement_preference === 'feet') measurementPreference = 'mi';
     }
 
-    const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {
-      athleteId,
-      athleteName,
-    });
+    const { canonicalSid, sessionToken, store, linkedUserId } =
+      await activateStravaCanonicalScope(req, res, {
+        athleteId,
+        athleteName,
+      });
     const hasExistingSyncPolicy = Boolean(store.stravaSyncPolicy?.confirmedAt);
 
     store.stravaAccessToken = resolvedAccessToken;
@@ -1303,8 +1396,8 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory
-    if (athleteId) {
+    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
@@ -1372,6 +1465,10 @@ stravaRouter.post('/api/strava/disconnect', async (req: Request, res: Response) 
   if (!isAuthenticatedRequest(req)) {
     res.status(401).json({ error: 'Authentication required.' });
     return;
+  }
+  const claims = getVerifiedSessionClaims(req);
+  if (claims?.sub?.startsWith('usr_')) {
+    await disconnectServiceFromUser(claims.sub, 'strava').catch(() => undefined);
   }
   runtimeStore.stravaAccessToken = '';
   runtimeStore.stravaRefreshToken = '';

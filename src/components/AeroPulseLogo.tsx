@@ -409,13 +409,13 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
               </div>
             )}
             <span
-              className={`${teamTitleClass} font-display truncate max-w-[115px] sm:max-w-[190px]`}
+              className={`${teamTitleClass} font-display truncate max-w-[82px] sm:max-w-[190px]`}
               title={teamBrand.name}
             >
               {teamBrand.shortName || teamBrand.name}
             </span>
             <span
-              className={`font-normal text-xs shrink-0 ${
+              className={`${size === 'sm' ? 'hidden sm:inline' : 'inline'} font-normal text-xs shrink-0 ${
                 surface === 'on-dark'
                   ? 'text-emerald-200/75'
                   : 'text-slate-600 dark:text-slate-400'
@@ -423,7 +423,9 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
             >
               ×
             </span>
-            {renderStandaloneMark(true)}
+            <span className={`${size === 'sm' ? 'hidden sm:inline-flex' : 'inline-flex'} items-center shrink-0`}>
+              {renderStandaloneMark(true)}
+            </span>
           </>
         ) : (
           renderStandaloneMark(false)

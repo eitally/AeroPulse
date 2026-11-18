@@ -25,17 +25,22 @@ import {
 import {
   autoLinkPendingTeamInvitesByEmail,
   migrateAnonymousTeamsToSid,
+  updateTeamMemberEmailsForUser,
 } from '../teamService.ts';
+import { deleteThreshAccountPermanently } from '../accountLifecycleService.ts';
 import {
   findOrCreateUser,
   getUserById,
   getUserByEmail,
   getUserByProvider,
+  linkProviderToUser,
   saveUser,
   unlinkProviderFromUser,
+  updateUserBirthMonthYear,
+  updateUserPrimaryEmail,
   connectServiceToUser,
   createMagicLinkToken,
-  verifyMagicLinkToken,
+  verifyMagicLinkPayload,
   sendMagicLinkEmail,
   issuePasskeyChallengeToken,
   verifyPasskeyChallengeToken,
@@ -386,8 +391,14 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
+  const joinCode = String(req.body?.joinCode || '').trim().slice(0, 32) || undefined;
+  const slug = String(req.body?.slug || '').trim().slice(0, 64) || undefined;
+  const inviteToken = String(req.body?.inviteToken || '').trim().slice(0, 96) || undefined;
+  const pendingJoin =
+    joinCode || slug || inviteToken ? { joinCode, slug, inviteToken } : undefined;
+
   try {
-    const { token } = await createMagicLinkToken(email);
+    const { token } = await createMagicLinkToken(email, pendingJoin);
     const baseUrl = getAppBaseUrl(req);
     const verifyUrl = `${baseUrl}/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`;
 
@@ -416,18 +427,19 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
   }
 
   try {
-    const email = await verifyMagicLinkToken(token);
-    if (!email) {
+    const verifiedPayload = await verifyMagicLinkPayload(token);
+    if (!verifiedPayload?.email) {
       return res.redirect('/?auth_error=expired_or_invalid_magic_token');
     }
 
+    const email = verifiedPayload.email;
     const user = await findOrCreateUser('magic_link', email, {
       email,
       name: email.split('@')[0],
     });
 
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect('/?auth_just_signed_in=1');
+    return res.redirect(buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
   } catch (err) {
     console.error('[THRESH Auth] Magic link verification error:', err);
     return res.redirect('/?auth_error=magic_link_verification_failed');
@@ -502,10 +514,24 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
     // Modern browsers return getPublicKey() base64 or SPKI DER in clientData
     const pubKeySpki = String(credential.publicKey || credential.response?.publicKey || credId);
 
-    const user = await findOrCreateUser('passkey', credId, {
-      email: email ? String(email).trim().toLowerCase() : undefined,
-      name: name ? String(name).trim() : 'Passkey Athlete',
-    });
+    const activeClaims = getVerifiedSessionClaims(req);
+    let user: ThreshUser | null = null;
+    if (activeClaims?.sub?.startsWith('usr_')) {
+      user = await getUserById(activeClaims.sub);
+      if (user) {
+        await linkProviderToUser(user.id, 'passkey', credId, {
+          email: user.email || (email ? String(email).trim().toLowerCase() : undefined),
+          name: user.name || (name ? String(name).trim() : 'Passkey Athlete'),
+        });
+        user = (await getUserById(user.id)) || user;
+      }
+    }
+    if (!user) {
+      user = await findOrCreateUser('passkey', credId, {
+        email: email ? String(email).trim().toLowerCase() : undefined,
+        name: name ? String(name).trim() : 'Passkey Athlete',
+      });
+    }
 
     if (!user.passkeys) user.passkeys = [];
     const existingIdx = user.passkeys.findIndex((p) => p.id === credId);
@@ -669,4 +695,77 @@ authRouter.post('/api/auth/unlink-provider', async (req: Request, res: Response)
   }
 
   return res.json({ ok: true });
+});
+
+/**
+ * POST /api/auth/change-email
+ * Migrates login email cleanly (e.g. graduating from @students.district.org to personal Gmail)
+ * while updating email indices and team memberships without losing history.
+ */
+authRouter.post('/api/auth/change-email', async (req: Request, res: Response) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+
+  let userId = claims.sub?.startsWith('usr_') ? claims.sub : '';
+  if (!userId && claims.sub) {
+    const byStrava = await getUserByProvider('strava', claims.sub);
+    if (byStrava) userId = byStrava.id;
+  }
+  if (!userId) {
+    return res.status(400).json({ error: 'Please sign in with a THRESH account before changing email.' });
+  }
+
+  const newEmail = String(req.body?.email || req.body?.newEmail || '').trim().toLowerCase();
+  const result = await updateUserPrimaryEmail(userId, newEmail);
+  if (!result.ok || !result.user) {
+    return res.status(400).json({ error: result.error || 'Could not update email.' });
+  }
+
+  try {
+    await updateTeamMemberEmailsForUser({
+      callerSid: claims.sid,
+      oldEmail: result.oldEmail,
+      newEmail,
+    });
+  } catch (err) {
+    console.warn('[THRESH Auth] Team membership email update warning:', err);
+  }
+
+  const { sessionToken } = await finalizeUserAuthentication(req, res, result.user);
+  return res.json({ ok: true, user: result.user, sessionToken });
+});
+
+/**
+ * POST /api/auth/birth-month
+ * Updates canonical YYYY-MM birth month-year on the authenticated ThreshUser.
+ */
+authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sub?.startsWith('usr_')) {
+    return res.status(401).json({ error: 'THRESH account required.' });
+  }
+  const birthMonthYear = String(req.body?.birthMonthYear || '').trim();
+  const updated = await updateUserBirthMonthYear(claims.sub, birthMonthYear);
+  if (!updated) {
+    return res.status(400).json({ error: 'Valid YYYY-MM birth month-year required.' });
+  }
+  const { sessionToken } = await finalizeUserAuthentication(req, res, updated);
+  return res.json({ ok: true, user: updated, sessionToken });
+});
+
+/**
+ * DELETE /api/auth/account
+ * Permanently erases user account, tokens, cloud vaults, and scrubs active team memberships.
+ */
+authRouter.delete('/api/auth/account', async (req: Request, res: Response) => {
+  const confirmVal = String(req.body?.confirm || req.query.confirm || '').trim().toUpperCase();
+  if (confirmVal !== 'DELETE') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Please pass confirm: "DELETE" to permanently delete your THRESH account.',
+    });
+  }
+  await deleteThreshAccountPermanently(req, res);
 });

@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { useModalDialog } from '../hooks/useModalDialog';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import {
   buildCompleteAthleteProfile,
   buildHrZonesFromCeilings,
@@ -130,6 +131,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const [safeSportHideWeight, setSafeSportHideWeight] = useState<boolean>(
     Boolean(athleteProfile.safeSportHideWeight)
   );
+  const [birthMonthYear, setBirthMonthYear] = useState<string>(
+    athleteProfile.birthMonthYear || ''
+  );
   const [academicDivision, setAcademicDivision] = useState<ScholasticDivision>(
     athleteProfile.academicDivision || 'CLUB_OPEN'
   );
@@ -158,6 +162,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     setLtPaceInput(formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit));
     setThresholdHistory(athleteProfile.thresholdHistory || []);
     setSafeSportHideWeight(Boolean(athleteProfile.safeSportHideWeight));
+    setBirthMonthYear(athleteProfile.birthMonthYear || '');
     setAcademicDivision(athleteProfile.academicDivision || 'CLUB_OPEN');
     setCompetitionGender(athleteProfile.competitionGender || 'MEN');
     setFerritinInput(athleteProfile.ferritinNgMl ? String(athleteProfile.ferritinNgMl) : '');
@@ -183,6 +188,12 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     runLthr === athleteProfile.runLthr && runMaxHr === athleteProfile.runMaxHr
       ? athleteProfile.runHrZones
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
+
+  const profileAgeTier = resolveAthleteAgeTier({
+    birthMonthYear: birthMonthYear || undefined,
+  });
+  const isMinorAgeLocked = profileAgeTier.isMinorU18;
+  const effectiveSafeSportHideWeight = isMinorAgeLocked ? true : safeSportHideWeight;
 
   const outdoorWkg = (ftp / Math.max(35, weightKg)).toFixed(2);
   const indoorWkg = (indoorFtp / Math.max(35, weightKg)).toFixed(2);
@@ -246,7 +257,8 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         hrZones: previewBikeHrZones,
         runHrZones: previewRunHrZones,
         thresholdHistory: mergedHistory,
-        safeSportHideWeight,
+        safeSportHideWeight: effectiveSafeSportHideWeight,
+        birthMonthYear: birthMonthYear.trim() || undefined,
         academicDivision,
         competitionGender,
         ferritinNgMl:
@@ -775,23 +787,47 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span className="text-2xs font-mono text-slate-500">Toggle</span>
             </summary>
             <div className="pt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
-            <label className="md:col-span-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2.5 flex items-start justify-between gap-3 cursor-pointer">
+            <label
+              className={`md:col-span-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2.5 flex items-start justify-between gap-3 ${
+                isMinorAgeLocked ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
+              }`}
+            >
               <div className="space-y-0.5">
                 <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <Shield className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span>Safe-Sport / RED-S Protection (Hide Weight &amp; W/kg)</span>
                 </div>
                 <p className="text-2xs text-slate-600 dark:text-slate-300">
-                  Masks body weight and W/kg across student-athlete views while keeping pace, HR, and absolute watts active.
+                  {isMinorAgeLocked
+                    ? 'Locked ON for U18 athletes (Safe-Sport) while keeping pace, HR, and absolute watts active.'
+                    : 'Masks body weight and W/kg across student-athlete views while keeping pace, HR, and absolute watts active.'}
                 </p>
               </div>
               <input
                 type="checkbox"
-                checked={safeSportHideWeight}
-                onChange={(e) => setSafeSportHideWeight(e.target.checked)}
+                checked={effectiveSafeSportHideWeight}
+                disabled={isMinorAgeLocked}
+                onChange={(e) => !isMinorAgeLocked && setSafeSportHideWeight(e.target.checked)}
                 className="mt-1 accent-emerald-600 w-4 h-4 shrink-0"
               />
             </label>
+
+            <div className="md:col-span-3">
+              <label
+                htmlFor={`${fieldId}-birth-month`}
+                className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+              >
+                Birth Month &amp; Year
+              </label>
+              <input
+                id={`${fieldId}-birth-month`}
+                data-testid="profile-birth-month-input"
+                type="month"
+                value={birthMonthYear}
+                onChange={(e) => setBirthMonthYear(e.target.value)}
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+              />
+            </div>
 
             <div className="md:col-span-3">
               <label

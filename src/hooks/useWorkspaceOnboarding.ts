@@ -111,6 +111,20 @@ export function useWorkspaceOnboarding({
         localStorage.removeItem('aeropulse_strava_expires_at');
         localStorage.removeItem('thresh_my_teams_v1');
         localStorage.removeItem('thresh_active_team_id_v1');
+        localStorage.removeItem('thresh_personal_mode_v1');
+        localStorage.removeItem('thresh_session_checkins_v1');
+        localStorage.removeItem('aeropulse_target_goals');
+        localStorage.removeItem('aeropulse_annual_mileage_goals');
+        localStorage.removeItem('aeropulse_self_privacy_settings');
+        localStorage.removeItem('aeropulse_connected_athletes_v1');
+        localStorage.removeItem('thresh_cloud_state_updated_at');
+        localStorage.removeItem('aeropulse_store_owner_athlete_id');
+        localStorage.removeItem('aeropulse_wahoo_connected');
+        localStorage.removeItem('aeropulse_wahoo_athlete_id');
+        localStorage.removeItem('aeropulse_wahoo_athlete_name');
+        localStorage.removeItem('aeropulse_polar_connected');
+        localStorage.removeItem('aeropulse_polar_athlete_id');
+        localStorage.removeItem('aeropulse_polar_athlete_name');
         sessionStorage.removeItem('thresh_pending_team_join_v1');
         if (clearAllVaultKeys) {
           localStorage.removeItem('aeropulse_calibrated_v1');
@@ -124,12 +138,15 @@ export function useWorkspaceOnboarding({
           localStorage.removeItem('aeropulse_intervals_api_key');
           localStorage.removeItem('aeropulse_intervals_athlete_id');
           localStorage.removeItem('aeropulse_intervals_athlete_name');
+          localStorage.removeItem('aeropulse_strava_client_id');
           localStorage.removeItem('aeropulse_strava_client_secret');
+          localStorage.removeItem('aeropulse_strava_backfill_v4_done');
           localStorage.removeItem('aeropulse_garmin_personal_api_key');
           localStorage.removeItem('aeropulse_garmin_bearer_token');
           localStorage.removeItem('aeropulse_garmin_oauth1_token');
           localStorage.removeItem('aeropulse_garmin_oauth1_secret');
           localStorage.removeItem('aeropulse_garmin_athlete_name');
+          localStorage.removeItem('thresh_trackside_stopwatch_v1');
         }
       } catch {
         // ignore
@@ -179,10 +196,10 @@ export function useWorkspaceOnboarding({
       } catch {
         // ignore
       }
-      if (clearAllVaultKeys) {
-        await clearPersistedTelemetrySnapshot();
-        setIdbSavedAt(null);
-      }
+      // Always purge shared-device IndexedDB workouts & wellness on Sign Out so the next user
+      // on a school iPad / Chromebook never inherits the prior athlete's history.
+      await clearPersistedTelemetrySnapshot();
+      setIdbSavedAt(null);
       await fetchServerConfigStatus();
     },
     [
@@ -256,6 +273,7 @@ export function useWorkspaceOnboarding({
           safeSportHideWeight: Boolean(
             payload.safeSportHideWeight || athleteProfileRef.current.safeSportHideWeight
           ),
+          ...(payload.birthMonthYear ? { birthMonthYear: payload.birthMonthYear } : {}),
         },
         wellnessDaysRef.current[wellnessDaysRef.current.length - 1],
         activitiesRef.current
