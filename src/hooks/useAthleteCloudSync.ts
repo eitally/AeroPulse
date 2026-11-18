@@ -1,15 +1,21 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AnnualMileageGoal,
   AthleteCloudStateEnvelope,
+  AthletePrivacySettings,
   AthleteProfile,
   DistanceUnit,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   SportCategory,
   TargetGoal,
+  TeamSummaryWithRole,
   ThreshUser,
   TrackWorkoutSpec,
+  UnifiedActivity,
+  UnifiedWellnessDay,
 } from '../types.ts';
+import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine.ts';
 import {
   consumePendingSharedWorkout,
   sharedWorkoutToPlannedEventInput,
@@ -17,6 +23,7 @@ import {
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage.ts';
 
 const CLOUD_UPDATED_AT_KEY = 'thresh_cloud_state_updated_at';
+const CHECKINS_STORAGE_KEY = 'thresh_session_checkins_v1';
 
 interface UseAthleteCloudSyncParams {
   isSampleDemoMode: boolean;
@@ -34,6 +41,14 @@ interface UseAthleteCloudSyncParams {
   setAthleteProfile: React.Dispatch<React.SetStateAction<AthleteProfile>>;
   distanceUnit: DistanceUnit;
   setDistanceUnit: React.Dispatch<React.SetStateAction<DistanceUnit>>;
+  activities: UnifiedActivity[];
+  wellnessDays: UnifiedWellnessDay[];
+  selfLatestWellness?: UnifiedWellnessDay;
+  selfPrivacySettings: AthletePrivacySettings;
+  garminConnected: boolean;
+  intervalsConnected: boolean;
+  myTeamsCount: number;
+  setMyTeams: React.Dispatch<React.SetStateAction<TeamSummaryWithRole[]>>;
   handleCreatePlannedEvent: (eventInput: {
     date: string;
     name: string;
@@ -50,9 +65,9 @@ interface UseAthleteCloudSyncParams {
 }
 
 /**
- * Synchronizes first-party plans, goals, threshold settings, and unit preferences
- * across devices via encrypted AES-256-GCM /api/athlete-state, and auto-imports
- * any pending shared workout across OAuth login.
+ * Synchronizes first-party plans, goals, threshold settings, unit preferences, and
+ * RPE/pain session check-ins via AES-256-GCM /api/athlete-state and /api/teams/sync-snapshot,
+ * and auto-imports any pending shared workout across OAuth login.
  */
 export function useAthleteCloudSync({
   isSampleDemoMode,
@@ -70,11 +85,85 @@ export function useAthleteCloudSync({
   setAthleteProfile,
   distanceUnit,
   setDistanceUnit,
+  activities,
+  wellnessDays,
+  selfLatestWellness,
+  selfPrivacySettings,
+  garminConnected,
+  intervalsConnected,
+  myTeamsCount,
+  setMyTeams,
   handleCreatePlannedEvent,
   onPendingWorkoutImported,
-}: UseAthleteCloudSyncParams): void {
+}: UseAthleteCloudSyncParams) {
   const hydratedIdentityRef = useRef<string | null>(null);
   const skipNextSaveRef = useRef<boolean>(false);
+
+  const [sessionCheckIns, setSessionCheckIns] = useState<SessionCheckInRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(CHECKINS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [];
+  });
+  const [sampleDemoCheckIns, setSampleDemoCheckIns] = useState<SessionCheckInRecord[]>([]);
+
+  const effectiveSessionCheckIns = isSampleDemoMode ? sampleDemoCheckIns : sessionCheckIns;
+
+  const resetDemoSessionCheckIns = useCallback(() => {
+    setSampleDemoCheckIns([]);
+  }, []);
+
+  const handleRecordSessionCheckIn = useCallback(
+    async (
+      input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
+      safetySwapEvent?: SafetySwapEventInput | null
+    ) => {
+      const record: SessionCheckInRecord = {
+        ...input,
+        id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        date: input.date.slice(0, 10),
+        rpe: Math.max(1, Math.min(10, Math.round(input.rpe))),
+        autoSwappedToRecovery: Boolean(safetySwapEvent || input.autoSwappedToRecovery),
+        createdAt: new Date().toISOString(),
+      };
+
+      const upsert = (prev: SessionCheckInRecord[]) => {
+        const targetKey = `${record.date}:${record.plannedEventId || 'daily'}`;
+        const filtered = prev.filter(
+          (c) => `${(c.date || '').slice(0, 10)}:${c.plannedEventId || 'daily'}` !== targetKey
+        );
+        return [record, ...filtered].slice(0, 120);
+      };
+
+      if (isSampleDemoMode) {
+        setSampleDemoCheckIns(upsert);
+      } else {
+        setSessionCheckIns((prev) => {
+          const next = upsert(prev);
+          try {
+            localStorage.setItem(CHECKINS_STORAGE_KEY, JSON.stringify(next));
+          } catch {
+            // ignore storage errors
+          }
+          return next;
+        });
+      }
+
+      if (safetySwapEvent) {
+        await handleCreatePlannedEvent({
+          ...safetySwapEvent,
+          replaceExistingDate: true,
+        });
+      }
+    },
+    [isSampleDemoMode, handleCreatePlannedEvent]
+  );
 
   const hasLiveWorkspace = !isSampleDemoMode && hasEnteredWorkspace && !isSessionLoggedOut;
   const hasAnyWorkspace = isSampleDemoMode || hasLiveWorkspace;
@@ -86,10 +175,8 @@ export function useAthleteCloudSync({
 
   // Reset hydration tracking on logout
   useEffect(() => {
-    if (!hasLiveWorkspace) {
-      if (!isSampleDemoMode) {
-        hydratedIdentityRef.current = null;
-      }
+    if (!hasLiveWorkspace && !isSampleDemoMode) {
+      hydratedIdentityRef.current = null;
     }
   }, [hasLiveWorkspace, isSampleDemoMode]);
 
@@ -180,6 +267,22 @@ export function useAthleteCloudSync({
             }));
           }
 
+          if (
+            Array.isArray(cloudState.sessionCheckIns) &&
+            cloudState.sessionCheckIns.length > 0 &&
+            (serverIsNewer || sessionCheckIns.length === 0)
+          ) {
+            setSessionCheckIns(cloudState.sessionCheckIns);
+            try {
+              localStorage.setItem(
+                CHECKINS_STORAGE_KEY,
+                JSON.stringify(cloudState.sessionCheckIns)
+              );
+            } catch {
+              // ignore storage errors
+            }
+          }
+
           if (cloudState.updatedAt) {
             try {
               localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudState.updatedAt);
@@ -206,6 +309,7 @@ export function useAthleteCloudSync({
     identityKey,
     plannedEvents.length,
     targetGoals.length,
+    sessionCheckIns.length,
     setPlannedEvents,
     setTargetGoals,
     setAnnualMileageGoals,
@@ -256,6 +360,7 @@ export function useAthleteCloudSync({
             annualMileageGoals,
             athleteProfile: cleanProfile,
             distanceUnit,
+            sessionCheckIns,
           }),
         });
         if (res.ok) {
@@ -278,5 +383,111 @@ export function useAthleteCloudSync({
     annualMileageGoals,
     athleteProfile,
     distanceUnit,
+    sessionCheckIns,
   ]);
+
+  // 3. Debounced Clean-Room readiness, check-ins & 7d productivity sync across joined teams
+  useEffect(() => {
+    if (isSampleDemoMode || !hasEnteredWorkspace || isSessionLoggedOut || myTeamsCount === 0) {
+      return;
+    }
+    if (activities.length === 0 && wellnessDays.length === 0 && sessionCheckIns.length === 0) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const sevenDaysAgoMs = Date.now() - 7 * 86_400_000;
+      const recent7dActs = activities.filter(
+        (a) => new Date(a.startDateLocal).getTime() >= sevenDaysAgoMs
+      );
+      const acuteLoad7d = Math.round(
+        recent7dActs.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
+      );
+      const ctlVal = selfLatestWellness?.ctl ?? 0;
+      const atlVal = selfLatestWellness?.atl ?? Math.round(acuteLoad7d / 7);
+      const tsbVal = selfLatestWellness?.tsb ?? Number((ctlVal - atlVal).toFixed(1));
+      const verdictLabel =
+        selfLatestWellness?.garminTrainingStatus ||
+        (tsbVal < -20
+          ? 'Strained · Recover'
+          : acuteLoad7d > 0 && acuteLoad7d >= Math.max(120, ctlVal * 5.2)
+            ? 'Productive · Building'
+            : 'Maintaining');
+      const readinessScore =
+        selfLatestWellness?.readinessStatus === 'Strain'
+          ? 52
+          : selfLatestWellness?.readinessStatus === 'Caution'
+            ? 70
+            : 86;
+      const hasWatch = Boolean(garminConnected || intervalsConnected || activities.length > 0);
+      fetch('/api/teams/sync-snapshot', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSavedIntervalsHeaders(),
+        },
+        body: JSON.stringify({
+          origin: window.location.origin,
+          athleteName: athleteProfile.name,
+          privacySettings: selfPrivacySettings,
+          snapshot: {
+            hasConnectedWatch: hasWatch,
+            verdictLabel,
+            readinessScore,
+            ctl: ctlVal,
+            atl: atlVal,
+            tsb: tsbVal,
+            acuteLoad7d,
+            lowAerobicPct: 76,
+            highAerobicPct: 18,
+            neuromuscularPct: 6,
+            caraHours7d: Number(
+              (
+                recent7dActs.reduce((acc, a) => acc + (a.movingTimeSecs || 0), 0) / 3600
+              ).toFixed(1)
+            ),
+            ftpWatts: athleteProfile.ftp,
+            thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
+            safeSportHideWeight: Boolean(athleteProfile.safeSportHideWeight),
+            wellnessDays: wellnessDays.slice(-14),
+            activities: activities.slice(0, 14),
+            sessionCheckIns: sessionCheckIns.slice(0, 14),
+          },
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.teams && Array.isArray(data.teams)) {
+            setMyTeams(data.teams);
+          }
+        })
+        .catch(() => {});
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isSampleDemoMode,
+    hasEnteredWorkspace,
+    isSessionLoggedOut,
+    myTeamsCount,
+    activities,
+    wellnessDays,
+    selfLatestWellness,
+    athleteProfile.name,
+    athleteProfile.ftp,
+    athleteProfile.thresholdPaceSecsPerKm,
+    athleteProfile.safeSportHideWeight,
+    selfPrivacySettings,
+    garminConnected,
+    intervalsConnected,
+    sessionCheckIns,
+    setMyTeams,
+  ]);
+
+  return {
+    effectiveSessionCheckIns,
+    handleRecordSessionCheckIn,
+    resetDemoSessionCheckIns,
+  };
 }

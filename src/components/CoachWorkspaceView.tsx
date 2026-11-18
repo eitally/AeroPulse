@@ -6,6 +6,7 @@ import type {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   SportCategory,
   TargetGoal,
   TeamSummaryWithRole,
@@ -24,6 +25,8 @@ import { TeamManagementPanel } from './TeamManagementPanel';
 import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
 import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
+import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
+import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   Shield,
   Users,
@@ -42,6 +45,7 @@ export interface CoachWorkspaceViewProps {
   primaryAthleteDisplayName: string;
   selfProfile: AthleteProfile;
   athleteFtp: number;
+  selfSessionCheckIns?: SessionCheckInRecord[];
   effectivePlannedEvents: PlannedWorkoutEvent[];
   effectiveActivities: UnifiedActivity[];
   effectiveWellnessDays: UnifiedWellnessDay[];
@@ -117,6 +121,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   primaryAthleteDisplayName,
   selfProfile,
   athleteFtp,
+  selfSessionCheckIns = [],
   effectivePlannedEvents,
   effectiveActivities,
   effectiveWellnessDays,
@@ -291,6 +296,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
             <button
               type="button"
+              data-testid="coach-open-cohort-plan-builder"
+              onClick={onOpenGoalsTab}
+              className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+            >
+              Build Cohort Plan
+            </button>
+
+            <button
+              type="button"
               onClick={onOpenAthleteToday}
               className="md:hidden min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
             >
@@ -399,6 +413,24 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 </div>
               </section>
           )}
+
+          {/* Squad Execution & Pain/RPE Check-In Digest (COACH-01) */}
+          <CoachExecutionDigestPanel
+            roster={connectedAthletesOnly}
+            selfFallback={{
+              id: 'SELF',
+              name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
+              plannedEvents: effectivePlannedEvents,
+              activities: effectiveActivities,
+              sessionCheckIns: selfSessionCheckIns,
+            }}
+            todayIso={getLocalDateIso()}
+            onInspectAthlete={(athId) => {
+              onSelectAthleteViewport(athId);
+              onOpenAthleteToday();
+            }}
+            onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
+          />
 
           {/* Track Multi-Set Workout Builder, Event Groups & Pace Pod Splits */}
           <CoachClipboardWorkoutBuilder
