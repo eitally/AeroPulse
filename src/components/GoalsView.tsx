@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Award,
   Calendar as CalendarIcon,
@@ -259,7 +259,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   const [singleWorkoutSavedMsg, setSingleWorkoutSavedMsg] = useState<string | null>(null);
 
   // Smart Default Archetype by athlete's primarySport
-  const [archetypeCategory, setArchetypeCategory] = useState<GoalArchetypeCategory>('ALL');
+  const [archetypeCategory, setArchetypeCategory] = useState<GoalArchetypeCategory>(() =>
+    athleteProfile?.primarySport === 'Running' ? 'ROAD' : 'CYCLING'
+  );
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<GoalArchetypeId>(() =>
     athleteProfile?.primarySport === 'Running' ? 'ROAD_HALF_MARATHON' : 'CYC_FTP_BUILDER'
   );
@@ -309,6 +311,19 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     onClose: () => setEditingPreviewTarget(null),
     dialogRef: previewEditDialogRef,
   });
+
+  useEffect(() => {
+    try {
+      const pendingCohort = sessionStorage.getItem('thresh_open_plan_cohort');
+      if (pendingCohort === 'TEAM_ALL') {
+        sessionStorage.removeItem('thresh_open_plan_cohort');
+        setBuilderMode('GOAL_PLAN');
+        setPublishAudience('TEAM_ALL');
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const visibleArchetypes = useMemo(
     () =>
@@ -889,7 +904,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           lastPopulatedTeamBlock?.blockId || lastPopulatedBlockId || ''
                         )
                       }
-                      className="min-h-[36px] px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-500/10 cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-500/10 cursor-pointer"
                     >
                       {isRemovingBlock
                         ? 'Removing...'
@@ -921,7 +936,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   data-testid="goals-remove-active-block"
                   disabled={isRemovingBlock}
                   onClick={() => void handleUndoPopulatedBlock(activeCalendarBlock.id)}
-                  className="min-h-[36px] px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-500/10 cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-500/10 cursor-pointer"
                 >
                   {isRemovingBlock ? 'Removing...' : 'Remove Active Block'}
                 </button>
@@ -1117,7 +1132,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           key={preset}
                           type="button"
                           onClick={() => setTrackSeedInput(preset)}
-                          className={`px-2 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
+                          className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
                             trackSeedInput.trim() === preset
                               ? 'bg-[#1C5436] text-white border-[#1C5436] dark:bg-[#C8FF00] dark:text-[#080A09] font-bold'
                               : 'bg-white dark:bg-[#15231B] text-slate-700 dark:text-slate-300 border-stone-300 dark:border-[#2B543B]'
@@ -1272,7 +1287,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           setStartAnchorMode(m.id);
                           setSelectedPreviewWeekIdx(0);
                         }}
-                        className={`min-h-[40px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
+                        className={`min-h-[44px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
                           startAnchorMode === m.id
                             ? 'liquid-capsule-active text-[#1C5436] dark:text-[#C8FF00] font-bold'
                             : 'text-slate-600 dark:text-slate-400'
@@ -1288,7 +1303,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       aria-label="Target race date for plan anchor"
                       value={targetRaceDateIso}
                       onChange={(e) => setTargetRaceDateIso(e.target.value)}
-                      className="mt-1.5 w-full min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="mt-1.5 w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   )}
                 </div>
@@ -1309,7 +1324,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           setSelectedPreviewWeekIdx(0);
                           setSessionOverrides({});
                         }}
-                        className={`min-h-[40px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
+                        className={`min-h-[44px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
                           blockWeeks === wks
                             ? 'liquid-capsule-active text-[#1C5436] dark:text-[#C8FF00] font-bold'
                             : 'text-slate-600 dark:text-slate-400'
@@ -1338,7 +1353,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           toggleWeekdayPill(dayOff);
                         }
                       }}
-                      className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="Sunday">Long: Sunday</option>
                       <option value="Saturday">Long: Saturday</option>
@@ -1349,7 +1364,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       onChange={(e) =>
                         setBlockEnvPref(e.target.value as 'FLEXIBLE' | 'OUTDOOR' | 'INDOOR')
                       }
-                      className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="FLEXIBLE">Hybrid</option>
                       <option value="OUTDOOR">Outdoor</option>
@@ -1367,7 +1382,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     aria-label="Weekly volume tier"
                     value={volumeTier}
                     onChange={(e) => setVolumeTier(e.target.value as PlanVolumeTier)}
-                    className="w-full min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 text-xs text-slate-900 dark:text-white"
+                    className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 text-xs text-slate-900 dark:text-white"
                   >
                     <option value="AUTO">Auto (From Fitness CTL {Math.round(currentCtl)})</option>
                     <option value="STARTER">Starter (~3–5 hrs/wk)</option>

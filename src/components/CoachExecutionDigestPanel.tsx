@@ -9,6 +9,7 @@ import {
   buildCoachSquadExecutionDigest,
   type DigestFallbackAthleteInput,
 } from '../physiology/sessionCheckInAndDigestEngine';
+import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import type { ConnectedAthleteRecord } from '../types';
 
 export interface CoachExecutionDigestPanelProps {
@@ -39,6 +40,27 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
     [roster, selfFallback, todayIso]
   );
 
+  const readinessByAthleteId = useMemo(() => {
+    const map = new Map<string, { hrv: number; tsb: number; watchLight: string }>();
+    for (const ath of roster) {
+      const latestW =
+        ath.wellnessDays && ath.wellnessDays.length > 0
+          ? ath.wellnessDays[ath.wellnessDays.length - 1]
+          : null;
+      const watchLight = evaluateSafeSportPatternWatch({
+        activities: ath.activities || [],
+        wellnessDays: ath.wellnessDays || [],
+        isMinorU18: Boolean(ath.athleteProfile.safeSportHideWeight),
+      }).trafficLight;
+      map.set(ath.id, {
+        hrv: latestW?.hrvRMSSD ?? 0,
+        tsb: latestW?.tsb ?? 0,
+        watchLight,
+      });
+    }
+    return map;
+  }, [roster]);
+
   const visibleRows = useMemo(() => {
     if (filterMode === 'ATTENTION') {
       return digest.rows.filter((r) => r.attentionReason !== 'ON_TRACK');
@@ -52,19 +74,14 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
   return (
     <section
       data-testid="coach-execution-digest"
-      className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-4"
+      className="rounded-2xl liquid-glass p-3 sm:p-4 space-y-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-              Squad Execution Digest (7d)
-            </h2>
-          </div>
-          <p className="text-2xs text-slate-600 dark:text-slate-300">
-            Post-session RPE &amp; Safe-Sport pain signals triage before you adjust training groups.
-          </p>
+        <div className="flex items-center gap-2">
+          <Activity className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
+          <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-[#F4F7F4]">
+            Squad Triage (7d)
+          </h2>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter digest rows">
@@ -152,11 +169,15 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
       ) : (
         <div className="space-y-2">
           {visibleRows.map((row) => {
+            const readiness = readinessByAthleteId.get(row.athleteId);
+            const hasWatchAlert =
+              readiness && readiness.watchLight !== 'GREEN_CLEAR';
             const badgeClass =
-              row.attentionReason === 'PAIN_FLAG'
+              row.attentionReason === 'PAIN_FLAG' || readiness?.watchLight === 'RED_MEDICAL_REVIEW'
                 ? 'ap-status-strained'
                 : row.attentionReason === 'HIGH_RPE_STRAIN' ||
-                    row.attentionReason === 'MISSED_KEY_SESSIONS'
+                    row.attentionReason === 'MISSED_KEY_SESSIONS' ||
+                    hasWatchAlert
                   ? 'ap-status-caution'
                   : 'ap-status-prime';
 
@@ -164,7 +185,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               <div
                 key={row.athleteId}
                 data-testid={`digest-row-${row.athleteId}`}
-                className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                className="rounded-xl border border-[#2B5B3F]/15 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
               >
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -177,19 +198,29 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                           ? 'High Strain'
                           : row.attentionReason === 'MISSED_KEY_SESSIONS'
                             ? 'Missed Sessions'
-                            : 'On Track'}
+                            : readiness?.watchLight === 'RED_MEDICAL_REVIEW'
+                              ? 'Medical Check'
+                              : readiness?.watchLight === 'AMBER_WATCH'
+                                ? 'Needs Review'
+                                : 'On Track'}
                     </span>
-                    <span className="font-bold text-slate-900 dark:text-white truncate">
+                    <span className="font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
                       {row.name}
                     </span>
+                    {readiness && (readiness.hrv > 0 || readiness.tsb !== 0) && (
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#43584B] dark:text-[#93A39A] tabular-nums">
+                        {readiness.hrv > 0 ? `HRV ${Math.round(readiness.hrv)}ms · ` : ''}
+                        Form {readiness.tsb >= 0 ? `+${Math.round(readiness.tsb)}` : Math.round(readiness.tsb)}
+                      </span>
+                    )}
                     {row.eventGroup && (
-                      <span className="px-2 py-0.5 rounded text-2xs font-mono bg-stone-100 dark:bg-white/10 text-slate-700 dark:text-slate-200">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#1F3528] dark:text-[#C8D8CE]">
                         {row.eventGroup}
                       </span>
                     )}
                     {row.isSelfFallback && (
-                      <span className="px-2 py-0.5 rounded text-2xs font-mono bg-stone-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-                        Coach Log Preview
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#43584B] dark:text-[#93A39A]">
+                        Coach Preview
                       </span>
                     )}
                   </div>

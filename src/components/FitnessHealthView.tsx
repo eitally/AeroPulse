@@ -181,6 +181,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const todayIso = useMemo(() => getLocalDateIso(), []);
   const hasWellnessTelemetry = wellnessDays.length > 0;
   const [orthoSwappedToast, setOrthoSwappedToast] = useState<string | null>(null);
+  const [showEmptyCheckIn, setShowEmptyCheckIn] = useState<boolean>(false);
 
   // Student-Athlete Check-In (Academic/Exam Stress, Shin/Metatarsal BSI, PHV Growth Plates) & Cross-Training
   const [isStudentCheckInOpen, setIsStudentCheckInOpen] = useState<boolean>(false);
@@ -834,14 +835,28 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onQuickLogRun={onQuickLogRun}
       />
 
-      {onRecordSessionCheckIn && (
-        <AthleteSessionCheckInCard
-          todayIso={todayIso}
-          plannedEvents={plannedEvents}
-          sessionCheckIns={sessionCheckIns}
-          onRecordCheckIn={onRecordSessionCheckIn}
-        />
-      )}
+      {onRecordSessionCheckIn &&
+        (activities.length > 0 ||
+        plannedEvents.length > 0 ||
+        sessionCheckIns.length > 0 ||
+        showEmptyCheckIn ? (
+          <AthleteSessionCheckInCard
+            todayIso={todayIso}
+            plannedEvents={plannedEvents}
+            sessionCheckIns={sessionCheckIns}
+            onRecordCheckIn={onRecordSessionCheckIn}
+          />
+        ) : (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowEmptyCheckIn(true)}
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-card-inset text-xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
+            >
+              Log Post-Session Readiness / RPE &amp; Pain Check-In →
+            </button>
+          </div>
+        ))}
 
       {/* ==========================================================================
           0B. ON-DEMAND SKYLINE INTERVAL WORKBENCH & GARMIN/.FIT EXPORT DRAWER
@@ -1120,7 +1135,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span
                       className={`text-xs font-semibold ${
                         orthopedicSummary.impactAcwr >= 1.32
-                          ? 'text-[#D9480F]'
+                          ? 'text-[#EA580C]'
                           : orthopedicSummary.impactAcwr >= 1.18
                             ? 'text-amber-600 dark:text-amber-400'
                             : 'text-[#0D9488] dark:text-teal-300'
@@ -1159,7 +1174,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span
                       className={`text-xs font-semibold ${
                         orthopedicSummary.trainerOnly48hLockActive
-                          ? 'text-[#D9480F] dark:text-rose-400'
+                          ? 'text-[#EA580C] dark:text-rose-400'
                           : orthopedicSummary.spikeGuardrailStatus === 'SPIKE_CAP_WARNING'
                             ? 'text-amber-600 dark:text-amber-400'
                             : 'text-[#0D9488] dark:text-teal-300'
@@ -1860,10 +1875,10 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               onClick={() => setIsDatePickerOpen((prev) => !prev)}
               className={`min-h-[44px] sm:min-h-[30px] px-3 sm:px-2.5 py-0.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
                 rangePreset === 'CUSTOM' ||
-                rangePreset === '7D' ||
                 rangePreset === '1M' ||
                 rangePreset === '6M' ||
-                rangePreset === '2Y'
+                rangePreset === '2Y' ||
+                isDatePickerOpen
                   ? 'ap-nav-volt-active'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
@@ -2123,7 +2138,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             fallback={
               <div
                 className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
-                style={{ height: `${isCompactMobile ? 380 : 530}px` }}
+                style={{ height: `${isCompactMobile ? 380 : 390}px` }}
               >
                 Loading Performance Management Chart…
               </div>
@@ -2135,7 +2150,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               onSelectActivity={onSelectActivity}
               onSelectDate={handleEChartsSelectDate}
               onSelectDateRange={handleEChartsSelectDateRange}
-              height={isCompactMobile ? 380 : 530}
+              height={isCompactMobile ? 380 : 390}
             />
           </Suspense>
         </div>
@@ -2201,7 +2216,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs font-sans text-slate-500 ml-1.5">CTL</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-[#0B4F9E] dark:text-sky-400">
+                  <span className="text-xs font-bold text-[#0284C7] dark:text-sky-400">
                     ACWR {acwr.toFixed(2)}x
                   </span>
                   <span className="block text-2xs text-slate-500">
@@ -2224,7 +2239,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   />
                   {/* Live Marker Dot */}
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#0B4F9E] dark:bg-sky-400 ring-2 ring-white dark:ring-slate-950"
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#0284C7] dark:bg-sky-400 ring-2 ring-white dark:ring-slate-950"
                     style={{ left: `${acwrMarkerPct}%` }}
                   />
                 </div>
@@ -2398,7 +2413,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   THRESH · eFTP
                 </span>
-                <span className="text-xs font-mono text-[#D9480F] dark:text-[#FB6514] font-bold">
+                <span className="text-xs font-mono text-[#EA580C] dark:text-orange-400 font-bold">
                   {athleteProfile?.safeSportHideWeight
                     ? 'Safe-Sport Shield'
                     : bikeEftp > 0
@@ -2414,7 +2429,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   <span className="text-xs text-slate-500 ml-1">Bike</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-[#0284C7] dark:text-[#60A5FA]">
+                  <span className="text-xs font-bold text-[#0284C7] dark:text-sky-400">
                     Run {runEftp > 0 ? `${runEftp}W` : '—'}
                   </span>
                   <span className="block text-2xs text-slate-500">
@@ -2425,13 +2440,13 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <div className="space-y-1 pt-0.5">
                 <div className="h-2 w-full rounded-full bg-stone-200/80 dark:bg-slate-800 overflow-hidden flex gap-0.5">
                   <div
-                    className="h-full bg-[#D9480F] dark:bg-[#FB6514] rounded-full transition-all"
+                    className="h-full bg-[#EA580C] rounded-full transition-all"
                     style={{ width: `${wPrimePct}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-2xs font-mono text-slate-500 dark:text-slate-400">
                   <span>Anaerobic Reserve (W&apos;)</span>
-                  <span className="text-[#D9480F] dark:text-[#FB6514] font-semibold">
+                  <span className="text-[#EA580C] dark:text-orange-400 font-semibold">
                     {wPrimeKj > 0 ? `${wPrimeKj} kJ` : hasWellnessTelemetry ? '—' : 'Calibrate FTP'}
                   </span>
                 </div>

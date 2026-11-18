@@ -1641,7 +1641,7 @@ export default function App() {
 
         {/* Global Content Container & Stage Banners */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 ap-container py-3 sm:py-4 min-w-0 flex flex-col gap-4">
+          <div className="flex-1 ap-container py-2 sm:py-3 min-w-0 flex flex-col gap-2.5 sm:gap-3">
             <CockpitStageBanners
               pendingUrlJoinOffer={pendingUrlJoinOffer}
               onAcceptJoinOffer={handleAcceptJoinOffer}
@@ -1682,6 +1682,10 @@ export default function App() {
               onDismissQuickConnectBanner={() => setDismissedQuickConnectBanner(true)}
               myTeamsCount={isSampleDemoMode ? 0 : myTeams.length}
               isCoachMode={activeTab === 'coach'}
+              isStopwatchMode={
+                activeTab === 'stopwatch' ||
+                (activeTab === 'coach' && coachSubTab === 'STOPWATCH')
+              }
               athleteProfile={effectiveAthleteProfile}
               distanceUnit={distanceUnit}
               onOpenProfileModal={handleOpenProfileModal}
@@ -1778,13 +1782,7 @@ export default function App() {
           coachSubTab={coachSubTab}
           onSelectCoachSubTab={setCoachSubTab}
           onSelectTab={(tab) => {
-            setActiveTab(
-              tab === 'totals'
-                ? activeTab === 'totals'
-                  ? 'totals'
-                  : lastLabTabRef.current
-                : tab
-            );
+            setActiveTab(tab);
           }}
         />
 
@@ -1886,7 +1884,11 @@ export default function App() {
           onTeamsUpdated={handleTeamsUpdated}
           onOpenFullScreenStopwatch={() => {
             setIsRosterModalOpen(false);
-            setActiveTab('stopwatch');
+            if (activeTab === 'coach') {
+              setCoachSubTab('STOPWATCH');
+            } else {
+              setActiveTab('stopwatch');
+            }
           }}
           showMetricsGuide={showMetricsGuide}
           onCloseMetricsGuide={() => setShowMetricsGuide(false)}

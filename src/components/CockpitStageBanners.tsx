@@ -58,6 +58,7 @@ interface CockpitStageBannersProps {
 
   myTeamsCount?: number;
   isCoachMode?: boolean;
+  isStopwatchMode?: boolean;
   athleteProfile?: AthleteProfile;
   distanceUnit?: DistanceUnit;
   onOpenProfileModal?: () => void;
@@ -89,6 +90,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
   onDismissQuickConnectBanner,
   myTeamsCount = 0,
   isCoachMode = false,
+  isStopwatchMode = false,
   athleteProfile,
   distanceUnit = 'mi',
   onOpenProfileModal,
@@ -118,13 +120,14 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
       ? 'CONNECTED_ATHLETE'
       : pendingUrlJoinOffer
         ? 'JOIN_OFFER'
-        : isSampleDemoMode
+        : isSampleDemoMode && !isStopwatchMode
           ? 'SAMPLE_DEMO'
-          : isSyncing
+          : isSyncing && !isStopwatchMode
             ? 'SYNCING'
             : redactedStravaCount > 0 &&
                 !connectionStatus.stravaConnected &&
-                !dismissedStravaBanner
+                !dismissedStravaBanner &&
+                !isStopwatchMode
               ? 'STRAVA_UNLOCK'
               : !isSampleDemoMode &&
                   !connectionStatus.stravaConnected &&
@@ -134,13 +137,15 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
                   !isSyncing &&
                   !dismissedQuickConnectBanner &&
                   myTeamsCount === 0 &&
-                  !isCoachMode
+                  !isCoachMode &&
+                  !isStopwatchMode
                 ? 'QUICK_CONNECT'
                 : !isSampleDemoMode &&
                     connectionStatus.stravaConnected &&
                     activitiesCount > 0 &&
                     !isSyncing &&
                     !isCoachMode &&
+                    !isStopwatchMode &&
                     !dismissedWelcomeFork
                   ? 'WELCOME_FORK'
                   : null;
@@ -414,63 +419,53 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         <section
           data-testid="post-login-welcome-launchpad"
           aria-label="Post-login quick start"
-          className="rounded-2xl liquid-glass border-[#28573B]/35 dark:border-[#C8FF00]/30 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+          className="rounded-xl liquid-glass border-[#28573B]/35 dark:border-[#C8FF00]/30 px-3 py-2 flex flex-wrap items-center justify-between gap-2"
         >
-          <div className="flex items-start gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0 mt-0.5">
-              <Sparkles className="w-4 h-4" weight="duotone" />
-            </div>
-            <div className="min-w-0 space-y-0.5 text-xs">
-              <div className="font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5">
-                <span>
-                  Synced {activitiesCount.toLocaleString()} Strava workouts
-                </span>
-                {athleteProfile && (
-                  <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
-                    {athleteProfile.primarySport === 'Running'
-                      ? `Running · LT ${formatPace(athleteProfile.thresholdPaceSecsPerKm || 250, distanceUnit)}`
-                      : `Cycling · FTP ${athleteProfile.ftp}W`}
-                  </span>
-                )}
-                {onOpenProfileModal && (
-                  <button
-                    type="button"
-                    onClick={onOpenProfileModal}
-                    className="text-2xs font-semibold underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer"
-                  >
-                    Edit Zones
-                  </button>
-                )}
-              </div>
-              <p className="text-2xs text-slate-600 dark:text-slate-300">
-                Choose your next step: review readiness &amp; trends below, or build a custom workout or goal training block.
-              </p>
-            </div>
+          <div className="flex items-center gap-2 min-w-0 text-xs">
+            <Sparkles className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00] shrink-0" weight="duotone" />
+            <span className="font-bold text-[#101411] dark:text-[#F4F7F4] whitespace-nowrap">
+              {activitiesCount.toLocaleString()} synced
+            </span>
+            {athleteProfile && (
+              <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00] whitespace-nowrap">
+                {athleteProfile.primarySport === 'Running'
+                  ? `Run · LT ${formatPace(athleteProfile.thresholdPaceSecsPerKm || 250, distanceUnit)}`
+                  : `Bike · ${athleteProfile.ftp}W`}
+              </span>
+            )}
+            {onOpenProfileModal && (
+              <button
+                type="button"
+                onClick={onOpenProfileModal}
+                className="min-h-[44px] sm:min-h-[32px] px-1.5 text-2xs font-semibold underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer whitespace-nowrap"
+              >
+                Edit Zones
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => {
                 onExploreFitness?.();
                 window.setTimeout(() => {
                   const target =
-                    document.getElementById('today-pmc-anchor') ||
                     document.getElementById('fitness-sec-pmc') ||
                     document.querySelector('[data-testid="today-physiology-deep-dive"]');
                   target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }, 60);
               }}
-              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[32px] px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
             >
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>Explore My Fitness</span>
+              <span>Trends</span>
             </button>
             <button
               type="button"
               data-testid="welcome-open-plan-builder-btn"
               onClick={() => onOpenPlanBuilder?.()}
-              className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[32px] px-3 py-1 text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
             >
               <Target className="w-3.5 h-3.5" />
               <span>Build a Workout or Plan</span>
@@ -479,7 +474,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               type="button"
               aria-label="Dismiss welcome quick start"
               onClick={dismissWelcomeFork}
-              className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
+              className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] flex items-center justify-center rounded-lg text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
               title="Dismiss"
             >
               <X className="w-4 h-4" />

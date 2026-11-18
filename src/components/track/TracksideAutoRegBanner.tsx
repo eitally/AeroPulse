@@ -15,6 +15,7 @@ export interface TracksideAutoRegBannerProps {
   autoRegSummary: SquadLiveAutoRegSummary;
   pivotHistory: TracksideAutoRegPivotEntry[];
   endedEarlyStimulusRatio: number | null;
+  isFloatingFocusMode?: boolean;
   onExtendRest30s: () => void;
   onConvertRemainingToCv: () => void;
   onEndSession85Stimulus: (completedRepsCap: number) => void;
@@ -25,6 +26,7 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
   autoRegSummary,
   pivotHistory,
   endedEarlyStimulusRatio,
+  isFloatingFocusMode = false,
   onExtendRest30s,
   onConvertRemainingToCv,
   onEndSession85Stimulus,
@@ -48,34 +50,44 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
     : 'ap-status-prime';
 
   return (
-    <div className="space-y-2">
+    <div
+      className={
+        isFloatingFocusMode
+          ? 'fixed bottom-[70px] left-2.5 right-2.5 z-30 space-y-1.5 lg:static lg:bottom-auto'
+          : 'space-y-2'
+      }
+    >
       {primaryAlert && (
         <div
           data-testid="stopwatch-autoreg-banner"
           role="status"
           aria-live="polite"
-          className={`rounded-xl px-4 py-3 border ${toneClass} space-y-2.5`}
+          className={`rounded-xl ${
+            isFloatingFocusMode ? 'px-3 py-2 shadow-2xl space-y-1.5' : 'px-4 py-3 space-y-2.5'
+          } border ${toneClass}`}
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="flex items-start gap-2.5 flex-1 min-w-0">
+            <div className="flex items-start gap-2 flex-1 min-w-0">
               {primaryAlert.cueType === 'NEURO_STOP_RULE' ? (
                 <Warning className="w-4 h-4 shrink-0 mt-0.5" weight="bold" />
               ) : (
                 <Pulse className="w-4 h-4 shrink-0 mt-0.5" weight="bold" />
               )}
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs font-extrabold tracking-tight">
                     {primaryAlert.runnerName} · {primaryAlert.headline}
                   </span>
-                  <span className="px-2 py-0.5 rounded bg-black/15 dark:bg-black/30 font-mono text-2xs font-bold tabular-nums">
+                  <span className="px-1.5 py-0.5 rounded bg-black/15 dark:bg-black/30 font-mono text-2xs font-bold tabular-nums">
                     Fade {primaryAlert.fadePct >= 0 ? '+' : ''}
                     {primaryAlert.fadePct.toFixed(1)}% · D&apos; {primaryAlert.dPrimeBalancePct}%
                   </span>
                 </div>
-                <p className="text-xs mt-1 leading-relaxed opacity-95">
-                  {primaryAlert.coachingCue}
-                </p>
+                {!isFloatingFocusMode && (
+                  <p className="text-xs mt-1 leading-relaxed opacity-95">
+                    {primaryAlert.coachingCue}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -89,15 +101,15 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               data-testid="autoreg-extend-rest-btn"
               onClick={onExtendRest30s}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'EXTEND_REST_30S'
                   ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-slate-900 dark:text-white'
+                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" weight="bold" />
@@ -108,10 +120,10 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
               type="button"
               data-testid="autoreg-convert-cv-btn"
               onClick={onConvertRemainingToCv}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'CONVERT_REMAINING_TO_CV'
                   ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-slate-900 dark:text-white'
+                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
               }`}
             >
               <ArrowsLeftRight className="w-3.5 h-3.5 shrink-0" weight="bold" />
@@ -122,10 +134,10 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
               type="button"
               data-testid="autoreg-end-85-btn"
               onClick={() => onEndSession85Stimulus(primaryAlert.completedReps)}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'END_SESSION_85_STIMULUS'
                   ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-slate-900 dark:text-white'
+                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
               }`}
             >
               <Pause className="w-3.5 h-3.5 shrink-0" weight="fill" />

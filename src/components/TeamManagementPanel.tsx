@@ -20,7 +20,6 @@ import {
 } from './icons/PhosphorIcons';
 import type {
   CoachEventGroup,
-  SportCategory,
   TeamBrandConfig,
   TeamOrgType,
   TeamSummaryWithRole,
@@ -47,6 +46,7 @@ interface TeamManagementPanelProps {
   initialShowCreateStudio?: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onOpenClipboard?: () => void;
 }
 
 const ORG_TYPE_OPTIONS: Array<{ id: TeamOrgType; label: string; subtitle: string }> = [
@@ -125,6 +125,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   initialShowCreateStudio = false,
   onSelectActiveTeam,
   onTeamsUpdated,
+  onOpenClipboard,
 }) => {
   const activeTeam = useMemo(
     () =>
@@ -171,30 +172,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const csvFileInputRef = useRef<HTMLInputElement | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Squad Workout Broadcast State
-  const [showBroadcastForm, setShowBroadcastForm] = useState(false);
-  const [broadcastSquad, setBroadcastSquad] = useState('ALL');
-  const [broadcastDate, setBroadcastDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
-  const [broadcastName, setBroadcastName] = useState(
-    'Squad Session: 5x1000m Cruise Threshold + 4x150m Strides'
-  );
-  const [broadcastSport, setBroadcastSport] = useState<SportCategory>('Running');
-  const [broadcastDurationMins, setBroadcastDurationMins] = useState(55);
-  const [broadcastLoad, setBroadcastLoad] = useState(74);
-  const [broadcastSyntax, setBroadcastSyntax] = useState(
-    '- 15m 70% Pace\n- 5x 4m 100% Pace / 60s 65% Pace\n- 4x 25s 118% Pace / 65s 60% Pace\n- 10m 68% Pace'
-  );
-  const [broadcastNotes, setBroadcastNotes] = useState(
-    'Run in VDOT pacing pods. Controlled first 2 reps; smooth turnover on strides.'
-  );
-
   // Status & Feedback
   const [isSavingStudio, setIsSavingStudio] = useState(false);
   const [isSendingBulk, setIsSendingBulk] = useState(false);
   const [isJoiningTeam, setIsJoiningTeam] = useState(false);
-  const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bannerMessage, setBannerMessage] = useState<{
     tone: 'success' | 'info' | 'error';
@@ -535,64 +516,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     }
   };
 
-  const handleBroadcastWorkout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeTeam) return;
-    setIsBroadcasting(true);
-    try {
-      const resp = await fetch(
-        `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            origin: originUrl,
-            targetSquadGroup: broadcastSquad,
-            date: broadcastDate,
-            name: broadcastName,
-            sportCategory: broadcastSport,
-            plannedDurationSecs: broadcastDurationMins * 60,
-            plannedLoad: broadcastLoad,
-            workoutSyntax: broadcastSyntax,
-            description: broadcastNotes,
-          }),
-        }
-      );
-      const data = await resp.json();
-      if (resp.ok && data.team) {
-        const updatedTeam = data.team as TeamSummaryWithRole;
-        onTeamsUpdated(
-          myTeams.map((t) =>
-            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-          ),
-          updatedTeam.brand.teamId
-        );
-        setShowBroadcastForm(false);
-        setBannerMessage({
-          tone: 'success',
-          text: `Broadcasted "${broadcastName}" to ${
-            broadcastSquad === 'ALL' ? 'all squads' : broadcastSquad
-          } on ${updatedTeam.brand.shortName}!`,
-        });
-      }
-    } finally {
-      setIsBroadcasting(false);
-    }
-  };
-
   const isActiveTeamCoach =
     activeTeam?.myRole === 'HEAD_COACH' || activeTeam?.myRole === 'ASSISTANT_COACH';
 
-  const distinctSquads = useMemo(() => {
-    if (!activeTeam) return ['Varsity', 'Junior Varsity', 'Frosh/Soph'];
-    const defaults = getOrgTypeSafeguardingDefaults(activeTeam.brand.orgType).defaultSquads;
-    const fromMembers = activeTeam.memberships.map((m) => m.squadGroup).filter(Boolean);
-    return Array.from(new Set([...defaults, ...fromMembers]));
-  }, [activeTeam]);
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Multi-Team Switcher & Quick Actions Bar */}
       <div className="rounded-2xl liquid-glass-subtle border border-stone-200/80 dark:border-white/10 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1175,14 +1103,16 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         Edit Branding &amp; Colors
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowBroadcastForm((prev) => !prev)}
-                        className="px-2.5 py-1.5 rounded-lg bg-[#D9480F]/15 hover:bg-[#D9480F]/25 text-[#B93800] dark:text-[#FB923C] border border-[#FDBA74] dark:border-[#FB6514]/35 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <CalendarPlus className="w-3.5 h-3.5" />
-                        <span>Broadcast Squad Workout</span>
-                      </button>
+                      {onOpenClipboard && (
+                        <button
+                          type="button"
+                          onClick={onOpenClipboard}
+                          className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg ap-btn-primary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <CalendarPlus className="w-3.5 h-3.5" />
+                          <span>Assign Workout in Clipboard →</span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -1211,170 +1141,6 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               ))}
             </div>
           </div>
-
-          {/* Squad Broadcast Workout Drawer */}
-          {isActiveTeamCoach && showBroadcastForm && (
-            <form
-              onSubmit={handleBroadcastWorkout}
-              className="rounded-2xl liquid-glass-subtle border border-[#D9480F]/40 p-5 space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-stone-200 dark:border-slate-800 pb-2.5">
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <CalendarPlus className="w-4 h-4 text-[#D9480F]" />
-                  <span>Broadcast Structured Workout to {activeTeam.brand.shortName}</span>
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => setShowBroadcastForm(false)}
-                  className="text-xs font-mono text-slate-500 cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label
-                    htmlFor={`${formId}-broadcast-squad`}
-                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                  >
-                    Target Squad Pod
-                  </label>
-                  <select
-                    id={`${formId}-broadcast-squad`}
-                    value={broadcastSquad}
-                    onChange={(e) => setBroadcastSquad(e.target.value)}
-                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-semibold"
-                  >
-                    <option value="ALL">All Squads ({activeTeam.activeCount} active)</option>
-                    {distinctSquads.map((sq) => (
-                      <option key={sq} value={sq}>
-                        {sq} Only
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor={`${formId}-broadcast-date`}
-                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                  >
-                    Workout Date
-                  </label>
-                  <input
-                    id={`${formId}-broadcast-date`}
-                    type="date"
-                    value={broadcastDate}
-                    onChange={(e) => setBroadcastDate(e.target.value)}
-                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor={`${formId}-broadcast-sport`}
-                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                  >
-                    Sport
-                  </label>
-                  <select
-                    id={`${formId}-broadcast-sport`}
-                    value={broadcastSport}
-                    onChange={(e) => setBroadcastSport(e.target.value as SportCategory)}
-                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-semibold"
-                  >
-                    <option value="Running">Running</option>
-                    <option value="Cycling">Cycling</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label
-                      htmlFor={`${formId}-broadcast-mins`}
-                      className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                    >
-                      Mins
-                    </label>
-                    <input
-                      id={`${formId}-broadcast-mins`}
-                      type="number"
-                      value={broadcastDurationMins}
-                      onChange={(e) => setBroadcastDurationMins(Number(e.target.value))}
-                      className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor={`${formId}-broadcast-load`}
-                      className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                    >
-                      Load
-                    </label>
-                    <input
-                      id={`${formId}-broadcast-load`}
-                      type="number"
-                      value={broadcastLoad}
-                      onChange={(e) => setBroadcastLoad(Number(e.target.value))}
-                      className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor={`${formId}-broadcast-title`}
-                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                  >
-                    Session Title &amp; Coach Notes
-                  </label>
-                  <input
-                    id={`${formId}-broadcast-title`}
-                    type="text"
-                    value={broadcastName}
-                    onChange={(e) => setBroadcastName(e.target.value)}
-                    className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-semibold mb-2"
-                  />
-                  <textarea
-                    rows={2}
-                    value={broadcastNotes}
-                    aria-label="Coach notes for squad workout"
-                    onChange={(e) => setBroadcastNotes(e.target.value)}
-                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-2.5 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor={`${formId}-broadcast-steps`}
-                    className="block text-2xs font-mono uppercase text-slate-500 mb-1"
-                  >
-                    Structured Steps (Auto-scales to each athlete&apos;s threshold)
-                  </label>
-                  <textarea
-                    id={`${formId}-broadcast-steps`}
-                    rows={4}
-                    value={broadcastSyntax}
-                    onChange={(e) => setBroadcastSyntax(e.target.value)}
-                    className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-2.5 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isBroadcasting}
-                  className="ap-btn-primary text-xs cursor-pointer"
-                >
-                  {isBroadcasting ? 'Broadcasting...' : 'Push Workout to Squad Calendars'}
-                </button>
-              </div>
-            </form>
-          )}
 
           {/* Coach-Only Bulk Roster CSV / Spreadsheet / Resend Email Inviter */}
           {isActiveTeamCoach && (

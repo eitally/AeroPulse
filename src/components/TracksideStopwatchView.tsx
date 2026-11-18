@@ -173,6 +173,11 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   } = useTracksideStopwatch(50);
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
+  const [isFocusMode, setIsFocusMode] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  );
+  const [lastTappedRunnerId, setLastTappedRunnerId] = useState<string | null>(null);
+  const tapFlashTimerRef = useRef<number | null>(null);
 
   const activeTeam = useMemo(
     () => myTeams.find((t) => t.brand.teamId === activeTeamId) || myTeams[0] || null,
@@ -597,6 +602,25 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     dismissedAutoRegSignatures,
   ]);
 
+  useEffect(() => {
+    return () => {
+      if (tapFlashTimerRef.current !== null) {
+        window.clearTimeout(tapFlashTimerRef.current);
+      }
+    };
+  }, []);
+
+  const triggerRunnerTapFlash = useCallback((runnerId: string) => {
+    setLastTappedRunnerId(runnerId);
+    if (tapFlashTimerRef.current !== null) {
+      window.clearTimeout(tapFlashTimerRef.current);
+    }
+    tapFlashTimerRef.current = window.setTimeout(() => {
+      setLastTappedRunnerId((prev) => (prev === runnerId ? null : prev));
+      tapFlashTimerRef.current = null;
+    }, 350);
+  }, []);
+
   const handleRunnerAction = useCallback(
     (telemetry: RunnerSplitTelemetry) => {
       if (telemetry.isFinishedLocked) {
@@ -610,6 +634,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           maxRaceLaps: targetRaceLaps,
         });
         if (assigned !== null) {
+          triggerRunnerTapFlash(telemetry.runnerId);
           const nextLap = telemetry.lapCount + 1;
           const hitsBell =
             sessionType === 'RACE' &&
@@ -627,6 +652,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       const stamped = tapRunnerSplit(telemetry.runnerId, telemetry.runnerName, {
         maxRaceLaps: targetRaceLaps,
       });
+      triggerRunnerTapFlash(telemetry.runnerId);
       const nextLap = telemetry.lapCount + 1;
       const hitsBell =
         sessionType === 'RACE' &&
@@ -645,6 +671,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       targetRaceLaps,
       sessionType,
       playFeedback,
+      triggerRunnerTapFlash,
     ]
   );
 
@@ -918,898 +945,1176 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     );
   };
 
+  const renderModeRadioGroup = (compact = false) => (
+    <div
+      role="radiogroup"
+      aria-label="Session Mode"
+      className="inline-flex items-center gap-1 p-0.5 sm:p-1 rounded-xl liquid-capsule-track shrink-0"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={sessionType === 'WORKOUT'}
+        data-testid="stopwatch-mode-workout"
+        onClick={() => {
+          setSessionType('WORKOUT');
+          setSaveFeedbackMsg(null);
+        }}
+        className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 rounded-lg font-bold transition-all cursor-pointer ${
+          compact ? 'px-2 text-2xs' : 'px-3.5 py-1.5 text-xs gap-1.5'
+        } ${
+          sessionType === 'WORKOUT'
+            ? 'liquid-capsule-active'
+            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4]'
+        }`}
+      >
+        <Timer className={compact ? 'w-3.5 h-3.5 ap-text-brand' : 'w-4 h-4 ap-text-brand'} weight="duotone" />
+        <span>WORKOUT</span>
+      </button>
+
+      <button
+        type="button"
+        role="radio"
+        aria-checked={sessionType === 'RACE'}
+        data-testid="stopwatch-mode-race"
+        onClick={() => {
+          setSessionType('RACE');
+          setSaveFeedbackMsg(null);
+        }}
+        className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 rounded-lg font-bold transition-all cursor-pointer ${
+          compact ? 'px-2 text-2xs' : 'px-3.5 py-1.5 text-xs gap-1.5'
+        } ${
+          sessionType === 'RACE'
+            ? 'liquid-capsule-active'
+            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4]'
+        }`}
+      >
+        <FlagCheckered
+          className={compact ? 'w-3.5 h-3.5 text-[#D97706]' : 'w-4 h-4 text-[#D97706]'}
+          weight="duotone"
+        />
+        <span>RACE</span>
+      </button>
+    </div>
+  );
+
+  const renderPresetSelect = (compact = false) =>
+    sessionType === 'WORKOUT' ? (
+      <select
+        aria-label="Workout Preset"
+        value={workoutPresetId}
+        onChange={(e) => setWorkoutPresetId(e.target.value)}
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+          compact ? 'max-w-[168px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
+        }`}
+      >
+        {customPlanPreset && (
+          <option
+            value="custom-plan"
+            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+          >
+            Planned: {customPlanPreset.label}
+          </option>
+        )}
+        {WORKOUT_STOPWATCH_PRESETS.map((p) => (
+          <option
+            key={p.id}
+            value={p.id}
+            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+          >
+            {p.label}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <select
+        aria-label="Race Event Distance"
+        value={raceEventLabel}
+        onChange={(e) => setRaceEventLabel(e.target.value)}
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+          compact ? 'max-w-[155px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
+        }`}
+      >
+        {RACE_STOPWATCH_PRESETS.map((evt) => (
+          <option
+            key={evt.label}
+            value={evt.label}
+            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+          >
+            {evt.label}
+            {evt.targetLaps ? ` (${evt.targetLaps} x ${evt.splitMeters}m)` : ' (Open Laps)'}
+          </option>
+        ))}
+      </select>
+    );
+
+  const recoverySelectNode = (
+    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+      <span>Auto Recovery Countdown</span>
+      <select
+        aria-label="Recovery Countdown"
+        value={restDurationSecs}
+        onChange={(e) => setRestDurationSecs(Number(e.target.value))}
+        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
+      >
+        {REST_OPTIONS_SECS.map((sec) => (
+          <option
+            key={sec}
+            value={sec}
+            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+          >
+            {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
+          </option>
+        ))}
+        {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
+          <option
+            value={restDurationSecs}
+            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+          >
+            {restDurationSecs}s Recovery Timer (Auto-Reg)
+          </option>
+        )}
+      </select>
+    </label>
+  );
+
+  const sessionTitleInputNode = (
+    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+      <span>{sessionType === 'RACE' ? 'Meet / Heat Name' : 'Session Name'}</span>
+      <input
+        type="text"
+        value={sessionTitle}
+        onChange={(e) => setSessionTitle(e.target.value)}
+        placeholder={
+          sessionType === 'RACE' ? 'e.g. League Finals Heat 1' : 'e.g. Tuesday Track Intervals'
+        }
+        aria-label="Meet or Session Name"
+        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B] dark:placeholder:text-[#93A39A] focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
+      />
+    </label>
+  );
+
+  const hardwareTogglesNode = (
+    <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+      <span>Trackside Hardware</span>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          aria-pressed={wakeLockEnabled}
+          onClick={() => setWakeLockEnabled(!wakeLockEnabled)}
+          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+            wakeLockEnabled
+              ? wakeLockState === 'ACTIVE'
+                ? 'ap-status-prime'
+                : 'ap-status-info'
+              : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+          }`}
+          title="Keep mobile display awake while timing live track sessions"
+        >
+          <Sun className="w-3.5 h-3.5 shrink-0" weight="bold" />
+          <span className="truncate">
+            {wakeLockEnabled ? (wakeLockState === 'ACTIVE' ? 'Awake On' : 'Wake Ready') : 'Wake Off'}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={soundEnabled}
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+            soundEnabled ? 'ap-status-info' : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+          }`}
+          title="Play crisp Web Audio confirmation beep + vibration on splits"
+        >
+          {soundEnabled ? (
+            <SpeakerHigh className="w-3.5 h-3.5 shrink-0" weight="bold" />
+          ) : (
+            <SpeakerSlash className="w-3.5 h-3.5 shrink-0" weight="bold" />
+          )}
+          <span>{soundEnabled ? 'Beep On' : 'Muted'}</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  const waveModeButtonsNode = (
+    <div
+      role="group"
+      aria-label="Start Wave Mode"
+      className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl liquid-capsule-track"
+    >
+      <button
+        type="button"
+        aria-pressed={waveMode === 'MASS'}
+        onClick={() => setWaveMode('MASS')}
+        className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+          waveMode === 'MASS'
+            ? 'liquid-capsule-active'
+            : 'text-[#43584B] dark:text-[#93A39A]'
+        }`}
+      >
+        Mass Gun
+      </button>
+      <button
+        type="button"
+        data-testid="stopwatch-wave-toggle"
+        aria-pressed={waveMode === 'POD_STAGGER'}
+        onClick={() => {
+          const nextMode = waveMode === 'POD_STAGGER' ? 'MASS' : 'POD_STAGGER';
+          setWaveMode(nextMode);
+          if (nextMode === 'POD_STAGGER') {
+            for (const [podKey, defOffset] of Object.entries(DEFAULT_POD_WAVE_OFFSETS)) {
+              setPodWaveOffset(podKey, defOffset);
+            }
+          }
+        }}
+        className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+          waveMode === 'POD_STAGGER'
+            ? 'liquid-capsule-active ap-status-caution font-bold'
+            : 'text-[#43584B] dark:text-[#93A39A]'
+        }`}
+      >
+        <Waves className="w-3.5 h-3.5" weight="bold" />
+        <span>Pod +10s</span>
+      </button>
+      <button
+        type="button"
+        data-testid="stopwatch-wave-pursuit"
+        aria-pressed={waveMode === 'PURSUIT'}
+        onClick={() => {
+          setWaveMode('PURSUIT');
+          for (const pod of vdotPods) {
+            const podKey = pod.podName.split(' — ')[0] || pod.podName;
+            if (typeof pod.pursuitStaggerOffsetSecs === 'number') {
+              setPodWaveOffset(podKey, pod.pursuitStaggerOffsetSecs);
+            }
+          }
+        }}
+        className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
+          waveMode === 'PURSUIT'
+            ? 'liquid-capsule-active ap-status-prime font-bold'
+            : 'text-[#43584B] dark:text-[#93A39A]'
+        }`}
+        title="Offset faster pods so all pods finish each rep together"
+      >
+        Pursuit (Finish Together)
+      </button>
+    </div>
+  );
+
+  const resetButtonNode = !confirmReset ? (
+    <button
+      type="button"
+      data-testid="stopwatch-reset-btn"
+      onClick={() => {
+        if (hasActiveSession) {
+          setConfirmReset(true);
+        } else {
+          resetStopwatch();
+        }
+      }}
+      disabled={!hasActiveSession}
+      className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-rose-700 dark:text-rose-300 disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+    >
+      <Trash className="w-4 h-4" weight="bold" />
+      <span>Reset</span>
+    </button>
+  ) : (
+    <button
+      type="button"
+      data-testid="stopwatch-reset-confirm-btn"
+      onClick={() => {
+        resetStopwatch();
+        setConfirmReset(false);
+        setSaveFeedbackMsg(null);
+      }}
+      className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-status-strained font-bold text-xs cursor-pointer"
+    >
+      <span>Confirm Clear Splits</span>
+    </button>
+  );
+
+  const multiSetPlanStripNode =
+    sessionType === 'WORKOUT' &&
+    customWorkoutSpec?.sets &&
+    customWorkoutSpec.sets.length > 1 ? (
+      <div
+        data-testid="stopwatch-multiset-plan-strip"
+        className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10 text-2xs font-mono"
+      >
+        <span className="font-bold uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] mr-1">
+          Multi-Set Plan:
+        </span>
+        {customWorkoutSpec.warmupDistanceMeters && (
+          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4]">
+            WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
+          </span>
+        )}
+        {customWorkoutSpec.sets.map((s, idx) => (
+          <span
+            key={`sw-set-${idx}`}
+            className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] font-semibold"
+          >
+            {s.repCount}×{s.repDistanceMeters}m
+          </span>
+        ))}
+        {customWorkoutSpec.cooldownDistanceMeters && (
+          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4]">
+            CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
+          </span>
+        )}
+      </div>
+    ) : null;
+
+  const heatAbortBannerNode = activeEnvAdjustment.heatAbortTriggered ? (
+    <div
+      data-testid="stopwatch-heat-abort-banner"
+      role="alert"
+      className="rounded-xl ap-status-strained px-3 py-2 text-xs font-semibold flex flex-wrap items-center justify-between gap-2"
+    >
+      <span>{activeEnvAdjustment.advisoryNote}</span>
+      <span className="font-mono text-2xs uppercase tracking-wider px-2 py-0.5 rounded bg-black/15">
+        Heat + Humidity Alert (Hadley Index {Math.round(activeEnvAdjustment.hadleySumF ?? 0)})
+      </span>
+    </div>
+  ) : null;
+
+  const envPhysicsPanelNode = showEnvPhysicsPanel ? (
+    <div
+      data-testid="stopwatch-env-physics-panel"
+      className="rounded-xl ap-card-inset p-3.5 space-y-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-2xs font-mono font-bold uppercase tracking-wider text-[#101411] dark:text-[#F4F7F4]">
+            World Athletics Oval Lane, Environment &amp; Spike Physics
+          </div>
+          <div className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] mt-0.5">
+            {activeEnvAdjustment.advisoryNote}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
+            {laneGeometry.lapLengthMeters.toFixed(2)}m/lap · +
+            {((activeEnvAdjustment.combinedSplitMultiplier - 1) * 100).toFixed(1)}%
+          </span>
+          {activeEnvAdjustment.altitudeRestMultiplier > 1 && (
+            <span className="px-2 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold tabular-nums">
+              Rest {activeEnvAdjustment.adjustedRestDurationSecs}s (
+              {activeEnvAdjustment.altitudeRestMultiplier.toFixed(2)}x)
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Oval Lane
+          </span>
+          <select
+            data-testid="stopwatch-lane-select"
+            value={trackLane}
+            onChange={(e) => setTrackLane(Number(e.target.value) as TrackLaneNumber)}
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+          >
+            {([1, 2, 3, 4, 5, 6, 7, 8] as TrackLaneNumber[]).map((ln) => {
+              const g = computeWorldAthleticsOvalLaneGeometry(ln);
+              return (
+                <option key={ln} value={ln}>
+                  L{ln} ({g.lapLengthMeters.toFixed(2)}m)
+                </option>
+              );
+            })}
+          </select>
+        </label>
+
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Track Facility
+          </span>
+          <select
+            data-testid="stopwatch-facility-select"
+            value={trackFacility}
+            onChange={(e) => setTrackFacility(e.target.value as NcaaTrackFacilityType)}
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+          >
+            <option value="OUTDOOR_400M">400m Outdoor</option>
+            <option value="INDOOR_BANKED_200M">200m Banked</option>
+            <option value="INDOOR_FLAT_200M">200m Flat (+Turn)</option>
+          </select>
+        </label>
+
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Air Temp (°F)
+          </span>
+          <input
+            data-testid="stopwatch-temp-input"
+            type="number"
+            min={15}
+            max={120}
+            placeholder="72"
+            value={airTempF ?? ''}
+            onChange={(e) =>
+              setAirTempF(e.target.value === '' ? null : Number(e.target.value))
+            }
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+          />
+        </label>
+
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Dew Point (°F)
+          </span>
+          <input
+            data-testid="stopwatch-dew-input"
+            type="number"
+            min={10}
+            max={90}
+            placeholder="55"
+            value={dewPointF ?? ''}
+            onChange={(e) =>
+              setDewPointF(e.target.value === '' ? null : Number(e.target.value))
+            }
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+          />
+        </label>
+
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Wind (m/s)
+          </span>
+          <input
+            data-testid="stopwatch-wind-input"
+            type="number"
+            min={0}
+            max={25}
+            step={0.5}
+            value={windSpeedMps}
+            onChange={(e) => setWindSpeedMps(Number(e.target.value) || 0)}
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+          />
+        </label>
+
+        <label className="space-y-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Altitude (m)
+          </span>
+          <input
+            data-testid="stopwatch-altitude-input"
+            type="number"
+            min={0}
+            max={4000}
+            step={50}
+            value={altitudeMeters}
+            onChange={(e) => setAltitudeMeters(Number(e.target.value) || 0)}
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+          />
+        </label>
+
+        <label className="space-y-1 col-span-2 sm:col-span-2 lg:col-span-1">
+          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+            Footwear
+          </span>
+          <select
+            data-testid="stopwatch-footwear-select"
+            value={footwearClass}
+            onChange={(e) => setFootwearClass(e.target.value as TrackFootwearClass)}
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+          >
+            <option value="DAILY_TRAINER">Daily Trainer (1.0x)</option>
+            <option value="LIGHTWEIGHT_FLAT_SUPER_TRAINER">Super Trainer / Flat (1.1x)</option>
+            <option value="CARBON_ROAD_RACER">Carbon Road Racer (1.2x)</option>
+            <option value="TRADITIONAL_TRACK_SPIKE">Track Spike (1.35x)</option>
+            <option value="CARBON_SUPER_SPIKE">Carbon Super-Spike (1.52x)</option>
+          </select>
+        </label>
+      </div>
+
+      {trackLane > 1 && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            data-testid="stopwatch-stagger-toggle"
+            aria-pressed={isStaggeredStart}
+            onClick={() => setIsStaggeredStart(!isStaggeredStart)}
+            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
+              isStaggeredStart
+                ? 'ap-status-info font-bold'
+                : 'ap-card text-[#43584B] dark:text-[#93A39A]'
+            }`}
+          >
+            {isStaggeredStart
+              ? 'Staggered Starts Active (Exact 400m Mark Eq)'
+              : 'Non-Staggered Lane Distance (Scaling Lap Split)'}
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const waveOffsetsPanelNode =
+    waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT' ? (
+      <div className="rounded-xl ap-card-inset p-3 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+          <span className="font-bold uppercase tracking-wider">
+            {waveMode === 'PURSUIT'
+              ? 'Pursuit Stagger Offsets — Finish Together'
+              : 'Staggered Pod Start Offsets'}
+          </span>
+          <span>Adjust (-5s / +5s) or tap Go Now</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {activePodKeys.map((podKey) => {
+            const offset = podWaveOffsetsSecs[podKey] ?? DEFAULT_POD_WAVE_OFFSETS[podKey] ?? 0;
+            return (
+              <div
+                key={podKey}
+                className="rounded-xl bg-white dark:bg-[#101B15] border border-emerald-900/15 dark:border-[#2B543B] px-3 py-2 flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                    {podKey}
+                  </div>
+                  <div className="text-2xs font-mono text-[#1C5436] dark:text-[#56BA00]">
+                    +{offset.toFixed(1)}s offset
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPodWaveOffset(podKey, Math.max(0, offset - 5))}
+                    aria-label={`Decrease ${podKey} offset by 5 seconds`}
+                    className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
+                  >
+                    -5s
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPodWaveOffset(podKey, offset + 5)}
+                    aria-label={`Increase ${podKey} offset by 5 seconds`}
+                    className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
+                  >
+                    +5s
+                  </button>
+                  {stopwatchRunning && (
+                    <button
+                      type="button"
+                      onClick={() => triggerPodWaveNow(podKey)}
+                      className="min-h-[44px] sm:min-h-[32px] px-2 rounded-lg ap-status-info font-mono text-2xs font-bold cursor-pointer"
+                      title={`Stamp ${podKey} start at current clock`}
+                    >
+                      Go Now
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
+  const chuteQueueStripNode =
+    chuteQueueSecs.length > 0 ? (
+      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+        <span className="text-2xs font-mono font-bold uppercase text-[#1C5436] dark:text-[#C8FF00]">
+          Finish Order Queue — Tap next runner in line:
+        </span>
+        {chuteQueueSecs.map((ts, idx) => (
+          <span
+            key={`${ts}-${idx}`}
+            data-testid={`chute-pill-${idx}`}
+            className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold tabular-nums ${
+              idx === 0
+                ? 'bg-[#0B120E] text-[#C8FF00] border border-[#56BA00]'
+                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+            }`}
+          >
+            #{idx + 1} · {formatTrackMark(ts, 2)}
+          </span>
+        ))}
+        <button
+          type="button"
+          onClick={clearChuteQueue}
+          className="min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] cursor-pointer ml-auto"
+        >
+          Clear Queue
+        </button>
+      </div>
+    ) : null;
+
+  const hasCustomEnvOrLane =
+    showEnvPhysicsPanel ||
+    trackLane > 1 ||
+    trackFacility !== 'OUTDOOR_400M' ||
+    windSpeedMps >= 4 ||
+    altitudeMeters >= 1000 ||
+    activeEnvAdjustment.heatSlowdownPct > 0 ||
+    footwearClass !== 'DAILY_TRAINER';
+
+  const autoRegBannerNode =
+    sessionType === 'WORKOUT' ? (
+      <TracksideAutoRegBanner
+        autoRegSummary={squadAutoRegSummary}
+        pivotHistory={autoRegPivotHistory}
+        endedEarlyStimulusRatio={endedEarlyStimulusRatio}
+        isFloatingFocusMode={isFocusMode && stopwatchRunning}
+        onExtendRest30s={() => {
+          extendWorkoutRestPlus30s(30);
+          playFeedback('BELL');
+          setLiveAnnouncement('Extended recovery timer +30s across active workout.');
+        }}
+        onConvertRemainingToCv={() => {
+          convertRemainingToCv();
+          playFeedback('BELL');
+          setLiveAnnouncement('Converted remaining reps to Critical Velocity (CV).');
+        }}
+        onEndSession85Stimulus={(repsCap) => {
+          endSessionStimulusAchieved(repsCap);
+          playFeedback('BELL');
+          setLiveAnnouncement('Ended workout cleanly with 85% quality stimulus preserved.');
+        }}
+        onDismissCue={dismissAutoRegCue}
+      />
+    ) : null;
+
   return (
-    <div className="space-y-4">
+    <div className={isFocusMode ? 'space-y-2.5' : 'space-y-4'}>
       <div className="sr-only" role="status" aria-live="polite">
         {liveAnnouncement}
       </div>
 
-      {/* 1. Top Session Control Deck & Prominent WORKOUT / RACE Flag */}
-      <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-            <button
-              type="button"
-              data-testid="stopwatch-back-to-log-btn"
-              onClick={onOpenActivitiesTab}
-              className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white cursor-pointer"
-            >
-              <span>← Back</span>
-            </button>
-            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Trackside Stopwatch
-            </h1>
-            <span
-              className={`px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold uppercase ${
-                stopwatchRunning ? 'ap-status-prime' : 'ap-status-info'
-              }`}
-            >
-              {stopwatchRunning ? 'Live Timing · 0.01s' : 'Ready · 0.01s FAT Precision'}
-            </span>
-            {!isOnline ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold ap-status-caution">
-                <WifiSlash className="w-3.5 h-3.5" weight="bold" />
-                <span>Offline · Local Storage Active</span>
-              </span>
-            ) : (
-              <span className="px-2.5 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-slate-700 dark:text-slate-300">
-                Saved on Device (Offline Ready)
-              </span>
-            )}
+      {isFocusMode ? (
+        <>
+          {/* Focus Mode Top Header Bar */}
+          <div className="rounded-xl ap-card px-2 py-1 flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                data-testid="stopwatch-back-to-log-btn"
+                onClick={onOpenActivitiesTab}
+                aria-label="Back to Activities"
+                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-1.5 rounded-lg liquid-capsule-track text-xs font-mono font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
+              >
+                ←
+              </button>
+              <h1 className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight whitespace-nowrap">
+                Trackside Stopwatch
+              </h1>
+              {!isOnline && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-2xs font-bold ap-status-caution shrink-0">
+                  <WifiSlash className="w-3 h-3" weight="bold" />
+                  <span>Offline</span>
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {renderModeRadioGroup(true)}
+            </div>
           </div>
 
-          {/* Prominent Session Mode Flag Button (WORKOUT vs RACE) */}
-          <div
-            role="radiogroup"
-            aria-label="Session Mode"
-            className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={sessionType === 'WORKOUT'}
-              data-testid="stopwatch-mode-workout"
-              onClick={() => {
-                setSessionType('WORKOUT');
-                setSaveFeedbackMsg(null);
-              }}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                sessionType === 'WORKOUT'
-                  ? 'liquid-capsule-active'
-                  : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Timer className="w-4 h-4 ap-text-brand" weight="duotone" />
-              <span>WORKOUT</span>
-            </button>
-
-            <button
-              type="button"
-              role="radio"
-              aria-checked={sessionType === 'RACE'}
-              data-testid="stopwatch-mode-race"
-              onClick={() => {
-                setSessionType('RACE');
-                setSaveFeedbackMsg(null);
-              }}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                sessionType === 'RACE'
-                  ? 'liquid-capsule-active'
-                  : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <FlagCheckered className="w-4 h-4 text-amber-600 dark:text-amber-400" weight="duotone" />
-              <span>RACE</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Context Row: Presets, Rest/Meet Title, Wake Lock & Audio Beep */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-2 border-t border-emerald-900/10 dark:border-white/10">
-          {sessionType === 'WORKOUT' ? (
-            <>
-              <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-                <span>Workout Preset</span>
-                <select
-                  aria-label="Workout Preset"
-                  value={workoutPresetId}
-                  onChange={(e) => setWorkoutPresetId(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
-                >
-                  {customPlanPreset && (
-                    <option
-                      value="custom-plan"
-                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
-                    >
-                      Planned: {customPlanPreset.label}
-                    </option>
-                  )}
-                  {WORKOUT_STOPWATCH_PRESETS.map((p) => (
-                    <option
-                      key={p.id}
-                      value={p.id}
-                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
-                    >
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-                <span>Auto Recovery Countdown</span>
-                <select
-                  aria-label="Recovery Countdown"
-                  value={restDurationSecs}
-                  onChange={(e) => setRestDurationSecs(Number(e.target.value))}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
-                >
-                  {REST_OPTIONS_SECS.map((sec) => (
-                    <option
-                      key={sec}
-                      value={sec}
-                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
-                    >
-                      {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
-                    </option>
-                  ))}
-                  {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
-                    <option
-                      value={restDurationSecs}
-                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
-                    >
-                      {restDurationSecs}s Recovery Timer (Auto-Reg)
-                    </option>
-                  )}
-                </select>
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-                <span>Race Event &amp; Finish Lock</span>
-                <select
-                  aria-label="Race Event Distance"
-                  value={raceEventLabel}
-                  onChange={(e) => setRaceEventLabel(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
-                >
-                  {RACE_STOPWATCH_PRESETS.map((evt) => (
-                    <option
-                      key={evt.label}
-                      value={evt.label}
-                      className="bg-white dark:bg-[#101B15] text-slate-900 dark:text-white"
-                    >
-                      {evt.label}
-                      {evt.targetLaps
-                        ? ` (${evt.targetLaps} x ${evt.splitMeters}m)`
-                        : ' (Open Laps)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-                <span>Race Lap Rules</span>
-                <div className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 flex items-center gap-2 text-xs text-slate-800 dark:text-slate-200">
-                  <BellRinging className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" weight="duotone" />
-                  <span className="truncate">
-                    {activeRacePreset.targetLaps
-                      ? `Bell Lap ${Math.max(1, activeRacePreset.targetLaps - 1)} · Lock @ Lap ${activeRacePreset.targetLaps}`
-                      : 'Unlimited open split taps'}
-                  </span>
-                </div>
+          {/* Sticky High-Contrast Sunlight Timing HUD */}
+          <section className="sticky top-[56px] z-30 rounded-2xl ap-card p-2.5 space-y-2">
+            {/* HUD Row 1: Clock + Gun + Undo + Chute */}
+            <div className="flex items-center justify-between gap-1.5">
+              <div
+                data-testid="stopwatch-master-clock"
+                className="rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] px-3 py-2 font-mono text-2xl font-extrabold tabular-nums tracking-tight shrink-0"
+              >
+                {formatStopwatchClockMs(stopwatchElapsedMs)}
               </div>
-            </>
-          )}
 
-          <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-            <span>{sessionType === 'RACE' ? 'Meet / Heat Name' : 'Session Name'}</span>
-            <input
-              type="text"
-              value={sessionTitle}
-              onChange={(e) => setSessionTitle(e.target.value)}
-              placeholder={
-                sessionType === 'RACE'
-                  ? 'e.g. League Finals Heat 1'
-                  : 'e.g. Tuesday Track Intervals'
-              }
-              aria-label="Meet or Session Name"
-              className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#84CC16]"
-            />
-          </label>
-
-          {/* Hardware Field Toggles: Screen Wake Lock + Audio Beep */}
-          <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-slate-700 dark:text-slate-300">
-            <span>Trackside Hardware</span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                aria-pressed={wakeLockEnabled}
-                onClick={() => setWakeLockEnabled(!wakeLockEnabled)}
-                className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-                  wakeLockEnabled
-                    ? wakeLockState === 'ACTIVE'
-                      ? 'ap-status-prime'
-                      : 'ap-status-info'
-                    : 'ap-card-inset text-slate-700 dark:text-slate-300'
-                }`}
-                title="Keep mobile display awake while timing live track sessions"
-              >
-                <Sun className="w-3.5 h-3.5 shrink-0" weight="bold" />
-                <span className="truncate">
-                  {wakeLockEnabled
-                    ? wakeLockState === 'ACTIVE'
-                      ? 'Awake On'
-                      : 'Wake Ready'
-                    : 'Wake Off'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={soundEnabled}
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-                  soundEnabled
-                    ? 'ap-status-info'
-                    : 'ap-card-inset text-slate-700 dark:text-slate-300'
-                }`}
-                title="Play crisp Web Audio confirmation beep + vibration on splits"
-              >
-                {soundEnabled ? (
-                  <SpeakerHigh className="w-3.5 h-3.5 shrink-0" weight="bold" />
-                ) : (
-                  <SpeakerSlash className="w-3.5 h-3.5 shrink-0" weight="bold" />
-                )}
-                <span>{soundEnabled ? 'Beep On' : 'Muted'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {sessionType === 'WORKOUT' &&
-          customWorkoutSpec?.sets &&
-          customWorkoutSpec.sets.length > 1 && (
-            <div
-              data-testid="stopwatch-multiset-plan-strip"
-              className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-stone-200/70 dark:border-[#244331] text-2xs font-mono"
-            >
-              <span className="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mr-1">
-                Multi-Set Plan:
-              </span>
-              {customWorkoutSpec.warmupDistanceMeters && (
-                <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-slate-700 dark:text-slate-300">
-                  WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
-                </span>
-              )}
-              {customWorkoutSpec.sets.map((s, idx) => (
-                <span
-                  key={`sw-set-${idx}`}
-                  className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] font-semibold"
-                >
-                  {s.repCount}×{s.repDistanceMeters}m
-                </span>
-              ))}
-              {customWorkoutSpec.cooldownDistanceMeters && (
-                <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-slate-700 dark:text-slate-300">
-                  CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
-                </span>
-              )}
-            </div>
-          )}
-      </section>
-
-      {/* 2. Master Clock, Gun Controls, Wave Mode & View Switcher */}
-      <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div
-              data-testid="stopwatch-master-clock"
-              className="rounded-2xl bg-[#101B15] text-[#C8FF00] border-2 border-[#2B5B3F] px-5 py-3 font-mono text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight shadow-sm"
-            >
-              {formatStopwatchClockMs(stopwatchElapsedMs)}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                data-testid="stopwatch-gun-btn"
-                onClick={handleGunToggle}
-                className={
-                  stopwatchRunning
-                    ? 'min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl ap-status-caution font-bold text-xs cursor-pointer transition-all'
-                    : 'ap-btn-primary cursor-pointer'
-                }
-              >
-                {stopwatchRunning ? (
-                  <>
-                    <Pause className="w-4 h-4" weight="fill" />
-                    <span>Pause Gun</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4" weight="fill" />
-                    <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                data-testid="stopwatch-undo-btn"
-                onClick={handleUndo}
-                disabled={tapHistory.length === 0}
-                className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
-                <span>Undo Last</span>
-              </button>
-
-              {!confirmReset ? (
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
                 <button
                   type="button"
-                  data-testid="stopwatch-reset-btn"
-                  onClick={() => {
-                    if (hasActiveSession) {
-                      setConfirmReset(true);
-                    } else {
-                      resetStopwatch();
-                    }
-                  }}
-                  disabled={!hasActiveSession}
-                  className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-rose-700 dark:text-rose-300 disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <Trash className="w-4 h-4" weight="bold" />
-                  <span>Reset</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="stopwatch-reset-confirm-btn"
-                  onClick={() => {
-                    resetStopwatch();
-                    setConfirmReset(false);
-                    setSaveFeedbackMsg(null);
-                  }}
-                  className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-status-strained font-bold text-xs cursor-pointer"
-                >
-                  <span>Confirm Clear Splits</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Right Toolbar: Cards | Matrix Switcher, Pack Chute Toggle, Wave Toggle */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              role="group"
-              aria-label="Stopwatch Split Layout"
-              className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-            >
-              <button
-                type="button"
-                data-testid="stopwatch-view-cards"
-                aria-pressed={viewMode === 'CARDS'}
-                onClick={() => setViewMode('CARDS')}
-                className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                  viewMode === 'CARDS'
-                    ? 'liquid-capsule-active'
-                    : 'text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
-                <span>Cards</span>
-              </button>
-              <button
-                type="button"
-                data-testid="stopwatch-view-matrix"
-                aria-pressed={viewMode === 'MATRIX'}
-                onClick={() => setViewMode('MATRIX')}
-                className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                  viewMode === 'MATRIX'
-                    ? 'liquid-capsule-active'
-                    : 'text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <Table className="w-3.5 h-3.5" weight="duotone" />
-                <span>Matrix</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              data-testid="stopwatch-toggle-chute"
-              aria-pressed={showChuteBar}
-              onClick={() => setShowChuteBar(!showChuteBar)}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
-                showChuteBar
-                  ? 'ap-status-info font-bold'
-                  : 'ap-card-inset text-slate-700 dark:text-slate-200'
-              }`}
-            >
-              <Lightning className="w-3.5 h-3.5" weight="bold" />
-              <span>Chute Bar</span>
-              {chuteQueueSecs.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded bg-[#101B15] text-[#C8FF00] font-mono text-2xs">
-                  {chuteQueueSecs.length}
-                </span>
-              )}
-            </button>
-
-            <div
-              role="group"
-              aria-label="Start Wave Mode"
-              className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-            >
-              <button
-                type="button"
-                aria-pressed={waveMode === 'MASS'}
-                onClick={() => setWaveMode('MASS')}
-                className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  waveMode === 'MASS'
-                    ? 'liquid-capsule-active'
-                    : 'text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                Mass Gun
-              </button>
-              <button
-                type="button"
-                data-testid="stopwatch-wave-toggle"
-                aria-pressed={waveMode === 'POD_STAGGER'}
-                onClick={() => {
-                  const nextMode = waveMode === 'POD_STAGGER' ? 'MASS' : 'POD_STAGGER';
-                  setWaveMode(nextMode);
-                  if (nextMode === 'POD_STAGGER') {
-                    for (const [podKey, defOffset] of Object.entries(DEFAULT_POD_WAVE_OFFSETS)) {
-                      setPodWaveOffset(podKey, defOffset);
-                    }
+                  data-testid="stopwatch-gun-btn"
+                  onClick={handleGunToggle}
+                  className={
+                    stopwatchRunning
+                      ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
+                      : 'ap-btn-primary min-h-[44px] px-3.5 text-xs cursor-pointer'
                   }
-                }}
-                className={`min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  waveMode === 'POD_STAGGER'
-                    ? 'liquid-capsule-active ap-status-caution font-bold'
-                    : 'text-slate-700 dark:text-slate-300'
+                >
+                  {stopwatchRunning ? (
+                    <>
+                      <Pause className="w-4 h-4" weight="fill" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" weight="fill" />
+                      <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="stopwatch-undo-btn"
+                  onClick={handleUndo}
+                  disabled={tapHistory.length === 0}
+                  className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
+                  <span>Undo</span>
+                </button>
+
+                {(showChuteBar || sessionType === 'RACE') && (
+                  <button
+                    type="button"
+                    data-testid="stopwatch-chute-tap"
+                    onClick={handleChuteTap}
+                    className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
+                  >
+                    <Lightning className="w-4 h-4 shrink-0" weight="fill" />
+                    <span>Chute</span>
+                    {chuteQueueSecs.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
+                        {chuteQueueSecs.length}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {chuteQueueStripNode}
+
+            {/* HUD Row 2: Preset + Env + Pod Filters + Cards/Matrix */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-emerald-900/10 dark:border-white/10">
+              {renderPresetSelect(true)}
+
+              <button
+                type="button"
+                data-testid="stopwatch-toggle-env-physics"
+                aria-expanded={showEnvPhysicsPanel}
+                onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
+                className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
+                  hasCustomEnvOrLane
+                    ? 'ap-status-caution font-bold'
+                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
                 }`}
               >
                 <Waves className="w-3.5 h-3.5" weight="bold" />
-                <span>Pod +10s</span>
+                <span>
+                  {trackLane > 1
+                    ? `L${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
+                    : 'Lane / Env'}
+                </span>
               </button>
-              <button
-                type="button"
-                data-testid="stopwatch-wave-pursuit"
-                aria-pressed={waveMode === 'PURSUIT'}
-                onClick={() => {
-                  setWaveMode('PURSUIT');
-                  for (const pod of vdotPods) {
-                    const podKey = pod.podName.split(' — ')[0] || pod.podName;
-                    if (typeof pod.pursuitStaggerOffsetSecs === 'number') {
-                      setPodWaveOffset(podKey, pod.pursuitStaggerOffsetSecs);
-                    }
-                  }
-                }}
-                className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  waveMode === 'PURSUIT'
-                    ? 'liquid-capsule-active ap-status-prime font-bold'
-                    : 'text-slate-700 dark:text-slate-300'
-                }`}
-                title="Offset faster pods so all pods finish each rep together"
-              >
-                Pursuit (Finish Together)
-              </button>
-            </div>
 
-            <button
-              type="button"
-              data-testid="stopwatch-toggle-env-physics"
-              aria-expanded={showEnvPhysicsPanel}
-              onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
-              className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
-                showEnvPhysicsPanel ||
-                trackLane > 1 ||
-                trackFacility !== 'OUTDOOR_400M' ||
-                windSpeedMps >= 4 ||
-                altitudeMeters >= 1000 ||
-                activeEnvAdjustment.heatSlowdownPct > 0 ||
-                footwearClass !== 'DAILY_TRAINER'
-                  ? 'ap-status-caution font-bold'
-                  : 'ap-card-inset text-slate-700 dark:text-slate-200'
-              }`}
-            >
-              <Waves className="w-3.5 h-3.5" weight="bold" />
-              <span>
-                {trackLane > 1
-                  ? `Lane ${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
-                  : 'Lane, Env & Spikes'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Heat Abort Warning Banner (Mark Hadley T_air + T_dew > 180) */}
-        {activeEnvAdjustment.heatAbortTriggered && (
-          <div
-            data-testid="stopwatch-heat-abort-banner"
-            role="alert"
-            className="rounded-xl ap-status-strained px-3.5 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2"
-          >
-            <span>{activeEnvAdjustment.advisoryNote}</span>
-            <span className="font-mono text-2xs uppercase tracking-wider px-2 py-0.5 rounded bg-black/15">
-              Heat + Humidity Alert (Hadley Index {Math.round(activeEnvAdjustment.hadleySumF ?? 0)})
-            </span>
-          </div>
-        )}
-
-        {/* Collapsible Lane (2-8), Weather, Altitude, Facility & Spike Footwear Physics Bar */}
-        {showEnvPhysicsPanel && (
-          <div
-            data-testid="stopwatch-env-physics-panel"
-            className="rounded-xl ap-card-inset p-3.5 space-y-3"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="text-2xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                  World Athletics Oval Lane, Environment & Spike Exposure Physics
-                </div>
-                <div className="text-2xs font-mono text-slate-600 dark:text-slate-300 mt-0.5">
-                  {activeEnvAdjustment.advisoryNote}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
-                  {laneGeometry.lapLengthMeters.toFixed(2)}m/lap · +
-                  {((activeEnvAdjustment.combinedSplitMultiplier - 1) * 100).toFixed(1)}%
-                </span>
-                {activeEnvAdjustment.altitudeRestMultiplier > 1 && (
-                  <span className="px-2 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold tabular-nums">
-                    Rest {activeEnvAdjustment.adjustedRestDurationSecs}s (
-                    {activeEnvAdjustment.altitudeRestMultiplier.toFixed(2)}x)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Oval Lane
-                </span>
-                <select
-                  data-testid="stopwatch-lane-select"
-                  value={trackLane}
-                  onChange={(e) => setTrackLane(Number(e.target.value) as TrackLaneNumber)}
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
-                >
-                  {([1, 2, 3, 4, 5, 6, 7, 8] as TrackLaneNumber[]).map((ln) => {
-                    const g = computeWorldAthleticsOvalLaneGeometry(ln);
-                    return (
-                      <option key={ln} value={ln}>
-                        L{ln} ({g.lapLengthMeters.toFixed(2)}m)
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Track Facility
-                </span>
-                <select
-                  data-testid="stopwatch-facility-select"
-                  value={trackFacility}
-                  onChange={(e) => setTrackFacility(e.target.value as NcaaTrackFacilityType)}
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
-                >
-                  <option value="OUTDOOR_400M">400m Outdoor</option>
-                  <option value="INDOOR_BANKED_200M">200m Banked</option>
-                  <option value="INDOOR_FLAT_200M">200m Flat (+Turn)</option>
-                </select>
-              </label>
-
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Air Temp (°F)
-                </span>
-                <input
-                  data-testid="stopwatch-temp-input"
-                  type="number"
-                  min={15}
-                  max={120}
-                  placeholder="72"
-                  value={airTempF ?? ''}
-                  onChange={(e) =>
-                    setAirTempF(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
-                />
-              </label>
-
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Dew Point (°F)
-                </span>
-                <input
-                  data-testid="stopwatch-dew-input"
-                  type="number"
-                  min={10}
-                  max={90}
-                  placeholder="55"
-                  value={dewPointF ?? ''}
-                  onChange={(e) =>
-                    setDewPointF(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
-                />
-              </label>
-
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Wind (m/s)
-                </span>
-                <input
-                  data-testid="stopwatch-wind-input"
-                  type="number"
-                  min={0}
-                  max={25}
-                  step={0.5}
-                  value={windSpeedMps}
-                  onChange={(e) => setWindSpeedMps(Number(e.target.value) || 0)}
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
-                />
-              </label>
-
-              <label className="space-y-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Altitude (m)
-                </span>
-                <input
-                  data-testid="stopwatch-altitude-input"
-                  type="number"
-                  min={0}
-                  max={4000}
-                  step={50}
-                  value={altitudeMeters}
-                  onChange={(e) => setAltitudeMeters(Number(e.target.value) || 0)}
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-slate-900 dark:text-white"
-                />
-              </label>
-
-              <label className="space-y-1 col-span-2 sm:col-span-2 lg:col-span-1">
-                <span className="block text-2xs font-mono uppercase text-slate-600 dark:text-slate-300">
-                  Footwear
-                </span>
-                <select
-                  data-testid="stopwatch-footwear-select"
-                  value={footwearClass}
-                  onChange={(e) => setFootwearClass(e.target.value as TrackFootwearClass)}
-                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-slate-900 dark:text-white"
-                >
-                  <option value="DAILY_TRAINER">Daily Trainer (1.0x)</option>
-                  <option value="LIGHTWEIGHT_FLAT_SUPER_TRAINER">Super Trainer / Flat (1.1x)</option>
-                  <option value="CARBON_ROAD_RACER">Carbon Road Racer (1.2x)</option>
-                  <option value="TRADITIONAL_TRACK_SPIKE">Track Spike (1.35x)</option>
-                  <option value="CARBON_SUPER_SPIKE">Carbon Super-Spike (1.52x)</option>
-                </select>
-              </label>
-            </div>
-
-            {trackLane > 1 && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
+              {sessionType === 'WORKOUT' && (
                 <button
                   type="button"
-                  data-testid="stopwatch-stagger-toggle"
-                  aria-pressed={isStaggeredStart}
-                  onClick={() => setIsStaggeredStart(!isStaggeredStart)}
-                  className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
-                    isStaggeredStart
+                  data-testid="stopwatch-toggle-chute"
+                  aria-pressed={showChuteBar}
+                  onClick={() => setShowChuteBar(!showChuteBar)}
+                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
+                    showChuteBar
                       ? 'ap-status-info font-bold'
-                      : 'ap-card text-slate-700 dark:text-slate-200'
+                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
                   }`}
                 >
-                  {isStaggeredStart
-                    ? 'Staggered Starts Active (Exact 400m Mark Eq)'
-                    : 'Non-Staggered Lane Distance (Scaling Lap Split)'}
+                  <Lightning className="w-3.5 h-3.5" weight="bold" />
+                  <span>Chute</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSelectedPodFilter('ALL')}
+                className={`min-h-[44px] px-2.5 rounded-xl text-2xs font-mono font-semibold cursor-pointer shrink-0 ${
+                  selectedPodFilter === 'ALL'
+                    ? 'liquid-capsule-active'
+                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                }`}
+              >
+                All ({runnerTelemetries.length})
+              </button>
+              {activePodKeys.map((podKey) => {
+                const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
+                return (
+                  <button
+                    key={podKey}
+                    type="button"
+                    onClick={() => setSelectedPodFilter(podKey)}
+                    className={`min-h-[44px] px-2.5 rounded-xl text-2xs font-mono font-semibold cursor-pointer shrink-0 ${
+                      selectedPodFilter === podKey
+                        ? 'liquid-capsule-active'
+                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                    }`}
+                  >
+                    {podKey} ({count})
+                  </button>
+                );
+              })}
+
+              <div
+                role="group"
+                aria-label="Stopwatch Split Layout"
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track shrink-0 ml-auto"
+              >
+                <button
+                  type="button"
+                  data-testid="stopwatch-view-cards"
+                  aria-pressed={viewMode === 'CARDS'}
+                  onClick={() => setViewMode('CARDS')}
+                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                    viewMode === 'CARDS'
+                      ? 'liquid-capsule-active'
+                      : 'text-[#43584B] dark:text-[#93A39A]'
+                  }`}
+                >
+                  <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
+                  <span>Cards</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="stopwatch-view-matrix"
+                  aria-pressed={viewMode === 'MATRIX'}
+                  onClick={() => setViewMode('MATRIX')}
+                  className={`min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                    viewMode === 'MATRIX'
+                      ? 'liquid-capsule-active'
+                      : 'text-[#43584B] dark:text-[#93A39A]'
+                  }`}
+                >
+                  <Table className="w-3.5 h-3.5" weight="duotone" />
+                  <span>Matrix</span>
                 </button>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Staggered Pod Wave Controls Strip (when Pod Waves or Pursuit active) */}
-        {(waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT') && (
-          <div className="rounded-xl ap-card-inset p-3 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-700 dark:text-slate-300">
-              <span className="font-bold uppercase tracking-wider">
-                {waveMode === 'PURSUIT'
-                  ? 'Pursuit Stagger Offsets — Finish Together (Automatically Subtracted From Net Splits)'
-                  : 'Staggered Pod Start Offsets (Automatically Subtracted From Net Splits)'}
-              </span>
-              <span>Adjust offsets (-5s / +5s) or tap Go Now mid-session</span>
+              <button
+                type="button"
+                data-testid="stopwatch-focus-mode-toggle"
+                onClick={() => setIsFocusMode(false)}
+                className="min-h-[44px] px-2.5 rounded-xl ap-card-inset font-mono text-2xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
+                title="Expand full desktop session configuration"
+              >
+                Full Deck
+              </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              {activePodKeys.map((podKey) => {
-                const offset =
-                  podWaveOffsetsSecs[podKey] ?? DEFAULT_POD_WAVE_OFFSETS[podKey] ?? 0;
-                return (
-                  <div
-                    key={podKey}
-                    className="rounded-xl bg-white dark:bg-[#101B15] border border-emerald-900/15 dark:border-[#244331] px-3 py-2 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {podKey}
-                      </div>
-                      <div className="text-2xs font-mono text-emerald-700 dark:text-emerald-400">
-                        +{offset.toFixed(1)}s offset
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setPodWaveOffset(podKey, Math.max(0, offset - 5))}
-                        aria-label={`Decrease ${podKey} offset by 5 seconds`}
-                        className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
-                      >
-                        -5s
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPodWaveOffset(podKey, offset + 5)}
-                        aria-label={`Increase ${podKey} offset by 5 seconds`}
-                        className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
-                      >
-                        +5s
-                      </button>
-                      {stopwatchRunning && (
-                        <button
-                          type="button"
-                          onClick={() => triggerPodWaveNow(podKey)}
-                          className="min-h-[44px] sm:min-h-[32px] px-2 rounded-lg ap-status-info font-mono text-2xs font-bold cursor-pointer"
-                          title={`Stamp ${podKey} start at current clock`}
-                        >
-                          Go Now
-                        </button>
-                      )}
+
+            {heatAbortBannerNode}
+            {multiSetPlanStripNode}
+            {envPhysicsPanelNode}
+          </section>
+
+          {autoRegBannerNode}
+        </>
+      ) : (
+        <>
+          {/* 1. Desktop Full Top Session Control Deck & WORKOUT / RACE Flag */}
+          <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+                <button
+                  type="button"
+                  data-testid="stopwatch-back-to-log-btn"
+                  onClick={onOpenActivitiesTab}
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-capsule-track text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
+                >
+                  <span>← Back</span>
+                </button>
+                <h1 className="text-lg sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight">
+                  Trackside Stopwatch
+                </h1>
+                <span
+                  className={`px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold uppercase ${
+                    stopwatchRunning ? 'ap-status-prime' : 'ap-status-info'
+                  }`}
+                >
+                  {stopwatchRunning ? 'Live Timing · 0.01s' : 'Ready · 0.01s FAT Precision'}
+                </span>
+                {!isOnline ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg font-mono text-2xs font-bold ap-status-caution">
+                    <WifiSlash className="w-3.5 h-3.5" weight="bold" />
+                    <span>Offline · Local Storage Active</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-[#43584B] dark:text-[#93A39A]">
+                    Saved on Device (Offline Ready)
+                  </span>
+                )}
+                <button
+                  type="button"
+                  data-testid="stopwatch-focus-mode-toggle"
+                  onClick={() => setIsFocusMode(true)}
+                  className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
+                  title="Switch to high-density Trackside Focus HUD"
+                >
+                  Focus HUD
+                </button>
+              </div>
+
+              {renderModeRadioGroup(false)}
+            </div>
+
+            {/* Context Row: Presets, Rest/Meet Title, Wake Lock & Audio Beep */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-2 border-t border-emerald-900/10 dark:border-white/10">
+              {sessionType === 'WORKOUT' ? (
+                <>
+                  <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+                    <span>Workout Preset</span>
+                    {renderPresetSelect(false)}
+                  </label>
+                  {recoverySelectNode}
+                </>
+              ) : (
+                <>
+                  <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+                    <span>Race Event &amp; Finish Lock</span>
+                    {renderPresetSelect(false)}
+                  </label>
+
+                  <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+                    <span>Race Lap Rules</span>
+                    <div className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 flex items-center gap-2 text-xs text-[#101411] dark:text-[#F4F7F4]">
+                      <BellRinging className="w-4 h-4 text-[#D97706] shrink-0" weight="duotone" />
+                      <span className="truncate">
+                        {activeRacePreset.targetLaps
+                          ? `Bell Lap ${Math.max(1, activeRacePreset.targetLaps - 1)} · Lock @ Lap ${activeRacePreset.targetLaps}`
+                          : 'Unlimited open split taps'}
+                      </span>
                     </div>
                   </div>
+                </>
+              )}
+
+              {sessionTitleInputNode}
+              {hardwareTogglesNode}
+            </div>
+
+            {multiSetPlanStripNode}
+          </section>
+
+          {/* 2. Master Clock, Gun Controls, Wave Mode & View Switcher */}
+          <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div
+                  data-testid="stopwatch-master-clock"
+                  className="rounded-2xl bg-[#0B120E] text-[#C8FF00] border-2 border-[#2B5B3F] px-5 py-3 font-mono text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight shadow-sm"
+                >
+                  {formatStopwatchClockMs(stopwatchElapsedMs)}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="stopwatch-gun-btn"
+                    onClick={handleGunToggle}
+                    className={
+                      stopwatchRunning
+                        ? 'min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl ap-status-caution font-bold text-xs cursor-pointer transition-all'
+                        : 'ap-btn-primary cursor-pointer'
+                    }
+                  >
+                    {stopwatchRunning ? (
+                      <>
+                        <Pause className="w-4 h-4" weight="fill" />
+                        <span>Pause Gun</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4" weight="fill" />
+                        <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="stopwatch-undo-btn"
+                    onClick={handleUndo}
+                    disabled={tapHistory.length === 0}
+                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
+                    <span>Undo Last</span>
+                  </button>
+
+                  {resetButtonNode}
+                </div>
+              </div>
+
+              {/* Right Toolbar: Cards | Matrix Switcher, Pack Chute Toggle, Wave Toggle */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label="Stopwatch Split Layout"
+                  className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track"
+                >
+                  <button
+                    type="button"
+                    data-testid="stopwatch-view-cards"
+                    aria-pressed={viewMode === 'CARDS'}
+                    onClick={() => setViewMode('CARDS')}
+                    className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
+                      viewMode === 'CARDS'
+                        ? 'liquid-capsule-active'
+                        : 'text-[#43584B] dark:text-[#93A39A]'
+                    }`}
+                  >
+                    <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
+                    <span>Cards</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="stopwatch-view-matrix"
+                    aria-pressed={viewMode === 'MATRIX'}
+                    onClick={() => setViewMode('MATRIX')}
+                    className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
+                      viewMode === 'MATRIX'
+                        ? 'liquid-capsule-active'
+                        : 'text-[#43584B] dark:text-[#93A39A]'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5" weight="duotone" />
+                    <span>Matrix</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="stopwatch-toggle-chute"
+                  aria-pressed={showChuteBar}
+                  onClick={() => setShowChuteBar(!showChuteBar)}
+                  className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    showChuteBar
+                      ? 'ap-status-info font-bold'
+                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                  }`}
+                >
+                  <Lightning className="w-3.5 h-3.5" weight="bold" />
+                  <span>Chute Bar</span>
+                  {chuteQueueSecs.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-[#0B120E] text-[#C8FF00] font-mono text-2xs">
+                      {chuteQueueSecs.length}
+                    </span>
+                  )}
+                </button>
+
+                {waveModeButtonsNode}
+
+                <button
+                  type="button"
+                  data-testid="stopwatch-toggle-env-physics"
+                  aria-expanded={showEnvPhysicsPanel}
+                  onClick={() => setShowEnvPhysicsPanel((prev) => !prev)}
+                  className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    hasCustomEnvOrLane
+                      ? 'ap-status-caution font-bold'
+                      : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                  }`}
+                >
+                  <Waves className="w-3.5 h-3.5" weight="bold" />
+                  <span>
+                    {trackLane > 1
+                      ? `Lane ${trackLane} (${laneGeometry.lapLengthMeters.toFixed(0)}m)`
+                      : 'Lane, Env & Spikes'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {heatAbortBannerNode}
+            {envPhysicsPanelNode}
+            {waveOffsetsPanelNode}
+            {autoRegBannerNode}
+          </section>
+
+          {/* 3. Blind-Tap Pack / Chute Queue Bar (F1) */}
+          {showChuteBar && (
+            <section className="ap-card rounded-2xl p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <button
+                  type="button"
+                  data-testid="stopwatch-chute-tap"
+                  onClick={handleChuteTap}
+                  className={
+                    stopwatchRunning
+                      ? 'ap-btn-primary w-full sm:flex-1 min-h-[58px] text-sm cursor-pointer'
+                      : 'w-full sm:flex-1 min-h-[58px] inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#163022] hover:bg-[#1C5436] text-white dark:bg-[#0B1911] dark:text-[#C8FF00] border-2 border-[#2B5B3F] text-sm font-bold cursor-pointer'
+                  }
+                >
+                  <Lightning className="w-5 h-5 shrink-0" weight="fill" />
+                  <span>Chute Tap — Queue Pack Timestamp (Key: C)</span>
+                  {chuteQueueSecs.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-[#080A09] text-[#C8FF00] font-mono text-xs">
+                      {chuteQueueSecs.length} Queued
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {chuteQueueSecs.length > 0 ? (
+                chuteQueueStripNode
+              ) : (
+                <p className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+                  Tap Chute Tap rapidly as a pack crosses the line, then tap runners in finish order.
+                </p>
+              )}
+            </section>
+          )}
+        </>
+      )}
+
+      {/* 4. Pod Filter Strip (Desktop) + Unified Hybrid Runner Area (Cards OR Matrix) */}
+      <section className="space-y-3">
+        {!isFocusMode && (
+          <div className="ap-card rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedPodFilter('ALL')}
+                className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
+                  selectedPodFilter === 'ALL'
+                    ? 'liquid-capsule-active'
+                    : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                }`}
+              >
+                All Runners ({runnerTelemetries.length})
+              </button>
+              {activePodKeys.map((podKey) => {
+                const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
+                return (
+                  <button
+                    key={podKey}
+                    type="button"
+                    onClick={() => setSelectedPodFilter(podKey)}
+                    className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
+                      selectedPodFilter === podKey
+                        ? 'liquid-capsule-active'
+                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                    }`}
+                  >
+                    {podKey} ({count})
+                  </button>
                 );
               })}
             </div>
-          </div>
-        )}
 
-        {sessionType === 'WORKOUT' && (
-          <TracksideAutoRegBanner
-            autoRegSummary={squadAutoRegSummary}
-            pivotHistory={autoRegPivotHistory}
-            endedEarlyStimulusRatio={endedEarlyStimulusRatio}
-            onExtendRest30s={() => {
-              extendWorkoutRestPlus30s(30);
-              playFeedback('BELL');
-              setLiveAnnouncement('Extended recovery timer +30s across active workout.');
-            }}
-            onConvertRemainingToCv={() => {
-              convertRemainingToCv();
-              playFeedback('BELL');
-              setLiveAnnouncement('Converted remaining reps to Critical Velocity (CV).');
-            }}
-            onEndSession85Stimulus={(repsCap) => {
-              endSessionStimulusAchieved(repsCap);
-              playFeedback('BELL');
-              setLiveAnnouncement('Ended workout cleanly with 85% quality stimulus preserved.');
-            }}
-            onDismissCue={dismissAutoRegCue}
-          />
-        )}
-      </section>
-
-      {/* 3. Blind-Tap Pack / Chute Queue Bar (F1) */}
-      {showChuteBar && (
-        <section className="ap-card rounded-2xl p-4 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <button
-              type="button"
-              data-testid="stopwatch-chute-tap"
-              onClick={handleChuteTap}
-              className={
-                stopwatchRunning
-                  ? 'ap-btn-primary w-full sm:flex-1 min-h-[58px] text-sm cursor-pointer'
-                  : 'w-full sm:flex-1 min-h-[58px] inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-[#C8FF00] border-2 border-[#2B5B3F] text-sm font-bold cursor-pointer'
-              }
-            >
-              <Lightning className="w-5 h-5 shrink-0" weight="fill" />
-              <span>Chute Tap — Queue Pack Timestamp (Key: C)</span>
-              {chuteQueueSecs.length > 0 && (
-                <span className="px-2 py-0.5 rounded-md bg-[#080A09] text-[#C8FF00] font-mono text-xs">
-                  {chuteQueueSecs.length} Queued
-                </span>
-              )}
-            </button>
-
-            {chuteQueueSecs.length > 0 && (
-              <button
-                type="button"
-                onClick={clearChuteQueue}
-                className="min-h-[44px] px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer shrink-0"
-              >
-                Clear Queue
-              </button>
-            )}
-          </div>
-
-          {chuteQueueSecs.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-2xs font-mono font-bold uppercase text-emerald-800 dark:text-emerald-300">
-                Finish Order Queue — Tap next runner in line:
-              </span>
-              {chuteQueueSecs.map((ts, idx) => (
-                <span
-                  key={`${ts}-${idx}`}
-                  data-testid={`chute-pill-${idx}`}
-                  className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold tabular-nums ${
-                    idx === 0
-                      ? 'bg-[#1D3828] text-[#C8FF00] border border-[#65A30D]'
-                      : 'ap-card-inset text-slate-700 dark:text-slate-200'
-                  }`}
-                >
-                  #{idx + 1} · {formatTrackMark(ts, 2)}
-                </span>
-              ))}
+            <div className="hidden md:block text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+              Keys: Space Gun · 1–9 Split Lane · C Chute · Z Undo
             </div>
-          ) : (
-            <p className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-              Tap Chute Tap rapidly as a pack crosses the line, then tap runners in finish order to assign queued marks without losing a tenth.
-            </p>
-          )}
-        </section>
-      )}
-
-      {/* 4. Pod Filter Strip + Unified Hybrid Runner Area (Cards OR Matrix) */}
-      <section className="space-y-3">
-        <div className="ap-card rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setSelectedPodFilter('ALL')}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
-                selectedPodFilter === 'ALL'
-                  ? 'liquid-capsule-active'
-                  : 'ap-card-inset text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              All Runners ({runnerTelemetries.length})
-            </button>
-            {activePodKeys.map((podKey) => {
-              const count = runnerTelemetries.filter((t) => t.podKey === podKey).length;
-              return (
-                <button
-                  key={podKey}
-                  type="button"
-                  onClick={() => setSelectedPodFilter(podKey)}
-                  className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
-                    selectedPodFilter === podKey
-                      ? 'liquid-capsule-active'
-                      : 'ap-card-inset text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {podKey} ({count})
-                </button>
-              );
-            })}
           </div>
-
-          <div className="hidden md:block text-2xs font-mono text-slate-700 dark:text-slate-300">
-            Keys: Space Gun · 1–9 Split Lane · C Chute · Z Undo
-          </div>
-        </div>
+        )}
 
         {viewMode === 'CARDS' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div
+            className={
+              isFocusMode
+                ? `grid ${filteredTelemetries.length >= 4 ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2'} md:grid-cols-2 xl:grid-cols-3`
+                : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'
+            }
+          >
             {filteredTelemetries.map((telemetry, idx) => {
               const podMeta = runnerPodLookup.get(telemetry.runnerId);
               const nextChuteTs = chuteQueueSecs[0];
+              const isJustTapped = lastTappedRunnerId === telemetry.runnerId;
 
               return (
                 <button
@@ -1817,33 +2122,41 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   type="button"
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
-                  className={`min-h-[96px] w-full text-left rounded-2xl p-3.5 transition-all cursor-pointer flex flex-col justify-between gap-2.5 border ${
+                  className={`${
+                    isFocusMode ? 'min-h-[82px] rounded-xl p-2.5 gap-1.5' : 'min-h-[96px] rounded-2xl p-3.5 gap-2.5'
+                  } w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
+                    isJustTapped ? 'ring-2 ring-[#C8FF00]' : ''
+                  } ${
                     telemetry.isFinishedLocked
-                      ? 'ap-card border-emerald-600/45 bg-emerald-50/70 dark:bg-[#13261C]'
+                      ? 'ap-card border-[#059669]/45 bg-[#ECFDF5]/70 dark:bg-[#0B1911]'
                       : telemetry.isBellLap
-                        ? 'ap-card border-amber-500/60 ring-1 ring-amber-400/50'
-                        : 'ap-card hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 active:scale-[0.99]'
+                        ? 'ap-card border-[#D97706]/60 ring-1 ring-[#D97706]/50'
+                        : 'ap-card hover:border-[#2B5B3F] dark:hover:border-[#C8FF00]/60 active:scale-[0.98]'
                   }`}
                 >
                   {/* Top Row: Lane + Athlete + Status Badge */}
-                  <div className="flex items-start justify-between gap-2 w-full">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-start justify-between gap-1.5 w-full">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="ap-lane-badge shrink-0">
                         <span className="ap-lane-badge-inner">
                           {idx < 9 ? `L${idx + 1}` : `#${idx + 1}`}
                         </span>
                       </span>
                       <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                        <div
+                          className={`${
+                            isFocusMode ? 'text-xs' : 'text-sm'
+                          } font-bold text-[#101411] dark:text-[#F4F7F4] truncate`}
+                        >
                           {telemetry.runnerName}
                         </div>
-                        <div className="text-2xs font-mono text-slate-600 dark:text-slate-300 truncate">
+                        <div className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] truncate">
                           {telemetry.podKey}
                           {telemetry.effectiveOffsetSecs > 0
-                            ? ` · Wave +${telemetry.effectiveOffsetSecs.toFixed(1)}s`
+                            ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
                             : ''}
                           {sessionType === 'WORKOUT' && podMeta
-                            ? ` · Target ${formatTrackMark(podMeta.targetLapSecs, 1)}`
+                            ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
                             : ''}
                         </div>
                       </div>
@@ -1852,76 +2165,77 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     {/* Dynamic Right Badge */}
                     <div className="shrink-0 flex items-center gap-1">
                       {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
-                        <span className="px-2 py-0.5 rounded-lg bg-[#1D3828] text-[#C8FF00] font-mono text-2xs font-bold">
-                          Assign {formatTrackMark(nextChuteTs, 2)}
+                        <span className="px-1.5 py-0.5 rounded-lg bg-[#0B120E] text-[#C8FF00] font-mono text-2xs font-bold">
+                          +{formatTrackMark(nextChuteTs, 2)}
                         </span>
                       ) : sessionType === 'RACE' ? (
                         <div className="flex items-center gap-1">
                           {telemetry.placeLabel && (
-                            <span className="px-2 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold">
+                            <span className="px-1.5 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold">
                               {telemetry.placeLabel}
                             </span>
                           )}
                           {telemetry.isFinishedLocked ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold">
                               <Lock className="w-3 h-3" weight="bold" />
-                              <span>Finished</span>
+                              <span>Fin</span>
                             </span>
                           ) : telemetry.isBellLap ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold">
                               <BellRinging className="w-3 h-3" weight="bold" />
-                              <span>Bell Lap</span>
+                              <span>Bell</span>
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-slate-700 dark:text-slate-300">
-                              Lap {telemetry.lapCount}
+                            <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                              L{telemetry.lapCount}
                               {targetRaceLaps ? `/${targetRaceLaps}` : ''}
                             </span>
                           )}
                         </div>
                       ) : telemetry.restState.status === 'RESTING' ? (
-                        <span className="px-2 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold tabular-nums">
-                          Rest {telemetry.restState.remainingRestSecs}s
+                        <span className="px-1.5 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold tabular-nums">
+                          {telemetry.restState.remainingRestSecs}s
                         </span>
                       ) : telemetry.restState.status === 'GO_NOW' ? (
-                        <span className="px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
-                          GO (+{telemetry.restState.overdueSecs}s)
+                        <span className="px-1.5 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
+                          GO +{telemetry.restState.overdueSecs}s
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-slate-700 dark:text-slate-300">
-                          {telemetry.lapCount} {telemetry.lapCount === 1 ? 'Lap' : 'Laps'}
+                        <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                          {telemetry.lapCount}L
                         </span>
                       )}
                     </div>
                   </div>
 
                   {/* Middle Telemetry Readout */}
-                  <div className="flex items-baseline justify-between gap-3 w-full pt-1 border-t border-emerald-900/10 dark:border-white/10">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-slate-900 dark:text-white">
+                  <div className="flex items-baseline justify-between gap-2 w-full pt-1 border-t border-emerald-900/10 dark:border-white/10">
+                    <div className="flex items-baseline gap-1.5 min-w-0">
+                      <span
+                        className={`font-mono ${
+                          isFocusMode ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'
+                        } font-extrabold tabular-nums text-[#101411] dark:text-[#F4F7F4]`}
+                      >
                         {telemetry.lastLapSecs !== null
                           ? formatTrackMark(telemetry.lastLapSecs, 2)
                           : 'Tap Split'}
                       </span>
                       {telemetry.lastDeltaVsTargetSecs !== null && (
                         <span
-                          className={`font-mono text-2xs font-bold tabular-nums px-1.5 py-0.5 rounded ${
+                          className={`font-mono text-2xs font-bold tabular-nums px-1 py-0.5 rounded ${
                             telemetry.lastDeltaVsTargetSecs <= 0.5
                               ? 'ap-status-prime'
                               : 'ap-status-caution'
                           }`}
                         >
                           {telemetry.lastDeltaVsTargetSecs >= 0 ? '+' : ''}
-                          {telemetry.lastDeltaVsTargetSecs.toFixed(2)}s
+                          {telemetry.lastDeltaVsTargetSecs.toFixed(1)}s
                         </span>
                       )}
                     </div>
 
-                    <div className="text-right font-mono text-xs tabular-nums text-slate-700 dark:text-slate-300">
-                      <span className="text-2xs uppercase text-slate-500 dark:text-slate-400 mr-1">
-                        Net
-                      </span>
-                      <span className="font-bold">
+                    <div className="text-right font-mono text-2xs sm:text-xs tabular-nums text-[#43584B] dark:text-[#93A39A] shrink-0">
+                      <span className="font-bold text-[#101411] dark:text-[#F4F7F4]">
                         {telemetry.netTotalSecs !== null
                           ? formatFatTime(telemetry.netTotalSecs)
                           : '--:--.--'}
@@ -1931,20 +2245,22 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
                   {/* Bottom Recent Splits Trail & Live D'/Fade Strip */}
                   {telemetry.lapSplitsSecs.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-1.5 w-full">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {telemetry.lapSplitsSecs.slice(-4).map((lapSecs, lapIdx, arr) => {
-                          const globalLapNum =
-                            telemetry.lapSplitsSecs.length - arr.length + lapIdx + 1;
-                          return (
-                            <span
-                              key={`trail-${globalLapNum}`}
-                              className="px-1.5 py-0.5 rounded ap-card-inset font-mono text-2xs tabular-nums text-slate-700 dark:text-slate-200"
-                            >
-                              L{globalLapNum} {formatTrackMark(lapSecs, 2)}
-                            </span>
-                          );
-                        })}
+                    <div className="flex flex-wrap items-center justify-between gap-1 w-full">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {telemetry.lapSplitsSecs
+                          .slice(isFocusMode ? -2 : -4)
+                          .map((lapSecs, lapIdx, arr) => {
+                            const globalLapNum =
+                              telemetry.lapSplitsSecs.length - arr.length + lapIdx + 1;
+                            return (
+                              <span
+                                key={`trail-${globalLapNum}`}
+                                className="px-1.5 py-0.5 rounded ap-card-inset font-mono text-2xs tabular-nums text-[#43584B] dark:text-[#93A39A]"
+                              >
+                                L{globalLapNum} {formatTrackMark(lapSecs, 2)}
+                              </span>
+                            );
+                          })}
                       </div>
                       {sessionType === 'WORKOUT' && squadAutoRegSummary.byRunnerId[telemetry.runnerId] && (
                         <span
@@ -1953,7 +2269,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                               ? 'ap-status-strained'
                               : squadAutoRegSummary.byRunnerId[telemetry.runnerId].cueType !== 'NONE'
                                 ? 'ap-status-caution'
-                                : 'ap-card-inset text-slate-600 dark:text-slate-300'
+                                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
                           }`}
                         >
                           D&apos; {squadAutoRegSummary.byRunnerId[telemetry.runnerId].dPrimeBalancePct}%
@@ -2272,6 +2588,34 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           </div>
         )}
       </section>
+
+      {isFocusMode && (
+        <details className="ap-card rounded-2xl p-3 space-y-3">
+          <summary className="min-h-[44px] flex items-center justify-between gap-2 text-xs font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer select-none">
+            <span>Session, Recovery &amp; Wave Settings</span>
+            <span className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              {restDurationSecs > 0 ? `${restDurationSecs}s rest` : 'Open'} · {waveMode === 'MASS' ? 'Mass' : waveMode === 'POD_STAGGER' ? 'Pod +10s' : 'Pursuit'}
+            </span>
+          </summary>
+          <div className="pt-2 space-y-3 border-t border-emerald-900/10 dark:border-white/10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {sessionType === 'WORKOUT' && recoverySelectNode}
+              {sessionTitleInputNode}
+              {hardwareTogglesNode}
+            </div>
+            <div className="space-y-1">
+              <div className="text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+                Start Wave Mode
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {waveModeButtonsNode}
+                {resetButtonNode}
+              </div>
+            </div>
+            {waveOffsetsPanelNode}
+          </div>
+        </details>
+      )}
     </div>
   );
 };
