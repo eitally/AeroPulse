@@ -140,6 +140,7 @@ export interface TracksideAutoRegPivotEntry {
 export interface PersistedTracksideStopwatchState {
   isRunning: boolean;
   startedAtEpochMs: number | null;
+  sessionStartedEpochMs?: number | null;
   accumulatedMs: number;
   athleteLapTimestampsSecs: Record<string, number[]>;
   tapHistory: TracksideSplitTapEntry[];
@@ -174,6 +175,7 @@ export interface PersistedTracksideStopwatchState {
 const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   isRunning: false,
   startedAtEpochMs: null,
+  sessionStartedEpochMs: null,
   accumulatedMs: 0,
   athleteLapTimestampsSecs: {},
   tapHistory: [],
@@ -306,6 +308,11 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
       startedAtEpochMs:
         typeof parsed.startedAtEpochMs === 'number' && Number.isFinite(parsed.startedAtEpochMs)
           ? parsed.startedAtEpochMs
+          : null,
+      sessionStartedEpochMs:
+        typeof parsed.sessionStartedEpochMs === 'number' &&
+        Number.isFinite(parsed.sessionStartedEpochMs)
+          ? parsed.sessionStartedEpochMs
           : null,
       accumulatedMs:
         typeof parsed.accumulatedMs === 'number' && Number.isFinite(parsed.accumulatedMs)
@@ -450,6 +457,9 @@ export function applyToggleStartPause(
         ...current,
         isRunning: true,
         startedAtEpochMs: nowEpochMs,
+        sessionStartedEpochMs:
+          current.sessionStartedEpochMs ??
+          (current.accumulatedMs > 0 ? nowEpochMs - current.accumulatedMs : nowEpochMs),
       };
 }
 
@@ -460,6 +470,7 @@ export function applyResetStopwatch(
     ...current,
     isRunning: false,
     startedAtEpochMs: null,
+    sessionStartedEpochMs: null,
     accumulatedMs: 0,
     athleteLapTimestampsSecs: {},
     tapHistory: [],
@@ -608,6 +619,7 @@ function autoStartIfIdle(
       ...current,
       isRunning: true,
       startedAtEpochMs: nowEpochMs,
+      sessionStartedEpochMs: current.sessionStartedEpochMs ?? nowEpochMs,
     };
   }
   return current;
@@ -1409,6 +1421,7 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     stopwatchRunning: persisted.isRunning,
     stopwatchElapsedMs: elapsedMs,
     nowEpochMs,
+    sessionStartedEpochMs: persisted.sessionStartedEpochMs ?? null,
     athleteLapTimestampsSecs: persisted.athleteLapTimestampsSecs,
     tapHistory: persisted.tapHistory,
     extraPodAthletes: persisted.extraPodAthletes,

@@ -136,6 +136,7 @@ export interface ParsedOfficialRaceCandidate {
   lapSplitsSecs: number[];
   includeWarmupCooldown: boolean;
   sourceUrl?: string;
+  startDateLocalIso?: string;
 }
 
 /**
@@ -474,7 +475,7 @@ export function synthesizeOfficialRaceActivity(
 
   return {
     id: candidate.id || `official-race-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    startDateLocal: `${candidate.date.slice(0, 10)}T10:30:00`,
+    startDateLocal: candidate.startDateLocalIso || `${candidate.date.slice(0, 10)}T10:30:00`,
     name: `${candidate.eventLabel} Official Race (${officialRaceData.displayFatTime}) — ${candidate.meetName}`,
     sportCategory: 'Running',
     environment: isIndoorTrack ? 'INDOOR' : 'OUTDOOR',

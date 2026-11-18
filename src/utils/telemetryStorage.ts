@@ -1,13 +1,17 @@
 import {
+  ActivityInterval,
   ActivitySourceBadge,
+  ActivityStreamSet,
   AthleteGearItem,
   AthleteHrZone,
   AthletePowerZone,
   AthleteProfile,
   PlannedWorkoutEvent,
+  StopwatchFusionMetadata,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
+import { fuseWearableStreamWithStopwatchSplits } from './stopwatchActivitySynthesizer';
 import {
   bulkUpsertActivitiesToDexie,
   db,
@@ -719,6 +723,17 @@ export function reclassifyActivityEnvironment(act: UnifiedActivity): UnifiedActi
     const isTreadmillText = /\b(treadmill|indoor run|zwift run|woodway|peloton tread|track indoor)\b/i.test(
       combinedText
     );
+    const isExplicitTrackOrXc =
+      act.subType === 'Track' ||
+      act.subType === 'Cross Country' ||
+      Boolean(act.trackFacility) ||
+      Boolean(act.stopwatchFusionMeta) ||
+      Boolean(act.matchedStopwatchId) ||
+      Boolean(act.officialRaceData) ||
+      act.id.startsWith('stopwatch-');
+    if (isExplicitTrackOrXc && !isTreadmillText) {
+      return act;
+    }
     const isZeroGpsRun = !hasAnyGps && act.elevationGainMeters === 0 && act.movingTimeSecs > 180;
     if (act.environment === 'INDOOR' || isTreadmillText || isZeroGpsRun) {
       if (act.environment === 'INDOOR' && act.subType === 'Treadmill') return act;
@@ -1022,13 +1037,282 @@ export function findMatchingActivityByProximity(
   return undefined;
 }
 
+const GENERIC_WATCH_RUN_NAME_RE =
+  /^(morning|lunch|afternoon|evening|night|indoor|outdoor|track|treadmill)?\s*(track\s*)?(run|running|workout)$/i;
+
+/**
+ * Returns true if an activity originated directly from the local Trackside Stopwatch (`#stopwatch`)
+ * rather than a hardware watch or cloud wearable sync (Strava, Intervals.icu, Wahoo, Polar, Garmin .FIT).
+ */
+export function isSyntheticStopwatchActivity(act: UnifiedActivity | null | undefined): boolean {
+  if (!act || !act.id) return false;
+  if (
+    act.stravaId ||
+    act.intervalsId ||
+    (act as { intervalsActivityId?: string }).intervalsActivityId ||
+    act.wahooId ||
+    act.polarId ||
+    (act.matchedStopwatchId && act.matchedStopwatchId !== act.id)
+  ) {
+    return false;
+  }
+  if (act.id.startsWith('stopwatch-workout-') || act.id.startsWith('stopwatch-race-')) {
+    return true;
+  }
+  if (String(act.deviceName || '').startsWith('THRESH Trackside Stopwatch')) {
+    return true;
+  }
+  return Boolean(
+    act.stopwatchFusionMeta &&
+      act.stopwatchFusionMeta.stopwatchActivityId &&
+      act.stopwatchFusionMeta.stopwatchActivityId === act.id
+  );
+}
+
+function deriveStopwatchFusionMetaFallback(
+  stopwatchAct: UnifiedActivity
+): StopwatchFusionMetadata | undefined {
+  if (stopwatchAct.stopwatchFusionMeta) {
+    return stopwatchAct.stopwatchFusionMeta;
+  }
+  const workIntervals = (stopwatchAct.intervals || []).filter(
+    (iv) => iv.type === 'WORK' && Number.isFinite(iv.durationSecs) && iv.durationSecs > 0
+  );
+  if (workIntervals.length > 0) {
+    const recInterval = (stopwatchAct.intervals || []).find(
+      (iv) => iv.type === 'RECOVERY' && Number.isFinite(iv.durationSecs) && iv.durationSecs >= 0
+    );
+    return {
+      stopwatchActivityId: stopwatchAct.id,
+      lapSplitsSecs: workIntervals.map((iv) => Number(iv.durationSecs.toFixed(2))),
+      repDistanceMeters: Math.max(100, workIntervals[0]?.distanceMeters || 400),
+      restDurationSecs: recInterval ? Math.round(recInterval.durationSecs) : 60,
+      fusedWithWearableStreams: false,
+    };
+  }
+  if (
+    stopwatchAct.officialRaceData &&
+    Array.isArray(stopwatchAct.officialRaceData.lapSplitsSecs) &&
+    stopwatchAct.officialRaceData.lapSplitsSecs.length > 0
+  ) {
+    return {
+      stopwatchActivityId: stopwatchAct.id,
+      lapSplitsSecs: stopwatchAct.officialRaceData.lapSplitsSecs,
+      repDistanceMeters: stopwatchAct.officialRaceData.lapSplitDistanceMeters || 400,
+      restDurationSecs: 0,
+      fusedWithWearableStreams: false,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Fuses `0.01s` `#stopwatch` lap timings & lane metadata onto a wearable's `1Hz` stream set,
+ * recovering warm-up offset lag, Huber-snapping oval GPS, and annotating each rep with watch biometrics.
+ */
+export function applyStopwatchStreamFusionToActivity(
+  activity: UnifiedActivity,
+  wearableStreams: ActivityStreamSet,
+  fallbackMeta?: StopwatchFusionMetadata
+): UnifiedActivity {
+  const meta = activity.stopwatchFusionMeta || fallbackMeta;
+  if (
+    !meta ||
+    !Array.isArray(meta.lapSplitsSecs) ||
+    meta.lapSplitsSecs.length === 0 ||
+    !wearableStreams ||
+    !Array.isArray(wearableStreams.time) ||
+    wearableStreams.time.length < 10
+  ) {
+    return {
+      ...activity,
+      streams: wearableStreams,
+    };
+  }
+
+  const fusion = fuseWearableStreamWithStopwatchSplits({
+    wearableStreams,
+    lapSplitsSecs: meta.lapSplitsSecs,
+    repDistanceMeters: meta.repDistanceMeters,
+    restDurationSecs: meta.restDurationSecs,
+    lane: meta.lane ?? 1,
+    wearableActivity: activity,
+    thresholdPaceSecsPerKm: meta.thresholdPaceSecsPerKm,
+    multiSetSpec: meta.multiSetSpec ?? null,
+  });
+
+  const snappedRoute =
+    fusion.ovalSnapSummary && fusion.ovalSnapSummary.snappedLatLng.length > 2
+      ? fusion.ovalSnapSummary.snappedLatLng
+      : fusion.fusedStreams.latlng && fusion.fusedStreams.latlng.length > 2
+        ? fusion.fusedStreams.latlng
+        : activity.routeLatLngs;
+
+  return {
+    ...activity,
+    streams: fusion.fusedStreams,
+    routeLatLngs: snappedRoute,
+    intervals: fusion.intervals.length > 0 ? fusion.intervals : activity.intervals,
+    stopwatchFusionMeta: {
+      ...meta,
+      fusedWithWearableStreams: true,
+      optimalLagSecs: fusion.optimalLagSecs,
+    },
+  };
+}
+
+function isStopwatchWearableSameSessionMatch(
+  a: UnifiedActivity,
+  b: UnifiedActivity
+): boolean {
+  if (
+    a.matchedStopwatchId === b.id ||
+    b.matchedStopwatchId === a.id ||
+    a.stopwatchFusionMeta?.stopwatchActivityId === b.id ||
+    b.stopwatchFusionMeta?.stopwatchActivityId === a.id
+  ) {
+    return true;
+  }
+
+  const aIsSw = isSyntheticStopwatchActivity(a);
+  const bIsSw = isSyntheticStopwatchActivity(b);
+  if (aIsSw === bIsSw) return false;
+  if (a.sportCategory !== 'Running' || b.sportCategory !== 'Running') return false;
+  if (!a.startDateLocal || !b.startDateLocal) return false;
+
+  // Must share the same local calendar date so overnight activities never collide
+  if (String(a.startDateLocal).slice(0, 10) !== String(b.startDateLocal).slice(0, 10)) {
+    return false;
+  }
+
+  const stopwatchAct = aIsSw ? a : b;
+  const wearableAct = aIsSw ? b : a;
+  const swMs = new Date(stopwatchAct.startDateLocal).getTime();
+  const watchMs = new Date(wearableAct.startDateLocal).getTime();
+  if (Number.isNaN(swMs) || Number.isNaN(watchMs)) return false;
+
+  // Athletes commonly start their watch 10-60 min before Rep 1 for warm-up + drills;
+  // allow watch starts up to 120 min earlier or 45 min later while keeping AM/PM 2-a-days separate.
+  const deltaSecs = (swMs - watchMs) / 1000;
+  return deltaSecs >= -2700 && deltaSecs <= 7200;
+}
+
+function stripEstimatedHrFromUnfusedStopwatchIntervals(
+  intervals: ActivityInterval[] | undefined
+): ActivityInterval[] | undefined {
+  if (!Array.isArray(intervals) || intervals.length === 0) return intervals;
+  return intervals.map((iv) => {
+    const rest: ActivityInterval = { ...iv };
+    delete rest.avgHr;
+    delete rest.maxHr;
+    delete rest.avgCadence;
+    return rest;
+  });
+}
+
+function mergeStopwatchAndWearableActivity(
+  wearableAct: UnifiedActivity,
+  stopwatchAct: UnifiedActivity
+): UnifiedActivity {
+  const mergedBadges = Array.from(
+    new Set([...(wearableAct.sourceBadges || []), ...(stopwatchAct.sourceBadges || [])])
+  ) as ActivitySourceBadge[];
+
+  const baseDevice = (wearableAct.deviceName || '').trim();
+  const deviceName = baseDevice
+    ? baseDevice.includes('THRESH Stopwatch')
+      ? baseDevice
+      : `${baseDevice} + THRESH Stopwatch`
+    : 'Watch + THRESH Stopwatch';
+
+  const watchName = (wearableAct.name || '').trim();
+  const resolvedName =
+    !watchName || GENERIC_WATCH_RUN_NAME_RE.test(watchName)
+      ? stopwatchAct.name
+      : wearableAct.name;
+
+  const fusionMeta = deriveStopwatchFusionMetaFallback(stopwatchAct);
+  const alreadyFused = Boolean(
+    (wearableAct.matchedStopwatchId === stopwatchAct.id ||
+      wearableAct.stopwatchFusionMeta?.stopwatchActivityId === stopwatchAct.id) &&
+      wearableAct.stopwatchFusionMeta?.fusedWithWearableStreams &&
+      Array.isArray(wearableAct.intervals) &&
+      wearableAct.intervals.length > 0
+  );
+
+  const hasSpikedWork =
+    stopwatchAct.footwearClass === 'CARBON_SUPER_SPIKE' ||
+    stopwatchAct.footwearClass === 'TRADITIONAL_TRACK_SPIKE';
+
+  const baseMerged: UnifiedActivity = {
+    ...stopwatchAct,
+    ...wearableAct,
+    id: wearableAct.id,
+    name: resolvedName,
+    subType: stopwatchAct.subType || wearableAct.subType || 'Track',
+    environment: wearableAct.environment || stopwatchAct.environment,
+    deviceName,
+    footwearClass: stopwatchAct.footwearClass ?? wearableAct.footwearClass,
+    spikedDistanceMeters:
+      typeof stopwatchAct.spikedDistanceMeters === 'number' &&
+      (hasSpikedWork || stopwatchAct.spikedDistanceMeters > 0)
+        ? stopwatchAct.spikedDistanceMeters
+        : wearableAct.spikedDistanceMeters,
+    trackFacility: stopwatchAct.trackFacility ?? wearableAct.trackFacility,
+    stimulusCompletionRatio:
+      stopwatchAct.stimulusCompletionRatio ?? wearableAct.stimulusCompletionRatio,
+    autoRegPivotSummary:
+      stopwatchAct.autoRegPivotSummary ?? wearableAct.autoRegPivotSummary,
+    officialRaceData: stopwatchAct.officialRaceData ?? wearableAct.officialRaceData,
+    matchedStopwatchId: stopwatchAct.id,
+    sourceBadges: mergedBadges,
+  };
+
+  if (alreadyFused) {
+    return {
+      ...baseMerged,
+      streams: wearableAct.streams,
+      routeLatLngs: wearableAct.routeLatLngs,
+      intervals: wearableAct.intervals,
+      stopwatchFusionMeta: wearableAct.stopwatchFusionMeta,
+    };
+  }
+
+  if (
+    fusionMeta &&
+    wearableAct.streams &&
+    Array.isArray(wearableAct.streams.time) &&
+    wearableAct.streams.time.length >= 10
+  ) {
+    return applyStopwatchStreamFusionToActivity(
+      { ...baseMerged, stopwatchFusionMeta: fusionMeta },
+      wearableAct.streams,
+      fusionMeta
+    );
+  }
+
+  return {
+    ...baseMerged,
+    // Keep only real hardware streams on the wearable record so lazy stream hydration still fetches them
+    streams: wearableAct.streams,
+    stopwatchFusionMeta: fusionMeta ?? wearableAct.stopwatchFusionMeta,
+    intervals:
+      stopwatchAct.intervals && stopwatchAct.intervals.length > 0
+        ? wearableAct.avgHr > 0
+          ? stripEstimatedHrFromUnfusedStopwatchIntervals(stopwatchAct.intervals)
+          : stopwatchAct.intervals
+        : wearableAct.intervals,
+  };
+}
+
 /**
  * Merges incoming synced activities with existing persisted activities without losing
  * previously hydrated streams, GPS route polylines, Strava segment efforts, kudos, comments,
  * or Indoor / Virtual Cycling / Smart Trainer classification.
  *
  * Automatically deduplicates multi-source activities (Strava, Garmin, Wahoo, Intervals.icu)
- * recorded within ±5 minutes (300 seconds) so Training Load (TSS) is never double-counted.
+ * recorded within ±5 minutes (300 seconds) and fuses coach `#stopwatch` `0.01s` splits with
+ * athlete wearable runs across warm-up offsets so Training Load (TSS) is never double-counted.
  */
 export function mergeActivitiesNonDestructive(
   existing: UnifiedActivity[],
@@ -1046,16 +1330,25 @@ export function mergeActivitiesNonDestructive(
   const intervalsIdToPrimaryId = new Map<string, string>();
   const wahooIdToPrimaryId = new Map<string, string>();
   const polarIdToPrimaryId = new Map<string, string>();
+  const matchedStopwatchIdToPrimaryId = new Map<string, string>();
+
+  const indexPrimaryAct = (act: UnifiedActivity, primaryId: string) => {
+    if (act.stravaId) stravaIdToPrimaryId.set(String(act.stravaId), primaryId);
+    const actIntId = act.intervalsId || (act as { intervalsActivityId?: string }).intervalsActivityId;
+    if (actIntId) intervalsIdToPrimaryId.set(String(actIntId), primaryId);
+    if (act.wahooId) wahooIdToPrimaryId.set(String(act.wahooId), primaryId);
+    if (act.polarId) polarIdToPrimaryId.set(String(act.polarId), primaryId);
+    const swId = act.matchedStopwatchId || act.stopwatchFusionMeta?.stopwatchActivityId;
+    if (swId && swId !== primaryId) {
+      matchedStopwatchIdToPrimaryId.set(swId, primaryId);
+    }
+  };
 
   for (const rawAct of existing) {
     if (!rawAct || !rawAct.id) continue;
     const act = reclassifyActivityEnvironment(rawAct);
     byId.set(act.id, act);
-    if (act.stravaId) stravaIdToPrimaryId.set(String(act.stravaId), act.id);
-    const actIntId = act.intervalsId || (act as any).intervalsActivityId;
-    if (actIntId) intervalsIdToPrimaryId.set(String(actIntId), act.id);
-    if (act.wahooId) wahooIdToPrimaryId.set(String(act.wahooId), act.id);
-    if (act.polarId) polarIdToPrimaryId.set(String(act.polarId), act.id);
+    indexPrimaryAct(act, act.id);
   }
 
   for (const rawInc of incoming) {
@@ -1063,51 +1356,76 @@ export function mergeActivitiesNonDestructive(
     const inc = reclassifyActivityEnvironment(rawInc);
 
     let proximityMatchKey: string | undefined;
-    if (inc.startDateLocal) {
-      const incTimeMs = new Date(inc.startDateLocal).getTime();
-      if (!Number.isNaN(incTimeMs)) {
-        for (const existingAct of byId.values()) {
+    for (const existingAct of byId.values()) {
+      if (isStopwatchWearableSameSessionMatch(existingAct, inc)) {
+        proximityMatchKey = existingAct.id;
+        break;
+      }
+      if (inc.startDateLocal && existingAct.startDateLocal) {
+        const incTimeMs = new Date(inc.startDateLocal).getTime();
+        const existingTimeMs = new Date(existingAct.startDateLocal).getTime();
+        if (!Number.isNaN(incTimeMs) && !Number.isNaN(existingTimeMs)) {
           const sameSport = existingAct.sportCategory === inc.sportCategory;
-          const existingTimeMs = new Date(existingAct.startDateLocal).getTime();
-          if (!Number.isNaN(existingTimeMs)) {
-            const diffSecs = Math.abs(incTimeMs - existingTimeMs) / 1000;
-            const sameDurationClose =
-              Math.abs((existingAct.movingTimeSecs || 0) - (inc.movingTimeSecs || 0)) <= 180;
-            const hasMiscSportOverlap =
-              existingAct.sportCategory === 'Strength' ||
-              inc.sportCategory === 'Strength' ||
-              existingAct.sportCategory === 'Multisport' ||
-              inc.sportCategory === 'Multisport';
-            if ((sameSport && diffSecs <= 300) || (hasMiscSportOverlap && diffSecs <= 120 && sameDurationClose)) {
-              proximityMatchKey = existingAct.id;
-              break;
-            }
+          const diffSecs = Math.abs(incTimeMs - existingTimeMs) / 1000;
+          const sameDurationClose =
+            Math.abs((existingAct.movingTimeSecs || 0) - (inc.movingTimeSecs || 0)) <= 180;
+          const hasMiscSportOverlap =
+            existingAct.sportCategory === 'Strength' ||
+            inc.sportCategory === 'Strength' ||
+            existingAct.sportCategory === 'Multisport' ||
+            inc.sportCategory === 'Multisport';
+          if ((sameSport && diffSecs <= 300) || (hasMiscSportOverlap && diffSecs <= 120 && sameDurationClose)) {
+            proximityMatchKey = existingAct.id;
+            break;
           }
         }
       }
     }
 
-    const incIntervalId = inc.intervalsId || (inc as any).intervalsActivityId;
+    const incIntervalId = inc.intervalsId || (inc as { intervalsActivityId?: string }).intervalsActivityId;
+    const incLinkedSwId =
+      inc.matchedStopwatchId ||
+      (inc.stopwatchFusionMeta?.stopwatchActivityId &&
+      inc.stopwatchFusionMeta.stopwatchActivityId !== inc.id
+        ? inc.stopwatchFusionMeta.stopwatchActivityId
+        : undefined);
     const matchedKey =
       (byId.has(inc.id) ? inc.id : undefined) ||
       (incIntervalId ? intervalsIdToPrimaryId.get(String(incIntervalId)) : undefined) ||
       (inc.stravaId ? stravaIdToPrimaryId.get(String(inc.stravaId)) : undefined) ||
       (inc.wahooId ? wahooIdToPrimaryId.get(String(inc.wahooId)) : undefined) ||
       (inc.polarId ? polarIdToPrimaryId.get(String(inc.polarId)) : undefined) ||
+      matchedStopwatchIdToPrimaryId.get(inc.id) ||
+      (incLinkedSwId && byId.has(incLinkedSwId) ? incLinkedSwId : undefined) ||
+      (incLinkedSwId ? matchedStopwatchIdToPrimaryId.get(incLinkedSwId) : undefined) ||
       proximityMatchKey;
 
     if (!matchedKey) {
       byId.set(inc.id, inc);
-      if (inc.stravaId) stravaIdToPrimaryId.set(String(inc.stravaId), inc.id);
-      if (incIntervalId) intervalsIdToPrimaryId.set(String(incIntervalId), inc.id);
-      if (inc.wahooId) wahooIdToPrimaryId.set(String(inc.wahooId), inc.id);
-      if (inc.polarId) polarIdToPrimaryId.set(String(inc.polarId), inc.id);
+      indexPrimaryAct(inc, inc.id);
       continue;
     }
 
     const prev = byId.get(matchedKey)!;
+    const prevIsStopwatch = isSyntheticStopwatchActivity(prev);
+    const incIsStopwatch = isSyntheticStopwatchActivity(inc);
+
+    if (prevIsStopwatch !== incIsStopwatch) {
+      const wearableAct = prevIsStopwatch ? inc : prev;
+      const stopwatchAct = prevIsStopwatch ? prev : inc;
+      const merged = reclassifyActivityEnvironment(
+        mergeStopwatchAndWearableActivity(wearableAct, stopwatchAct)
+      );
+      if (merged.id !== matchedKey) {
+        byId.delete(matchedKey);
+      }
+      byId.set(merged.id, merged);
+      indexPrimaryAct(merged, merged.id);
+      continue;
+    }
+
     // Prefer whichever record has an Intervals.icu ID or Strava ID as primary ID
-    const prevIntId = prev.intervalsId || (prev as any).intervalsActivityId;
+    const prevIntId = prev.intervalsId || (prev as { intervalsActivityId?: string }).intervalsActivityId;
     const canonicalId = prevIntId ? prev.id : incIntervalId ? inc.id : prev.id;
 
     const mergedBadges = Array.from(
@@ -1124,7 +1442,9 @@ export function mergeActivitiesNonDestructive(
           ? 'Smart Trainer'
           : prev.subType === 'Treadmill' || inc.subType === 'Treadmill'
             ? 'Treadmill'
-            : inc.subType || prev.subType;
+            : prev.subType === 'Track' || inc.subType === 'Track'
+              ? 'Track'
+              : inc.subType || prev.subType;
 
     const prevHasIntervals =
       Boolean(prevIntId) || Boolean(prev.sourceBadges?.includes('Intervals.icu'));
@@ -1139,6 +1459,20 @@ export function mergeActivitiesNonDestructive(
     const clearStalePower =
       inc.deviceWatts === false && !prevHasIntervals && !incHasIntervals;
 
+    const preservePrevStopwatchSplits = Boolean(
+      (prev.matchedStopwatchId || prev.stopwatchFusionMeta) && !inc.stopwatchFusionMeta
+    );
+    const resolvedStreams =
+      inc.streams && Array.isArray(inc.streams.time) && inc.streams.time.length > 0
+        ? inc.streams
+        : prev.streams;
+    const resolvedFusionMeta =
+      inc.stopwatchFusionMeta?.fusedWithWearableStreams
+        ? inc.stopwatchFusionMeta
+        : prev.stopwatchFusionMeta?.fusedWithWearableStreams
+          ? prev.stopwatchFusionMeta
+          : inc.stopwatchFusionMeta || prev.stopwatchFusionMeta;
+
     const mergedRaw: UnifiedActivity = {
       ...prev,
       ...inc,
@@ -1147,10 +1481,15 @@ export function mergeActivitiesNonDestructive(
       stravaId: inc.stravaId || prev.stravaId,
       wahooId: inc.wahooId || prev.wahooId,
       polarId: inc.polarId || prev.polarId,
+      matchedStopwatchId: inc.matchedStopwatchId || prev.matchedStopwatchId,
+      stopwatchFusionMeta: resolvedFusionMeta,
       environment: resolvedEnv,
       subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
-      deviceName: inc.deviceName || prev.deviceName,
+      deviceName:
+        prev.deviceName?.includes('THRESH Stopwatch') && !inc.deviceName?.includes('THRESH Stopwatch')
+          ? prev.deviceName
+          : inc.deviceName || prev.deviceName,
       deviceWatts: inc.deviceWatts ?? prev.deviceWatts,
       rawSportType: inc.rawSportType || prev.rawSportType,
       loadModelVersion: inc.loadModelVersion ?? prev.loadModelVersion,
@@ -1178,6 +1517,18 @@ export function mergeActivitiesNonDestructive(
         inc.zoneSecs?.hr?.some((s) => s > 0) || !prev.zoneSecs?.hr?.some((s) => s > 0)
           ? inc.zoneSecs
           : prev.zoneSecs,
+      footwearClass:
+        preservePrevStopwatchSplits
+          ? prev.footwearClass ?? inc.footwearClass
+          : inc.footwearClass ?? prev.footwearClass,
+      spikedDistanceMeters:
+        preservePrevStopwatchSplits
+          ? prev.spikedDistanceMeters ?? inc.spikedDistanceMeters
+          : inc.spikedDistanceMeters ?? prev.spikedDistanceMeters,
+      trackFacility:
+        preservePrevStopwatchSplits
+          ? prev.trackFacility ?? inc.trackFacility
+          : inc.trackFacility ?? prev.trackFacility,
       stravaPrCount: Math.max(prev.stravaPrCount || 0, inc.stravaPrCount || 0),
       kudosCount: Math.max(prev.kudosCount || 0, inc.kudosCount || 0),
       commentCount: Math.max(prev.commentCount || 0, inc.commentCount || 0),
@@ -1194,12 +1545,10 @@ export function mergeActivitiesNonDestructive(
           : prev.routeLatLngs,
       startLatLng: inc.startLatLng || prev.startLatLng,
       endLatLng: inc.endLatLng || prev.endLatLng,
-      streams:
-        inc.streams && Array.isArray(inc.streams.time) && inc.streams.time.length > 0
-          ? inc.streams
-          : prev.streams,
-      intervals:
-        Array.isArray(inc.intervals) && inc.intervals.length > 0
+      streams: resolvedStreams,
+      intervals: preservePrevStopwatchSplits
+        ? prev.intervals
+        : Array.isArray(inc.intervals) && inc.intervals.length > 0
           ? inc.intervals
           : prev.intervals,
       segmentEfforts:
@@ -1209,17 +1558,22 @@ export function mergeActivitiesNonDestructive(
       sourceBadges: mergedBadges,
     };
 
-    const merged = reclassifyActivityEnvironment(mergedRaw);
+    const hydratedMerged =
+      resolvedFusionMeta &&
+      !resolvedFusionMeta.fusedWithWearableStreams &&
+      resolvedStreams &&
+      Array.isArray(resolvedStreams.time) &&
+      resolvedStreams.time.length >= 10
+        ? applyStopwatchStreamFusionToActivity(mergedRaw, resolvedStreams, resolvedFusionMeta)
+        : mergedRaw;
+
+    const merged = reclassifyActivityEnvironment(hydratedMerged);
 
     if (canonicalId !== matchedKey) {
       byId.delete(matchedKey);
     }
     byId.set(canonicalId, merged);
-    if (merged.stravaId) stravaIdToPrimaryId.set(String(merged.stravaId), canonicalId);
-    const mergedIntId = merged.intervalsId || (merged as any).intervalsActivityId;
-    if (mergedIntId) intervalsIdToPrimaryId.set(String(mergedIntId), canonicalId);
-    if (merged.wahooId) wahooIdToPrimaryId.set(String(merged.wahooId), canonicalId);
-    if (merged.polarId) polarIdToPrimaryId.set(String(merged.polarId), canonicalId);
+    indexPrimaryAct(merged, canonicalId);
   }
 
   return Array.from(byId.values()).sort(

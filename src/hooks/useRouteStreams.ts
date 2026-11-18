@@ -6,9 +6,55 @@ import {
   saveActivityStreamToDexie,
 } from '../db/workoutStore';
 import {
+  applyStopwatchStreamFusionToActivity,
   getSavedIntervalsHeaders,
   saveRotatedStravaTokensToStorage,
 } from '../utils/telemetryStorage';
+import type { ActivityInterval, ActivityStreamSet, StravaSegmentEffort } from '../types';
+
+function mergeHydratedStreamsIntoActivity(
+  target: UnifiedActivity,
+  sourceActivity: UnifiedActivity,
+  streams: ActivityStreamSet | undefined,
+  options?: {
+    intervals?: ActivityInterval[];
+    segmentEfforts?: StravaSegmentEffort[];
+  }
+): UnifiedActivity {
+  const hasRealStreams = Boolean(streams && Array.isArray(streams.time) && streams.time.length > 0);
+  const nextStreams = hasRealStreams ? streams! : target.streams;
+  const fusionMeta = target.stopwatchFusionMeta || sourceActivity.stopwatchFusionMeta;
+  const matchedStopwatchId =
+    target.matchedStopwatchId ?? sourceActivity.matchedStopwatchId;
+
+  const base: UnifiedActivity = {
+    ...target,
+    streams: nextStreams,
+    routeLatLngs:
+      hasRealStreams && Array.isArray(streams?.latlng) && streams.latlng.length > 2
+        ? streams.latlng
+        : target.routeLatLngs,
+    intervals: fusionMeta
+      ? target.intervals
+      : options?.intervals || target.intervals,
+    segmentEfforts:
+      options?.segmentEfforts && options.segmentEfforts.length > 0
+        ? options.segmentEfforts
+        : target.segmentEfforts,
+    ...(matchedStopwatchId ? { matchedStopwatchId } : {}),
+    ...(fusionMeta ? { stopwatchFusionMeta: fusionMeta } : {}),
+  };
+
+  if (
+    fusionMeta &&
+    nextStreams &&
+    Array.isArray(nextStreams.time) &&
+    nextStreams.time.length >= 10
+  ) {
+    return applyStopwatchStreamFusionToActivity(base, nextStreams, fusionMeta);
+  }
+  return base;
+}
 
 interface UseRouteStreamsParams {
   activitiesRef: React.MutableRefObject<UnifiedActivity[]>;
@@ -271,6 +317,29 @@ export function useRouteStreams({
         return;
       }
 
+      const needsStopwatchFusion = Boolean(
+        activity.stopwatchFusionMeta && !activity.stopwatchFusionMeta.fusedWithWearableStreams
+      );
+
+      if (
+        needsStopwatchFusion &&
+        activity.streams &&
+        Array.isArray(activity.streams.time) &&
+        activity.streams.time.length >= 10
+      ) {
+        const fusedInMemory = applyStopwatchStreamFusionToActivity(
+          activity,
+          activity.streams,
+          activity.stopwatchFusionMeta
+        );
+        setActivities((prev) =>
+          prev.map((a) => (a.id === activity.id ? mergeHydratedStreamsIntoActivity(a, activity, fusedInMemory.streams) : a))
+        );
+        setSelectedActivity((curr) =>
+          curr && curr.id === activity.id ? fusedInMemory : curr
+        );
+      }
+
       // 1. Check Dexie.js activityStreams table first for high-frequency 1Hz stream cache
       const cachedDexieRecord = await getActivityStreamFromDexie(activity.id);
       const cachedDexieStream = cachedDexieRecord?.streams;
@@ -278,23 +347,35 @@ export function useRouteStreams({
         cachedDexieStream &&
         Array.isArray(cachedDexieStream.time) &&
         cachedDexieStream.time.length >= 60 &&
-        (!activity.streams || activity.streams.time.length < cachedDexieStream.time.length)
+        (needsStopwatchFusion ||
+          !activity.streams ||
+          activity.streams.time.length < cachedDexieStream.time.length)
       ) {
         setActivities((prev) =>
-          prev.map((a) => (a.id === activity.id ? { ...a, streams: cachedDexieStream } : a))
+          prev.map((a) =>
+            a.id === activity.id
+              ? mergeHydratedStreamsIntoActivity(a, activity, cachedDexieStream)
+              : a
+          )
         );
         setSelectedActivity((curr) =>
-          curr && curr.id === activity.id ? { ...curr, streams: cachedDexieStream } : curr
+          curr && curr.id === activity.id
+            ? mergeHydratedStreamsIntoActivity(curr, activity, cachedDexieStream)
+            : curr
         );
       }
 
+      const activeStreams =
+        cachedDexieStream && cachedDexieStream.time.length >= 60
+          ? cachedDexieStream
+          : activity.streams;
       if (
-        activity.streams &&
-        activity.streams.time.length >= 60 &&
+        activeStreams &&
+        activeStreams.time.length >= 60 &&
         activity.segmentEfforts &&
         activity.segmentEfforts.length > 0 &&
         (activity.environment === 'INDOOR' ||
-          (activity.streams.latlng && activity.streams.latlng.length > 2))
+          (activeStreams.latlng && activeStreams.latlng.length > 2))
       ) {
         return;
       }
@@ -322,29 +403,22 @@ export function useRouteStreams({
               setActivities((prev) => {
                 const updated = prev.map((a) =>
                   a.id === activity.id
-                    ? {
-                        ...a,
-                        streams:
-                          streams && Array.isArray(streams.time) && streams.time.length > 0
-                            ? streams
-                            : a.streams,
-                        routeLatLngs:
-                          streams && Array.isArray(streams.latlng) && streams.latlng.length > 2
-                            ? streams.latlng
-                            : a.routeLatLngs,
-                        intervals: intervals || a.intervals,
-                        segmentEfforts:
-                          segmentEfforts && segmentEfforts.length > 0
-                            ? segmentEfforts
-                            : a.segmentEfforts,
-                      }
+                    ? mergeHydratedStreamsIntoActivity(a, activity, streams, {
+                        intervals,
+                        segmentEfforts,
+                      })
                     : a
                 );
                 const ranked = reRankActivitiesSegments(updated);
                 const latestAct = ranked.find((a) => a.id === activity.id);
                 if (latestAct) {
                   setSelectedActivity((curr) =>
-                    curr && curr.id === activity.id ? latestAct : curr
+                    curr && curr.id === activity.id
+                      ? mergeHydratedStreamsIntoActivity(curr, activity, streams, {
+                          intervals,
+                          segmentEfforts,
+                        })
+                      : curr
                   );
                 }
                 return ranked;
@@ -378,28 +452,20 @@ export function useRouteStreams({
               setActivities((prev) => {
                 const updated = prev.map((a) =>
                   a.id === activity.id
-                    ? {
-                        ...a,
-                        streams:
-                          streams && Array.isArray(streams.time) && streams.time.length > 0
-                            ? streams
-                            : a.streams,
-                        routeLatLngs:
-                          streams && Array.isArray(streams.latlng) && streams.latlng.length > 2
-                            ? streams.latlng
-                            : a.routeLatLngs,
-                        segmentEfforts:
-                          segmentEfforts && segmentEfforts.length > 0
-                            ? segmentEfforts
-                            : a.segmentEfforts,
-                      }
+                    ? mergeHydratedStreamsIntoActivity(a, activity, streams, {
+                        segmentEfforts,
+                      })
                     : a
                 );
                 const ranked = reRankActivitiesSegments(updated);
                 const latestAct = ranked.find((a) => a.id === activity.id);
                 if (latestAct) {
                   setSelectedActivity((curr) =>
-                    curr && curr.id === activity.id ? latestAct : curr
+                    curr && curr.id === activity.id
+                      ? mergeHydratedStreamsIntoActivity(curr, activity, streams, {
+                          segmentEfforts,
+                        })
+                      : curr
                   );
                 }
                 return ranked;
