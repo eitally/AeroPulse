@@ -41,6 +41,8 @@ import {
 } from '../utils/formatters';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+
 export type DeepDiveSectionId = 'CURVES' | 'DURABILITY' | 'PROGRESSION' | 'TRENDS';
 
 export interface TodayPhysiologyDeepDiveProps {
@@ -69,7 +71,7 @@ export interface TodayPhysiologyDeepDiveProps {
   onOpenDataSources?: () => void;
 }
 
-const ALL_SPORTS_LIST: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength'];
+const ALL_SPORTS_LIST: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength', 'Multisport'];
 
 const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   activities,
@@ -144,7 +146,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   };
 
   const currentYear = new Date().getFullYear();
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getLocalDateIso();
 
   const runGoal = annualMileageGoals.find((g) => g.sportCategory === 'Running') || {
     sportCategory: 'Running' as const,

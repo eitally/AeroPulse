@@ -1445,6 +1445,11 @@ export interface SessionCheckInRecord {
   painArea?: 'KNEE' | 'SHIN' | 'ACHILLES' | 'HAMSTRING' | 'HIP' | 'FOOT' | 'BACK' | 'OTHER';
   sorenessNote?: string;
   autoSwappedToRecovery?: boolean;
+  legFeel?: 'FRESH' | 'NORMAL' | 'HEAVY';
+  lifeStressFlag?: boolean;
+  sleepTargetHours?: number;
+  tomorrowLocked?: boolean;
+  ritualSlot?: 'MORNING' | 'POST_SESSION' | 'TONIGHT';
   createdAt: string;
 }
 

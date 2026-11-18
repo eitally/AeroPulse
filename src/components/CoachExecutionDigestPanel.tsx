@@ -131,10 +131,10 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
         </div>
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5">
           <div className="text-2xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
-            Checked In Today
+            Checked In (24h)
           </div>
           <div className="text-lg font-extrabold text-slate-900 dark:text-white">
-            {digest.checkedInTodayCount}/{digest.totalAthletes}
+            {digest.checkedInLast24hCount}/{digest.totalAthletes}
           </div>
         </div>
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5">
@@ -153,10 +153,11 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
         </div>
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5">
           <div className="text-2xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
-            High Strain (RPE 9+)
+            High Strain / Stress
           </div>
           <div className="text-lg font-extrabold text-slate-900 dark:text-white">
             {digest.highRpeCount}
+            {digest.lifeStressCount > 0 ? ` · ${digest.lifeStressCount} stress` : ''}
           </div>
         </div>
       </div>
@@ -177,6 +178,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               row.attentionReason === 'PAIN_FLAG' || readiness?.watchLight === 'RED_MEDICAL_REVIEW'
                 ? 'ap-status-strained'
                 : row.attentionReason === 'HIGH_RPE_STRAIN' ||
+                    row.attentionReason === 'HIGH_LIFE_STRESS' ||
                     row.attentionReason === 'MISSED_KEY_SESSIONS' ||
                     hasWatchAlert
                   ? 'ap-status-caution'
@@ -197,17 +199,24 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                         ? 'Pain Flag'
                         : row.attentionReason === 'HIGH_RPE_STRAIN'
                           ? 'High Strain'
-                          : row.attentionReason === 'MISSED_KEY_SESSIONS'
-                            ? 'Missed Sessions'
-                            : readiness?.watchLight === 'RED_MEDICAL_REVIEW'
-                              ? 'Medical Check'
-                              : readiness?.watchLight === 'AMBER_WATCH'
-                                ? 'Needs Review'
-                                : 'On Track'}
+                          : row.attentionReason === 'HIGH_LIFE_STRESS'
+                            ? 'High Stress'
+                            : row.attentionReason === 'MISSED_KEY_SESSIONS'
+                              ? 'Missed Sessions'
+                              : readiness?.watchLight === 'RED_MEDICAL_REVIEW'
+                                ? 'Medical Check'
+                                : readiness?.watchLight === 'AMBER_WATCH'
+                                  ? 'Needs Review'
+                                  : 'On Track'}
                     </span>
                     <span className="font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
                       {row.name}
                     </span>
+                    {row.checkInStreakDays > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 tabular-nums">
+                        {row.checkInStreakDays}d streak
+                      </span>
+                    )}
                     {readiness && (readiness.hrv > 0 || readiness.tsb !== 0) && (
                       <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#43584B] dark:text-[#93A39A] tabular-nums">
                         {readiness.hrv > 0 ? `HRV ${Math.round(readiness.hrv)}ms · ` : ''}

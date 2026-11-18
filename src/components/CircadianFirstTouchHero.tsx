@@ -33,11 +33,19 @@ import type {
   DistanceUnit,
   PlannedWorkoutCompliance,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   SportCategory,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
+import { EveningCloseoutCard } from './today/EveningCloseoutCard';
+import {
+  findMorningContinuityFromLastNight,
+  resolveCircadianHeroMode,
+  type CircadianHeroMode,
+} from '../physiology/eveningHabitEngine';
+import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import {
   evaluateRollingTrainingProductivity,
   evaluateSessionImpactReceipt,
@@ -45,7 +53,7 @@ import {
   type LoadFocusBucketSummary,
 } from '../physiology/trainingProductivityEngine';
 
-export type CircadianHeroMode = 'MORNING' | 'POST_SESSION';
+export type { CircadianHeroMode };
 
 interface CircadianFirstTouchHeroProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -58,6 +66,15 @@ interface CircadianFirstTouchHeroProps {
   onToggleWorkbench: () => void;
   rxSport?: 'Cycling' | 'Running';
   onRxSportChange?: (sport: 'Cycling' | 'Running') => void;
+  mode?: CircadianHeroMode;
+  onModeChange?: (mode: CircadianHeroMode) => void;
+  sessionCheckIns?: SessionCheckInRecord[];
+  onRecordSessionCheckIn?: (
+    input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
+    safetySwapEvent?: SafetySwapEventInput | null
+  ) => Promise<void> | void;
+  isDuskMode?: boolean;
+  onToggleDuskMode?: () => void;
   onSelectActivity?: (activity: UnifiedActivity) => void;
   onSyncMorphedToCalendar?: (eventInput: {
     date: string;
@@ -168,6 +185,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   onToggleWorkbench,
   rxSport: controlledRxSport,
   onRxSportChange,
+  mode: controlledMode,
+  onModeChange,
+  sessionCheckIns = [],
+  onRecordSessionCheckIn,
+  isDuskMode = false,
+  onToggleDuskMode,
   onSelectActivity,
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -183,16 +206,26 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
     [activities, todayIso]
   );
 
-  const [mode, setMode] = useState<CircadianHeroMode>(() =>
-    hasCompletedToday ? 'POST_SESSION' : 'MORNING'
+  const [internalMode, setInternalMode] = useState<CircadianHeroMode>(() =>
+    resolveCircadianHeroMode({ hasCompletedToday })
   );
+  const mode = controlledMode ?? internalMode;
+  const setMode = (next: CircadianHeroMode) => {
+    setInternalMode(next);
+    onModeChange?.(next);
+  };
 
-  // Auto-flip into Post-Session Receipt as soon as a workout syncs for today
+  // Auto-flip into Post-Session Receipt as soon as a workout syncs for today (without overriding explicit Tonight mode)
   useEffect(() => {
-    if (hasCompletedToday) {
-      setMode('POST_SESSION');
+    if (hasCompletedToday && !controlledMode) {
+      setInternalMode((prev) => (prev === 'MORNING' ? 'POST_SESSION' : prev));
     }
-  }, [hasCompletedToday]);
+  }, [hasCompletedToday, controlledMode]);
+
+  const lastNightContinuity = useMemo(
+    () => findMorningContinuityFromLastNight(sessionCheckIns, todayIso),
+    [sessionCheckIns, todayIso]
+  );
 
   const productivity = useMemo(
     () =>
@@ -338,9 +371,18 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       <div className="relative px-4 sm:px-5 py-3 border-b border-emerald-900/15 dark:border-[#254431] bg-[#EDF4EF]/85 dark:bg-[#0D1711]/90 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
-            {mode === 'MORNING' ? 'Today’s Readiness & Prescription' : 'Today’s Session Receipt'}
+            {mode === 'TONIGHT'
+              ? 'Tonight Closeout & Tomorrow Lock-In'
+              : mode === 'MORNING'
+                ? 'Today’s Readiness & Prescription'
+                : 'Today’s Session Receipt'}
           </h1>
-          {mode === 'MORNING' ? (
+          {mode === 'TONIGHT' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+              <Moon className="w-3.5 h-3.5" />
+              <span>Bedtime Ritual · {todayIso}</span>
+            </span>
+          ) : mode === 'MORNING' ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
               <Sun className="w-3.5 h-3.5" />
               <span>7d Rolling</span>
@@ -409,14 +451,14 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           })()}
         </div>
 
-        {/* Bi-Modal Switcher: Morning Brief <-> Post-Session Receipt */}
+        {/* Tri-Modal Circadian Switcher: Morning Brief | Post-Session | Tonight */}
         <div className="flex items-center gap-2">
           <div className="p-1 rounded-xl liquid-capsule-track inline-flex items-center text-xs">
             <button
               type="button"
               aria-pressed={mode === 'MORNING'}
               onClick={() => setMode('MORNING')}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all cursor-pointer ${
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all cursor-pointer ${
                 mode === 'MORNING'
                   ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE]'
                   : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
@@ -430,7 +472,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               aria-pressed={mode === 'POST_SESSION'}
               onClick={() => setMode('POST_SESSION')}
               disabled={!sessionReceipt}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all ${
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all ${
                 !sessionReceipt
                   ? 'opacity-40 cursor-not-allowed text-[#43584B] dark:text-[#93A39A]'
                   : mode === 'POST_SESSION'
@@ -444,14 +486,40 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               )}
             </button>
+            <button
+              type="button"
+              data-testid="circadian-mode-tonight"
+              aria-pressed={mode === 'TONIGHT'}
+              onClick={() => setMode('TONIGHT')}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg inline-flex items-center gap-1.5 font-semibold transition-all cursor-pointer ${
+                mode === 'TONIGHT'
+                  ? 'liquid-capsule-active text-[#101411] dark:text-[#ECF2EE]'
+                  : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
+              <span>Tonight</span>
+            </button>
           </div>
         </div>
       </div>
 
       {/* ==========================================================================
-          MODE A: MORNING WAKE-UP 3-CARD BENTO (Productivity + Readiness + Gap RX)
+          MODE C: TONIGHT CLOSEOUT & TOMORROW LOCK-IN (15s Bedtime Ritual)
          ========================================================================== */}
-      {mode === 'MORNING' || !sessionReceipt ? (
+      {mode === 'TONIGHT' ? (
+        <EveningCloseoutCard
+          todayIso={todayIso}
+          activities={activities}
+          plannedEvents={plannedEvents}
+          latestWellness={wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : null}
+          safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
+          sessionCheckIns={sessionCheckIns}
+          onRecordCheckIn={onRecordSessionCheckIn || (() => {})}
+          isDuskMode={isDuskMode}
+          onToggleDuskMode={onToggleDuskMode || (() => {})}
+        />
+      ) : mode === 'MORNING' || !sessionReceipt ? (
         <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-3.5">
           {/* CARD 1 (5 Cols): 7-Day Rolling Training Productivity & 3-System Load Focus */}
           <div className="order-3 lg:order-1 lg:col-span-5 rounded-xl liquid-glass-subtle p-3.5 sm:p-4 flex flex-col justify-between space-y-3">
@@ -514,6 +582,17 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 {productivity.headlineWhy}
               </p>
+              {lastNightContinuity && (
+                <div className="rounded-lg ap-card-inset px-2.5 py-1.5 text-2xs font-mono text-slate-700 dark:text-slate-200">
+                  Last night: RPE {lastNightContinuity.rpe}/10
+                  {lastNightContinuity.legFeel ? ` · Legs ${lastNightContinuity.legFeel}` : ''}
+                  {lastNightContinuity.autoSwappedToRecovery
+                    ? ' · Tomorrow auto-morphed to recovery'
+                    : lastNightContinuity.sleepTargetHours
+                      ? ` · Sleep target ${lastNightContinuity.sleepTargetHours}h`
+                      : ''}
+                </div>
+              )}
 
               {/* 7-Day Acute Load Tunnel Bar */}
               <div className="pt-0.5 space-y-1">

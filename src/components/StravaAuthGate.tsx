@@ -233,6 +233,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
+  const [showAltAuthMethods, setShowAltAuthMethods] = useState<boolean>(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
   const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>(() => {
     try {
@@ -1252,8 +1253,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   {activeBrand
                     ? `Join ${activeBrand.name} on THRESH`
                     : onboardingRole === 'COACH'
-                      ? 'Coach Your Squad’s Pace Groups, Calendar & Track Splits.'
-                      : 'Know How Hard to Push Today—Before You Lace Up or Clip In.'}
+                      ? 'Assign Squad Pace Pods, Prescribe Workouts & Time Track Splits.'
+                      : 'Close Today in 15 Seconds. Wake Up With Tomorrow Locked.'}
                 </h1>
                 {activeBrand && (
                   <div>
@@ -1451,126 +1452,138 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <span>{isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}</span>
                 </button>
 
-                {/* 3. Biometric Passkey (Touch ID / Face ID / WebAuthn) */}
-                {passkeySupported && (
+                {/* 3. Expandable Secondary Auth: Biometric Passkey & Email Magic Link */}
+                <div>
                   <button
                     type="button"
-                    onClick={() => void handlePasskeySignIn()}
-                    disabled={busy || isPasskeyAuthenticating}
-                    className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-emerald-600/30 dark:border-emerald-400/20 bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold text-sm flex items-center justify-center gap-2.5 hover:bg-emerald-500/20 cursor-pointer transition-colors"
+                    aria-expanded={showAltAuthMethods || showPasskeyRegister || magicLinkSent || Boolean(passkeyError)}
+                    onClick={() => setShowAltAuthMethods((prev) => !prev)}
+                    className="w-full min-h-[44px] sm:min-h-[36px] py-1.5 px-3 rounded-xl ap-btn-secondary text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    {isPasskeyAuthenticating ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <KeyRound className="w-4 h-4" />
-                    )}
                     <span>
-                      {isPasskeyAuthenticating
-                        ? 'Authenticating with Touch ID / Face ID…'
-                        : 'Sign in with Passkey (Biometrics)'}
+                      {showAltAuthMethods || showPasskeyRegister || magicLinkSent || Boolean(passkeyError)
+                        ? 'Hide Passkey & Email Magic Link'
+                        : 'Use Passkey or Email Magic Link'}
                     </span>
                   </button>
-                )}
-
-                {/* Passkey registration dialog / fallback */}
-                {showPasskeyRegister && (
-                  <form
-                    onSubmit={handlePasskeyRegister}
-                    className="rounded-xl border border-emerald-600/40 p-3 space-y-2.5 bg-emerald-500/5 text-xs"
-                  >
-                    <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
-                      <span>Register Passkey for this device</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowPasskeyRegister(false)}
-                        className="text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    {passkeyError && (
-                      <p className="text-2xs text-rose-500 dark:text-rose-400">{passkeyError}</p>
-                    )}
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="email"
-                        required
-                        value={passkeyRegEmail}
-                        onChange={(e) => setPasskeyRegEmail(e.target.value)}
-                        placeholder="Enter your email to link passkey"
-                        className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 text-xs text-slate-900 dark:text-white"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
-                        className="ap-btn-primary !min-h-[40px] px-3 text-xs shrink-0 cursor-pointer"
-                      >
-                        {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {/* Divider: or email magic link */}
-                <div className="relative flex items-center justify-center my-1">
-                  <div className="border-t border-slate-200 dark:border-white/10 w-full" />
-                  <span className="bg-white/80 dark:bg-[#101B15] px-3 text-2xs uppercase tracking-wider text-slate-500 font-mono absolute">
-                    or email magic link
-                  </span>
                 </div>
 
-                {/* 4. Email Magic Link Form */}
-                <form onSubmit={handleSendMagicLink} className="space-y-2">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="email"
-                      required
-                      value={magicLinkEmail}
-                      onChange={(e) => {
-                        setMagicLinkEmail(e.target.value);
-                        setMagicLinkSent(false);
-                      }}
-                      placeholder="athlete@domain.com"
-                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-                    />
-                    <button
-                      type="submit"
-                      disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
-                      className="ap-btn-secondary !min-h-[44px] px-4 text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-                    >
-                      {isSendingMagicLink ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5 ap-text-brand" />
-                      )}
-                      <span>{isSendingMagicLink ? 'Sending…' : 'Send Sign-In Link'}</span>
-                    </button>
-                  </div>
-                  {magicLinkSent && (
-                    <div className="ap-status-prime rounded-xl p-3 text-xs space-y-1.5">
-                      <div className="flex items-center gap-2 font-bold">
-                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                        <span>Check your inbox for a secure sign-in link!</span>
-                      </div>
-                      <p className="text-2xs opacity-90">
-                        We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
-                      </p>
-                      {magicLinkDevUrl && (
-                        <div className="pt-1.5 border-t border-emerald-500/20">
-                          <span className="font-mono text-2xs uppercase tracking-wider opacity-75 mr-2">
-                            Dev Link:
-                          </span>
-                          <a
-                            href={magicLinkDevUrl}
-                            className="text-2xs font-bold underline ap-text-brand hover:opacity-80"
+                {(showAltAuthMethods ||
+                  showPasskeyRegister ||
+                  magicLinkSent ||
+                  Boolean(passkeyError)) && (
+                  <div className="space-y-3 pt-1">
+                    {passkeySupported && (
+                      <button
+                        type="button"
+                        onClick={() => void handlePasskeySignIn()}
+                        disabled={busy || isPasskeyAuthenticating}
+                        className="w-full !min-h-[48px] py-2.5 px-4 rounded-xl border border-emerald-600/30 dark:border-emerald-400/20 bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold text-sm flex items-center justify-center gap-2.5 hover:bg-emerald-500/20 cursor-pointer transition-colors"
+                      >
+                        {isPasskeyAuthenticating ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <KeyRound className="w-4 h-4" />
+                        )}
+                        <span>
+                          {isPasskeyAuthenticating
+                            ? 'Authenticating with Touch ID / Face ID…'
+                            : 'Sign in with Passkey (Biometrics)'}
+                        </span>
+                      </button>
+                    )}
+
+                    {showPasskeyRegister && (
+                      <form
+                        onSubmit={handlePasskeyRegister}
+                        className="rounded-xl border border-emerald-600/40 p-3 space-y-2.5 bg-emerald-500/5 text-xs"
+                      >
+                        <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
+                          <span>Register Passkey for this device</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowPasskeyRegister(false)}
+                            className="text-2xs font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
                           >
-                            Complete Sign-In Now →
-                          </a>
+                            Cancel
+                          </button>
+                        </div>
+                        {passkeyError && (
+                          <p className="text-2xs text-rose-500 dark:text-rose-400">{passkeyError}</p>
+                        )}
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="email"
+                            required
+                            value={passkeyRegEmail}
+                            onChange={(e) => setPasskeyRegEmail(e.target.value)}
+                            placeholder="Enter your email to link passkey"
+                            className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 text-xs text-slate-900 dark:text-white"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
+                            className="ap-btn-primary !min-h-[40px] px-3 text-xs shrink-0 cursor-pointer"
+                          >
+                            {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    <form onSubmit={handleSendMagicLink} className="space-y-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="email"
+                          required
+                          value={magicLinkEmail}
+                          onChange={(e) => {
+                            setMagicLinkEmail(e.target.value);
+                            setMagicLinkSent(false);
+                          }}
+                          placeholder="athlete@domain.com"
+                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                        />
+                        <button
+                          type="submit"
+                          disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
+                          className="ap-btn-secondary !min-h-[44px] px-4 text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          {isSendingMagicLink ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5 ap-text-brand" />
+                          )}
+                          <span>{isSendingMagicLink ? 'Sending…' : 'Send Sign-In Link'}</span>
+                        </button>
+                      </div>
+                      {magicLinkSent && (
+                        <div className="ap-status-prime rounded-xl p-3 text-xs space-y-1.5">
+                          <div className="flex items-center gap-2 font-bold">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span>Check your inbox for a secure sign-in link!</span>
+                          </div>
+                          <p className="text-2xs opacity-90">
+                            We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
+                          </p>
+                          {magicLinkDevUrl && (
+                            <div className="pt-1.5 border-t border-emerald-500/20">
+                              <span className="font-mono text-2xs uppercase tracking-wider opacity-75 mr-2">
+                                Dev Link:
+                              </span>
+                              <a
+                                href={magicLinkDevUrl}
+                                className="text-2xs font-bold underline ap-text-brand hover:opacity-80"
+                              >
+                                Complete Sign-In Now →
+                              </a>
+                            </div>
+                          )}
                         </div>
                       )}
-                    </div>
-                  )}
-                </form>
+                    </form>
+                  </div>
+                )}
 
                 {/* Read-Only Privacy Pledge */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-200/80 dark:border-white/10 text-xs">
@@ -2596,7 +2609,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           onClick={() => onLaunchIntervalsOAuth?.()}
                           className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                         >
-                          <Lightning className="w-4 h-4 text-lime-400" />
+                          <Lightning className="w-4 h-4 shrink-0" />
                           <span>1-Click Connect with Intervals.icu (OAuth 2.0)</span>
                         </button>
                       )}
@@ -2657,7 +2670,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               </div>
 
               {/* Wahoo Option */}
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-500 font-bold text-xs flex items-center justify-center">
@@ -2690,14 +2703,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     disabled={busy}
                     className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                   >
-                    <Lightning className="w-4 h-4 text-sky-400" />
+                    <Lightning className="w-4 h-4 shrink-0" />
                     <span>1-Click Connect with Wahoo (OAuth 2.0)</span>
                   </button>
                 )}
               </div>
 
               {/* Polar Option */}
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-500 font-bold text-xs flex items-center justify-center">
@@ -2730,7 +2743,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     disabled={busy}
                     className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                   >
-                    <Lightning className="w-4 h-4 text-rose-400" />
+                    <Lightning className="w-4 h-4 shrink-0" />
                     <span>1-Click Connect with Polar (OAuth 2.0)</span>
                   </button>
                 )}

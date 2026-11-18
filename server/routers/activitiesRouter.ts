@@ -211,8 +211,8 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
       return;
     }
     const resolvedId = config.athleteId || '0';
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${todayStr}`;
+    const newestStr = new Date(Date.now() + 86400 * 1000).toISOString().slice(0, 10);
+    const activitiesUrl = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2015-01-01&newest=${newestStr}`;
     const actResp = await fetch(activitiesUrl, {
       headers: { Authorization: authHeader, Accept: 'application/json' },
     });
@@ -349,9 +349,9 @@ activitiesRouter.post('/api/activities/hydrate-routes', async (req: Request, res
 
     if (activityIds.length === 0) {
       const resolvedId = intervalsConfig.athleteId || '0';
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const newestStr = new Date(Date.now() + 86400 * 1000).toISOString().slice(0, 10);
       const actResp = await fetch(
-        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${todayStr}`,
+        `https://intervals.icu/api/v1/athlete/${encodeURIComponent(resolvedId)}/activities?oldest=2018-01-01&newest=${newestStr}`,
         { headers: { Authorization: authHeader, Accept: 'application/json' } }
       );
       if (actResp.ok) {

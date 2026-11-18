@@ -25,6 +25,7 @@ import {
   UnifiedActivity,
 } from '../types';
 import { formatDuration, formatPace } from '../utils/formatters';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import { generateVerifiedRacePassport } from '../physiology/raceRubberBander';
 import {
   convertNcaaTrackPerformance,
@@ -79,7 +80,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   // Tab 2: Quick Watchless FAT Track Race Logger State
   const [quickEventLabel, setQuickEventLabel] = useState<string>('800m');
   const [quickFatTimeInput, setQuickFatTimeInput] = useState<string>('1:55.84');
-  const [quickDate, setQuickDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [quickDate, setQuickDate] = useState<string>(() => getLocalDateIso());
   const [quickMeetName, setQuickMeetName] = useState<string>('Bay Area Track Club Twilight');
   const [quickPlatform, setQuickPlatform] = useState<OfficialRacePlatform>('Athletic.net');
   const [quickTrackType, setQuickTrackType] = useState<OfficialTrackSurface>('OUTDOOR_400M');
@@ -312,7 +313,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     );
               return {
                 id: `srv-race-${Date.now()}-${idx}`,
-                date: String(r.date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+                date: String(r.date || getLocalDateIso()).slice(0, 10),
                 meetName: String(r.meetName || 'Official Track & Field Meet'),
                 eventLabel: def.label,
                 eventDistanceMeters: Number(r.eventDistanceMeters || def.distanceMeters),

@@ -70,8 +70,7 @@ export function usePlannedEvents({
                   targetMembershipIds: [targetMemId],
                   date: eventInput.date,
                   name: eventInput.name,
-                  sportCategory:
-                    eventInput.sportCategory === 'Cycling' ? 'Cycling' : 'Running',
+                  sportCategory: eventInput.sportCategory,
                   plannedDurationSecs: eventInput.plannedDurationSecs,
                   plannedLoad: eventInput.plannedLoad,
                   workoutSyntax: eventInput.workoutSyntax,
@@ -444,8 +443,28 @@ export function usePlannedEvents({
           );
         if (isSampleDemoMode) {
           setSampleDemoConnectedAthletes(removeFromRoster);
-        } else {
-          setConnectedAthletes(removeFromRoster);
+          return;
+        }
+        setConnectedAthletes(removeFromRoster);
+        if (activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam && id.startsWith('bw_')) {
+          try {
+            const resp = await fetch(
+              `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
+              {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: getSavedIntervalsHeaders(),
+              }
+            );
+            if (resp.ok) {
+              const data = await resp.json();
+              if (Array.isArray(data.teams)) {
+                handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+              }
+            }
+          } catch {
+            // ignore offline errors
+          }
         }
         return;
       }
@@ -456,6 +475,27 @@ export function usePlannedEvents({
       }
 
       setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
+      if (activeTeam && id.startsWith('bw_')) {
+        try {
+          const resp = await fetch(
+            `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
+            {
+              method: 'DELETE',
+              credentials: 'include',
+              headers: getSavedIntervalsHeaders(),
+            }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data.teams)) {
+              handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+            }
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
       try {
         await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
           method: 'DELETE',
@@ -467,6 +507,8 @@ export function usePlannedEvents({
     },
     [
       activeConnectedAthlete,
+      activeTeam,
+      handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
@@ -495,8 +537,28 @@ export function usePlannedEvents({
           );
         if (isSampleDemoMode) {
           setSampleDemoConnectedAthletes(clearFromRoster);
-        } else {
-          setConnectedAthletes(clearFromRoster);
+          return;
+        }
+        setConnectedAthletes(clearFromRoster);
+        if (activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam) {
+          try {
+            const resp = await fetch(
+              `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/blocks/${encodeURIComponent(planBlockId)}`,
+              {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: getSavedIntervalsHeaders(),
+              }
+            );
+            if (resp.ok) {
+              const data = await resp.json();
+              if (Array.isArray(data.teams)) {
+                handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+              }
+            }
+          } catch {
+            // ignore
+          }
         }
         return;
       }
@@ -520,6 +582,8 @@ export function usePlannedEvents({
     },
     [
       activeConnectedAthlete,
+      activeTeam,
+      handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,

@@ -2,10 +2,12 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Flame,
   Shield,
   Sliders,
   Zap,
 } from './icons/PhosphorIcons';
+import { computeCheckInStreak } from '../physiology/eveningHabitEngine';
 import {
   evaluateSafetySwapFromCheckIn,
   type SafetySwapEventInput,
@@ -53,6 +55,10 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
 }) => {
   const existingToday = useMemo(
     () => sessionCheckIns.find((c) => (c.date || '').slice(0, 10) === todayIso) || null,
+    [sessionCheckIns, todayIso]
+  );
+  const streakDays = useMemo(
+    () => computeCheckInStreak(sessionCheckIns, todayIso),
     [sessionCheckIns, todayIso]
   );
 
@@ -185,6 +191,12 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             2-Tap Post-Session Check-In
           </h2>
+          {streakDays > 0 && (
+            <span className="px-2 py-0.5 rounded-md font-mono font-bold text-2xs bg-amber-500/15 text-amber-700 dark:text-amber-300 inline-flex items-center gap-1">
+              <Flame className="w-3 h-3" />
+              <span>{streakDays}d streak</span>
+            </span>
+          )}
           {todayPlanned && (
             <span className="hidden sm:inline text-2xs font-mono text-slate-600 dark:text-slate-400">
               · {todayPlanned.name}

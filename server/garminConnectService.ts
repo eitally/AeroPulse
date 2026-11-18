@@ -831,7 +831,7 @@ export async function fetchDirectGarminProfileAndWellness(
   wellnessRows: Record<string, any>[];
   activities: Record<string, any>[];
 }> {
-  const endDate = new Date().toISOString().slice(0, 10);
+  const endDate = new Date(Date.now() + 86400 * 1000).toISOString().slice(0, 10);
   const startDate = new Date(
     Date.now() - Math.min(daysToFetch, 30) * 86400 * 1000
   )

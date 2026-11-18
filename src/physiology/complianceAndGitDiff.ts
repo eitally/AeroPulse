@@ -8,6 +8,7 @@ import type {
   WeeklyGitDiffProposal,
 } from '../types.ts';
 import { applyMeetMicroPeriodizationToGitDiff } from './trackMeetAndRelayEngine.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -25,7 +26,7 @@ function parseDateSafe(dateStr: string): Date {
 export function evaluatePlannedVsCompletedCompliance(
   plannedEvents: PlannedWorkoutEvent[],
   activities: UnifiedActivity[],
-  todayIso: string = new Date().toISOString().slice(0, 10)
+  todayIso: string = getLocalDateIso()
 ): PlannedWorkoutCompliance[] {
   const actsByDate = new Map<string, UnifiedActivity[]>();
   for (const act of activities) {
@@ -141,7 +142,7 @@ export function generateWeeklyTrainingGitDiff(params: {
     plannedEvents,
     latestWellness,
     orthopedicSummary,
-    todayIso = new Date().toISOString().slice(0, 10),
+    todayIso = getLocalDateIso(),
   } = params;
 
   const hrvScore = latestWellness

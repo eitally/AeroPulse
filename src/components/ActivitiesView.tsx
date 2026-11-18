@@ -674,7 +674,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
       {
         segmentId: string;
         name: string;
-        sportCategory: 'Cycling' | 'Running';
+        sportCategory: SportCategory;
         distanceMeters: number;
         averageGradePct: number;
         prElapsedTimeSecs: number;
@@ -719,7 +719,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
           map.set(sid, {
             segmentId: sid,
             name: eff.name,
-            sportCategory: act.sportCategory === 'Running' ? 'Running' : 'Cycling',
+            sportCategory: act.sportCategory,
             distanceMeters: eff.distanceMeters,
             averageGradePct: eff.averageGradePct,
             prElapsedTimeSecs: eff.elapsedTimeSecs,
@@ -1460,7 +1460,9 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                                     className={`px-1.5 py-0.5 rounded font-sans font-bold text-2xs uppercase ${
                                       act.sportCategory === 'Running'
                                         ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                                        : 'bg-[#C23800]/12 dark:bg-[#FC4C02]/15 ap-text-strava'
+                                        : act.sportCategory === 'Cycling'
+                                          ? 'bg-[#C23800]/12 dark:bg-[#FC4C02]/15 ap-text-strava'
+                                          : 'bg-teal-500/15 text-teal-700 dark:text-teal-300'
                                     }`}
                                   >
                                     {act.sportCategory}
@@ -1528,11 +1530,23 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                               </div>
                               <div>
                                 <div className="text-2xs font-sans text-slate-500">
-                                  {act.sportCategory === 'Running' ? 'Avg Pace' : 'NP / Watts'}
+                                  {act.sportCategory === 'Running' ||
+                                  act.sportCategory === 'Swimming' ||
+                                  (act.sportCategory === 'Multisport' && Boolean(act.avgPaceSecsPerKm))
+                                    ? 'Avg Pace'
+                                    : 'NP / Watts'}
                                 </div>
                                 <div className="font-bold text-blue-600 dark:text-blue-400">
-                                  {act.sportCategory === 'Running' && act.avgPaceSecsPerKm
-                                    ? formatPace(act.avgPaceSecsPerKm, distanceUnit)
+                                  {(act.sportCategory === 'Running' ||
+                                    act.sportCategory === 'Swimming' ||
+                                    act.sportCategory === 'Multisport') &&
+                                  act.avgPaceSecsPerKm
+                                    ? formatMultiSportPace(
+                                        act.avgPaceSecsPerKm,
+                                        distanceUnit,
+                                        act.sportCategory,
+                                        act.subType
+                                      )
                                     : act.normalizedPower
                                       ? `${act.normalizedPower}W`
                                       : act.avgPower
@@ -3435,8 +3449,21 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 <div className="rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-3.5">
                   <div className="text-xs text-slate-500">Primary Output</div>
                   <div className="text-base font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                    {selectedActivity.sportCategory === 'Running' && selectedActivity.avgPaceSecsPerKm
-                      ? `${formatPace(selectedActivity.avgPaceSecsPerKm, distanceUnit)} (GAP ${formatPace(selectedActivity.gapPaceSecsPerKm, distanceUnit)})`
+                    {selectedActivity.avgPaceSecsPerKm &&
+                    (selectedActivity.sportCategory === 'Running' ||
+                      selectedActivity.sportCategory === 'Swimming' ||
+                      selectedActivity.sportCategory === 'Multisport')
+                      ? `${formatMultiSportPace(
+                          selectedActivity.avgPaceSecsPerKm,
+                          distanceUnit,
+                          selectedActivity.sportCategory,
+                          selectedActivity.subType
+                        )}${
+                          selectedActivity.sportCategory === 'Running' &&
+                          selectedActivity.gapPaceSecsPerKm
+                            ? ` (GAP ${formatPace(selectedActivity.gapPaceSecsPerKm, distanceUnit)})`
+                            : ''
+                        }`
                       : selectedActivity.normalizedPower
                         ? `NP ${selectedActivity.normalizedPower}W (Avg ${selectedActivity.avgPower}W)`
                         : `Load ${selectedActivity.trainingLoad} TSS`}

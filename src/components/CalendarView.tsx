@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalDialog } from '../hooks/useModalDialog';
 import {
+  Activity,
   Bike,
   Calendar as CalendarIcon,
   ChevronDown,
@@ -37,6 +38,7 @@ import {
   UnifiedWellnessDay,
 } from '../types';
 import { formatDistance, formatPace } from '../utils/formatters';
+import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import {
   exportWorkoutAsErg,
@@ -766,7 +768,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     width: number;
   } | null>(null);
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => getLocalDateIso(), []);
 
   // Default to the month of the most recent activity, or the upcoming planBlock month if activities lie in an earlier month
   const initialDate = useMemo(() => {
@@ -1086,7 +1088,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
           ? Number((endOfWeekWellness.ctl - startOfWeekWellness.ctl).toFixed(1))
           : endOfWeekWellness?.rampRate || 0;
 
-      const bySportOrder: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength'];
+      const bySportOrder: SportCategory[] = ['Cycling', 'Running', 'Swimming', 'Strength', 'Multisport'];
       const bySport = bySportOrder
         .filter((s) => sportTotals.has(s))
         .map((s) => ({
@@ -1170,15 +1172,6 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   };
 
   const handleJumpToday = () => {
-    if (activities.length > 0) {
-      const latestStr = activities[0].startDateLocal.slice(0, 10);
-      const [y, m] = latestStr.split('-').map(Number);
-      if (y && m) {
-        setViewYear(y);
-        setViewMonth(m - 1);
-        return;
-      }
-    }
     const now = new Date();
     setViewYear(now.getFullYear());
     setViewMonth(now.getMonth());
@@ -1218,6 +1211,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     if (sport === 'Cycling') return 'bg-[#0284C7] text-white';
     if (sport === 'Running') return 'bg-[#059669] text-white';
     if (sport === 'Swimming') return 'bg-[#0D9488] text-white';
+    if (sport === 'Strength') return 'bg-[#7C3AED] text-white';
     return 'bg-[#43584B] text-white';
   };
 
@@ -1225,7 +1219,8 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
     if (sport === 'Cycling') return <Bike className={className} />;
     if (sport === 'Running') return <Footprints className={className} />;
     if (sport === 'Swimming') return <Waves className={className} />;
-    return <Dumbbell className={className} />;
+    if (sport === 'Strength') return <Dumbbell className={className} />;
+    return <Activity className={className} />;
   };
 
   const primaryObjective = useMemo(() => {
@@ -1850,8 +1845,12 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           >
                             <div className="flex items-center justify-between gap-2 text-2xs">
                               <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
-                                {dayStripe.sportCategory === 'Running' ? 'Run' : 'Bike'} Rx:{' '}
-                                {dayStripe.workoutName}
+                                {dayStripe.sportCategory === 'Running'
+                                  ? 'Run'
+                                  : dayStripe.sportCategory === 'Cycling'
+                                    ? 'Bike'
+                                    : dayStripe.sportCategory}{' '}
+                                Rx: {dayStripe.workoutName}
                               </span>
                               <span
                                 className="font-mono font-bold shrink-0"
@@ -2968,14 +2967,12 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-mono font-bold uppercase tracking-wider ${
                   hoveredPrescription.stripe.sportCategory === 'Running'
                     ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35'
-                    : 'bg-blue-500/15 text-blue-700 dark:text-sky-300 border border-blue-500/35'
+                    : hoveredPrescription.stripe.sportCategory === 'Cycling'
+                      ? 'bg-blue-500/15 text-blue-700 dark:text-sky-300 border border-blue-500/35'
+                      : 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35'
                 }`}
               >
-                {hoveredPrescription.stripe.sportCategory === 'Running' ? (
-                  <Footprints className="w-3 h-3" />
-                ) : (
-                  <Bike className="w-3 h-3" />
-                )}
+                {getSportIcon(hoveredPrescription.stripe.sportCategory, 'w-3 h-3')}
                 <span>
                   {hoveredPrescription.stripe.sportCategory}{' '}
                   {hoveredPrescription.stripe.source === 'SCHEDULED'
@@ -3027,7 +3024,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                   Y-Axis Amplitude:{' '}
                   {hoveredPrescription.stripe.sportCategory === 'Running'
                     ? '% Threshold Pace'
-                    : '% FTP'}
+                    : hoveredPrescription.stripe.sportCategory === 'Cycling'
+                      ? '% FTP'
+                      : '% Effort'}
                 </span>
                 <span>Click stripe to edit</span>
               </div>

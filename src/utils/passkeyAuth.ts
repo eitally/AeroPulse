@@ -101,6 +101,14 @@ export async function registerPasskey(
     }
 
     const result = await verifyRes.json();
+    try {
+      localStorage.removeItem('aeropulse_logged_out');
+      if (result.sessionToken) {
+        localStorage.setItem('aeropulse_session_token', String(result.sessionToken));
+      }
+    } catch {
+      // ignore storage quota errors
+    }
     return { ok: true, user: result.user };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -164,6 +172,14 @@ export async function authenticateWithPasskey(): Promise<{ ok: boolean; user?: a
     }
 
     const result = await verifyRes.json();
+    try {
+      localStorage.removeItem('aeropulse_logged_out');
+      if (result.sessionToken) {
+        localStorage.setItem('aeropulse_session_token', String(result.sessionToken));
+      }
+    } catch {
+      // ignore storage quota errors
+    }
     return { ok: true, user: result.user };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -51,6 +51,7 @@ import {
   type PlanStartAnchorMode,
   type PlanVolumeTier,
 } from '../physiology/cyclingPrescriptionEngine';
+import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 import {
   formatDuration,
   formatGoalMetricValue,
@@ -257,7 +258,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   onOpenTracksideStopwatch,
 }) => {
   const formId = useId();
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => getLocalDateIso(), []);
 
   // Top-Level Plan Builder Mode Switch
   const [builderMode, setBuilderMode] = useState<'GOAL_PLAN' | 'SINGLE_WORKOUT'>('GOAL_PLAN');
@@ -272,10 +273,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   );
   const [blockWeeks, setBlockWeeks] = useState<4 | 8 | 12 | 16>(12);
   const [startAnchorMode, setStartAnchorMode] = useState<PlanStartAnchorMode>('NEXT_MONDAY');
-  const [targetRaceDateIso, setTargetRaceDateIso] = useState<string>(() => {
-    const dt = new Date(Date.now() + 84 * 86400000);
-    return dt.toISOString().slice(0, 10);
-  });
+  const [targetRaceDateIso, setTargetRaceDateIso] = useState<string>(() =>
+    shiftIsoDate(getLocalDateIso(), 84)
+  );
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1, 2, 3, 5, 6]);
   const [longDayPreference, setLongDayPreference] = useState<'Saturday' | 'Sunday'>('Sunday');
   const [blockEnvPref, setBlockEnvPref] = useState<'FLEXIBLE' | 'OUTDOOR' | 'INDOOR'>('FLEXIBLE');
@@ -721,12 +721,26 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   };
 
   // New Race / Performance Goal Form State
+  const defaultGoalSport: SportCategory =
+    athleteProfile?.primarySport === 'Cycling'
+      ? 'Cycling'
+      : athleteProfile?.primarySport === 'Hybrid'
+        ? 'Multisport'
+        : 'Running';
   const [newTitle, setNewTitle] = useState('');
-  const [newSport, setNewSport] = useState<SportCategory>('Running');
+  const [newSport, setNewSport] = useState<SportCategory>(defaultGoalSport);
   const [newPriority, setNewPriority] = useState<'A-Race' | 'B-Race' | 'Milestone'>('A-Race');
-  const [newTargetDate, setNewTargetDate] = useState('2027-02-14');
-  const [newTargetVal, setNewTargetVal] = useState('350');
-  const [newUnit, setNewUnit] = useState('W');
+  const [newTargetDate, setNewTargetDate] = useState(() => shiftIsoDate(todayIso, 84));
+  const [newTargetVal, setNewTargetVal] = useState(() =>
+    defaultGoalSport === 'Cycling'
+      ? String(Math.round(currentBikeFtp * 1.08))
+      : defaultGoalSport === 'Running'
+        ? String(Math.round(safeThresholdPace * 0.96))
+        : '85'
+  );
+  const [newUnit, setNewUnit] = useState(() =>
+    defaultGoalSport === 'Cycling' ? 'W' : defaultGoalSport === 'Running' ? 's/km' : 'CTL'
+  );
   const [newNotes, setNewNotes] = useState('');
 
   const handleAddGoalSubmit = (e: React.FormEvent) => {
@@ -737,7 +751,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       title: newTitle.trim(),
       type: newPriority === 'Milestone' ? 'PERFORMANCE_METRIC' : 'RACE_EVENT',
       sportCategory: newSport,
-      targetDate: newTargetDate,
+      targetDate: newTargetDate >= todayIso ? newTargetDate : todayIso,
       priority: newPriority,
       targetCtl: newUnit === 'CTL' ? val : undefined,
       currentValue:
@@ -745,7 +759,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           ? currentCtl
           : newUnit === 'W'
             ? currentBikeFtp
-            : Math.round(val * 0.92),
+            : newUnit === 's/km'
+              ? safeThresholdPace
+              : Math.round(val * 0.92),
       targetValue: val,
       unit: newUnit,
       notes: newNotes.trim() || 'Custom performance target tracked by Thresh.',
@@ -1318,6 +1334,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     <input
                       type="date"
                       aria-label="Target race date for plan anchor"
+                      min={todayIso}
                       value={targetRaceDateIso}
                       onChange={(e) => setTargetRaceDateIso(e.target.value)}
                       className="mt-1.5 w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 font-mono text-xs text-slate-900 dark:text-white"
@@ -1982,7 +1999,20 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <select
                 id={`${formId}-goal-sport`}
                 value={newSport}
-                onChange={(e) => setNewSport(e.target.value as SportCategory)}
+                onChange={(e) => {
+                  const sp = e.target.value as SportCategory;
+                  setNewSport(sp);
+                  if (sp === 'Running') {
+                    setNewUnit('s/km');
+                    setNewTargetVal(String(Math.round(safeThresholdPace * 0.96)));
+                  } else if (sp === 'Cycling') {
+                    setNewUnit('W');
+                    setNewTargetVal(String(Math.round(currentBikeFtp * 1.08)));
+                  } else {
+                    setNewUnit('CTL');
+                    setNewTargetVal(String(Math.max(55, Math.round(currentCtl + 12))));
+                  }
+                }}
                 className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="Running">Running</option>
@@ -2017,6 +2047,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <input
                 id={`${formId}-goal-date`}
                 type="date"
+                min={todayIso}
                 value={newTargetDate}
                 onChange={(e) => setNewTargetDate(e.target.value)}
                 className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
@@ -2040,6 +2071,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   onChange={(e) => setNewUnit(e.target.value)}
                   className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 >
+                  <option value="s/km">Pace (s/km)</option>
                   <option value="W">Watts</option>
                   <option value="CTL">CTL</option>
                   <option value="W/kg">W/kg</option>

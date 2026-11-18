@@ -69,17 +69,27 @@
   }
 
   .dark {
-    --ap-outer-bg: #0c1d14;
-    --ap-canvas-bg: #0b120e;
+    --ap-outer-bg: #050a07;
+    --ap-canvas-bg: #0b110e;
     --ap-content-border: #2b543b;
-    --ap-card-bg: #101b15;
+    --ap-card-bg: #111a15;
     --ap-card-border: rgba(57, 150, 99, 0.36);
-    --ap-inset-bg: #15231b;
+    --ap-inset-bg: #080d0a;
     --ap-inset-border: rgba(57, 150, 99, 0.26);
     --ap-brand-volt: #c8ff00;
     --ap-brand-primary: #c8ff00;
     --ap-action-cobalt: #c8ff00;
     --ap-thresh-vermilion: #c8ff00;
+  }
+
+  html.dark.ap-dusk {
+    --ap-outer-bg: #070605;
+    --ap-inset-bg: #090806;
+    --ap-canvas-bg: #0d0b09;
+    --ap-card-bg: #15120e;
+    --ap-content-border: #3d3528;
+    --ap-card-border: rgba(217, 119, 6, 0.24);
+    --ap-inset-border: rgba(217, 119, 6, 0.18);
   }
 
   html,
@@ -100,8 +110,14 @@
 
   .dark body {
     background-color: var(--ap-outer-bg);
-    background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.12), transparent 52%);
-    color: #f4f7f4;
+    background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.06), transparent 52%);
+    color: #e6ece8;
+  }
+
+  html.dark.ap-dusk body {
+    background-color: var(--ap-outer-bg);
+    background-image: radial-gradient(circle at 12% 0%, rgba(217, 119, 6, 0.05), transparent 50%);
+    color: #e8e2d8;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -290,7 +306,7 @@
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
-  background: #101b15;
+  background: var(--ap-card-bg);
   border: 2px solid var(--ap-content-border);
   box-shadow:
     0 12px 30px -10px rgba(0, 0, 0, 0.75),
@@ -299,13 +315,15 @@
 
 /* Nested Inset Wells — Tonal Luminance Step Without Nested Boxitis */
 .liquid-glass-subtle,
-.ap-card-inset {
+.ap-card-inset,
+.ap-well {
   background: var(--ap-inset-bg);
   border: 1px solid var(--ap-inset-border);
 }
 
 .dark .liquid-glass-subtle,
-.dark .ap-card-inset {
+.dark .ap-card-inset,
+.dark .ap-well {
   background: var(--ap-inset-bg);
   border: 1px solid var(--ap-inset-border);
 }

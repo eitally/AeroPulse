@@ -10,6 +10,7 @@ import {
   solveTrackPaceSecsPerKmForPctVdot,
 } from './trackSpeedReserveEngine.ts';
 import { pctVo2MaxAtDurationMins, vo2AtVelocityMpm } from './trackSpeedReserveEngine.ts';
+import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
 const clamp = (val: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, val));
@@ -449,7 +450,7 @@ export function computeTrackProgressionLevels(params: {
   const refDate =
     referenceDateIso?.slice(0, 10) ||
     runs[runs.length - 1]?.startDateLocal.slice(0, 10) ||
-    new Date().toISOString().slice(0, 10);
+    getLocalDateIso();
 
   const wellnessByDate = new Map<string, UnifiedWellnessDay>();
   for (const w of wellnessDays) {

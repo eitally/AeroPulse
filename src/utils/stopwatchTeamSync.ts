@@ -65,7 +65,7 @@ export async function persistCoachStopwatchActivitiesToServer(
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'x-thresh-session': token } : {}),
+          ...(token ? { 'x-session-token': token } : {}),
         },
         body: JSON.stringify({ entries }),
       }

@@ -16,6 +16,7 @@ import {
 import { formatDistance } from '../utils/formatters';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
+import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 
 interface PhysiologicalTrendsViewProps {
   activities: UnifiedActivity[];
@@ -169,7 +170,6 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
     const sorted = [...wellnessDays].sort((a, b) => a.date.localeCompare(b.date));
     if (sorted.length === 0) return [];
 
-    const now = new Date();
     let cutoffStr = '2010-01-01';
     if (trendSpan !== 'ALL') {
       const daysMap: Record<Exclude<TrendSpan, 'ALL'>, number> = {
@@ -177,9 +177,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         '1Y': 365,
         '2Y': 730,
       };
-      const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - daysMap[trendSpan]);
-      cutoffStr = d.toISOString().slice(0, 10);
+      cutoffStr = shiftIsoDate(getLocalDateIso(), -daysMap[trendSpan]);
     }
 
     const filtered = sorted.filter((w) => w.date >= cutoffStr);

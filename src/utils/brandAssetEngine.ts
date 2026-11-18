@@ -205,7 +205,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'thresh-lockup-light',
     title: 'Primary Lockup — Light Stage',
-    subtitle: 'S2 Redline Breach + W-A Threshold Horizon (#1C5436 / #3F8E00 / #101411)',
+    subtitle: 'S2 Redline Breach + W-A Threshold Horizon (#1C5436 / #357A00 / #101411)',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -221,7 +221,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     minPhysicalSpec: 'Min print 0.5 in (13 mm) tall · CMYK-safe Pine/Lime inks',
     svgMarkup: buildMultiToneLockupSvg({
       pineColor: '#1C5436',
-      accentColor: '#3F8E00',
+      accentColor: '#357A00',
       inkColor: '#101411',
     }),
   },
@@ -347,7 +347,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     minPhysicalSpec: 'Min print 0.35 in (9 mm) · WCAG AA Pine/Olive',
     svgMarkup: buildGaugeIconSvg({
       pineColor: '#1C5436',
-      accentColor: '#3F8E00',
+      accentColor: '#357A00',
     }),
   },
   {
@@ -429,7 +429,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     svgMarkup: buildGaugeIconSvg({
       tile: { fill: '#F4F7F2', stroke: '#1C5436', rx: 28 },
       pineColor: '#1C5436',
-      accentColor: '#3F8E00',
+      accentColor: '#357A00',
     }),
   },
   {
@@ -479,7 +479,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'thresh-wordmark-light',
     title: 'Standalone Wordmark (W-A) — Light Stage',
-    subtitle: 'Upright 0° optical THRESH letterforms + #3F8E00 threshold E-bar',
+    subtitle: 'Upright 0° optical THRESH letterforms + #357A00 threshold E-bar',
     category: 'WORDMARK_AND_SOCIAL',
     width: 328,
     height: 96,
@@ -491,10 +491,10 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (1312×384)', width: 1312, height: 384 },
     ],
     recommendedFor: 'Compact white header strips & dense meet timing tables',
-    minPhysicalSpec: 'Obsidian #101411 + Olive #3F8E00 E-bar on crisp chalk/white',
+    minPhysicalSpec: 'Obsidian #101411 + Olive #357A00 E-bar on crisp chalk/white',
     svgMarkup: buildStandaloneWordmarkSvg({
       inkColor: '#101411',
-      accentColor: '#3F8E00',
+      accentColor: '#357A00',
     }),
   },
   {

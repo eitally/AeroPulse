@@ -30,8 +30,10 @@ import {
   SpikeBudgetSegmentedMeter,
 } from './charts/MicroGraphics';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
-import { CircadianFirstTouchHero } from './CircadianFirstTouchHero';
+import { CircadianFirstTouchHero, type CircadianHeroMode } from './CircadianFirstTouchHero';
 import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
+import { EveningCloseoutCard } from './today/EveningCloseoutCard';
+import { resolveCircadianHeroMode } from '../physiology/eveningHabitEngine';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import {
   buildDayLoadSegments,
@@ -57,6 +59,7 @@ import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   BANISTER_ATL_DECAY,
   BANISTER_CTL_DECAY,
+  shiftIsoDate,
 } from '../physiology/stravaLoadCalibration';
 
 interface FitnessHealthViewProps {
@@ -158,11 +161,9 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 }) => {
   // Default to 42D (6-week microcycle) so daily load bars and acute fitness swings are immediately readable
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('42D');
-  const [customStart, setCustomStart] = useState<string>(() => {
-    const d = new Date();
-    d.setUTCFullYear(d.getUTCFullYear() - 1);
-    return d.toISOString().slice(0, 10);
-  });
+  const [customStart, setCustomStart] = useState<string>(() =>
+    shiftIsoDate(getLocalDateIso(), -365)
+  );
   const [customEnd, setCustomEnd] = useState<string>(() => getLocalDateIso());
   const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState<boolean>(false);
@@ -185,17 +186,87 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const todayIso = useMemo(() => getLocalDateIso(), []);
+  const hasCompletedToday = useMemo(
+    () => activities.some((a) => (a.startDateLocal || '').slice(0, 10) === todayIso),
+    [activities, todayIso]
+  );
+  const isEveningHours = resolveCircadianHeroMode({ hasCompletedToday }) === 'TONIGHT';
+  const [circadianMode, setCircadianMode] = useState<CircadianHeroMode>(() =>
+    hasCompletedToday ? 'POST_SESSION' : 'MORNING'
+  );
+  useEffect(() => {
+    if (hasCompletedToday) {
+      setCircadianMode((prev) => (prev === 'MORNING' ? 'POST_SESSION' : prev));
+    }
+  }, [hasCompletedToday]);
+  const [isDuskMode, setIsDuskMode] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('thresh_dusk_mode') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.classList.toggle('ap-dusk', isDuskMode);
+    try {
+      window.localStorage.setItem('thresh_dusk_mode', isDuskMode ? '1' : '0');
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [isDuskMode]);
   const hasWellnessTelemetry = wellnessDays.length > 0;
   const [orthoSwappedToast, setOrthoSwappedToast] = useState<string | null>(null);
   const [showEmptyCheckIn, setShowEmptyCheckIn] = useState<boolean>(false);
 
   // Student-Athlete Check-In (Academic/Exam Stress, Shin/Metatarsal BSI, PHV Growth Plates) & Cross-Training
+  const initialDailySoreness = useMemo(() => {
+    try {
+      const raw = window.localStorage.getItem(`thresh_daily_soreness_v1:${todayIso}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, [todayIso]);
   const [isStudentCheckInOpen, setIsStudentCheckInOpen] = useState<boolean>(false);
-  const [academicStress, setAcademicStress] = useState<1 | 2 | 3 | 4 | 5>(2);
-  const [shinBoneSoreness, setShinBoneSoreness] = useState<0 | 1 | 2 | 3>(0);
-  const [achillesSoreness, setAchillesSoreness] = useState<0 | 1 | 2 | 3>(0);
-  const [kneeGrowthPlateSoreness, setKneeGrowthPlateSoreness] = useState<0 | 1 | 2 | 3>(0);
-  const [heelApophysisSoreness, setHeelApophysisSoreness] = useState<0 | 1 | 2 | 3>(0);
+  const [academicStress, setAcademicStress] = useState<1 | 2 | 3 | 4 | 5>(
+    () => (initialDailySoreness.academicStress as 1 | 2 | 3 | 4 | 5) || 2
+  );
+  const [shinBoneSoreness, setShinBoneSoreness] = useState<0 | 1 | 2 | 3>(
+    () => (initialDailySoreness.shinBoneSoreness as 0 | 1 | 2 | 3) || 0
+  );
+  const [achillesSoreness, setAchillesSoreness] = useState<0 | 1 | 2 | 3>(
+    () => (initialDailySoreness.achillesSoreness as 0 | 1 | 2 | 3) || 0
+  );
+  const [kneeGrowthPlateSoreness, setKneeGrowthPlateSoreness] = useState<0 | 1 | 2 | 3>(
+    () => (initialDailySoreness.kneeGrowthPlateSoreness as 0 | 1 | 2 | 3) || 0
+  );
+  const [heelApophysisSoreness, setHeelApophysisSoreness] = useState<0 | 1 | 2 | 3>(
+    () => (initialDailySoreness.heelApophysisSoreness as 0 | 1 | 2 | 3) || 0
+  );
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `thresh_daily_soreness_v1:${todayIso}`,
+        JSON.stringify({
+          academicStress,
+          shinBoneSoreness,
+          achillesSoreness,
+          kneeGrowthPlateSoreness,
+          heelApophysisSoreness,
+        })
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [
+    todayIso,
+    academicStress,
+    shinBoneSoreness,
+    achillesSoreness,
+    kneeGrowthPlateSoreness,
+    heelApophysisSoreness,
+  ]);
   const [crossTrainModality, setCrossTrainModality] =
     useState<CrossTrainingModality>('AQUA_JOGGING');
   const [crossTrainMins, setCrossTrainMins] = useState<number>(45);
@@ -602,9 +673,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
   // Compute 28d vs 90d Aerobic Efficiency (EF = NP/HR) & Pa:Hr Decoupling Durability for the Coach Summary Card
   const aerobicDurabilityStats = useMemo(() => {
-    const nowMs = Date.now();
-    const d28Cutoff = new Date(nowMs - 28 * 86400 * 1000).toISOString().slice(0, 10);
-    const d90Cutoff = new Date(nowMs - 90 * 86400 * 1000).toISOString().slice(0, 10);
+    const d28Cutoff = shiftIsoDate(todayIso, -28);
+    const d90Cutoff = shiftIsoDate(todayIso, -90);
 
     const validEfActs = activities.filter(
       (a) => a.efficiencyFactor && a.efficiencyFactor > 0.7 && a.efficiencyFactor < 3.2
@@ -834,6 +904,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onToggleWorkbench={() => setIsPrescriptionExpanded((prev) => !prev)}
         rxSport={sharedRxSport}
         onRxSportChange={handleSharedRxSportChange}
+        mode={circadianMode}
+        onModeChange={setCircadianMode}
+        sessionCheckIns={sessionCheckIns}
+        onRecordSessionCheckIn={onRecordSessionCheckIn}
+        isDuskMode={isDuskMode}
+        onToggleDuskMode={() => setIsDuskMode((prev) => !prev)}
         onSelectActivity={onSelectActivity}
         onSyncMorphedToCalendar={onSyncMorphedToCalendar}
         onOpenAthleteProfileModal={onOpenAthleteProfileModal}
@@ -843,16 +919,33 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
       />
 
       {onRecordSessionCheckIn &&
+        circadianMode !== 'TONIGHT' &&
         (activities.length > 0 ||
         plannedEvents.length > 0 ||
         sessionCheckIns.length > 0 ||
         showEmptyCheckIn ? (
-          <AthleteSessionCheckInCard
-            todayIso={todayIso}
-            plannedEvents={plannedEvents}
-            sessionCheckIns={sessionCheckIns}
-            onRecordCheckIn={onRecordSessionCheckIn}
-          />
+          isEveningHours ? (
+            <div className="rounded-2xl liquid-glass overflow-hidden">
+              <EveningCloseoutCard
+                todayIso={todayIso}
+                activities={activities}
+                plannedEvents={plannedEvents}
+                latestWellness={latestDay}
+                safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
+                sessionCheckIns={sessionCheckIns}
+                onRecordCheckIn={onRecordSessionCheckIn}
+                isDuskMode={isDuskMode}
+                onToggleDuskMode={() => setIsDuskMode((prev) => !prev)}
+              />
+            </div>
+          ) : (
+            <AthleteSessionCheckInCard
+              todayIso={todayIso}
+              plannedEvents={plannedEvents}
+              sessionCheckIns={sessionCheckIns}
+              onRecordCheckIn={onRecordSessionCheckIn}
+            />
+          )
         ) : (
           <div className="flex justify-end">
             <button

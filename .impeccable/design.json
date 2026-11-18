@@ -874,7 +874,7 @@
     "keyCharacteristics": [
       "**Framed Stadium Stage:** Deep Pine outer surround framing a `2px` Pine-bordered workspace stage (`1.5rem` desktop radius) with opaque tonal layering across light and dark modes.",
       "**High-Voltage Track Volt Discipline:** Track Volt (`#C8FF00` paired with `#080A09` Obsidian ink) is reserved strictly for primary actions, active navigation pills, and threshold focal markers.",
-      "**Velocity-Sheared Perimeter Geometry:** Primary cockpit tabs and lane badges skew `-14deg` with `+14deg` counter-skewed inner labels, echoing the `B3-3A × W1` THRESH track lockup.",
+      "**Velocity-Sheared Perimeter Geometry:** Primary cockpit tabs and lane badges skew `-14deg` with `+14deg` counter-skewed inner labels, echoing the `S2 × W-A` THRESH track lockup.",
       "**Protected Physiological Encodings:** Six-zone effort colors (`Z1–Z6`), Banister load series, and WCAG AA/AAA readiness pills stay invariant across themes and school/club co-branding.",
       "**Tabular Telemetry & `11px` Floor:** `Plus Jakarta Sans` pairs with `JetBrains Mono` (`tabular-nums`) and a hard `0.6875rem` (`11px`) `rem`-scaled floor so live `0.01s` splits and `1Hz` scrubbers never jitter.",
       "**Zero-Blur 60fps Surfaces:** Solid surface steps and crisp `1px`–`2px` borders replace GPU-heavy glassmorphism, keeping dense ECharts/uPlot canvases responsive on mobile field devices."
@@ -939,7 +939,7 @@
       "**Do** synchronize HTML/CSS UI tokens 1:1 with canvas/SVG chart palettes via `getThreshThemePalette(isDark)` (`src/utils/themeTokens.ts`), keeping `Z1–Z6` and `CTL`/`ATL`/`TSB` colors locked even under school/club co-branding.",
       "**Do** render explicit `CALIBRATING` states when an athlete has zero synced workouts, and shield body weight / `W/kg` emphasis automatically when U18 Safe-Sport mode is active.",
       "**Do** use true boolean compound-path 1-ink knockouts (`Obsidian Black`, `Reversed White`, `Track Volt`, and unframed `Gauge Symbols`) for singlets, heat-transfer vinyl, CNC etching, and 600-DPI B&W laser heat sheets, and convert `#C8FF00` to Light Stage Pine (`#1C5436`) + Turf Lime (`#56BA00`) for 4-color CMYK paper.",
-      "**Do** preserve `1R` minimum clear space around `B3-3A × W1` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`)."
+      "**Do** preserve `1R` minimum clear space around `S2 × W-A` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`)."
     ],
     "donts": [
       "**Don't** apply full-bar or full-screen `backdrop-filter: blur()` or `background-attachment: fixed` to headers, cards, or modals; maintain crisp opaque surface layering for `60fps` telemetry scrolling.",

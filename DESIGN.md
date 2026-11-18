@@ -4,6 +4,7 @@ description: Athletic stadium-track workspace and laboratory-grade endurance phy
 colors:
   track-volt: "#C8FF00"
   track-volt-hover: "#B5EB00"
+  volt-light-mark: "#357A00"
   turf-lime-mark: "#56BA00"
   stadium-pine: "#1C5436"
   pine-gauge-dark: "#399663"
@@ -12,21 +13,31 @@ colors:
   strava-vermilion: "#C23800"
   strava-vermilion-hover: "#A83000"
   stadium-surround-light: "#163022"
-  stadium-surround-dark: "#0C1D14"
+  stadium-surround-dark: "#050A07"
+  stadium-surround-dark-legacy: "#0C1D14"
   stadium-chalk: "#F4F7F2"
-  obsidian-pine: "#0B120E"
+  obsidian-pine: "#0B110E"
+  obsidian-pine-legacy: "#0B120E"
   tile-obsidian: "#0B1911"
   pine-frame-light: "#2B5B3F"
   pine-frame-dark: "#2B543B"
   crisp-paper: "#FFFFFF"
-  carbon-pine: "#101B15"
+  carbon-pine: "#111A15"
+  carbon-pine-legacy: "#101B15"
   chalk-inset: "#E9EFE9"
+  deep-turf-well: "#080D0A"
   deep-turf: "#15231B"
   pill-track-light: "#E3ECE5"
   pill-track-dark: "#0B140F"
   obsidian-ink: "#080A09"
   ink-primary-light: "#101411"
+  ink-bedtime-dark: "#E6ECE8"
   ink-primary-dark: "#F4F7F4"
+  dusk-surround: "#070605"
+  dusk-inset: "#090806"
+  dusk-stage: "#0D0B09"
+  dusk-card: "#15120E"
+  dusk-ink: "#E8E2D8"
   ink-secondary-light: "#1F3528"
   ink-secondary-dark: "#C8D8CE"
   ink-muted-light: "#43584B"
@@ -199,7 +210,7 @@ The interface serves solo self-coached runners and cyclists alongside 80-athlete
 **Key Characteristics:**
 - **Framed Stadium Stage:** Deep Pine outer surround framing a `2px` Pine-bordered workspace stage (`1.5rem` desktop radius) with opaque tonal layering across light and dark modes.
 - **High-Voltage Track Volt Discipline:** Track Volt (`#C8FF00` paired with `#080A09` Obsidian ink) is reserved strictly for primary actions, active navigation pills, and threshold focal markers.
-- **Velocity-Sheared Perimeter Geometry:** Primary cockpit tabs and lane badges skew `-14deg` with `+14deg` counter-skewed inner labels, echoing the `B3-3A × W1` THRESH track lockup.
+- **Velocity-Sheared Perimeter Geometry:** Primary cockpit tabs and lane badges skew `-14deg` with `+14deg` counter-skewed inner labels, echoing the `S2 × W-A` THRESH track lockup.
 - **Protected Physiological Encodings:** Six-zone effort colors (`Z1–Z6`), Banister load series, and WCAG AA/AAA readiness pills stay invariant across themes and school/club co-branding.
 - **Tabular Telemetry & `11px` Floor:** `Plus Jakarta Sans` pairs with `JetBrains Mono` (`tabular-nums`) and a hard `0.6875rem` (`11px`) `rem`-scaled floor so live `0.01s` splits and `1Hz` scrubbers never jitter.
 - **Zero-Blur 60fps Surfaces:** Solid surface steps and crisp `1px`–`2px` borders replace GPU-heavy glassmorphism, keeping dense ECharts/uPlot canvases responsive on mobile field devices.
@@ -287,11 +298,11 @@ Inside `.ap-content-stage` (`padding: 1rem` on mobile, `2rem` on `>= 640px`), an
 
 Navigation adapts by posture: desktop viewports (`>= 768px`) display the full horizontal `.ap-header-bar` with `-14deg` workspace tabs, while mobile viewports (`< 768px`) reserve bottom clearance (`calc(4.75rem + env(safe-area-inset-bottom, 0px))`) for `.ap-mobile-dock`. Horizontal filter toolbars use `.ap-toolbar-scroll` (touch-scrollable single row below `640px`, wrapping cleanly at `>= 640px`). Modals (`.ap-modal-backdrop` + `.ap-modal-sheet`) anchor to the bottom edge as `92dvh` sheets on phones (`< 640px`) and center with `1rem` outer padding (`max-height: 90vh`) on larger screens. Interactive controls enforce a `2.75rem` (`44px`) touch-target floor on touch viewports (`>= 3.125rem` / `50px` on the primary Strava OAuth CTA and `>= 3.5rem` / `56px` on watchless trackside runner rows). Standalone documentation (`public/docs/index.html`) adapts the same Stadium Pine & Chalk/Obsidian palette into a sticky-header + two-column sidebar TOC reading layout.
 
-The public zero-auth **`/brand` Brand Studio & Style Guide** (`src/components/BrandGuidePage.tsx` via `src/utils/brandRoute.ts`) extends the same `.ap-header-bar` + `.ap-content-stage` (`p-4 sm:p-7 space-y-8`) + `ThreshBrandWatermark` frame without authentication. Its first viewport opens on a `6 + 6` desktop grid (`grid-cols-1 lg:grid-cols-12`) pairing the hero `THRESH Brand Studio & Style Guide` heading + `Download Complete Brand Kit (.zip)` CTA with the interactive `B3-3A × W1` construction specimen above a `-14deg` `.ap-track-tab` jump strip (`2×2` grid on mobile, inline flex on `>= 640px`), followed by a `1 / 2 / 3`-column asset grid (`thresh-og-1200x630` spanning `2` columns at `>= 768px`), `2`-column and `3`-column token swatch grids, and `5 + 7` desktop splits for both the Team Co-Brand Sandbox and the `0.01s` Tabular Comparator.
+The public zero-auth **`/brand` Brand Studio & Style Guide** (`src/components/BrandGuidePage.tsx` via `src/utils/brandRoute.ts`) extends the same `.ap-header-bar` + `.ap-content-stage` (`p-4 sm:p-7 space-y-8`) + `ThreshBrandWatermark` frame without authentication. Its first viewport opens on a `6 + 6` desktop grid (`grid-cols-1 lg:grid-cols-12`) pairing the hero `THRESH Brand Studio & Style Guide` heading + `Download Complete Brand Kit (.zip)` CTA with the interactive `S2 × W-A` construction specimen above a `-14deg` `.ap-track-tab` jump strip (`2×2` grid on mobile, inline flex on `>= 640px`), followed by a `1 / 2 / 3`-column asset grid (`thresh-og-1200x630` spanning `2` columns at `>= 768px`), `2`-column and `3`-column token swatch grids, and `5 + 7` desktop splits for both the Team Co-Brand Sandbox and the `0.01s` Tabular Comparator.
 
 ## Elevation & Depth
 
-THRESH uses **structural Pine framing and opaque tonal luminance steps** rather than heavy drop-shadow stacks or frosted-glass blur. Depth moves across four crisp, solid surface planes: the deep Pine outer stadium surround (`#163022` / `#0C1D14`), the `2px` Pine-bordered workspace stage (`#F4F7F2` / `#0B120E`), `1px`-bordered elevated telemetry cards (`#FFFFFF` / `#101B15`), and shadowless recessed inset wells (`#E9EFE9` / `#15231B`).
+THRESH uses **structural Pine framing and opaque tonal luminance steps** rather than heavy drop-shadow stacks or frosted-glass blur. Depth moves across four crisp, solid surface planes: the deep Pine outer stadium surround (`#163022` / `#050A07`), the `2px` Pine-bordered workspace stage (`#F4F7F2` / `#0B110E`), `1px`-bordered elevated telemetry cards (`#FFFFFF` / `#111A15`), and shadowless recessed inset wells (`#E9EFE9` / `#080D0A`).
 
 ### Shadow Vocabulary
 - **Content Stage Frame** (`box-shadow: 0 18px 40px -16px rgba(7, 18, 12, 0.42), 0 2px 8px 0 rgba(7, 18, 12, 0.18)` light; `0 22px 48px -16px rgba(0, 0, 0, 0.78), 0 2px 10px 0 rgba(0, 0, 0, 0.5)` dark): Lifts `.ap-content-stage` off the outer stadium surround.
@@ -310,9 +321,9 @@ THRESH uses **structural Pine framing and opaque tonal luminance steps** rather 
 THRESH's form language pairs **concentric stadium-turn radii** on analytical containers with **velocity-sheared `-14deg` parallelograms** on navigation and lane callouts:
 
 - **Concentric Container Radii:** Outer `.ap-content-stage` uses a generous stadium-turn curve (`1.5rem` / `24px` on `>= 640px`, `1.25rem` / `20px` on mobile); interior `.ap-card` and `.ap-header-bar` step down to `1rem` (`16px`); buttons, inputs, and `.ap-card-inset` wells use `0.75rem` (`12px`); compact split cells use `0.5rem` (`8px`); semantic status pills and gauge bars use `9999px` full capsules.
-- **Velocity-Sheared `-14deg` Track Silhouettes:** `.ap-track-tab` (`0.425rem` radius) and `.ap-lane-badge` (`0.35rem` radius) apply `transform: skewX(-14deg)` to their outer box while counter-skewing `.ap-track-tab-inner` and `.ap-lane-badge-inner` by `skewX(14deg)`. The `14deg` angle matches the straightaway termination of the `B3-3A × W1` THRESH vector lockup while keeping icons and text strictly vertical.
+- **Velocity-Sheared `-14deg` Track Silhouettes:** `.ap-track-tab` (`0.425rem` radius) and `.ap-lane-badge` (`0.35rem` radius) apply `transform: skewX(-14deg)` to their outer box while counter-skewing `.ap-track-tab-inner` and `.ap-lane-badge-inner` by `skewX(14deg)`. The `14deg` angle aligns with the `S2 × W-A` THRESH track identity while keeping navigation icons and text strictly vertical.
 - **Architectural Borders & Hairlines:** Structural boundaries use `2px solid` Pine (`#2B5B3F` / `#2B543B`) on the main stage, header bar, and account menu, paired with `.ap-brand-hairline` (`linear-gradient(90deg, #C8FF00 0%, #65A30D 55%, #1D3828 100%)`) and the low-opacity 4-lane concentric banking-turn `ThreshBrandWatermark` (`0.045` light / `0.065` dark class opacity in `AeroPulseLogo.tsx`; `0.04`–`0.14` recommended print range) in hero corners.
-- **`B3-3A × W1` Vector Mark & Knockout Geometry (`brandAssetEngine.ts`):** Canonical lockups occupy a `472 × 124` viewBox with 4 concentric stadium lanes (`cx=64, cy=58`, `r=[19, 30, 41, 52]`), a `313°` tapered wedge needle, a `355°` boundary tick, and `-14°` straightaway shear paired with path-outlined `W1` letterforms (`0` font dependency). Square icon symbols (`128 × 128` viewBox, `cx=64, cy=71.5`, `0.84` inner scale) ship unframed, in `rx=28` rounded tiles (`3.5` stroke), and in full-bleed `0px` corner tiles; the Die-Cut Badge Pill (`thresh-sticker-diecut`) wraps the `472 × 124` lockup inside an `rx=24` `#0B1911` pill.
+- **`S2 × W-A` Decoupled Mark & Wordmark Geometry (`brandAssetEngine.ts`, `brandVectors.ts`):** Canonical lockups pair the decoupled `S2 Redline Breach` 128×128 symbol (precision ring broken at 45° by a piercing threshold arrow-needle) with upright 0° optical `W-A Threshold Horizon` letterforms (`0` font dependency). Square `S2` symbols ship unframed, in `rx=28` rounded tiles (`3.5` stroke), and in full-bleed `0px` corner tiles; light-stage vector fills use Pine (`#1C5436`) + deep olive Volt (`#357A00`) + Obsidian (`#101411`).
 
 ### Named Rules
 **The True 1-Ink Knockout Rule.** Monochrome screen-print, vinyl-plotter, and CNC laser stencils split radial gauge sectors mathematically around the `313°` needle moat and close boundary ticks as outlined capsule contours (`fill-rule="evenodd"`), banning fake `#FFFFFF` masking strokes or SVG `<mask>` overlays.
@@ -374,7 +385,7 @@ Components feel **tactile, field-ready, and instrument-grade**: decisive contras
 - **Do** synchronize HTML/CSS UI tokens 1:1 with canvas/SVG chart palettes via `getThreshThemePalette(isDark)` (`src/utils/themeTokens.ts`), keeping `Z1–Z6` and `CTL`/`ATL`/`TSB` colors locked even under school/club co-branding.
 - **Do** render explicit `CALIBRATING` states when an athlete has zero synced workouts, and shield body weight / `W/kg` emphasis automatically when U18 Safe-Sport mode is active.
 - **Do** use true boolean compound-path 1-ink knockouts (`Obsidian Black`, `Reversed White`, `Track Volt`, and unframed `Gauge Symbols`) for singlets, heat-transfer vinyl, CNC etching, and 600-DPI B&W laser heat sheets, and convert `#C8FF00` to Light Stage Pine (`#1C5436`) + Turf Lime (`#56BA00`) for 4-color CMYK paper.
-- **Do** preserve `1R` minimum clear space around `B3-3A × W1` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`).
+- **Do** preserve `1R` minimum clear space around `S2 × W-A` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`).
 
 ### Don't:
 - **Don't** apply full-bar or full-screen `backdrop-filter: blur()` or `background-attachment: fixed` to headers, cards, or modals; maintain crisp opaque surface layering for `60fps` telemetry scrolling.
