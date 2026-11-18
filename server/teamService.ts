@@ -31,6 +31,7 @@ import type {
   TeamMemberRole,
   TeamMembershipRecord,
   TeamOrgType,
+  TeamPlanTier,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
@@ -718,6 +719,22 @@ export async function autoLinkPendingTeamInvitesByEmail(params: {
   return linkedTeamIds;
 }
 
+/**
+ * Tracks D2 free coach sandbox (<= 5 non-revoked athletes) vs Founding Team (> 5)
+ * on the backend without adding checkout/billing friction during beta.
+ */
+export function resolveTeamPlanTier(
+  memberships: Array<{ role?: string; status?: string }>
+): TeamPlanTier {
+  const activeOrInvitedAthletes = (memberships || []).filter(
+    (m) =>
+      m.status !== 'REVOKED' &&
+      m.role !== 'HEAD_COACH' &&
+      m.role !== 'ASSISTANT_COACH'
+  ).length;
+  return activeOrInvitedAthletes <= 5 ? 'SANDBOX' : 'FOUNDING_TEAM';
+}
+
 function projectTeamSummaryForCaller(
   doc: StoredTeamDocument,
   callerSid: string,
@@ -855,7 +872,10 @@ function projectTeamSummaryForCaller(
   });
 
   return {
-    brand: doc.brand,
+    brand: {
+      ...doc.brand,
+      planTier: resolveTeamPlanTier(doc.memberships),
+    },
     myRole: myMembership.role,
     mySquadGroup: myMembership.squadGroup,
     ...(myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {}),
@@ -971,6 +991,7 @@ export async function createTeamForCoach(params: {
     enableParentGuardianCc,
     coachDisplayName:
       String(params.coachDisplayName || '').trim().slice(0, 48) || 'Head Coach',
+    planTier: 'SANDBOX',
     createdAt: nowIso,
   };
 

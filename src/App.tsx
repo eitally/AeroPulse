@@ -72,14 +72,18 @@ import { useTeamRoster } from './hooks/useTeamRoster';
 import { useCoachChat } from './hooks/useCoachChat';
 import { useRosterActions } from './hooks/useRosterActions';
 import { useBrandStudioRoute } from './utils/brandRoute';
+import { useShareWorkoutRoute, sharedWorkoutToPlannedEventInput } from './utils/shareWorkoutEngine';
+import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
 
 const BrandGuidePage = React.lazy(() => import('./components/BrandGuidePage'));
+const ShareWorkoutPage = React.lazy(() => import('./components/ShareWorkoutPage'));
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 
 export default function App() {
   const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
+  const { isShareRoute, sharedWorkout, closeShareWorkout } = useShareWorkoutRoute();
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -657,6 +661,14 @@ export default function App() {
     setSampleDemoPlannedEvents,
     setConnectedAthletes,
     setSampleDemoConnectedAthletes,
+  });
+
+  useAthleteCloudSync({
+    isSampleDemoMode, hasEnteredWorkspace, isSessionLoggedOut, currentUser,
+    stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
+    targetGoals, setTargetGoals, annualMileageGoals, setAnnualMileageGoals,
+    athleteProfile, setAthleteProfile, distanceUnit, setDistanceUnit,
+    handleCreatePlannedEvent, onPendingWorkoutImported: () => setActiveTab('calendar'),
   });
 
   const {
@@ -1546,6 +1558,22 @@ export default function App() {
       <IconContext.Provider value={{ weight: 'duotone' }}>
         <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">Loading THRESH Brand Studio…</div>}>
           <BrandGuidePage isDark={isDark} onToggleDark={() => setIsDark((d) => !d)} hasActiveWorkspace={hasWorkspace} onExitBrand={() => closeBrand(hasWorkspace ? activeTab : undefined)} />
+        </React.Suspense>
+      </IconContext.Provider>
+    );
+  }
+
+  if (isShareRoute) {
+    const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
+    return (
+      <IconContext.Provider value={{ weight: 'duotone' }}>
+        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono">Loading THRESH Share…</div>}>
+          <ShareWorkoutPage
+            sharedWorkout={sharedWorkout} isDark={isDark} onToggleDark={() => setIsDark((d) => !d)} hasActiveWorkspace={hasWorkspace}
+            initialFtpWatts={athleteProfile.ftp} initialThresholdPaceSecsPerKm={athleteProfile.thresholdPaceSecsPerKm} initialUnit={distanceUnit}
+            onImportToWorkspace={async (p, f, pace, u) => { await handleCreatePlannedEvent(sharedWorkoutToPlannedEventInput(p, { ftpWatts: f, thresholdPaceSecsPerKm: pace, unit: u })); closeShareWorkout(); setActiveTab('calendar'); }}
+            onExitToSignIn={closeShareWorkout} onExitToWorkspace={closeShareWorkout}
+          />
         </React.Suspense>
       </IconContext.Provider>
     );

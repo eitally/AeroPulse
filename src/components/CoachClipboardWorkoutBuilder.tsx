@@ -24,6 +24,7 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
 } from '../utils/workoutExportActions';
+import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
 import {
@@ -35,6 +36,7 @@ import {
   Footprints,
   Plus,
   Send,
+  ShareNetwork,
   Timer,
   Trash,
 } from './icons/PhosphorIcons';
@@ -576,6 +578,24 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     });
   };
 
+  const handleShareWorkout = () => {
+    openShareWorkoutRoute({
+      kind: 'WORKOUT',
+      version: 1,
+      title: workoutTitle.trim() || builtWorkout.setsSummary || 'Coach Session',
+      sport: clipboardSport,
+      date: workoutDate,
+      workoutSyntax: builtWorkout.workoutSyntax,
+      plannedDurationSecs: builtWorkout.plannedDurationSecs,
+      plannedLoad: builtWorkout.plannedLoad,
+      description: builtWorkout.setsSummary,
+      teamName: activeTeam?.brand.name,
+      authorLabel: activeTeam?.brand.coachDisplayName || 'Coach',
+      referenceFtpWatts: selfProfile.ftp || 260,
+      referenceThresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+    });
+  };
+
   const handleCopySheet = () => {
     const sheet = formatMultiSetPrintableSplitSheet(
       workoutTitle.trim() || builtWorkout.setsSummary,
@@ -698,6 +718,16 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               <span>.ERG</span>
             </button>
           )}
+
+          <button
+            type="button"
+            data-testid="clipboard-share-btn"
+            onClick={handleShareWorkout}
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <ShareNetwork className="w-3.5 h-3.5" />
+            <span>Share</span>
+          </button>
         </div>
       </div>
 

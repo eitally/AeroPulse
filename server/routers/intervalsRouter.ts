@@ -37,6 +37,10 @@ import {
   resolveIntervalsCallbackUrl,
 } from '../oauthHelpers.ts';
 import {
+  loadAthleteCloudState,
+  saveAthleteCloudState,
+} from './athleteStateRouter.ts';
+import {
   pushWorkoutToGarminConnect,
   saveGarminSession,
   fetchDirectGarminProfileAndWellness,
@@ -1762,9 +1766,14 @@ intervalsRouter.get('/api/intervals/activities/:id/streams', async (req: Request
   }
 });
 
-// Training Calendar Planned Events API (Local + Sync to Intervals.icu / Garmin)
-intervalsRouter.get('/api/calendar/events', (req: Request, res: Response) => {
+// Training Calendar Planned Events API (Vault + Local + Sync to Intervals.icu / Garmin)
+intervalsRouter.get('/api/calendar/events', async (req: Request, res: Response) => {
   const scopedFile = getScopedPlannedEventsFile(req);
+  const cloud = await loadAthleteCloudState(req);
+  if (cloud && cloud.plannedEvents.length > 0) {
+    res.json({ events: cloud.plannedEvents });
+    return;
+  }
   if (!scopedFile) {
     res.json({ events: [] });
     return;
@@ -1811,12 +1820,15 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
     };
 
     const scopedFile = getScopedPlannedEventsFile(req);
-    let updated = [newEvent];
+    const cloud = await loadAthleteCloudState(req);
+    const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+    const existing =
+      cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
+    const updated = [newEvent, ...existing];
     if (scopedFile) {
-      const existing = loadJsonFile<any[]>(scopedFile, []);
-      updated = [newEvent, ...existing];
       saveJsonFile(scopedFile, updated);
     }
+    await saveAthleteCloudState(req, { plannedEvents: updated });
 
     // Also push to Intervals.icu Calendar if connected and requested
     const intervalsConfig = getEffectiveIntervalsConfig(req);
@@ -1900,18 +1912,21 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
   }
 });
 
-intervalsRouter.put('/api/calendar/events/:id', (req: Request, res: Response) => {
+intervalsRouter.put('/api/calendar/events/:id', async (req: Request, res: Response) => {
   const id = req.params.id;
   const body = req.body || {};
   const scopedFile = getScopedPlannedEventsFile(req);
+  const cloud = await loadAthleteCloudState(req);
   const nextSyntax = typeof body.workoutSyntax === 'string' ? body.workoutSyntax : undefined;
   const nextDurationSecs =
     typeof body.plannedDurationSecs === 'number' ? body.plannedDurationSecs : 3600;
-  if (!scopedFile) {
+  if (!scopedFile && !cloud) {
     res.json({ updated: true, event: { id, ...body } });
     return;
   }
-  const existing = loadJsonFile<any[]>(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existing =
+    cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const idx = existing.findIndex((e) => e.id === id);
   const patched = {
     ...(idx >= 0 ? existing[idx] : {}),
@@ -1928,32 +1943,47 @@ intervalsRouter.put('/api/calendar/events/:id', (req: Request, res: Response) =>
   };
   const updated =
     idx >= 0 ? existing.map((e, i) => (i === idx ? patched : e)) : [patched, ...existing];
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ updated: true, event: patched, events: updated });
 });
 
-intervalsRouter.delete('/api/calendar/blocks/:blockId', (req: Request, res: Response) => {
+intervalsRouter.delete('/api/calendar/blocks/:blockId', async (req: Request, res: Response) => {
   const scopedFile = getScopedPlannedEventsFile(req);
-  if (!scopedFile) {
+  const cloud = await loadAthleteCloudState(req);
+  if (!scopedFile && !cloud) {
     res.json({ deleted: true, events: [] });
     return;
   }
   const blockId = req.params.blockId;
-  const existing = loadJsonFile<any[]>(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existing =
+    cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.planBlockId !== blockId);
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
 
-intervalsRouter.delete('/api/calendar/events/:id', (req: Request, res: Response) => {
+intervalsRouter.delete('/api/calendar/events/:id', async (req: Request, res: Response) => {
   const scopedFile = getScopedPlannedEventsFile(req);
-  if (!scopedFile) {
+  const cloud = await loadAthleteCloudState(req);
+  if (!scopedFile && !cloud) {
     res.json({ deleted: true, events: [] });
     return;
   }
   const id = req.params.id;
-  const existing = loadJsonFile<any[]>(scopedFile, []);
+  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existing =
+    cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.id !== id);
-  saveJsonFile(scopedFile, updated);
+  if (scopedFile) {
+    saveJsonFile(scopedFile, updated);
+  }
+  await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
