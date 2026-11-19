@@ -804,7 +804,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 value={athleteA.id}
                 onChange={(e) => setAthleteAId(e.target.value)}
                 aria-label="Select Athlete A"
-                className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer truncate max-w-full"
+                className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white cursor-pointer truncate max-w-full rounded"
               >
                 {availableAthletes.map((a) => (
                   <option key={`a-${a.id}`} value={a.id} className="bg-[#101B15] text-white">
@@ -866,7 +866,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 value={athleteB.id}
                 onChange={(e) => setAthleteBId(e.target.value)}
                 aria-label="Select Athlete B"
-                className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer truncate max-w-full"
+                className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white cursor-pointer truncate max-w-full rounded"
               >
                 {availableAthletes.map((b) => (
                   <option key={`b-${b.id}`} value={b.id} className="bg-[#101B15] text-white">

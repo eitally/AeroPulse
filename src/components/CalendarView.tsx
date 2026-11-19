@@ -203,6 +203,7 @@ export interface DayPlannedEffortStripe {
     code: string;
     name: string;
     color: string;
+    inkClass: string;
   };
   steps: {
     label: string;
@@ -342,6 +343,7 @@ function buildDayPlannedEffortStripe(
       code: domMeta.code,
       name: domMeta.name,
       color: domMeta.color,
+      inkClass: domMeta.inkClass,
     },
     steps: stepsRaw.map((s) => {
       const zInfo = getIntervalsZoneFromIntensityPct(s.intensityPct);
@@ -1231,11 +1233,11 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   };
 
   const getSportHeaderColor = (sport: SportCategory) => {
-    if (sport === 'Cycling') return 'bg-[#0284C7] text-white';
-    if (sport === 'Running') return 'bg-[#059669] text-white';
-    if (sport === 'Swimming') return 'bg-[#0D9488] text-white';
-    if (sport === 'Strength') return 'bg-[#7C3AED] text-white';
-    return 'bg-[#43584B] text-white';
+    if (sport === 'Cycling') return 'bg-[#0369A1] text-white';
+    if (sport === 'Running') return 'bg-[#047857] text-white';
+    if (sport === 'Swimming') return 'bg-[#0F766E] text-white';
+    if (sport === 'Strength') return 'bg-[#6D28D9] text-white';
+    return 'bg-[#33463A] text-white';
   };
 
   const getSportIcon = (sport: SportCategory, className = 'w-3.5 h-3.5') => {
@@ -1857,14 +1859,14 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                           </button>
                         </div>
 
-                        {/* Planned Effort Stripe (strictly scheduled workouts only) */}
-                        {showDayEffortStripe && dayStripe && (
+                        {/* Planned Effort Stripe (Compact strip only when day also has completed sessions; avoids double-render with planned card below) */}
+                        {showDayEffortStripe && dayStripe && day.dayActivities.length > 0 && (
                           <button
                             type="button"
                             onClick={() =>
                               handleOpenBuilderForDate(day.dateStr, dayStripe.primaryEvent)
                             }
-                            className="w-full text-left rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-2 space-y-1"
+                            className="w-full text-left rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-[#101B15]/80 p-2 space-y-1"
                           >
                             <div className="flex items-center justify-between gap-2 text-2xs">
                               <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
@@ -1876,8 +1878,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                 Rx: {dayStripe.workoutName}
                               </span>
                               <span
-                                className="font-mono font-bold shrink-0"
-                                style={{ color: dayStripe.dominantZone.color }}
+                                className={`font-mono font-bold shrink-0 ${dayStripe.dominantZone.inkClass}`}
                               >
                                 {dayStripe.dominantZone.code} · {dayStripe.totalDurationMins}m
                               </span>
@@ -1976,7 +1977,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="min-w-0">
-                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug">
                                     {ev.name}
                                   </div>
                                   <div className="mt-0.5 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00] font-semibold">
@@ -2319,11 +2320,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                               <div className="flex items-center justify-between gap-1">
                                 {plannedStripe ? (
                                   <span
-                                    className="text-2xs font-mono font-bold px-1 py-0.2 rounded-xs leading-tight"
-                                    style={{
-                                      backgroundColor: `${plannedStripe.dominantZone.color}22`,
-                                      color: plannedStripe.dominantZone.color,
-                                    }}
+                                    className={`text-2xs font-mono font-bold px-1 py-0.2 rounded-xs leading-tight bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${plannedStripe.dominantZone.inkClass}`}
                                     title={`Planned Target Zone: ${plannedStripe.dominantZone.code} ${plannedStripe.dominantZone.name}`}
                                   >
                                     {plannedStripe.dominantZone.code}
@@ -2356,8 +2353,10 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                 </button>
                               </div>
 
-                              {/* SMALL DIMENSIONAL DAILY PLANNED WORKOUT EFFORT SKYLINE (Strictly scheduled workouts only) */}
-                              {showDayEffortStripe && plannedStripe && (
+                              {/* SMALL DIMENSIONAL DAILY PLANNED WORKOUT EFFORT SKYLINE (Compact stripe only when day also has completed sessions; avoids double-render with planned card below) */}
+                              {showDayEffortStripe &&
+                                plannedStripe &&
+                                cell.dayActivities.length > 0 && (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -2391,7 +2390,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                       prev?.dateStr === cell.dateStr ? null : prev
                                     )
                                   }
-                                  className="w-full text-left group/stripe rounded-xs overflow-hidden border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/60 transition-colors focus:outline-hidden"
+                                  className="w-full text-left group/stripe rounded-xs overflow-hidden border border-slate-200/80 dark:border-slate-800/80 hover:border-[#1C5436]/60 dark:hover:border-[#C8FF00]/60 transition-colors focus-visible:ring-2 focus-visible:ring-[#1C5436] dark:focus-visible:ring-[#C8FF00]"
                                   title={`${plannedStripe.sportCategory} (Scheduled Workout): ${plannedStripe.workoutName} (${plannedStripe.totalDurationMins}m · ~${plannedStripe.plannedLoad} TSS)\n${plannedStripe.description}\nZones: ${plannedZoneBreakdownTooltip}`}
                                 >
                                   {/* Dimensional Mini Effort Skyline with Threshold Reference */}
@@ -2417,7 +2416,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                     </div>
                                   </div>
                                   {/* Compact Micro Label with Cycling / Running Modality Icon */}
-                                  <div className="flex items-center justify-between gap-1 px-1 py-0.5 bg-slate-100/80 dark:bg-slate-900/80 group-hover/stripe:bg-blue-500/10 border-t border-slate-200/60 dark:border-slate-800/60 transition-colors">
+                                  <div className="flex items-center justify-between gap-1 px-1 py-0.5 bg-slate-100/80 dark:bg-[#101B15]/90 group-hover/stripe:bg-[#E9EFE9] dark:group-hover/stripe:bg-[#15231B] border-t border-slate-200/60 dark:border-slate-800/60 transition-colors">
                                     <span className="inline-flex items-center gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300 truncate min-w-0">
                                       {plannedStripe.sportCategory === 'Running' ? (
                                         <Footprints className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -2725,11 +2724,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                           <div className="flex items-center gap-1 text-2xs font-mono uppercase tracking-wider text-blue-600 dark:text-sky-400 font-semibold">
                                             <span>Planned · {ev.sportCategory}</span>
                                             <span
-                                              className="px-1 rounded-xs text-2xs font-bold"
-                                              style={{
-                                                backgroundColor: `${evStripe.dominantZone.color}25`,
-                                                color: evStripe.dominantZone.color,
-                                              }}
+                                              className={`px-1 rounded-xs text-2xs font-bold bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${evStripe.dominantZone.inkClass}`}
                                             >
                                               {evStripe.dominantZone.code}
                                             </span>
@@ -2737,7 +2732,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                           <button
                                             type="button"
                                             onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
-                                            className="text-left text-2xs font-bold text-slate-900 dark:text-slate-100 hover:underline truncate cursor-pointer"
+                                            className="block w-full text-left text-2xs font-bold text-slate-900 dark:text-slate-100 hover:underline line-clamp-2 leading-snug cursor-pointer"
                                             title="Click to edit workout in place"
                                           >
                                             {ev.name}
@@ -3035,11 +3030,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 </span>
                 <span className="text-slate-600 dark:text-slate-400">·</span>
                 <span
-                  className="px-1.5 py-0.2 rounded text-2xs font-bold"
-                  style={{
-                    backgroundColor: `${hoveredPrescription.stripe.dominantZone.color}22`,
-                    color: hoveredPrescription.stripe.dominantZone.color,
-                  }}
+                  className={`px-1.5 py-0.2 rounded text-2xs font-bold bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${hoveredPrescription.stripe.dominantZone.inkClass}`}
                 >
                   {hoveredPrescription.stripe.dominantZone.code}{' '}
                   {hoveredPrescription.stripe.dominantZone.name}

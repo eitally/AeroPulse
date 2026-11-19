@@ -66,6 +66,13 @@
     --ap-brand-primary: #1c5436;
     --ap-action-cobalt: #1c5436;
     --ap-thresh-vermilion: #84cc16;
+    --ap-ink-emerald: #047857;
+    --ap-ink-sky: #0369a1;
+    --ap-ink-teal: #0f766e;
+    --ap-ink-vermilion: #9a3412;
+    --ap-ink-amber: #92400e;
+    --ap-ink-rose: #be123c;
+    --ap-ink-violet: #6d28d9;
   }
 
   .dark {
@@ -80,6 +87,13 @@
     --ap-brand-primary: #c8ff00;
     --ap-action-cobalt: #c8ff00;
     --ap-thresh-vermilion: #c8ff00;
+    --ap-ink-emerald: #34d399;
+    --ap-ink-sky: #38bdf8;
+    --ap-ink-teal: #2dd4bf;
+    --ap-ink-vermilion: #fb923c;
+    --ap-ink-amber: #fbbf24;
+    --ap-ink-rose: #fb7185;
+    --ap-ink-violet: #c4b5fd;
   }
 
   html.dark.ap-midnight-slate {
@@ -148,6 +162,54 @@
   .font-mono, .tabular-nums {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: 2px solid #1c5436;
+    outline-offset: 2px;
+  }
+
+  .dark a:focus-visible,
+  .dark button:focus-visible,
+  .dark input:focus-visible,
+  .dark select:focus-visible,
+  .dark textarea:focus-visible,
+  .dark summary:focus-visible,
+  .dark [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline-color: #c8ff00;
+  }
+
+  html.dark.ap-midnight-slate a:focus-visible,
+  html.dark.ap-midnight-slate button:focus-visible,
+  html.dark.ap-midnight-slate input:focus-visible,
+  html.dark.ap-midnight-slate select:focus-visible,
+  html.dark.ap-midnight-slate textarea:focus-visible,
+  html.dark.ap-midnight-slate summary:focus-visible,
+  html.dark.ap-midnight-slate [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline-color: #d4ff33;
+  }
+
+  html.dark.ap-dusk a:focus-visible,
+  html.dark.ap-dusk button:focus-visible,
+  html.dark.ap-dusk input:focus-visible,
+  html.dark.ap-dusk select:focus-visible,
+  html.dark.ap-dusk textarea:focus-visible,
+  html.dark.ap-dusk summary:focus-visible,
+  html.dark.ap-dusk [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline-color: #fbbf24;
+  }
+
+  a:focus:not(:focus-visible),
+  button:focus:not(:focus-visible),
+  summary:focus:not(:focus-visible),
+  [tabindex]:focus:not(:focus-visible) {
+    outline: none;
   }
 }
 
@@ -296,18 +358,20 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
   gap: 0.375rem;
 }
 
-.ap-badge-volt {
-  background-color: #c8ff00;
-  color: #080a09;
-  border: 1px solid #65a30d;
-  font-weight: 700;
-}
+@layer components {
+  .ap-badge-volt {
+    background-color: #c8ff00;
+    color: #080a09;
+    border: 1px solid #65a30d;
+    font-weight: 700;
+  }
 
-.dark .ap-badge-volt {
-  background-color: #c8ff00;
-  color: #080a09;
-  border: 1px solid #a3e635;
-  font-weight: 700;
+  .dark .ap-badge-volt {
+    background-color: #c8ff00;
+    color: #080a09;
+    border: 1px solid #a3e635;
+    font-weight: 700;
+  }
 }
 
 /* Primary Card Surface — Elevates cleanly on Stadium Chalk / Carbon-Pine without GPU blur lag */
@@ -485,6 +549,9 @@ html.dark.ap-midnight-slate .ap-pill-active {
   top: 0.75rem;
   left: 0.75rem;
   z-index: 100;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
   padding: 0.625rem 1rem;
   border-radius: 0.75rem;
   background-color: #c8ff00;
@@ -504,91 +571,178 @@ html.dark.ap-midnight-slate .ap-pill-active {
   outline-offset: 2px;
 }
 
-.ap-btn-primary {
-  min-height: 2.75rem; /* 44px Apple HIG / WCAG touch target */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.75rem;
-  font-size: 0.8125rem; /* 13px */
-  font-weight: 700;
-  color: #080a09;
-  background-color: #c8ff00;
-  border: 1.5px solid #4d7c0f;
-  box-shadow: 0 2px 10px rgba(132, 204, 22, 0.28);
-  transition:
-    background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
+@layer components {
+  .ap-btn-primary {
+    min-height: 2.75rem; /* 44px Apple HIG / WCAG touch target */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.75rem;
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 700;
+    color: #080a09;
+    background-color: #c8ff00;
+    border: 1.5px solid #4d7c0f;
+    box-shadow: 0 2px 10px rgba(132, 204, 22, 0.28);
+    transition:
+      background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
-.ap-btn-primary:hover {
-  background-color: #b5eb00;
-}
+  .ap-btn-primary:hover {
+    background-color: #b5eb00;
+  }
 
-.dark .ap-btn-primary {
-  color: #080a09;
-  background-color: #c8ff00;
-  border-color: #e2ff66;
-  box-shadow: 0 2px 16px rgba(200, 255, 0, 0.26);
-}
+  .dark .ap-btn-primary {
+    color: #080a09;
+    background-color: #c8ff00;
+    border-color: #e2ff66;
+    box-shadow: 0 2px 16px rgba(200, 255, 0, 0.26);
+  }
 
-.dark .ap-btn-primary:hover {
-  background-color: #b5eb00;
-}
+  .dark .ap-btn-primary:hover {
+    background-color: #b5eb00;
+  }
 
-.ap-btn-secondary {
-  min-height: 2.75rem; /* 44px Apple HIG / WCAG touch target */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: 0.75rem;
-  font-size: 0.8125rem; /* 13px */
-  font-weight: 600;
-  color: #101411;
-  background: var(--ap-inset-bg);
-  border: 1px solid rgba(38, 88, 58, 0.22);
-  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
+  /* Secondary Stadium Pine CTA (preserves strict 80/15/5 Track Volt restraint across viewports) */
+  .ap-btn-pine {
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.95rem;
+    border-radius: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #ffffff;
+    background-color: #1c5436;
+    border: 1px solid #16422a;
+    box-shadow: 0 2px 8px rgba(28, 84, 54, 0.22);
+    transition:
+      background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
-.dark .ap-btn-secondary {
-  color: #f4f7f4;
-  border-color: rgba(57, 150, 99, 0.28);
-}
+  .ap-btn-pine:hover {
+    background-color: #16422a;
+  }
 
-.ap-btn-secondary:hover {
-  background: #dce7de;
-}
+  .dark .ap-btn-pine {
+    color: #c8ff00;
+    background-color: #15231b;
+    border-color: #399663;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  }
 
-.dark .ap-btn-secondary:hover {
-  background: #1c3125;
-}
+  .dark .ap-btn-pine:hover {
+    background-color: #1c3125;
+  }
 
-/* WCAG 2.1 AA Compliant Strava Brand Surfaces (5.44:1 white-on-vermilion CTA; >= 5.07:1 text ink) */
-.ap-btn-strava {
-  min-height: 2.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.75rem;
-  font-weight: 700;
-  color: #ffffff;
-  background-color: #c23800;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 2px 10px rgba(194, 56, 0, 0.26);
-  transition:
-    background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
+  @media (min-width: 640px) {
+    .ap-btn-pine {
+      min-height: 2.25rem;
+    }
+  }
 
-.ap-btn-strava:hover {
-  background-color: #a83000;
+  .ap-btn-secondary {
+    min-height: 2.75rem; /* 44px Apple HIG / WCAG touch target */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 0.75rem;
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 600;
+    color: #101411;
+    background: var(--ap-inset-bg);
+    border: 1px solid rgba(38, 88, 58, 0.22);
+    transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dark .ap-btn-secondary {
+    color: #f4f7f4;
+    border-color: rgba(57, 150, 99, 0.28);
+  }
+
+  .ap-btn-secondary:hover {
+    background: #dce7de;
+  }
+
+  .dark .ap-btn-secondary:hover {
+    background: #1c3125;
+  }
+
+  /* WCAG 2.1 AA Compliant Strava Brand Surfaces (5.44:1 white-on-vermilion CTA; >= 5.07:1 text ink) */
+  .ap-btn-strava {
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.75rem;
+    font-weight: 700;
+    color: #ffffff;
+    background-color: #c23800;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 2px 10px rgba(194, 56, 0, 0.26);
+    transition:
+      background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ap-btn-strava:hover {
+    background-color: #a83000;
+  }
+
+  /* AA-verified Telemetry Ink Tokens (>= 4.5:1 across Chalk, Carbon-Pine, Slate, Dusk) */
+  .ap-ink-emerald {
+    color: var(--ap-ink-emerald);
+  }
+  .ap-ink-sky {
+    color: var(--ap-ink-sky);
+  }
+  .ap-ink-teal {
+    color: var(--ap-ink-teal);
+  }
+  .ap-ink-vermilion {
+    color: var(--ap-ink-vermilion);
+  }
+  .ap-ink-amber {
+    color: var(--ap-ink-amber);
+  }
+  .ap-ink-rose {
+    color: var(--ap-ink-rose);
+  }
+  .ap-ink-violet {
+    color: var(--ap-ink-violet);
+  }
+
+  /* Mobile >=44px Ergonomic Touch Targets (WCAG 2.5.5 / 2.5.8) */
+  .ap-touch {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .ap-touch-row {
+    min-height: 2.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .ap-touch {
+      min-height: 2.25rem;
+      min-width: auto;
+    }
+
+    .ap-touch-row {
+      min-height: 2.25rem;
+    }
+  }
 }
 
 .ap-text-strava {
@@ -641,7 +795,13 @@ html.dark.ap-midnight-slate .ap-pill-active {
   width: 100%;
   max-width: 96rem;
   margin-inline: auto;
-  padding-inline: clamp(0.75rem, 2.2vw, 2rem);
+  padding-inline: 0.5rem;
+}
+
+@media (min-width: 1024px) {
+  .ap-container {
+    padding-inline: clamp(1rem, 2.2vw, 2rem);
+  }
 }
 
 .ap-toolbar-scroll {

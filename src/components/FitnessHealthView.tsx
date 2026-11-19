@@ -1224,10 +1224,10 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-slate-700 dark:text-slate-200 font-semibold">
                       Systemic CTL {dualSportLatest.systemicCtl.toFixed(1)}
                     </span>
-                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#0284C7] dark:text-sky-300 font-semibold">
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track ap-ink-sky font-semibold">
                       Bike CTL {dualSportLatest.cyclingCtl.toFixed(1)}
                     </span>
-                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track text-[#0D9488] dark:text-teal-300 font-semibold">
+                    <span className="px-2 py-0.5 rounded-md liquid-capsule-track ap-ink-teal font-semibold">
                       Run CTL {dualSportLatest.runningCtl.toFixed(1)}
                     </span>
                   </div>
@@ -1236,21 +1236,21 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     1. Central Cardiorespiratory (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
                     <span className="text-base font-bold text-slate-900 dark:text-white">
                       {orthopedicSummary.centralAutonomicLoad7d} TSS
                     </span>
-                    <span className="text-xs text-[#0284C7] dark:text-sky-300">
+                    <span className="text-xs font-semibold ap-ink-sky">
                       {orthopedicSummary.centralAcwr.toFixed(2)}x ACWR
                     </span>
                   </div>
                 </div>
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     2. Eccentric Run Impact (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1260,10 +1260,10 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span
                       className={`text-xs font-semibold ${
                         orthopedicSummary.impactAcwr >= 1.32
-                          ? 'text-[#EA580C]'
+                          ? 'ap-ink-vermilion'
                           : orthopedicSummary.impactAcwr >= 1.18
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-[#0D9488] dark:text-teal-300'
+                            ? 'ap-ink-amber'
+                            : 'ap-ink-teal'
                       }`}
                     >
                       {orthopedicSummary.impactAcwr.toFixed(2)}x ACWR
@@ -1272,7 +1272,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 </div>
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
-                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     3. Concentric Bike Torque (7d)
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1289,7 +1289,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   data-testid="ortho-spike-budget-tile"
                   className="rounded-xl liquid-glass-subtle px-3.5 py-2.5"
                 >
-                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     4. Spiked-Meter &amp; Curve Budget
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
@@ -1299,10 +1299,10 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <span
                       className={`text-xs font-semibold ${
                         orthopedicSummary.trainerOnly48hLockActive
-                          ? 'text-[#EA580C] dark:text-rose-400'
+                          ? 'ap-ink-rose'
                           : orthopedicSummary.spikeGuardrailStatus === 'SPIKE_CAP_WARNING'
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-[#0D9488] dark:text-teal-300'
+                            ? 'ap-ink-amber'
+                            : 'ap-ink-teal'
                       }`}
                     >
                       {orthopedicSummary.trainerOnly48hLockActive
@@ -1863,7 +1863,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 type="button"
                 aria-expanded={false}
                 onClick={() => toggleSection('pmc')}
-                className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-badge-volt text-xs font-mono flex items-center gap-1"
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-pill-active text-xs font-mono font-bold flex items-center gap-1 cursor-pointer"
               >
                 <span>Expand Chart</span>
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -2121,7 +2121,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                         `My current Fitness (CTL) is ${latestDay.ctl}, Fatigue (ATL) is ${latestDay.atl}, Form (TSB) is ${latestDay.tsb} (${getIntervalsFormZone(latestDay.tsb).label}), Sleep Score is ${latestWithSleep.sleepScore}, and HRV is ${latestWithHrv.hrvRMSSD}ms. Analyze my fitness/fatigue trend and recommend adjustments for the coming week.`
                       );
                     }}
-                    className="w-full min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-semibold transition-all cursor-pointer"
+                    className="w-full min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-pine text-xs font-semibold transition-all cursor-pointer"
                   >
                     Ask AI Coach About My PMC
                   </button>

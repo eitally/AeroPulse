@@ -3063,20 +3063,134 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  <th className="py-3 px-4">Date &amp; Session</th>
-                  <th className="py-3 px-3">Sport &amp; Environment</th>
-                  <th className="py-3 px-3 text-right">Distance / Time</th>
-                  <th className="py-3 px-3 text-right">Output (NP / Pace)</th>
-                  <th className="py-3 px-3 text-right">HR &amp; Decoupling</th>
-                  <th className="py-3 px-3 text-right">Load &amp; Plan Compliance</th>
-                  <th className="py-3 px-3 text-center">Split Compare</th>
-                  <th className="py-3 px-4 text-right">Source</th>
-                </tr>
-              </thead>
+          <div>
+            {/* Mobile Stacked Cards (RT-23 / UX-09: zero 8-column horizontal clipping on phones) */}
+            <div
+              data-testid="activities-mobile-cards"
+              className="md:hidden divide-y divide-slate-200 dark:divide-slate-800"
+            >
+              {filteredActivities.slice(0, visibleLimit).map((act) => {
+                const isCompareA = compareIdA === act.id;
+                const isCompareB = compareIdB === act.id;
+                const isPaceSport = Boolean(
+                  act.avgPaceSecsPerKm &&
+                    (act.sportCategory === 'Running' ||
+                      act.sportCategory === 'Swimming' ||
+                      act.sportCategory === 'Multisport' ||
+                      act.subType === 'Rowing' ||
+                      act.subType === 'Hiking' ||
+                      act.subType === 'Walking' ||
+                      act.subType === 'Nordic Ski' ||
+                      act.subType === 'Paddling & Water')
+                );
+                const outputSummary = isPaceSport && act.avgPaceSecsPerKm
+                  ? formatMultiSportPace(
+                      act.avgPaceSecsPerKm,
+                      distanceUnit,
+                      act.sportCategory,
+                      act.subType
+                    )
+                  : act.normalizedPower
+                    ? `NP ${act.normalizedPower}W`
+                    : '—';
+                return (
+                  <div
+                    key={`mob-${act.id}`}
+                    className="p-3.5 space-y-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectActivity(act);
+                        setStreamHoverIndex(null);
+                      }}
+                      className="w-full text-left min-h-[44px] space-y-1.5 cursor-pointer rounded-lg"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-snug">
+                            {act.name}
+                          </div>
+                          <div className="text-2xs font-mono text-slate-600 dark:text-slate-300 mt-0.5">
+                            {act.startDateLocal.slice(0, 10)} · {act.sportCategory} ·{' '}
+                            {act.environment === 'INDOOR' ? 'Indoor' : 'Outdoor'}
+                          </div>
+                        </div>
+                        <span className="shrink-0 font-mono text-xs font-bold ap-ink-sky">
+                          {act.trainingLoad} TSS
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-2xs font-mono tabular-nums text-slate-700 dark:text-slate-200">
+                        <div>
+                          <span className="block text-slate-500 dark:text-slate-400">Dist / Time</span>
+                          <span className="font-semibold">
+                            {act.distanceMeters > 0
+                              ? formatDistance(act.distanceMeters, distanceUnit, 1)
+                              : formatDuration(act.movingTimeSecs)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-slate-500 dark:text-slate-400">Output</span>
+                          <span className="font-semibold">{outputSummary}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="block text-slate-500 dark:text-slate-400">Avg HR</span>
+                          <span className="font-semibold">
+                            {act.avgHr > 0 ? `${act.avgHr} bpm` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                    <div className="flex items-center justify-between gap-2 pt-1 text-2xs font-mono">
+                      <span className="text-slate-500 dark:text-slate-400 truncate">
+                        {act.sourceBadges.join(' + ')}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAssignToCompareSlot(act, 'A')}
+                          aria-label={`Set ${act.name} as Workout A`}
+                          className={`ap-touch px-2.5 rounded text-xs font-mono font-bold cursor-pointer ${
+                            isCompareA
+                              ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
+                              : 'border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          A
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAssignToCompareSlot(act, 'B')}
+                          aria-label={`Set ${act.name} as Workout B`}
+                          className={`ap-touch px-2.5 rounded text-xs font-mono font-bold cursor-pointer ${
+                            isCompareB
+                              ? 'bg-amber-500 text-[#080A09]'
+                              : 'border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          B
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    <th scope="col" className="py-3 px-4">Date &amp; Session</th>
+                    <th scope="col" className="py-3 px-3">Sport &amp; Environment</th>
+                    <th scope="col" className="py-3 px-3 text-right">Distance / Time</th>
+                    <th scope="col" className="py-3 px-3 text-right">Output (NP / Pace)</th>
+                    <th scope="col" className="py-3 px-3 text-right">HR &amp; Decoupling</th>
+                    <th scope="col" className="py-3 px-3 text-right">Load &amp; Plan Compliance</th>
+                    <th scope="col" className="py-3 px-3 text-center">Split Compare</th>
+                    <th scope="col" className="py-3 px-4 text-right">Source</th>
+                  </tr>
+                </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                 {filteredActivities.slice(0, visibleLimit).map((act) => {
                   const isSelected = selectedActivity?.id === act.id;
@@ -3323,6 +3437,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 })}
               </tbody>
             </table>
+            </div>
 
             {filteredActivities.length > visibleLimit && (
               <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-center">
@@ -4654,8 +4769,8 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                           <span
                             className={`px-1.5 py-0.2 rounded text-2xs font-mono font-bold ${
                               showAutoZoneInsight
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                                ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                             }`}
                           >
                             {showAutoZoneInsight ? 'ON' : 'OFF'}
@@ -4691,7 +4806,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       <div className="rounded-xl bg-indigo-500/8 dark:bg-indigo-500/12 border border-indigo-500/30 p-3.5 space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600 text-white text-2xs font-mono font-bold uppercase tracking-wider">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] text-2xs font-mono font-bold uppercase tracking-wider">
                               <Sparkles className="w-3 h-3" />
                               Auto-Zone Coach Overlay
                             </span>

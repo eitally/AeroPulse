@@ -2212,7 +2212,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   type="button"
                   onClick={() => handleRemoveWalkOn(w.id)}
                   aria-label={`Remove ${w.name}`}
-                  className="text-rose-600 dark:text-rose-400 font-bold hover:underline cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-[28px] inline-flex items-center justify-center rounded-md text-rose-700 dark:text-rose-400 font-bold hover:bg-rose-500/10 cursor-pointer"
                 >
                   ×
                 </button>

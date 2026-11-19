@@ -315,7 +315,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     onSelectActiveTeam(e.target.value ? e.target.value : null)
                   }
                   aria-label="Switch Active Team Workspace"
-                  className="bg-transparent text-2xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer max-w-[110px] truncate"
+                  className="bg-transparent text-2xs font-mono font-bold text-slate-800 dark:text-slate-100 cursor-pointer max-w-[110px] truncate rounded"
                 >
                   {myTeams.map((t) => (
                     <option
@@ -501,7 +501,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     setSelectedActivity(null);
                   }}
                   aria-label="Switch Active Athlete Profile"
-                  className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-0.5 max-w-[130px] truncate"
+                  className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer pr-0.5 max-w-[130px] truncate rounded"
                 >
                   <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                     {primaryAthleteDisplayName} (You)
@@ -955,7 +955,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     onSelectActiveTeam(e.target.value ? e.target.value : null)
                   }
                   aria-label="Switch Active Team Workspace (Mobile)"
-                  className="bg-transparent text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[110px] truncate"
+                  className="bg-transparent text-xs font-mono font-bold text-slate-800 dark:text-slate-100 max-w-[110px] truncate rounded"
                 >
                   {myTeams.map((t) => (
                     <option
@@ -986,7 +986,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     setSelectedActivity(null);
                   }}
                   aria-label="Switch Active Athlete Profile (Mobile)"
-                  className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 focus:outline-none max-w-[125px] truncate"
+                  className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 max-w-[125px] truncate rounded"
                 >
                   <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                     {primaryAthleteDisplayName} (You)
