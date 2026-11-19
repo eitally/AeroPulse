@@ -50,8 +50,44 @@ export function decodeGooglePolyline(encoded: string): [number, number][] {
   return points;
 }
 
+export interface RawIntervalsSegment {
+  id?: string | number;
+  segment_id?: string | number;
+  name?: string;
+  starred?: boolean;
+  start_index?: number;
+  end_index?: number;
+}
+
+export interface ComputedIntervalsSegmentEffort {
+  id: string;
+  segmentId: string;
+  name: string;
+  sportCategory: 'Cycling' | 'Running';
+  distanceMeters: number;
+  averageGradePct: number;
+  elapsedTimeSecs: number;
+  movingTimeSecs: number;
+  avgWatts?: number;
+  avgPaceSecsPerKm?: number;
+  avgHr?: number;
+  prRank: 1 | 2 | 3 | null;
+  komRank: number | null;
+  starred: boolean;
+  startDateLocal: string;
+  activityId: string;
+  activityName: string;
+  startTimeSecs: number;
+  endTimeSecs: number;
+  startIndex: number;
+  endIndex: number;
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
+  pathLatLngs?: [number, number][];
+}
+
 export function computeIntervalsSegmentEfforts(
-  rawSegments: any[],
+  rawSegments: RawIntervalsSegment[],
   rawStreams: { type: string; data: number[]; data2?: number[] }[],
   act: {
     id: string;
@@ -60,7 +96,7 @@ export function computeIntervalsSegmentEfforts(
     sportCategory: string;
     avgHr?: number;
   }
-) {
+): ComputedIntervalsSegmentEffort[] {
   if (!Array.isArray(rawSegments) || rawSegments.length === 0) return [];
   const fullStreamMap: Record<string, number[]> = {};
   let latArr: number[] = [];
@@ -82,7 +118,7 @@ export function computeIntervalsSegmentEfforts(
   const hrArr = fullStreamMap.heartrate || [];
   const altArr = fullStreamMap.altitude || [];
 
-  const efforts: any[] = [];
+  const efforts: ComputedIntervalsSegmentEffort[] = [];
   for (let idx = 0; idx < rawSegments.length; idx++) {
     const seg = rawSegments[idx];
     if (!seg || (!seg.segment_id && !seg.id)) continue;
@@ -231,7 +267,7 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
       res.status(actResp.status).json({ error: 'Unable to fetch Intervals.icu activities list' });
       return;
     }
-    const rawActivities = (await actResp.json()) as Record<string, any>[];
+    const rawActivities = (await actResp.json()) as Record<string, unknown>[];
     const segmentsCache = loadJsonFile<Record<string, any[]>>(scopedSegmentsFile, {});
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
       scopedRoutesFile,
@@ -263,7 +299,7 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
               ),
             ]);
             if (segResp.ok && stResp.ok) {
-              const rawSegs = (await segResp.json()) as any[];
+              const rawSegs = (await segResp.json()) as RawIntervalsSegment[];
               const rawStreams = (await stResp.json()) as {
                 type: string;
                 data: number[];
@@ -376,7 +412,7 @@ activitiesRouter.post('/api/activities/hydrate-routes', async (req: Request, res
         { headers: { Authorization: authHeader, Accept: 'application/json' } }
       );
       if (actResp.ok) {
-        const rawActs = (await actResp.json()) as Record<string, any>[];
+        const rawActs = (await actResp.json()) as Record<string, unknown>[];
         activityIds = rawActs
           .filter(
             (a) =>

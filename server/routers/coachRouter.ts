@@ -90,9 +90,62 @@ export function getGeminiClient(req?: Request): GoogleGenAI | null {
   });
 }
 
+export interface CoachTelemetrySummary {
+  latestWellness?: {
+    ctl?: number | null;
+    atl?: number | null;
+    tsb?: number | null;
+    hrvRMSSD?: number | null;
+    hrvBaseline7d?: number | null;
+    hrvStatus?: string | null;
+    sleepScore?: number | null;
+    sleepSecs?: number | null;
+    garminTrainingStatus?: string | null;
+  };
+  athleteThresholds?: {
+    ftp?: number | null;
+    lthr?: number | null;
+    runLthr?: number | null;
+  };
+  athleteProfile?: {
+    safeSportHideWeight?: boolean;
+    birthMonthYear?: string;
+  };
+  safeSportHideWeight?: boolean;
+  enforceZeroWeight?: boolean;
+  birthMonthYear?: string;
+  isMinorU18?: boolean;
+}
+
+export interface ProposedCoachWorkout {
+  id: string;
+  date: string;
+  name: string;
+  sportCategory: string;
+  environmentPreference: string;
+  description: string;
+  plannedLoad: number;
+  plannedDurationSecs: number;
+  targetZoneSummary: string;
+  workoutSyntax: string;
+  structuredSteps: ReturnType<typeof parseWorkoutSyntaxToSteps>;
+  source: 'AI_COACH';
+}
+
+interface RawAiProposedWorkout {
+  date?: string;
+  name?: string;
+  sportCategory?: string;
+  environmentPreference?: string;
+  description?: string;
+  plannedLoad?: number | string;
+  plannedDurationSecs?: number | string;
+  workoutSyntax?: string;
+}
+
 export async function generateGeminiContentWithFallback(
   ai: GoogleGenAI,
-  params: { contents: string; config?: Record<string, any> }
+  params: { contents: string; config?: Record<string, unknown> }
 ) {
   const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
   let lastError: unknown = null;
@@ -121,7 +174,7 @@ export function buildDeterministicDailyWorkoutOptions(
   sportPreference: string,
   environmentPreference: string,
   durationMinutes: number,
-  telemetrySummary: Record<string, any> = {}
+  telemetrySummary: CoachTelemetrySummary = {}
 ) {
   const w = telemetrySummary?.latestWellness || {};
   const t = telemetrySummary?.athleteThresholds || {};
@@ -215,7 +268,7 @@ export function buildDeterministicDailyWorkoutOptions(
 
 export function buildDeterministicCoachChatResponse(
   message: string,
-  telemetrySummary: Record<string, any> = {},
+  telemetrySummary: CoachTelemetrySummary = {},
   todayStr: string
 ) {
   const w = telemetrySummary?.latestWellness || {};
@@ -257,7 +310,7 @@ export function buildDeterministicCoachChatResponse(
   if (runLthr) citedMetrics.push(`Run LTHR ${runLthr} bpm`);
 
   let reply = '';
-  const proposedWorkouts: any[] = [];
+  const proposedWorkouts: ProposedCoachWorkout[] = [];
 
   if (wantsMultiDay) {
     reply = `### Microcycle Prescription (${todayStr})\n\nHere is your adaptive training microcycle structured against your physiological metrics:\n\n` +
@@ -343,7 +396,7 @@ export function buildDeterministicCoachChatResponse(
 
 async function resolveCallerYouthSafeguardStatus(
   req: Request,
-  telemetrySummary: any
+  telemetrySummary?: CoachTelemetrySummary
 ): Promise<{ isMinorU18: boolean; forceZeroWeight: boolean }> {
   let isMinorU18 = false;
   let forceZeroWeight = Boolean(
@@ -633,9 +686,13 @@ ${message}
     });
 
     const rawText = (response.text ?? '{}').trim();
-    const parsed = JSON.parse(rawText);
+    const parsed = JSON.parse(rawText) as {
+      reply?: string;
+      citedMetrics?: string[];
+      proposedWorkouts?: RawAiProposedWorkout[];
+    };
     const proposedWorkouts = Array.isArray(parsed.proposedWorkouts)
-      ? parsed.proposedWorkouts.map((pw: any, i: number) => {
+      ? parsed.proposedWorkouts.map((pw, i: number) => {
           const dur = Number(pw.plannedDurationSecs || 3600);
           const syntax = String(pw.workoutSyntax || '- 15m 65% FTP\n- 30m 85% FTP\n- 15m 55% FTP');
           return {
