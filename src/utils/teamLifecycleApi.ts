@@ -1,4 +1,4 @@
-import type { TeamSummaryWithRole, ThreshUser } from '../types.ts';
+import type { CoachDataSharingTier, TeamSummaryWithRole, ThreshUser } from '../types.ts';
 import { getSavedIntervalsHeaders } from './telemetryStorage.ts';
 
 export function buildThreshSessionHeaders(): Record<string, string> {
@@ -41,6 +41,17 @@ export function revokeGuardianCcApi(teamId: string, origin?: string) {
   return requestLifecycleJson<{ teams?: TeamSummaryWithRole[] }>(
     `/api/teams/${encodeURIComponent(teamId)}/members/me/guardian`,
     { method: 'DELETE', body: JSON.stringify({ origin }) }
+  );
+}
+
+export function updateMyTeamSharingTierApi(
+  teamId: string,
+  sharingTier: CoachDataSharingTier,
+  origin?: string
+) {
+  return requestLifecycleJson<{ team?: TeamSummaryWithRole; teams?: TeamSummaryWithRole[] }>(
+    `/api/teams/${encodeURIComponent(teamId)}/members/me/sharing-tier`,
+    { method: 'PATCH', body: JSON.stringify({ sharingTier, origin }) }
   );
 }
 

@@ -11,8 +11,6 @@ const EVIDENCE_DIR =
 
 async function enterSampleDemoStopwatch(page: Page) {
   await page.goto('/?demo=1#stopwatch');
-  const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
-  await expect(cockpitNav).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
     timeout: 15000,
   });

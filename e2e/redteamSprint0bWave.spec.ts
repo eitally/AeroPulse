@@ -35,6 +35,10 @@ async function signInAndEnterWorkspace(
 }
 
 async function openCoachStopwatchSubTab(page: Page) {
+  const gunBtn = page.getByTestId('stopwatch-gun-btn');
+  if (await gunBtn.isVisible().catch(() => false)) {
+    return;
+  }
   const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);
   if (isMobile) {
     const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
@@ -45,7 +49,7 @@ async function openCoachStopwatchSubTab(page: Page) {
     await expect(subTabBtn).toBeVisible({ timeout: 10000 });
     await subTabBtn.click();
   }
-  await expect(page.getByTestId('stopwatch-gun-btn')).toBeVisible({ timeout: 10000 });
+  await expect(gunBtn).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () => {
@@ -227,11 +231,10 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     await expect(feedback).toBeVisible();
     await expect(feedback).toContainText(/walk-on/i);
 
-    // Reload while still offline for stopwatch sync -> outbox banner must persist
+    // Reload while still offline for stopwatch sync -> #coach/stopwatch hash keeps Coach Stopwatch open & outbox banner persists
     await page.reload();
-    await expect(page.getByTestId('toggle-coach-workspace')).toBeVisible({ timeout: 15000 });
-    await page.getByTestId('toggle-coach-workspace').click();
-    await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 15000 });
+    const coachView = page.getByTestId('coach-workspace-view');
+    await expect(coachView).toBeVisible({ timeout: 15000 });
     await openCoachStopwatchSubTab(page);
 
     await expect(page.getByTestId('stopwatch-outbox-banner')).toBeVisible({ timeout: 10000 });

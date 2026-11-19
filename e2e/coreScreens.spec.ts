@@ -255,7 +255,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
       await enterSampleDemoMode(page);
       const desktopNav = page.locator('nav[aria-label="Primary workspaces"]');
-      for (const label of ['Today', 'Training Calendar', 'Plan Builder']) {
+      for (const label of ['Today', 'Training Calendar', 'Progress', 'Plan Builder']) {
         await expect(desktopNav.getByRole('link', { name: label })).toBeVisible();
       }
       await expect(desktopNav.getByRole('link', { name: 'Stopwatch' })).toHaveCount(0);
@@ -401,20 +401,14 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
     });
 
     test('5b. Trackside Stopwatch Workspace (Mobile 390) — Light and Dark Mode', async ({ page }) => {
-      await enterSampleDemoMode(page, '#stopwatch');
-      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
-      await page.reload();
+      await enterSampleDemoMode(page);
 
-      await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
-        timeout: 15000,
-      });
-
-      // Verify 3-tab Athlete MobileDock switches cleanly to 4-tab Coach MobileDock and back
+      // Verify 4-pillar Athlete MobileDock switches cleanly to 4-tab Coach MobileDock and hides inside Stopwatch
       const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
-      for (const label of ['Today', 'Calendar', 'Plan Builder']) {
+      for (const label of ['Today', 'Calendar', 'Progress', 'Plan Builder']) {
         await expect(mobileDock.getByRole('button', { name: label })).toBeVisible();
       }
-      await expect(mobileDock.getByRole('button', { name: 'Calendar' })).toHaveAttribute('aria-current', 'page');
+      await expect(mobileDock.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
 
       await page.getByTestId('toggle-coach-workspace').click();
       for (const label of ['Clipboard', 'Team Plan', 'Stopwatch', 'Roster']) {
@@ -424,6 +418,9 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
         timeout: 10000,
       });
+      await expect(mobileDock).toHaveCount(0);
+      await expect(page.getByTestId('stopwatch-mobile-thumb-bar')).toBeVisible();
+
       await page.getByTestId('toggle-coach-workspace').click();
       await expect(mobileDock.getByRole('button', { name: 'Today' })).toBeVisible();
       await mobileDock.getByRole('button', { name: 'Calendar' }).click();
@@ -431,6 +428,13 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.getByTestId('log-open-stopwatch-btn').click();
       await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
         timeout: 10000,
+      });
+      await expect(mobileDock).toHaveCount(0);
+      await expect(page.getByTestId('stopwatch-mobile-thumb-bar')).toBeVisible();
+      await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+        timeout: 15000,
       });
 
       // Add walk-on athlete and record 1 split so mobile cards showcase active timing

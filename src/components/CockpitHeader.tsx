@@ -24,6 +24,7 @@ import {
   ClipboardText,
   Sliders,
   Timer,
+  TrendingUp,
   HelpCircle,
   LogOut,
 } from './icons/PhosphorIcons';
@@ -83,6 +84,9 @@ export interface CockpitHeaderProps {
   onOpenGuide: () => void;
   distanceUnit: DistanceUnit;
   setDistanceUnit: (unit: DistanceUnit) => void;
+  isSampleDemoMode?: boolean;
+  plainLanguageMode?: boolean;
+  onTogglePlainLanguage?: () => void;
   onLogoutSession: () => void;
   onLogoutAndClearData: () => Promise<void>;
   isAccountMenuOpen?: boolean;
@@ -133,6 +137,9 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   onOpenGuide,
   distanceUnit,
   setDistanceUnit,
+  isSampleDemoMode = false,
+  plainLanguageMode = false,
+  onTogglePlainLanguage,
   onLogoutSession,
   onLogoutAndClearData,
   isAccountMenuOpen: controlledOpen,
@@ -143,6 +150,22 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   const [internalOpen, setInternalOpen] = useState(false);
   const internalMenuRef = useRef<HTMLDivElement>(null);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
+
+  const hasCoachOnboardingRole = (() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        sessionStorage.getItem('thresh_onboarding_role') === 'COACH'
+      );
+    } catch {
+      return false;
+    }
+  })();
+  const showCoachSwitchInHeader =
+    activeTab === 'coach' ||
+    myTeams.length > 0 ||
+    isSampleDemoMode ||
+    hasCoachOnboardingRole;
 
   const hasStoredStopwatchSession = () => {
     try {
@@ -258,50 +281,52 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               )}
             </a>
 
-            <button
-              type="button"
-              data-testid="toggle-coach-workspace"
-              aria-label={
-                activeTab === 'coach'
-                  ? 'Return to My Training'
-                  : activeTeam
-                    ? `Open Coach Workspace (${activeTeam.brand.shortName || activeTeam.brand.name})`
-                    : 'Open Coach Workspace'
-              }
-              onClick={() => {
-                if (activeTab !== 'coach' && activeViewedAthleteId !== 'SELF') {
-                  setActiveViewedAthleteId('SELF');
-                  setSelectedActivity(null);
+            {showCoachSwitchInHeader && (
+              <button
+                type="button"
+                data-testid="toggle-coach-workspace"
+                aria-label={
+                  activeTab === 'coach'
+                    ? 'Return to My Training'
+                    : activeTeam
+                      ? `Open Coach Workspace (${activeTeam.brand.shortName || activeTeam.brand.name})`
+                      : 'Open Coach Workspace'
                 }
-                setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach');
-              }}
-              className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                activeTab === 'coach'
-                  ? 'ap-nav-volt-active'
-                  : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
-              }`}
-              title={
-                activeTab === 'coach'
-                  ? 'Switch back to your personal Athlete view'
-                  : 'Open full-screen Coach Workspace (Clipboard, Team Plan, Stopwatch & Roster)'
-              }
-            >
-              {activeTab === 'coach' ? (
-                <>
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span className="sm:hidden">Exit</span>
-                  <span className="hidden sm:inline">My Training</span>
-                </>
-              ) : (
-                <>
-                  <Users className="w-3.5 h-3.5 ap-text-brand" />
-                  <span>Coach</span>
-                </>
-              )}
-            </button>
+                onClick={() => {
+                  if (activeTab !== 'coach' && activeViewedAthleteId !== 'SELF') {
+                    setActiveViewedAthleteId('SELF');
+                    setSelectedActivity(null);
+                  }
+                  setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach');
+                }}
+                className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                  activeTab === 'coach'
+                    ? 'ap-nav-volt-active'
+                    : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
+                }`}
+                title={
+                  activeTab === 'coach'
+                    ? 'Switch back to your personal Athlete view'
+                    : 'Open full-screen Coach Workspace (Clipboard, Team Plan, Stopwatch & Roster)'
+                }
+              >
+                {activeTab === 'coach' ? (
+                  <>
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span className="sm:hidden">Exit</span>
+                    <span className="hidden sm:inline">My Training</span>
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-3.5 h-3.5 ap-text-brand" />
+                    <span>Coach</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {myTeams.length > 1 && activeTab !== 'coach' && (
-              <div className="hidden 2xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
+              <div className="hidden xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{
@@ -382,7 +407,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             )}
           </div>
 
-          {/* 2. Center: 3-Pillar Athlete Nav (Today | Training Calendar | Plan Builder) OR Coach Mode 4 Tabs */}
+          {/* 2. Center: 4-Pillar Athlete Nav (Today | Training Calendar | Progress | Plan Builder) OR Coach Mode 4 Tabs */}
           <nav
             aria-label="Primary workspaces"
             className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
@@ -426,8 +451,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     id: 'fitness',
                     label: 'Today',
                     icon: HeartPulse,
-                    href: '#fitness',
-                    match: ['fitness', 'curves', 'trends', 'charts'],
+                    href: '#today',
+                    match: ['fitness'],
                   },
                   {
                     id: 'calendar',
@@ -435,6 +460,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     icon: Calendar,
                     href: '#calendar',
                     match: ['calendar', 'activities', 'stopwatch'],
+                  },
+                  {
+                    id: 'curves',
+                    label: 'Progress',
+                    icon: TrendingUp,
+                    href: '#progress',
+                    match: ['curves', 'trends', 'charts'],
                   },
                   {
                     id: 'totals',
@@ -716,10 +748,12 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     >
                       <span className="flex items-center gap-2 font-medium">
                         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Connections &amp; Privacy</span>
+                        <span>Account, Teams &amp; Privacy</span>
                       </span>
                       <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
-                        1:1
+                        {myTeams.length > 0
+                          ? `${myTeams.length} team${myTeams.length === 1 ? '' : 's'}`
+                          : 'Privacy'}
                       </span>
                     </button>
 
@@ -810,6 +844,31 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         ))}
                       </div>
                     </div>
+
+                    {onTogglePlainLanguage && (
+                      <div className="flex items-center justify-between px-2">
+                        <span
+                          className="text-slate-600 dark:text-slate-300 font-medium"
+                          title="Simplify readiness and workload terms on Today"
+                        >
+                          Plain Language Labels
+                        </span>
+                        <button
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={plainLanguageMode}
+                          data-testid="toggle-plain-language"
+                          onClick={onTogglePlainLanguage}
+                          className={`min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-lg font-mono text-2xs font-semibold transition-all cursor-pointer ${
+                            plainLanguageMode
+                              ? 'ap-nav-volt-active'
+                              : 'liquid-capsule-track text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {plainLanguageMode ? 'Plain On' : 'Standard'}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Daytime & Sundown P2 Midnight Slate Appearance */}
                     {onSelectDaytimePalette && onSelectSundownPolicy && (

@@ -11,6 +11,12 @@ const EVIDENCE_DIR =
 
 async function enterSampleDemoMode(page: Page, hash = '') {
   await page.goto(`/?demo=1${hash}`);
+  if (hash === '#stopwatch') {
+    await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+      timeout: 15000,
+    });
+    return;
+  }
   const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
   await expect(cockpitNav).toBeVisible({ timeout: 15000 });
 }
@@ -93,7 +99,7 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
 
       await page.getByTestId('stopwatch-mode-race').click();
       await page.getByTestId('runner-card-0').click();
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(400);
       await page.getByTestId('runner-card-0').click();
 
       const passportBtn = page.getByTestId('stopwatch-mint-passports-btn');

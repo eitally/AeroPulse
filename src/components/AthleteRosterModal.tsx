@@ -17,6 +17,7 @@ import type {
   AthleteConnectionRole,
   AthletePrivacySettings,
   AthleteProfile,
+  CoachDataSharingTier,
   ConnectedAthleteRecord,
   DistanceUnit,
   PrivacyVisibilityTier,
@@ -31,6 +32,7 @@ import {
   deleteAccountApi,
   leaveOrGraduateTeamApi,
   revokeGuardianCcApi,
+  updateMyTeamSharingTierApi,
 } from '../utils/teamLifecycleApi';
 
 export type RosterTab =
@@ -132,6 +134,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const [privacyActionMsg, setPrivacyActionMsg] = useState<string | null>(null);
   const [privacyActionErr, setPrivacyActionErr] = useState<string | null>(null);
   const [busyTeamActionId, setBusyTeamActionId] = useState<string | null>(null);
+  const [confirmLeaveTeamId, setConfirmLeaveTeamId] = useState<string | null>(null);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -154,6 +157,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
       if (Array.isArray(data.teams)) {
         onTeamsUpdated?.(data.teams, data.teams[0]?.brand?.teamId ?? null);
       }
+      setConfirmLeaveTeamId(null);
       setPrivacyActionMsg(
         mode === 'GRADUATE_ALUMNI'
           ? 'Moved to Alumni. Your official race marks remain credited while live wellness sharing is stopped.'
@@ -178,6 +182,34 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
       setPrivacyActionMsg('Parent/guardian email CC removed for this team.');
     } catch (err) {
       setPrivacyActionErr(err instanceof Error ? err.message : 'Could not remove parent/guardian CC.');
+    } finally {
+      setBusyTeamActionId(null);
+    }
+  };
+
+  const handleUpdateTeamSharingTier = async (
+    teamId: string,
+    tier: CoachDataSharingTier
+  ) => {
+    setBusyTeamActionId(teamId);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      const data = await updateMyTeamSharingTierApi(teamId, tier);
+      if (Array.isArray(data.teams)) {
+        onTeamsUpdated?.(data.teams, activeTeamId);
+      }
+      setPrivacyActionMsg(
+        tier === 'LOAD_ONLY'
+          ? 'Updated team sharing to Load & Readiness Only. Activity history cleared from coach feed.'
+          : tier === 'SUMMARY_ONLY'
+            ? 'Updated team sharing to Workout Summaries (No GPS).'
+            : 'Updated team sharing to Full 1Hz Streams & Splits.'
+      );
+    } catch (err) {
+      setPrivacyActionErr(
+        err instanceof Error ? err.message : 'Could not update team data sharing tier.'
+      );
     } finally {
       setBusyTeamActionId(null);
     }
@@ -277,6 +309,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     if (!isOpen) {
       setBackdropRunningNotice(false);
       setConfirmDeleteAthleteId(null);
+      setConfirmLeaveTeamId(null);
     }
   }, [isOpen]);
 
@@ -350,10 +383,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 id="thresh-roster-modal-title"
                 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white"
               >
-                Connections &amp; Privacy
+                Account, Teams &amp; Privacy
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-300 hidden sm:block">
-                Manage 1:1 follow codes and control what teammates or coaches can see.
+                Manage team sharing tiers, 1:1 follow codes, login email, and privacy controls.
               </p>
             </div>
           </div>
@@ -897,11 +930,18 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         (team.brand.orgType === 'HIGH_SCHOOL' ||
                           team.brand.orgType === 'COLLEGIATE') &&
                         mine?.status !== 'ALUMNI';
+                      const minorConsentLocked = Boolean(
+                        mine?.isMinorU18 && mine.parentConsentStatus !== 'ACKNOWLEDGED'
+                      );
+                      const effectiveTier: CoachDataSharingTier =
+                        mine?.sharingTier || 'SUMMARY_ONLY';
+                      const isConfirmingLeave =
+                        confirmLeaveTeamId === team.brand.teamId;
 
                       return (
                         <div
                           key={team.brand.teamId}
-                          className="py-2.5 flex flex-wrap items-center justify-between gap-2.5"
+                          className="py-3 flex flex-wrap items-center justify-between gap-2.5"
                         >
                           <div className="min-w-0">
                             <div className="text-xs font-semibold text-slate-900 dark:text-white">
@@ -910,9 +950,33 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                             <div className="text-2xs font-mono text-slate-500 dark:text-slate-400">
                               Role: {team.myRole.replace('_', ' ')}
                               {mine?.status === 'ALUMNI' ? ' · Alumni' : ''}
+                              {minorConsentLocked ? ' · Pending parent consent (Load Only)' : ''}
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
+                            {mine && mine.status !== 'ALUMNI' && (
+                              <select
+                                data-testid={`team-sharing-tier-${team.brand.teamId}`}
+                                aria-label={`Coach data sharing tier for ${team.brand.name}`}
+                                disabled={isTeamBusy}
+                                value={effectiveTier}
+                                onChange={(e) =>
+                                  void handleUpdateTeamSharingTier(
+                                    team.brand.teamId,
+                                    e.target.value as CoachDataSharingTier
+                                  )
+                                }
+                                className="min-h-[44px] sm:min-h-[36px] bg-white dark:bg-[#15231B] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100 cursor-pointer disabled:opacity-50"
+                              >
+                                <option value="LOAD_ONLY">Load &amp; Readiness Only</option>
+                                <option value="SUMMARY_ONLY" disabled={minorConsentLocked}>
+                                  Workout Summaries (No GPS)
+                                </option>
+                                <option value="FULL_STREAMS" disabled={minorConsentLocked}>
+                                  Full 1Hz Streams &amp; Splits
+                                </option>
+                              </select>
+                            )}
                             {showGuardianRemove && (
                               <button
                                 type="button"
@@ -940,19 +1004,44 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                                 Graduate to Alumni
                               </button>
                             )}
-                            {team.myRole !== 'HEAD_COACH' && (
-                              <button
-                                type="button"
-                                data-testid={`privacy-leave-team-${team.brand.teamId}`}
-                                disabled={isTeamBusy}
-                                onClick={() =>
-                                  void handleLeaveOrGraduateTeam(team.brand.teamId, 'LEAVE')
-                                }
-                                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
-                              >
-                                Leave Team (Keep My Data)
-                              </button>
-                            )}
+                            {team.myRole !== 'HEAD_COACH' &&
+                              (!isConfirmingLeave ? (
+                                <button
+                                  type="button"
+                                  data-testid={`privacy-leave-team-${team.brand.teamId}`}
+                                  disabled={isTeamBusy}
+                                  onClick={() => setConfirmLeaveTeamId(team.brand.teamId)}
+                                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
+                                >
+                                  Leave Team (Keep My Data)
+                                </button>
+                              ) : (
+                                <div className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-rose-500/35 bg-rose-500/10 px-2 py-1">
+                                  <span className="text-2xs font-medium text-rose-700 dark:text-rose-200 px-1">
+                                    Stop sharing live wellness?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    data-testid={`privacy-leave-team-confirm-${team.brand.teamId}`}
+                                    disabled={isTeamBusy}
+                                    onClick={() =>
+                                      void handleLeaveOrGraduateTeam(team.brand.teamId, 'LEAVE')
+                                    }
+                                    className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                                  >
+                                    Confirm Leave
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-testid={`privacy-leave-team-cancel-${team.brand.teamId}`}
+                                    disabled={isTeamBusy}
+                                    onClick={() => setConfirmLeaveTeamId(null)}
+                                    className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ))}
                           </div>
                         </div>
                       );

@@ -7,6 +7,7 @@ import type {
   TrackEnvironmentConditions,
   TrackFootwearClass,
   TrackLaneNumber,
+  TrackRepDistanceMeters,
   UnifiedActivity,
 } from '../types';
 import {
@@ -42,6 +43,7 @@ import {
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
+import { STORAGE_KEYS } from '../utils/storageKeys';
 import {
   countPendingStopwatchOutboxEntries,
   type StopwatchOutboxFlushResult,
@@ -98,6 +100,8 @@ export interface TracksideStopwatchViewProps {
 interface WakeLockSentinelLike {
   released: boolean;
   release: () => Promise<void>;
+  addEventListener?: (type: 'release', listener: () => void) => void;
+  removeEventListener?: (type: 'release', listener: () => void) => void;
 }
 
 const REST_OPTIONS_SECS = [0, 30, 45, 60, 90, 120, 180] as const;
@@ -187,6 +191,26 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const [showToolsDrawer, setShowToolsDrawer] = useState<boolean>(false);
   const [lastTappedRunnerId, setLastTappedRunnerId] = useState<string | null>(null);
   const tapFlashTimerRef = useRef<number | null>(null);
+  const lastRunnerTapMsRef = useRef<Map<string, number>>(new Map());
+  const holdPauseTimerRef = useRef<number | null>(null);
+  const holdPauseSucceededRef = useRef<boolean>(false);
+  const [isHoldingPause, setIsHoldingPause] = useState<boolean>(false);
+  const [customRepOverride, setCustomRepOverride] = useState<number | null>(null);
+  const [customDistOverride, setCustomDistOverride] = useState<TrackRepDistanceMeters | null>(null);
+  const [keyboardShortcutsEnabled, setKeyboardShortcutsEnabled] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined'
+        ? window.localStorage.getItem(STORAGE_KEYS.STOPWATCH_SHORTCUTS) !== '0'
+        : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    setCustomRepOverride(null);
+    setCustomDistOverride(null);
+  }, [workoutPresetId]);
 
   const activeTeam = useMemo(
     () => myTeams.find((t) => t.brand.teamId === activeTeamId) || myTeams[0] || null,
@@ -283,15 +307,30 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     return () => window.clearTimeout(timer);
   }, [copiedCsv]);
 
-  // Screen Wake Lock API while timer is active
+  // Screen Wake Lock API: keep display awake immediately while Stopwatch is active & recover after visibility changes
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
       setWakeLockState('UNSUPPORTED');
       return;
     }
     let cancelled = false;
+    let attachedSentinel: WakeLockSentinelLike | null = null;
+    const handleSentinelRelease = () => {
+      if (!cancelled) {
+        wakeLockSentinelRef.current = null;
+        setWakeLockState('IDLE');
+      }
+    };
+    const detachSentinel = () => {
+      if (attachedSentinel) {
+        attachedSentinel.removeEventListener?.('release', handleSentinelRelease);
+        attachedSentinel = null;
+      }
+    };
+
     const acquireLock = async () => {
-      if (!wakeLockEnabled || !stopwatchRunning) {
+      if (!wakeLockEnabled) {
+        detachSentinel();
         if (wakeLockSentinelRef.current && !wakeLockSentinelRef.current.released) {
           await wakeLockSentinelRef.current.release().catch(() => {});
         }
@@ -308,6 +347,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           if (cancelled) {
             await sentinel.release().catch(() => {});
           } else {
+            detachSentinel();
+            sentinel.addEventListener?.('release', handleSentinelRelease);
+            attachedSentinel = sentinel;
             wakeLockSentinelRef.current = sentinel;
             setWakeLockState('ACTIVE');
           }
@@ -320,7 +362,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     void acquireLock();
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && wakeLockEnabled && stopwatchRunning) {
+      if (document.visibilityState === 'visible' && wakeLockEnabled) {
         void acquireLock();
       }
     };
@@ -329,12 +371,33 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     return () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', handleVisibility);
+      detachSentinel();
       if (wakeLockSentinelRef.current && !wakeLockSentinelRef.current.released) {
         void wakeLockSentinelRef.current.release().catch(() => {});
         wakeLockSentinelRef.current = null;
       }
     };
-  }, [wakeLockEnabled, stopwatchRunning]);
+  }, [wakeLockEnabled]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const prevPad = document.documentElement.style.scrollPaddingBottom;
+      document.documentElement.style.scrollPaddingBottom = '104px';
+      return () => {
+        document.documentElement.style.scrollPaddingBottom = prevPad;
+        if (holdPauseTimerRef.current !== null) {
+          window.clearTimeout(holdPauseTimerRef.current);
+          holdPauseTimerRef.current = null;
+        }
+      };
+    }
+    return () => {
+      if (holdPauseTimerRef.current !== null) {
+        window.clearTimeout(holdPauseTimerRef.current);
+        holdPauseTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const playFeedback = useCallback(
     (kind: 'GUN' | 'SPLIT' | 'CHUTE' | 'BELL') => {
@@ -363,7 +426,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           const gain = ctx.createGain();
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(freq, ctx.currentTime + delaySec);
-          gain.gain.setValueAtTime(0.08, ctx.currentTime + delaySec);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime + delaySec);
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delaySec + durationSec);
           osc.connect(gain);
           gain.connect(ctx.destination);
@@ -401,13 +464,28 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     };
   }, [customWorkoutSpec, sessionTitle]);
 
-  const activeWorkoutPreset = useMemo(
+  const baseWorkoutPreset = useMemo(
     () =>
       (workoutPresetId === 'custom-plan' && customPlanPreset ? customPlanPreset : null) ||
       WORKOUT_STOPWATCH_PRESETS.find((p) => p.id === workoutPresetId) ||
       WORKOUT_STOPWATCH_PRESETS[0],
     [workoutPresetId, customPlanPreset]
   );
+
+  const activeWorkoutPreset = useMemo(() => {
+    const repCount = customRepOverride ?? baseWorkoutPreset.repCount;
+    const repDistanceMeters = customDistOverride ?? baseWorkoutPreset.repDistanceMeters;
+    const isOverridden =
+      customRepOverride !== null || customDistOverride !== null;
+    return {
+      ...baseWorkoutPreset,
+      repCount,
+      repDistanceMeters,
+      label: isOverridden
+        ? `${repCount} x ${repDistanceMeters}m · Custom`
+        : baseWorkoutPreset.label,
+    };
+  }, [baseWorkoutPreset, customRepOverride, customDistOverride]);
 
   const activeRacePreset = useMemo(
     () =>
@@ -699,6 +777,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         return;
       }
 
+      // 350ms per-runner anti-double-tap debounce prevents rain/thumb bounce from creating bogus <0.3s splits
+      const nowTapMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const prevTapMs = lastRunnerTapMsRef.current.get(telemetry.runnerId) ?? 0;
+      if (nowTapMs - prevTapMs < 350) {
+        return;
+      }
+      lastRunnerTapMsRef.current.set(telemetry.runnerId, nowTapMs);
+
       const stamped = tapRunnerSplit(telemetry.runnerId, telemetry.runnerName, {
         maxRaceLaps: targetRaceLaps,
       });
@@ -749,8 +835,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     }
   }, [undoLastSplit, playFeedback]);
 
-  // Trackside Physical Keyboard Accelerators: Space = Gun, 1–9 = Visible Lane 1–9, C = Chute Tap, Z = Undo
+  // Trackside Physical Keyboard Accelerators (WCAG 2.1.4 user-toggleable): Space = Gun, 1–9 = Lane 1–9, C = Chute, Z = Undo
   useEffect(() => {
+    if (!keyboardShortcutsEnabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
@@ -791,6 +878,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    keyboardShortcutsEnabled,
     handleGunToggle,
     handleChuteTap,
     handleUndo,
@@ -1177,10 +1265,22 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     </label>
   );
 
+  const toggleKeyboardShortcuts = () => {
+    setKeyboardShortcutsEnabled((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.STOPWATCH_SHORTCUTS, next ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   const hardwareTogglesNode = (
     <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
-      <span>Trackside Hardware</span>
-      <div className="grid grid-cols-2 gap-2">
+      <span>Trackside Hardware &amp; Keys</span>
+      <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
           aria-pressed={wakeLockEnabled}
@@ -1215,6 +1315,21 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             <SpeakerSlash className="w-3.5 h-3.5 shrink-0" weight="bold" />
           )}
           <span>{soundEnabled ? 'Beep On' : 'Muted'}</span>
+        </button>
+
+        <button
+          type="button"
+          data-testid="stopwatch-shortcuts-toggle"
+          aria-pressed={keyboardShortcutsEnabled}
+          onClick={toggleKeyboardShortcuts}
+          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1 px-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+            keyboardShortcutsEnabled
+              ? 'ap-status-info'
+              : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+          }`}
+          title="Enable or disable single-key shortcuts (Space, 1-9, C, Z)"
+        >
+          <span>{keyboardShortcutsEnabled ? 'Keys On' : 'Keys Off'}</span>
         </button>
       </div>
     </div>
@@ -1664,7 +1779,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     ) : null;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-32 md:pb-6">
       <div className="sr-only" role="status" aria-live="polite">
         {liveAnnouncement}
       </div>
@@ -1700,7 +1815,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </div>
       </div>
 
-      <section className="sticky top-[56px] z-30 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
+      <section className="md:sticky md:top-[56px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
         {/* HUD Row 1: Clock + Gun + Undo + Chute */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
@@ -1896,6 +2011,68 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         )}
 
         {heatAbortBannerNode}
+        {sessionType === 'WORKOUT' && (
+          <div
+            data-testid="stopwatch-rep-stepper"
+            className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-900/10 dark:border-white/10"
+          >
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
+                Reps
+              </span>
+              <button
+                type="button"
+                data-testid="stopwatch-rep-dec"
+                aria-label="Decrease workout rep count"
+                onClick={() =>
+                  setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
+                }
+                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-[#101411] dark:text-white cursor-pointer"
+              >
+                -
+              </button>
+              <span
+                data-testid="stopwatch-rep-count"
+                className="px-2 font-mono text-xs font-bold tabular-nums text-[#101411] dark:text-white"
+              >
+                {activeWorkoutPreset.repCount} reps
+              </span>
+              <button
+                type="button"
+                data-testid="stopwatch-rep-inc"
+                aria-label="Increase workout rep count"
+                onClick={() =>
+                  setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
+                }
+                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-[#101411] dark:text-white cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Quick rep distance">
+              {([200, 400, 800, 1000, 1600] as const).map((dist) => {
+                const isSelected = activeWorkoutPreset.repDistanceMeters === dist;
+                return (
+                  <button
+                    key={dist}
+                    type="button"
+                    data-testid={`stopwatch-dist-${dist}`}
+                    aria-pressed={isSelected}
+                    onClick={() => setCustomDistOverride(dist)}
+                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'ap-nav-volt-active'
+                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                    }`}
+                  >
+                    {dist}m
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {multiSetPlanStripNode}
         {envPhysicsPanelNode}
       </section>
@@ -2158,10 +2335,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       </section>
 
       {/* 5. Walk-On Roster Deck & 1-Click THRESH Save / CSV Export Footer */}
-      <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
+      <section className="ap-card rounded-2xl p-4 sm:p-5 space-y-4 scroll-mb-28">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Quick Walk-On Runner Adder */}
-          <form onSubmit={handleAddWalkOn} className="flex flex-wrap items-center gap-2">
+          <form onSubmit={handleAddWalkOn} className="flex flex-wrap items-center gap-2 scroll-mb-28">
             <input
               type="text"
               value={walkOnName}
@@ -2359,6 +2536,123 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           </div>
         )}
       </section>
+
+      {/* Fixed bottom thumb-zone bar on phones (<768px) — replaces MobileDock while timing (RT-25) */}
+      <div
+        data-testid="stopwatch-mobile-thumb-bar"
+        role="region"
+        aria-label="Trackside thumb controls"
+        className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header px-2 py-2 grid grid-cols-3 gap-1.5"
+      >
+        <button
+          type="button"
+          data-testid="stopwatch-mobile-gun-btn"
+          aria-label={
+            stopwatchRunning
+              ? 'Hold 0.5 seconds to pause stopwatch'
+              : stopwatchElapsedMs > 0
+                ? 'Resume stopwatch'
+                : 'Start Gun'
+          }
+          onPointerDown={(e) => {
+            if (!stopwatchRunning) return;
+            if (typeof e.button === 'number' && e.button !== 0) return;
+            holdPauseSucceededRef.current = false;
+            setIsHoldingPause(true);
+            if (holdPauseTimerRef.current !== null) {
+              window.clearTimeout(holdPauseTimerRef.current);
+            }
+            holdPauseTimerRef.current = window.setTimeout(() => {
+              holdPauseTimerRef.current = null;
+              holdPauseSucceededRef.current = true;
+              setIsHoldingPause(false);
+              handleGunToggle();
+            }, 450);
+          }}
+          onPointerUp={() => {
+            if (holdPauseTimerRef.current !== null) {
+              window.clearTimeout(holdPauseTimerRef.current);
+              holdPauseTimerRef.current = null;
+            }
+            setIsHoldingPause(false);
+            if (stopwatchRunning && !holdPauseSucceededRef.current) {
+              setLiveAnnouncement('Hold Pause for 0.5s to prevent accidental stops');
+            }
+          }}
+          onPointerCancel={() => {
+            if (holdPauseTimerRef.current !== null) {
+              window.clearTimeout(holdPauseTimerRef.current);
+              holdPauseTimerRef.current = null;
+            }
+            setIsHoldingPause(false);
+          }}
+          onPointerLeave={() => {
+            if (holdPauseTimerRef.current !== null) {
+              window.clearTimeout(holdPauseTimerRef.current);
+              holdPauseTimerRef.current = null;
+            }
+            setIsHoldingPause(false);
+          }}
+          onClick={(e) => {
+            if (!stopwatchRunning) {
+              handleGunToggle();
+              return;
+            }
+            // Keyboard Enter/Space activation produces detail === 0
+            if (e.detail === 0) {
+              handleGunToggle();
+            }
+          }}
+          className={
+            stopwatchRunning
+              ? 'min-h-[52px] inline-flex items-center justify-center gap-1.5 px-2 rounded-xl ap-status-caution font-bold text-xs cursor-pointer select-none'
+              : 'ap-btn-primary min-h-[52px] px-2 text-xs font-bold cursor-pointer'
+          }
+        >
+          {stopwatchRunning ? (
+            <>
+              <Pause className="w-4 h-4 shrink-0" weight="fill" />
+              <span className="truncate">{isHoldingPause ? 'Pausing…' : 'Hold Pause'}</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4 shrink-0" weight="fill" />
+              <span className="truncate">{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          data-testid="stopwatch-mobile-chute-btn"
+          onClick={() => {
+            if (!showChuteBar && sessionType !== 'RACE') {
+              setShowChuteBar(true);
+            }
+            handleChuteTap();
+          }}
+          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
+        >
+          <Lightning className="w-4 h-4 shrink-0" weight="fill" />
+          <span>Chute</span>
+          {chuteQueueSecs.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
+              {chuteQueueSecs.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          data-testid="stopwatch-mobile-undo-btn"
+          onClick={handleUndo}
+          disabled={tapHistory.length === 0}
+          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+        >
+          <ArrowCounterClockwise className="w-4 h-4 shrink-0" weight="bold" />
+          <span>Undo</span>
+        </button>
+      </div>
     </div>
   );
 };

@@ -564,9 +564,9 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                 Custom Chart Builder &amp; Correlation Lab
-              </h1>
+              </h2>
               <ChartInfoTooltip
                 title="Custom Multi-Metric Time-Series & Correlation Lab"
                 subtitle="Bivariate Physiological Regression (r, R², Linear Fit)"

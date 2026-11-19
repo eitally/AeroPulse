@@ -20,6 +20,12 @@ import {
   Zap,
 } from './icons/PhosphorIcons';
 import { formatHumanReadableStepLine } from '../utils/workoutParser';
+import { formatDistance, formatDuration } from '../utils/formatters';
+import {
+  formatOneHzHint,
+  formatOptimalTunnelLabel,
+  formatVerdictLabel,
+} from '../utils/plainLanguage';
 import { QuickRunLoggerCard } from './QuickRunLoggerCard';
 import {
   inferTrackWorkoutSpecFromPlannedEvent,
@@ -69,6 +75,7 @@ interface CircadianFirstTouchHeroProps {
   plannedEvents: PlannedWorkoutEvent[];
   athleteProfile?: AthleteProfile | null;
   distanceUnit: DistanceUnit;
+  plainLanguageMode?: boolean;
   todayCompliance?: PlannedWorkoutCompliance | null;
   orthopedicSummary?: OrthopedicLoadSummary | null;
   studentGuardrail?: StudentAthleteGuardrailResult | null;
@@ -190,6 +197,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   plannedEvents,
   athleteProfile,
   distanceUnit,
+  plainLanguageMode = false,
   todayCompliance,
   orthopedicSummary = null,
   studentGuardrail = null,
@@ -217,6 +225,15 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       activities.some((a) => (a.startDateLocal || '').slice(0, 10) === todayIso),
     [activities, todayIso]
   );
+
+  const latestCompletedActivity = useMemo(() => {
+    if (hasCompletedToday || activities.length === 0) return null;
+    return (
+      [...activities].sort((a, b) =>
+        (b.startDateLocal || '').localeCompare(a.startDateLocal || '')
+      )[0] || null
+    );
+  }, [hasCompletedToday, activities]);
 
   const [internalMode, setInternalMode] = useState<CircadianHeroMode>(() =>
     resolveCircadianHeroMode({ hasCompletedToday })
@@ -593,7 +610,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                     )}`}
                   >
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
-                    <span>{productivity.verdictLabel}</span>
+                    <span>{formatVerdictLabel(productivity.verdictLabel, plainLanguageMode)}</span>
                   </span>
                   <ChartInfoTooltip
                     title="7-Day Rolling Training Productivity & Load Focus"
@@ -666,7 +683,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                     ({productivity.acwr.toFixed(2)}x)
                   </span>
                   <span>
-                    Optimal Tunnel: {productivity.optimalLoadMin}–
+                    {formatOptimalTunnelLabel(plainLanguageMode)}: {productivity.optimalLoadMin}–
                     {productivity.optimalLoadMax}
                   </span>
                 </div>
@@ -1339,6 +1356,37 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               )}
             </div>
           </div>
+
+          {latestCompletedActivity && onSelectActivity && (
+            <div
+              data-testid="today-last-run-strip"
+              className="order-4 lg:col-span-12 rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5"
+            >
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="px-2 py-0.5 rounded-md liquid-capsule-track font-mono text-2xs font-bold uppercase text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+                  Last Session
+                </span>
+                <span className="text-xs font-bold text-[#101411] dark:text-white truncate max-w-[240px] sm:max-w-[360px]">
+                  {latestCompletedActivity.name}
+                </span>
+                <span className="text-2xs font-mono tabular-nums text-[#43584B] dark:text-[#93A39A]">
+                  {(latestCompletedActivity.startDateLocal || '').slice(0, 10)} ·{' '}
+                  {formatDistance(latestCompletedActivity.distanceMeters || 0, distanceUnit)} ·{' '}
+                  {formatDuration(latestCompletedActivity.movingTimeSecs || 0)} ·{' '}
+                  {Math.round(latestCompletedActivity.trainingLoad || 0)} TSS
+                </span>
+              </div>
+              <button
+                type="button"
+                data-testid="today-last-run-inspect-btn"
+                onClick={() => onSelectActivity(latestCompletedActivity)}
+                className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <span>Inspect</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* ==========================================================================
@@ -1378,7 +1426,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 </span>
                 <span className="opacity-40">·</span>
                 <span>
-                  Optimal Tunnel: {sessionReceipt.optimalLoadMin}–
+                  {formatOptimalTunnelLabel(plainLanguageMode)}: {sessionReceipt.optimalLoadMin}–
                   {sessionReceipt.optimalLoadMax} TSS
                 </span>
               </div>
@@ -1587,7 +1635,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               <span className="text-2xs text-[#43584B] dark:text-[#93A39A]">
                 {sessionReceipt.debriefReport
                   ? sessionReceipt.debriefReport.headline
-                  : 'Open 1Hz streams for Skiba W’ match-burn, HRR60 & lap splits'}
+                  : formatOneHzHint(plainLanguageMode)}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <button

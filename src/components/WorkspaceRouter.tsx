@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from 'react';
-import { Activity, Calendar, Target, Timer } from './icons/PhosphorIcons';
+import { Activity, Calendar, Timer } from './icons/PhosphorIcons';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import type {
@@ -109,6 +109,7 @@ export interface WorkspaceRouterProps {
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
   isSampleDemoMode?: boolean;
+  plainLanguageMode?: boolean;
   stravaSyncWindow?: StravaSyncWindow;
   onOpenDataSources?: () => void;
 
@@ -238,6 +239,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   onOpenPublicTeamHub,
   onOpenCoachGuide,
   isSampleDemoMode = false,
+  plainLanguageMode = false,
   stravaSyncWindow,
   onOpenDataSources,
 
@@ -338,16 +340,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
               className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#2B5B3F] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Timer className="w-3.5 h-3.5 ap-text-brand" />
-              <span>Time Session</span>
-            </button>
-            <button
-              type="button"
-              data-testid="calendar-bar-plan-builder-btn"
-              onClick={() => setActiveTab('totals')}
-              className="hidden sm:inline-flex min-h-[34px] px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold items-center gap-1.5 cursor-pointer"
-            >
-              <Target className="w-3.5 h-3.5" />
-              <span>Plan Builder</span>
+              <span>Time on Track</span>
             </button>
           </div>
         </div>
@@ -380,10 +373,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
         />
       )}
 
-      {(activeTab === 'fitness' ||
-        activeTab === 'curves' ||
-        activeTab === 'trends' ||
-        activeTab === 'charts') && (
+      {activeTab === 'fitness' && (
         <div className="space-y-3.5">
           <FitnessHealthView
             wellnessDays={effectiveWellnessDays}
@@ -391,6 +381,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
             activities={effectiveActivities}
             athleteProfile={effectiveAthleteProfile}
             distanceUnit={distanceUnit}
+            plainLanguageMode={plainLanguageMode}
             sessionCheckIns={effectiveSessionCheckIns}
             onRecordSessionCheckIn={onRecordSessionCheckIn}
             selfName={primaryAthleteDisplayName}
@@ -420,14 +411,9 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
             athleteProfile={effectiveAthleteProfile}
             isScanningSegments={isScanningSegments}
             stravaSyncWindow={stravaSyncWindow}
-            initialOpen={activeTab !== 'fitness'}
-            initialSection={
-              activeTab === 'curves'
-                ? 'CURVES'
-                : activeTab === 'trends' || activeTab === 'charts'
-                  ? 'TRENDS'
-                  : 'CURVES'
-            }
+            standalone={false}
+            initialOpen={false}
+            initialSection="CURVES"
             onScanMoreSegments={handleScanMoreSegments}
             onSelectActivity={handleSelectActivityAndOpenTab}
             onOpenActivitiesSegments={handleOpenActivitiesTab}
@@ -438,6 +424,36 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
             onOpenDataSources={onOpenDataSources}
           />
         </div>
+      )}
+
+      {(activeTab === 'curves' || activeTab === 'trends' || activeTab === 'charts') && (
+        <TodayPhysiologyDeepDive
+          activities={effectiveActivities}
+          wellnessDays={effectiveWellnessDays}
+          annualMileageGoals={effectiveAnnualMileageGoals}
+          targetGoals={effectiveTargetGoals}
+          benchmarkSegments={benchmarkSegments}
+          envFilter={envFilter}
+          onSelectEnvFilter={setEnvFilter}
+          distanceUnit={distanceUnit}
+          athleteWeightKg={latestWeightKg}
+          currentCtl={latestCtl}
+          athleteProfile={effectiveAthleteProfile}
+          isScanningSegments={isScanningSegments}
+          stravaSyncWindow={stravaSyncWindow}
+          standalone={true}
+          initialOpen={true}
+          initialSection={activeTab === 'curves' ? 'CURVES' : 'TRENDS'}
+          initialTrendsSubView={activeTab === 'charts' ? 'CUSTOM_LAB' : 'TRENDS'}
+          onScanMoreSegments={handleScanMoreSegments}
+          onSelectActivity={handleSelectActivityAndOpenTab}
+          onOpenActivitiesSegments={handleOpenActivitiesTab}
+          onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
+          onUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
+          onSaveProfileOverride={handleSaveProfileOverride}
+          onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
+          onOpenDataSources={onOpenDataSources}
+        />
       )}
 
       {activeTab === 'activities' && (

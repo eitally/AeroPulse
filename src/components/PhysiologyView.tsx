@@ -278,9 +278,9 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                 Peak Power &amp; Pace Duration Curves
-              </h1>
+              </h2>
               <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/25 text-2xs font-mono font-semibold text-blue-600 dark:text-sky-300">
                 CP · W&apos; · Pmax
               </span>

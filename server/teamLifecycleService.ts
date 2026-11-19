@@ -1,6 +1,7 @@
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import { timingSafeStringEqual } from './securityUtils.ts';
 import type {
+  CoachDataSharingTier,
   TeamInviteStatus,
   TeamMemberRole,
   TeamSummaryWithRole,
@@ -161,6 +162,57 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
     if (canonicalBmy && !mem.birthMonthYear) {
       mem.birthMonthYear = canonicalBmy;
     }
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
+/**
+ * Allows an active or invited team member to inspect/update their post-join coach data sharing tier.
+ * Respects RT-08 minor quarantine (cannot expand beyond LOAD_ONLY until guardian consent is ACKNOWLEDGED).
+ */
+export async function updateMyTeamSharingTier(params: {
+  callerSid: string;
+  teamId: string;
+  sharingTier: CoachDataSharingTier;
+  originUrl: string;
+}): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: 'Team not found.' };
+
+    const mem = doc.memberships.find(
+      (m) =>
+        m.userSid === params.callerSid &&
+        m.status !== 'REVOKED' &&
+        m.status !== 'ALUMNI'
+    );
+    if (!mem) return { ok: false, error: 'Active team membership not found.' };
+
+    if (
+      mem.isMinorU18 &&
+      mem.parentConsentStatus !== 'ACKNOWLEDGED' &&
+      params.sharingTier !== 'LOAD_ONLY'
+    ) {
+      return {
+        ok: false,
+        error:
+          'Parent/guardian consent must be acknowledged before expanding sharing beyond Load & Readiness Only.',
+      };
+    }
+
+    mem.sharingTier = params.sharingTier;
+    if (mem.liveSnapshot) {
+      mem.liveSnapshot.sharingTier = params.sharingTier;
+      if (params.sharingTier === 'LOAD_ONLY') {
+        mem.liveSnapshot.activities = [];
+      }
+    }
+
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
     return {
