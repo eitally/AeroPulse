@@ -78,6 +78,18 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       return null;
     };
 
+    const isDemoQuery =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('demo') === '1';
+    if (isDemoQuery) {
+      const demoFallback = resolveFallback();
+      if (demoFallback) {
+        setPayload(demoFallback);
+        setLoading(false);
+        return;
+      }
+    }
+
     (async () => {
       try {
         const resp = await fetch(`/api/teams/public/${encodeURIComponent(slugOrCode)}`);
@@ -310,7 +322,10 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                   </div>
                   {payload.brand.mascotOrMotto && (
                     <p className="text-xs sm:text-sm text-[#43584B] dark:text-[#93A39A]">
-                      {payload.brand.mascotOrMotto} · Coach {payload.brand.coachDisplayName}
+                      {payload.brand.mascotOrMotto} ·{' '}
+                      {/^coach\b/i.test(payload.brand.coachDisplayName.trim())
+                        ? payload.brand.coachDisplayName.trim()
+                        : `Coach ${payload.brand.coachDisplayName.trim()}`}
                     </p>
                   )}
                 </div>

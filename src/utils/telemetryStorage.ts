@@ -999,12 +999,14 @@ export async function savePersistedTelemetrySnapshot(
   snapshot: Omit<PersistedTelemetrySnapshot, 'savedAt'> & { savedAt?: string }
 ): Promise<string | null> {
   try {
+    if (isBrowserSessionLoggedOut()) return null;
     const savedAt = snapshot.savedAt || new Date().toISOString();
     const normalizedActivities = Array.isArray(snapshot.activities)
       ? snapshot.activities.map(reclassifyActivityEnvironment)
       : [];
 
     await bulkUpsertActivitiesToDexie(normalizedActivities);
+    if (isBrowserSessionLoggedOut()) return null;
 
     await db.transaction(
       'rw',
@@ -2085,6 +2087,15 @@ export interface StoredClientStravaSyncPolicy {
 
 const STRAVA_SYNC_POLICY_STORAGE_KEY = 'aeropulse_strava_sync_policy';
 
+export function isBrowserSessionLoggedOut(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem('aeropulse_logged_out') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function saveStravaSyncPolicyToStorage(policy?: StoredClientStravaSyncPolicy | null) {
   if (typeof localStorage === 'undefined') return;
   try {
@@ -2092,6 +2103,7 @@ export function saveStravaSyncPolicyToStorage(policy?: StoredClientStravaSyncPol
       localStorage.removeItem(STRAVA_SYNC_POLICY_STORAGE_KEY);
       return;
     }
+    if (isBrowserSessionLoggedOut()) return;
     localStorage.setItem(STRAVA_SYNC_POLICY_STORAGE_KEY, JSON.stringify(policy));
   } catch {
     // ignore storage quota errors
@@ -2135,6 +2147,7 @@ export function hasPendingTeamJoinInBrowser(): boolean {
 
 export function saveRotatedStravaTokensToStorage(tokens?: RotatedStravaTokenPayload | null) {
   if (!tokens) return;
+  if (isBrowserSessionLoggedOut()) return;
   try {
     if (tokens.refreshToken) {
       localStorage.setItem('aeropulse_strava_refresh_token', tokens.refreshToken.trim());
