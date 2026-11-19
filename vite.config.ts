@@ -57,6 +57,7 @@ export default defineConfig(() => {
           globIgnores: [
             '**/brand/**',
             '**/docs/**',
+            '**/legal/**',
             '**/assets/vendor-leaflet-*',
             '**/assets/vendor-uplot-*',
             '**/assets/FitnessHealthView-*',
@@ -91,7 +92,12 @@ export default defineConfig(() => {
           clientsClaim: true,
           skipWaiting: true,
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/docs(\/|$)/],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/auth\//,
+            /^\/docs(\/|$)/,
+            /^\/(legal|privacy|terms|subprocessors|procurement)(\/|$)/,
+          ],
           runtimeCaching: [
             {
               // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks

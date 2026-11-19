@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { findMixedCaseBrandLeaks } from './checkBrandCasing.mjs';
 
 const MAX_ENTRY_GZIP_BYTES = 220 * 1024; // 220 KB gzip strict entry chunk ceiling
 const MAX_CRITICAL_INITIAL_GZIP_BYTES = 290 * 1024; // 290 KB gzip total initial HTML scripts + modulepreloads + css ceiling
@@ -140,4 +141,13 @@ try {
   process.exit(1);
 }
 
+const brandLeaks = findMixedCaseBrandLeaks(process.cwd());
+if (brandLeaks.length > 0) {
+  console.error('[Brand Casing Check] FAIL — mixed-case "Thresh" detected:');
+  for (const leak of brandLeaks) {
+    console.error(`  ${leak.file}:${leak.line}: ${leak.text}`);
+  }
+  process.exit(1);
+}
+console.log('[Brand Casing Check] PASS — 0 mixed-case "Thresh" leaks.');
 console.log('[Bundle Budget] PASS — entry bundle within budget and dist/ clean.');

@@ -46,7 +46,39 @@
       "destination": "/docs/index.html"
     },
     {
-      "source": "/((?!api/|auth/|assets/|docs(?:/|$)|.*\\..*).*)",
+      "source": "/privacy",
+      "destination": "/legal/privacy.html"
+    },
+    {
+      "source": "/privacy/",
+      "destination": "/legal/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/legal/terms.html"
+    },
+    {
+      "source": "/terms/",
+      "destination": "/legal/terms.html"
+    },
+    {
+      "source": "/subprocessors",
+      "destination": "/legal/subprocessors.html"
+    },
+    {
+      "source": "/subprocessors/",
+      "destination": "/legal/subprocessors.html"
+    },
+    {
+      "source": "/procurement",
+      "destination": "/legal/procurement.html"
+    },
+    {
+      "source": "/procurement/",
+      "destination": "/legal/procurement.html"
+    },
+    {
+      "source": "/((?!api/|auth/|assets/|docs(?:/|$)|legal(?:/|$)|privacy(?:/|$)|terms(?:/|$)|subprocessors(?:/|$)|procurement(?:/|$)|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

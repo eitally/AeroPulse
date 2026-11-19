@@ -48,6 +48,24 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
           Guide
         </button>
         <a
+          href="/privacy"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors"
+        >
+          Privacy
+        </a>
+        <a
+          href="/terms"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors"
+        >
+          Terms
+        </a>
+        <a
+          href="/procurement"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors"
+        >
+          Schools &amp; NCAA
+        </a>
+        <a
           href="/brand"
           onClick={(e) => {
             if (onOpenBrandStudio && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {

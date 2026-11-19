@@ -26,17 +26,21 @@ THRESH eliminates the fragmentation between physiological analysis platforms, ad
 3. **Strava Identity, Official FAT Race Intelligence & Team Hub**: Universal Strava OAuth sign-in, full-bleed Leaflet GPS route maps, Strava segment PR leaderboards, verified `0.01s` Fully Automatic Timing (`FAT`) track/road/XC race logging with Daniels `VDOT` projections, and branded High School / Collegiate / Club team workspaces.
 
 ### 3-Step New User Onboarding Flow
-1. **Step 1 — Continue With Strava (Primary Identity)**:
-   - Sign in with one click using **Continue With Strava** (zero passwords to remember, cross-device session persistence).
-   - Joining a school or club team? Scan your coach's QR poster (`/join/<slug>`) or expand **Have a Team Join Code?** on the welcome screen to preview your team before authenticating.
+1. **Step 1 — Sign In (`Google`, `Passkey`, `Magic Link`, `Email OTP`, or Optional `Strava`)**:
+   - Sign in with Google, a biometric WebAuthn Passkey, an email Magic Link / OTP, or optional **Connect with Strava**. School athletes can join teams cleanly with Google or Email—zero Strava account required.
+   - Joining a school or club team? Scan your coach's QR poster (`/join/<slug>`) or tap **Team Code** on the homepage to preview your team before signing in.
    - **Read-Only Pledge**: THRESH never posts to your Strava feed or edits your activities.
-2. **Step 2 — Choose What Syncs From Strava**:
-   - **Last 90 Days (Recommended)**: Fast 42-day `CTL`, 7-day `ATL`, and Form (`TSB`) calibration.
-   - **Last 6 Months** or **Full Archive**: Deeper historical `CP/W'` and seasonal durability curves.
-   - **Identity Only (No Workouts)**: Uses Strava strictly for sign-in and imports zero workouts.
-   - Confirm your **Primary Sport** (`Running`, `Cycling`, `Both`), **Units** (`mi / lbs` or `km / kg`, auto-detected from Strava), optional **Recent Race / Power Seed Mark** (e.g., `18:45 5K`, `10:15 3200m`, `280W 20m`), and—if joining a team—your **Coach Data Sharing Tier**.
-3. **Step 3 — Add Overnight Sleep & HRV (100% Optional)**:
-   - Optionally connect **Garmin Connect** or **Intervals.icu** now—or skip straight into your workspace and add them anytime later in **Data Sources**.
+2. **Step 2 — Sync Preferences, Profile & Team Sharing Tier**:
+   - If using Strava, choose your sync window (**Last 90 Days**, **Last 6 Months**, **Full Archive**, or **Identity Only — 0 Workouts**).
+   - Confirm your **Primary Sport** (`Running`, `Cycling`, `Both`), **Units** (`mi / lbs` or `km / kg`), optional **Recent Race / Power Seed Mark**, birth month/year (`YYYY-MM` COPPA/Safe-Sport check), and—if joining a team—your **Coach Data Sharing Tier**.
+3. **Step 3 — Add Optional Hardware & Overnight Wellness Sources**:
+   - Optionally connect **Garmin Connect**, **Intervals.icu** (including COROS / WHOOP relays), **Wahoo Cloud**, or **Polar AccessLink**, or drag `.FIT/.GPX/.ZIP` archives anytime in **Data Sources**.
+
+### Unified 4-Pillar Athlete Workspace
+1. **Today (`#today` / `#fitness`)**: Unified Readiness Verdict + modulated daily prescription, Last Run/Ride summary, contextual 2-tap check-in with Pain Safety Swap, and 3-Channel Orthopedic Load.
+2. **Calendar (`#calendar`)**: Monthly & weekly planned/completed ledger + structured Workout Builder + **Plan Builder** (`#plan-builder` / `#totals`, including **Return-to-Run** & **First 5K** starter plans) + Race Simulator.
+3. **Log (`#activities`)**: Filterable activity ledger, 1Hz Stream Inspector (`W' Balance`, `Pa:Hr`/`Pw:Hr`), GPS Map, Segments & Workout Comparison.
+4. **Progress (`#progress` / `#curves` / `#trends` / `#charts`)**: Standalone analytics stage with `Fitness PMC`, `Power & Pace Curves`, `0–40 kJ/kg` & `0–2,000 kcal` Durability, and `Trends & Custom Lab`.
 
 ---
 
@@ -47,11 +51,11 @@ THRESH eliminates the fragmentation between physiological analysis platforms, ad
 2. Under **Strava — Primary Identity**, you can change your sync window (`Last 90d`, `Last 6 Months`, `Full Archive`, `Identity Only`), toggle bike/shoe gear & athlete profile sync, trigger an immediate sync, or click **Sign Out** to clear local telemetry on shared computers.
 3. If you unchecked `View data about your activities` on Strava's consent screen, THRESH detects the missing `activity:read` scope and provides a 1-click **Re-Authorize Activity Scope** button.
 
-### 2. Optional Secondary Connections: Garmin Connect & Intervals.icu
-Garmin Connect and Intervals.icu are **never mandatory**—they are optional add-ons that enrich THRESH with overnight autonomic wellness:
-- **Garmin Connect (Optional Add-On)**: Sign in directly with your Garmin Connect email/password (including 2FA support) or paste a Personal API Token to sync overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and `VO2max`. Disconnect Garmin independently anytime without signing out of THRESH.
-- **Intervals.icu (Optional Add-On)**: Paste your Athlete ID (or `0`) and API Key from **Intervals.icu → Settings → Developer Settings** to sync historical `CTL/ATL`, `eFTP`, `W'`, and structured calendar workouts.
-- **Smart Multi-Source Deduplication**: Workouts synced from Strava, Garmin, and Intervals.icu within `±5 minutes` are merged into a single clean activity card so Training Load (`TSS`) is never double-counted.
+### 2. Optional Hardware Connectors: Garmin Connect, Intervals.icu, Wahoo & Polar
+These connectors are **never mandatory**—they are optional add-ons that enrich THRESH with workouts and overnight autonomic wellness:
+- **Garmin Connect (Optional Add-On)**: Connects overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and workout sync. Disconnect Garmin independently anytime without signing out.
+- **Intervals.icu (Optional OAuth / API Key)**: Syncs structured calendars, `eFTP`, `W'`, and Intervals.icu-relayed devices (**COROS**, **WHOOP**, Suunto).
+- **Wahoo Cloud & Polar AccessLink (Direct OAuth 2.0)**: Syncs ELEMNT/KICKR/Vantage/Grit X/H10 binary `.FIT` & exercise files using canonical UTC timestamps (`startDateUtcMs`) so evening workouts and ±5-minute deduplication work cleanly across all timezones.
 
 ### 3. Local 1Hz `.FIT` / `.GPX` / `.TCX` / `.ZIP` Drag-and-Drop Parser
 - Drag `.fit`, `.fit.gz`, `.gpx`, `.tcx`, or bulk `.zip` archives directly into the **Drop Zone** inside **Data Sources** (or **Activities**).

@@ -7,7 +7,7 @@ export const SERVER_ZONE_COLORS = [
   '#94A3B8', // Z1 Cool Mist
   '#0D9488', // Z2 Aerobic Teal
   '#D97706', // Z3 Ochre Tempo
-  '#EA580C', // Z4 Thresh Vermilion
+  '#EA580C', // Z4 THRESH Vermilion
   '#DC2626', // Z5 VO2 Crimson
   '#7C3AED', // Z6 Anaerobic Violet
   '#A21CAF', // Z7 Neuromuscular

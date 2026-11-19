@@ -7,6 +7,8 @@ import type {
   SportCategory,
   TeamBroadcastWorkout,
   TeamSummaryWithRole,
+  TeamWorkoutLibraryCategory,
+  TeamWorkoutLibraryTemplate,
   TrackRepDistanceMeters,
   TrackSetSpec,
   TrackTrainingZoneCode,
@@ -39,7 +41,11 @@ import {
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
-import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
+import {
+  buildThreshSessionHeaders,
+  deleteWorkoutLibraryTemplateApi,
+  saveWorkoutLibraryTemplateApi,
+} from '../utils/teamLifecycleApi';
 import {
   Bike,
   Check,
@@ -101,6 +107,87 @@ interface BuilderSetRow {
 
 const VALID_REP_DISTS: TrackRepDistanceMeters[] = [
   150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
+];
+
+const BUILTIN_WORKOUT_LIBRARY: Array<TeamWorkoutLibraryTemplate & { isBuiltin?: boolean }> = [
+  {
+    id: 'builtin-cv-5x800',
+    name: '5×800m CV + 4×200m R',
+    category: 'TRACK',
+    sportCategory: 'Running',
+    workoutSyntax:
+      'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 5x800m at CV pace (90s jog)\n\nMain Set 2\n- 4x200m at mile pace (200m jog)\n\nCooldown\n- 1.5mi Z1 Cooldown',
+    description: 'Critical Velocity aerobic power with fast closing 200m mechanics.',
+    plannedDurationSecs: 3300,
+    plannedLoad: 76,
+    createdByName: 'THRESH Library',
+    createdAt: '2026-01-01T00:00:00Z',
+    isBuiltin: true,
+  },
+  {
+    id: 'builtin-xc-threshold',
+    name: '6×1000m Sub-T Track Ladder',
+    category: 'XC_TEMPO',
+    sportCategory: 'Running',
+    workoutSyntax:
+      'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 6x1000m at Sub-T pace (60s jog)\n\nCooldown\n- 1.5mi Z1 Cooldown',
+    description: 'High-control Sub-Threshold reps for midseason XC & 5000m strength.',
+    plannedDurationSecs: 3600,
+    plannedLoad: 78,
+    createdByName: 'THRESH Library',
+    createdAt: '2026-01-01T00:00:00Z',
+    isBuiltin: true,
+  },
+  {
+    id: 'builtin-road-prog',
+    name: '30m Aerobic Progression',
+    category: 'ROAD',
+    sportCategory: 'Running',
+    workoutSyntax: 'Warmup\n- 10m 68% Pace\n\nMain Set 1\n- 30m 84% Pace\n\nCooldown\n- 10m 65% Pace',
+    description: 'Progressive aerobic steady block ending near Marathon effort.',
+    plannedDurationSecs: 3000,
+    plannedLoad: 64,
+    createdByName: 'THRESH Library',
+    createdAt: '2026-01-01T00:00:00Z',
+    isBuiltin: true,
+  },
+  {
+    id: 'builtin-cyc-ss',
+    name: '3×10m Sweet Spot Trainer',
+    category: 'CYCLING',
+    sportCategory: 'Cycling',
+    workoutSyntax:
+      'Warmup\n- 15m 58% FTP Warmup\n\nMain Set 1\n- 3x 10m 88% FTP (3m recovery)\n\nCooldown\n- 10m 54% FTP Cooldown',
+    description: 'Zero-impact aerobic engine support at 88% FTP.',
+    plannedDurationSecs: 3600,
+    plannedLoad: 72,
+    createdByName: 'THRESH Library',
+    createdAt: '2026-01-01T00:00:00Z',
+    isBuiltin: true,
+  },
+  {
+    id: 'builtin-rec-strides',
+    name: 'Pre-Meet Shakeout + Strides',
+    category: 'RECOVERY',
+    sportCategory: 'Running',
+    workoutSyntax:
+      'Warmup\n- 1.5mi Z1 Warmup\n\nMain Set 1\n- 4x150m at mile pace (90s walk)\n\nCooldown\n- 1mi Z1 Cooldown',
+    description: 'Low-strain neuromuscular opener 24 hours before competition.',
+    plannedDurationSecs: 1800,
+    plannedLoad: 32,
+    createdByName: 'THRESH Library',
+    createdAt: '2026-01-01T00:00:00Z',
+    isBuiltin: true,
+  },
+];
+
+const LIBRARY_CATEGORY_CHIPS: Array<{ id: 'ALL' | TeamWorkoutLibraryCategory; label: string }> = [
+  { id: 'ALL', label: 'All' },
+  { id: 'TRACK', label: 'Track' },
+  { id: 'XC_TEMPO', label: 'XC / Tempo' },
+  { id: 'ROAD', label: 'Road' },
+  { id: 'CYCLING', label: 'Cycling' },
+  { id: 'RECOVERY', label: 'Recovery' },
 ];
 
 const WARMUP_COOLDOWN_PRESETS = [
@@ -230,6 +317,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const [stopwatchWaveMode, setStopwatchWaveMode] = useState<'MASS' | 'POD_10S' | 'PURSUIT'>('POD_10S');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignFeedback, setAssignFeedback] = useState<string | null>(null);
+  const [showWorkoutLibrary, setShowWorkoutLibrary] = useState(true);
+  const [libraryFilter, setLibraryFilter] = useState<'ALL' | TeamWorkoutLibraryCategory>('ALL');
+  const [isSavingLibrary, setIsSavingLibrary] = useState(false);
+  const [deletingLibraryId, setDeletingLibraryId] = useState<string | null>(null);
 
   const audienceChips: Array<{ id: AudienceMode; label: string }> = [
     { id: 'ALL', label: 'Whole Team' },
@@ -552,6 +643,54 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             ? selectedAthleteIds.map((id) => id.replace(/^team-mem-/, ''))
             : undefined;
 
+        if (activeTeam.brand.teamId.startsWith('demo_team_')) {
+          const newBroadcast: TeamBroadcastWorkout = {
+            broadcastId: `bw_demo_${Date.now()}`,
+            teamId: activeTeam.brand.teamId,
+            targetSquadGroup: 'ALL',
+            ...(targetEventGroups ? { targetEventGroups } : {}),
+            ...(targetMembershipIds ? { targetMembershipIds } : {}),
+            date: workoutDate,
+            name: title,
+            sportCategory: clipboardSport,
+            plannedDurationSecs: builtWorkout.plannedDurationSecs,
+            plannedLoad: builtWorkout.plannedLoad,
+            workoutSyntax: builtWorkout.workoutSyntax,
+            description,
+            ...(cleanTime ? { scheduledTime: cleanTime } : {}),
+            sessionSlot,
+            ...(cleanLoc ? { locationName: cleanLoc, locationCategory } : {}),
+            ...(clipboardSport === 'Running' ? { trackSpec: builtWorkout.trackSpec } : {}),
+            ...(Object.keys(athleteOverrides).length > 0 ? { athleteOverrides } : {}),
+            pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
+            createdAt: new Date().toISOString(),
+          };
+          const updatedTeam: TeamSummaryWithRole = {
+            ...activeTeam,
+            broadcastWorkouts: [
+              ...(activeTeam.broadcastWorkouts || []).filter(
+                (bw) =>
+                  !(
+                    sessionSlot === 'SINGLE' &&
+                    bw.date === workoutDate &&
+                    !bw.isOfficialMeet
+                  )
+              ),
+              newBroadcast,
+            ],
+          };
+          onTeamsUpdated(
+            myTeams.map((t) =>
+              t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+            ),
+            updatedTeam.brand.teamId
+          );
+          setAssignFeedback(
+            `Assigned "${title}" to ${audienceLabel} for ${workoutDate}${logisticsBadge ? ` (${logisticsBadge})` : ''}.`
+          );
+          return;
+        }
+
         const resp = await fetch(
           `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
           {
@@ -706,6 +845,158 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     }
     setCopiedSheet(true);
     window.setTimeout(() => setCopiedSheet(false), 2500);
+  };
+
+  const libraryTemplates = useMemo<Array<TeamWorkoutLibraryTemplate & { isBuiltin?: boolean }>>(() => {
+    const saved = (activeTeam?.workoutLibrary || []).map((t) => ({ ...t, isBuiltin: false }));
+    const savedNames = new Set(saved.map((t) => t.name.toLowerCase()));
+    const starters = BUILTIN_WORKOUT_LIBRARY.filter((b) => !savedNames.has(b.name.toLowerCase()));
+    return [...saved, ...starters];
+  }, [activeTeam?.workoutLibrary]);
+
+  const filteredLibraryTemplates = useMemo(
+    () =>
+      libraryFilter === 'ALL'
+        ? libraryTemplates
+        : libraryTemplates.filter((t) => t.category === libraryFilter),
+    [libraryTemplates, libraryFilter]
+  );
+
+  const handleLoadLibraryTemplate = (tpl: TeamWorkoutLibraryTemplate) => {
+    const nextSport: 'Running' | 'Cycling' | 'Strength' =
+      tpl.sportCategory === 'Cycling'
+        ? 'Cycling'
+        : tpl.sportCategory === 'Strength'
+          ? 'Strength'
+          : 'Running';
+    setClipboardSport(nextSport);
+    setWorkoutTitle(tpl.name);
+    if (nextSport === 'Running') {
+      applyShorthandText(tpl.workoutSyntax);
+      setWorkoutTitle(tpl.name);
+    } else {
+      const durMatch = tpl.workoutSyntax.match(/(\d+)\s*x\s*(\d+)m\s*(\d+)%/i);
+      const mins = durMatch ? Number(durMatch[2]) : Math.max(10, Math.round(tpl.plannedDurationSecs / 120));
+      const pct = durMatch ? Number(durMatch[3]) : nextSport === 'Cycling' ? 88 : 78;
+      const reps = durMatch ? Math.max(1, Number(durMatch[1])) : 3;
+      setSets([
+        {
+          id: `lib-set-${Date.now()}`,
+          repCount: reps,
+          repDistanceMeters: 800,
+          measureMode: 'TIME_MINS',
+          durationMins: mins,
+          targetPctFtp: pct,
+          intensity: 'THRESHOLD_CV',
+          restLabel: '3m easy',
+          setRestAfterSecs: 0,
+        },
+      ]);
+      setShowManualSetRows(true);
+    }
+    setAssignFeedback(`Loaded template "${tpl.name}" from Workout Library.`);
+  };
+
+  const handleSaveToLibrary = async () => {
+    const name = (workoutTitle.trim() || builtWorkout.setsSummary || 'Custom Session').slice(0, 100);
+    const category: TeamWorkoutLibraryCategory =
+      clipboardSport === 'Cycling'
+        ? 'CYCLING'
+        : builtWorkout.plannedLoad < 45
+          ? 'RECOVERY'
+          : /tempo|sub-t|xc|hill/i.test(`${name} ${builtWorkout.setsSummary}`)
+            ? 'XC_TEMPO'
+            : builtWorkout.trackSpec
+              ? 'TRACK'
+              : 'ROAD';
+    const payload = {
+      name,
+      category,
+      sportCategory: clipboardSport,
+      workoutSyntax: builtWorkout.workoutSyntax,
+      description: builtWorkout.setsSummary || name,
+      plannedDurationSecs: builtWorkout.plannedDurationSecs,
+      plannedLoad: builtWorkout.plannedLoad,
+      ...(clipboardSport === 'Running' ? { trackSpec: builtWorkout.trackSpec } : {}),
+    };
+
+    if (!activeTeam || activeTeam.brand.teamId.startsWith('demo_team_')) {
+      if (activeTeam) {
+        const localTemplate: TeamWorkoutLibraryTemplate = {
+          id: `lib_${Date.now()}`,
+          ...payload,
+          createdByName: activeTeam.brand.coachDisplayName || primaryAthleteDisplayName || 'Coach',
+          createdAt: new Date().toISOString(),
+        };
+        const updatedTeam: TeamSummaryWithRole = {
+          ...activeTeam,
+          workoutLibrary: [localTemplate, ...(activeTeam.workoutLibrary || [])],
+        };
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+          ),
+          updatedTeam.brand.teamId
+        );
+      }
+      setAssignFeedback(`Saved "${name}" to Team Workout Library.`);
+      return;
+    }
+
+    setIsSavingLibrary(true);
+    try {
+      const res = await saveWorkoutLibraryTemplateApi(activeTeam.brand.teamId, payload);
+      if (Array.isArray(res.teams)) {
+        onTeamsUpdated(res.teams, activeTeam.brand.teamId);
+      } else if (res.team) {
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === res.team!.brand.teamId ? res.team! : t
+          ),
+          res.team.brand.teamId
+        );
+      }
+      setAssignFeedback(`Saved "${name}" to Team Workout Library.`);
+    } catch (err) {
+      setAssignFeedback(err instanceof Error ? err.message : 'Could not save template.');
+    } finally {
+      setIsSavingLibrary(false);
+    }
+  };
+
+  const handleDeleteLibraryTemplate = async (tplId: string) => {
+    if (!activeTeam) return;
+    if (activeTeam.brand.teamId.startsWith('demo_team_')) {
+      const updatedTeam: TeamSummaryWithRole = {
+        ...activeTeam,
+        workoutLibrary: (activeTeam.workoutLibrary || []).filter((t) => t.id !== tplId),
+      };
+      onTeamsUpdated(
+        myTeams.map((t) =>
+          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+        ),
+        updatedTeam.brand.teamId
+      );
+      return;
+    }
+    setDeletingLibraryId(tplId);
+    try {
+      const res = await deleteWorkoutLibraryTemplateApi(activeTeam.brand.teamId, tplId);
+      if (Array.isArray(res.teams)) {
+        onTeamsUpdated(res.teams, activeTeam.brand.teamId);
+      } else if (res.team) {
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === res.team!.brand.teamId ? res.team! : t
+          ),
+          res.team.brand.teamId
+        );
+      }
+    } catch (err) {
+      setAssignFeedback(err instanceof Error ? err.message : 'Could not remove template.');
+    } finally {
+      setDeletingLibraryId(null);
+    }
   };
 
   return (
@@ -1544,12 +1835,123 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               <span>Launch in Stopwatch</span>
             </button>
           )}
+
+          <button
+            type="button"
+            data-testid="clipboard-save-library-btn"
+            disabled={isSavingLibrary}
+            onClick={() => void handleSaveToLibrary()}
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 ap-text-brand" />
+            <span>{isSavingLibrary ? 'Saving…' : 'Save to Library'}</span>
+          </button>
         </div>
 
         {assignFeedback && (
           <span className="text-2xs font-mono font-semibold text-emerald-700 dark:text-emerald-300">
             {assignFeedback}
           </span>
+        )}
+      </div>
+
+      {/* Reusable Team Workout Library */}
+      <div
+        data-testid="coach-workout-library"
+        className="pt-2 border-t border-stone-200/80 dark:border-[#244331] space-y-2.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ClipboardText className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
+            <h3 className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4]">
+              Team Workout Library ({libraryTemplates.length})
+            </h3>
+          </div>
+          <button
+            type="button"
+            data-testid="toggle-workout-library-btn"
+            aria-expanded={showWorkoutLibrary}
+            onClick={() => setShowWorkoutLibrary((v) => !v)}
+            className="ap-touch min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-[#101B15] text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 cursor-pointer"
+          >
+            <span>{showWorkoutLibrary ? 'Hide Library' : 'Show Library'}</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform ${showWorkoutLibrary ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+
+        {showWorkoutLibrary && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter workout library">
+              {LIBRARY_CATEGORY_CHIPS.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  aria-pressed={libraryFilter === chip.id}
+                  onClick={() => setLibraryFilter(chip.id)}
+                  className={`ap-touch min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-full text-2xs font-mono font-semibold cursor-pointer ${
+                    libraryFilter === chip.id
+                      ? 'ap-nav-volt-active'
+                      : 'bg-white/80 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {filteredLibraryTemplates.map((tpl) => (
+                <div
+                  key={tpl.id}
+                  className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/85 dark:bg-[#101B15] p-3 flex flex-col justify-between gap-2 text-xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-slate-900 dark:text-white leading-snug">
+                        {tpl.name}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-2xs font-mono uppercase text-slate-600 dark:text-slate-300 shrink-0">
+                        {tpl.category.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p className="text-2xs text-slate-600 dark:text-slate-400 line-clamp-2">
+                      {tpl.description}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-stone-200/70 dark:border-[#244331]">
+                    <span className="text-2xs font-mono text-slate-500">
+                      {Math.round(tpl.plannedDurationSecs / 60)}m · ~{Math.round(tpl.plannedLoad)} TSS
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {!tpl.isBuiltin && (
+                        <button
+                          type="button"
+                          data-testid="library-delete-template-btn"
+                          aria-label={`Delete ${tpl.name}`}
+                          disabled={deletingLibraryId === tpl.id}
+                          onClick={() => void handleDeleteLibraryTemplate(tpl.id)}
+                          className="ap-touch min-h-[44px] sm:min-h-[30px] px-2 rounded-lg text-slate-500 hover:text-red-600 dark:hover:text-red-400 cursor-pointer"
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="library-load-template-btn"
+                        onClick={() => handleLoadLibraryTemplate(tpl)}
+                        className="ap-touch min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-2xs font-semibold cursor-pointer"
+                      >
+                        Load
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </section>

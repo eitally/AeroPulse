@@ -86,15 +86,55 @@ export function formatGoalMetricValue(
     return formatPace(value, distanceUnit);
   }
   if (u === 'kg' || u === 'lbs') {
-    return formatWeight(value, distanceUnit);
+    const kgValue = u === 'lbs' ? value / 2.20462 : value;
+    return formatWeight(kgValue, distanceUnit);
   }
   return `${value} ${goalUnit}`;
 }
 
+/**
+ * Formats a canonical secs/km pace into a plain `m:ss` clock string in the user's preferred unit
+ * (e.g. `250 s/km, 'mi'` -> `'6:42'`, `'km'` -> `'4:10'`).
+ */
+export function formatPaceClockInput(secsPerKm: number, unit: DistanceUnit): string {
+  const safe = Number(secsPerKm);
+  if (!Number.isFinite(safe) || safe <= 0) return unit === 'mi' ? '7:30' : '4:40';
+  const totalSecs = Math.max(
+    60,
+    Math.round(unit === 'mi' ? safe * (METERS_PER_MILE / 1000) : safe)
+  );
+  const mins = Math.floor(totalSecs / 60);
+  const rem = totalSecs % 60;
+  return `${mins}:${rem.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Parses a `mm:ss` pace clock string (e.g. `"7:30"`) or numeric seconds back to canonical `secsPerKm`.
+ */
+export function parsePaceClockInput(raw: string, unit: DistanceUnit): number | null {
+  const clean = String(raw || '').trim();
+  if (!clean) return null;
+  const match = clean.match(/^(\d{1,2}):(\d{1,2})(?:\.\d+)?$/);
+  if (match) {
+    const mins = Number(match[1]);
+    const secs = Number(match[2]);
+    if (!Number.isFinite(mins) || !Number.isFinite(secs) || secs >= 60) return null;
+    const totalPerUnit = mins * 60 + secs;
+    if (totalPerUnit < 90 || totalPerUnit > 1800) return null;
+    return unit === 'mi' ? Math.round(totalPerUnit / (METERS_PER_MILE / 1000)) : Math.round(totalPerUnit);
+  }
+  const numeric = Number(clean);
+  if (Number.isFinite(numeric) && numeric >= 90 && numeric <= 900) {
+    return Math.round(numeric);
+  }
+  return null;
+}
+
 export function formatDuration(totalSecs: number): string {
-  const hrs = Math.floor(totalSecs / 3600);
-  const mins = Math.floor((totalSecs % 3600) / 60);
-  const secs = Math.round(totalSecs % 60);
+  const rounded = Math.max(0, Math.round(totalSecs));
+  const hrs = Math.floor(rounded / 3600);
+  const mins = Math.floor((rounded % 3600) / 60);
+  const secs = rounded % 60;
   if (hrs > 0) {
     return `${hrs}h ${mins.toString().padStart(2, '0')}m`;
   }
@@ -102,9 +142,10 @@ export function formatDuration(totalSecs: number): string {
 }
 
 export function formatStopwatch(totalSecs: number): string {
-  const hrs = Math.floor(totalSecs / 3600);
-  const mins = Math.floor((totalSecs % 3600) / 60);
-  const secs = Math.round(totalSecs % 60);
+  const rounded = Math.max(0, Math.round(totalSecs));
+  const hrs = Math.floor(rounded / 3600);
+  const mins = Math.floor((rounded % 3600) / 60);
+  const secs = rounded % 60;
   if (hrs > 0) {
     return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
@@ -112,8 +153,9 @@ export function formatStopwatch(totalSecs: number): string {
 }
 
 export function formatSleepDuration(totalSecs: number): string {
-  const hrs = Math.floor(totalSecs / 3600);
-  const mins = Math.round((totalSecs % 3600) / 60);
+  const roundedMins = Math.max(0, Math.round(totalSecs / 60));
+  const hrs = Math.floor(roundedMins / 60);
+  const mins = roundedMins % 60;
   return `${hrs}h ${mins.toString().padStart(2, '0')}m`;
 }
 

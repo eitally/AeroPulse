@@ -460,7 +460,7 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
   // 3. Zwift .ZWO XML
   const zwoLines = [
     '<workout_file>',
-    '  <author>Thresh</author>',
+    '  <author>THRESH</author>',
     `  <name>${title.replace(/[<>&]/g, '')}</name>`,
     `  <sportType>${sport === 'Running' ? 'run' : 'bike'}</sportType>`,
     '  <workout>',

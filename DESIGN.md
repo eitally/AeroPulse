@@ -257,7 +257,7 @@ The palette balances deep stadium-pine architectural framing and chalk/obsidian 
 - **Zone 1 Cool Mist** (`#94A3B8`): Active recovery effort encoding across pace/power zone tables, workout blocks, and 1Hz stream overlays.
 - **Zone 2 Aerobic Teal** (`#0D9488`): Endurance base zone, Low Aerobic load focus bar, and light-mode Banister Chronic Training Load (`42d CTL`; `#2DD4BF` in dark mode).
 - **Zone 3 Ochre** (`#D97706`): Tempo / Sweet Spot effort zone and Banister `TSB` productive grey-zone warning (`#FBBF24` in dark mode).
-- **Zone 4 Thresh Vermilion** (`#EA580C`): Lactate threshold (`LT2` / `FTP` / `CP`) effort zone and High Aerobic load focus bar.
+- **Zone 4 THRESH Vermilion** (`#EA580C`): Lactate threshold (`LT2` / `FTP` / `CP`) effort zone and High Aerobic load focus bar.
 - **Zone 5 Crimson** (`#DC2626`): $\text{VO}_2\max$ aerobic power zone and Banister `TSB` high overreach risk (`#F87171` in dark mode).
 - **Zone 6 Deep Violet** (`#7C3AED`): Anaerobic / neuromuscular capacity (`W'`) effort zone and Anaerobic load focus bar.
 - **Banister ATL Rose & TSB Readiness Series** (`#E11D48` `7d ATL`, `#059669` Optimal Race Window `TSB`, `#0284C7` Fresh/Transition `TSB`): Locked longitudinal chart series in `themeTokens.ts` (lifting to `#FB7185`, `#34D399`, and `#38BDF8` on dark canvases).

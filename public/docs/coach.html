@@ -15,6 +15,7 @@
     (function () {
       try {
         var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
         var isDark =
           saved === '1'
             ? true
@@ -22,6 +23,7 @@
               ? false
               : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
       } catch (e) {}
     })();
   </script>
@@ -53,6 +55,41 @@
       --accent-cobalt: #C8FF00;
       --code-bg: #070B09;
       --code-fg: #E6EFEA;
+    }
+    html.dark.theme-slate {
+      --bg-outer: #080D14;
+      --bg-canvas: #0B1117;
+      --bg-surface: #111923;
+      --bg-recessed: #16212E;
+      --content-border: #2D4259;
+      --text-secondary: #CBD5E1;
+      --text-muted: #94A3B8;
+      --border-hairline: rgba(94, 129, 172, 0.32);
+    }
+    :focus-visible {
+      outline: 2px solid var(--accent-cobalt);
+      outline-offset: 2px;
+    }
+    .skip-link {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      z-index: 100;
+      min-height: 2.75rem;
+      display: inline-flex;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      border-radius: 10px;
+      background: #C8FF00;
+      color: #080A09;
+      border: 2px solid #163022;
+      font-size: 0.8125rem;
+      font-weight: 800;
+      text-decoration: none;
+      transform: translateY(-220%);
+    }
+    .skip-link:focus {
+      transform: translateY(0);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -181,8 +218,8 @@
     .nav-link {
       display: flex;
       align-items: center;
-      min-height: 2.5rem;
-      padding: 0.45rem 0.7rem;
+      min-height: 2.75rem;
+      padding: 0.5rem 0.75rem;
       border-radius: 8px;
       color: var(--text-secondary);
       text-decoration: none;
@@ -316,9 +353,18 @@
       .header-controls { max-width: none; width: 100%; }
       .search-input { min-width: 100%; order: 4; }
     }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body>
+  <a href="#coachDocMain" class="skip-link">Skip to guide content</a>
   <header>
     <a href="/" class="brand">
       <img src="/brand/thresh-lockup-light.svg" alt="THRESH" class="doc-logo-light" />
@@ -355,13 +401,13 @@
           <span>Jump to Chapter (1–5)</span>
           <span class="mono" aria-hidden="true">▾</span>
         </summary>
-        <div>
+        <nav aria-label="Mobile Coach Guide chapters">
           <a href="#ch1-onboard" class="nav-link">1. Onboard Your Team</a>
           <a href="#ch2-safety" class="nav-link">2. Performance &amp; Safety</a>
           <a href="#ch3-workouts" class="nav-link">3. Workouts &amp; Season Plans</a>
           <a href="#ch4-review" class="nav-link">4. Post-Workout &amp; Strain Review</a>
           <a href="#ch5-integrations" class="nav-link">5. Athletic.net &amp; TFRRS Sync</a>
-        </div>
+        </nav>
       </details>
 
       <section class="doc-section">
@@ -388,7 +434,7 @@
           <div class="step-card">
             <h3>Step 2 — Share QR or Code</h3>
             <p>
-              THRESH immediately creates your 6-character Team Code (e.g. <code>WGHS-26</code>) and printable <strong>Locker-Room QR Poster</strong>. Athletes scan the poster or enter the code once during Strava sign-in to claim their spot.
+              THRESH immediately creates your 6-character Team Code (e.g. <code>WGHS-26</code>) and printable <strong>Locker-Room QR Poster</strong>. Athletes scan the poster or enter the code once during Google, Email, or Strava sign-in to claim their spot.
             </p>
           </div>
           <div class="step-card">
@@ -505,7 +551,7 @@
             <strong>Watchless 0.01s Trackside Stopwatch:</strong> From Clipboard (<strong>Launch in Stopwatch</strong>) or the top <strong>Stopwatch</strong> tab, tap runner cards as athletes cross the line. THRESH compares each lap to that runner&apos;s VDOT pod target and warns on heat/humidity or sudden late-rep slowdowns. Tap <strong>Save Workout Splits to THRESH</strong> when finished to post splits and training load straight onto each athlete&apos;s log.
           </li>
           <li>
-            <strong>Inspect Post-Workout Fitness, Strain &amp; Streams:</strong> In Coach <strong>Roster</strong> -&gt; click <strong>Inspect</strong> on any athlete to inspect their <strong>Today Readiness</strong>, 1Hz activity breakdown, Aerobic Decoupling (<code>Pa:Hr</code>), <strong>42-day Fitness (CTL)</strong>, <strong>7-day Strain (ATL)</strong>, and <strong>Form (TSB)</strong>. For school record boards and DMR / 4x400m lineups, expand <strong>Relay Optimizer &amp; NFHS FAT Top Times</strong> inside Clipboard.
+            <strong>Inspect Post-Workout Fitness, Fatigue &amp; Streams:</strong> In Coach <strong>Roster</strong> -&gt; click <strong>Inspect</strong> on any athlete to inspect their <strong>Today Readiness</strong>, 1Hz activity breakdown, Running/Cycling Decoupling (<code>Pa:Hr</code> / <code>Pw:Hr</code>), <strong>42d Fitness (CTL)</strong>, <strong>7d Fatigue (ATL)</strong>, and <strong>Form (TSB)</strong>. For school record boards and DMR / 4x400m lineups, expand <strong>Relay Optimizer &amp; NFHS FAT Top Times</strong> inside Clipboard. Use <strong>Workout Library</strong> to reuse saved team workouts and post Guardian-CC&apos;d comments in Squad Triage.
           </li>
         </ul>
 
@@ -571,6 +617,16 @@
           </figcaption>
         </figure>
       </section>
+
+      <footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border-hairline);display:flex;flex-wrap:wrap;justify-content:space-between;gap:0.75rem;font-size:0.8125rem;color:var(--text-muted);">
+        <span><strong>THRESH</strong> · Non-medical coaching telemetry · U18 Safe-Sport Shield</span>
+        <div style="display:flex;flex-wrap:wrap;gap:0.9rem;">
+          <a href="/privacy" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Privacy</a>
+          <a href="/terms" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Terms</a>
+          <a href="/subprocessors" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Subprocessors</a>
+          <a href="/procurement" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">School &amp; NCAA Pack</a>
+        </div>
+      </footer>
     </main>
   </div>
 

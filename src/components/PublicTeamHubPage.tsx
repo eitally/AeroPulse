@@ -135,6 +135,35 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
     });
   }, [payload, selectedSquad]);
 
+  const rosterByEventGroup = useMemo(() => {
+    const groups = new Map<
+      string,
+      { eventLabel: string; distanceMeters: number; rows: PublicTeamHubPayload['rosterLeaderboard'] }
+    >();
+    for (const ath of visibleRoster) {
+      const topMark = ath.officialResults[0];
+      const eventLabel = topMark?.eventLabel || 'Roster Athletes';
+      const dist = topMark?.eventDistanceMeters ?? Number.MAX_SAFE_INTEGER;
+      const existing = groups.get(eventLabel);
+      if (existing) {
+        existing.rows.push(ath);
+      } else {
+        groups.set(eventLabel, { eventLabel, distanceMeters: dist, rows: [ath] });
+      }
+    }
+    return Array.from(groups.values())
+      .map((g) => ({
+        ...g,
+        rows: [...g.rows].sort((a, b) => {
+          const tA = a.officialResults[0]?.fatTimeSecs ?? Number.POSITIVE_INFINITY;
+          const tB = b.officialResults[0]?.fatTimeSecs ?? Number.POSITIVE_INFINITY;
+          if (tA !== tB) return tA - tB;
+          return a.name.localeCompare(b.name);
+        }),
+      }))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [visibleRoster]);
+
   const handleFollowAsSupporter = async () => {
     if (!payload?.brand) return;
     setIsFollowing(true);
@@ -180,6 +209,9 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       data-testid="public-team-hub-page"
       className="ap-shell min-h-screen text-[#101411] dark:text-[#F4F7F4]"
     >
+      <a href="#public-hub-main" className="ap-skip-link">
+        Skip to team hub content
+      </a>
       <header className="liquid-glass-header sticky top-0 z-30 px-3.5 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
@@ -235,7 +267,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-3.5 sm:px-6 py-5 space-y-4">
+      <main id="public-hub-main" tabIndex={-1} className="max-w-6xl mx-auto px-3.5 sm:px-6 py-5 space-y-4">
         {loading ? (
           <div className="ap-card p-6 text-center font-mono text-xs text-[#43584B] dark:text-[#93A39A]">
             Loading Team Hub...
@@ -399,59 +431,68 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                     <span>No roster athletes published yet.</span>
                   </div>
                 ) : (
-                  <div className="divide-y divide-stone-200 dark:divide-[#244331]">
-                    {visibleRoster.map((ath) => {
-                      const latestMark = ath.officialResults[0];
-                      return (
-                        <div
-                          key={ath.membershipId}
-                          data-testid="public-hub-roster-row"
-                          className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-bold flex items-center gap-1.5">
-                              <span className="truncate">{ath.name}</span>
-                              {ath.externalProfileUrl && /^https:\/\//i.test(ath.externalProfileUrl.trim()) && (
-                                <a
-                                  href={ath.externalProfileUrl.trim()}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  aria-label={`Open external profile for ${ath.name}`}
-                                  className="text-[#1C5436] dark:text-[#C8FF00]"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                            </div>
-                            <div className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
-                              {ath.squadGroup}
-                              {ath.graduationYear ? ` · Class of ${ath.graduationYear}` : ''}
-                            </div>
-                          </div>
-
-                          <div className="text-right font-mono shrink-0">
-                            {latestMark ? (
-                              <>
-                                <div className="font-extrabold text-[#1C5436] dark:text-[#C8FF00]">
-                                  {latestMark.displayFatTime}{' '}
-                                  <span className="font-normal text-2xs text-[#43584B] dark:text-[#93A39A]">
-                                    ({latestMark.eventLabel})
-                                  </span>
-                                </div>
-                                <div className="text-2xs text-[#43584B] dark:text-[#93A39A]">
-                                  {latestMark.meetName}
-                                  {latestMark.placeFinish ? ` · #${latestMark.placeFinish}` : ''}
-                                </div>
-                              </>
-                            ) : (
-                              <div className="font-bold text-[#101411] dark:text-[#F4F7F4]">
-                                {ath.seedMarkOrFtp ? `Seed ${ath.seedMarkOrFtp}` : 'Rostered'}
-                              </div>
-                            )}
-                          </div>
+                  <div className="space-y-4">
+                    {rosterByEventGroup.map((group) => (
+                      <div key={group.eventLabel} className="space-y-1">
+                        <div className="text-2xs font-mono font-bold uppercase tracking-wider text-[#1C5436] dark:text-[#C8FF00] border-b border-stone-200 dark:border-[#244331] pb-1">
+                          {group.eventLabel} ({group.rows.length})
                         </div>
-                      );
-                    })}
+                        <div className="divide-y divide-stone-200 dark:divide-[#244331]">
+                          {group.rows.map((ath) => {
+                            const latestMark = ath.officialResults[0];
+                            return (
+                              <div
+                                key={ath.membershipId}
+                                data-testid="public-hub-roster-row"
+                                className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="font-bold flex items-center gap-1.5">
+                                    <span className="truncate">{ath.name}</span>
+                                    {ath.externalProfileUrl && /^https:\/\//i.test(ath.externalProfileUrl.trim()) && (
+                                      <a
+                                        href={ath.externalProfileUrl.trim()}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={`Open external profile for ${ath.name}`}
+                                        className="text-[#1C5436] dark:text-[#C8FF00]"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
+                                  </div>
+                                  <div className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                    {ath.squadGroup}
+                                    {ath.graduationYear ? ` · Class of ${ath.graduationYear}` : ''}
+                                  </div>
+                                </div>
+
+                                <div className="text-right font-mono shrink-0">
+                                  {latestMark ? (
+                                    <>
+                                      <div className="font-extrabold text-[#1C5436] dark:text-[#C8FF00]">
+                                        {latestMark.displayFatTime}{' '}
+                                        <span className="font-normal text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                          ({latestMark.eventLabel})
+                                        </span>
+                                      </div>
+                                      <div className="text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                        {latestMark.meetName}
+                                        {latestMark.placeFinish ? ` · #${latestMark.placeFinish}` : ''}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="font-bold text-[#101411] dark:text-[#F4F7F4]">
+                                      {ath.seedMarkOrFtp ? `Seed ${ath.seedMarkOrFtp}` : 'Rostered'}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </section>
@@ -459,6 +500,24 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
           </>
         )}
       </main>
+
+      <footer className="max-w-6xl mx-auto px-3.5 sm:px-6 pb-6 pt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-[#43584B] dark:text-[#93A39A]">
+        <span>THRESH Clean-Room Team Hub · Youth Safe-Sport Shield</span>
+        <div className="flex flex-wrap items-center gap-3 font-semibold">
+          <a href="/privacy" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
+            Privacy
+          </a>
+          <a href="/terms" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
+            Terms
+          </a>
+          <a href="/subprocessors" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
+            Subprocessors
+          </a>
+          <a href="/procurement" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
+            Procurement
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };

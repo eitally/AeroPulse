@@ -1,6 +1,8 @@
 # THRESH — Exercise Physiology & Mathematical Telemetry Reference
 
-This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, seed-mark calibration models, and algorithmic classifiers implemented across THRESH's client, server, and Web Worker engines (`src/physiology/`, `src/components/charts/EChartsPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
+> **Non-Medical Disclaimer:** THRESH telemetry, readiness scores, ACWR guardrails, and ferritin/bone-stress alerts are informational coaching references only and do not constitute medical advice, diagnosis, or treatment. Consult a qualified healthcare provider before making medical or return-to-play decisions.
+
+This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, seed-mark calibration models, and algorithmic classifiers implemented across THRESH's client, server, and Web Worker engines (`src/physiology/`, `src/components/charts/UPlotPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
 
 ---
 
@@ -26,14 +28,14 @@ Strava's API often omits power (`weighted_average_watts`) and `suffer_score` for
 THRESH models chronic adaptation and acute fatigue using the Banister exponentially weighted moving average (EWMA) impulse-response equations.
 
 ### 1.1 Chronic Training Load (`CTL` — Fitness)
-`CTL` uses a 42-day decay time constant ($\tau_{\text{CTL}} = 42\text{ days}$) to quantify long-term aerobic base and structural durability:
+`CTL` uses a 42-day discrete EWMA decay constant ($\alpha_{\text{CTL}} = \frac{1}{42} \approx 0.02381$, discrete step approximation to continuous $1 - e^{-1/42} \approx 0.02353$) to quantify long-term aerobic base and structural durability:
 
-$$\text{CTL}_t = \text{CTL}_{t-1} + \frac{\text{TSS}_t - \text{CTL}_{t-1}}{42} = \text{CTL}_{t-1} \cdot e^{-1/42} + \text{TSS}_t \cdot \left(1 - e^{-1/42}\right)$$
+$$\text{CTL}_t = \text{CTL}_{t-1} + \frac{\text{TSS}_t - \text{CTL}_{t-1}}{42}$$
 
 ### 1.2 Acute Training Load (`ATL` — Fatigue)
-`ATL` uses a 7-day decay time constant ($\tau_{\text{ATL}} = 7\text{ days}$) to quantify immediate neuromuscular and autonomic fatigue:
+`ATL` uses a 7-day discrete EWMA decay constant ($\alpha_{\text{ATL}} = \frac{1}{7} \approx 0.1429$, discrete step approximation to continuous $1 - e^{-1/7} \approx 0.1331$) to quantify immediate neuromuscular and autonomic fatigue:
 
-$$\text{ATL}_t = \text{ATL}_{t-1} + \frac{\text{TSS}_t - \text{ATL}_{t-1}}{7} = \text{ATL}_{t-1} \cdot e^{-1/7} + \text{TSS}_t \cdot \left(1 - e^{-1/7}\right)$$
+$$\text{ATL}_t = \text{ATL}_{t-1} + \frac{\text{TSS}_t - \text{ATL}_{t-1}}{7}$$
 
 ### 1.3 Training Stress Balance (`TSB` — Form)
 `TSB` represents net readiness resulting from the difference between Chronic Fitness and Acute Fatigue:
@@ -117,13 +119,13 @@ For running sessions without power, **running TSS (`rTSS`)** or **heart-rate TSS
 
 ---
 
-## 4. Efficiency Factor (`EF`) & Aerobic Decoupling (`Pa:Hr` / `Pw:Hr`)
+## 4. Efficiency Factor (`EF`) & Aerobic Decoupling (`Pa:Hr` Running / `Pw:Hr` Cycling)
 
-Aerobic Decoupling quantifies cardiovascular drift over the course of a workout by comparing the ratio of output (Normalized Power or Grade Adjusted Speed) to Heart Rate between the first half ($H_1$) and second half ($H_2$) of moving time:
+Aerobic Decoupling quantifies cardiovascular drift over the course of a workout by comparing the ratio of output — Normalized Power (`NP` on rides -> `Pw:Hr`) or Grade Adjusted Speed (`v_GAP` on runs -> `Pa:Hr`) — to Heart Rate between the first half ($H_1$) and second half ($H_2$) of moving time:
 
-$$\text{EF}_{H_1} = \frac{\text{NP}_{H_1}}{\text{HR}_{\text{avg}, H_1}}, \qquad \text{EF}_{H_2} = \frac{\text{NP}_{H_2}}{\text{HR}_{\text{avg}, H_2}}$$
+$$\text{EF}_{\text{bike}, H_k} = \frac{\text{NP}_{H_k}}{\text{HR}_{\text{avg}, H_k}}, \qquad \text{EF}_{\text{run}, H_k} = \frac{v_{\text{GAP}, H_k} \cdot 60}{\text{HR}_{\text{avg}, H_k}}$$
 
-$$\text{Decoupling (Pa:Hr \%)} = \left( \frac{\text{EF}_{H_1} - \text{EF}_{H_2}}{\text{EF}_{H_1}} \right) \times 100\%$$
+$$\text{Decoupling (\%)} = \left( \frac{\text{EF}_{H_1} - \text{EF}_{H_2}}{\text{EF}_{H_1}} \right) \times 100\%$$
 
 - **$< 3.5\%$ (Durable / Coupled)**: Strong aerobic durability and stroke-volume stability at that intensity.
 - **$3.5\% \text{ to } 5.0\%$ (Moderate Drift)**: Approaching the upper boundary of current endurance base.
@@ -187,9 +189,9 @@ THRESH's **Readiness Morphing Engine** combines morning `HRV rMSSD` vs. the 60-d
 
 ---
 
-## 9. Horizon 1–3 & v2.3 Scholastic Mathematical Models (`@thresh/physiology`)
+## 8. Horizon 1–3 & v2.3 Scholastic Mathematical Models (`src/physiology/`)
 
-### 9.1 3-Channel Orthopedic Load Decomposition (`orthopedicEngine.ts`)
+### 8.1 3-Channel Orthopedic Load Decomposition (`orthopedicEngine.ts`)
 Each activity $i$ with training load $\text{TSS}_i$ and sport modality $s_i$ is projected onto three orthogonal physiological strain channels:
 - **Central Autonomic Load**: $L_{\text{central},i} = \text{TSS}_i$
 - **Eccentric Run Impact Load**: $L_{\text{impact},i} = \text{TSS}_i \times 1.35$ (for outdoor/track running), $0.15 \times \text{TSS}_i$ (for cycling/swimming)
@@ -197,18 +199,18 @@ Each activity $i$ with training load $\text{TSS}_i$ and sport modality $s_i$ is 
 
 When $\text{ACWR}_{\text{impact}} = \frac{\sum_{7\text{d}} L_{\text{impact}}}{\frac{1}{4}\sum_{28\text{d}} L_{\text{impact}}} \ge 1.28$ while $\text{ACWR}_{\text{central}} \le 1.18$, the engine prescribes a cross-modal aerobic-equivalent cycling/pool swap.
 
-### 9.2 Fatigue-Sliced Durability (`durabilityEngine.ts`)
+### 8.2 Fatigue-Sliced Durability (`durabilityEngine.ts`)
 Cumulative mechanical work prior to sample index $k$ at 1Hz is integrated as:
 $$W_{\text{prior}}(k) = \frac{1}{1000 \cdot m_{\text{kg}}} \sum_{j=0}^{k-1} P_j \, \Delta t_j \quad (\text{kJ/kg})$$
 For running streams without power, metabolic expenditure is integrated via Minetti grade cost $C_r(g_j)$ (`kcal`). Peak 5-minute and 20-minute rolling windows are partitioned into work buckets (`0, 10, 20, 30, 40 kJ/kg` or `0, 500, 1000, 1500, 2000 kcal`), and deep-fatigue retention is defined as:
 $$\text{Retention}_{\%} = \frac{\text{MMP}_{20\text{m}}(\text{Deep Bucket})}{\text{MMP}_{20\text{m}}(\text{Bucket } 0)} \times 100\%$$
 
-### 9.3 NCAA Track Facility & Altitude Indexing (`scholasticEngine.ts`)
+### 8.3 NCAA Track Facility & Altitude Indexing (`scholasticEngine.ts`)
 For a raw track time $T_{\text{raw}}$ run on facility $F_{\text{from}}$ at elevation $E_{\text{ft}}$ feet:
 $$T_{\text{indexed}} = T_{\text{raw}} \cdot M(F_{\text{from}} \to F_{\text{to}}, \text{event}, \text{gender}) - \Delta T_{\text{alt}}(E_{\text{ft}}, \text{event})$$
 where $M < 1.0$ when converting from `INDOOR_FLAT_200M` to `INDOOR_BANKED_200M` or `OUTDOOR_400M`, and $\Delta T_{\text{alt}} > 0$ for $E_{\text{ft}} \ge 3,000\text{ ft}$.
 
-### 9.4 1Hz Unstructured Interval Bimodal Hysteresis Detector (`autoDetectUnstructuredIntervals`)
+### 8.4 1Hz Unstructured Interval Bimodal Hysteresis Detector (`autoDetectUnstructuredIntervals`)
 Given a 5-second boxcar-smoothed 1Hz velocity or wattage series $S_t$, let $P_{30}, P_{50}, P_{82}, P_{92}$ denote the empirical quantiles of active samples. When the bimodal spread satisfies $P_{82}/P_{30} \ge 1.16$ (running) or $1.25$ (cycling), two-state hysteresis segmentation triggers `WORK` entry at:
 $$\theta_{\text{enter}} = \min\!\left(\theta_{\text{calibrated}}, \; P_{50} + 0.42\,(P_{92} - P_{50})\right), \quad \theta_{\text{exit}} = \alpha \, \theta_{\text{enter}}$$
 with $\alpha \in [0.84, 0.88]$ and minimum work hold $t_{\min} = 18\text{ s}$.

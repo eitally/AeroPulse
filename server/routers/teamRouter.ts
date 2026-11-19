@@ -31,12 +31,19 @@ import {
   createTeamForCoach,
   deleteBroadcastPlanBlockFromTeam,
   deleteBroadcastWorkoutFromTeam,
+  deleteTeamWorkoutLibraryTemplate,
+  getTeamGovernanceAuditLog,
   isResendConfigured,
+  listTeamWorkoutComments,
+  listTeamWorkoutLibrary,
   listTeamsForUser,
+  postTeamWorkoutComment,
   previewTeamJoinInvite,
   recordCoachStopwatchActivities,
+  recordGuardianSafetyAlert,
   requestEmailOtpCode,
   resendPendingTeamInvites,
+  saveTeamWorkoutLibraryTemplate,
   syncAthleteSnapshotAcrossTeams,
   updateBroadcastWorkoutOnTeam,
   updateTeamBranding,
@@ -47,6 +54,7 @@ import type {
   CoachDataSharingTier,
   CoachEventGroup,
   TeamInviteStatus,
+  TeamMemberRole,
 } from '../../src/types.ts';
 
 export const teamRouter = express.Router();
@@ -931,8 +939,16 @@ teamRouter.patch(
         return;
       }
       const role = String(req.body?.role || '').toUpperCase();
-      if (role !== 'ATHLETE' && role !== 'ASSISTANT_COACH') {
-        res.status(400).json({ ok: false, error: 'Role must be ATHLETE or ASSISTANT_COACH.' });
+      if (
+        role !== 'ATHLETE' &&
+        role !== 'ASSISTANT_COACH' &&
+        role !== 'ORG_ADMIN' &&
+        role !== 'ATHLETIC_TRAINER'
+      ) {
+        res.status(400).json({
+          ok: false,
+          error: 'Role must be ATHLETE, ASSISTANT_COACH, ORG_ADMIN, or ATHLETIC_TRAINER.',
+        });
         return;
       }
       const originUrl = resolveRequestOrigin(req);
@@ -940,7 +956,10 @@ teamRouter.patch(
         callerSid: claims.sid,
         teamId: String(req.params.teamId || ''),
         membershipId: String(req.params.membershipId || ''),
-        role,
+        role: role as Extract<
+          TeamMemberRole,
+          'ATHLETE' | 'ASSISTANT_COACH' | 'ORG_ADMIN' | 'ATHLETIC_TRAINER'
+        >,
         originUrl,
       });
       if (!outcome.ok || !outcome.summary) {
@@ -1122,3 +1141,232 @@ teamRouter.post(
     }
   }
 );
+
+// 13. Governance Audit Log (HEAD_COACH / ORG_ADMIN only)
+teamRouter.get('/api/teams/:teamId/audit-log', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const limit = Number(req.query?.limit || 100);
+    const result = await getTeamGovernanceAuditLog({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      limit: Number.isFinite(limit) ? limit : 100,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Audit log permission required.',
+      });
+      return;
+    }
+    res.json({ ok: true, entries: result.entries || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading audit log.',
+    });
+  }
+});
+
+// 14. Guardian Safety Alerts (Coach / AT / Self athlete -> Guardian CC & Audit Log)
+teamRouter.post('/api/teams/:teamId/safety-alerts', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await recordGuardianSafetyAlert({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      targetMembershipId: String(req.body?.targetMembershipId || ''),
+      category: req.body?.category || 'PAIN_FLAG',
+      severity: req.body?.severity || 'CAUTION',
+      summary: String(req.body?.summary || ''),
+      painLocation: req.body?.painLocation ? String(req.body.painLocation) : undefined,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || 'Unable to record safety alert.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, alert: result.alert, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed recording safety alert.',
+    });
+  }
+});
+
+// 15. Reusable Team Workout Library (Coach programming roles only for mutations)
+teamRouter.get('/api/teams/:teamId/workout-library', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const result = await listTeamWorkoutLibrary({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || 'Forbidden.' });
+      return;
+    }
+    res.json({ ok: true, templates: result.templates || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading workout library.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/workout-library', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await saveTeamWorkoutLibraryTemplate({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      originUrl,
+      template: {
+        ...(body.id ? { id: String(body.id) } : {}),
+        name: String(body.name || ''),
+        category: body.category || 'TRACK',
+        sportCategory: body.sportCategory || 'Running',
+        workoutSyntax: String(body.workoutSyntax || ''),
+        description: String(body.description || ''),
+        plannedDurationSecs: Number(body.plannedDurationSecs || 2400),
+        plannedLoad: Number(body.plannedLoad || 55),
+        ...(body.trackSpec ? { trackSpec: body.trackSpec } : {}),
+      },
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Coach permissions required.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, template: result.template, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed saving workout template.',
+    });
+  }
+});
+
+teamRouter.delete(
+  '/api/teams/:teamId/workout-library/:templateId',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const result = await deleteTeamWorkoutLibraryTemplate({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        templateId: String(req.params.templateId || ''),
+        originUrl,
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || 'Coach permissions required.',
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed deleting workout template.',
+      });
+    }
+  }
+);
+
+// 16. Logged Workout Comments with Mandatory U18 Guardian CC (SafeSport MAAPP)
+teamRouter.get('/api/teams/:teamId/comments', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const result = await listTeamWorkoutComments({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      targetMembershipId: req.query?.targetMembershipId
+        ? String(req.query.targetMembershipId)
+        : undefined,
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || 'Forbidden.' });
+      return;
+    }
+    res.json({ ok: true, comments: result.comments || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading comments.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/comments', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await postTeamWorkoutComment({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      targetMembershipId: String(body.targetMembershipId || ''),
+      workoutDate: body.workoutDate ? String(body.workoutDate) : undefined,
+      activityId: body.activityId ? String(body.activityId) : undefined,
+      body: String(body.body || ''),
+      privateDirectToMinor: body.privateDirectToMinor === true,
+      guardianCc: body.guardianCc,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to post workout comment.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, comment: result.comment, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed posting workout comment.',
+    });
+  }
+});

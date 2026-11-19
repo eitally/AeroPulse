@@ -19,7 +19,12 @@ import {
   saveTeamDocRaw,
   teamDocVaultKey,
 } from './teamService.ts';
-import { saveTenantVaultAsync, withVaultLock } from './tokenVault.ts';
+import {
+  appendAuditLogAsync,
+  saveTenantVaultAsync,
+  withTeamRowLock,
+  withVaultLock,
+} from './tokenVault.ts';
 
 function sanitizeMemberPublicNameForDeletion(m: StoredMembershipInternal): void {
   m.userSid = undefined;
@@ -49,7 +54,7 @@ export async function leaveOrGraduateTeam(params: {
 }): Promise<{ ok: boolean; error?: string }> {
   const archiveQueue: { member: StoredMembershipInternal; activities: any[] }[] = [];
 
-  const result = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const result = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
 
@@ -126,7 +131,7 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
   birthMonthYear?: string;
   verifiedUserBirthMonthYear?: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
 
@@ -164,6 +169,13 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
     }
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'GUARDIAN_CONSENT_REVOKED',
+      targetId: mem.membershipId,
+      metadata: { reason: 'ADULT_18_PLUS' },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -181,7 +193,7 @@ export async function updateMyTeamSharingTier(params: {
   sharingTier: CoachDataSharingTier;
   originUrl: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
 
@@ -215,6 +227,13 @@ export async function updateMyTeamSharingTier(params: {
 
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'SHARING_TIER_CHANGED',
+      targetId: mem.membershipId,
+      metadata: { sharingTier: params.sharingTier },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -235,7 +254,7 @@ export async function updateMemberRosterLifecycleStatus(params: {
   let archiveTarget: { member: StoredMembershipInternal; activities: any[] } | null = null;
   let detachSid: string | undefined;
 
-  const outcome = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
 
@@ -281,6 +300,13 @@ export async function updateMemberRosterLifecycleStatus(params: {
 
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'MEMBER_REMOVED_OR_GRADUATED',
+      targetId: target.membershipId,
+      metadata: { status: params.status, targetName: target.invitedName },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -308,7 +334,7 @@ export async function graduateTeamClass(params: {
 }): Promise<{ ok: boolean; graduatedCount: number; summary?: TeamSummaryWithRole | null; error?: string }> {
   const archiveList: Array<{ member: StoredMembershipInternal; activities: any[]; sid?: string }> = [];
 
-  const res = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const res = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, graduatedCount: 0, error: 'Team not found.' };
 
@@ -360,23 +386,27 @@ export async function graduateTeamClass(params: {
 }
 
 /**
- * Promotes/demotes a claimed roster user between `ATHLETE` and `ASSISTANT_COACH` (`HEAD_COACH` only).
+ * Promotes/demotes a claimed roster user between `ATHLETE`, `ASSISTANT_COACH`, `ORG_ADMIN`,
+ * and `ATHLETIC_TRAINER` (`HEAD_COACH` or `ORG_ADMIN`).
  */
 export async function updateMemberRole(params: {
   callerSid: string;
   teamId: string;
   membershipId: string;
-  role: Extract<TeamMemberRole, 'ATHLETE' | 'ASSISTANT_COACH'>;
+  role: Extract<
+    TeamMemberRole,
+    'ATHLETE' | 'ASSISTANT_COACH' | 'ORG_ADMIN' | 'ATHLETIC_TRAINER'
+  >;
   originUrl: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
     );
-    if (!callerMem || callerMem.role !== 'HEAD_COACH') {
-      return { ok: false, error: 'Only the Head Coach can manage coaching staff roles.' };
+    if (!callerMem || (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ORG_ADMIN')) {
+      return { ok: false, error: 'Only Head Coach or Org Admin can manage staff roles.' };
     }
     const target = doc.memberships.find(
       (m) => m.membershipId === params.membershipId && m.status !== 'REVOKED'
@@ -384,10 +414,18 @@ export async function updateMemberRole(params: {
     if (!target || target.role === 'HEAD_COACH') {
       return { ok: false, error: 'Target member cannot be reassigned.' };
     }
+    const prevRole = target.role;
     target.role = params.role;
-    target.isMinorU18 = params.role === 'ASSISTANT_COACH' ? false : target.isMinorU18;
+    target.isMinorU18 = params.role !== 'ATHLETE' ? false : target.isMinorU18;
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'ROLE_CHANGED',
+      targetId: target.membershipId,
+      metadata: { prevRole, nextRole: params.role, targetName: target.invitedName },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -404,7 +442,7 @@ export async function transferTeamHeadCoachOwnership(params: {
   newHeadCoachMembershipId: string;
   originUrl: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
     const currentHead = doc.memberships.find(
@@ -434,6 +472,13 @@ export async function transferTeamHeadCoachOwnership(params: {
     doc.brand.coachDisplayName = nextHead.invitedName || doc.brand.coachDisplayName;
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'OWNERSHIP_TRANSFERRED',
+      targetId: nextHead.membershipId,
+      metadata: { nextHeadName: nextHead.invitedName },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -458,7 +503,7 @@ export async function mergeDuplicateRosterMembers(params: {
 
   let archiveTarget: { member: StoredMembershipInternal; activities: any[] } | null = null;
 
-  const outcome = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: 'Team not found.' };
     const callerMem = doc.memberships.find(
@@ -524,6 +569,13 @@ export async function mergeDuplicateRosterMembers(params: {
 
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'MEMBERS_MERGED',
+      targetId: target.membershipId,
+      metadata: { mergedSourceId: source.membershipId },
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -613,7 +665,7 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
     const athleteName = targetMem.invitedName;
     const teamName = doc.brand.name;
 
-    await withVaultLock(teamDocVaultKey(teamId), async () => {
+    await withTeamRowLock(teamId, async () => {
       const freshDoc = await loadTeamDocRaw(teamId);
       if (!freshDoc) return;
       const mem = freshDoc.memberships.find((m) => matchesToken(m));
@@ -626,6 +678,13 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
       mem.coachRecordedActivities = undefined;
       freshDoc.updatedAt = mem.leftAt;
       await saveTeamDocRaw(teamId, freshDoc);
+      await appendAuditLogAsync({
+        teamId,
+        actorSid: 'guardian',
+        action: 'PARENT_CONSENT_DECLINED',
+        targetId: mem.membershipId,
+        metadata: { originalName: athleteName },
+      });
     });
 
     if (detachedSid) {

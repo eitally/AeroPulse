@@ -31,7 +31,10 @@ test.describe('Simplified Coach Onboarding & Illustrated Coach Guide (Desktop & 
 
     await openCoachRosterTab(page);
 
-    const createBtn = page.getByTestId('team-empty-create-btn');
+    // Seeded 12-athlete Willow Glen demo squad is ready immediately
+    await expect(page.getByTestId('coach-execution-digest')).toContainText('Maya Chen');
+
+    const createBtn = page.getByTestId('team-create-new-btn');
     await expect(createBtn).toBeVisible({ timeout: 10000 });
     await createBtn.click();
 

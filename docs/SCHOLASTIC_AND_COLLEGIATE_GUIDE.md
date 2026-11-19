@@ -6,11 +6,14 @@ This guide documents the scholastic, NCAA collegiate, and club team capabilities
 
 ## 0. Team Onboarding, Locker-Room QR Posters, CSV Auto-Match & Athlete Sharing Tiers
 
-### Creating or Joining a Team (`+ Team` & `/join/<slug>`)
-1. **Strava Handles Identity**: Coaches and athletes sign in with **Continue With Strava**—no separate school passwords or manual API keys required.
-2. **2-Card Team Hub (`TeamManagementPanel.tsx`)**:
-   - **Athletes & Assistant Coaches**: Enter a 6-character Team Join Code (e.g., `PAXC-26`), tap a personalized magic link, or scan the coach's printable **Locker-Room QR Sheet** (`/join/<slug>`).
-   - **Head Coaches & Club Directors**: Launch the **Team Branding & Safeguarding Studio** to configure school/club colors (automatically WCAG 2.1 AA contrast-clamped), upload a crest, and generate a Join Code + QR poster in under 60 seconds.
+### Creating or Joining a Team (`+ Team`, `ORG_ADMIN` & `/join/<slug>`)
+1. **Multi-Auth School-Safe Identity**: Coaches, administrators, parents, and athletes sign in via **Google OAuth**, **WebAuthn Passkey**, **Magic Link**, **Email OTP**, or **optional Strava OAuth**—high schoolers never need a Strava account.
+2. **2-Card Team Hub (`TeamManagementPanel.tsx`) & Governance RBAC**:
+   - **Athletes & Assistant Coaches**: Enter a 6-character Team Join Code (e.g., `WGHS26`), tap a magic invite link, or scan the **Locker-Room QR Sheet** (`/join/<slug>`).
+   - **Head Coaches, Athletic Directors (`ORG_ADMIN`) & Sports Med (`ATHLETIC_TRAINER`)**: Manage team creation (`HIGH_SCHOOL`, `COLLEGIATE`, `RUNNING_CLUB`, `CYCLING_CLUB`), scoped medical/safety triage without unpermitted workout edits, and the immutable `thresh_audit_log`.
+3. **Reusable Workout Library, Guardian-CC Comments & Coach Demo**:
+   - Save and reload recurring sessions (`Track`, `XC / Tempo`, `Road`, `Cycling`, `Recovery`) via the **Coach Workout Library**.
+   - Logged workout comments enforce **mandatory Parent/Guardian CC** on minor/HS rosters (`403 Forbidden` on un-CC&apos;d private comments), backed by a seeded **12-athlete Willow Glen Coach Demo** squad.
 3. **Bulk `.CSV` Roster Importer & Automatic Strava Claim Matching**:
    - Paste spreadsheet rows or upload a `.CSV` with `Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark`.
    - When an invited athlete signs in with Strava and claims the team code or magic link, THRESH automatically matches their pending roster slot (by invite token, Strava ID, email, or normalized name), assigns their squad (`Varsity`, `Junior Varsity`, etc.), and pre-calibrates their threshold zones from `SeedMark` (including bare HS `3200m` marks like `10:15`, `800m` marks, `5K` times, or `280W 20m` cycling power).
@@ -109,8 +112,8 @@ Compares the athlete's indexed time against Men's and Women's benchmarks across 
 ### 5-Second Student-Athlete Check-In (`evaluateStudentAthleteGuardrail` in `FitnessHealthView.tsx`)
 Evaluates three scholastic/collegiate risk vectors before practice:
 1. **Focal Shin / Metatarsal Bone-Stress Stop (`shinMetatarsalSoreness ≥ 2/3`)**: Immediately triggers a red `BONE_STRESS_STOP` (`0%` running impact cap) to catch tibial or metatarsal Bone Stress Injuries (BSI) before a stress reaction becomes a cortical fracture.
-2. **Serum Ferritin Iron-Depletion Caution (`ferritinNgMl < 30 ng/mL`)**: Alerts the athlete and coach when low ferritin reserves blunt aerobic capacity and elevates threshold heart rate.
-3. **Academic / Exam Allostatic Modulation (`academicStress ≥ 4/5` or `sleepHours < 6.2h`)**: Down-scales interval volume to `84%` during Midterms and Finals weeks when HPA-axis cortisol is elevated.
+1. **COPPA `<13` Block & Verifiable Guardian Consent**: Accounts under 13 are hard-blocked; minors aged 13–17 and High School rosters stay quarantined (`LOAD_ONLY`, zero AI) until a verified parent/guardian confirms or declines consent.
+2. **Serum Ferritin (`ng/mL`) & Academic Exam Modulation (Informational Coaching Only)**: Flags low endurance ferritin reserve below `30 ng/mL` (coaching reference only — not a medical diagnosis; consult a licensed physician or certified athletic trainer) and down-scales interval volume during Midterm/Finals weeks (`Academic Stress 4–5` or `Sleep < 6.2h`). Pre-race caffeine suggestions are suppressed automatically for U18 minors.
 
 ### Training Room Cross-Training → Virtual Running Miles (`computeCrossTrainingEquivalence`)
 Converts injured or load-managed training-room sessions into **Virtual Running Miles / Km**, systemic TSS, and bone-impact reduction:

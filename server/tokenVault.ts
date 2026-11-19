@@ -106,6 +106,19 @@ export function getVaultStorageBackend(): 'POSTGRES' | 'ENCRYPTED_FILE' {
   return process.env.DATABASE_URL?.trim() ? 'POSTGRES' : 'ENCRYPTED_FILE';
 }
 
+export function buildPostgresSslConfig(
+  dbUrl: string,
+  env: NodeJS.ProcessEnv = process.env
+): { rejectUnauthorized: boolean } | undefined {
+  const clean = String(dbUrl || '').trim().toLowerCase();
+  if (!clean || clean.includes('localhost') || clean.includes('127.0.0.1')) {
+    return undefined;
+  }
+  return {
+    rejectUnauthorized: env.PG_SSL_ALLOW_SELF_SIGNED === 'true' ? false : true,
+  };
+}
+
 function getPostgresPool(): pg.Pool | null {
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (!dbUrl) return null;
@@ -115,10 +128,7 @@ function getPostgresPool(): pg.Pool | null {
       max: 5,
       idleTimeoutMillis: 15_000,
       connectionTimeoutMillis: 5_000,
-      ssl:
-        dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1')
-          ? undefined
-          : { rejectUnauthorized: false },
+      ssl: buildPostgresSslConfig(dbUrl),
     });
   }
   return pgPool;
@@ -134,6 +144,40 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
           encrypted_envelope TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS thresh_teams (
+          team_id TEXT PRIMARY KEY,
+          slug TEXT,
+          join_code TEXT,
+          org_type TEXT,
+          encrypted_doc TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS thresh_team_members (
+          team_id TEXT NOT NULL,
+          membership_id TEXT NOT NULL,
+          user_sid TEXT,
+          invited_email TEXT,
+          role TEXT NOT NULL,
+          status TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, membership_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_members_sid
+          ON thresh_team_members (user_sid);
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_members_email
+          ON thresh_team_members (invited_email);
+        CREATE TABLE IF NOT EXISTS thresh_audit_log (
+          id BIGSERIAL PRIMARY KEY,
+          event_id TEXT UNIQUE NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          team_id TEXT,
+          actor_sid TEXT,
+          action TEXT NOT NULL,
+          target_id TEXT,
+          metadata_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_audit_log_team_created
+          ON thresh_audit_log (team_id, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -451,4 +495,226 @@ export async function withVaultLock<T>(
       vaultOperationQueues.delete(safeId);
     }
   }
+}
+
+export interface NormalizedTeamMemberSyncInput {
+  membershipId: string;
+  userSid?: string;
+  invitedEmail?: string;
+  role: string;
+  status: string;
+}
+
+/**
+ * Mirrors encrypted team metadata & membership rows into normalized Postgres tables when
+ * `DATABASE_URL` is configured, enabling indexed lookups and database-level row locking.
+ */
+export async function syncNormalizedTeamPostgresAsync(
+  teamId: string,
+  metadata: { slug?: string; joinCode?: string; orgType?: string },
+  docPayload: unknown,
+  members: NormalizedTeamMemberSyncInput[]
+): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  const safeTeamId = sanitizeTenantId(teamId);
+  const envelope = encryptJsonForVault(docPayload);
+  const client = await pool.connect().catch(() => null);
+  if (!client) return;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (team_id)
+       DO UPDATE SET
+         slug = EXCLUDED.slug,
+         join_code = EXCLUDED.join_code,
+         org_type = EXCLUDED.org_type,
+         encrypted_doc = EXCLUDED.encrypted_doc,
+         updated_at = NOW();`,
+      [
+        safeTeamId,
+        metadata.slug ? String(metadata.slug).slice(0, 80) : null,
+        metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
+        metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
+        envelope,
+      ]
+    );
+    await client.query('DELETE FROM thresh_team_members WHERE team_id = $1', [safeTeamId]);
+    for (const m of members) {
+      await client.query(
+        `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [
+          safeTeamId,
+          String(m.membershipId).slice(0, 64),
+          m.userSid ? String(m.userSid).slice(0, 96) : null,
+          m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null,
+          String(m.role || 'ATHLETE').slice(0, 32),
+          String(m.status || 'INVITED').slice(0, 32),
+        ]
+      );
+    }
+    await client.query('COMMIT');
+  } catch {
+    await client.query('ROLLBACK').catch(() => undefined);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Serializes team document mutations with both per-runtime mutex and Postgres advisory/row locking
+ * when `DATABASE_URL` is configured, preventing cross-Lambda concurrent QR claim races.
+ */
+export async function withTeamRowLock<T>(
+  teamId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
+  return withVaultLock(lockKey, async () => {
+    const pool = getPostgresPool();
+    if (!pool) return fn();
+    const client = await pool.connect().catch(() => null);
+    if (!client) return fn();
+    try {
+      await ensurePostgresVaultSchema(pool);
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
+      const result = await fn();
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+export interface PersistedAuditLogEntry {
+  eventId: string;
+  createdAt: string;
+  teamId: string;
+  actorSid: string;
+  action: string;
+  targetId?: string;
+  metadata: Record<string, unknown>;
+}
+
+const MAX_LOCAL_AUDIT_ENTRIES = 500;
+
+function auditVaultKey(teamId: string): string {
+  return `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+}
+
+/**
+ * Appends an immutable governance/safeguarding audit record to encrypted tenant storage and Postgres
+ * `thresh_audit_log` (when configured).
+ */
+export async function appendAuditLogAsync(params: {
+  teamId: string;
+  actorSid: string;
+  action: string;
+  targetId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<PersistedAuditLogEntry> {
+  const entry: PersistedAuditLogEntry = {
+    eventId: `aud_${crypto.randomBytes(8).toString('hex')}`,
+    createdAt: new Date().toISOString(),
+    teamId: sanitizeTenantId(params.teamId),
+    actorSid: String(params.actorSid || 'system').slice(0, 96),
+    action: String(params.action || 'UNKNOWN').slice(0, 64),
+    ...(params.targetId ? { targetId: String(params.targetId).slice(0, 96) } : {}),
+    metadata: params.metadata || {},
+  };
+
+  const key = auditVaultKey(entry.teamId);
+  await withVaultLock(key, async () => {
+    const existing = await loadTenantVaultAsync<PersistedAuditLogEntry[]>(key, []);
+    const next = [...existing, entry].slice(-MAX_LOCAL_AUDIT_ENTRIES);
+    await saveTenantVaultAsync(key, next);
+  });
+
+  const pool = getPostgresPool();
+  if (pool) {
+    try {
+      await ensurePostgresVaultSchema(pool);
+      await pool.query(
+        `INSERT INTO thresh_audit_log (event_id, created_at, team_id, actor_sid, action, target_id, metadata_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [
+          entry.eventId,
+          entry.createdAt,
+          entry.teamId,
+          entry.actorSid,
+          entry.action,
+          entry.targetId || null,
+          JSON.stringify(entry.metadata),
+        ]
+      );
+    } catch {
+      // local encrypted vault already captured entry
+    }
+  }
+
+  return entry;
+}
+
+export async function listTeamAuditLogAsync(
+  teamId: string,
+  limit = 100
+): Promise<PersistedAuditLogEntry[]> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
+  const pool = getPostgresPool();
+  if (pool) {
+    try {
+      await ensurePostgresVaultSchema(pool);
+      const res = await pool.query<{
+        event_id: string;
+        created_at: Date | string;
+        team_id: string;
+        actor_sid: string;
+        action: string;
+        target_id: string | null;
+        metadata_json: string;
+      }>(
+        `SELECT event_id, created_at, team_id, actor_sid, action, target_id, metadata_json
+         FROM thresh_audit_log
+         WHERE team_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [safeTeamId, clampedLimit]
+      );
+      if (res.rows.length > 0) {
+        return res.rows.map((r) => ({
+          eventId: r.event_id,
+          createdAt:
+            r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+          teamId: r.team_id,
+          actorSid: r.actor_sid,
+          action: r.action,
+          ...(r.target_id ? { targetId: r.target_id } : {}),
+          metadata: (() => {
+            try {
+              return JSON.parse(r.metadata_json) as Record<string, unknown>;
+            } catch {
+              return {};
+            }
+          })(),
+        }));
+      }
+    } catch {
+      // fall back to encrypted local audit log
+    }
+  }
+
+  const local = await loadTenantVaultAsync<PersistedAuditLogEntry[]>(auditVaultKey(safeTeamId), []);
+  return [...local].reverse().slice(0, clampedLimit);
 }

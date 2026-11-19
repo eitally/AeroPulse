@@ -248,7 +248,7 @@ export const SACRED_ZONES_SPECTRUM: PhysiologyZoneSpec[] = [
   },
   {
     zone: 'Z4',
-    name: 'Thresh Vermilion',
+    name: 'THRESH Vermilion',
     domain: 'LT2 / CS / FTP',
     hex: '#EA580C',
     cssVar: '--color-ap-z4',

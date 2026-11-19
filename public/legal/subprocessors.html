@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH — Subprocessor List</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
+  <link rel="stylesheet" href="/legal/legal.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
+        var isDark =
+          saved === '1'
+            ? true
+            : saved === '0'
+              ? false
+              : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="legal-header">
+    <a class="legal-brand" href="/" aria-label="THRESH Home">
+      <img class="doc-logo-light" src="/brand/thresh-lockup-light-2x.png" alt="THRESH" width="122" height="32" />
+      <img class="doc-logo-dark" src="/brand/thresh-lockup-dark-2x.png" alt="THRESH" width="122" height="32" />
+      <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Subprocessors</span>
+    </a>
+    <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/privacy">Privacy</a>
+      <a class="legal-nav-link" href="/terms">Terms</a>
+      <a class="legal-nav-link" href="/subprocessors" aria-current="page">Subprocessors</a>
+      <a class="legal-nav-link" href="/procurement">District &amp; NCAA Pack</a>
+      <button type="button" class="legal-btn" id="legalThemeBtn">Theme</button>
+      <a class="legal-btn legal-btn-primary" href="/">Open THRESH</a>
+    </nav>
+  </header>
+
+  <main id="main-content" tabindex="-1" class="legal-shell">
+    <section class="legal-hero">
+      <div class="legal-kicker">SUBPROCESSOR DISCLOSURE · UPDATED NOV 2026</div>
+      <h1>THRESH Authorized Infrastructure Subprocessors</h1>
+      <p class="legal-meta">Transparency notice for School Districts, Athletic Departments, and Parents reviewing vendor data flows.</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Core Infrastructure &amp; Transactional Services</h2>
+      <div class="legal-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Subprocessor</th>
+              <th>Purpose</th>
+              <th>Data Handled</th>
+              <th>Youth / Strava Safeguard</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Vercel Inc.</strong></td>
+              <td>Web application hosting, CDN edge delivery &amp; serverless API runtime (US regions)</td>
+              <td>HTTP requests, HMAC session cookies, encrypted payloads in transit (TLS 1.3)</td>
+              <td>Strict security headers, CSP/CORS origin allowlist</td>
+            </tr>
+            <tr>
+              <td><strong>Neon (PostgreSQL)</strong></td>
+              <td>Encrypted multi-tenant vaults, normalized team roster/audit records &amp; backup storage</td>
+              <td>AES-256-GCM encrypted token envelopes, team memberships, hashed tokens, audit log</td>
+              <td>Strict TLS (<code>rejectUnauthorized: true</code>), zero plaintext OAuth tokens</td>
+            </tr>
+            <tr>
+              <td><strong>Resend</strong></td>
+              <td>Transactional email delivery (team invites, magic links, OTPs, Guardian safety alerts)</td>
+              <td>Recipient email address, team name, guardian alert summary (never raw workouts or weights)</td>
+              <td>Magic links split read-only GET confirm from POST burn; guardian CC logged</td>
+            </tr>
+            <tr>
+              <td><strong>Google Gemini API</strong></td>
+              <td>Optional AI coaching explanations for adult athletes &amp; opt-in non-minor telemetry</td>
+              <td>Allowlisted aggregated CTL/ATL/TSB &amp; first-party hardware metrics only</td>
+              <td><strong>Disabled by default for U18 / HIGH_SCHOOL</strong>; 0% Strava data permitted</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="legal-section">
+      <h2>User-Authorized Third-Party Wearable Connectors</h2>
+      <p>Connecting Strava, Garmin Connect, Intervals.icu, Wahoo, or Polar is strictly optional and athlete-initiated. Watchless high school teams can operate 100% via Email/Google Sign-In + Trackside Stopwatch without linking external wearables.</p>
+    </section>
+  </main>
+
+  <footer class="legal-footer">
+    <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+    <div>
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/subprocessors">Subprocessors</a> · <a href="/procurement">Procurement</a> · <a href="/docs/">Docs</a>
+    </div>
+  </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById('legalThemeBtn');
+      if (!btn) return;
+      function syncLabel() {
+        var dark = document.documentElement.classList.contains('dark');
+        var slate = document.documentElement.classList.contains('theme-slate');
+        btn.textContent = dark ? (slate ? 'Slate Dark' : 'Pine Dark') : 'Chalk Light';
+      }
+      syncLabel();
+      btn.addEventListener('click', function () {
+        var nextDark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', nextDark);
+        try { localStorage.setItem('thresh_theme_dark', nextDark ? '1' : '0'); } catch (e) {}
+        syncLabel();
+      });
+    })();
+  </script>
+</body>
+</html>

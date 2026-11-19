@@ -57,6 +57,8 @@ import {
   formatDuration,
   formatGoalMetricValue,
   formatPace,
+  formatPaceClockInput,
+  parsePaceClockInput,
 } from '../utils/formatters';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 import {
@@ -739,7 +741,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     defaultGoalSport === 'Cycling'
       ? String(Math.round(currentBikeFtp * 1.08))
       : defaultGoalSport === 'Running'
-        ? String(Math.round(safeThresholdPace * 0.96))
+        ? formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
         : '85'
   );
   const [newUnit, setNewUnit] = useState(() =>
@@ -750,7 +752,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   const handleAddGoalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    const val = Number(newTargetVal) || 85;
+    const val =
+      newUnit === 's/km'
+        ? parsePaceClockInput(newTargetVal, distanceUnit) ??
+          (Math.round(safeThresholdPace * 0.96) || 240)
+        : Number(newTargetVal) || 85;
     onAddTargetGoal({
       title: newTitle.trim(),
       type: newPriority === 'Milestone' ? 'PERFORMANCE_METRIC' : 'RACE_EVENT',
@@ -768,7 +774,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               : Math.round(val * 0.92),
       targetValue: val,
       unit: newUnit,
-      notes: newNotes.trim() || 'Custom performance target tracked by Thresh.',
+      notes: newNotes.trim() || 'Custom performance target tracked by THRESH.',
     });
     setNewTitle('');
     setNewNotes('');
@@ -1905,17 +1911,24 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
         {targetGoals.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {targetGoals.map((goal) => {
-              const now = Date.now();
               const safeTargetDate = goal.targetDate || todayIso;
-              const parsedTargetTime = new Date(`${safeTargetDate}T00:00:00Z`).getTime();
-              const targetTime = Number.isFinite(parsedTargetTime)
-                ? parsedTargetTime
-                : now + 86_400_000;
-              const daysRemaining = Math.max(
-                1,
-                Math.round((targetTime - now) / (1000 * 60 * 60 * 24))
-              );
-              const weeksRemaining = Math.max(1, daysRemaining / 7);
+              const [cy, cm, cd] = todayIso.split('-').map(Number);
+              const todayNoonMs = new Date(cy || 2026, (cm || 1) - 1, cd || 1, 12, 0, 0).getTime();
+              const [ty, tm, td] = safeTargetDate.split('-').map(Number);
+              const parsedTargetNoon = new Date(
+                ty || cy || 2026,
+                (tm || 1) - 1,
+                td || 1,
+                12,
+                0,
+                0
+              ).getTime();
+              const rawDayDiff = Number.isFinite(parsedTargetNoon)
+                ? Math.round((parsedTargetNoon - todayNoonMs) / 86_400_000)
+                : 1;
+              const isPastGoal = rawDayDiff < 0;
+              const daysRemaining = Math.max(0, rawDayDiff);
+              const weeksRemaining = Math.max(1, Math.max(1, daysRemaining) / 7);
               const ctlGap = goal.targetCtl ? Math.max(0, goal.targetCtl - currentCtl) : 0;
               const reqWeeklyRamp = (ctlGap / weeksRemaining).toFixed(1);
               const safeTitle = goal.title || 'Performance Target';
@@ -1926,12 +1939,15 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 ? Number(goal.targetValue)
                 : 0;
 
-              const phase =
-                daysRemaining <= 14
-                  ? 'Taper & Peak'
-                  : daysRemaining <= 45
-                    ? 'Specific Build'
-                    : 'Aerobic Base';
+              const phase = isPastGoal
+                ? 'Completed'
+                : daysRemaining === 0
+                  ? 'Race Day'
+                  : daysRemaining <= 14
+                    ? 'Taper & Peak'
+                    : daysRemaining <= 45
+                      ? 'Specific Build'
+                      : 'Aerobic Base';
 
               return (
                 <div
@@ -1941,8 +1957,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                        {goal.priority || 'A-Race'} · {goal.sportCategory || 'Running'} · {safeTargetDate} ({daysRemaining}d out ·{' '}
-                        {phase})
+                        {goal.priority || 'A-Race'} · {goal.sportCategory || 'Running'} · {safeTargetDate} (
+                        {isPastGoal
+                          ? 'Completed'
+                          : daysRemaining === 0
+                            ? 'Today · Race Day'
+                            : `${daysRemaining}d out · ${phase}`}
+                        )
                       </div>
                       <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                         {safeTitle}
@@ -2052,7 +2073,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   setNewSport(sp);
                   if (sp === 'Running') {
                     setNewUnit('s/km');
-                    setNewTargetVal(String(Math.round(safeThresholdPace * 0.96)));
+                    setNewTargetVal(
+                      formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
+                    );
                   } else if (sp === 'Cycling') {
                     setNewUnit('W');
                     setNewTargetVal(String(Math.round(currentBikeFtp * 1.08)));
@@ -2106,20 +2129,45 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 Target Value &amp; Unit
               </label>
               <div className="flex gap-1">
-                <input
-                  id={`${formId}-goal-val`}
-                  type="number"
-                  value={newTargetVal}
-                  onChange={(e) => setNewTargetVal(e.target.value)}
-                  className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                />
+                {newUnit === 's/km' ? (
+                  <input
+                    id={`${formId}-goal-val`}
+                    data-testid="goal-pace-clock-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={newTargetVal}
+                    onChange={(e) => setNewTargetVal(e.target.value)}
+                    placeholder={distanceUnit === 'mi' ? '7:30' : '4:35'}
+                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                ) : (
+                  <input
+                    id={`${formId}-goal-val`}
+                    type="number"
+                    value={newTargetVal}
+                    onChange={(e) => setNewTargetVal(e.target.value)}
+                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  />
+                )}
                 <select
                   value={newUnit}
                   aria-label="Goal target unit"
-                  onChange={(e) => setNewUnit(e.target.value)}
+                  onChange={(e) => {
+                    const nextUnit = e.target.value;
+                    setNewUnit(nextUnit);
+                    if (nextUnit === 's/km') {
+                      setNewTargetVal(
+                        formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
+                      );
+                    } else if (nextUnit === 'W') {
+                      setNewTargetVal(String(Math.round(currentBikeFtp * 1.08)));
+                    } else if (nextUnit === 'CTL') {
+                      setNewTargetVal(String(Math.max(55, Math.round(currentCtl + 12))));
+                    }
+                  }}
                   className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 >
-                  <option value="s/km">Pace (s/km)</option>
+                  <option value="s/km">Pace (/{distanceUnit})</option>
                   <option value="W">Watts</option>
                   <option value="CTL">CTL</option>
                   {!athleteProfile?.safeSportHideWeight && <option value="W/kg">W/kg</option>}

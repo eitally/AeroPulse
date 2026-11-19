@@ -119,7 +119,7 @@ describe('UX-08, UX-11 & UX-12 Post-Login 3-Pillar IA, Today Consolidation & Pro
 
     const coachView = readSrc('src/components/CoachWorkspaceView.tsx');
     expect(coachView).toContain('initialShowCreateStudio={openCreateTeamOnSwitch}');
-    expect(coachView).toContain("activeTeam.brand.orgType === 'COLLEGIATE'");
+    expect(coachView).toContain("activeTeam?.brand?.orgType === 'COLLEGIATE'");
     expect(coachView).toContain('/workouts/broadcast');
     expect(coachView).not.toContain('SUB_TABS');
 

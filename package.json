@@ -4,7 +4,7 @@
   "version": "2.1.0",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "dev": "tsx server.ts",
@@ -16,6 +16,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "check:brand": "node scripts/checkBrandCasing.mjs",
     "check:bundle": "node scripts/checkBundleBudget.mjs",
     "secrets:generate": "node scripts/generateProdSecrets.mjs"
   },

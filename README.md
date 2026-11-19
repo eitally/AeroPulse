@@ -1,25 +1,27 @@
-# THRESH v2.3 — Precision Endurance Physiology, Load, Race Simulation & Scholastic Team Platform
+# THRESH — Precision Endurance Physiology, Load, Race Simulation & Scholastic Team Platform
 
-**THRESH** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit crafted in the **`#1 Stadium Track`** graphic identity (`B3-3A + W1 + G1` track-and-gauge brand lockup + standalone gauge favicon).
+**THRESH** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit crafted in the **`#1 Stadium Track`** graphic identity (`S2 × W-A` brand lockup + `FAV-F` standalone favicon).
 
-- **Strava Handles Identity**: Sign in across desktop and mobile with one click via **Strava OAuth** (deterministic HMAC-derived cross-device session + encrypted `AES-256-GCM` token vault).
-- **Athlete-Controlled Strava Sync**: Right after authenticating, choose exactly what syncs to THRESH (`Last 90 Days`, `Last 6 Months`, `Full Archive`, or `Identity Only — 0 Workouts`), confirm units (`mi / lbs` or `km / kg`), and optionally calibrate zones from a recent race or power mark.
-- **Optional Overnight Sleep & HRV Add-Ons**: Connect **Garmin Connect** or **Intervals.icu** anytime as optional secondary add-ons for overnight `HRV rMSSD`, `Sleep Score`, and `Resting HR`—never mandatory.
-- **Individual & School / Club Team Ready**: Launch a branded High School, Collegiate, or Club workspace with printable Locker-Room QR sheets (`/join/<slug>`), `.CSV` roster auto-matching on Strava sign-in, U18 Safe-Sport weight shielding, VDOT pacing pods, Watchless Split Stopwatch, and NCAA 20-Hour CARA compliance.
+- **Multi-Auth Cross-Device Identity**: Sign in across desktop and mobile with **Google OAuth**, **WebAuthn Passkeys**, **Magic Link**, **Email OTP**, or **optional Strava OAuth** (with deterministic HMAC sessions, `AES-256-GCM` vaults, and normalized PostgreSQL persistence).
+- **4-Pillar Athlete Workspace & Run/Ride Core**: Unified **Today**, **Calendar** (+ **Plan Builder** with Return-to-Run & First 5K beginner tracks), **Log** (`Activities`), and standalone **Progress** (`Curves`, `Trends`, `Lab`), plus optional **Coach Workspace**.
+- **Optional Overnight Sleep & HRV Connectors**: Connect **Garmin Connect**, **Intervals.icu** (also relaying COROS/WHOOP), **Wahoo Cloud**, or **Polar AccessLink** anytime, or drop `.FIT` / `.GPX` / `.TCX` / `.ZIP` archives locally.
+- **Individual & School / Club Team Ready**: Launch a branded High School, Collegiate, or Club workspace with `12`-athlete Coach Demo mode, reusable **Workout Library**, Guardian-CC'd **Workout Comments**, Locker-Room QR sheets (`/join/<slug>`), `.CSV` roster auto-matching, U18 Safe-Sport weight shielding, VDOT pacing pods, Watchless `0.01s` Trackside Stopwatch, NCAA 20h CARA compliance, and standalone [`/privacy`](/privacy), [`/terms`](/terms), [`/subprocessors`](/subprocessors), and [`/procurement`](/procurement) school compliance pages.
 
 ---
 
-## Complete Online Documentation Suite
+## Complete Online Documentation & Procurement Suite
 
 | Resource | Path / URL | Description |
 | :--- | :--- | :--- |
-| **[Online Documentation Portal (`/docs`)](public/docs/index.html)** | `/docs/index.html` | Standalone, searchable online documentation website served in `#1 Stadium Track` Light/Dark themes covering 3-step Strava onboarding, team QR/CSV workflows, NCAA tables, mathematical formulas, and REST API security. |
-| **[In-App Interactive Guide (`UserGuideModal.tsx`)](src/components/UserGuideModal.tsx)** | Click **`?` (Guide)** in top header | Interactive 9-chapter searchable manual with **15 physiological formula cards** and **"Try It Live →"** deep links into every modal and workspace. |
-| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | `docs/USER_GUIDE.md` | Complete step-by-step walkthrough across all 8 chapters, from 3-step Strava sign-in & sync policy selection to the Plan vs. Actual Ledger, Durability curves, and Team Join codes. |
-| **[High School & Collegiate Team Pack Guide (`docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`)](docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)** | `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md` | Deep dive into Team Branding Studio, QR posters, `.CSV` roster auto-matching, `SUMMARY_ONLY` / `FULL_STREAMS` / `LOAD_ONLY` sharing tiers, VDOT Pacing Pods, Watchless Split Pad, NCAA Track Conversions, Safe-Sport / RED-S Protection, and 20-Hour CARA audits. |
-| **[Physiology & Math Reference (`docs/PHYSIOLOGY_AND_METRICS.md`)](docs/PHYSIOLOGY_AND_METRICS.md)** | `docs/PHYSIOLOGY_AND_METRICS.md` | Mathematical derivations for Seed-Mark Calibration, Two-Pass Strava `rTSS` & `EF`, Banister `CTL`/`ATL`/`TSB`, 3-Channel Orthopedic ACWR, `0–40 kJ/kg` & `0–2,000 kcal` Durability, `CP`/`W'`, Skiba `W' Balance`, Daniels `VDOT`, and 1Hz Unstructured Interval Hysteresis. |
-| **[REST API, OAuth & Security (`docs/API_AND_SECURITY.md`)](docs/API_AND_SECURITY.md)** | `docs/API_AND_SECURITY.md` | Documentation for deterministic Strava session derivation, CSRF-signed OAuth `state`, `AES-256-GCM` Token Vault (`TOKEN_VAULT_KEY` + serverless `thresh_vault` backup), Clean-Room Strava Firewall, hardware webhooks, and OTA workout export. |
-| **[Design System (`docs/DESIGN_SYSTEM.md`)](docs/DESIGN_SYSTEM.md)** | `docs/DESIGN_SYSTEM.md` | `#1 Stadium Track` surface tokens (`#0C1D14` Dark Pine / `#163022` Light Pine + `#C8FF00` Volt lane geometry), `B3-3A + W1 + G1` THRESH lockup, protected `Z1–Z7` effort colors, and WCAG AA status pills. |
+| **[Online Documentation Portal (`/docs`)](public/docs/index.html)** | `/docs` · `/docs/` | Standalone searchable documentation portal in Chalk, Track Pine Dark, and Midnight Slate themes. |
+| **[Illustrated Coach Guide (`/docs/coach.html`)](public/docs/coach.html)** | `/docs/coach.html` | 5-chapter visual Coach manual with recaptured screenshots covering team setup, Squad Triage, Clipboard, Trackside Stopwatch, and Parent Hub. |
+| **[Legal & School Procurement Pack](/procurement)** | `/privacy` · `/terms` · `/subprocessors` · `/procurement` | Privacy Policy, Terms of Service, Subprocessor disclosure, CA SDPC NDPA / FERPA addendum, HECVAT Lite, and PO pricing / W-9 path. |
+| **[In-App Interactive Guide (`UserGuideModal.tsx`)](src/components/UserGuideModal.tsx)** | Click **`?` (Guide)** in top header | Interactive 9-chapter searchable manual with **14 physiological formula cards** and **"Try It Live →"** deep links into modals and workspaces. |
+| **[User Manual (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** | `docs/USER_GUIDE.md` | Complete step-by-step walkthrough across the 4-pillar Athlete workspace, onboarding, Plan Builder, Durability, and Teams. |
+| **[High School & Collegiate Team Pack Guide (`docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`)](docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)** | `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md` | Team Branding Studio, QR posters, `.CSV` auto-matching, `ORG_ADMIN`/`ATHLETIC_TRAINER` roles, Workout Library, Guardian CC comments, VDOT Pods, Stopwatch, Safe-Sport, and 20h CARA audits. |
+| **[Physiology & Math Reference (`docs/PHYSIOLOGY_AND_METRICS.md`)](docs/PHYSIOLOGY_AND_METRICS.md)** | `docs/PHYSIOLOGY_AND_METRICS.md` | Mathematical derivations for Seed-Mark Calibration, Two-Pass Strava `rTSS` & `EF`, Banister `CTL`/`ATL`/`TSB`, 3-Channel Orthopedic ACWR, `0–40 kJ/kg` & `0–2,000 kcal` Durability, `CP`/`W'`, Skiba `W' Balance`, and Daniels `VDOT`. |
+| **[REST API, OAuth & Security (`docs/API_AND_SECURITY.md`)](docs/API_AND_SECURITY.md)** | `docs/API_AND_SECURITY.md` | Multi-Auth identity, CSRF OAuth cookie-nonce binding, `AES-256-GCM` Vault & Postgres TLS, Clean-Room Allowlist AI Firewall, RBAC, and audit log endpoints. |
+| **[Design System (`docs/DESIGN_SYSTEM.md`)](docs/DESIGN_SYSTEM.md)** | `docs/DESIGN_SYSTEM.md` | `#1 Stadium Track` surface tokens (`#0C1D14` Dark Pine / `#163022` Light Pine + `#C8FF00` Volt lane geometry), `S2 × W-A` lockup, protected `Z1–Z6` effort colors, and WCAG AA tokens. |
 
 ---
 

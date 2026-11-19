@@ -87,9 +87,11 @@ describe('UX-09 & UX-10 · Visual Workout Builder, Export Actions & 15-Plan Peri
     expect(week2Titles.size).toBe(7);
   });
 
-  it('generates all 4 Road Running archetypes with zero % FTP leaks and 2-week Marathon taper', () => {
+  it('generates all 6 Road Running archetypes with zero % FTP leaks and 2-week Marathon taper', () => {
     const roadArchetypes = ENDURANCE_PLAN_ARCHETYPES.filter((a) => a.category === 'ROAD');
-    expect(roadArchetypes).toHaveLength(4);
+    expect(roadArchetypes).toHaveLength(6);
+    expect(roadArchetypes.map((a) => a.id)).toContain('ROAD_RETURN_TO_RUN');
+    expect(roadArchetypes.map((a) => a.id)).toContain('ROAD_FIRST_5K');
 
     for (const arch of roadArchetypes) {
       const weeks = generateEnduranceTrainingPlan({

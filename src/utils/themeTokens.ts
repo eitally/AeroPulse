@@ -114,7 +114,7 @@ export function getAeroPulseThemePalette(
       '#94A3B8', // Z1 Cool Mist (Recovery)
       '#0D9488', // Z2 Aerobic Teal (Endurance)
       '#D97706', // Z3 Ochre (Tempo / Sweet Spot)
-      '#EA580C', // Z4 Thresh Vermilion (Lactate Threshold)
+      '#EA580C', // Z4 THRESH Vermilion (Lactate Threshold)
       '#DC2626', // Z5 Crimson (VO2max)
       '#7C3AED', // Z6 Deep Violet (Anaerobic)
     ],

@@ -104,7 +104,7 @@ interface StravaAuthGateProps {
   errorMessage: string | null;
   isDark?: boolean;
   onToggleDark?: () => void;
-  onEnterSampleDemo?: () => void;
+  onEnterSampleDemo?: (preferredRole?: 'ATHLETE' | 'COACH') => void;
   onImportBatchActivities?: (activities: UnifiedActivity[]) => void;
   onBypassToLocalSession?: () => Promise<void>;
   onOpenBrandStudio?: () => void;
@@ -1139,9 +1139,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setShowFitDrawer((prev) => !prev);
   };
 
-  const atlSpecimenValue = isSimulatedFatigued ? 78 : 58;
-  const tsbSpecimenValue = isSimulatedFatigued ? '-14' : '+6';
-  const loadSumSpecimen = isSimulatedFatigued ? '1,180 TRIMP' : '920 TRIMP';
+  const atlSpecimenValue = isSimulatedFatigued ? 88 : 58;
+  const tsbSpecimenValue = isSimulatedFatigued ? '-24' : '+6';
+  const loadSumSpecimen = isSimulatedFatigued ? '1,180 TSS' : '920 TSS';
+  const isSlateVariant =
+    typeof document !== 'undefined' &&
+    document.documentElement.classList.contains('theme-slate');
   const z2Scale = isSimulatedFatigued ? 0.38 : 0.54;
   const z4Scale = isSimulatedFatigued ? 0.39 : 0.31;
   const z6Scale = isSimulatedFatigued ? 0.23 : 0.15;
@@ -1173,7 +1176,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 {onEnterSampleDemo && (
                   <button
                     type="button"
-                    onClick={onEnterSampleDemo}
+                    onClick={() => onEnterSampleDemo(onboardingRole)}
                     className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] items-center cursor-pointer transition-colors"
                   >
                     Sample Demo
@@ -1220,10 +1223,16 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     onClick={onToggleDark}
                     aria-label="Toggle color theme"
                     className="min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-slate-900 dark:text-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
-                    title={isDark ? 'Switch to Daylight Chalk' : 'Switch to Track Pine Dark'}
+                    title={
+                      isDark
+                        ? 'Switch to Daylight Chalk'
+                        : isSlateVariant
+                          ? 'Switch to Midnight Slate'
+                          : 'Switch to Track Pine Dark'
+                    }
                   >
                     <span className="font-mono text-2xs font-bold tracking-wider">
-                      {isDark ? 'PINE DARK' : 'CHALK'}
+                      {isDark ? (isSlateVariant ? 'SLATE DARK' : 'PINE DARK') : 'CHALK'}
                     </span>
                   </button>
                 )}
@@ -1321,7 +1330,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       Sign in or create account
                     </h2>
                     <span className="ap-lane-badge ap-badge-volt shrink-0">
-                      <span className="ap-lane-badge-inner">FREE ACCESS</span>
+                      <span className="ap-lane-badge-inner">FREE FOR ATHLETES</span>
                     </span>
                   </div>
 
@@ -1442,7 +1451,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       </span>
                     </button>
                     <p className="text-xs text-center text-[#43584B] dark:text-[#93A39A]">
-                      Read-only 90d import · Never posts or edits activities
+                      {activeBrand
+                        ? 'Optional Strava sync — school athletes can also sign in with Google or Email below.'
+                        : 'Read-only 90d import · Never posts or edits activities'}
                     </p>
                   </div>
 
@@ -1819,7 +1830,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   {onEnterSampleDemo && (
                     <button
                       type="button"
-                      onClick={onEnterSampleDemo}
+                      onClick={() => onEnterSampleDemo(onboardingRole)}
                       className="w-full min-h-[52px] rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
                     >
                       <span className="min-w-0">
@@ -1920,7 +1931,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
                             }`}
                           >
-                            Fatigued (-14 TSB)
+                            Fatigued (-24 TSB)
                           </button>
                         </div>
                       </div>
@@ -2199,10 +2210,28 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   Brand &amp; Style Guide
                 </a>
                 <a
+                  href="/privacy"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Privacy
+                </a>
+                <a
+                  href="/terms"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Terms
+                </a>
+                <a
+                  href="/procurement"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  Schools &amp; NCAA
+                </a>
+                <a
                   href="/docs/#sec-safesport"
                   className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
                 >
-                  Safe-Sport &amp; Privacy
+                  Safe-Sport Shield
                 </a>
               </div>
             </footer>
@@ -2913,47 +2942,29 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label
-                        htmlFor={`${formId}-roster-name`}
-                        className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                      >
-                        Roster Display Name
-                      </label>
-                      <input
-                        id={`${formId}-roster-name`}
-                        type="text"
-                        value={athleteName}
-                        onChange={(e) => setAthleteName(e.target.value)}
-                        placeholder="Your full name"
-                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor={`${formId}-sharing-tier`}
-                        className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                      >
-                        Coach Data Sharing Level
-                      </label>
-                      <select
-                        id={`${formId}-sharing-tier`}
-                        value={sharingTier}
-                        onChange={(e) => setSharingTier(e.target.value as CoachDataSharingTier)}
-                        className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
-                      >
-                        <option value="SUMMARY_ONLY">
-                          Workout Summaries &amp; Readiness (Recommended)
-                        </option>
-                        <option value="FULL_STREAMS">
-                          Full Coaching Splits &amp; Pace/Power Curves
-                        </option>
-                        <option value="LOAD_ONLY">
-                          Readiness &amp; Weekly Load Totals Only
-                        </option>
-                      </select>
-                    </div>
+                  <div>
+                    <label
+                      htmlFor={`${formId}-sharing-tier`}
+                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Coach Data Sharing Level
+                    </label>
+                    <select
+                      id={`${formId}-sharing-tier`}
+                      value={sharingTier}
+                      onChange={(e) => setSharingTier(e.target.value as CoachDataSharingTier)}
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="SUMMARY_ONLY">
+                        Workout Summaries &amp; Readiness (Recommended)
+                      </option>
+                      <option value="FULL_STREAMS">
+                        Full Coaching Splits &amp; Pace/Power Curves
+                      </option>
+                      <option value="LOAD_ONLY">
+                        Readiness &amp; Weekly Load Totals Only
+                      </option>
+                    </select>
                   </div>
 
                   <label
@@ -2982,15 +2993,23 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </div>
               )}
 
-              <div className="text-center text-2xs text-slate-500 dark:text-slate-400 pt-1">
+              <div className="text-center text-2xs text-slate-500 dark:text-slate-400 pt-1 flex flex-wrap items-center justify-center gap-3">
                 <a
-                  href="/docs/index.html#sec-safesport"
+                  href="/privacy"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline hover:text-emerald-400 inline-flex items-center gap-1"
                 >
                   <ShieldCheck className="w-3.5 h-3.5 inline" />
-                  <span>Youth Athlete Privacy, COPPA, &amp; Scholastic Compliance Policy</span>
+                  <span>Privacy Policy, COPPA &amp; Safe-Sport Shield</span>
+                </a>
+                <a
+                  href="/procurement"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-emerald-400"
+                >
+                  District NDPA &amp; Terms
                 </a>
               </div>
 
@@ -3046,7 +3065,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   Add Overnight Sleep &amp; HRV (Optional)
                 </h1>
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Strava is already handling your sign-in{syncWindow !== 'none' ? ' and workout sync' : ''}. Optionally link <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> for overnight HRV, Sleep Score, and Resting HR—or enter THRESH right now.
+                  {status.stravaConnected ? (
+                    <>
+                      Strava is already handling your sign-in{syncWindow !== 'none' ? ' and workout sync' : ''}. Optionally link <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> for overnight HRV, Sleep Score, and Resting HR—or enter THRESH right now.
+                    </>
+                  ) : (
+                    <>
+                      Your THRESH account is active. Optionally link <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter THRESH right now.
+                    </>
+                  )}
                 </p>
               </div>
 

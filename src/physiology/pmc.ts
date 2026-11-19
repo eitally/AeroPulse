@@ -153,9 +153,10 @@ export function computeDualSportPmcSeries(
   const hasSeedSeries = sortedSeeds.length > 0;
   if (activities.length === 0 && !hasSeedSeries) return [];
 
-  const sorted = [...activities].sort((a, b) =>
-    a.startDateLocal.localeCompare(b.startDateLocal)
-  );
+  const sorted = [...activities]
+    .filter((a) => Boolean(a && typeof a.startDateLocal === 'string' && a.startDateLocal.slice(0, 10) >= '2000-01-01'))
+    .sort((a, b) => a.startDateLocal.localeCompare(b.startDateLocal));
+  if (sorted.length === 0 && !hasSeedSeries) return [];
   const firstActivityDate = sorted[0]?.startDateLocal?.slice(0, 10) || sortedSeeds[0].date.slice(0, 10);
   const firstSeedDate = sortedSeeds[0]?.date?.slice(0, 10) || firstActivityDate;
   const seriesStartStr = firstSeedDate < firstActivityDate ? firstSeedDate : firstActivityDate;
