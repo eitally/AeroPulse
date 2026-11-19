@@ -162,6 +162,7 @@ describe('UX-03 Multi-Set Coach Clipboard, 400m/Mile Pace Engine & Event Groups'
       codeOrSlug: team.brand.joinCode,
       athleteName: 'Miler Alex',
       seedMarkOrFtp: '4:28 Mile',
+      parentGuardianEmail: 'parent.alex@family.test',
     });
     const distJoin = await claimTeamJoinInvite({
       callerSid: distSid,
@@ -169,6 +170,7 @@ describe('UX-03 Multi-Set Coach Clipboard, 400m/Mile Pace Engine & Event Groups'
       codeOrSlug: team.brand.joinCode,
       athleteName: 'TwoMiler Sam',
       seedMarkOrFtp: '9:35 3200m',
+      parentGuardianEmail: 'parent.sam@family.test',
     });
 
     const midMemId = midJoin.summary!.memberships.find((m) => m.userSid === midSid)!.membershipId;

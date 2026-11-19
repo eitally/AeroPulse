@@ -1,3 +1,4 @@
+import { resolveAthleteAgeTier } from './ageAndComplianceEngine.ts';
 import type {
   AthleteProfile,
   DurabilityAnalysisReport,
@@ -43,6 +44,10 @@ export function simulateCoursePacingAndFueling(
 
   const cleanDistKm = Math.max(1.5, distanceKm);
   const cleanElevM = Math.max(0, elevationGainMeters);
+  const hideWeightOrMinor = Boolean(
+    athleteProfile.safeSportHideWeight ||
+      resolveAthleteAgeTier({ birthMonthYear: athleteProfile.birthMonthYear }).isMinorU18
+  );
   const weightKg = Math.max(42, athleteProfile.weightKg || 72);
   const ftp = Math.max(140, athleteProfile.ftp || athleteProfile.indoorFtp || 275);
   const thresholdPaceSecsKm = Math.max(
@@ -166,7 +171,7 @@ export function simulateCoursePacingAndFueling(
         avgGradePct: segGradePct,
         accumulatedFatigueLabel: fatigueLabel,
         targetWatts,
-        targetWkg,
+        targetWkg: hideWeightOrMinor ? null : targetWkg,
         targetPaceSecsPerKm: null,
         targetGapSecsPerKm: null,
         segmentDurationSecs: segSecs,
@@ -177,7 +182,7 @@ export function simulateCoursePacingAndFueling(
           i === 0
             ? `Cap surges strictly at ${ Math.round(targetWatts * 1.06) }W for the first 12 minutes to preserve W'.`
             : i === 2
-              ? `Crux climb (${segGradePct}% avg): hold ${targetWatts}W (${targetWkg} W/kg) seated at 85+ rpm.`
+              ? `Crux climb (${segGradePct}% avg): hold ${targetWatts}W${hideWeightOrMinor ? '' : ` (${targetWkg} W/kg)`} seated at 85+ rpm.`
               : i === 3
                 ? `Entering deep work (${fatigueLabel}): take 1 gel + 200mL fluid before kilometer ${startKm}.`
                 : `Empty remaining W' tank over the final ${(endKm - startKm).toFixed(1)} km.`,
@@ -239,7 +244,9 @@ export function simulateCoursePacingAndFueling(
     fluidMlPerHour,
     totalFluidMl: Math.round(fluidMlPerHour * totalHours),
     gelEquivalentsCount: Math.max(0, Math.round((carbsGramsPerHour * totalHours) / 25)),
-    caffeineMgRecommendation: Math.round(weightKg * (totalHours > 1.5 ? 3.5 : 2.5)),
+    caffeineMgRecommendation: hideWeightOrMinor
+      ? 0
+      : Math.round(weightKg * (totalHours > 1.5 ? 3.5 : 2.5)),
   };
 
   const averageTargetWatts =

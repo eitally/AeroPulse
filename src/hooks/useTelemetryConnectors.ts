@@ -359,12 +359,7 @@ export function useTelemetryConnectors({
     };
 
     const handleMessage = (event: MessageEvent) => {
-      if (
-        event.origin !== window.location.origin &&
-        !event.origin.includes('.vercel.app') &&
-        !event.origin.includes('run.app') &&
-        !event.origin.includes('localhost')
-      ) {
+      if (event.origin !== window.location.origin) {
         return;
       }
       processIncomingOAuthPayload(event.data);
@@ -392,36 +387,42 @@ export function useTelemetryConnectors({
     };
   }, [completeStravaAuthHandshake, setSyncError, stopStravaOAuthPoll]);
 
-  const handleLaunchIntervalsOAuth = async (flow = 'popup') => {
+  const launchProviderOAuth = async (urlPath: string, providerLabel: string, flow = 'popup') => {
+    const popupWidth = 600;
+    const popupHeight = 720;
+    const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
+    const popup =
+      flow === 'popup'
+        ? window.open(
+            'about:blank',
+            'aeropulse_oauth_popup',
+            `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+          )
+        : null;
     try {
       setSyncError(null);
-      const resp = await fetch(`/api/intervals/auth/url?flow=${flow}`, {
+      const resp = await fetch(`${urlPath}?flow=${encodeURIComponent(flow)}`, {
         credentials: 'include',
       });
       const data = await safeParseResponseJson(resp);
       if (!resp.ok || !data.url) {
-        throw new Error(data.error || 'Failed to start Intervals.icu OAuth');
+        if (popup && !popup.closed) popup.close();
+        throw new Error(data.error || `Failed to start ${providerLabel} OAuth`);
       }
-      if (flow === 'popup') {
-        const popupWidth = 600;
-        const popupHeight = 720;
-        const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
-        const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
-        const popup = window.open(
-          data.url,
-          'aeropulse_oauth_popup',
-          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
-        );
-        if (!popup) {
-          window.location.href = data.url;
-        }
+      if (flow === 'popup' && popup && !popup.closed) {
+        popup.location.href = data.url;
       } else {
         window.location.href = data.url;
       }
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Failed to launch Intervals.icu OAuth');
+      if (popup && !popup.closed) popup.close();
+      setSyncError(err instanceof Error ? err.message : `Failed to launch ${providerLabel} OAuth`);
     }
   };
+
+  const handleLaunchIntervalsOAuth = (flow = 'popup') =>
+    launchProviderOAuth('/api/intervals/auth/url', 'Intervals.icu', flow);
 
   const handleConnectIntervals = async (athleteId: string, apiKey: string) => {
     setSyncError(null);
@@ -482,36 +483,8 @@ export function useTelemetryConnectors({
     await fetchServerConfigStatus();
   };
 
-  const handleLaunchWahooOAuth = async (flow = 'popup') => {
-    try {
-      setSyncError(null);
-      const resp = await fetch(`/api/wahoo/auth/url?flow=${flow}`, {
-        credentials: 'include',
-      });
-      const data = await safeParseResponseJson(resp);
-      if (!resp.ok || !data.url) {
-        throw new Error(data.error || 'Failed to start Wahoo OAuth');
-      }
-      if (flow === 'popup') {
-        const popupWidth = 600;
-        const popupHeight = 720;
-        const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
-        const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
-        const popup = window.open(
-          data.url,
-          'aeropulse_oauth_popup',
-          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
-        );
-        if (!popup) {
-          window.location.href = data.url;
-        }
-      } else {
-        window.location.href = data.url;
-      }
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Failed to launch Wahoo OAuth');
-    }
-  };
+  const handleLaunchWahooOAuth = (flow = 'popup') =>
+    launchProviderOAuth('/api/wahoo/auth/url', 'Wahoo', flow);
 
   const handleDisconnectWahoo = async () => {
     try {
@@ -529,36 +502,8 @@ export function useTelemetryConnectors({
     await fetchServerConfigStatus();
   };
 
-  const handleLaunchPolarOAuth = async (flow = 'popup') => {
-    try {
-      setSyncError(null);
-      const resp = await fetch(`/api/polar/auth/url?flow=${flow}`, {
-        credentials: 'include',
-      });
-      const data = await safeParseResponseJson(resp);
-      if (!resp.ok || !data.url) {
-        throw new Error(data.error || 'Failed to start Polar OAuth');
-      }
-      if (flow === 'popup') {
-        const popupWidth = 600;
-        const popupHeight = 720;
-        const left = Math.max(0, window.screenX + (window.outerWidth - popupWidth) / 2);
-        const top = Math.max(0, window.screenY + (window.outerHeight - popupHeight) / 2);
-        const popup = window.open(
-          data.url,
-          'aeropulse_oauth_popup',
-          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
-        );
-        if (!popup) {
-          window.location.href = data.url;
-        }
-      } else {
-        window.location.href = data.url;
-      }
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Failed to launch Polar OAuth');
-    }
-  };
+  const handleLaunchPolarOAuth = (flow = 'popup') =>
+    launchProviderOAuth('/api/polar/auth/url', 'Polar', flow);
 
   const handleDisconnectPolar = async () => {
     try {

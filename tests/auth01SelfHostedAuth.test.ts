@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import crypto from 'crypto';
 import http from 'http';
 import express from 'express';
 import { apiRouter } from '../server/apiRouter.ts';
@@ -187,14 +188,35 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
       const token = url.searchParams.get('token');
       expect(token).toBeTruthy();
 
-      // Follow verify endpoint (manual redirect handling to inspect Set-Cookie)
-      const verifyRes = await fetch(`${baseUrl}/api/auth/magic-link/verify?token=${token}`, {
+      // Step 1: GET /verify renders HTML confirm page WITHOUT consuming token or minting session
+      const previewRes = await fetch(`${baseUrl}/api/auth/magic-link/verify?token=${token}`, {
+        redirect: 'manual',
+      });
+      expect(previewRes.status).toBe(200);
+      expect(previewRes.headers.get('set-cookie')).toBeNull();
+      const previewHtml = await previewRes.text();
+      expect(previewHtml).toContain('Complete Sign-In to THRESH');
+
+      // Step 2: POST /verify atomically consumes token and issues session cookie
+      const verifyRes = await fetch(`${baseUrl}/api/auth/magic-link/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
         redirect: 'manual',
       });
 
       expect([302, 303, 307]).toContain(verifyRes.status);
       const setCookie = verifyRes.headers.get('set-cookie');
       expect(setCookie).toContain(SESSION_COOKIE_NAME);
+
+      // Replay must fail (token already consumed)
+      const replayRes = await fetch(`${baseUrl}/api/auth/magic-link/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+        redirect: 'manual',
+      });
+      expect(replayRes.headers.get('location')).toContain('expired_or_invalid_magic_token');
 
       // Verify session via /api/auth/me
       const meRes = await fetch(`${baseUrl}/api/auth/me`, {
@@ -206,9 +228,49 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
       expect(meData.user?.authProviders[0].provider).toBe('magic_link');
     });
 
-    it('POST /api/auth/passkey/register-options and register-verify creates account', async () => {
+    it('POST /api/auth/passkey/register-options and register-verify creates account with real ES256 WebAuthn', async () => {
       const passkeyEmail = `touchid_${Math.random().toString(36).slice(2, 7)}@thresh.run`;
-      const uniqueCredId = `cred_mock_${Math.random().toString(36).slice(2, 9)}`;
+      const credIdBuf = crypto.randomBytes(16);
+      const uniqueCredId = credIdBuf.toString('base64url');
+      const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
+        namedCurve: 'P-256',
+      });
+      const jwk = publicKey.export({ format: 'jwk' });
+      const xBuf = Buffer.from(jwk.x!, 'base64url');
+      const yBuf = Buffer.from(jwk.y!, 'base64url');
+      const rpIdHash = crypto.createHash('sha256').update('127.0.0.1').digest();
+
+      const coseEc2Key = Buffer.concat([
+        Buffer.from([0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]),
+        xBuf,
+        Buffer.from([0x22, 0x58, 0x20]),
+        yBuf,
+      ]);
+      const credIdLenBuf = Buffer.alloc(2);
+      credIdLenBuf.writeUInt16BE(credIdBuf.length, 0);
+      const regSignCount = Buffer.alloc(4);
+      regSignCount.writeUInt32BE(1, 0);
+      const regAuthData = Buffer.concat([
+        rpIdHash,
+        Buffer.from([0x45]), // UP + UV + AT
+        regSignCount,
+        Buffer.alloc(16, 0), // aaguid
+        credIdLenBuf,
+        credIdBuf,
+        coseEc2Key,
+      ]);
+      const attestationObject = Buffer.concat([
+        Buffer.from([0xa3, 0x63]),
+        Buffer.from('fmt'),
+        Buffer.from([0x64]),
+        Buffer.from('none'),
+        Buffer.from([0x67]),
+        Buffer.from('attStmt'),
+        Buffer.from([0xa0, 0x68]),
+        Buffer.from('authData'),
+        Buffer.from([0x58, regAuthData.length]),
+        regAuthData,
+      ]).toString('base64url');
 
       const optRes = await fetch(`${baseUrl}/api/auth/passkey/register-options`, {
         method: 'POST',
@@ -221,7 +283,15 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
       expect(optData.challengeToken).toBeDefined();
       expect(optData.options?.challenge).toBeDefined();
 
-      // Simulate browser credential creation response
+      const regClientDataJson = Buffer.from(
+        JSON.stringify({
+          type: 'webauthn.create',
+          challenge: optData.options.challenge,
+          origin: baseUrl,
+        })
+      ).toString('base64url');
+
+      // Simulate browser WebAuthn credential creation response
       const verifyRes = await fetch(`${baseUrl}/api/auth/passkey/register-verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,7 +303,8 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
             id: uniqueCredId,
             rawId: uniqueCredId,
             response: {
-              publicKey: 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmock',
+              clientDataJSON: regClientDataJson,
+              attestationObject,
             },
           },
         }),
@@ -245,11 +316,28 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
       expect(verifyData.user?.passkeys).toHaveLength(1);
       expect(verifyData.user?.passkeys[0].id).toBe(uniqueCredId);
 
-      // Now authenticate via passkey
+      // Now authenticate via real ES256 WebAuthn assertion
       const authOptRes = await fetch(`${baseUrl}/api/auth/passkey/auth-options`, {
         method: 'POST',
       });
       const authOptData = await authOptRes.json();
+      const assertClientDataJson = Buffer.from(
+        JSON.stringify({
+          type: 'webauthn.get',
+          challenge: authOptData.options.challenge,
+          origin: baseUrl,
+        })
+      ).toString('base64url');
+      const assertSignCount = Buffer.alloc(4);
+      assertSignCount.writeUInt32BE(2, 0);
+      const assertAuthData = Buffer.concat([rpIdHash, Buffer.from([0x05]), assertSignCount]);
+      const clientHash = crypto
+        .createHash('sha256')
+        .update(Buffer.from(assertClientDataJson, 'base64url'))
+        .digest();
+      const assertSig = crypto
+        .sign('sha256', Buffer.concat([assertAuthData, clientHash]), privateKey)
+        .toString('base64url');
 
       const authVerifyRes = await fetch(`${baseUrl}/api/auth/passkey/auth-verify`, {
         method: 'POST',
@@ -258,6 +346,12 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
           challengeToken: authOptData.challengeToken,
           credential: {
             id: uniqueCredId,
+            rawId: uniqueCredId,
+            response: {
+              clientDataJSON: assertClientDataJson,
+              authenticatorData: assertAuthData.toString('base64url'),
+              signature: assertSig,
+            },
           },
         }),
       });

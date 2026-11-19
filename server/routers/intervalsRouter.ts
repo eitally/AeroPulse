@@ -49,6 +49,7 @@ import {
 import { computeIntervalsSegmentEfforts } from './activitiesRouter.ts';
 import { resolveStravaAthleteIdentity, ensureValidStravaAccessToken } from './stravaRouter.ts';
 import { connectServiceToUser, disconnectServiceFromUser } from '../authService.ts';
+import { getOAuthStateCookieNonce, timingSafeStringEqual } from '../securityUtils.ts';
 import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
 import { classifyMultiSportActivity } from '../../src/physiology/stravaLoadCalibration.ts';
 
@@ -939,6 +940,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
   const error = String(req.query.error || '').trim();
   const stateToken = String(req.query.state || '').trim();
 
+  const cookieNonce = getOAuthStateCookieNonce(req);
   const verifiedState = verifyOAuthStateToken(stateToken);
   clearOAuthStateCookie(res);
 
@@ -956,7 +958,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -984,21 +986,23 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         accentColor: '#FB7185',
         body: 'No authorization code was returned by Intervals.icu.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
   }
 
-  if (!verifiedState) {
+  if (!verifiedState || !cookieNonce || !timingSafeStringEqual(cookieNonce, verifiedState.nonce)) {
     res.status(400).type('html').send(
       renderThreshOAuthHtml({
         title: 'Invalid OAuth State',
         heading: 'Security Verification Failed',
         accentColor: '#FB7185',
-        body: 'OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection.',
+        body: !verifiedState
+          ? 'OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection.'
+          : 'Browser OAuth verification cookie was missing or did not match. Please re-initiate Intervals.icu connection.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
@@ -1070,7 +1074,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
       await connectServiceToUser(callerClaims.sub, 'intervals', athleteId, athleteName);
     }
 
-    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    const sessionToken = setSessionCookie(req, res, athleteName, sid, 'verified');
     await saveSessionCacheAsync(req, res, sid);
 
     const oauthPayloadJson = safeJsonForScript({
@@ -1080,7 +1084,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
       athleteName,
       sessionToken,
       scope: tokenData.scope,
-      returnUrl: '/?tab=settings',
+      returnUrl: '/#fitness?openDataSources=1',
     });
 
     res.type('html').send(
@@ -1090,7 +1094,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         accentColor: '#10B981',
         body: 'Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and training data are ready to sync.',
         ctaLabel: 'Continue to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
@@ -1124,7 +1128,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
               try { window.close(); } catch (e) {}
             }, 300);
           } else {
-            window.location.replace(payload.returnUrl || '/?tab=settings');
+            window.location.replace(payload.returnUrl || '/#fitness?openDataSources=1');
           }
         })();`,
       })
@@ -1143,7 +1147,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {

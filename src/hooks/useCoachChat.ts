@@ -14,6 +14,7 @@ import { INITIAL_CHAT_MESSAGES } from '../data/mockTelemetry';
 import { getLocalDateIso, shiftIsoDate } from '../physiology/stravaLoadCalibration';
 import { computeAnnualMileageSummary, formatDistance } from '../utils/formatters';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
+import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 
 interface UseCoachChatParams {
   latestWellness: UnifiedWellnessDay | null;
@@ -65,8 +66,48 @@ export function useCoachChat({
       envFilter
     );
 
+    const ageCompliance = resolveAthleteAgeTier({
+      birthMonthYear: effectiveAthleteProfile.birthMonthYear,
+    });
+    const effectiveHideWeight = Boolean(
+      effectiveAthleteProfile.safeSportHideWeight || ageCompliance.isMinorU18
+    );
+    const sanitizedToday =
+      today && effectiveHideWeight
+        ? { ...today, weightKg: undefined, bmi: undefined, bodyFatPct: undefined }
+        : today;
+
+    const firstPartyBadges = ['garmin', 'fit', 'wahoo', 'coros', 'suunto', 'polar', 'apple', 'intervals', 'stopwatch', 'manual', 'official fat'];
+    const cleanRecentWorkouts = effectiveActivities
+      .filter((a) => {
+        const badges = Array.isArray(a.sourceBadges)
+          ? a.sourceBadges.map((b) => String(b).toLowerCase())
+          : [];
+        const hasHardware = badges.some((b) => firstPartyBadges.some((tok) => b.includes(tok)));
+        const hasStrava = Boolean(a.stravaId) || badges.includes('strava') || String(a.id || '').toLowerCase().includes('strava');
+        if (hasStrava && !hasHardware) return false;
+        return hasHardware || !hasStrava;
+      })
+      .slice(0, 10)
+      .map((a) => ({
+        date: a.startDateLocal.slice(0, 10),
+        name: a.name,
+        sport: a.sportCategory,
+        environment: a.environment,
+        subType: a.subType,
+        distance: formatDistance(a.distanceMeters, distanceUnit, 1),
+        durationMins: Math.round(a.movingTimeSecs / 60),
+        load: a.trainingLoad,
+        decouplingPct: a.aerobicDecouplingPct,
+        npWatts: a.normalizedPower,
+        avgHr: a.avgHr,
+        sourceBadges: Array.isArray(a.sourceBadges) && a.sourceBadges.length > 0 ? a.sourceBadges : ['Garmin'],
+      }));
+
     return {
-      todayWellness: today,
+      todayWellness: sanitizedToday,
+      safeSportHideWeight: effectiveHideWeight,
+      ...(ageCompliance.isMinorU18 ? { isMinorU18: true } : {}),
       garminHealthSummary: today
         ? {
             trainingStatus: today.garminTrainingStatus,
@@ -100,23 +141,12 @@ export function useCoachChat({
         annualTarget: formatDistance(bikeSummary.targetMeters, distanceUnit, 0),
         deltaVsSchedule: formatDistance(bikeSummary.deltaVsScheduleMeters, distanceUnit, 1),
       },
-      recentWorkouts: effectiveActivities.slice(0, 10).map((a) => ({
-        date: a.startDateLocal.slice(0, 10),
-        name: a.name,
-        sport: a.sportCategory,
-        environment: a.environment,
-        subType: a.subType,
-        distance: formatDistance(a.distanceMeters, distanceUnit, 1),
-        durationMins: Math.round(a.movingTimeSecs / 60),
-        load: a.trainingLoad,
-        decouplingPct: a.aerobicDecouplingPct,
-        npWatts: a.normalizedPower,
-        avgHr: a.avgHr,
-      })),
+      recentWorkouts: cleanRecentWorkouts,
       upcomingPlannedWorkouts: effectivePlannedEvents.slice(0, 8),
       targetGoals: effectiveTargetGoals,
       athleteProfile: {
-        weightKg: effectiveAthleteProfile.weightKg,
+        ...(effectiveHideWeight ? {} : { weightKg: effectiveAthleteProfile.weightKg }),
+        safeSportHideWeight: effectiveHideWeight,
         restingHr: effectiveAthleteProfile.restingHr,
         ftp: effectiveAthleteProfile.ftp,
         indoorFtp: effectiveAthleteProfile.indoorFtp,

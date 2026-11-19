@@ -253,18 +253,40 @@ describe('LIFECYCLE · Identity, Team Departure, Age Compliance, RBAC & Concurre
     });
     expect(clubMinorNoParent.ok).toBe(false);
 
-    const clubMinorJoin = await claimTeamJoinInvite({
-      callerSid: `cminor_${tag}`,
-      originUrl: origin,
-      codeOrSlug: clubTeam.brand.joinCode,
-      athleteName: 'Sam ClubMinor',
-      birthYear: currentYear - 15,
-      parentGuardianEmail: 'guardian.sam@family.test',
-    });
+    const prevResend = process.env.RESEND_API_KEY;
+    let consentToken = '';
+    process.env.RESEND_API_KEY = 're_test_lifecycle_consent';
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('api.resend.com/emails')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { html?: string };
+        const m = body.html?.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/);
+        if (m?.[1]) consentToken = m[1];
+        return new Response(JSON.stringify({ id: 'em_lc_1' }), { status: 200 });
+      }
+      return originalFetch(input, init);
+    }) as any;
+
+    let clubMinorJoin: Awaited<ReturnType<typeof claimTeamJoinInvite>>;
+    try {
+      clubMinorJoin = await claimTeamJoinInvite({
+        callerSid: `cminor_${tag}`,
+        originUrl: origin,
+        codeOrSlug: clubTeam.brand.joinCode,
+        athleteName: 'Sam ClubMinor',
+        birthYear: currentYear - 15,
+        parentGuardianEmail: 'guardian.sam@family.test',
+      });
+      await new Promise((r) => setTimeout(r, 20));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prevResend === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = prevResend;
+    }
     expect(clubMinorJoin.ok).toBe(true);
-    const consentToken = clubMinorJoin.summary!.memberships.find(
-      (m) => m.userSid === `cminor_${tag}`
-    )?.parentConsentToken!;
+    expect(
+      clubMinorJoin.summary!.memberships.find((m) => m.userSid === `cminor_${tag}`)
+        ?.parentConsentToken
+    ).toBeUndefined();
     expect(consentToken).toBeTruthy();
 
     // Quarantined snapshot push while PENDING on non-school club

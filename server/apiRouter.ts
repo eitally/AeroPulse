@@ -26,8 +26,9 @@ import { webhookRouter } from './routers/webhookRouter.ts';
 
 export const apiRouter = express.Router();
 
-// Security headers & scoped session context middleware
+// Security headers, URL-encoded form parsing, & scoped session context middleware
 apiRouter.use(securityHeadersMiddleware);
+apiRouter.use(express.urlencoded({ extended: false }));
 apiRouter.use((req: Request, res: Response, next: NextFunction) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {

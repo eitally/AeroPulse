@@ -411,9 +411,9 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                           <div className="min-w-0">
                             <div className="font-bold flex items-center gap-1.5">
                               <span className="truncate">{ath.name}</span>
-                              {ath.externalProfileUrl && (
+                              {ath.externalProfileUrl && /^https:\/\//i.test(ath.externalProfileUrl.trim()) && (
                                 <a
-                                  href={ath.externalProfileUrl}
+                                  href={ath.externalProfileUrl.trim()}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   aria-label={`Open external profile for ${ath.name}`}

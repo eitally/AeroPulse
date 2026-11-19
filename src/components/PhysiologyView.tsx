@@ -52,6 +52,8 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
   onOpenActivitiesSegments,
   onOpenCoachWithPrompt,
 }) => {
+  const hideWeight = Boolean(athleteProfile?.safeSportHideWeight);
+  const validWeightKg = !hideWeight && athleteWeightKg > 0 ? Math.max(35, athleteWeightKg) : 0;
   const isMobile = useIsMobileViewport();
   const [curveDiscipline, setCurveDiscipline] = useState<'Cycling' | 'Running'>('Cycling');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -291,7 +293,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                   label:
                     curveDiscipline === 'Cycling'
                       ? hasPowerCalibration
-                        ? `20m Outdoor: ${calibratedCurves[3]?.cyclingOutdoorWatts || 0}W (${((calibratedCurves[3]?.cyclingOutdoorWatts || 0) / Math.max(40, athleteWeightKg)).toFixed(2)} W/kg) · Trainer: ${calibratedCurves[3]?.cyclingIndoorWatts || 0}W`
+                        ? `20m Outdoor: ${calibratedCurves[3]?.cyclingOutdoorWatts || 0}W${validWeightKg > 0 ? ` (${((calibratedCurves[3]?.cyclingOutdoorWatts || 0) / validWeightKg).toFixed(2)} W/kg)` : ''} · Trainer: ${calibratedCurves[3]?.cyclingIndoorWatts || 0}W`
                         : 'Awaiting Power Calibration'
                       : hasPaceCalibration
                         ? `20m Outdoor: ${formatPace(calibratedCurves[3]?.runningOutdoorPaceSecsKm || 0, distanceUnit)} · Treadmill: ${formatPace(calibratedCurves[3]?.runningIndoorPaceSecsKm || 0, distanceUnit)}`
@@ -321,7 +323,11 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
                 }`}
               >
-                {disc === 'Cycling' ? 'Cycling Power (W & W/kg)' : `Running Pace (/${distanceUnit})`}
+                {disc === 'Cycling'
+                  ? validWeightKg > 0
+                    ? 'Cycling Power (W & W/kg)'
+                    : 'Cycling Power (W)'
+                  : `Running Pace (/${distanceUnit})`}
               </button>
             ))}
           </div>
@@ -347,9 +353,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
             <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-blue-600 dark:text-sky-400">
               {curveDiscipline === 'Cycling'
                 ? empiricalSummary.criticalPowerWatts
-                  ? `${empiricalSummary.criticalPowerWatts} W (${(
-                      empiricalSummary.criticalPowerWatts / Math.max(40, athleteWeightKg)
-                    ).toFixed(2)} W/kg)`
+                  ? `${empiricalSummary.criticalPowerWatts} W${validWeightKg > 0 ? ` (${(empiricalSummary.criticalPowerWatts / validWeightKg).toFixed(2)} W/kg)` : ''}`
                   : '—'
                 : empiricalSummary.criticalPaceSecsPerKm
                   ? `${formatPace(Math.round(empiricalSummary.criticalPaceSecsPerKm), distanceUnit)}${
@@ -709,9 +713,14 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
               {calibratedCurves.map((pt) => {
                 if (curveDiscipline === 'Cycling') {
-                  const outWkg = (pt.cyclingOutdoorWatts / athleteWeightKg).toFixed(2);
-                  const inWkg = (pt.cyclingIndoorWatts / athleteWeightKg).toFixed(2);
-                  const bestWkg = (pt.cyclingSeasonBestWatts / athleteWeightKg).toFixed(2);
+                  const outWkg =
+                    validWeightKg > 0 ? (pt.cyclingOutdoorWatts / validWeightKg).toFixed(2) : null;
+                  const inWkg =
+                    validWeightKg > 0 ? (pt.cyclingIndoorWatts / validWeightKg).toFixed(2) : null;
+                  const bestWkg =
+                    validWeightKg > 0
+                      ? (pt.cyclingSeasonBestWatts / validWeightKg).toFixed(2)
+                      : null;
                   const diffW = pt.cyclingOutdoorWatts - pt.cyclingIndoorWatts;
                   return (
                     <tr key={pt.durationLabel} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
@@ -719,16 +728,16 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                         {pt.durationLabel}
                       </td>
                       <td className="py-3 px-4 text-right text-blue-600 dark:text-blue-400 font-semibold">
-                        {pt.cyclingOutdoorWatts} W ({outWkg} W/kg)
+                        {pt.cyclingOutdoorWatts} W{outWkg ? ` (${outWkg} W/kg)` : ''}
                       </td>
                       <td className="py-3 px-4 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
-                        {pt.cyclingIndoorWatts} W ({inWkg} W/kg)
+                        {pt.cyclingIndoorWatts} W{inWkg ? ` (${inWkg} W/kg)` : ''}
                       </td>
                       <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-300">
                         {diffW >= 0 ? `+${diffW} W Outdoor` : `${Math.abs(diffW)} W Indoor`}
                       </td>
                       <td className="py-3 px-4 text-right text-slate-900 dark:text-slate-100 font-semibold">
-                        {pt.cyclingSeasonBestWatts} W ({bestWkg} W/kg)
+                        {pt.cyclingSeasonBestWatts} W{bestWkg ? ` (${bestWkg} W/kg)` : ''}
                       </td>
                     </tr>
                   );
@@ -821,9 +830,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
                           <td className="py-2.5 px-3 text-right font-semibold text-blue-600 dark:text-sky-400">
                             {isCycling
                               ? pt.bestWatts != null
-                                ? `${pt.bestWatts} W (${(
-                                    pt.bestWatts / Math.max(40, athleteWeightKg)
-                                  ).toFixed(2)} W/kg)`
+                                ? `${pt.bestWatts} W${validWeightKg > 0 ? ` (${(pt.bestWatts / validWeightKg).toFixed(2)} W/kg)` : ''}`
                                 : '—'
                               : pt.bestGapSecsPerKm != null
                                 ? `${formatPace(Math.round(pt.bestGapSecsPerKm), distanceUnit)} GAP`

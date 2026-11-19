@@ -254,7 +254,7 @@ export function evaluateSafeSportPatternWatch(
         baselineValue: '>= 50 ng/mL target',
         deltaDisplay: `${Math.round(f - 50)} ng/mL`,
         guidance:
-          'Clinical iron deficiency impairs oxygen delivery and VO2max adaptations. Refer to team sports medicine / physician before iron supplementation.',
+          'Low endurance ferritin reserve (< 30 ng/mL) may limit aerobic recovery and oxygen transport. Coaching readiness indicator only (not a medical diagnosis) — consult a sports physician before iron supplementation.',
       });
     } else if (f < 50) {
       ferritinStatus = 'SUBOPTIMAL_30_50';

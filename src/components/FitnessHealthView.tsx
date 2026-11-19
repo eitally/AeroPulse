@@ -2542,9 +2542,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 <span className="text-xs font-mono text-[#EA580C] dark:text-orange-400 font-bold">
                   {athleteProfile?.safeSportHideWeight
                     ? 'Safe-Sport Shield'
-                    : bikeEftp > 0
-                      ? `${(bikeEftp / (latestDay.weightKg || athleteProfile?.weightKg || 70)).toFixed(2)} W/kg`
-                      : '— W/kg'}
+                    : bikeEftp > 0 && (latestDay.weightKg || athleteProfile?.weightKg || 0) > 0
+                      ? `${(bikeEftp / Math.max(35, latestDay.weightKg || athleteProfile?.weightKg || 0)).toFixed(2)} W/kg`
+                      : bikeEftp > 0
+                        ? `${bikeEftp} W`
+                        : '— W/kg'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between font-mono tabular-nums">

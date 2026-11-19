@@ -150,6 +150,7 @@ describe('UX-02 & UX-07 Coach Workspace, 4-Tab Nav & Student Polish', () => {
       codeOrSlug: team.brand.joinCode,
       athleteName: 'Jordan Watchless',
       birthYear: new Date().getFullYear() - 16,
+      parentGuardianEmail: 'parent.jordan@family.test',
     });
     expect(joined.ok).toBe(true);
     expect(joined.safeSportShieldEnforced).toBe(true);

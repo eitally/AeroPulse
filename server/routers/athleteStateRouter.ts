@@ -8,6 +8,7 @@ import {
   resolveSessionScopeKey,
   saveTenantVaultAsync,
 } from '../sessionContext.ts';
+import { isCanonicalAuthenticatedClaims } from '../securityUtils.ts';
 import type { RuntimeSessionStore } from '../sessionContext.ts';
 import type {
   AnnualMileageGoal,
@@ -74,6 +75,9 @@ const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
  */
 export function resolveCanonicalAthleteVaultKey(req: Request): string | null {
   const verified = getVerifiedSessionClaims(req);
+  if (verified && !isCanonicalAuthenticatedClaims(verified)) {
+    return null;
+  }
   const sub = String(verified?.sub || '').trim();
   if (sub.startsWith('usr_')) {
     const cleanUserId = sub.replace(/[^0-9a-zA-Z_-]/g, '');
@@ -96,7 +100,7 @@ export function resolveCanonicalAthleteVaultKey(req: Request): string | null {
   }
 
   const scopeKey = resolveSessionScopeKey(req);
-  if (scopeKey) {
+  if (scopeKey && !verified) {
     return `athlete_state_sid_${scopeKey}`;
   }
 

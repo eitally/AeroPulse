@@ -360,11 +360,7 @@ export function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
 
     const cookieVault = readCompactVaultFromCookie(activeReq);
     const shouldHydrateCookieVault = Boolean(
-      cookieVault &&
-        (cookieVault.sid?.slice(0, 24) === scopeKey ||
-          (!loaded.stravaRefreshToken &&
-            !loaded.stravaAccessToken &&
-            Boolean(cookieVault.stravaRefreshToken || cookieVault.stravaAccessToken)))
+      cookieVault && cookieVault.sid?.slice(0, 24) === scopeKey
     );
     if (cookieVault && shouldHydrateCookieVault) {
       loaded = {

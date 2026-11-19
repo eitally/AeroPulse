@@ -2,12 +2,14 @@ import { Router, type Request, type Response } from 'express';
 import {
   issueOAuthStateToken,
   setOAuthStateCookie,
+  getOAuthStateCookieNonce,
   verifyOAuthStateToken,
   clearOAuthStateCookie,
   safeJsonForScript,
   escapeHtml,
   setSessionCookie,
   getVerifiedSessionClaims,
+  timingSafeStringEqual,
 } from '../securityUtils.ts';
 import {
   ensureRequestSessionSid,
@@ -119,7 +121,7 @@ export function normalizePolarExercise(
   if (rawHrZones.length > 0) {
     rawHrZones.forEach((z: any, i: number) => {
       const rawIdx = z.index != null ? Number(z.index) : i + 1;
-      const targetIdx = rawIdx >= 1 && rawIdx <= 5 ? rawIdx : rawIdx;
+      const targetIdx = rawIdx >= 1 && rawIdx <= 7 ? rawIdx - 1 : i;
       const inZoneSecs = parsePolarDurationSecs(z.in_zone ?? z.in_zone_seconds ?? z.duration ?? 0);
       if (targetIdx >= 0 && targetIdx < 7) {
         hrZones[targetIdx] = inZoneSecs;
@@ -222,6 +224,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
   const error = String(req.query.error || '').trim();
   const stateToken = String(req.query.state || '').trim();
 
+  const cookieNonce = getOAuthStateCookieNonce(req);
   const verifiedState = verifyOAuthStateToken(stateToken);
   clearOAuthStateCookie(res);
 
@@ -239,7 +242,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#EF4444',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -267,21 +270,23 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#EF4444',
         body: 'No authorization code was returned by Polar.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
   }
 
-  if (!verifiedState) {
+  if (!verifiedState || !cookieNonce || !timingSafeStringEqual(cookieNonce, verifiedState.nonce)) {
     res.status(400).type('html').send(
       renderThreshOAuthHtml({
         title: 'Invalid OAuth State',
         heading: 'Security Verification Failed',
         accentColor: '#EF4444',
-        body: 'OAuth state token was invalid or expired. Please re-initiate Polar connection.',
+        body: !verifiedState
+          ? 'OAuth state token was invalid or expired. Please re-initiate Polar connection.'
+          : 'Browser OAuth verification cookie was missing or did not match. Please re-initiate Polar connection.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
@@ -376,7 +381,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
       await connectServiceToUser(callerClaims.sub, 'polar', athleteId, athleteName);
     }
 
-    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    const sessionToken = setSessionCookie(req, res, athleteName, sid, 'verified');
     await saveSessionCacheAsync(req, res, sid);
 
     const oauthPayloadJson = safeJsonForScript({
@@ -385,7 +390,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
       athleteId,
       athleteName,
       sessionToken,
-      returnUrl: '/?tab=settings',
+      returnUrl: '/#fitness?openDataSources=1',
     });
 
     res.type('html').send(
@@ -395,7 +400,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#EF4444',
         body: 'Your Polar AccessLink account is now linked via OAuth 2.0. Exercises, heart rate zones, and rTSS will sync automatically with smart deduplication.',
         ctaLabel: 'Continue to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
@@ -428,7 +433,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
               try { window.close(); } catch (e) {}
             }, 300);
           } else {
-            window.location.replace(payload.returnUrl || '/?tab=settings');
+            window.location.replace(payload.returnUrl || '/#fitness?openDataSources=1');
           }
         })();`,
       })
@@ -447,7 +452,7 @@ export const polarCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {

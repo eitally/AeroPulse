@@ -1127,10 +1127,10 @@ export function evaluateStudentAthleteGuardrail(
     return {
       status: 'IRON_DEPLETION_CAUTION',
       headline: severeIron
-        ? `Severe Iron Depletion Alert (Ferritin ${checkIn.ferritinNgMl} ng/mL)`
+        ? `Low Ferritin Reserve Watch (Ferritin ${checkIn.ferritinNgMl} ng/mL)`
         : `Sub-Optimal Ferritin Reserve (${checkIn.ferritinNgMl} ng/mL)`,
       recommendation:
-        'Serum ferritin < 30 ng/mL blunts erythropoiesis and mitochondrial enzymes in endurance runners, causing elevated HR at threshold. Cap VO2/anaerobic reps at controlled Threshold/CV effort and review iron protocol with team physician.',
+        'Serum ferritin < 30 ng/mL is associated with reduced endurance aerobic adaptation and elevated HR at threshold. Cap VO2/anaerobic reps at controlled Threshold/CV effort. Coaching load reference only (not a medical diagnosis) — discuss with a sports physician before supplementation.',
       intensityScalePct: severeIron ? 78 : 88,
       suggestCrossTrainingSwap: false,
       flags,

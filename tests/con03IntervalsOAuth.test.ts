@@ -134,8 +134,10 @@ describe('CON-03 · Intervals.icu OAuth 2.0 Connector & Power-User Fallback', ()
     process.env.INTERVALS_CLIENT_ID = 'test_intervals_client_id_123';
     process.env.INTERVALS_CLIENT_SECRET = 'test_intervals_secret_abc';
 
-    // 1. Get a valid signed state token
+    // 1. Get a valid signed state token + browser OAuth state cookie
+    const jar = new SimpleCookieJar();
     const urlRes = await fetch(`${baseUrl}/api/intervals/auth/url`);
+    jar.absorbResponse(urlRes);
     const { state } = (await urlRes.json()) as { state: string };
 
     // 2. Mock Intervals.icu token exchange endpoint
@@ -158,10 +160,10 @@ describe('CON-03 · Intervals.icu OAuth 2.0 Connector & Power-User Fallback', ()
       return originalFetch(input, init);
     }) as any;
 
-    // 3. Invoke callback
+    // 3. Invoke callback with OAuth state cookie
     const callbackRes = await fetch(
       `${baseUrl}/auth/intervals/callback?code=valid_auth_code_123&state=${encodeURIComponent(state)}`,
-      { redirect: 'manual' }
+      { redirect: 'manual', headers: { Cookie: jar.headerValue() } }
     );
 
     expect(callbackRes.status).toBe(200);
@@ -172,7 +174,6 @@ describe('CON-03 · Intervals.icu OAuth 2.0 Connector & Power-User Fallback', ()
     expect(html).toContain('OAUTH_AUTH_SUCCESS');
 
     // 4. Verify /api/config/status reports Intervals.icu connected via OAuth
-    const jar = new SimpleCookieJar();
     jar.absorbResponse(callbackRes);
     const statusRes = await fetch(`${baseUrl}/api/config/status`, {
       headers: { Cookie: jar.headerValue() },

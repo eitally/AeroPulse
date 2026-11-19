@@ -139,8 +139,10 @@ describe('CON-02 · Wahoo Cloud API Connector (OAuth 2.0 / PKCE, Webhook & Smart
     process.env.WAHOO_CLIENT_ID = 'test_wahoo_client_123';
     process.env.WAHOO_CLIENT_SECRET = 'test_wahoo_secret_abc';
 
-    // 1. Get a valid signed state token with PKCE challenge
+    // 1. Get a valid signed state token + browser OAuth state cookie
+    const jar = new SimpleCookieJar();
     const urlRes = await fetch(`${baseUrl}/api/wahoo/auth/url`);
+    jar.absorbResponse(urlRes);
     const { state } = (await urlRes.json()) as { state: string };
 
     // 2. Mock Wahoo token exchange endpoint
@@ -171,10 +173,10 @@ describe('CON-02 · Wahoo Cloud API Connector (OAuth 2.0 / PKCE, Webhook & Smart
       return originalFetch(input, init);
     }) as any;
 
-    // 3. Invoke callback
+    // 3. Invoke callback with OAuth state cookie
     const callbackRes = await fetch(
       `${baseUrl}/auth/wahoo/callback?code=valid_wahoo_code_999&state=${encodeURIComponent(state)}`,
-      { redirect: 'manual' }
+      { redirect: 'manual', headers: { Cookie: jar.headerValue() } }
     );
 
     expect(callbackRes.status).toBe(200);
@@ -187,7 +189,6 @@ describe('CON-02 · Wahoo Cloud API Connector (OAuth 2.0 / PKCE, Webhook & Smart
     expect(parsedBody.get('code')).toBe('valid_wahoo_code_999');
 
     // 4. Verify /api/config/status reports Wahoo connected via OAuth
-    const jar = new SimpleCookieJar();
     jar.absorbResponse(callbackRes);
     const statusRes = await fetch(`${baseUrl}/api/config/status`, {
       headers: { Cookie: jar.headerValue() },

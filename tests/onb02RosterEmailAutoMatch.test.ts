@@ -199,6 +199,7 @@ describe('[ONB-02] CSV roster auto-match by athlete email (decoupled from Strava
       athleteEmail: 'sarah.k@summit.org',
       athleteName: 'Sarah Kelly',
       stravaAthleteId: 'strava_999999',
+      parentGuardianEmail: 'parent.sarah@summit.org',
     });
 
     expect(claimRes1.ok).toBe(true);
@@ -217,6 +218,7 @@ describe('[ONB-02] CSV roster auto-match by athlete email (decoupled from Strava
       athleteName: 'Anonymous Rider',
       stravaAthleteId: 'strava_fallback_888',
       squadGroup: 'Frosh/Soph',
+      parentGuardianEmail: 'parent.anon@summit.org',
     });
 
     expect(claimRes2.ok).toBe(true);
@@ -267,6 +269,7 @@ describe('[ONB-02] CSV roster auto-match by athlete email (decoupled from Strava
       codeOrSlug: team.brand.slug,
       athleteEmail: user.email,
       athleteName: user.name,
+      parentGuardianEmail: 'parent.leo@pioneer.edu',
     });
 
     expect(claimRes.ok).toBe(true);
@@ -296,6 +299,7 @@ describe('[ONB-02] CSV roster auto-match by athlete email (decoupled from Strava
       originUrl: origin,
       codeOrSlug: team.brand.slug,
       athleteName: 'Anonymous Falcon',
+      parentGuardianEmail: 'parent.falcon@harriers.org',
     });
     expect(anonClaim.ok).toBe(true);
 

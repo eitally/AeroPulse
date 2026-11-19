@@ -1,4 +1,5 @@
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
+import { timingSafeStringEqual } from './securityUtils.ts';
 import type {
   TeamInviteStatus,
   TeamMemberRole,
@@ -9,6 +10,7 @@ import {
   TEAMS_DIRECTORY_KEY,
   type StoredMembershipInternal,
   type StoredTeamDocument,
+  hashToken,
   loadDirectory,
   loadTeamDocRaw,
   projectTeamSummaryForCaller,
@@ -25,6 +27,7 @@ function sanitizeMemberPublicNameForDeletion(m: StoredMembershipInternal): void 
   m.invitedPhone = undefined;
   m.parentGuardianEmail = undefined;
   m.parentConsentToken = undefined;
+  m.parentConsentTokenHash = undefined;
   m.liveSnapshot = undefined;
   m.rawInviteToken = undefined;
   m.inviteTokenHash = undefined;
@@ -85,6 +88,7 @@ export async function leaveOrGraduateTeam(params: {
     mem.liveSnapshot = undefined;
     mem.parentGuardianEmail = undefined;
     mem.parentConsentToken = undefined;
+    mem.parentConsentTokenHash = undefined;
 
     if (params.mode === 'GRADUATE_ALUMNI') {
       mem.status = 'ALUMNI';
@@ -119,6 +123,7 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
   teamId: string;
   originUrl: string;
   birthMonthYear?: string;
+  verifiedUserBirthMonthYear?: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
   return withVaultLock(teamDocVaultKey(params.teamId), async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -129,8 +134,12 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
     );
     if (!mem) return { ok: false, error: 'Membership not found.' };
 
+    const canonicalBmy =
+      mem.birthMonthYear ||
+      params.verifiedUserBirthMonthYear ||
+      (mem.isMinorU18 && !mem.birthYear ? undefined : params.birthMonthYear);
     const ageCheck = resolveAthleteAgeTier({
-      birthMonthYear: params.birthMonthYear || mem.birthMonthYear,
+      birthMonthYear: canonicalBmy,
       birthYear: mem.birthYear,
       orgType: doc.brand.orgType,
       graduationYear: mem.graduationYear,
@@ -147,9 +156,10 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
     mem.isMinorU18 = false;
     mem.parentGuardianEmail = undefined;
     mem.parentConsentToken = undefined;
+    mem.parentConsentTokenHash = undefined;
     mem.parentConsentStatus = 'NOT_REQUIRED';
-    if (params.birthMonthYear && !mem.birthMonthYear) {
-      mem.birthMonthYear = params.birthMonthYear;
+    if (canonicalBmy && !mem.birthMonthYear) {
+      mem.birthMonthYear = canonicalBmy;
     }
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
@@ -493,12 +503,18 @@ export async function previewParentConsentToken(token: string): Promise<{
   if (!cleanToken) {
     return { ok: false, error: 'Invalid or missing parent consent token.' };
   }
+  const targetHash = hashToken(cleanToken);
+  const matchesToken = (m: StoredMembershipInternal): boolean =>
+    Boolean(
+      (m.parentConsentTokenHash && timingSafeStringEqual(m.parentConsentTokenHash, targetHash)) ||
+        (m.parentConsentToken && timingSafeStringEqual(m.parentConsentToken, cleanToken))
+    );
   const dir = await loadDirectory();
   for (const teamId of dir.allTeamIds) {
     const doc = await loadTeamDocRaw(teamId);
     if (!doc) continue;
     const mem = doc.memberships.find(
-      (m) => m.parentConsentToken === cleanToken && m.status !== 'REVOKED'
+      (m) => matchesToken(m) && m.status !== 'REVOKED'
     );
     if (mem) {
       return {
@@ -526,12 +542,18 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
 }> {
   const cleanToken = String(token || '').trim();
   if (!cleanToken) return { ok: false, error: 'Invalid or missing parent consent token.' };
+  const targetHash = hashToken(cleanToken);
+  const matchesToken = (m: StoredMembershipInternal): boolean =>
+    Boolean(
+      (m.parentConsentTokenHash && timingSafeStringEqual(m.parentConsentTokenHash, targetHash)) ||
+        (m.parentConsentToken && timingSafeStringEqual(m.parentConsentToken, cleanToken))
+    );
   const dir = await loadDirectory();
   for (const teamId of dir.allTeamIds) {
     const doc = await loadTeamDocRaw(teamId);
     if (!doc) continue;
     const targetMem = doc.memberships.find(
-      (m) => m.parentConsentToken === cleanToken && m.status !== 'REVOKED'
+      (m) => matchesToken(m) && m.status !== 'REVOKED'
     );
     if (!targetMem) continue;
 
@@ -542,7 +564,7 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
     await withVaultLock(teamDocVaultKey(teamId), async () => {
       const freshDoc = await loadTeamDocRaw(teamId);
       if (!freshDoc) return;
-      const mem = freshDoc.memberships.find((m) => m.parentConsentToken === cleanToken);
+      const mem = freshDoc.memberships.find((m) => matchesToken(m));
       if (!mem) return;
       detachedSid = mem.userSid;
       mem.status = 'REVOKED';

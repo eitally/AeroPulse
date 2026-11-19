@@ -885,7 +885,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Syncs structured workout calendars, COROS / Suunto / Apple Watch / Oura / WHOOP relay data, and eFTP curves.
+                  Syncs structured workout calendars, Intervals.icu-relayed devices (COROS / Suunto / Apple Watch / Oura / WHOOP), and eFTP curves.
                 </p>
               </div>
               <span className="text-xs font-semibold ap-text-brand">

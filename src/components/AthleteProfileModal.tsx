@@ -195,9 +195,11 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const isMinorAgeLocked = profileAgeTier.isMinorU18;
   const effectiveSafeSportHideWeight = isMinorAgeLocked ? true : safeSportHideWeight;
 
-  const outdoorWkg = (ftp / Math.max(35, weightKg)).toFixed(2);
-  const indoorWkg = (indoorFtp / Math.max(35, weightKg)).toFixed(2);
-  const weightLbs = (weightKg * 2.20462).toFixed(1);
+  const safeWeightForWkg =
+    !effectiveSafeSportHideWeight && weightKg > 0 ? Math.max(35, weightKg) : 0;
+  const outdoorWkg = safeWeightForWkg > 0 ? (ftp / safeWeightForWkg).toFixed(2) : '—';
+  const indoorWkg = safeWeightForWkg > 0 ? (indoorFtp / safeWeightForWkg).toFixed(2) : '—';
+  const weightLbs = weightKg > 0 ? (weightKg * 2.20462).toFixed(1) : '—';
 
   const formatPace = (secsPerKm: number) => {
     const secs = distanceUnit === 'mi' ? secsPerKm * 1.60934 : secsPerKm;
@@ -374,7 +376,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
               {ftp}W{' '}
-              {!safeSportHideWeight && (
+              {!effectiveSafeSportHideWeight && safeWeightForWkg > 0 && (
                 <span className="text-xs font-semibold text-sky-500">({outdoorWkg} W/kg)</span>
               )}
             </div>
@@ -390,7 +392,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
               {indoorFtp}W{' '}
-              {!safeSportHideWeight && (
+              {!effectiveSafeSportHideWeight && safeWeightForWkg > 0 && (
                 <span className="text-xs font-semibold text-indigo-400">({indoorWkg} W/kg)</span>
               )}
             </div>
@@ -418,14 +420,14 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               <span>Body Weight</span>
             </div>
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-              {safeSportHideWeight
+              {effectiveSafeSportHideWeight
                 ? 'Hidden'
                 : distanceUnit === 'mi'
                   ? `${weightLbs} lbs`
                   : `${weightKg.toFixed(1)} kg`}
             </div>
             <div className="text-2xs font-mono text-slate-600 dark:text-slate-400">
-              {safeSportHideWeight
+              {effectiveSafeSportHideWeight
                 ? 'Safe-Sport Shield ON'
                 : distanceUnit === 'mi'
                   ? `${weightKg.toFixed(1)} kg`
@@ -508,9 +510,11 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 htmlFor={`${fieldId}-weight`}
                 className="block text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
               >
-                Weight ({distanceUnit === 'mi' ? 'lbs' : 'kg'})
+                {effectiveSafeSportHideWeight
+                  ? 'Weight (Protected)'
+                  : `Weight (${distanceUnit === 'mi' ? 'lbs' : 'kg'})`}
               </label>
-              {safeSportHideWeight ? (
+              {effectiveSafeSportHideWeight ? (
                 <div
                   id={`${fieldId}-weight`}
                   className="w-full min-h-[40px] rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 font-mono text-2xs text-emerald-700 dark:text-emerald-300 flex items-center"
@@ -779,7 +783,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
           {/* Safe-Sport / RED-S Protection & Scholastic / Collegiate Settings (Collapsed by Default Unless Configured) */}
           <details
-            open={safeSportHideWeight || Boolean(ferritinInput)}
+            open={effectiveSafeSportHideWeight || Boolean(ferritinInput)}
             className="pt-3 border-t border-slate-200 dark:border-slate-800 group"
           >
             <summary className="cursor-pointer list-none select-none flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -886,6 +890,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 onChange={(e) => setFerritinInput(e.target.value)}
                 className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
               />
+              <p className="text-2xs text-slate-500 dark:text-slate-400 mt-1">
+                Coaching readiness reference only — not a medical diagnosis.
+              </p>
             </div>
           </div>
           </details>
@@ -902,13 +909,15 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 </h3>
                 <p className="text-2xs text-slate-500 dark:text-slate-400">
                   Calibrated for Outdoor ({ftp}W) &amp; Virtual/Indoor ({indoorFtp}W)
-                  {safeSportHideWeight
+                  {effectiveSafeSportHideWeight || safeWeightForWkg <= 0
                     ? ' · Safe-Sport Mode'
                     : ` @ ${distanceUnit === 'mi' ? `${weightLbs} lbs` : `${weightKg.toFixed(1)} kg`}`}
                 </p>
               </div>
               <span className="text-2xs font-mono px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-sky-300 font-semibold">
-                {safeSportHideWeight ? 'Safe-Sport' : `${outdoorWkg} W/kg`}
+                {effectiveSafeSportHideWeight || safeWeightForWkg <= 0
+                  ? 'Safe-Sport'
+                  : `${outdoorWkg} W/kg`}
               </span>
             </div>
 
@@ -925,8 +934,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/70 font-mono tabular-nums text-2xs">
                   {previewPowerZones.map((pz) => {
-                    const minWkg = (pz.minWatts / Math.max(35, weightKg)).toFixed(1);
-                    const maxWkg = (pz.maxWatts / Math.max(35, weightKg)).toFixed(1);
+                    const minWkg =
+                      safeWeightForWkg > 0 ? (pz.minWatts / safeWeightForWkg).toFixed(1) : '—';
+                    const maxWkg =
+                      safeWeightForWkg > 0 ? (pz.maxWatts / safeWeightForWkg).toFixed(1) : '—';
                     return (
                       <tr key={pz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                         <td className="py-2 pr-2 font-sans">
@@ -955,7 +966,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                             : `${pz.minIndoorWatts}–${pz.maxIndoorWatts}W`}
                         </td>
                         <td className="py-2 pl-2 text-right text-slate-500 dark:text-slate-400">
-                          {safeSportHideWeight
+                          {effectiveSafeSportHideWeight || safeWeightForWkg <= 0
                             ? '—'
                             : pz.zone === 7
                               ? `>${minWkg}`

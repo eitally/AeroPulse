@@ -80,9 +80,7 @@ describe('[AUTH-02] Coach-invited, parent-acknowledged sign-up for minor athlete
     expect(membership?.birthYear).toBe(minorBirthYear);
     expect(membership?.parentGuardianEmail).toBe(parentEmail);
     expect(membership?.parentConsentStatus).toBe('PENDING');
-    expect(membership?.parentConsentToken).toBeDefined();
-    expect(typeof membership?.parentConsentToken).toBe('string');
-    expect(membership?.parentConsentToken?.length).toBeGreaterThan(16);
+    expect(membership?.parentConsentToken).toBeUndefined();
 
     // Verify Resend parent consent email was dispatched
     expect(sentEmails).toHaveLength(1);
@@ -93,7 +91,9 @@ describe('[AUTH-02] Coach-invited, parent-acknowledged sign-up for minor athlete
     expect(email.html).toContain('Cascadia Youth Distance Club');
     expect(email.html).toContain('Safe-Sport Weight Shield');
     expect(email.html).toContain('COPPA');
-    expect(email.html).toContain(`/api/teams/parent-consent?token=${membership?.parentConsentToken}`);
+    const consentToken = email.html.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/)?.[1];
+    expect(consentToken).toBeDefined();
+    expect(consentToken!.length).toBeGreaterThan(16);
 
     // Verify preview endpoint exposes parentConsentStatus and minor flags
     const preview = await previewTeamJoinInvite(team.brand.joinCode, undefined, athleteEmail);
@@ -130,7 +130,10 @@ describe('[AUTH-02] Coach-invited, parent-acknowledged sign-up for minor athlete
     });
 
     expect(claimRes.ok).toBe(true);
-    const token = claimRes.summary?.memberships.find((m) => m.userSid === athleteSid)?.parentConsentToken;
+    expect(claimRes.summary?.memberships.find((m) => m.userSid === athleteSid)?.parentConsentToken).toBeUndefined();
+    const token = sentEmails
+      .at(-1)
+      ?.html.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/)?.[1];
     expect(token).toBeDefined();
 
     // Verify parent consent via token

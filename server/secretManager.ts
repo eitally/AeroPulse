@@ -1,7 +1,7 @@
 import type { Request } from 'express';
 import {
-  hasValidSessionToken,
   getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
 } from './securityUtils.ts';
 import {
   requestContext,
@@ -82,10 +82,10 @@ export function hasClientByoGeminiKey(req?: Request): boolean {
 export function isAuthorizedForServerAi(req?: Request): boolean {
   const activeReq = req ?? requestContext.getStore();
   if (!activeReq) return false;
+  const claims = getVerifiedSessionClaims(activeReq);
   if (
-    hasValidSessionToken(activeReq) ||
-    Boolean(getVerifiedSessionClaims(activeReq)) ||
-    Boolean(readCompactVaultFromCookie(activeReq))
+    isCanonicalAuthenticatedClaims(claims) ||
+    Boolean(readCompactVaultFromCookie(activeReq)?.sid)
   ) {
     return true;
   }

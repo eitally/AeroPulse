@@ -11,10 +11,32 @@ export const OAUTH_STATE_COOKIE_NAME = 'thresh_oauth_state';
 const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 365 days (sliding across deploys)
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+export type SessionAuthLevel = 'verified' | 'anon';
+
 export interface VerifiedSessionClaims {
   sid: string;
   sub: string;
   exp: number;
+  authLevel?: SessionAuthLevel;
+}
+
+export function isProductionDeployment(): boolean {
+  return process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+}
+
+export function timingSafeStringEqual(a?: string | null, b?: string | null): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+}
+
+export function isCanonicalAuthenticatedClaims(claims?: VerifiedSessionClaims | null): boolean {
+  if (!claims || !claims.sub || !claims.sid) return false;
+  if (claims.authLevel === 'anon') return false;
+  const sub = String(claims.sub).trim();
+  if (!sub || sub.startsWith('anon_') || sub === 'thresh-athlete') return false;
+  return true;
 }
 
 export interface OAuthStateClaims {
@@ -62,6 +84,25 @@ function getSessionSecret(): string {
   } catch {
     cachedSecret = crypto.randomBytes(32).toString('hex');
     return cachedSecret;
+  }
+}
+
+export function getPasskeyChallengeSecret(): Buffer {
+  return crypto
+    .createHmac('sha256', getSessionSecret())
+    .update('thresh-passkey-challenge-v2')
+    .digest();
+}
+
+export function isSafeHttpsUrl(rawUrl?: unknown): boolean {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return false;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.username || parsed.password) return false;
+    return Boolean(parsed.hostname);
+  } catch {
+    return false;
   }
 }
 
@@ -216,15 +257,23 @@ export function clearOAuthStateCookie(res: Response): void {
   );
 }
 
-export function issueSessionToken(subject = 'authenticated', existingSid?: string): string {
+export function issueSessionToken(
+  subject = 'authenticated',
+  existingSid?: string,
+  authLevel?: SessionAuthLevel
+): string {
   const sid =
     existingSid && /^[a-f0-9]{24,64}$/i.test(existingSid)
       ? existingSid
       : crypto.randomBytes(16).toString('hex');
+  const resolvedAuthLevel: SessionAuthLevel =
+    authLevel ||
+    (subject.startsWith('anon_') || subject === 'thresh-athlete' ? 'anon' : 'verified');
   const exp = Date.now() + SESSION_TTL_MS;
-  const payload = Buffer.from(JSON.stringify({ sid, sub: subject, exp }), 'utf8').toString(
-    'base64url'
-  );
+  const payload = Buffer.from(
+    JSON.stringify({ sid, sub: subject, exp, authLevel: resolvedAuthLevel }),
+    'utf8'
+  ).toString('base64url');
   const sig = crypto
     .createHmac('sha256', getSessionSecret())
     .update(payload)
@@ -255,15 +304,22 @@ export function decodeAndVerifyToken(token?: string | null): VerifiedSessionClai
       sid?: string;
       sub?: string;
       exp?: number;
+      authLevel?: SessionAuthLevel;
     };
     if (!decoded.exp || Date.now() > decoded.exp) return null;
     const sub = String(decoded.sub || 'authenticated');
+    const authLevel: SessionAuthLevel =
+      decoded.authLevel === 'anon' || decoded.authLevel === 'verified'
+        ? decoded.authLevel
+        : sub.startsWith('anon_') || sub === 'thresh-athlete'
+          ? 'anon'
+          : 'verified';
     // Derive deterministic fallback sid only for legacy pre-sid tokens signed with our secret
     const sid =
       decoded.sid && /^[a-f0-9]{16,64}$/i.test(decoded.sid)
         ? decoded.sid
         : crypto.createHash('sha256').update(`${sub}:${sig}`).digest('hex').slice(0, 32);
-    return { sid, sub, exp: decoded.exp };
+    return { sid, sub, exp: decoded.exp, authLevel };
   } catch {
     return null;
   }
@@ -312,7 +368,8 @@ export function setSessionCookie(
   req: Request,
   res: Response,
   subject = 'authenticated',
-  explicitSid?: string
+  explicitSid?: string,
+  authLevel?: SessionAuthLevel
 ): string {
   const existing = getVerifiedSessionClaims(req);
   const targetSid = explicitSid || existing?.sid;
@@ -321,7 +378,13 @@ export function setSessionCookie(
     !subject.startsWith('usr_') &&
     Boolean(targetSid && existing?.sid && targetSid === existing.sid);
   const resolvedSubject = preserveCanonicalUserSub ? existing!.sub : subject;
-  const token = issueSessionToken(resolvedSubject, targetSid);
+  const resolvedAuthLevel: SessionAuthLevel = preserveCanonicalUserSub
+    ? 'verified'
+    : authLevel ||
+      (resolvedSubject.startsWith('anon_') || resolvedSubject === 'thresh-athlete'
+        ? 'anon'
+        : 'verified');
+  const token = issueSessionToken(resolvedSubject, targetSid, resolvedAuthLevel);
   const isSecure =
     req.secure ||
     String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https';
@@ -415,14 +478,18 @@ export function resolveSafeOrigin(rawOrigin?: string): string | null {
 const TRUSTED_PROD_CORS_ORIGINS = new Set<string>([
   'https://thresh-dev.vercel.app',
   'https://aeropulse-eta.vercel.app',
+  'https://thresh.app',
 ]);
 
-const VERCEL_PREVIEW_CORS_REGEX =
-  /^https:\/\/(?:thresh|aeropulse)(?:-[a-z0-9-]+)?\.vercel\.app$/i;
+function normalizeVercelHostToOrigin(host?: string): string | null {
+  const clean = String(host || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!clean) return null;
+  return resolveSafeOrigin(`https://${clean}`);
+}
 
 /**
  * Validates whether a request Origin is allowed for cross-origin credentialed requests
- * (for example, during legacy domain -> new domain 307 migration or Vercel preview launches).
+ * (explicit allowlisted domains, configured preview host env vars, or local dev servers).
  */
 export function resolveTrustedCorsOrigin(rawOrigin?: string): string | null {
   const safeOrigin = resolveSafeOrigin(rawOrigin);
@@ -430,13 +497,26 @@ export function resolveTrustedCorsOrigin(rawOrigin?: string): string | null {
   if (TRUSTED_PROD_CORS_ORIGINS.has(safeOrigin)) {
     return safeOrigin;
   }
-  if (VERCEL_PREVIEW_CORS_REGEX.test(safeOrigin)) {
-    return safeOrigin;
+
+  const allowedCandidates = [
+    process.env.APP_URL,
+    process.env.APP_BASE_URL,
+    ...(process.env.ALLOWED_ORIGINS || '').split(','),
+  ];
+  for (const cand of allowedCandidates) {
+    const resolved = resolveSafeOrigin(cand);
+    if (resolved && resolved === safeOrigin) {
+      return safeOrigin;
+    }
   }
-  const appOrigin = resolveSafeOrigin(process.env.APP_URL || '');
-  if (appOrigin && safeOrigin === appOrigin) {
-    return safeOrigin;
+
+  for (const vercelHost of [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL]) {
+    const resolved = normalizeVercelHostToOrigin(vercelHost);
+    if (resolved && resolved === safeOrigin) {
+      return safeOrigin;
+    }
   }
+
   if (process.env.NODE_ENV !== 'production') {
     try {
       const parsed = new URL(safeOrigin);

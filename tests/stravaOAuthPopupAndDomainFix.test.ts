@@ -31,6 +31,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
       'STRAVA_FALLBACK_REDIRECT_URI',
       'SESSION_SECRET',
       'TOKEN_VAULT_KEY',
+      'VERCEL_BRANCH_URL',
     ]) {
       origEnv[k] = process.env[k];
     }
@@ -207,8 +208,9 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     // Lone x-strava-client-id without x-strava-client-secret must NOT override server clientId
     expect(legacyData.clientId).toBe('121717');
 
-    // 2. Vercel preview deployment origin falls back to thresh-dev.vercel.app and gets CORS headers
+    // 2. Trusted Vercel branch preview origin (matching VERCEL_BRANCH_URL) falls back to thresh-dev.vercel.app and gets CORS headers
     const previewOrigin = 'https://thresh-git-preview-willow-glen-photography.vercel.app';
+    process.env.VERCEL_BRANCH_URL = 'thresh-git-preview-willow-glen-photography.vercel.app';
     const previewResp = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(previewOrigin)}&mode=cloud&flow=popup`,
       {
@@ -220,6 +222,15 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(previewResp.headers.get('access-control-allow-credentials')).toBe('true');
     const previewData = await previewResp.json();
     expect(previewData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+
+    // Untrusted arbitrary *.vercel.app origin must NOT receive wildcard CORS headers
+    const spoofPreviewResp = await originalFetch(
+      `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent('https://evil-attacker.vercel.app')}&mode=cloud&flow=popup`,
+      {
+        headers: { Origin: 'https://evil-attacker.vercel.app' },
+      }
+    );
+    expect(spoofPreviewResp.headers.get('access-control-allow-origin')).toBeNull();
 
     // 3. Full BYO pair (x-strava-client-id + x-strava-client-secret) overrides server clientId
     const byoResp = await originalFetch(
@@ -287,10 +298,17 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
       return originalFetch(input, init);
     }) as typeof fetch;
 
+    const loginCookie = (
+      loginResp.headers.getSetCookie?.() || [loginResp.headers.get('set-cookie') || '']
+    )
+      .map((s) => s.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
     const cbResp = await originalFetch(
       `${baseUrl}/auth/strava/callback?code=cb_code_1&state=${encodeURIComponent(
         stateParam
-      )}&scope=read,activity:read_all`
+      )}&scope=read,activity:read_all`,
+      { headers: { Cookie: loginCookie } }
     );
     expect(cbResp.status).toBe(200);
     const html = await cbResp.text();
@@ -314,14 +332,23 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(foreignPollResp.status).toBe(200);
     expect((await foreignPollResp.json()).completed).toBe(false);
 
-    // Un-cookied caller holding the signed state (e.g. Safari ITP / post-307) succeeds
+    // Cookieless unauthenticated caller holding only signed state must be REJECTED (RT-05)
     const cookielessPollResp = await originalFetch(
       `${baseUrl}/api/strava/auth/poll?state=${encodeURIComponent(stateParam)}`
     );
     expect(cookielessPollResp.status).toBe(200);
-    const pollBody = await cookielessPollResp.json();
+    expect((await cookielessPollResp.json()).completed).toBe(false);
+
+    // Legitimate browser holding its original OAuth state cookie completes poll safely without raw tokens
+    const validPollResp = await originalFetch(
+      `${baseUrl}/api/strava/auth/poll?state=${encodeURIComponent(stateParam)}`,
+      { headers: { Cookie: loginCookie } }
+    );
+    expect(validPollResp.status).toBe(200);
+    const pollBody = await validPollResp.json();
     expect(pollBody.completed).toBe(true);
-    expect(pollBody.tokens?.refreshToken).toBe('strava_ref_popup_fix');
+    expect(pollBody.tokens?.athleteId).toBe(athleteId);
+    expect(pollBody.tokens?.refreshToken).toBeUndefined();
     expect(pollBody.athleteName).toBe('Jordan Reyes');
   });
 

@@ -1638,14 +1638,17 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         other.status === 'ACTIVE' &&
                         other.role === 'ATHLETE'
                     );
-                    const smsHref = m.invitedPhone
-                      ? buildFreeNativeSmsUri(
-                          m.invitedPhone,
-                          activeTeam.brand,
-                          joinLink,
-                          firstName
-                        )
-                      : null;
+                    const allowDirectSms =
+                      !m.isMinorU18 && activeTeam.brand.orgType !== 'HIGH_SCHOOL';
+                    const smsHref =
+                      allowDirectSms && m.invitedPhone
+                        ? buildFreeNativeSmsUri(
+                            m.invitedPhone,
+                            activeTeam.brand,
+                            joinLink,
+                            firstName
+                          )
+                        : null;
                     const mailtoHref = m.invitedEmail
                       ? `mailto:${encodeURIComponent(m.invitedEmail)}?${
                           activeTeam.brand.enableParentGuardianCc &&
@@ -1879,7 +1882,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 )}
                               </button>
 
-                              {smsHref && (
+                              {allowDirectSms && smsHref && (
                                 <a
                                   href={smsHref}
                                   className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-2xs font-mono inline-flex items-center gap-1"

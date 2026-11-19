@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apiRouter } from '../server/apiRouter.ts';
-import { SESSION_COOKIE_NAME } from '../server/securityUtils.ts';
+import { SESSION_COOKIE_NAME, issueSessionToken } from '../server/securityUtils.ts';
 import { loadTeamDocRaw, saveTeamDocRaw } from '../server/teamService.ts';
 import {
   COLLEGIATE_TFRRS_PRESET,
@@ -246,10 +246,19 @@ describe('Athletic.net & TFRRS Team Sync + Clean-Room Parent Hub', () => {
 
   describe('3. Express HTTP Endpoints, SSRF Guard & Safe-Sport Clean-Room Isolation', () => {
     it('syncs Willow Glen HS via API, blocks loopback .ics SSRF, and guarantees zero PII/biometrics on public hub and PARENT_FOLLOWER role', async () => {
-      // 1. Coach creates Willow Glen team
+      // 1. Coach creates Willow Glen team (authenticated verified session required)
+      const coachSession = issueSessionToken(
+        'usr_wghs_coach_1',
+        `sid_wghs_coach_${Date.now()}`,
+        'verified'
+      );
+      const coachCookie = `${SESSION_COOKIE_NAME}=${coachSession}`;
       const createResp = await fetch(`${baseUrl}/api/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: coachCookie,
+        },
         body: JSON.stringify({
           name: 'Willow Glen High School XC',
           shortName: 'WGHS XC',
@@ -271,11 +280,9 @@ describe('Athletic.net & TFRRS Team Sync + Clean-Room Parent Hub', () => {
       const createData = await createResp.json();
       expect(createResp.status).toBe(200);
       expect(createData.ok).toBe(true);
-      expect(createData.sessionToken).toBeTruthy();
 
       const teamId: string = createData.team.brand.teamId;
       const slug: string = createData.team.brand.slug;
-      const coachCookie = `${SESSION_COOKIE_NAME}=${createData.sessionToken}`;
 
       // 2. Seed an athlete membership with sensitive PII & biometric wellness/check-in/GPS data
       const doc = await loadTeamDocRaw(teamId);
