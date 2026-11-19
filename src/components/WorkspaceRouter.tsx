@@ -27,6 +27,10 @@ import type {
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
 import type { PlannedEventBatchItem } from './GoalsView';
 import type { SavedStopwatchEntry } from './TracksideStopwatchView';
+import type {
+  StopwatchOutboxFlushResult,
+  StopwatchSaveResult,
+} from '../utils/stopwatchTeamSync';
 
 const CalendarView = lazyWithRetry(
   () => import('./CalendarView').then((m) => ({ default: m.CalendarView })),
@@ -104,6 +108,7 @@ export interface WorkspaceRouterProps {
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  isSampleDemoMode?: boolean;
   stravaSyncWindow?: StravaSyncWindow;
   onOpenDataSources?: () => void;
 
@@ -188,7 +193,10 @@ export interface WorkspaceRouterProps {
   handleDeleteTargetGoal: (id: string) => void;
   handleSaveProfileOverride: (updatedProfile: AthleteProfile) => Promise<void>;
   handleSwitchToCalendarTab: () => void;
-  handleSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
+  handleSaveStopwatchActivities: (
+    entries: SavedStopwatchEntry[]
+  ) => Promise<StopwatchSaveResult> | StopwatchSaveResult | number;
+  handleFlushStopwatchOutbox?: () => Promise<StopwatchOutboxFlushResult>;
 }
 
 export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
@@ -229,6 +237,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   onTeamsUpdated,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
+  isSampleDemoMode = false,
   stravaSyncWindow,
   onOpenDataSources,
 
@@ -260,6 +269,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   handleSaveProfileOverride,
   handleSwitchToCalendarTab,
   handleSaveStopwatchActivities,
+  handleFlushStopwatchOutbox,
 }) => {
   // Warm lazy workspace chunks on idle so trackside Airplane Mode navigation never hits network
   useEffect(() => {
@@ -500,6 +510,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           myTeams={myTeams}
           activeTeamId={activeTeamId}
           onSaveStopwatchActivities={handleSaveStopwatchActivities}
+          onFlushStopwatchOutbox={handleFlushStopwatchOutbox}
           onOpenActivitiesTab={handleOpenActivitiesTab}
           onOpenRosterModal={handleOpenRosterModal}
         />
@@ -541,10 +552,12 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenOfficialRaceModal={handleOpenOfficialRaceModal}
           onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
           onSaveStopwatchActivities={handleSaveStopwatchActivities}
+          onFlushStopwatchOutbox={handleFlushStopwatchOutbox}
           onOpenAthleteToday={handleOpenTodayTab}
           onOpenRosterModal={handleOpenRosterModal}
           onOpenPublicTeamHub={onOpenPublicTeamHub}
           onOpenCoachGuide={onOpenCoachGuide}
+          isSampleDemoMode={isSampleDemoMode}
         />
       )}
 

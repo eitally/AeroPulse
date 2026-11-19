@@ -1,5 +1,11 @@
 import crypto from 'crypto';
-import { deleteTenantVault, loadTenantVaultAsync, saveTenantVaultAsync } from './tokenVault.ts';
+import { deleteTenantVault, loadTenantVaultAsync, saveTenantVaultAsync, withVaultLock } from './tokenVault.ts';
+import {
+  escapeHtml,
+  getPasskeyChallengeSecret,
+  isProductionDeployment,
+  timingSafeStringEqual,
+} from './securityUtils.ts';
 
 export interface ThreshUserAuthProvider {
   provider: 'google' | 'magic_link' | 'passkey' | 'strava' | 'dev_mock';
@@ -12,6 +18,7 @@ export interface ThreshUserAuthProvider {
 export interface ThreshPasskeyCredential {
   id: string; // credentialId (base64url)
   publicKeySpkiBase64: string; // DER-encoded SubjectPublicKeyInfo base64
+  coseAlg?: number; // COSE algorithm identifier (e.g. -7 ES256, -257 RS256, -8 EdDSA)
   counter: number;
   transports?: string[];
   createdAt: string;
@@ -410,7 +417,7 @@ export async function createMagicLinkToken(
   return { token: rawToken, expiresAt };
 }
 
-export async function verifyMagicLinkPayload(
+export async function peekMagicLinkPayload(
   rawToken: string
 ): Promise<{ email: string; pendingJoin?: PendingJoinContext } | null> {
   if (!rawToken || typeof rawToken !== 'string') return null;
@@ -426,8 +433,29 @@ export async function verifyMagicLinkPayload(
     return null;
   }
 
-  await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
   return { email: record.email, pendingJoin: record.pendingJoin };
+}
+
+export async function verifyMagicLinkPayload(
+  rawToken: string
+): Promise<{ email: string; pendingJoin?: PendingJoinContext } | null> {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+  const vaultKey = `magic_link_${tokenHash}`;
+  return withVaultLock(vaultKey, async () => {
+    const record = await loadTenantVaultAsync<MagicLinkRecord | null>(vaultKey, null);
+
+    if (!record || !record.email || !record.expiresAt) {
+      return null;
+    }
+
+    await saveTenantVaultAsync(vaultKey, null);
+    if (Date.now() > record.expiresAt) {
+      return null;
+    }
+
+    return { email: record.email, pendingJoin: record.pendingJoin };
+  });
 }
 
 export async function verifyMagicLinkToken(rawToken: string): Promise<string | null> {
@@ -438,8 +466,9 @@ export async function verifyMagicLinkToken(rawToken: string): Promise<string | n
 export async function sendMagicLinkEmail(
   email: string,
   verifyUrl: string
-): Promise<{ sent: boolean; devMode?: boolean; previewUrl?: string }> {
+): Promise<{ sent: boolean; devMode?: boolean; previewUrl?: string; error?: string }> {
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const safeVerifyUrl = escapeHtml(verifyUrl);
 
   // If Resend API key is configured, send via Resend free tier (3,000/mo)
   if (resendApiKey) {
@@ -459,7 +488,7 @@ export async function sendMagicLinkEmail(
               <h2 style="color: #C8FF00; margin-top: 0;">Sign in to THRESH</h2>
               <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your THRESH endurance training cockpit. This link expires in 15 minutes.</p>
               <div style="margin: 24px 0;">
-                <a href="${verifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to THRESH</a>
+                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to THRESH</a>
               </div>
               <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
             </div>
@@ -476,7 +505,15 @@ export async function sendMagicLinkEmail(
     }
   }
 
-  // Fallback to local / dev mode preview URL
+  // Fail closed in production deployments (never leak magic link URLs in HTTP responses)
+  if (isProductionDeployment()) {
+    return {
+      sent: false,
+      error: 'Email delivery service is temporarily unavailable. Please try Google, Passkey, or Strava.',
+    };
+  }
+
+  // Fallback to local / dev mode preview URL strictly in non-production environments
   return {
     sent: true,
     devMode: true,
@@ -485,10 +522,138 @@ export async function sendMagicLinkEmail(
 }
 
 /* ========================================================================== */
-/* Passkeys / WebAuthn Challenge & State Verification                         */
+/* Verified Primary Email Change Flow                                         */
 /* ========================================================================== */
 
-const PASSPORT_STATE_SECRET = 'thresh-passkey-state-v1';
+interface PendingEmailChangeRecord {
+  newEmail: string;
+  codeHash: string;
+  expiresAt: number;
+  attempts: number;
+}
+
+export async function createPendingEmailChange(
+  userId: string,
+  newEmail: string
+): Promise<{ ok: boolean; error?: string; devMode?: boolean; devCode?: string }> {
+  const cleanNewEmail = String(newEmail || '').trim().toLowerCase();
+  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+    return { ok: false, error: 'Please enter a valid email address.' };
+  }
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: 'User not found.' };
+
+  const existingOwner = await getUserByEmail(cleanNewEmail);
+  if (existingOwner && existingOwner.id !== user.id) {
+    return {
+      ok: false,
+      error: 'That email is already linked to another THRESH account.',
+    };
+  }
+
+  const code = String(crypto.randomInt(100000, 1000000));
+  const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+  await saveTenantVaultAsync(`email_change_${user.id}`, {
+    newEmail: cleanNewEmail,
+    codeHash,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    attempts: 0,
+  } satisfies PendingEmailChangeRecord);
+
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  if (resendApiKey) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.run>',
+          to: [cleanNewEmail],
+          subject: 'Verify your new THRESH email address',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
+              <h2 style="color: #C8FF00; margin-top: 0;">Confirm Email Change</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in THRESH to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
+              <div style="margin: 20px 0; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: #C8FF00;">${escapeHtml(code)}</div>
+              <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
+            </div>
+          `,
+        }),
+      });
+      if (res.ok) {
+        return { ok: true };
+      }
+      console.warn('[THRESH Auth] Resend email-change dispatch failed:', await res.text());
+    } catch (err) {
+      console.error('[THRESH Auth] Failed sending email-change code via Resend:', err);
+    }
+  }
+
+  if (isProductionDeployment()) {
+    await saveTenantVaultAsync(`email_change_${user.id}`, null);
+    return {
+      ok: false,
+      error: 'Email verification service is unavailable right now. Please try again shortly.',
+    };
+  }
+
+  return { ok: true, devMode: true, devCode: code };
+}
+
+export async function verifyAndCommitEmailChange(
+  userId: string,
+  rawCode: string,
+  expectedNewEmail?: string
+): Promise<{ ok: boolean; user?: ThreshUser; oldEmail?: string; newEmail?: string; error?: string }> {
+  const cleanCode = String(rawCode || '').trim();
+  if (!/^\d{6}$/.test(cleanCode)) {
+    return { ok: false, error: 'Please enter the 6-digit verification code sent to your new email.' };
+  }
+  const vaultKey = `email_change_${userId}`;
+  return withVaultLock(vaultKey, async () => {
+    const rec = await loadTenantVaultAsync<PendingEmailChangeRecord | null>(vaultKey, null);
+    if (!rec || !rec.newEmail || !rec.codeHash || !rec.expiresAt) {
+      return { ok: false, error: 'No pending email verification request found. Request a new code.' };
+    }
+    if (Date.now() > rec.expiresAt) {
+      await saveTenantVaultAsync(vaultKey, null);
+      return { ok: false, error: 'Verification code has expired. Please request a new code.' };
+    }
+    if (expectedNewEmail && expectedNewEmail.trim().toLowerCase() !== rec.newEmail) {
+      return { ok: false, error: 'Verification code was issued for a different email address.' };
+    }
+    if (rec.attempts >= 5) {
+      await saveTenantVaultAsync(vaultKey, null);
+      return { ok: false, error: 'Too many invalid attempts. Please request a new verification code.' };
+    }
+
+    const incomingHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
+    if (!timingSafeStringEqual(incomingHash, rec.codeHash)) {
+      rec.attempts += 1;
+      await saveTenantVaultAsync(vaultKey, rec);
+      return { ok: false, error: 'Invalid verification code.' };
+    }
+
+    await saveTenantVaultAsync(vaultKey, null);
+    const updated = await updateUserPrimaryEmail(userId, rec.newEmail);
+    if (!updated.ok || !updated.user) {
+      return { ok: false, error: updated.error || 'Could not update email.' };
+    }
+    return {
+      ok: true,
+      user: updated.user,
+      oldEmail: updated.oldEmail,
+      newEmail: rec.newEmail,
+    };
+  });
+}
+
+/* ========================================================================== */
+/* Passkeys / WebAuthn Challenge & State Verification                         */
+/* ========================================================================== */
 
 export function issuePasskeyChallengeToken(payload: {
   challenge: string;
@@ -497,10 +662,11 @@ export function issuePasskeyChallengeToken(payload: {
 }): string {
   const data = JSON.stringify({
     ...payload,
+    jti: crypto.randomBytes(12).toString('hex'),
     exp: Date.now() + 5 * 60 * 1000, // 5 min TTL
   });
   const b64 = Buffer.from(data, 'utf8').toString('base64url');
-  const sig = crypto.createHmac('sha256', PASSPORT_STATE_SECRET).update(b64).digest('base64url');
+  const sig = crypto.createHmac('sha256', getPasskeyChallengeSecret()).update(b64).digest('base64url');
   return `${b64}.${sig}`;
 }
 
@@ -508,17 +674,18 @@ export function verifyPasskeyChallengeToken(token?: string | null): {
   challenge: string;
   purpose: 'register' | 'auth';
   userId?: string;
+  jti?: string;
 } | null {
   if (!token) return null;
   const [b64, sig] = token.split('.');
   if (!b64 || !sig) return null;
 
   const expectedSig = crypto
-    .createHmac('sha256', PASSPORT_STATE_SECRET)
+    .createHmac('sha256', getPasskeyChallengeSecret())
     .update(b64)
     .digest('base64url');
 
-  if (sig !== expectedSig) return null;
+  if (!timingSafeStringEqual(sig, expectedSig)) return null;
 
   try {
     const claims = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8'));

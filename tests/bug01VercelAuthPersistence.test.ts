@@ -218,7 +218,7 @@ describe('BUG-01: Vercel Deployment /tmp Wipe & Strava Auth Persistence', () => 
     expect(logoutSetCookies.some((c) => c.startsWith('thresh_vault=;') && c.includes('Max-Age=0'))).toBe(true);
   });
 
-  it('rehydrates Strava tokens from thresh_vault cookie even when thresh_session sid differs after /tmp wipe', async () => {
+  it('refuses to hydrate thresh_vault when thresh_session sid differs (cross-tenant cookie hijack protection)', async () => {
     const athleteId = '777888';
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -273,8 +273,6 @@ describe('BUG-01: Vercel Deployment /tmp Wipe & Strava Auth Persistence', () => 
       },
     });
     const statusJson = await statusResp.json();
-    expect(statusJson.stravaConnected).toBe(true);
-    expect(statusJson.stravaTokens?.refreshToken).toBe('refresh_token_cross_sid');
-    expect(statusJson.stravaSyncPolicy?.window).toBe('180d');
+    expect(statusJson.stravaConnected).toBe(false);
   });
 });

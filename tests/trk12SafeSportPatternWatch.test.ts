@@ -1,11 +1,12 @@
 import crypto from 'crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { evaluateSafeSportPatternWatch } from '../src/physiology/safeSportPatternWatchEngine';
 import {
   sanitizeTelemetryForCleanRoom,
   stripSafeSportWeightAndBodyCompFields,
 } from '../server/cleanRoomFirewall';
 import {
+  acknowledgeParentConsent,
   claimTeamJoinInvite,
   createTeamForCoach,
   listTeamsForUser,
@@ -205,18 +206,42 @@ describe('TRK-12: Ethical U18 RED-S / Iron / PHV Early Pattern Watch & Zero-Weig
       coachDisplayName: 'Coach Morales',
     });
 
-    await claimTeamJoinInvite({
-      callerSid: athleteSid,
-      originUrl,
-      codeOrSlug: hsTeam.brand.joinCode,
-      athleteName: 'Lena Brooks',
-    });
-    await claimTeamJoinInvite({
-      callerSid: peerSid,
-      originUrl,
-      codeOrSlug: hsTeam.brand.joinCode,
-      athleteName: 'Chris Park',
-    });
+    const prevResend = process.env.RESEND_API_KEY;
+    const prevFetch = globalThis.fetch;
+    let consentToken = '';
+    process.env.RESEND_API_KEY = 're_test_trk12';
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('api.resend.com/emails')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { html?: string };
+        const m = body.html?.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/);
+        if (m?.[1]) consentToken = m[1];
+        return new Response(JSON.stringify({ id: 'em_trk12' }), { status: 200 });
+      }
+      return prevFetch(input, init);
+    }) as any;
+
+    try {
+      await claimTeamJoinInvite({
+        callerSid: athleteSid,
+        originUrl,
+        codeOrSlug: hsTeam.brand.joinCode,
+        athleteName: 'Lena Brooks',
+        parentGuardianEmail: 'parent.lena@family.test',
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      if (consentToken) await acknowledgeParentConsent(consentToken);
+      await claimTeamJoinInvite({
+        callerSid: peerSid,
+        originUrl,
+        codeOrSlug: hsTeam.brand.joinCode,
+        athleteName: 'Chris Park',
+        parentGuardianEmail: 'parent.chris@family.test',
+      });
+    } finally {
+      globalThis.fetch = prevFetch;
+      if (prevResend === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = prevResend;
+    }
 
     await syncAthleteSnapshotAcrossTeams({
       callerSid: athleteSid,

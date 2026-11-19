@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
 import {
   requestContext,
   runtimeStore,
@@ -23,7 +24,7 @@ import {
   saveTenantVaultAsync,
   deleteTenantVault,
   deriveStravaSessionSid,
-  STRAVA_KUDOS_CACHE_FILE,
+  resolveSessionScopeKey,
   type RuntimeSessionStore,
 } from '../sessionContext.ts';
 import { isServerOwnedSecret } from '../secretManager.ts';
@@ -35,10 +36,14 @@ import {
   resolveValidatedStravaCallbackUrl,
 } from '../oauthHelpers.ts';
 import {
+  appendSetCookieHeader,
   deriveUserSessionSid,
+  isCanonicalAuthenticatedClaims,
   resolveSafeOrigin,
   resolveTrustedCorsOrigin,
+  timingSafeStringEqual,
 } from '../securityUtils.ts';
+import { buildClearVaultCookieHeader } from '../tokenVault.ts';
 import { buildServerAthleteProfile, isGenericName } from '../physiologyEngine.ts';
 import { decodeGooglePolyline } from './activitiesRouter.ts';
 import { migrateAnonymousTeamsToStravaSid } from '../teamService.ts';
@@ -421,7 +426,7 @@ export async function activateStravaCanonicalScope(
   await loadTenantVaultAsync(`session_${scopeKey}`, {});
   bindRequestScopeKey(req, canonicalSid);
 
-  const sessionToken = setSessionCookie(req, res, sessionSubject, canonicalSid);
+  const sessionToken = setSessionCookie(req, res, sessionSubject, canonicalSid, 'verified');
   const store = getScopedRuntimeStore(req);
 
   // Preserve pre-OAuth credentials and previously linked Garmin/Intervals/Wahoo/Polar tokens
@@ -676,7 +681,11 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
     const cookieNonce = getOAuthStateCookieNonce(req);
     const scopeParam = String(req.query.scope || '').trim();
 
-    if (!verifiedState) {
+    if (
+      !verifiedState ||
+      !cookieNonce ||
+      !timingSafeStringEqual(cookieNonce, verifiedState.nonce)
+    ) {
       clearOAuthStateCookie(res);
       res
         .status(400)
@@ -686,7 +695,9 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             title: 'Security Verification Failed',
             heading: 'Invalid OAuth State',
             accentColor: '#FB7185',
-            body: 'The security verification token has expired or is invalid. Please return and initiate connection again.',
+            body: !verifiedState
+              ? 'The security verification token has expired or is invalid. Please return and initiate connection again.'
+              : 'The browser OAuth state cookie is missing or does not match. Please return and initiate connection again.',
             ctaLabel: 'Return to THRESH',
             ctaHref: '/',
           })
@@ -885,8 +896,6 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       isPopupFlow,
       openerOrigin: trustedOpenerOrigin,
       tokens: {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
         expiresAt: tokenData.expires_at,
         clientId,
         athleteId,
@@ -907,8 +916,6 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           localStorage.removeItem('aeropulse_auth_gate_passed');
           localStorage.removeItem('aeropulse_strava_sync_policy');
         }
-        if (payload.tokens.accessToken) localStorage.setItem('aeropulse_strava_access_token', payload.tokens.accessToken);
-        if (payload.tokens.refreshToken) localStorage.setItem('aeropulse_strava_refresh_token', payload.tokens.refreshToken);
         if (payload.tokens.expiresAt) localStorage.setItem('aeropulse_strava_expires_at', String(payload.tokens.expiresAt));
         if (payload.tokens.clientId) localStorage.setItem('aeropulse_strava_client_id', payload.tokens.clientId);
         if (payload.tokens.athleteId) localStorage.setItem('aeropulse_strava_athlete_id', String(payload.tokens.athleteId));
@@ -1132,17 +1139,18 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
   const canonicalSidForFound = found.athleteId
     ? deriveStravaSessionSid(found.athleteId)
     : undefined;
-  const authorizedCaller = verifiedState
-    ? (cookieNonce && cookieNonce === verifiedState.nonce) ||
-      (verifiedState.sid && callerClaims?.sid === verifiedState.sid) ||
-      (canonicalSidForFound && callerClaims?.sid === canonicalSidForFound) ||
-      !callerClaims?.sid ||
-      !verifiedState.sid
-    : Boolean(
-        (cookieNonce && cookieNonce === lookupNonce) ||
-          (found.sid && callerClaims?.sid === found.sid) ||
-          (canonicalSidForFound && callerClaims?.sid === canonicalSidForFound)
-      );
+  const cookieMatchesVerified = Boolean(
+    cookieNonce &&
+      ((verifiedState?.nonce && timingSafeStringEqual(cookieNonce, verifiedState.nonce)) ||
+        (lookupNonce && timingSafeStringEqual(cookieNonce, lookupNonce)))
+  );
+  const callerMatchesSid = Boolean(
+    callerClaims?.sid &&
+      ((verifiedState?.sid && callerClaims.sid === verifiedState.sid) ||
+        (found.sid && callerClaims.sid === found.sid) ||
+        (canonicalSidForFound && callerClaims.sid === canonicalSidForFound))
+  );
+  const authorizedCaller = cookieMatchesVerified || callerMatchesSid;
   if (!authorizedCaller) {
     res.json({ completed: false });
     return;
@@ -1183,8 +1191,6 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
     measurementPreference: found.measurementPreference,
     grantedScope: found.grantedScope,
     tokens: {
-      accessToken: found.accessToken,
-      refreshToken: found.refreshToken,
       expiresAt: found.expiresAt,
       clientId: found.clientId,
       athleteId: found.athleteId,
@@ -1462,13 +1468,29 @@ stravaRouter.post('/api/strava/sync-policy', async (req: Request, res: Response)
 });
 
 stravaRouter.post('/api/strava/disconnect', async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) {
+  const claims = getVerifiedSessionClaims(req);
+  if (!isCanonicalAuthenticatedClaims(claims)) {
     res.status(401).json({ error: 'Authentication required.' });
     return;
   }
-  const claims = getVerifiedSessionClaims(req);
+  const cleanAthleteId = String(runtimeStore.stravaAthleteId || '').replace(/[^0-9a-zA-Z_-]/g, '');
+  const accessToken = await ensureValidStravaAccessToken(req, false).catch(() => '');
+  if (accessToken) {
+    await fetch(
+      `https://www.strava.com/oauth/deauthorize?access_token=${encodeURIComponent(accessToken)}`,
+      { method: 'POST', signal: AbortSignal.timeout(4000) }
+    ).catch(() => undefined);
+  }
   if (claims?.sub?.startsWith('usr_')) {
     await disconnectServiceFromUser(claims.sub, 'strava').catch(() => undefined);
+  }
+  if (cleanAthleteId) {
+    try {
+      const archivePath = `/tmp/aeropulse-strava-archive-${cleanAthleteId}.json`;
+      if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
+    } catch {
+      // ignore archive unlink errors
+    }
   }
   runtimeStore.stravaAccessToken = '';
   runtimeStore.stravaRefreshToken = '';
@@ -1478,7 +1500,10 @@ stravaRouter.post('/api/strava/disconnect', async (req: Request, res: Response) 
   runtimeStore.stravaMeasurementPreference = undefined;
   runtimeStore.stravaGrantedScope = undefined;
   runtimeStore.stravaSyncPolicy = undefined;
+  runtimeStore.stravaClientId = '';
+  runtimeStore.stravaClientSecret = '';
   await saveSessionCacheAsync(req, res);
+  appendSetCookieHeader(res, buildClearVaultCookieHeader());
   res.json({ ok: true, disconnected: 'strava' });
 });
 
@@ -1663,6 +1688,13 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
 // Fetch Strava Kudoers & Comments for a specific activity (live Strava API + cached/local social notes)
 stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: Response) => {
   try {
+    const claims = getVerifiedSessionClaims(req);
+    const scopeKey = resolveSessionScopeKey(req);
+    if (!isCanonicalAuthenticatedClaims(claims) || !scopeKey) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    const scopedKudosFile = `/tmp/thresh-strava-kudos-${scopeKey}.json`;
     const activityId = String(req.params.id);
     const stravaId = String(req.query.stravaId || activityId).replace(/^strava-/, '');
     const kudosCache = loadJsonFile<
@@ -1675,7 +1707,7 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
           comments?: any[];
         }
       >
-    >(STRAVA_KUDOS_CACHE_FILE, {});
+    >(scopedKudosFile, {});
 
     const activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
@@ -1733,7 +1765,7 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
         };
         kudosCache[activityId] = updatedEntry;
         kudosCache[stravaId] = updatedEntry;
-        saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
+        saveJsonFile(scopedKudosFile, kudosCache);
       }
     }
 
@@ -1756,6 +1788,13 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
 // Toggle Kudos or add a Club / Coaching Comment on an activity
 stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => {
   try {
+    const claims = getVerifiedSessionClaims(req);
+    const scopeKey = resolveSessionScopeKey(req);
+    if (!isCanonicalAuthenticatedClaims(claims) || !scopeKey) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    const scopedKudosFile = `/tmp/thresh-strava-kudos-${scopeKey}.json`;
     const activityId = String(req.params.id);
     const { action = 'toggle_kudos', commentText, athleteName } = req.body || {};
     const kudosCache = loadJsonFile<
@@ -1768,7 +1807,7 @@ stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => 
           comments?: any[];
         }
       >
-    >(STRAVA_KUDOS_CACHE_FILE, {});
+    >(scopedKudosFile, {});
 
     const current = kudosCache[activityId] || {
       kudosCount: Number(req.body?.currentKudosCount || 0),
@@ -1816,7 +1855,7 @@ stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => 
     }
 
     kudosCache[activityId] = current;
-    saveJsonFile(STRAVA_KUDOS_CACHE_FILE, kudosCache);
+    saveJsonFile(scopedKudosFile, kudosCache);
 
     res.json({
       activityId,

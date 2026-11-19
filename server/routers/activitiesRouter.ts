@@ -1,10 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import {
-  ROUTES_BY_ACTIVITY_CACHE_FILE,
-  SEGMENTS_BY_ACTIVITY_CACHE_FILE,
   loadJsonFile,
+  resolveSessionScopeKey,
   saveJsonFile,
 } from '../sessionContext.ts';
+import {
+  getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
+} from '../securityUtils.ts';
 import {
   getEffectiveIntervalsConfig,
   getIntervalsAuthHeader,
@@ -202,6 +205,14 @@ export function computeIntervalsSegmentEfforts(
 
 activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Response) => {
   try {
+    const claims = getVerifiedSessionClaims(req);
+    const scopeKey = resolveSessionScopeKey(req);
+    if (!isCanonicalAuthenticatedClaims(claims) || !scopeKey) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    const scopedSegmentsFile = `/tmp/thresh-segments-${scopeKey}.json`;
+    const scopedRoutesFile = `/tmp/thresh-routes-${scopeKey}.json`;
     const config = getEffectiveIntervalsConfig(req);
     const authHeader = getIntervalsAuthHeader(config);
     if (!authHeader) {
@@ -221,9 +232,9 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
       return;
     }
     const rawActivities = (await actResp.json()) as Record<string, any>[];
-    const segmentsCache = loadJsonFile<Record<string, any[]>>(SEGMENTS_BY_ACTIVITY_CACHE_FILE, {});
+    const segmentsCache = loadJsonFile<Record<string, any[]>>(scopedSegmentsFile, {});
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
-      ROUTES_BY_ACTIVITY_CACHE_FILE,
+      scopedRoutesFile,
       {}
     );
 
@@ -297,8 +308,8 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
         })
       );
     }
-    saveJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, segmentsCache);
-    saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+    saveJsonFile(scopedSegmentsFile, segmentsCache);
+    saveJsonFile(scopedRoutesFile, routesCache);
 
     const ownedIds = new Set(rawActivities.map((a) => String(a?.id || '')).filter(Boolean));
     const scopedSegments: Record<string, any[]> = {};
@@ -329,6 +340,16 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
 
 activitiesRouter.post('/api/activities/hydrate-routes', async (req: Request, res: Response) => {
   try {
+    const claims = getVerifiedSessionClaims(req);
+    const scopeKey = resolveSessionScopeKey(req);
+    if (!isCanonicalAuthenticatedClaims(claims) || !scopeKey) {
+      res.status(401).json({
+        error: 'Authentication required.',
+        routesByActivity: {},
+      });
+      return;
+    }
+    const scopedRoutesFile = `/tmp/thresh-routes-${scopeKey}.json`;
     const intervalsConfig = getEffectiveIntervalsConfig(req);
     const intervalsAuth = getIntervalsAuthHeader(intervalsConfig);
     if (!intervalsAuth) {
@@ -339,7 +360,7 @@ activitiesRouter.post('/api/activities/hydrate-routes', async (req: Request, res
       return;
     }
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
-      ROUTES_BY_ACTIVITY_CACHE_FILE,
+      scopedRoutesFile,
       {}
     );
     const authHeader = intervalsAuth;
@@ -409,7 +430,7 @@ activitiesRouter.post('/api/activities/hydrate-routes', async (req: Request, res
         })
       );
     }
-    saveJsonFile(ROUTES_BY_ACTIVITY_CACHE_FILE, routesCache);
+    saveJsonFile(scopedRoutesFile, routesCache);
     const scopedRoutes: Record<string, [number, number][]> = {};
     for (const id of activityIds) {
       if (Array.isArray(routesCache[id])) {

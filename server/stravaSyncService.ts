@@ -25,6 +25,10 @@ import {
   type CachedStravaIdentity,
 } from './routers/stravaRouter.ts';
 import { extractStravaId, readStravaResponseJson } from './stravaIdUtils.ts';
+import {
+  normalizeActivityTimestamps,
+  stripTimezoneSuffix,
+} from '../src/utils/activityTimestamp.ts';
 
 export interface NormalizeStravaActivityCalibration {
   calibratedFtp: number;
@@ -223,9 +227,25 @@ export function normalizeRawStravaActivity(
         ? decodedRoute[decodedRoute.length - 1]
         : undefined;
 
+  const normalizedTimestamps = normalizeActivityTimestamps({
+    startDateLocal: a.start_date_local
+      ? stripTimezoneSuffix(String(a.start_date_local))
+      : undefined,
+    startDateUtc: a.start_date ? String(a.start_date) : undefined,
+    utcOffsetSecs:
+      typeof a.utc_offset === 'number' && Number.isFinite(a.utc_offset)
+        ? a.utc_offset
+        : undefined,
+    startLatLng,
+    fallbackBrowserTz: true,
+  });
+
   return {
     stravaId: activityStravaId,
-    startDateLocal: String(a.start_date_local || '').replace(/Z$/i, ''),
+    startDateLocal: normalizedTimestamps.startDateLocal,
+    ...(normalizedTimestamps.startDateUtcMs !== undefined
+      ? { startDateUtcMs: normalizedTimestamps.startDateUtcMs }
+      : {}),
     name: String(a.name || sportType || sportCategory),
     sportCategory,
     rawSportType: sportType || undefined,

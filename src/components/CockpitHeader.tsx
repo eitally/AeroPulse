@@ -233,13 +233,29 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
             <a
               href="#fitness"
+              aria-label={
+                activeTeam?.brand
+                  ? `${activeTeam.brand.shortName || activeTeam.brand.name} on THRESH Home`
+                  : 'THRESH Home'
+              }
               onClick={(e) => {
                 e.preventDefault();
                 setActiveTab('fitness');
               }}
-              className="flex items-center whitespace-nowrap min-w-0 shrink"
+              className="min-h-[44px] sm:min-h-[36px] inline-flex items-center whitespace-nowrap min-w-0 shrink-0"
             >
-              <AeroPulseLogo size="sm" teamBrand={activeTeam?.brand || null} />
+              {activeTeam?.brand ? (
+                <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
+              ) : (
+                <>
+                  <span className="inline-flex min-[420px]:hidden">
+                    <AeroPulseLogo size="sm" mode="mark-only" teamBrand={null} />
+                  </span>
+                  <span className="hidden min-[420px]:inline-flex">
+                    <AeroPulseLogo size="sm" mode="horizontal" teamBrand={null} />
+                  </span>
+                </>
+              )}
             </a>
 
             <button

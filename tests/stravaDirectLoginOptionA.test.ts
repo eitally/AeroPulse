@@ -151,10 +151,15 @@ describe('Option A · 1-Click Homepage Strava Login & Pending Team Join Behavior
     const urlRes = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(baseUrl)}`
     );
+    const oauthCookie1 = (urlRes.headers.getSetCookie?.() || [urlRes.headers.get('set-cookie') || ''])
+      .map((s) => s.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
     const { state } = await urlRes.json();
 
     const cbRes = await originalFetch(
-      `${baseUrl}/api/strava/callback?code=c_1&scope=read,activity:read_all,profile:read_all&state=${encodeURIComponent(state)}`
+      `${baseUrl}/api/strava/callback?code=c_1&scope=read,activity:read_all,profile:read_all&state=${encodeURIComponent(state)}`,
+      { headers: { Cookie: oauthCookie1 } }
     );
     expect(cbRes.status).toBe(200);
     const html = await cbRes.text();
@@ -190,10 +195,15 @@ describe('Option A · 1-Click Homepage Strava Login & Pending Team Join Behavior
     const urlResOther = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(baseUrl)}`
     );
+    const oauthCookie2 = (urlResOther.headers.getSetCookie?.() || [urlResOther.headers.get('set-cookie') || ''])
+      .map((s) => s.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
     const { state: stateOther } = await urlResOther.json();
     const cbOther = await (
       await originalFetch(
-        `${baseUrl}/api/strava/callback?code=c_2&scope=read,activity:read_all&state=${encodeURIComponent(stateOther)}`
+        `${baseUrl}/api/strava/callback?code=c_2&scope=read,activity:read_all&state=${encodeURIComponent(stateOther)}`,
+        { headers: { Cookie: oauthCookie2 } }
       )
     ).text();
     const diffAthLogin = executeCallbackHtmlScript(cbOther, {
@@ -209,10 +219,15 @@ describe('Option A · 1-Click Homepage Strava Login & Pending Team Join Behavior
     const urlResNoScope = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(baseUrl)}`
     );
+    const oauthCookie3 = (urlResNoScope.headers.getSetCookie?.() || [urlResNoScope.headers.get('set-cookie') || ''])
+      .map((s) => s.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
     const { state: stateNoScope } = await urlResNoScope.json();
     const cbNoScope = await (
       await originalFetch(
-        `${baseUrl}/api/strava/callback?code=c_3&scope=read,profile:read_all&state=${encodeURIComponent(stateNoScope)}`
+        `${baseUrl}/api/strava/callback?code=c_3&scope=read,profile:read_all&state=${encodeURIComponent(stateNoScope)}`,
+        { headers: { Cookie: oauthCookie3 } }
       )
     ).text();
     const noScopeRun = executeCallbackHtmlScript(cbNoScope);
@@ -229,10 +244,15 @@ describe('Option A · 1-Click Homepage Strava Login & Pending Team Join Behavior
     const urlRes = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=${encodeURIComponent(baseUrl)}&joinCode=PAXC-26`
     );
+    const oauthCookie = (urlRes.headers.getSetCookie?.() || [urlRes.headers.get('set-cookie') || ''])
+      .map((s) => s.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
     const { state } = await urlRes.json();
 
     const cbRes = await originalFetch(
-      `${baseUrl}/api/strava/callback?code=c_team&scope=read,activity:read_all&state=${encodeURIComponent(state)}`
+      `${baseUrl}/api/strava/callback?code=c_team&scope=read,activity:read_all&state=${encodeURIComponent(state)}`,
+      { headers: { Cookie: oauthCookie } }
     );
     expect(cbRes.status).toBe(200);
     const html = await cbRes.text();

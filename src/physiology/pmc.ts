@@ -3,6 +3,7 @@ import type {
   DualSportPmcPoint,
   ThresholdHistoryEntry,
   UnifiedActivity,
+  UnifiedWellnessDay,
 } from '../types.ts';
 import { computeCyclingTss, computeRunningTss } from './powerPaceMetrics.ts';
 import {
@@ -141,27 +142,75 @@ export function computeHistoricalActivityLoad(
 export function computeDualSportPmcSeries(
   activities: UnifiedActivity[],
   profile: AthleteProfile,
-  windowDays = 90
+  windowDays = 90,
+  options?: { seedWellnessDays?: UnifiedWellnessDay[] }
 ): DualSportPmcPoint[] {
-  if (activities.length === 0) return [];
+  const sortedSeeds = Array.isArray(options?.seedWellnessDays)
+    ? [...options!.seedWellnessDays]
+        .filter((w) => w && typeof w.date === 'string' && w.date.length >= 10)
+        .sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  const hasSeedSeries = sortedSeeds.length > 0;
+  if (activities.length === 0 && !hasSeedSeries) return [];
 
   const sorted = [...activities].sort((a, b) =>
     a.startDateLocal.localeCompare(b.startDateLocal)
   );
-  const firstDateStr = sorted[0].startDateLocal.slice(0, 10);
+  const firstActivityDate = sorted[0]?.startDateLocal?.slice(0, 10) || sortedSeeds[0].date.slice(0, 10);
+  const firstSeedDate = sortedSeeds[0]?.date?.slice(0, 10) || firstActivityDate;
+  const seriesStartStr = firstSeedDate < firstActivityDate ? firstSeedDate : firstActivityDate;
   const todayStr = getLocalDateIso();
-  const endDateStr = todayStr >= firstDateStr ? todayStr : firstDateStr;
+  const lastActivityDate =
+    sorted.length > 0 ? sorted[sorted.length - 1].startDateLocal.slice(0, 10) : firstActivityDate;
+  const endDateStr = todayStr >= lastActivityDate ? todayStr : lastActivityDate;
+
+  const hasHistoryOverrides =
+    Array.isArray(profile.thresholdHistory) && profile.thresholdHistory.length > 0;
 
   const byDay = new Map<string, { sys: number; cyc: number; run: number }>();
+  let totalSysActLoad = 0;
+  let totalCycActLoad = 0;
+  let totalRunActLoad = 0;
   for (const act of sorted) {
     const d = act.startDateLocal.slice(0, 10);
-    const load = computeHistoricalActivityLoad(act, profile);
+    const useCanonicalSeedLoad =
+      hasSeedSeries &&
+      !hasHistoryOverrides &&
+      Number.isFinite(act.trainingLoad) &&
+      act.trainingLoad > 0;
+    const load = useCanonicalSeedLoad
+      ? Math.max(0, act.trainingLoad)
+      : computeHistoricalActivityLoad(act, profile);
     const bucket = byDay.get(d) || { sys: 0, cyc: 0, run: 0 };
     bucket.sys += load;
-    if (act.sportCategory === 'Cycling') bucket.cyc += load;
-    else if (act.sportCategory === 'Running') bucket.run += load;
+    totalSysActLoad += load;
+    if (act.sportCategory === 'Cycling') {
+      bucket.cyc += load;
+      totalCycActLoad += load;
+    } else if (act.sportCategory === 'Running') {
+      bucket.run += load;
+      totalRunActLoad += load;
+    }
     byDay.set(d, bucket);
   }
+
+  const wellnessByDate = new Map<string, UnifiedWellnessDay>();
+  for (const w of sortedSeeds) {
+    wellnessByDate.set(w.date.slice(0, 10), w);
+  }
+
+  const cycShare =
+    totalSysActLoad > 0
+      ? totalCycActLoad / totalSysActLoad
+      : profile.primarySport === 'Cycling'
+        ? 1
+        : 0;
+  const runShare =
+    totalSysActLoad > 0
+      ? totalRunActLoad / totalSysActLoad
+      : profile.primarySport === 'Running'
+        ? 1
+        : Math.max(0, 1 - cycShare);
 
   const ctlDecay = BANISTER_CTL_DECAY;
   const atlDecay = BANISTER_ATL_DECAY;
@@ -173,9 +222,32 @@ export function computeDualSportPmcSeries(
   let runCtl = 0;
   let runAtl = 0;
 
+  if (hasSeedSeries && firstSeedDate <= firstActivityDate) {
+    const w0 = sortedSeeds[0];
+    const w0Load = byDay.get(firstSeedDate)?.sys ?? Math.max(0, Number(w0.dailyLoad || 0));
+    const seedCtl0 = Math.max(0, (w0.ctl - w0Load * (1 - ctlDecay)) / ctlDecay);
+    const seedAtl0 = Math.max(0, (w0.atl - w0Load * (1 - atlDecay)) / atlDecay);
+    sysCtl = seedCtl0;
+    sysAtl = seedAtl0;
+    cycCtl = seedCtl0 * cycShare;
+    cycAtl = seedAtl0 * cycShare;
+    runCtl = seedCtl0 * runShare;
+    runAtl = seedAtl0 * runShare;
+  }
+
   const fullSeries: DualSportPmcPoint[] = [];
-  for (let dStr = firstDateStr; dStr <= endDateStr; dStr = shiftIsoDate(dStr, 1)) {
-    const loads = byDay.get(dStr) || { sys: 0, cyc: 0, run: 0 };
+  for (let dStr = seriesStartStr; dStr <= endDateStr; dStr = shiftIsoDate(dStr, 1)) {
+    const activityLoads = byDay.get(dStr);
+    const seedDay = wellnessByDate.get(dStr);
+    const loads = activityLoads
+      ? activityLoads
+      : seedDay && Number.isFinite(seedDay.dailyLoad) && seedDay.dailyLoad > 0
+        ? {
+            sys: seedDay.dailyLoad,
+            cyc: seedDay.dailyLoad * cycShare,
+            run: seedDay.dailyLoad * runShare,
+          }
+        : { sys: 0, cyc: 0, run: 0 };
 
     sysCtl = sysCtl * ctlDecay + loads.sys * (1 - ctlDecay);
     sysAtl = sysAtl * atlDecay + loads.sys * (1 - atlDecay);

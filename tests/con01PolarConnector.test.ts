@@ -137,8 +137,10 @@ describe('CON-01 · Polar AccessLink Connector (OAuth 2.0, Webhook, rTSS & Smart
     process.env.POLAR_CLIENT_ID = 'test_polar_client_987';
     process.env.POLAR_CLIENT_SECRET = 'test_polar_secret_xyz';
 
-    // 1. Get signed state token
+    // 1. Get signed state token + browser OAuth state cookie
+    const jar = new SimpleCookieJar();
     const urlRes = await fetch(`${baseUrl}/api/polar/auth/url`);
+    jar.absorbResponse(urlRes);
     const { state } = (await urlRes.json()) as { state: string };
 
     // 2. Mock Polar token exchange and user registration
@@ -174,10 +176,10 @@ describe('CON-01 · Polar AccessLink Connector (OAuth 2.0, Webhook, rTSS & Smart
       return originalFetch(input, init);
     }) as any;
 
-    // 3. Invoke callback
+    // 3. Invoke callback with OAuth state cookie
     const callbackRes = await fetch(
       `${baseUrl}/auth/polar/callback?code=valid_polar_code_111&state=${encodeURIComponent(state)}`,
-      { redirect: 'manual' }
+      { redirect: 'manual', headers: { Cookie: jar.headerValue() } }
     );
 
     expect(callbackRes.status).toBe(200);
@@ -194,7 +196,6 @@ describe('CON-01 · Polar AccessLink Connector (OAuth 2.0, Webhook, rTSS & Smart
     expect(userRegistered).toBe(true);
 
     // 4. Verify /api/config/status reports Polar connected via OAuth
-    const jar = new SimpleCookieJar();
     jar.absorbResponse(callbackRes);
     const statusRes = await fetch(`${baseUrl}/api/config/status`, {
       headers: { Cookie: jar.headerValue() },
@@ -274,13 +275,13 @@ describe('CON-01 · Polar AccessLink Connector (OAuth 2.0, Webhook, rTSS & Smart
     expect(act.trainingLoad).toBeGreaterThan(50);
     expect(act.efficiencyFactor).toBeGreaterThan(0);
 
-    // HR zone distribution mapping
+    // HR zone distribution mapping (0-based array indices matching Garmin Z1..Z5)
     expect(act.zoneSecs?.hr).toBeDefined();
     expect(act.zoneSecs!.hr.length).toBe(7);
-    expect(act.zoneSecs!.hr[1]).toBe(300); // 5 min = 300s
-    expect(act.zoneSecs!.hr[2]).toBe(600); // 10 min = 600s
-    expect(act.zoneSecs!.hr[3]).toBe(1500); // 25 min = 1500s
-    expect(act.zoneSecs!.hr[4]).toBe(600); // 10 min = 600s
+    expect(act.zoneSecs!.hr[0]).toBe(300); // Z1: 5 min = 300s
+    expect(act.zoneSecs!.hr[1]).toBe(600); // Z2: 10 min = 600s
+    expect(act.zoneSecs!.hr[2]).toBe(1500); // Z3: 25 min = 1500s
+    expect(act.zoneSecs!.hr[3]).toBe(600); // Z4: 10 min = 600s
   });
 
   it('receives Polar webhook and echoes verification challenge', async () => {

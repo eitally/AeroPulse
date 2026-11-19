@@ -36,6 +36,12 @@ async function signInViaDevMagicLink(
   expect(payload.previewUrl).toBeTruthy();
   const parsed = new URL(payload.previewUrl);
   await page.goto(`${parsed.pathname}${parsed.search}`);
+  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to THRESH/i });
+  await expect(confirmBtn).toBeVisible({ timeout: 10000 });
+  await Promise.all([
+    page.waitForURL((u) => !u.pathname.includes('/api/auth/magic-link/verify')),
+    confirmBtn.click(),
+  ]);
 }
 
 test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Desktop & Mobile)', () => {
@@ -81,9 +87,16 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
 
     const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-    // 1. Create a High School team from an isolated Coach context
+    // 1. Create a High School team from an isolated authenticated Coach context
     const coachCtx = await browser.newContext();
     const coachReq = coachCtx.request;
+    const coachLoginResp = await coachReq.post('/api/auth/mock-login', {
+      data: {
+        email: `coach.rivera.${unique}@school.edu`,
+        name: 'Coach Rivera',
+      },
+    });
+    expect(coachLoginResp.ok()).toBe(true);
     const teamResp = await coachReq.post('/api/teams', {
       data: {
         name: `Redwood HS Track ${unique}`,
@@ -139,10 +152,17 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
     await page.getByTestId('open-roster-modal').click();
     await page.getByRole('tab', { name: /Privacy Shield/i }).click();
 
-    // Update login email away from graduating .edu address
+    // Update login email away from graduating .edu address (2-step code verification)
     const emailInput = page.getByTestId('account-change-email-input');
     await expect(emailInput).toBeVisible({ timeout: 10000 });
     await emailInput.fill(newPersonalEmail);
+    await page.getByTestId('account-change-email-btn').click();
+    const devCodeEl = page.getByTestId('account-change-email-dev-code');
+    await expect(devCodeEl).toBeVisible({ timeout: 10000 });
+    const devCodeText = (await devCodeEl.textContent()) || '';
+    const devCodeMatch = devCodeText.match(/(\d{6})/);
+    expect(devCodeMatch).not.toBeNull();
+    await page.getByTestId('account-change-email-code-input').fill(devCodeMatch![1]);
     await page.getByTestId('account-change-email-btn').click();
     await expect(page.getByText(/Login email updated/i)).toBeVisible({ timeout: 10000 });
 

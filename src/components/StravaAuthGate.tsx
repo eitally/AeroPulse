@@ -2078,7 +2078,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           </span>
                         </div>
                         <span className="font-mono text-xs font-bold text-[#166534] dark:text-[#4ADE80] shrink-0">
-                          COPPA/FERPA SHIELD ON
+                          U18 SAFE-SPORT SHIELD ON
                         </span>
                       </div>
                     </div>
@@ -2107,7 +2107,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <li className="flex items-start gap-2">
                         <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
                         <span>
-                          Works with Strava, Garmin, Polar, Wahoo, COROS/Whoop, or{' '}
+                          Works with Strava, Garmin, Polar, Wahoo, Intervals.icu, or{' '}
                           <span className="font-mono">.FIT/.ZIP</span>
                         </span>
                       </li>
@@ -2662,7 +2662,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <span>Scholastic Youth Protection Gate</span>
                     </div>
                     <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
-                      Under COPPA and our youth privacy rules, athletes under 18 must join through an authorized school or club athletic team roster.
+                      Under our U18 Safe-Sport youth privacy policy (with COPPA &lt;13 enforcement), athletes aged 13–17 join through an authorized school or club athletic team roster with parent/guardian consent.
                     </p>
                     {!showTeamCodeDrawer ? (
                       <div className="pt-1">
@@ -3135,7 +3135,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                        Syncs Coros / Polar / Wahoo / Whoop wellness, eFTP curves, and planned calendar workouts.
+                        Syncs Intervals.icu connected devices (Garmin, COROS, Suunto, Polar, Wahoo), eFTP curves, and planned calendar workouts.
                       </p>
                     </div>
                     <button

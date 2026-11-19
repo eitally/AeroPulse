@@ -3,12 +3,13 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 import http from 'http';
 import express from 'express';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRouter } from '../server/apiRouter.ts';
 import { setSessionCookie } from '../server/securityUtils.ts';
 import { deleteTenantVault } from '../server/tokenVault.ts';
 import { scopedStoresInMemory } from '../server/sessionContext.ts';
 import {
+  acknowledgeParentConsent,
   claimTeamJoinInvite,
   createTeamForCoach,
   listTeamsForUser,
@@ -298,22 +299,45 @@ describe('COACH-01 & COACH-02: Pure Engines + Safe-Sport Team API Sync & Cohort 
     });
     createdTeamIds.push(team.brand.teamId);
 
-    await claimTeamJoinInvite({
-      callerSid: ath1Sid,
-      originUrl: 'https://thresh-dev.vercel.app',
-      codeOrSlug: team.brand.joinCode,
-      athleteName: 'Jordan Runner',
-      birthYear: 2009,
-      parentGuardianEmail: 'parent@example.com',
-    });
-    await claimTeamJoinInvite({
-      callerSid: ath2Sid,
-      originUrl: 'https://thresh-dev.vercel.app',
-      codeOrSlug: team.brand.joinCode,
-      athleteName: 'Teammate Peer',
-      birthYear: 2009,
-      parentGuardianEmail: 'parent2@example.com',
-    });
+    const prevResend = process.env.RESEND_API_KEY;
+    const prevFetch = globalThis.fetch;
+    let jordanConsentToken = '';
+    process.env.RESEND_API_KEY = 're_test_coach01';
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('api.resend.com/emails')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { html?: string };
+        const m = body.html?.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/);
+        if (m?.[1]) jordanConsentToken = m[1];
+        return new Response(JSON.stringify({ id: 'em_c01' }), { status: 200 });
+      }
+      return prevFetch(input, init);
+    }) as any;
+
+    try {
+      await claimTeamJoinInvite({
+        callerSid: ath1Sid,
+        originUrl: 'https://thresh-dev.vercel.app',
+        codeOrSlug: team.brand.joinCode,
+        athleteName: 'Jordan Runner',
+        birthYear: 2009,
+        parentGuardianEmail: 'parent@example.com',
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(jordanConsentToken).toBeTruthy();
+      await acknowledgeParentConsent(jordanConsentToken);
+      await claimTeamJoinInvite({
+        callerSid: ath2Sid,
+        originUrl: 'https://thresh-dev.vercel.app',
+        codeOrSlug: team.brand.joinCode,
+        athleteName: 'Teammate Peer',
+        birthYear: 2009,
+        parentGuardianEmail: 'parent2@example.com',
+      });
+    } finally {
+      globalThis.fetch = prevFetch;
+      if (prevResend === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = prevResend;
+    }
 
     const ath1CookieRes = await fetch(`${baseUrl}/__test/issue-cookie`, {
       method: 'POST',

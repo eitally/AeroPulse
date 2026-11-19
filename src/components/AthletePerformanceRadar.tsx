@@ -178,6 +178,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
   onOpenRosterModal,
   onOpenCoachWithPrompt,
 }) => {
+  const hideWeight = Boolean(selfProfile?.safeSportHideWeight);
   const athletes = useMemo<NormalizedAthleteRadarSource[]>(() => {
     const cleanSelfActivities = selfActivities.filter((a) => !isStravaSourcedActivity(a));
     const selfFtp = selfProfile?.ftp || 0;
@@ -305,11 +306,10 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
         )
       );
 
-      // 4. Peak Power-to-Weight: Normalized against 5.40 W/kg Elite ceiling
-      const pwrWeightScore = Math.min(
-        99,
-        Math.max(42, Math.round((ath.wPerKg / 5.4) * 100))
-      );
+      // 4. Peak Power-to-Weight (or Threshold Power under Safe-Sport Zero-Weight)
+      const pwrWeightScore = hideWeight
+        ? Math.min(99, Math.max(42, Math.round((ath.ftp / 380) * 100)))
+        : Math.min(99, Math.max(42, Math.round((ath.wPerKg / 5.4) * 100)));
 
       // 5. Weekly Load Consistency: Low week-to-week TSS variance across 4 weeks
       const weeks: number[] = [0, 0, 0, 0];
@@ -338,7 +338,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
         complianceScore,
         complianceDisplay: `${complianceScore}% Exec`,
         pwrWeightScore,
-        pwrWeightDisplay: `${ath.wPerKg} W/kg`,
+        pwrWeightDisplay: hideWeight ? `${ath.ftp}W FTP` : `${ath.wPerKg} W/kg`,
         consistencyScore,
         consistencyDisplay: `${Math.round(meanW)} TSS/wk`,
       };
@@ -380,13 +380,13 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
       },
       {
         key: 'peak_power_weight',
-        label: 'Peak Power-to-Weight',
-        shortLabel: 'Peak W/kg',
+        label: hideWeight ? 'Threshold Power' : 'Peak Power-to-Weight',
+        shortLabel: hideWeight ? 'FTP Power' : 'Peak W/kg',
         scoreA: mA.pwrWeightScore,
         scoreB: mB.pwrWeightScore,
         displayA: mA.pwrWeightDisplay,
         displayB: mB.pwrWeightDisplay,
-        benchmarkLabel: 'Normalized vs 5.4 W/kg',
+        benchmarkLabel: hideWeight ? 'Normalized Absolute Power' : 'Normalized vs 5.4 W/kg',
       },
       {
         key: 'weekly_consistency',
@@ -479,12 +479,14 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
         shortLabel: d.shortLabel,
         scoreA,
         scoreB,
-        displayA: `${valA} W/kg (${scoreA}%)`,
-        displayB: `${valB} W/kg (${scoreB}%)`,
-        benchmarkLabel: `Age-Graded 100% = ${ageCeilingA.toFixed(1)} W/kg`,
+        displayA: hideWeight ? `${scoreA}% AG` : `${valA} W/kg (${scoreA}%)`,
+        displayB: hideWeight ? `${scoreB}% AG` : `${valB} W/kg (${scoreB}%)`,
+        benchmarkLabel: hideWeight
+          ? `Age-Graded Std (${Math.round(bracketConfigA.cyclingAgeFactor * 100)}%)`
+          : `Age-Graded 100% = ${ageCeilingA.toFixed(1)} W/kg`,
       };
     });
-  }, [athleteA, athleteB, bracketConfigA, bracketConfigB]);
+  }, [athleteA, athleteB, bracketConfigA, bracketConfigB, hideWeight]);
 
   // ============================================================================
   // 3. WMA / DANIELS AGE-GRADED RUNNING PERFORMANCE SCALE RADAR (STANDARDIZED DISTANCES)
@@ -839,7 +841,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               >
                 {athletes.map((a) => (
                   <option key={`rad-a-${a.id}`} value={a.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                    {a.name} ({a.wPerKg} W/kg)
+                    {a.name} ({hideWeight ? `${a.ftp}W` : `${a.wPerKg} W/kg`})
                   </option>
                 ))}
               </select>
@@ -910,7 +912,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               >
                 {athletes.map((b) => (
                   <option key={`rad-b-${b.id}`} value={b.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                    {b.name} ({b.wPerKg} W/kg)
+                    {b.name} ({hideWeight ? `${b.ftp}W` : `${b.wPerKg} W/kg`})
                   </option>
                 ))}
               </select>

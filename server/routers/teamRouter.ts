@@ -1,12 +1,14 @@
 import express, { type Request, type Response } from 'express';
 import {
-  decodeAndVerifyToken,
   escapeHtml,
   getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
+  isProductionDeployment,
   resolveSafeOrigin,
   setSessionCookie,
 } from '../securityUtils.ts';
-import { getUserById } from '../authService.ts';
+import { getUserById, getUserByProvider } from '../authService.ts';
+import { getScopedRuntimeStore } from '../sessionContext.ts';
 import {
   declineAndPurgeParentConsent,
   graduateTeamClass,
@@ -62,23 +64,6 @@ function resolveRequestOrigin(req: Request): string {
   return 'https://thresh.app';
 }
 
-function ensureSessionSid(
-  req: Request,
-  res: Response,
-  subjectHint = 'thresh-athlete'
-): { sid: string; sessionToken?: string } {
-  const existing = getVerifiedSessionClaims(req);
-  if (existing?.sid) {
-    return { sid: existing.sid };
-  }
-  const sessionToken = setSessionCookie(req, res, subjectHint);
-  const decoded = decodeAndVerifyToken(sessionToken);
-  return {
-    sid: decoded?.sid || '000000000000000000000000',
-    sessionToken,
-  };
-}
-
 // 1. Send 6-Digit Cross-Device Email OTP via Resend
 teamRouter.post('/api/auth/email/send-otp', async (req: Request, res: Response) => {
   try {
@@ -92,7 +77,9 @@ teamRouter.post('/api/auth/email/send-otp', async (req: Request, res: Response) 
       ok: true,
       deliveryStatus: result.deliveryStatus,
       resendConfigured: isResendConfigured(),
-      ...(result.devPreviewCode ? { devPreviewCode: result.devPreviewCode } : {}),
+      ...(!isProductionDeployment() && result.devPreviewCode
+        ? { devPreviewCode: result.devPreviewCode }
+        : {}),
     });
   } catch (err) {
     res.status(500).json({
@@ -118,7 +105,8 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
       req,
       res,
       result.displayName || result.email || 'thresh-athlete',
-      result.sid
+      result.sid,
+      'verified'
     );
     const originUrl = resolveRequestOrigin(req);
     const teams = await listTeamsForUser(result.sid, originUrl);
@@ -142,7 +130,7 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
 teamRouter.get(['/api/teams/mine', '/api/teams'], async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.json({
         ok: true,
         resendConfigured: isResendConfigured(),
@@ -181,14 +169,14 @@ teamRouter.get(['/api/teams/mine', '/api/teams'], async (req: Request, res: Resp
 // 4. Create New School / Club / Coaching Team
 teamRouter.post('/api/teams', async (req: Request, res: Response) => {
   try {
-    const { sid, sessionToken } = ensureSessionSid(
-      req,
-      res,
-      String(req.body?.coachDisplayName || 'thresh-coach')
-    );
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
     const originUrl = resolveRequestOrigin(req);
     const team = await createTeamForCoach({
-      callerSid: sid,
+      callerSid: claims.sid,
       originUrl,
       name: String(req.body?.name || ''),
       shortName: req.body?.shortName ? String(req.body.shortName) : undefined,
@@ -206,7 +194,6 @@ teamRouter.post('/api/teams', async (req: Request, res: Response) => {
     });
     res.json({
       ok: true,
-      ...(sessionToken ? { sessionToken } : {}),
       resendConfigured: isResendConfigured(),
       team,
     });
@@ -222,7 +209,7 @@ teamRouter.post('/api/teams', async (req: Request, res: Response) => {
 teamRouter.put('/api/teams/:teamId', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -253,7 +240,7 @@ teamRouter.put('/api/teams/:teamId', async (req: Request, res: Response) => {
 teamRouter.post('/api/teams/:teamId/invites/bulk', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -293,7 +280,7 @@ teamRouter.post('/api/teams/:teamId/invites/bulk', async (req: Request, res: Res
 teamRouter.post('/api/teams/:teamId/invites/resend', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -327,15 +314,13 @@ teamRouter.get('/api/teams/join-preview', async (req: Request, res: Response) =>
   try {
     const codeOrSlug = String(req.query.codeOrSlug || '').trim();
     const token = req.query.t ? String(req.query.t).trim() : undefined;
-    let email = req.query.email ? String(req.query.email).trim().toLowerCase() : undefined;
-    if (!email) {
-      const claims = getVerifiedSessionClaims(req);
-      if (claims?.sub?.startsWith('usr_')) {
-        const u = await getUserById(claims.sub);
-        if (u?.email) email = u.email;
-      }
+    let verifiedCallerEmail: string | undefined;
+    const claims = getVerifiedSessionClaims(req);
+    if (isCanonicalAuthenticatedClaims(claims) && claims?.sub?.startsWith('usr_')) {
+      const u = await getUserById(claims.sub);
+      if (u?.email) verifiedCallerEmail = u.email;
     }
-    const preview = await previewTeamJoinInvite(codeOrSlug, token, email);
+    const preview = await previewTeamJoinInvite(codeOrSlug, token, verifiedCallerEmail);
     res.json(preview);
   } catch (err) {
     res.status(400).json({
@@ -348,12 +333,12 @@ teamRouter.get('/api/teams/join-preview', async (req: Request, res: Response) =>
 // 9. Claim Team Membership & Auto-Calibrate Baseline
 teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => {
   try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Please sign in before joining a team.' });
+      return;
+    }
     const athleteName = String(req.body?.athleteName || '').trim();
-    const { sid, sessionToken } = ensureSessionSid(
-      req,
-      res,
-      athleteName || 'thresh-athlete'
-    );
     const originUrl = resolveRequestOrigin(req);
     const rawUnit = String(req.body?.distanceUnit || '').toLowerCase();
     const distanceUnit: 'mi' | 'km' = rawUnit === 'km' ? 'km' : 'mi';
@@ -363,38 +348,45 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
         ? rawTier
         : 'SUMMARY_ONLY';
 
-    let athleteEmail = req.body?.athleteEmail ? String(req.body.athleteEmail).trim().toLowerCase() : undefined;
-    if (!athleteEmail) {
-      const claims = getVerifiedSessionClaims(req);
-      if (claims?.sub?.startsWith('usr_')) {
-        const u = await getUserById(claims.sub);
-        if (u?.email) athleteEmail = u.email;
-      }
-    }
+    let user = claims.sub?.startsWith('usr_')
+      ? await getUserById(claims.sub)
+      : claims.sub
+        ? await getUserByProvider('strava', claims.sub)
+        : null;
+    const verifiedEmail = user?.email ? user.email.trim().toLowerCase() : undefined;
+    const verifiedBirthMonthYear = user?.birthMonthYear;
+    const store = getScopedRuntimeStore(req);
+    const stravaFromUser =
+      user?.authProviders?.find((p) => p.provider === 'strava')?.providerId ||
+      user?.connectedServices?.find((s) => s.service === 'strava')?.athleteId;
+    const verifiedStravaId =
+      (store?.stravaAthleteId ? String(store.stravaAthleteId).trim() : '') ||
+      (stravaFromUser ? String(stravaFromUser).trim() : '') ||
+      (!claims.sub?.startsWith('usr_') && /^\d+$/.test(claims.sub || '') ? claims.sub : '') ||
+      undefined;
 
     const claimed = await claimTeamJoinInvite({
-      callerSid: sid,
+      callerSid: claims.sid,
       originUrl,
       codeOrSlug: String(req.body?.codeOrSlug || '').trim(),
       inviteToken: req.body?.inviteToken ? String(req.body.inviteToken).trim() : undefined,
-      athleteName: athleteName || undefined,
-      athleteEmail,
-      stravaAthleteId: req.body?.stravaAthleteId
-        ? String(req.body.stravaAthleteId).trim()
-        : undefined,
+      athleteName: athleteName || user?.name || undefined,
+      athleteEmail: verifiedEmail,
+      stravaAthleteId: verifiedStravaId,
       squadGroup: req.body?.squadGroup ? String(req.body.squadGroup) : undefined,
       seedMarkOrFtp: req.body?.seedMarkOrFtp ? String(req.body.seedMarkOrFtp) : undefined,
       distanceUnit,
       sharingTier,
-      birthYear:
-        typeof req.body?.birthYear === 'number'
+      birthYear: verifiedBirthMonthYear
+        ? Number(verifiedBirthMonthYear.slice(0, 4))
+        : typeof req.body?.birthYear === 'number'
           ? req.body.birthYear
           : req.body?.birthYear
             ? Number(req.body.birthYear)
             : undefined,
-      birthMonthYear: req.body?.birthMonthYear
-        ? String(req.body.birthMonthYear).trim()
-        : undefined,
+      birthMonthYear:
+        verifiedBirthMonthYear ||
+        (req.body?.birthMonthYear ? String(req.body.birthMonthYear).trim() : undefined),
       graduationYear:
         typeof req.body?.graduationYear === 'number'
           ? req.body.graduationYear
@@ -417,10 +409,9 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       return;
     }
 
-    const teams = await listTeamsForUser(sid, originUrl);
+    const teams = await listTeamsForUser(claims.sid, originUrl);
     res.json({
       ok: true,
-      ...(sessionToken ? { sessionToken } : {}),
       team: claimed.summary,
       teams,
       calibrated: claimed.calibrated,
@@ -438,11 +429,14 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
 teamRouter.post('/api/teams/sync-snapshot', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.json({ ok: true, teams: [] });
       return;
     }
     const originUrl = resolveRequestOrigin(req);
+    const verifiedUser = claims.sub?.startsWith('usr_')
+      ? await getUserById(claims.sub).catch(() => null)
+      : null;
     const mergedSnapshot = {
       ...(req.body?.snapshot || {}),
       ...(req.body?.privacySettings && !req.body?.snapshot?.privacySettings
@@ -453,6 +447,7 @@ teamRouter.post('/api/teams/sync-snapshot', async (req: Request, res: Response) 
       callerSid: claims.sid,
       originUrl,
       athleteName: req.body?.athleteName ? String(req.body.athleteName) : undefined,
+      verifiedUserBirthMonthYear: verifiedUser?.birthMonthYear,
       snapshot: mergedSnapshot,
     });
     res.json({ ok: true, teams });
@@ -468,7 +463,7 @@ teamRouter.post('/api/teams/sync-snapshot', async (req: Request, res: Response) 
 teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -526,7 +521,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
 teamRouter.post('/api/teams/:teamId/workouts/broadcast-batch', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -575,7 +570,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast-batch', async (req: Reque
 teamRouter.delete('/api/teams/:teamId/workouts/blocks/:blockId', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -604,7 +599,7 @@ teamRouter.delete('/api/teams/:teamId/workouts/blocks/:blockId', async (req: Req
 teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -633,7 +628,7 @@ teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Reques
 teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -667,7 +662,7 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (
 teamRouter.post('/api/teams/:teamId/stopwatch-activities', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -696,7 +691,7 @@ teamRouter.post('/api/teams/:teamId/stopwatch-activities', async (req: Request, 
 teamRouter.post('/api/teams/:teamId/leave', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -728,16 +723,20 @@ teamRouter.post('/api/teams/:teamId/leave', async (req: Request, res: Response) 
 teamRouter.delete('/api/teams/:teamId/members/me/guardian', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
     const originUrl = resolveRequestOrigin(req);
+    const verifiedUser = claims.sub?.startsWith('usr_')
+      ? await getUserById(claims.sub).catch(() => null)
+      : null;
     const outcome = await revokeAthleteGuardianConsentForTeam({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
       originUrl,
       birthMonthYear: req.body?.birthMonthYear ? String(req.body.birthMonthYear) : undefined,
+      verifiedUserBirthMonthYear: verifiedUser?.birthMonthYear,
     });
     if (!outcome.ok) {
       res.status(400).json({ ok: false, error: outcome.error });
@@ -797,7 +796,7 @@ teamRouter.patch(
 teamRouter.post('/api/teams/:teamId/graduate-class', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -866,7 +865,7 @@ teamRouter.patch(
 teamRouter.post('/api/teams/:teamId/transfer-ownership', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
@@ -896,7 +895,7 @@ teamRouter.post('/api/teams/:teamId/transfer-ownership', async (req: Request, re
 teamRouter.post('/api/teams/:teamId/members/merge', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid) {
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }

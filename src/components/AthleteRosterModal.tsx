@@ -125,6 +125,9 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
   // Team membership lifecycle, login email mobility, and account erasure state
   const [accountEmailInput, setAccountEmailInput] = useState(currentUser?.email || '');
+  const [pendingEmailVerify, setPendingEmailVerify] = useState<string | null>(null);
+  const [emailVerifyCodeInput, setEmailVerifyCodeInput] = useState('');
+  const [emailVerifyDevCode, setEmailVerifyDevCode] = useState<string | null>(null);
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
   const [privacyActionMsg, setPrivacyActionMsg] = useState<string | null>(null);
   const [privacyActionErr, setPrivacyActionErr] = useState<string | null>(null);
@@ -191,8 +194,29 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
     setPrivacyActionMsg(null);
     setPrivacyActionErr(null);
     try {
-      const data = await changePrimaryEmailApi(clean);
+      const confirmingCode =
+        pendingEmailVerify === clean ? emailVerifyCodeInput.trim() : '';
+      const data = await changePrimaryEmailApi(clean, confirmingCode || undefined);
+      if (data.verificationRequired) {
+        setPendingEmailVerify(clean);
+        setEmailVerifyCodeInput('');
+        setEmailVerifyDevCode(data.devCode || null);
+        setPrivacyActionMsg(
+          `Verification code sent to ${clean}. Enter the 6-digit code below to finish updating your login email.`
+        );
+        return;
+      }
+      if (data.sessionToken) {
+        try {
+          localStorage.setItem('aeropulse_session_token', data.sessionToken);
+        } catch {
+          // ignore
+        }
+      }
       if (data.user) onUserUpdated?.(data.user);
+      setPendingEmailVerify(null);
+      setEmailVerifyCodeInput('');
+      setEmailVerifyDevCode(null);
       setPrivacyActionMsg(
         'Login email updated — your training history and connected apps stay intact.'
       );
@@ -956,19 +980,58 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       data-testid="account-change-email-input"
                       aria-label="New primary login email"
                       value={accountEmailInput}
-                      onChange={(e) => setAccountEmailInput(e.target.value)}
+                      onChange={(e) => {
+                        setAccountEmailInput(e.target.value);
+                        if (pendingEmailVerify && e.target.value.trim().toLowerCase() !== pendingEmailVerify) {
+                          setPendingEmailVerify(null);
+                          setEmailVerifyCodeInput('');
+                          setEmailVerifyDevCode(null);
+                        }
+                      }}
                       placeholder="personal.email@example.com"
                       className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
                       data-testid="account-change-email-btn"
-                      disabled={isUpdatingEmail || !accountEmailInput.trim()}
+                      disabled={
+                        isUpdatingEmail ||
+                        !accountEmailInput.trim() ||
+                        (pendingEmailVerify === accountEmailInput.trim().toLowerCase() &&
+                          emailVerifyCodeInput.trim().length < 6)
+                      }
                       className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap disabled:opacity-50"
                     >
-                      {isUpdatingEmail ? 'Updating…' : 'Update Email'}
+                      {isUpdatingEmail
+                        ? 'Updating…'
+                        : pendingEmailVerify === accountEmailInput.trim().toLowerCase()
+                          ? 'Confirm Code'
+                          : 'Update Email'}
                     </button>
                   </div>
+                  {pendingEmailVerify && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        data-testid="account-change-email-code-input"
+                        aria-label="6-digit email verification code"
+                        value={emailVerifyCodeInput}
+                        onChange={(e) => setEmailVerifyCodeInput(e.target.value)}
+                        placeholder="6-digit verification code"
+                        className="w-full sm:w-48 min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+                      />
+                      {emailVerifyDevCode && (
+                        <span
+                          data-testid="account-change-email-dev-code"
+                          className="text-2xs font-mono text-emerald-700 dark:text-emerald-300"
+                        >
+                          Dev code: <strong>{emailVerifyDevCode}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </form>
 
                 <div className="pt-2 space-y-2.5">

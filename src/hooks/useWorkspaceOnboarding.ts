@@ -1,12 +1,16 @@
 import React, { useCallback } from 'react';
 import type {
   ActiveTab,
+  AnnualMileageGoal,
   AthleteGearItem,
+  AthletePrivacySettings,
   AthleteProfile,
   CoachWorkspaceSubTab,
+  ConnectedAthleteRecord,
   ConnectionStatus,
   DistanceUnit,
   PlannedWorkoutEvent,
+  TargetGoal,
   TeamSummaryWithRole,
   ThreshUser,
   UnifiedActivity,
@@ -14,6 +18,12 @@ import type {
 } from '../types';
 import type { FirstRunCalibrationPayload } from '../components/StravaAuthGate';
 import type { RosterTab } from '../components/AthleteRosterModal';
+import { INITIAL_ANNUAL_MILEAGE_GOALS } from '../data/mockTelemetry';
+import {
+  DEFAULT_SELF_PRIVACY_SETTINGS,
+  buildInitialConnectedAthletes,
+} from '../data/athleteRosterData';
+import { clearAllUserBrowserStorage } from '../utils/storageKeys';
 import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
@@ -31,6 +41,7 @@ interface UseWorkspaceOnboardingParams {
   athleteProfileRef: React.MutableRefObject<AthleteProfile>;
   redactedStravaCountRef: React.MutableRefObject<number>;
   hasEnteredWorkspaceRef: React.MutableRefObject<boolean>;
+  idbHydratedRef: React.MutableRefObject<boolean>;
   athleteProfile: AthleteProfile;
   setActivities: React.Dispatch<React.SetStateAction<UnifiedActivity[]>>;
   setWellnessDays: React.Dispatch<React.SetStateAction<UnifiedWellnessDay[]>>;
@@ -38,9 +49,20 @@ interface UseWorkspaceOnboardingParams {
   setGearItems: React.Dispatch<React.SetStateAction<AthleteGearItem[]>>;
   setAthleteProfile: React.Dispatch<React.SetStateAction<AthleteProfile>>;
   setRedactedStravaCount: React.Dispatch<React.SetStateAction<number>>;
+  setTargetGoals: React.Dispatch<React.SetStateAction<TargetGoal[]>>;
+  setAnnualMileageGoals: React.Dispatch<React.SetStateAction<AnnualMileageGoal[]>>;
+  setSelfPrivacySettings: React.Dispatch<React.SetStateAction<AthletePrivacySettings>>;
+  setConnectedAthletes: React.Dispatch<React.SetStateAction<ConnectedAthleteRecord[]>>;
   setMyTeams: React.Dispatch<React.SetStateAction<TeamSummaryWithRole[]>>;
   setActiveTeamId: React.Dispatch<React.SetStateAction<string | null>>;
+  setExplicitPersonalMode: React.Dispatch<React.SetStateAction<boolean>>;
   setActiveViewedAthleteId: React.Dispatch<React.SetStateAction<string>>;
+  setSelectedActivity: React.Dispatch<React.SetStateAction<UnifiedActivity | null>>;
+  setInspectedFromCoach: React.Dispatch<React.SetStateAction<boolean>>;
+  setDismissedStravaBanner: React.Dispatch<React.SetStateAction<boolean>>;
+  setDismissedQuickConnectBanner: React.Dispatch<React.SetStateAction<boolean>>;
+  setSyncError: React.Dispatch<React.SetStateAction<string | null>>;
+  setIsProfileModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setCurrentUser: React.Dispatch<React.SetStateAction<ThreshUser | null>>;
   setConnectionStatus: React.Dispatch<React.SetStateAction<ConnectionStatus>>;
   setIdbSavedAt: React.Dispatch<React.SetStateAction<string | null>>;
@@ -54,6 +76,7 @@ interface UseWorkspaceOnboardingParams {
   setRosterInitialTab: React.Dispatch<React.SetStateAction<RosterTab>>;
   setIsRosterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   resetSampleDemoEphemeralState: () => void;
+  resetUserCloudSyncState: () => void;
   fetchServerConfigStatus: () => Promise<void>;
   handleTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
   handleSaveProfileOverride: (profile: AthleteProfile) => Promise<void>;
@@ -67,6 +90,7 @@ export function useWorkspaceOnboarding({
   athleteProfileRef,
   redactedStravaCountRef,
   hasEnteredWorkspaceRef,
+  idbHydratedRef,
   athleteProfile,
   setActivities,
   setWellnessDays,
@@ -74,9 +98,20 @@ export function useWorkspaceOnboarding({
   setGearItems,
   setAthleteProfile,
   setRedactedStravaCount,
+  setTargetGoals,
+  setAnnualMileageGoals,
+  setSelfPrivacySettings,
+  setConnectedAthletes,
   setMyTeams,
   setActiveTeamId,
+  setExplicitPersonalMode,
   setActiveViewedAthleteId,
+  setSelectedActivity,
+  setInspectedFromCoach,
+  setDismissedStravaBanner,
+  setDismissedQuickConnectBanner,
+  setSyncError,
+  setIsProfileModalOpen,
   setCurrentUser,
   setConnectionStatus,
   setIdbSavedAt,
@@ -90,67 +125,26 @@ export function useWorkspaceOnboarding({
   setRosterInitialTab,
   setIsRosterModalOpen,
   resetSampleDemoEphemeralState,
+  resetUserCloudSyncState,
   fetchServerConfigStatus,
   handleTeamsUpdated,
   handleSaveProfileOverride,
 }: UseWorkspaceOnboardingParams) {
   const resetClientWorkspaceStateOnLogout = useCallback(
     async (clearAllVaultKeys: boolean) => {
+      const activeHeaders = getSavedIntervalsHeaders();
       setIsSampleDemoMode(false);
       resetSampleDemoEphemeralState();
+      resetUserCloudSyncState();
       setIsSessionLoggedOut(true);
       setHasEnteredWorkspace(false);
       hasEnteredWorkspaceRef.current = false;
-      const activeHeaders = getSavedIntervalsHeaders();
-      try {
-        localStorage.setItem('aeropulse_logged_out', '1');
-        localStorage.removeItem('aeropulse_auth_gate_passed');
-        localStorage.removeItem('aeropulse_session_token');
-        localStorage.removeItem('aeropulse_strava_access_token');
-        localStorage.removeItem('aeropulse_strava_refresh_token');
-        localStorage.removeItem('aeropulse_strava_expires_at');
-        localStorage.removeItem('thresh_my_teams_v1');
-        localStorage.removeItem('thresh_active_team_id_v1');
-        localStorage.removeItem('thresh_personal_mode_v1');
-        localStorage.removeItem('thresh_session_checkins_v1');
-        localStorage.removeItem('aeropulse_target_goals');
-        localStorage.removeItem('aeropulse_annual_mileage_goals');
-        localStorage.removeItem('aeropulse_self_privacy_settings');
-        localStorage.removeItem('aeropulse_connected_athletes_v1');
-        localStorage.removeItem('thresh_cloud_state_updated_at');
-        localStorage.removeItem('aeropulse_store_owner_athlete_id');
-        localStorage.removeItem('aeropulse_wahoo_connected');
-        localStorage.removeItem('aeropulse_wahoo_athlete_id');
-        localStorage.removeItem('aeropulse_wahoo_athlete_name');
-        localStorage.removeItem('aeropulse_polar_connected');
-        localStorage.removeItem('aeropulse_polar_athlete_id');
-        localStorage.removeItem('aeropulse_polar_athlete_name');
-        sessionStorage.removeItem('thresh_pending_team_join_v1');
-        if (clearAllVaultKeys) {
-          localStorage.removeItem('aeropulse_calibrated_v1');
-          localStorage.removeItem('aeropulse_strava_athlete_id');
-          localStorage.removeItem('aeropulse_strava_athlete_name');
-          localStorage.removeItem('aeropulse_strava_athlete_weight_kg');
-          localStorage.removeItem('aeropulse_strava_athlete_ftp');
-          localStorage.removeItem('aeropulse_strava_sync_policy');
-          localStorage.removeItem('aeropulse_store_owner_athlete_id');
-          localStorage.removeItem('thresh_primary_sport');
-          localStorage.removeItem('aeropulse_intervals_api_key');
-          localStorage.removeItem('aeropulse_intervals_athlete_id');
-          localStorage.removeItem('aeropulse_intervals_athlete_name');
-          localStorage.removeItem('aeropulse_strava_client_id');
-          localStorage.removeItem('aeropulse_strava_client_secret');
-          localStorage.removeItem('aeropulse_strava_backfill_v4_done');
-          localStorage.removeItem('aeropulse_garmin_personal_api_key');
-          localStorage.removeItem('aeropulse_garmin_bearer_token');
-          localStorage.removeItem('aeropulse_garmin_oauth1_token');
-          localStorage.removeItem('aeropulse_garmin_oauth1_secret');
-          localStorage.removeItem('aeropulse_garmin_athlete_name');
-          localStorage.removeItem('thresh_trackside_stopwatch_v1');
-        }
-      } catch {
-        // ignore
-      }
+      idbHydratedRef.current = false;
+
+      // Always purge all user/credential/team browser keys unconditionally on Sign Out so shared devices
+      // never leak User A tokens, backfill markers, check-ins, or goals into User B's session.
+      clearAllUserBrowserStorage({ preserveLoggedOutFlag: true });
+
       applyTeamBrandToDocument(null);
       setActivities([]);
       activitiesRef.current = [];
@@ -160,9 +154,23 @@ export function useWorkspaceOnboarding({
       plannedEventsRef.current = [];
       setGearItems([]);
       gearItemsRef.current = [];
+      setTargetGoals([]);
+      setAnnualMileageGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
+      setSelfPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
+      setConnectedAthletes(buildInitialConnectedAthletes());
       setMyTeams([]);
       setActiveTeamId(null);
+      setExplicitPersonalMode(false);
       setActiveViewedAthleteId('SELF');
+      setSelectedActivity(null);
+      setInspectedFromCoach(false);
+      setDismissedStravaBanner(false);
+      setDismissedQuickConnectBanner(false);
+      setSyncError(null);
+      setActiveTab('fitness');
+      setIsDataSourcesOpen(false);
+      setIsRosterModalOpen(false);
+      setIsProfileModalOpen(false);
       setCurrentUser(null);
       const defaultProf = buildCompleteAthleteProfile(null);
       setAthleteProfile(defaultProf);
@@ -173,6 +181,12 @@ export function useWorkspaceOnboarding({
         ...prev,
         mode: 'SANDBOX_CALIBRATION',
         currentUser: null,
+        athleteProfile: undefined,
+        athleteFtp: undefined,
+        athleteIndoorFtp: undefined,
+        athleteRunFtp: undefined,
+        athleteLthr: undefined,
+        athleteMaxHr: undefined,
         stravaConnected: false,
         stravaAthleteId: undefined,
         stravaAthleteName: undefined,
@@ -181,6 +195,10 @@ export function useWorkspaceOnboarding({
         stravaSource: 'NONE',
         garminConnected: false,
         garminAthleteName: undefined,
+        wahooConnected: false,
+        wahooAthleteName: undefined,
+        polarConnected: false,
+        polarAthleteName: undefined,
         intervalsConnected: false,
         intervalsAthleteId: '0',
         intervalsAthleteName: undefined,
@@ -208,23 +226,39 @@ export function useWorkspaceOnboarding({
       fetchServerConfigStatus,
       gearItemsRef,
       hasEnteredWorkspaceRef,
+      idbHydratedRef,
       plannedEventsRef,
       redactedStravaCountRef,
       resetSampleDemoEphemeralState,
+      resetUserCloudSyncState,
+      setActiveTab,
       setActiveTeamId,
       setActiveViewedAthleteId,
       setActivities,
+      setAnnualMileageGoals,
       setAthleteProfile,
+      setConnectedAthletes,
       setConnectionStatus,
       setCurrentUser,
+      setDismissedQuickConnectBanner,
+      setDismissedStravaBanner,
+      setExplicitPersonalMode,
       setGearItems,
       setHasEnteredWorkspace,
       setIdbSavedAt,
+      setInspectedFromCoach,
+      setIsDataSourcesOpen,
+      setIsProfileModalOpen,
+      setIsRosterModalOpen,
       setIsSampleDemoMode,
       setIsSessionLoggedOut,
       setMyTeams,
       setPlannedEvents,
       setRedactedStravaCount,
+      setSelectedActivity,
+      setSelfPrivacySettings,
+      setSyncError,
+      setTargetGoals,
       setWellnessDays,
       wellnessDaysRef,
     ]

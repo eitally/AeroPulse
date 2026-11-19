@@ -22,7 +22,7 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
         <AeroPulseLogo size="sm" surface="on-dark" />
         <span className="hidden sm:inline text-emerald-200/55 dark:text-slate-400">·</span>
         <span className="hidden sm:inline font-mono text-2xs text-emerald-100/75 dark:text-slate-400">
-          Close Today · Lock Tomorrow · Threshold Telemetry
+          Close Today · Lock Tomorrow · Coaching &amp; readiness telemetry only — not medical advice
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-4 font-medium">

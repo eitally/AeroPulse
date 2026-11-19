@@ -21,10 +21,14 @@ async function startServer() {
       reviver: strava64BitJsonReviver as unknown as (key: string, value: any) => any,
     })
   );
+  app.use(express.urlencoded({ extended: false }));
   app.use(apiRouter);
 
   const publicPath = path.resolve(__dirname, 'public');
   app.use(express.static(publicPath));
+  app.get(['/docs', '/docs/'], (_req, res) => {
+    res.sendFile(path.join(publicPath, 'docs', 'index.html'));
+  });
 
   app.get('/manifest.webmanifest', (_req, res, next) => {
     const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');
@@ -34,7 +38,9 @@ async function startServer() {
     });
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  const serveBuiltDist =
+    process.env.NODE_ENV === 'production' || process.env.SERVE_BUILT_DIST === '1';
+  if (!serveBuiltDist) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {

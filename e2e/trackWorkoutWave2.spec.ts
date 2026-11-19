@@ -116,8 +116,10 @@ test.describe('THRESH Wave 2 Track Physics, Safety & Morphing E2E (TRK-05..07, T
       expect(await morphCard.innerText()).not.toMatch(/%\s*FTP/i);
 
       // 3. Fitness & Health Drawers: Spiked-Meter Budget + PHV Selectors + Safe-Sport Watch
-      await page.getByRole('button', { name: /Impact & Run\/Bike Load/i }).click();
       const spikeBudgetTile = page.getByTestId('ortho-spike-budget-tile');
+      if (!(await spikeBudgetTile.isVisible())) {
+        await page.getByRole('button', { name: /Impact & Run\/Bike Load/i }).click();
+      }
       await expect(spikeBudgetTile).toBeVisible();
       await expect(spikeBudgetTile).toContainText(/Spiked-Meter & Curve Budget/i);
 

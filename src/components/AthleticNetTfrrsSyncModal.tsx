@@ -117,7 +117,15 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
   // Listen for live 1-Click "Send to THRESH" Bookmarklet postMessage payloads
   useEffect(() => {
     if (typeof window === 'undefined' || !isOpen) return;
+    const allowedOrigins = new Set([
+      window.location.origin,
+      'https://www.athletic.net',
+      'https://athletic.net',
+      'https://www.tfrrs.org',
+      'https://tfrrs.org',
+    ]);
     const onMessage = (event: MessageEvent) => {
+      if (!allowedOrigins.has(event.origin)) return;
       const data = event.data;
       if (!data || data.type !== 'THRESH_EXTERNAL_SYNC_V1' || !data.payload) return;
       const serialized = `THRESH_SYNC_V1:${JSON.stringify(data.payload)}`;

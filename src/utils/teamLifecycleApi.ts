@@ -105,10 +105,20 @@ export function graduateClassApi(
   );
 }
 
-export function changePrimaryEmailApi(newEmail: string) {
-  return requestLifecycleJson<{ user?: ThreshUser }>('/api/auth/change-email', {
+export function changePrimaryEmailApi(newEmail: string, verificationCode?: string) {
+  return requestLifecycleJson<{
+    user?: ThreshUser;
+    verificationRequired?: boolean;
+    pendingEmail?: string;
+    devMode?: boolean;
+    devCode?: string;
+    sessionToken?: string;
+  }>('/api/auth/change-email', {
     method: 'POST',
-    body: JSON.stringify({ newEmail }),
+    body: JSON.stringify({
+      newEmail,
+      ...(verificationCode ? { verificationCode } : {}),
+    }),
   });
 }
 

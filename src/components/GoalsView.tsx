@@ -1639,7 +1639,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-8 sm:grid-cols-12 lg:grid-cols-16 gap-1.5 items-end h-36 pt-4 px-1">
+                  <div
+                    data-testid="plan-builder-load-arc"
+                    className="flex items-end gap-1.5 overflow-x-auto pb-2 pt-3 px-1"
+                  >
                     {generatedPlanWeeks.map((wk, idx) => {
                       const maxTss = Math.max(...generatedPlanWeeks.map((w) => w.targetTss), 300);
                       const hPct = Math.max(20, Math.round((wk.targetTss / maxTss) * 100));
@@ -1655,7 +1658,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           key={wk.weekNum}
                           type="button"
                           onClick={() => setSelectedPreviewWeekIdx(idx)}
-                          className={`group flex flex-col items-center justify-end h-full rounded-lg p-1 transition-all cursor-pointer ${
+                          className={`group flex-1 min-w-[44px] shrink-0 flex flex-col items-center justify-end rounded-lg p-1 transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-[#0D9488]/15 dark:bg-[#2DD4BF]/15 ring-1 ring-[#0D9488] dark:ring-[#2DD4BF]'
                               : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'
@@ -2119,7 +2122,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   <option value="s/km">Pace (s/km)</option>
                   <option value="W">Watts</option>
                   <option value="CTL">CTL</option>
-                  <option value="W/kg">W/kg</option>
+                  {!athleteProfile?.safeSportHideWeight && <option value="W/kg">W/kg</option>}
                   <option value="min">min</option>
                 </select>
               </div>
@@ -2355,8 +2358,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               {raceSimulationReport.fuelingPlan.sodiumMgPerHour} mg/hr Na+
             </div>
             <div className="text-2xs text-slate-500">
-              {raceSimulationReport.fuelingPlan.fluidMlPerHour} mL/hr fluid ·{' '}
-              {raceSimulationReport.fuelingPlan.caffeineMgRecommendation}mg Caf
+              {raceSimulationReport.fuelingPlan.fluidMlPerHour} mL/hr fluid
+              {!athleteProfile?.safeSportHideWeight &&
+              raceSimulationReport.fuelingPlan.caffeineMgRecommendation > 0
+                ? ` · ${raceSimulationReport.fuelingPlan.caffeineMgRecommendation}mg Caf`
+                : ''}
             </div>
           </div>
         </div>
@@ -2396,7 +2402,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold ap-text-brand">
                       {raceSimulationReport.sport === 'Cycling'
-                        ? `${seg.targetWatts ?? 0}W (${seg.targetWkg ?? 0} W/kg)`
+                        ? athleteProfile?.safeSportHideWeight || seg.targetWkg == null
+                          ? `${seg.targetWatts ?? 0}W`
+                          : `${seg.targetWatts ?? 0}W (${seg.targetWkg} W/kg)`
                         : `${formatPace(seg.targetPaceSecsPerKm ?? 250, distanceUnit)} (GAP ${formatPace(
                             seg.targetGapSecsPerKm ?? 245,
                             distanceUnit

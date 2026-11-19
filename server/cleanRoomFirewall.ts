@@ -4,6 +4,30 @@
  * before passing athlete telemetry into any LLM / generative AI context window
  * or cross-athlete analytics pipeline.
  */
+const FIRST_PARTY_HARDWARE_TOKENS = [
+  'garmin',
+  'fit',
+  'wahoo',
+  'coros',
+  'suunto',
+  'polar',
+  'apple_watch',
+  'apple watch',
+  'intervals',
+];
+
+const ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS = [
+  ...FIRST_PARTY_HARDWARE_TOKENS,
+  'apple',
+  'thresh_stopwatch',
+  'thresh stopwatch',
+  'stopwatch',
+  'manual',
+  'official_race',
+  'official race',
+  'official fat',
+];
+
 export function isStravaOriginRecord(item: unknown): boolean {
   if (!item || typeof item !== 'object') return false;
   const obj = item as Record<string, unknown>;
@@ -13,13 +37,33 @@ export function isStravaOriginRecord(item: unknown): boolean {
   const badges = Array.isArray(obj.sourceBadges)
     ? obj.sourceBadges.map((b: unknown) => String(b).toLowerCase())
     : [];
-  const hasFirstPartyHardware = badges.some(
-    (b) => b.includes('garmin') || b.includes('fit') || b.includes('wahoo') || b.includes('coros')
+  const hasFirstPartyHardware = badges.some((b) =>
+    FIRST_PARTY_HARDWARE_TOKENS.some((tok) => b.includes(tok))
   );
   if (Boolean(obj.stravaId) && !hasFirstPartyHardware) return true;
   if (src.includes('strava') && !hasFirstPartyHardware) return true;
   if (badges.includes('strava') && !hasFirstPartyHardware) return true;
   return false;
+}
+
+export function hasVerifiedCleanRoomProvenance(item: unknown): boolean {
+  if (!item || typeof item !== 'object') return false;
+  if (isStravaOriginRecord(item)) return false;
+  const obj = item as Record<string, unknown>;
+  const badges = Array.isArray(obj.sourceBadges)
+    ? obj.sourceBadges.map((b: unknown) => String(b).toLowerCase())
+    : [];
+  if (
+    badges.some((b) =>
+      ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => b.includes(tok))
+    )
+  ) {
+    return true;
+  }
+  const src = String(
+    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ''
+  ).toLowerCase();
+  return ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => src.includes(tok));
 }
 
 const SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = new Set([
@@ -71,15 +115,29 @@ export function stripSafeSportWeightAndBodyCompFields<T>(
   return out as T;
 }
 
-export function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<string, any> {
+export function sanitizeTelemetryForCleanRoom(
+  rawSummary: unknown,
+  options?: { forceZeroWeight?: boolean; requireFirstPartyProvenance?: boolean }
+): Record<string, any> {
   if (!rawSummary || typeof rawSummary !== 'object') return {};
   let clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
 
   let strippedCount = 0;
-  for (const key of ['recentActivities', 'activities', 'workouts', 'completedActivities']) {
+  for (const key of [
+    'recentWorkouts',
+    'recentActivities',
+    'activities',
+    'workouts',
+    'completedActivities',
+  ]) {
     if (Array.isArray(clone[key])) {
       const before = clone[key].length;
-      clone[key] = clone[key].filter((item: unknown) => !isStravaOriginRecord(item));
+      const requirePositive = Boolean(
+        options?.requireFirstPartyProvenance || key === 'recentWorkouts'
+      );
+      clone[key] = clone[key].filter((item: unknown) =>
+        requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
+      );
       strippedCount += before - clone[key].length;
     }
   }
@@ -89,8 +147,14 @@ export function sanitizeTelemetryForCleanRoom(rawSummary: unknown): Record<strin
   delete clone.stravaAthleteId;
   delete clone.segmentEfforts;
 
-  if (clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
+  if (
+    options?.forceZeroWeight ||
+    clone.safeSportHideWeight ||
+    clone.isMinorU18 ||
+    clone.enforceZeroWeight
+  ) {
     clone = stripSafeSportWeightAndBodyCompFields(clone);
+    clone.safeSportHideWeight = true;
     clone.zeroWeightEnforced = true;
   }
 

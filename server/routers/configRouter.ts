@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import crypto from 'crypto';
 import fs from 'fs';
 import {
   getVaultStorageBackend,
@@ -11,6 +12,7 @@ import {
   clearOAuthStateCookie,
   clearSessionCookie,
   deriveStravaSessionSid,
+  isCanonicalAuthenticatedClaims,
   setSessionCookie,
 } from '../securityUtils.ts';
 import {
@@ -60,16 +62,22 @@ import { getEffectiveGeminiApiKey } from './coachRouter.ts';
 
 export const configRouter = Router();
 
-// Bootstrap or refresh an isolated HttpOnly athlete session cookie (without requiring Strava login)
+// Bootstrap or refresh an anonymous pre-auth session cookie (never permits caller-selected sub)
 configRouter.post('/api/auth/session', (req: Request, res: Response) => {
-  const rawSubject = String(req.body?.athleteName || 'thresh-athlete')
-    .trim()
-    .slice(0, 64);
-  const sessionToken = setSessionCookie(req, res, rawSubject || 'thresh-athlete');
-  res.json({ ok: true, sessionToken });
+  const existing = getVerifiedSessionClaims(req);
+  if (existing && isCanonicalAuthenticatedClaims(existing)) {
+    const refreshedToken = setSessionCookie(req, res, existing.sub, existing.sid, 'verified');
+    res.json({ ok: true, sessionToken: refreshedToken, authLevel: 'verified' });
+    return;
+  }
+  const anonSub = `anon_${crypto.randomBytes(8).toString('hex')}`;
+  const sessionToken = setSessionCookie(req, res, anonSub, undefined, 'anon');
+  res.json({ ok: true, sessionToken, authLevel: 'anon' });
 });
 
 configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request, res: Response) => {
+  const verifiedClaims = getVerifiedSessionClaims(req);
+  const isVerifiedSession = isCanonicalAuthenticatedClaims(verifiedClaims);
   const isAuthed = isAuthenticatedRequest(req);
   const {
     apiKey: intervalsKey,
@@ -185,8 +193,11 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
   const isPolarConnected = Boolean(polarAccessToken);
 
   let sessionToken: string | undefined;
-  if (isAuthed && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)) {
-    const existingClaims = getVerifiedSessionClaims(req);
+  if (
+    (isVerifiedSession || Boolean(resolvedStravaAthleteId)) &&
+    (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)
+  ) {
+    const existingClaims = verifiedClaims;
     const keepUserSub = Boolean(existingClaims?.sub?.startsWith('usr_'));
     const canonicalSid = keepUserSub
       ? existingClaims!.sid
@@ -199,7 +210,8 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
       keepUserSub
         ? existingClaims!.sub
         : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || 'athlete',
-      canonicalSid
+      canonicalSid,
+      'verified'
     );
     await saveSessionCacheAsync(req, res, canonicalSid);
   }
@@ -249,7 +261,7 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     sessionToken,
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
-    mapTileApiKey: isAuthed && effectiveMapKey ? effectiveMapKey : undefined,
+    mapTileApiKey: isVerifiedSession && effectiveMapKey ? effectiveMapKey : undefined,
   });
 });
 

@@ -7,6 +7,8 @@ import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import {
   deriveUserSessionSid,
   escapeHtml,
+  isProductionDeployment,
+  timingSafeStringEqual,
 } from './securityUtils.ts';
 import { findOrCreateUser } from './authService.ts';
 import { evaluateSafeSportPatternWatch } from '../src/physiology/safeSportPatternWatchEngine.ts';
@@ -67,6 +69,7 @@ interface TeamsDirectoryIndex {
 export interface StoredMembershipInternal extends TeamMembershipRecord {
   rawInviteToken?: string;
   inviteTokenHash?: string;
+  parentConsentTokenHash?: string;
 }
 
 export interface StoredTeamDocument {
@@ -435,8 +438,8 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
     text: `Your THRESH verification code is ${code} (expires in 10 minutes).`,
   });
 
-  const isLocalDev = process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
-  if (!res.delivered && !isLocalDev) {
+  const isProd = isProductionDeployment();
+  if (!res.delivered && isProd) {
     return {
       ok: false,
       deliveryStatus: res.status,
@@ -448,7 +451,7 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
   return {
     ok: res.status !== 'FAILED',
     deliveryStatus: res.status,
-    ...(res.status === 'READY_MANUAL_LINK' && isLocalDev ? { devPreviewCode: code } : {}),
+    ...(res.status === 'READY_MANUAL_LINK' && !isProd ? { devPreviewCode: code } : {}),
     ...(res.error ? { error: res.error } : {}),
   };
 }
@@ -1040,7 +1043,6 @@ export function projectTeamSummaryForCaller(
       base.invitedEmail = m.invitedEmail;
       base.invitedPhone = m.invitedPhone;
       base.parentGuardianEmail = m.parentGuardianEmail;
-      base.parentConsentToken = m.parentConsentToken;
       const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : '';
       if (m.rawInviteToken) {
         base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ''}`;
@@ -1660,30 +1662,13 @@ export async function previewTeamJoinInvite(
     matchedMem = doc.memberships.find(
       (m) => m.inviteTokenHash === targetHash && m.status !== 'REVOKED'
     );
-    if (matchedMem && matchedMem.status === 'INVITED') {
-      matchedMem.status = 'OPENED';
-      matchedMem.openedAt = new Date().toISOString();
-      doc.updatedAt = matchedMem.openedAt;
-      await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
-    }
   }
 
-  // Primary CSV matching by athlete email if token didn't match or wasn't provided
+  // Primary CSV matching by server-verified athlete email if token didn't match or wasn't provided
   if (!matchedMem && cleanEmail) {
     matchedMem = doc.memberships.find(
       (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== 'REVOKED'
     );
-    if (matchedMem && matchedMem.status === 'INVITED') {
-      matchedMem.status = 'OPENED';
-      matchedMem.openedAt = new Date().toISOString();
-      doc.updatedAt = matchedMem.openedAt;
-      await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
-    }
-  }
-
-  if (!matchedMem) {
-    doc.anonymousLinkOpens = (doc.anonymousLinkOpens || 0) + 1;
-    await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
   }
 
   return {
@@ -1756,13 +1741,20 @@ export async function claimTeamJoinInvite(params: {
     if (params.inviteToken) {
       const targetHash = hashToken(params.inviteToken);
       mem = doc.memberships.find(
-        (m) => m.inviteTokenHash === targetHash && m.status !== 'REVOKED'
+        (m) =>
+          m.inviteTokenHash === targetHash &&
+          m.status !== 'REVOKED' &&
+          (!m.userSid || m.userSid === params.callerSid)
       );
     }
-    // 1. Primary CSV match: athlete email address
+    // 1. Primary CSV match: athlete email address (athletes only, unclaimed or own row)
     if (!mem && cleanEmail) {
       mem = doc.memberships.find(
-        (m) => m.invitedEmail?.toLowerCase() === cleanEmail && m.status !== 'REVOKED'
+        (m) =>
+          m.role === 'ATHLETE' &&
+          m.invitedEmail?.toLowerCase() === cleanEmail &&
+          m.status !== 'REVOKED' &&
+          (!m.userSid || m.userSid === params.callerSid)
       );
     }
     // 2. Caller SID match (reconnecting or updating settings)
@@ -1771,10 +1763,14 @@ export async function claimTeamJoinInvite(params: {
         (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
       );
     }
-    // 3. Secondary fallback: Strava athlete ID
+    // 3. Secondary fallback: verified Strava athlete ID (athletes only, unclaimed or own row)
     if (!mem && cleanStravaId) {
       mem = doc.memberships.find(
-        (m) => m.stravaAthleteId === cleanStravaId && m.status !== 'REVOKED'
+        (m) =>
+          m.role === 'ATHLETE' &&
+          m.stravaAthleteId === cleanStravaId &&
+          m.status !== 'REVOKED' &&
+          (!m.userSid || m.userSid === params.callerSid)
       );
     }
     // 4. Tertiary fallback: normalized athlete full name (strips diacritics & handles "Last, First")
@@ -1814,9 +1810,10 @@ export async function claimTeamJoinInvite(params: {
     }
 
     // Evaluate COPPA (<13) and Minor/Adult (13-17 vs 18+) before mutating roster
+    // Prefer existing stored DOB over incoming payload so a minor cannot overwrite DOB to 18+.
     const ageCheck = resolveAthleteAgeTier({
-      birthMonthYear: params.birthMonthYear || mem?.birthMonthYear,
-      birthYear: params.birthYear ?? mem?.birthYear,
+      birthMonthYear: mem?.birthMonthYear || params.birthMonthYear,
+      birthYear: mem?.birthYear ?? params.birthYear,
       orgType: doc.brand.orgType,
       graduationYear: params.graduationYear ?? mem?.graduationYear,
     });
@@ -1834,8 +1831,8 @@ export async function claimTeamJoinInvite(params: {
       mem?.parentGuardianEmail?.trim().toLowerCase();
 
     if (
-      doc.brand.orgType !== 'HIGH_SCHOOL' &&
-      ageCheck.ageTier === 'YOUTH_13_17' &&
+      (ageCheck.ageTier === 'YOUTH_13_17' ||
+        (ageCheck.ageTier === 'UNKNOWN' && doc.brand.orgType === 'HIGH_SCHOOL')) &&
       !effectiveParentEmail
     ) {
       return {
@@ -1906,16 +1903,17 @@ export async function claimTeamJoinInvite(params: {
     }
 
     mem.isMinorU18 = isMinor;
-    if (ageCheck.birthMonthYear) {
+    if (ageCheck.birthMonthYear && !mem.birthMonthYear) {
       mem.birthMonthYear = ageCheck.birthMonthYear;
     }
-    if (ageCheck.birthYear && ageCheck.birthYear > 1900) {
+    if (ageCheck.birthYear && ageCheck.birthYear > 1900 && !mem.birthYear) {
       mem.birthYear = ageCheck.birthYear;
     }
     if (ageCheck.ageTier === 'ADULT_18_PLUS') {
       // 18+ athletes own their account; remove mandatory minor guardian requirement
       mem.parentGuardianEmail = undefined;
       mem.parentConsentToken = undefined;
+      mem.parentConsentTokenHash = undefined;
       mem.parentConsentStatus = 'NOT_REQUIRED';
     } else if (effectiveParentEmail) {
       mem.parentGuardianEmail = effectiveParentEmail;
@@ -1923,27 +1921,32 @@ export async function claimTeamJoinInvite(params: {
 
     // If athlete is minor and has a parent/guardian email, trigger parent consent notification
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
-      if (!mem.parentConsentToken) {
-        mem.parentConsentToken = crypto.randomBytes(16).toString('base64url');
+      let rawConsentToken = '';
+      if (!mem.parentConsentTokenHash) {
+        rawConsentToken = crypto.randomBytes(16).toString('base64url');
+        mem.parentConsentTokenHash = hashToken(rawConsentToken);
+        mem.parentConsentToken = undefined;
       }
       if (!mem.parentConsentStatus || mem.parentConsentStatus === 'NOT_REQUIRED') {
         mem.parentConsentStatus = 'PENDING';
       }
 
-      const cleanOrigin = params.originUrl.replace(/\/+$/, '');
-      const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${mem.parentConsentToken}`;
-      const emailContent = buildParentConsentEmailContent({
-        brand: doc.brand,
-        athleteName: mem.invitedName,
-        parentConsentUrl: consentUrl,
-      });
+      if (rawConsentToken) {
+        const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+        const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${rawConsentToken}`;
+        const emailContent = buildParentConsentEmailContent({
+          brand: doc.brand,
+          athleteName: mem.invitedName,
+          parentConsentUrl: consentUrl,
+        });
 
-      void sendEmailViaResend({
-        to: mem.parentGuardianEmail,
-        subject: emailContent.subject,
-        html: emailContent.html,
-        text: emailContent.text,
-      });
+        void sendEmailViaResend({
+          to: mem.parentGuardianEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        });
+      }
     } else if (!mem.parentConsentStatus) {
       mem.parentConsentStatus = mem.isMinorU18 ? 'PENDING' : 'NOT_REQUIRED';
     }
@@ -2018,6 +2021,7 @@ export async function acknowledgeParentConsent(token: string): Promise<{
     return { ok: false, error: 'Invalid or missing parent consent token.' };
   }
 
+  const targetHash = hashToken(cleanToken);
   const dir = await loadDirectory();
   for (const teamId of dir.allTeamIds) {
     const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
@@ -2027,7 +2031,10 @@ export async function acknowledgeParentConsent(token: string): Promise<{
     if (!doc) continue;
 
     const mem = doc.memberships.find(
-      (m) => m.parentConsentToken === cleanToken && m.status !== 'REVOKED'
+      (m) =>
+        m.status !== 'REVOKED' &&
+        ((m.parentConsentTokenHash && timingSafeStringEqual(m.parentConsentTokenHash, targetHash)) ||
+          (m.parentConsentToken && timingSafeStringEqual(m.parentConsentToken, cleanToken)))
     );
     if (mem) {
       const wasAcknowledged = mem.parentConsentStatus === 'ACKNOWLEDGED';
@@ -2542,6 +2549,7 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
   callerSid: string;
   originUrl: string;
   athleteName?: string;
+  verifiedUserBirthMonthYear?: string;
   snapshot: Partial<TeamAthleteLiveSnapshot>;
 }): Promise<TeamSummaryWithRole[]> {
   const userIdx = await loadTenantVaultAsync<UserTeamsIndex>(
@@ -2572,8 +2580,12 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
       );
       if (!mem) return null;
 
+      const canonicalBirthMonthYear =
+        mem.birthMonthYear ||
+        params.verifiedUserBirthMonthYear ||
+        (mem.isMinorU18 || mem.birthYear ? undefined : params.snapshot.birthMonthYear);
       const ageCompliance = resolveAthleteAgeTier({
-        birthMonthYear: params.snapshot.birthMonthYear || mem.birthMonthYear,
+        birthMonthYear: canonicalBirthMonthYear,
         birthYear: mem.birthYear,
         orgType: doc.brand.orgType,
         graduationYear: mem.graduationYear,
@@ -2595,24 +2607,23 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
           ? Boolean(mem.isMinorU18)
           : ageCompliance.isMinorU18;
       mem.isMinorU18 = effectiveIsMinor;
-      if (ageCompliance.birthMonthYear) {
+      if (ageCompliance.birthMonthYear && !mem.birthMonthYear) {
         mem.birthMonthYear = ageCompliance.birthMonthYear;
       }
       if (ageCompliance.ageTier === 'ADULT_18_PLUS' && mem.parentConsentStatus === 'PENDING') {
         mem.parentConsentStatus = 'NOT_REQUIRED';
+        mem.parentConsentToken = undefined;
+        mem.parentConsentTokenHash = undefined;
       }
 
-      const quarantineNonSchoolPending = Boolean(
-        effectiveIsMinor &&
-          doc.brand.orgType !== 'HIGH_SCHOOL' &&
-          mem.parentGuardianEmail &&
-          mem.parentConsentStatus === 'PENDING'
+      const quarantineMinorPendingConsent = Boolean(
+        effectiveIsMinor && mem.parentConsentStatus !== 'ACKNOWLEDGED'
       );
 
-      let effectiveTier: CoachDataSharingTier = quarantineNonSchoolPending
+      let effectiveTier: CoachDataSharingTier = quarantineMinorPendingConsent
         ? 'LOAD_ONLY'
         : params.snapshot.sharingTier || mem.sharingTier || 'SUMMARY_ONLY';
-      if (params.snapshot.sharingTier && !quarantineNonSchoolPending) {
+      if (params.snapshot.sharingTier && !quarantineMinorPendingConsent) {
         mem.sharingTier = params.snapshot.sharingTier;
       } else if (!mem.sharingTier) {
         mem.sharingTier = effectiveTier;
@@ -2625,6 +2636,7 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
       );
 
       const priv = params.snapshot.privacySettings;
+      const hidePrivateWellness = priv?.shareWellnessAndHrv === 'PRIVATE';
       const allowGpsRoutes =
         !priv || (priv.shareGpsRoutes !== 'PRIVATE' && !priv.stravaComplianceShield);
 
@@ -2640,7 +2652,9 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
         : rawCoachActivities;
 
       const rawSanitizedWellness =
-        quarantineNonSchoolPending || !Array.isArray(params.snapshot.wellnessDays)
+        quarantineMinorPendingConsent ||
+        hidePrivateWellness ||
+        !Array.isArray(params.snapshot.wellnessDays)
           ? undefined
           : params.snapshot.wellnessDays.slice(-56);
       const sanitizedWellness =
@@ -2662,8 +2676,9 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
         mem.invitedName = params.athleteName.trim().slice(0, 64);
       }
 
-      const sanitizedCheckIns: SessionCheckInRecord[] | undefined = quarantineNonSchoolPending
-        ? undefined
+      const sanitizedCheckIns: SessionCheckInRecord[] | undefined =
+        quarantineMinorPendingConsent || hidePrivateWellness
+          ? undefined
         : Array.isArray(params.snapshot.sessionCheckIns)
           ? params.snapshot.sessionCheckIns.slice(0, 28).map((c) => {
               const validArea =
@@ -2715,10 +2730,10 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
       const assembledSnapshot: TeamAthleteLiveSnapshot = {
         updatedAt: nowIso,
         hasConnectedWatch: Boolean(params.snapshot.hasConnectedWatch),
-        verdictLabel: quarantineNonSchoolPending
+        verdictLabel: quarantineMinorPendingConsent
           ? 'Awaiting Parent Consent'
           : String(params.snapshot.verdictLabel || 'Active').slice(0, 48),
-        readinessScore: quarantineNonSchoolPending
+        readinessScore: quarantineMinorPendingConsent
           ? 0
           : Number(params.snapshot.readinessScore ?? 0),
         ctl: Number(params.snapshot.ctl ?? 0),

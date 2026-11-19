@@ -13,6 +13,7 @@ app.use(
     reviver: strava64BitJsonReviver as unknown as (key: string, value: any) => any,
   })
 );
+app.use(express.urlencoded({ extended: false }));
 app.use(apiRouter);
 
 export default app;

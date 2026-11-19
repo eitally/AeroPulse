@@ -123,7 +123,10 @@ describe('OAuth Regressions — Strava Handoff & Google/Vercel Cold-Start Auth',
     expect(cbResp.status).toBe(200);
     const html = await cbResp.text();
     expect(html).toContain('"type":"OAUTH_AUTH_SUCCESS"');
-    expect(html).toContain("localStorage.setItem('aeropulse_strava_refresh_token'");
+    // RT-19: raw Strava OAuth tokens must stay inside HttpOnly cookies / server KV vault, never exposed in HTML JS
+    expect(html).not.toContain('strv_ref_test_1');
+    expect(html).not.toContain('strv_acc_test_1');
+    expect(html).not.toContain("localStorage.setItem('aeropulse_strava_refresh_token'");
     expect(html).toContain("localStorage.removeItem('aeropulse_logged_out')");
 
     // Verify saveTenantVaultAsync persisted poll payload for cross-instance Vercel lookup
@@ -134,7 +137,7 @@ describe('OAuth Regressions — Strava Handoff & Google/Vercel Cold-Start Auth',
     expect(vaultedPoll?.athleteId).toBe('445566');
     expect(vaultedPoll?.accessToken).toBe('strv_acc_test_1');
 
-    // Verify /api/strava/auth/poll completes with tokens for the caller session
+    // Verify /api/strava/auth/poll completes for caller session without leaking raw tokens in JSON
     const pollResp = await fetch(
       `${baseUrl}/api/strava/auth/poll?state=${encodeURIComponent(urlData.state)}`,
       {
@@ -144,8 +147,11 @@ describe('OAuth Regressions — Strava Handoff & Google/Vercel Cold-Start Auth',
     expect(pollResp.status).toBe(200);
     const pollData = await pollResp.json();
     expect(pollData.completed).toBe(true);
-    expect(pollData.tokens?.refreshToken).toBe('strv_ref_test_1');
+    expect(pollData.tokens?.athleteId).toBe('445566');
+    expect(pollData.tokens?.refreshToken).toBeUndefined();
+    expect(pollData.tokens?.accessToken).toBeUndefined();
     expect(pollData.athleteName).toBe('Maya Lin');
+    expect(pollResp.headers.get('set-cookie')).toContain('thresh_session=');
   });
 
   it('builds Google OAuth URL from multi-hop Vercel proxy headers and disables mock-login in production', async () => {

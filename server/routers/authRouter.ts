@@ -12,11 +12,22 @@ import {
   clearSessionCookie,
   decodeAndVerifyToken,
   getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
+  isProductionDeployment,
+  timingSafeStringEqual,
+  escapeHtml,
   issueSessionToken,
   appendSetCookieHeader,
   parseCookies,
   resolveSafeOrigin,
+  resolveTrustedCorsOrigin,
 } from '../securityUtils.ts';
+import {
+  consumePasskeyChallengeJti,
+  verifyWebAuthnAssertion,
+  verifyWebAuthnRegistration,
+} from '../webauthnVerify.ts';
+import { resolveAthleteAgeTier } from '../../src/physiology/ageAndComplianceEngine.ts';
 import {
   USER_VAULT_COOKIE_NAME,
   buildEncryptedUserCookieHeader,
@@ -37,9 +48,11 @@ import {
   saveUser,
   unlinkProviderFromUser,
   updateUserBirthMonthYear,
-  updateUserPrimaryEmail,
+  createPendingEmailChange,
+  verifyAndCommitEmailChange,
   connectServiceToUser,
   createMagicLinkToken,
+  peekMagicLinkPayload,
   verifyMagicLinkPayload,
   sendMagicLinkEmail,
   issuePasskeyChallengeToken,
@@ -50,15 +63,32 @@ import {
 
 export const authRouter = express.Router();
 
-function isProductionDeployment(): boolean {
-  return process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+const magicLinkRateStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkMagicLinkRateLimit(key: string, limit: number, windowMs = 10 * 60 * 1000): boolean {
+  const now = Date.now();
+  if (magicLinkRateStore.size > 2000) {
+    for (const [k, v] of magicLinkRateStore.entries()) {
+      if (now > v.resetAt) magicLinkRateStore.delete(k);
+    }
+  }
+  const existing = magicLinkRateStore.get(key);
+  if (!existing || now > existing.resetAt) {
+    magicLinkRateStore.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (existing.count >= limit) {
+    return false;
+  }
+  existing.count += 1;
+  return true;
 }
 
-function getRpId(req: Request): string {
-  const host = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
+function getRequestHostCandidate(req: Request): string {
+  return String(req.headers['x-forwarded-host'] || req.get('host') || '')
     .split(',')[0]
-    .trim();
-  return host.split(':')[0] || 'localhost';
+    .trim()
+    .replace(/[^a-zA-Z0-9.:-]/g, '');
 }
 
 function getAppBaseUrl(req: Request): string {
@@ -68,11 +98,51 @@ function getAppBaseUrl(req: Request): string {
     .toLowerCase();
   const isHttps = req.secure || rawProto === 'https';
   const proto = isHttps ? 'https' : 'http';
-  const host = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
-    .split(',')[0]
-    .trim()
-    .replace(/[^a-zA-Z0-9.:-]/g, '');
-  return `${proto}://${host || 'localhost:3000'}`;
+  const host = getRequestHostCandidate(req);
+  const headerOrigin = host ? `${proto}://${host}` : '';
+
+  if (isProductionDeployment()) {
+    const trustedHeaderOrigin = resolveTrustedCorsOrigin(headerOrigin);
+    if (trustedHeaderOrigin) return trustedHeaderOrigin;
+
+    const envCandidates = [
+      process.env.APP_BASE_URL,
+      process.env.APP_URL,
+      process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : undefined,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
+    ];
+    for (const cand of envCandidates) {
+      const resolved = resolveSafeOrigin(cand);
+      if (resolved && !resolved.includes('MY_APP_URL')) {
+        return resolved;
+      }
+    }
+    return 'https://thresh-dev.vercel.app';
+  }
+
+  return resolveSafeOrigin(headerOrigin) || 'http://localhost:3000';
+}
+
+function getRpId(req: Request): string {
+  try {
+    return new URL(getAppBaseUrl(req)).hostname || 'localhost';
+  } catch {
+    return 'localhost';
+  }
+}
+
+function getExpectedWebAuthnOrigins(req: Request): string[] {
+  const origins = new Set<string>([getAppBaseUrl(req)]);
+  const headerOrigin = resolveTrustedCorsOrigin(req.headers.origin as string | undefined);
+  if (headerOrigin) origins.add(headerOrigin);
+  if (!isProductionDeployment()) {
+    const host = getRequestHostCandidate(req);
+    if (host) {
+      origins.add(`http://${host}`);
+      origins.add(`https://${host}`);
+    }
+  }
+  return Array.from(origins);
 }
 
 function resolveGoogleCallbackUrl(req: Request): string {
@@ -88,6 +158,17 @@ function resolveGoogleCallbackUrl(req: Request): string {
     }
   }
   const reqOrigin = getAppBaseUrl(req);
+  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const host = getRequestHostCandidate(req);
+  const trustedForwarded = host
+    ? resolveTrustedCorsOrigin(`${req.secure || rawProto === 'https' ? 'https' : 'http'}://${host}`)
+    : null;
+  if (trustedForwarded) {
+    return `${trustedForwarded}/api/auth/google/callback`;
+  }
   const envOrigin = resolveSafeOrigin(process.env.APP_URL || '');
   if (
     envOrigin &&
@@ -120,13 +201,15 @@ function toCompactUserBackupPayload(user: ThreshUser): ThreshUser {
     email: user.email,
     name: user.name,
     picture: user.picture,
+    birthMonthYear: user.birthMonthYear,
     role: user.role,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     authProviders: (user.authProviders || []).slice(0, 6),
     passkeys: (user.passkeys || []).slice(0, 4).map((pk) => ({
       id: pk.id,
-      publicKeySpkiBase64: '',
+      publicKeySpkiBase64: pk.publicKeySpkiBase64 || '',
+      ...(pk.coseAlg !== undefined ? { coseAlg: pk.coseAlg } : {}),
       counter: pk.counter,
       createdAt: pk.createdAt,
     })),
@@ -141,7 +224,7 @@ async function finalizeUserAuthentication(
 ): Promise<{ userSid: string; sessionToken: string }> {
   const userSid = deriveUserSessionSid(user.id);
   const prevClaims = getVerifiedSessionClaims(req);
-  const sessionToken = setSessionCookie(req, res, user.id, userSid);
+  const sessionToken = setSessionCookie(req, res, user.id, userSid, 'verified');
 
   const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || '')
     .split(',')[0]
@@ -191,7 +274,7 @@ async function finalizeUserAuthentication(
 authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
-    if (!claims) {
+    if (!claims || !isCanonicalAuthenticatedClaims(claims)) {
       return res.json({ authenticated: false, user: null });
     }
 
@@ -310,12 +393,12 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
     return res.redirect(`/?auth_error=${encodeURIComponent(error || 'missing_code')}`);
   }
 
-  // Validate state token against cookie nonce
+  // Validate state token against required HttpOnly cookie nonce
   const stateClaims = verifyOAuthStateToken(state);
   const cookieNonce = getOAuthStateCookieNonce(req);
   clearOAuthStateCookie(res);
 
-  if (!stateClaims || (cookieNonce && stateClaims.nonce !== cookieNonce)) {
+  if (!stateClaims || !cookieNonce || !timingSafeStringEqual(stateClaims.nonce, cookieNonce)) {
     return res.redirect('/?auth_error=invalid_state_csrf');
   }
 
@@ -391,6 +474,18 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
+  const clientIp = String(req.headers['x-vercel-forwarded-for'] || req.ip || 'local')
+    .split(',')[0]
+    .trim();
+  if (
+    !checkMagicLinkRateLimit(`ml_ip:${clientIp}`, 10) ||
+    !checkMagicLinkRateLimit(`ml_em:${email}`, 5)
+  ) {
+    return res.status(429).json({
+      error: 'Too many sign-in link requests. Please wait a few minutes and try again.',
+    });
+  }
+
   const joinCode = String(req.body?.joinCode || '').trim().slice(0, 32) || undefined;
   const slug = String(req.body?.slug || '').trim().slice(0, 64) || undefined;
   const inviteToken = String(req.body?.inviteToken || '').trim().slice(0, 96) || undefined;
@@ -403,12 +498,19 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
     const verifyUrl = `${baseUrl}/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`;
 
     const result = await sendMagicLinkEmail(email, verifyUrl);
+    if (!result.sent) {
+      return res.status(503).json({
+        ok: false,
+        error: result.error || 'Email delivery service unavailable.',
+      });
+    }
 
+    const exposeDev = !isProductionDeployment() && Boolean(result.devMode);
     return res.json({
       ok: true,
       message: 'A secure sign-in link has been sent to your email.',
-      devMode: result.devMode || false,
-      previewUrl: result.devMode ? result.previewUrl : undefined,
+      devMode: exposeDev,
+      previewUrl: exposeDev ? result.previewUrl : undefined,
     });
   } catch (err) {
     console.error('[THRESH Auth] Failed generating magic link:', err);
@@ -418,7 +520,7 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
 
 /**
  * GET /api/auth/magic-link/verify
- * Validates the single-use token, creates/logs in the THRESH user, and sets session cookie.
+ * Non-mutating confirmation landing page (immune to Defender SafeLinks / Proofpoint link prefetchers).
  */
 authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response) => {
   const token = String(req.query.token || '').trim();
@@ -427,9 +529,51 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
   }
 
   try {
+    const previewPayload = await peekMagicLinkPayload(token);
+    if (!previewPayload?.email) {
+      return res.redirect('/?auth_error=expired_or_invalid_magic_token');
+    }
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    return res.status(200).type('html').send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirm Sign-In · THRESH</title>
+  </head>
+  <body style="font-family:system-ui,-apple-system,sans-serif;background:#080D0A;color:#F4F7F4;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box;">
+    <div style="background:#111A15;border:2px solid #25573A;border-radius:18px;padding:28px 26px;max-width:420px;width:100%;text-align:center;">
+      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">THRESH · Email Sign-In</div>
+      <h1 style="margin:0 0 10px;font-size:20px;line-height:1.3;">Complete Sign-In</h1>
+      <p style="margin:0 0 20px;color:#C8D8CE;font-size:14px;line-height:1.55;">Confirm your sign-in as <strong>${escapeHtml(previewPayload.email)}</strong> to open your THRESH workspace.</p>
+      <form method="POST" action="/api/auth/magic-link/verify">
+        <input type="hidden" name="token" value="${escapeHtml(token)}" />
+        <button type="submit" style="width:100%;min-height:44px;background:#C8FF00;color:#080A09;border:none;border-radius:12px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;">Complete Sign-In to THRESH</button>
+      </form>
+    </div>
+  </body>
+</html>`);
+  } catch (err) {
+    console.error('[THRESH Auth] Magic link preview error:', err);
+    return res.redirect('/?auth_error=magic_link_verification_failed');
+  }
+});
+
+/**
+ * POST /api/auth/magic-link/verify
+ * Atomically consumes the single-use token, creates/logs in the THRESH user, and sets session cookie.
+ */
+authRouter.post('/api/auth/magic-link/verify', async (req: Request, res: Response) => {
+  const token = String(req.body?.token || req.query.token || '').trim();
+  if (!token) {
+    return res.redirect(303, '/?auth_error=missing_magic_token');
+  }
+
+  try {
     const verifiedPayload = await verifyMagicLinkPayload(token);
     if (!verifiedPayload?.email) {
-      return res.redirect('/?auth_error=expired_or_invalid_magic_token');
+      return res.redirect(303, '/?auth_error=expired_or_invalid_magic_token');
     }
 
     const email = verifiedPayload.email;
@@ -439,10 +583,10 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
     });
 
     await finalizeUserAuthentication(req, res, user);
-    return res.redirect(buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
+    return res.redirect(303, buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
   } catch (err) {
     console.error('[THRESH Auth] Magic link verification error:', err);
-    return res.redirect('/?auth_error=magic_link_verification_failed');
+    return res.redirect(303, '/?auth_error=magic_link_verification_failed');
   }
 });
 
@@ -492,7 +636,8 @@ authRouter.post('/api/auth/passkey/register-options', async (req: Request, res: 
 
 /**
  * POST /api/auth/passkey/register-verify
- * Verifies and saves passkey credential to THRESH account.
+ * Cryptographically verifies WebAuthn attestation, enforces single-use challenges,
+ * prevents unauthenticated linking to existing emails, and saves credential to THRESH account.
  */
 authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: Response) => {
   const { credential, challengeToken, email, name } = req.body || {};
@@ -505,40 +650,67 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
     return res.status(400).json({ error: 'Invalid or expired passkey registration challenge.' });
   }
 
+  const jtiFresh = await consumePasskeyChallengeJti(tokenClaims.jti);
+  if (!jtiFresh) {
+    return res.status(400).json({ error: 'Passkey registration challenge has already been used.' });
+  }
+
+  let verifiedReg: {
+    credId: string;
+    publicKeySpkiBase64: string;
+    coseAlg: number;
+    signCount: number;
+  };
   try {
-    const credId = String(credential.id || credential.rawId || '').trim();
-    if (!credId) {
-      return res.status(400).json({ error: 'Invalid credential ID received.' });
-    }
+    verifiedReg = verifyWebAuthnRegistration({
+      credential,
+      expectedChallenge: tokenClaims.challenge,
+      expectedRpId: getRpId(req),
+      expectedOrigins: getExpectedWebAuthnOrigins(req),
+    });
+  } catch (err) {
+    return res.status(400).json({
+      error: err instanceof Error ? err.message : 'Invalid WebAuthn passkey registration.',
+    });
+  }
 
-    // Modern browsers return getPublicKey() base64 or SPKI DER in clientData
-    const pubKeySpki = String(credential.publicKey || credential.response?.publicKey || credId);
-
+  try {
+    const cleanEmail = email ? String(email).trim().toLowerCase() : '';
     const activeClaims = getVerifiedSessionClaims(req);
     let user: ThreshUser | null = null;
-    if (activeClaims?.sub?.startsWith('usr_')) {
+    if (isCanonicalAuthenticatedClaims(activeClaims) && activeClaims?.sub?.startsWith('usr_')) {
       user = await getUserById(activeClaims.sub);
       if (user) {
-        await linkProviderToUser(user.id, 'passkey', credId, {
-          email: user.email || (email ? String(email).trim().toLowerCase() : undefined),
+        await linkProviderToUser(user.id, 'passkey', verifiedReg.credId, {
+          email: user.email || (cleanEmail || undefined),
           name: user.name || (name ? String(name).trim() : 'Passkey Athlete'),
         });
         user = (await getUserById(user.id)) || user;
       }
     }
     if (!user) {
-      user = await findOrCreateUser('passkey', credId, {
-        email: email ? String(email).trim().toLowerCase() : undefined,
+      if (cleanEmail) {
+        const existingOwner = await getUserByEmail(cleanEmail);
+        if (existingOwner) {
+          return res.status(409).json({
+            error:
+              'An account with this email already exists. Please sign in first, then add a passkey from Account Settings.',
+          });
+        }
+      }
+      user = await findOrCreateUser('passkey', verifiedReg.credId, {
+        email: cleanEmail || undefined,
         name: name ? String(name).trim() : 'Passkey Athlete',
       });
     }
 
     if (!user.passkeys) user.passkeys = [];
-    const existingIdx = user.passkeys.findIndex((p) => p.id === credId);
+    const existingIdx = user.passkeys.findIndex((p) => p.id === verifiedReg.credId);
     const passkeyObj: ThreshPasskeyCredential = {
-      id: credId,
-      publicKeySpkiBase64: pubKeySpki,
-      counter: 0,
+      id: verifiedReg.credId,
+      publicKeySpkiBase64: verifiedReg.publicKeySpkiBase64,
+      coseAlg: verifiedReg.coseAlg,
+      counter: verifiedReg.signCount,
       createdAt: new Date().toISOString(),
     };
     if (existingIdx >= 0) {
@@ -548,9 +720,9 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
     }
 
     await saveUser(user);
-    await finalizeUserAuthentication(req, res, user);
+    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
 
-    return res.json({ ok: true, user });
+    return res.json({ ok: true, user, sessionToken });
   } catch (err) {
     console.error('[THRESH Auth] Passkey registration verification error:', err);
     return res.status(500).json({ error: 'Failed completing passkey registration.' });
@@ -581,7 +753,7 @@ authRouter.post('/api/auth/passkey/auth-options', (req: Request, res: Response) 
 
 /**
  * POST /api/auth/passkey/auth-verify
- * Verifies passkey authentication and logs in user.
+ * Cryptographically verifies WebAuthn assertion signature, challenge, RP ID, and signCount.
  */
 authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Response) => {
   const { credential, challengeToken } = req.body || {};
@@ -592,6 +764,11 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
   const tokenClaims = verifyPasskeyChallengeToken(challengeToken);
   if (!tokenClaims || tokenClaims.purpose !== 'auth') {
     return res.status(400).json({ error: 'Invalid or expired passkey auth challenge.' });
+  }
+
+  const jtiFresh = await consumePasskeyChallengeJti(tokenClaims.jti);
+  if (!jtiFresh) {
+    return res.status(400).json({ error: 'Passkey auth challenge has already been used.' });
   }
 
   try {
@@ -605,15 +782,31 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
       return res.status(404).json({ error: 'No THRESH account associated with this passkey.' });
     }
 
-    // Increment passkey counter
     const passkey = user.passkeys?.find((p) => p.id === credId);
-    if (passkey) {
-      passkey.counter += 1;
+    if (!passkey || !passkey.publicKeySpkiBase64) {
+      return res.status(401).json({ error: 'Stored passkey credential is missing or unverified.' });
+    }
+
+    const assertionCheck = verifyWebAuthnAssertion({
+      credential,
+      expectedChallenge: tokenClaims.challenge,
+      expectedRpId: getRpId(req),
+      expectedOrigins: getExpectedWebAuthnOrigins(req),
+      publicKeySpkiBase64: passkey.publicKeySpkiBase64,
+      coseAlg: passkey.coseAlg,
+      storedCounter: passkey.counter || 0,
+    });
+    if (!assertionCheck.verified) {
+      return res.status(401).json({ error: assertionCheck.error || 'Passkey signature verification failed.' });
+    }
+
+    if (assertionCheck.newSignCount > (passkey.counter || 0)) {
+      passkey.counter = assertionCheck.newSignCount;
       await saveUser(user);
     }
 
-    await finalizeUserAuthentication(req, res, user);
-    return res.json({ ok: true, user });
+    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
+    return res.json({ ok: true, user, sessionToken });
   } catch (err) {
     console.error('[THRESH Auth] Passkey auth verification error:', err);
     return res.status(500).json({ error: 'Failed verifying passkey.' });
@@ -680,7 +873,7 @@ authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
  */
 authRouter.post('/api/auth/unlink-provider', async (req: Request, res: Response) => {
   const claims = getVerifiedSessionClaims(req);
-  if (!claims) {
+  if (!claims || !isCanonicalAuthenticatedClaims(claims)) {
     return res.status(401).json({ error: 'Authentication required.' });
   }
 
@@ -699,12 +892,11 @@ authRouter.post('/api/auth/unlink-provider', async (req: Request, res: Response)
 
 /**
  * POST /api/auth/change-email
- * Migrates login email cleanly (e.g. graduating from @students.district.org to personal Gmail)
- * while updating email indices and team memberships without losing history.
+ * 2-step verified primary email migration (send 6-digit code -> verify code -> migrate).
  */
 authRouter.post('/api/auth/change-email', async (req: Request, res: Response) => {
   const claims = getVerifiedSessionClaims(req);
-  if (!claims) {
+  if (!claims || !isCanonicalAuthenticatedClaims(claims)) {
     return res.status(401).json({ error: 'Authentication required.' });
   }
 
@@ -718,16 +910,38 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
   }
 
   const newEmail = String(req.body?.email || req.body?.newEmail || '').trim().toLowerCase();
-  const result = await updateUserPrimaryEmail(userId, newEmail);
-  if (!result.ok || !result.user) {
-    return res.status(400).json({ error: result.error || 'Could not update email.' });
+  const verificationCode = String(req.body?.verificationCode || req.body?.code || '').trim();
+
+  if (!verificationCode) {
+    const reqRes = await createPendingEmailChange(userId, newEmail);
+    if (!reqRes.ok) {
+      const status = reqRes.error?.includes('unavailable') ? 503 : 400;
+      return res.status(status).json({ error: reqRes.error || 'Could not initiate email verification.' });
+    }
+    const exposeDev = !isProductionDeployment() && Boolean(reqRes.devMode);
+    return res.json({
+      ok: true,
+      verificationRequired: true,
+      pendingEmail: newEmail,
+      devMode: exposeDev,
+      ...(exposeDev && reqRes.devCode ? { devCode: reqRes.devCode } : {}),
+    });
+  }
+
+  const result = await verifyAndCommitEmailChange(
+    userId,
+    verificationCode,
+    newEmail || undefined
+  );
+  if (!result.ok || !result.user || !result.newEmail) {
+    return res.status(400).json({ error: result.error || 'Could not verify and update email.' });
   }
 
   try {
     await updateTeamMemberEmailsForUser({
       callerSid: claims.sid,
       oldEmail: result.oldEmail,
-      newEmail,
+      newEmail: result.newEmail,
     });
   } catch (err) {
     console.warn('[THRESH Auth] Team membership email update warning:', err);
@@ -740,13 +954,37 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
 /**
  * POST /api/auth/birth-month
  * Updates canonical YYYY-MM birth month-year on the authenticated ThreshUser.
+ * Enforces COPPA <13 block and prevents minors from altering stored DOB to an adult date.
  */
 authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => {
   const claims = getVerifiedSessionClaims(req);
-  if (!claims?.sub?.startsWith('usr_')) {
+  if (!claims?.sub?.startsWith('usr_') || !isCanonicalAuthenticatedClaims(claims)) {
     return res.status(401).json({ error: 'THRESH account required.' });
   }
   const birthMonthYear = String(req.body?.birthMonthYear || '').trim();
+  const incomingAge = resolveAthleteAgeTier({ birthMonthYear });
+  if (incomingAge.ageTier === 'UNKNOWN') {
+    return res.status(400).json({ error: 'Valid YYYY-MM birth month-year required.' });
+  }
+  if (incomingAge.isUnder13) {
+    return res.status(400).json({
+      error: 'THRESH accounts require athletes to be 13 or older (COPPA).',
+    });
+  }
+
+  const existingUser = await getUserById(claims.sub);
+  if (!existingUser) {
+    return res.status(404).json({ error: 'Account not found.' });
+  }
+  if (existingUser.birthMonthYear) {
+    const existingAge = resolveAthleteAgeTier({ birthMonthYear: existingUser.birthMonthYear });
+    if (existingAge.isMinorU18 && incomingAge.ageTier === 'ADULT_18_PLUS') {
+      return res.status(403).json({
+        error: 'Minor birth date cannot be altered to an adult date directly.',
+      });
+    }
+  }
+
   const updated = await updateUserBirthMonthYear(claims.sub, birthMonthYear);
   if (!updated) {
     return res.status(400).json({ error: 'Valid YYYY-MM birth month-year required.' });

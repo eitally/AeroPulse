@@ -13,6 +13,10 @@ import type {
 } from '../types';
 import { getStoreMetadata, saveStoreMetadata } from '../db/workoutStore';
 import {
+  areActivityTimestampsClose,
+  resolveActivityStartEpochMs,
+} from '../utils/activityTimestamp';
+import {
   CURRENT_PMC_MODEL_VERSION,
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
@@ -693,10 +697,24 @@ export function useTelemetrySync({
           }
         }
 
+        let clientTzName = '';
+        let clientTzOffsetMins = '';
+        try {
+          clientTzName = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          clientTzOffsetMins = String(-new Date().getTimezoneOffset());
+        } catch {
+          // ignore Intl errors
+        }
+        const tzSyncHeaders: Record<string, string> = {
+          ...activeHeaders,
+          ...(clientTzName ? { 'x-client-tz': clientTzName } : {}),
+          ...(clientTzOffsetMins ? { 'x-client-tz-offset-mins': clientTzOffsetMins } : {}),
+        };
+
         if (statusData.wahooConnected) {
           const wahooResp = await fetch('/api/wahoo/sync', {
             credentials: 'include',
-            headers: activeHeaders,
+            headers: tzSyncHeaders,
           });
           if (wahooResp.ok) {
             const wahooData = await wahooResp.json();
@@ -714,7 +732,7 @@ export function useTelemetrySync({
         if (statusData.polarConnected) {
           const polarResp = await fetch('/api/polar/sync', {
             credentials: 'include',
-            headers: activeHeaders,
+            headers: tzSyncHeaders,
           });
           if (polarResp.ok) {
             const polarData = await polarResp.json();
@@ -747,7 +765,7 @@ export function useTelemetrySync({
             (a) => Boolean(a.stravaId) || a.sourceBadges?.includes('Strava')
           );
           const latestStravaMs = stravaActs.reduce((maxMs, a) => {
-            const t = new Date(a.startDateLocal || 0).getTime();
+            const t = resolveActivityStartEpochMs(a);
             return Number.isFinite(t) && t > maxMs ? t : maxMs;
           }, 0);
           const useDelta =
@@ -776,7 +794,7 @@ export function useTelemetrySync({
             const stravaData = await stravaResp.json();
             const stravaBackfillKey = `aeropulse_strava_backfill_v4_${stravaData.athleteId || 'self'}`;
             const oldestStravaMs = stravaActs.reduce((minMs, a) => {
-              const t = new Date(a.startDateLocal || 0).getTime();
+              const t = resolveActivityStartEpochMs(a);
               return Number.isFinite(t) && t > 0 && t < minMs ? t : minMs;
             }, Number.POSITIVE_INFINITY);
             let cursorBeforeEpoch =
@@ -998,6 +1016,9 @@ export function useTelemetrySync({
                   id: `strava-${sa.stravaId}`,
                   stravaId: String(sa.stravaId),
                   startDateLocal: sa.startDateLocal,
+                  ...(typeof sa.startDateUtcMs === 'number'
+                    ? { startDateUtcMs: sa.startDateUtcMs }
+                    : {}),
                   name: sa.name,
                   sportCategory: sa.sportCategory,
                   rawSportType: sa.rawSportType,
@@ -1050,13 +1071,10 @@ export function useTelemetrySync({
                 mergedActivities = mergedActivities.map((act) => {
                   let matched = act.stravaId ? byStravaId.get(String(act.stravaId)) : undefined;
                   if (!matched && !act.stravaId) {
-                    const actNorm = String(act.startDateLocal || '').replace(/Z$/i, '');
-                    const actTime = new Date(actNorm).getTime();
+                    const actDateStr = String(act.startDateLocal || '').slice(0, 10);
                     for (const [sid, sa] of byStravaId.entries()) {
-                      const saNorm = String(sa.startDateLocal || '').replace(/Z$/i, '');
-                      const saTime = new Date(saNorm).getTime();
-                      const timeDiffSecs = Math.abs(actTime - saTime) / 1000;
-                      const sameDate = actNorm.slice(0, 10) === saNorm.slice(0, 10);
+                      const closeInTime = areActivityTimestampsClose(act, sa, 300);
+                      const sameDate = actDateStr === String(sa.startDateLocal || '').slice(0, 10);
                       const distDiffRatio =
                         act.distanceMeters > 500 && sa.distanceMeters > 500
                           ? Math.abs(act.distanceMeters - sa.distanceMeters) /
@@ -1064,7 +1082,7 @@ export function useTelemetrySync({
                           : 1;
                       if (
                         sa.sportCategory === act.sportCategory &&
-                        (timeDiffSecs <= 300 || (sameDate && distDiffRatio <= 0.03))
+                        (closeInTime || (sameDate && distDiffRatio <= 0.03))
                       ) {
                         matched = sa;
                         byStravaId.delete(sid);
@@ -1104,6 +1122,9 @@ export function useTelemetrySync({
 
                     return reclassifyActivityEnvironment({
                       ...act,
+                      ...(act.startDateUtcMs !== undefined || matched.startDateUtcMs !== undefined
+                        ? { startDateUtcMs: act.startDateUtcMs ?? matched.startDateUtcMs }
+                        : {}),
                       name: isGenericStubName && matched.name ? matched.name : act.name,
                       sportCategory:
                         !hasAuthoritativeIntervals &&

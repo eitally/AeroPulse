@@ -14,6 +14,7 @@ import {
   generateQrMatrix,
 } from '../src/utils/teamQrHelper';
 import {
+  acknowledgeParentConsent,
   broadcastWorkoutToTeamSquad,
   bulkCreateAndSendInvites,
   claimTeamJoinInvite,
@@ -205,7 +206,7 @@ describe('Team Onboarding, Custom Branding, Resend Bulk Invites & Safeguarding',
     // Extract personalized token from magicJoinUrl
     const tokenParam = new URL(invitedMember.magicJoinUrl!).searchParams.get('t')!;
 
-    // 3. Athlete opens link -> funnel transitions INVITED -> OPENED
+    // 3. Athlete previews link -> GET preview stays read-only (status remains INVITED until claim)
     const preview = await previewTeamJoinInvite(hsTeam.brand.slug, tokenParam);
     expect(preview.found).toBe(true);
     expect(preview.membership?.invitedName).toBe('Elena Vance');
@@ -214,18 +215,34 @@ describe('Team Onboarding, Custom Branding, Resend Bulk Invites & Safeguarding',
     const afterOpenCoachView = (await listTeamsForUser(coachSid, originUrl)).find(
       (t) => t.brand.teamId === hsTeam.brand.teamId
     )!;
-    expect(afterOpenCoachView.openedCount).toBeGreaterThanOrEqual(2); // Coach + Elena
+    expect(afterOpenCoachView.openedCount).toBe(1); // Read-only preview does not mutate funnel
 
-    // 4. Athlete claims HS team AND also joins an off-season Running Club (Multi-Team!)
+    // 4. Athlete claims HS team (with guardian email & consent acknowledged) AND off-season Club
+    let capturedConsentToken = '';
+    process.env.RESEND_API_KEY = 're_test_onboarding_hs';
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('api.resend.com/emails')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { html?: string };
+        const m = body.html?.match(/\/api\/teams\/parent-consent\?token=([A-Za-z0-9_-]+)/);
+        if (m?.[1]) capturedConsentToken = m[1];
+        return new Response(JSON.stringify({ id: 'em_hs_1' }), { status: 200 });
+      }
+      return originalFetch(input, init);
+    }) as any;
+
     const claimHs = await claimTeamJoinInvite({
       callerSid: athleteSid,
       originUrl,
       codeOrSlug: hsTeam.brand.slug,
       inviteToken: tokenParam,
       athleteName: 'Elena Vance',
+      parentGuardianEmail: 'parent.vance@gunn.edu',
     });
+    await new Promise((r) => setTimeout(r, 20));
     expect(claimHs.ok).toBe(true);
     expect(claimHs.safeSportShieldEnforced).toBe(true);
+    expect(capturedConsentToken).toBeTruthy();
+    expect((await acknowledgeParentConsent(capturedConsentToken)).ok).toBe(true);
 
     const clubTeam = await createTeamForCoach({
       callerSid: coachSid,

@@ -42,8 +42,13 @@ import type { RosterTab } from './components/AthleteRosterModal';
 import type { UserGuideChapterId } from './components/UserGuideModal';
 import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
 import {
+  enqueueStopwatchOutboxBatch,
+  flushStopwatchOutbox,
+  overlayPendingStopwatchOutboxOnTeams,
   partitionSavedStopwatchEntries,
-  persistCoachStopwatchActivitiesToServer,
+  persistWalkOnStopwatchEntriesLocal,
+  type StopwatchOutboxFlushResult,
+  type StopwatchSaveResult,
 } from './utils/stopwatchTeamSync';
 import {
   buildCompleteAthleteProfile,
@@ -481,42 +486,42 @@ export default function App() {
     redactedStravaCount,
   ]);
 
-  // Save goals & privacy/roster preferences to localStorage (never during ephemeral Sample Demo Mode)
+  // Save goals & privacy/roster preferences to localStorage (never during Sample Demo or logged-out transitions)
   useEffect(() => {
-    if (isSampleDemoMode) return;
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     try {
       localStorage.setItem('aeropulse_annual_mileage_goals', JSON.stringify(annualMileageGoals));
     } catch {
       // ignore storage quota errors
     }
-  }, [annualMileageGoals, isSampleDemoMode]);
+  }, [annualMileageGoals, isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace]);
 
   useEffect(() => {
-    if (isSampleDemoMode) return;
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     try {
       localStorage.setItem('aeropulse_target_goals', JSON.stringify(targetGoals));
     } catch {
       // ignore
     }
-  }, [targetGoals, isSampleDemoMode]);
+  }, [targetGoals, isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace]);
 
   useEffect(() => {
-    if (isSampleDemoMode) return;
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     try {
       localStorage.setItem('aeropulse_self_privacy_settings', JSON.stringify(selfPrivacySettings));
     } catch {
       // ignore
     }
-  }, [selfPrivacySettings, isSampleDemoMode]);
+  }, [selfPrivacySettings, isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace]);
 
   useEffect(() => {
-    if (isSampleDemoMode) return;
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     try {
       localStorage.setItem('aeropulse_connected_athletes_v1', JSON.stringify(connectedAthletes));
     } catch {
       // ignore
     }
-  }, [connectedAthletes, isSampleDemoMode]);
+  }, [connectedAthletes, isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace]);
 
   useEffect(() => {
     if (isSampleDemoMode) return;
@@ -539,6 +544,7 @@ export default function App() {
     setActiveTeamId,
     activeTeam,
     explicitPersonalMode,
+    setExplicitPersonalMode,
     resendConfigured,
     pendingUrlJoinOffer,
     handleSelectActiveTeam,
@@ -1022,6 +1028,7 @@ export default function App() {
     effectiveSessionCheckIns,
     handleRecordSessionCheckIn,
     resetDemoSessionCheckIns,
+    resetUserCloudSyncState,
   } = useAthleteCloudSync({
     isSampleDemoMode, hasEnteredWorkspace, isSessionLoggedOut, currentUser,
     stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
@@ -1117,6 +1124,7 @@ export default function App() {
     athleteProfileRef,
     redactedStravaCountRef,
     hasEnteredWorkspaceRef,
+    idbHydratedRef,
     athleteProfile,
     setActivities,
     setWellnessDays,
@@ -1124,9 +1132,20 @@ export default function App() {
     setGearItems,
     setAthleteProfile,
     setRedactedStravaCount,
+    setTargetGoals,
+    setAnnualMileageGoals,
+    setSelfPrivacySettings,
+    setConnectedAthletes,
     setMyTeams,
     setActiveTeamId,
+    setExplicitPersonalMode,
     setActiveViewedAthleteId,
+    setSelectedActivity,
+    setInspectedFromCoach,
+    setDismissedStravaBanner,
+    setDismissedQuickConnectBanner,
+    setSyncError,
+    setIsProfileModalOpen,
     setCurrentUser,
     setConnectionStatus,
     setIdbSavedAt,
@@ -1140,6 +1159,7 @@ export default function App() {
     setRosterInitialTab,
     setIsRosterModalOpen,
     resetSampleDemoEphemeralState,
+    resetUserCloudSyncState,
     fetchServerConfigStatus,
     handleTeamsUpdated,
     handleSaveProfileOverride,
@@ -1375,11 +1395,77 @@ export default function App() {
     [isSampleDemoMode]
   );
 
+  const applyUpdatedTeamToState = useCallback(
+    (updatedTeam: TeamSummaryWithRole) => {
+      setMyTeams((prev) => {
+        const replaced = prev.map((t) =>
+          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+        );
+        const withOutbox = overlayPendingStopwatchOutboxOnTeams(replaced);
+        try {
+          localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
+        } catch {
+          // ignore
+        }
+        return withOutbox;
+      });
+    },
+    [setMyTeams]
+  );
+
+  const handleFlushStopwatchOutbox = useCallback(async (): Promise<StopwatchOutboxFlushResult> => {
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) {
+      return { syncedBatches: 0, syncedEntries: 0, remainingBatches: 0, remainingEntries: 0 };
+    }
+    return flushStopwatchOutbox(applyUpdatedTeamToState);
+  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, applyUpdatedTeamToState]);
+
+  useEffect(() => {
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
+    void handleFlushStopwatchOutbox();
+    const onOnline = () => {
+      void handleFlushStopwatchOutbox();
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, handleFlushStopwatchOutbox]);
+
   const handleSaveStopwatchActivities = useCallback(
-    (entries: SavedStopwatchEntry[]): number => {
-      if (!entries || entries.length === 0) return 0;
-      const { selfActs, rosterByRunnerId, teamApiEntries, savedCount } =
-        partitionSavedStopwatchEntries(entries, combinedRoster);
+    async (entries: SavedStopwatchEntry[]): Promise<StopwatchSaveResult> => {
+      if (!entries || entries.length === 0) {
+        return {
+          savedCount: 0,
+          selfCount: 0,
+          rosterCount: 0,
+          teamCount: 0,
+          walkOnCount: 0,
+          pendingTeamCount: 0,
+          skippedReadOnlyNames: [],
+          syncStatus: 'LOCAL_ONLY',
+        };
+      }
+
+      const activeTeamForCoach = !isSampleDemoMode ? effectiveActiveTeam : null;
+      const isTeamCoach = Boolean(
+        activeTeamForCoach &&
+          (activeTeamForCoach.myRole === 'HEAD_COACH' ||
+            activeTeamForCoach.myRole === 'ASSISTANT_COACH')
+      );
+      const activeTeamMembershipIds = activeTeamForCoach
+        ? new Set(activeTeamForCoach.memberships.map((m) => m.membershipId))
+        : undefined;
+
+      const {
+        selfActs,
+        rosterByRunnerId,
+        teamApiEntries,
+        walkOnEntries,
+        skippedReadOnlyNames,
+        savedCount,
+      } = partitionSavedStopwatchEntries(entries, combinedRoster, {
+        isTeamCoach,
+        activeTeamMembershipIds,
+      });
 
       if (selfActs.length > 0) {
         if (isSampleDemoMode) {
@@ -1401,6 +1487,10 @@ export default function App() {
         }
       }
 
+      if (walkOnEntries.length > 0 && !isSampleDemoMode) {
+        persistWalkOnStopwatchEntriesLocal(walkOnEntries);
+      }
+
       if (rosterByRunnerId.size > 0) {
         const mergeRosterActs = (prev: ConnectedAthleteRecord[]) =>
           prev.map((a) => {
@@ -1413,21 +1503,47 @@ export default function App() {
           setSampleDemoConnectedAthletes(mergeRosterActs);
         } else {
           setConnectedAthletes(mergeRosterActs);
-          if (activeTeamId && teamApiEntries.length > 0) {
-            void persistCoachStopwatchActivitiesToServer(activeTeamId, teamApiEntries).then((updatedTeam) => {
-              if (updatedTeam) {
-                setMyTeams((prev) =>
-                  prev.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t))
-                );
-              }
-            });
-          }
         }
       }
 
-      return savedCount;
+      let syncStatus: StopwatchSaveResult['syncStatus'] = 'LOCAL_ONLY';
+      let pendingTeamCount = 0;
+
+      if (!isSampleDemoMode && activeTeamId && teamApiEntries.length > 0) {
+        enqueueStopwatchOutboxBatch(activeTeamId, teamApiEntries);
+        setMyTeams((prev) => {
+          const withOutbox = overlayPendingStopwatchOutboxOnTeams(prev);
+          try {
+            localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
+          } catch {
+            // ignore
+          }
+          return withOutbox;
+        });
+        const flushRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
+        pendingTeamCount = flushRes.remainingEntries;
+        syncStatus = flushRes.remainingEntries === 0 ? 'SYNCED' : 'PENDING_OFFLINE';
+      }
+
+      return {
+        savedCount,
+        selfCount: selfActs.length,
+        rosterCount: rosterByRunnerId.size,
+        teamCount: teamApiEntries.length,
+        walkOnCount: walkOnEntries.length,
+        pendingTeamCount,
+        skippedReadOnlyNames,
+        syncStatus,
+      };
     },
-    [combinedRoster, isSampleDemoMode, activeTeamId, setMyTeams]
+    [
+      combinedRoster,
+      isSampleDemoMode,
+      activeTeamId,
+      effectiveActiveTeam,
+      setMyTeams,
+      applyUpdatedTeamToState,
+    ]
   );
 
   if (publicTeamSlug) {
@@ -1692,6 +1808,7 @@ export default function App() {
                 onTeamsUpdated={effectiveOnTeamsUpdated}
                 onOpenPublicTeamHub={openPublicTeamHub}
                 onOpenCoachGuide={handleOpenCoachGuideModal}
+                isSampleDemoMode={isSampleDemoMode}
                 effectiveActivities={effectiveActivities}
                 effectiveWellnessDays={effectiveWellnessDays}
                 effectivePlannedEvents={effectivePlannedEvents}
@@ -1745,6 +1862,7 @@ export default function App() {
                 handleSaveProfileOverride={handleSaveProfileOverride}
                 handleSwitchToCalendarTab={handleSwitchToCalendarTab}
                 handleSaveStopwatchActivities={handleSaveStopwatchActivities}
+                handleFlushStopwatchOutbox={handleFlushStopwatchOutbox}
               />
             </main>
 

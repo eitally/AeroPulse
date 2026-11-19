@@ -906,6 +906,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                   activities={activities}
                   wellnessDays={wellnessDays}
                   athleteWeightKg={athleteWeightKg}
+                  safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
                   distanceUnit={distanceUnit}
                   onOpenCoachWithPrompt={onOpenCoachWithPrompt}
                 />

@@ -3,12 +3,14 @@ import {
   generatePkcePair,
   issueOAuthStateToken,
   setOAuthStateCookie,
+  getOAuthStateCookieNonce,
   verifyOAuthStateToken,
   clearOAuthStateCookie,
   safeJsonForScript,
   escapeHtml,
   setSessionCookie,
   getVerifiedSessionClaims,
+  timingSafeStringEqual,
 } from '../securityUtils.ts';
 import {
   ensureRequestSessionSid,
@@ -26,6 +28,12 @@ import {
   disconnectServiceFromUser,
 } from '../authService.ts';
 import { isGenericName } from '../physiologyEngine.ts';
+import {
+  normalizeActivityTimestamps,
+  parseClientTzOffsetMins,
+  parseIsoWithExplicitOffsetToUtcMs,
+  resolveIanaTimeZoneOffsetMinutes,
+} from '../../src/utils/activityTimestamp.ts';
 
 export const wahooRouter = Router();
 
@@ -97,6 +105,7 @@ export async function ensureValidWahooAccessToken(
         if (activeReq) {
           activeReq.headers['x-wahoo-access-token'] = refreshed.access_token;
         }
+        await saveSessionCacheAsync(activeReq);
         return refreshed.access_token;
       }
     } catch {
@@ -180,6 +189,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
   const error = String(req.query.error || '').trim();
   const stateToken = String(req.query.state || '').trim();
 
+  const cookieNonce = getOAuthStateCookieNonce(req);
   const verifiedState = verifyOAuthStateToken(stateToken);
   clearOAuthStateCookie(res);
 
@@ -197,7 +207,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#0EA5E9',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -225,21 +235,23 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#0EA5E9',
         body: 'No authorization code was returned by Wahoo.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
   }
 
-  if (!verifiedState) {
+  if (!verifiedState || !cookieNonce || !timingSafeStringEqual(cookieNonce, verifiedState.nonce)) {
     res.status(400).type('html').send(
       renderThreshOAuthHtml({
         title: 'Invalid OAuth State',
         heading: 'Security Verification Failed',
         accentColor: '#0EA5E9',
-        body: 'OAuth state token was invalid or expired. Please re-initiate Wahoo connection.',
+        body: !verifiedState
+          ? 'OAuth state token was invalid or expired. Please re-initiate Wahoo connection.'
+          : 'Browser OAuth verification cookie was missing or did not match. Please re-initiate Wahoo connection.',
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
       })
     );
     return;
@@ -323,7 +335,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
       await connectServiceToUser(callerClaims.sub, 'wahoo', athleteId, athleteName);
     }
 
-    const sessionToken = setSessionCookie(req, res, athleteName, sid);
+    const sessionToken = setSessionCookie(req, res, athleteName, sid, 'verified');
     await saveSessionCacheAsync(req, res, sid);
 
     const oauthPayloadJson = safeJsonForScript({
@@ -333,7 +345,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
       athleteName,
       sessionToken,
       scope: tokenData.scope,
-      returnUrl: '/?tab=settings',
+      returnUrl: '/#fitness?openDataSources=1',
     });
 
     res.type('html').send(
@@ -343,7 +355,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#0EA5E9',
         body: 'Your Wahoo Cloud account is now linked via OAuth 2.0 / PKCE. ELEMNT rides, workouts, and FIT files will sync automatically with smart deduplication.',
         ctaLabel: 'Continue to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
@@ -376,7 +388,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
               try { window.close(); } catch (e) {}
             }, 300);
           } else {
-            window.location.replace(payload.returnUrl || '/?tab=settings');
+            window.location.replace(payload.returnUrl || '/#fitness?openDataSources=1');
           }
         })();`,
       })
@@ -395,7 +407,7 @@ export const wahooCallbackHandler = async (req: Request, res: Response): Promise
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
         ctaLabel: 'Return to THRESH',
-        ctaHref: '/?tab=settings',
+        ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -539,16 +551,41 @@ wahooRouter.get('/api/wahoo/sync', async (req: Request, res: Response) => {
 
     const data = await resp.json();
     const rawWorkouts = Array.isArray(data) ? data : Array.isArray(data?.workouts) ? data.workouts : [];
+    const clientTzName = String(
+      req.headers['x-client-tz'] || req.query.tz || ''
+    ).trim();
+    const clientTzOffsetMins = parseClientTzOffsetMins(
+      req.headers['x-client-tz-offset-mins'] ?? req.query.tzOffsetMins
+    );
 
     const activities = rawWorkouts.map((w: any) => {
       const summary = w.workout_summary || {};
       const sport = w.workout_type_id === 2 ? 'Running' : 'Cycling';
       const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
       const isIndoor = /kickr|indoor|trainer/i.test(w.name || '');
+      const rawStartUtc = w.starts || new Date().toISOString();
+      const rawUtcMs = parseIsoWithExplicitOffsetToUtcMs(rawStartUtc) ?? Date.parse(rawStartUtc);
+      const resolvedOffsetMins =
+        (typeof w.timezone === 'string' && Number.isFinite(rawUtcMs)
+          ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, w.timezone)
+          : undefined) ??
+        (clientTzName && Number.isFinite(rawUtcMs)
+          ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, clientTzName)
+          : undefined) ??
+        clientTzOffsetMins;
+      const normalizedTimestamps = normalizeActivityTimestamps({
+        startDateUtc: rawStartUtc,
+        timeZoneOffsetMins: resolvedOffsetMins,
+        fallbackBrowserTz: true,
+      });
+
       return {
         id: `wahoo_${w.id}`,
         wahooId: String(w.id),
-        startDateLocal: w.starts || new Date().toISOString(),
+        startDateLocal: normalizedTimestamps.startDateLocal,
+        ...(normalizedTimestamps.startDateUtcMs !== undefined
+          ? { startDateUtcMs: normalizedTimestamps.startDateUtcMs }
+          : {}),
         name: w.name || 'Wahoo Workout',
         sportCategory: sport,
         environment: isIndoor ? 'INDOOR' : 'OUTDOOR',

@@ -1,7 +1,12 @@
 import express, { type Request, type Response } from 'express';
 import fs from 'fs';
 import { runtimeStore, saveSessionCacheAsync } from '../sessionContext.ts';
-import { deriveStravaSessionSid, hasValidCronAuthorization } from '../securityUtils.ts';
+import {
+  deriveStravaSessionSid,
+  hasValidCronAuthorization,
+  isProductionDeployment,
+  timingSafeStringEqual,
+} from '../securityUtils.ts';
 import { loadTenantVaultAsync, saveTenantVaultAsync } from '../tokenVault.ts';
 import { getEffectiveIntervalsConfig, syncIntervalsAllHistory } from './intervalsRouter.ts';
 import { syncStravaAllHistory } from './stravaRouter.ts';
@@ -62,6 +67,23 @@ webhookRouter.all('/api/cron/hourly-sync', async (req: Request, res: Response) =
 
 // Real-Time Webhook Receiver for Intervals.icu (ACTIVITY_UPLOADED, WELLNESS_UPDATED, etc.)
 webhookRouter.post('/api/webhooks/intervals', async (req: Request, res: Response) => {
+  const intervalsSecret = String(process.env.INTERVALS_WEBHOOK_SECRET || '').trim();
+  const cronSecretConfigured = Boolean((process.env.CRON_SECRET || '').trim());
+  const suppliedSecret = String(
+    req.headers['x-intervals-webhook-secret'] || req.query.secret || ''
+  ).trim();
+  const hasIntervalsSecret = Boolean(
+    intervalsSecret && suppliedSecret && timingSafeStringEqual(suppliedSecret, intervalsSecret)
+  );
+  if (isProductionDeployment() && !intervalsSecret && !cronSecretConfigured) {
+    res.status(503).json({ ok: false, error: 'Intervals webhook authentication is not configured.' });
+    return;
+  }
+  const hasConfiguredCronAuth = Boolean(cronSecretConfigured && hasValidCronAuthorization(req));
+  if (!hasConfiguredCronAuth && !hasIntervalsSecret) {
+    res.status(401).json({ ok: false, error: 'Unauthorized Intervals webhook invocation.' });
+    return;
+  }
   try {
     const summary = await executeHourlyBackgroundPoll();
     res.json({
@@ -85,7 +107,14 @@ webhookRouter.get('/api/webhooks/strava', (req: Request, res: Response) => {
   const verifyToken = String(req.query['hub.verify_token'] || '').trim();
   const expectedVerifyToken = String(process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || '').trim();
   if (mode === 'subscribe' && challenge) {
-    if (expectedVerifyToken && verifyToken !== expectedVerifyToken) {
+    if (!expectedVerifyToken && isProductionDeployment()) {
+      res.status(503).json({ ok: false, error: 'Strava webhook verify token is not configured.' });
+      return;
+    }
+    if (
+      expectedVerifyToken &&
+      (!verifyToken || !timingSafeStringEqual(verifyToken, expectedVerifyToken))
+    ) {
       res.status(403).json({ ok: false, error: 'Invalid Strava webhook verify_token.' });
       return;
     }
@@ -97,6 +126,20 @@ webhookRouter.get('/api/webhooks/strava', (req: Request, res: Response) => {
 
 webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) => {
   try {
+    const expectedSubId = String(process.env.STRAVA_WEBHOOK_SUBSCRIPTION_ID || '').trim();
+    if (!expectedSubId && isProductionDeployment()) {
+      res
+        .status(503)
+        .json({ ok: false, error: 'Strava webhook subscription ID is not configured.' });
+      return;
+    }
+    if (expectedSubId) {
+      const incomingSubId = String(req.body?.subscription_id ?? '').trim();
+      if (!incomingSubId || !timingSafeStringEqual(incomingSubId, expectedSubId)) {
+        res.status(403).json({ ok: false, error: 'Invalid Strava webhook subscription_id.' });
+        return;
+      }
+    }
     const aspectType = String(req.body?.aspect_type || '').toLowerCase();
     const objectType = String(req.body?.object_type || '').toLowerCase();
     const objectId = extractStravaId(req.body, 'object_id_str', 'object_id');

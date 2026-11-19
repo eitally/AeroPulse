@@ -24,6 +24,7 @@ interface PhysiologicalTrendsViewProps {
   envFilter?: EnvironmentFilter;
   distanceUnit?: DistanceUnit;
   athleteWeightKg: number;
+  safeSportHideWeight?: boolean;
   onOpenCoachWithPrompt: (prompt: string) => void;
 }
 
@@ -142,15 +143,26 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   envFilter = 'COMBINED',
   distanceUnit = 'mi',
   athleteWeightKg,
+  safeSportHideWeight = false,
   onOpenCoachWithPrompt,
 }) => {
   const isMobile = useIsMobileViewport();
+  const hideWeight = Boolean(safeSportHideWeight || athleteWeightKg <= 0);
+  const visibleMetrics = useMemo(
+    () => (hideWeight ? TREND_METRICS.filter((m) => m.key !== 'wPerKg') : TREND_METRICS),
+    [hideWeight]
+  );
   const [trendSpan, setTrendSpan] = useState<TrendSpan>('1Y');
   // Default to just 2 clean, complementary series so the chart is immediately legible and uncluttered
   const [selectedMetrics, setSelectedMetrics] = useState<TrendMetricKey[]>([
     'vo2Max',
     'rideEftp',
   ]);
+  const effectiveSelectedMetrics = useMemo(() => {
+    if (!hideWeight) return selectedMetrics;
+    const filtered = selectedMetrics.filter((k) => k !== 'wPerKg');
+    return filtered.length > 0 ? filtered : (['rideEftp'] as TrendMetricKey[]);
+  }, [hideWeight, selectedMetrics]);
   const [scaleMode, setScaleMode] = useState<'RAW' | 'PCT_CHANGE'>('RAW');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [showSeasonTable, setShowSeasonTable] = useState<boolean>(true);
@@ -399,7 +411,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       const pcts = vals.map((v) => ((v - baseline) / Math.max(0.01, baseline)) * 100);
       const pMin = pcts.length > 0 ? Math.min(...pcts) : -5;
       const pMax = pcts.length > 0 ? Math.max(...pcts) : 5;
-      if (selectedMetrics.includes(meta.key)) {
+      if (effectiveSelectedMetrics.includes(meta.key)) {
         globalPctMin = Math.min(globalPctMin, Math.floor(pMin - 2));
         globalPctMax = Math.max(globalPctMax, Math.ceil(pMax + 2));
       }
@@ -419,9 +431,11 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
     }
 
     return map;
-  }, [trendSeries, selectedMetrics]);
+  }, [trendSeries, effectiveSelectedMetrics]);
 
-  const activeMetaList = TREND_METRICS.filter((m) => selectedMetrics.includes(m.key));
+  const activeMetaList = visibleMetrics.filter((m) =>
+    effectiveSelectedMetrics.includes(m.key)
+  );
   const primaryLeftMeta =
     activeMetaList.find((m) => m.axisGroup === 'LEFT_POWER_VO2') || activeMetaList[0];
   const secondaryRightMeta =
@@ -475,10 +489,20 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               <ChartInfoTooltip
                 title="Long-Term Physiological Adaptation & Ceiling Explorer"
                 subtitle="Exercise Physiologist Multi-System Trend Analysis"
-                whatItMeasures="Tracks your central cardiovascular ceiling (VO2max), neuromuscular/metabolic threshold power (Cycling & Running eFTP, W/kg), aerobic economy (Efficiency Factor EF), and autonomic nervous system cost (7d HRV rMSSD & Resting HR) on one unified timeline."
-                benchmarks="True aerobic adaptation occurs when eFTP, W/kg, or EF rises while Overnight HRV remains stable within your baseline corridor and Resting HR stays steady or trends downward."
+                whatItMeasures={
+                  hideWeight
+                    ? 'Tracks your central cardiovascular ceiling (VO2max), threshold power (Cycling & Running eFTP), aerobic economy (Efficiency Factor EF), and autonomic nervous system cost (7d HRV rMSSD & Resting HR) on one unified timeline.'
+                    : 'Tracks your central cardiovascular ceiling (VO2max), neuromuscular/metabolic threshold power (Cycling & Running eFTP, W/kg), aerobic economy (Efficiency Factor EF), and autonomic nervous system cost (7d HRV rMSSD & Resting HR) on one unified timeline.'
+                }
+                benchmarks={
+                  hideWeight
+                    ? 'True aerobic adaptation occurs when eFTP or EF rises while Overnight HRV remains stable within your baseline corridor and Resting HR stays steady or trends downward.'
+                    : 'True aerobic adaptation occurs when eFTP, W/kg, or EF rises while Overnight HRV remains stable within your baseline corridor and Resting HR stays steady or trends downward.'
+                }
                 liveStatus={{
-                  label: `VO2max ${latestPoint.vo2Max} · Bike eFTP ${latestPoint.rideEftp}W (${latestPoint.wPerKg} W/kg) · HRV ${latestPoint.hrvRMSSD}ms`,
+                  label: hideWeight
+                    ? `VO2max ${latestPoint.vo2Max} · Bike eFTP ${latestPoint.rideEftp}W · HRV ${latestPoint.hrvRMSSD}ms`
+                    : `VO2max ${latestPoint.vo2Max} · Bike eFTP ${latestPoint.rideEftp}W (${latestPoint.wPerKg} W/kg) · HRV ${latestPoint.hrvRMSSD}ms`,
                   state:
                     latestPoint.rideEftp >= firstPoint.rideEftp &&
                     latestPoint.hrvRMSSD >= firstPoint.hrvRMSSD * 0.9
@@ -528,7 +552,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               type="button"
               onClick={() =>
                 onOpenCoachWithPrompt(
-                  `Analyze my long-term physiological trends over ${trendSpan}: VO2max is ${latestPoint.vo2Max} mL/kg/min, Cycling eFTP is ${latestPoint.rideEftp}W (${latestPoint.wPerKg} W/kg), Running eFTP is ${latestPoint.runEftp}W, 7d HRV is ${latestPoint.hrvRMSSD}ms, Resting HR is ${latestPoint.restingHR} bpm, and Aerobic EF is ${latestPoint.rawEf}. What is my primary physiological limiter and how should I structure the next mesocycle?`
+                  `Analyze my long-term physiological trends over ${trendSpan}: VO2max is ${latestPoint.vo2Max} mL/kg/min, Cycling eFTP is ${latestPoint.rideEftp}W${hideWeight ? '' : ` (${latestPoint.wPerKg} W/kg)`}, Running eFTP is ${latestPoint.runEftp}W, 7d HRV is ${latestPoint.hrvRMSSD}ms, Resting HR is ${latestPoint.restingHR} bpm, and Aerobic EF is ${latestPoint.rawEf}. What is my primary physiological limiter and how should I structure the next mesocycle?`
                 )
               }
               className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-semibold shadow-sm transition-all"
@@ -544,7 +568,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
               <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
-              <span>Toggle Metrics Included on Graph ({selectedMetrics.length} active):</span>
+              <span>Toggle Metrics Included on Graph ({effectiveSelectedMetrics.length} active):</span>
             </div>
 
             {/* Quick Physiologist Presets */}
@@ -559,10 +583,16 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedMetrics(['rideEftp', 'wPerKg', 'efficiencyFactor'])}
+                onClick={() =>
+                  setSelectedMetrics(
+                    hideWeight
+                      ? ['rideEftp', 'efficiencyFactor']
+                      : ['rideEftp', 'wPerKg', 'efficiencyFactor']
+                  )
+                }
                 className="px-2 py-0.5 rounded-md liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-300 font-medium transition-colors"
               >
-                Power + W/kg + EF
+                {hideWeight ? 'Power + EF' : 'Power + W/kg + EF'}
               </button>
               <button
                 type="button"
@@ -582,8 +612,8 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-            {TREND_METRICS.map((meta) => {
-              const isSelected = selectedMetrics.includes(meta.key);
+            {visibleMetrics.map((meta) => {
+              const isSelected = effectiveSelectedMetrics.includes(meta.key);
               const startVal = getMetricValue(firstPoint, meta.key);
               const currVal = getMetricValue(activePoint, meta.key);
               const delta = currVal - startVal;

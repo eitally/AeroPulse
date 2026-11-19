@@ -396,7 +396,7 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       await page.evaluate(() => localStorage.clear());
     });
 
-    test('Sign Out preserves custom sync policy across Strava re-login, and Team Join links still show Step 2 claim', async ({
+    test('Sign Out wipes local sync policy on shared devices, Strava re-login restores server policy, and Team Join links show Step 2 claim', async ({
       page,
       context,
     }) => {
@@ -430,14 +430,14 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       await page.getByRole('button', { name: /Account and preferences menu/i }).click();
       await page.getByRole('menuitem', { name: /Back to Welcome \/ Sign Out/i }).click();
 
-      // Back on homepage; custom sync policy ('all') must still be preserved
+      // Back on homepage; shared-device Sign Out (RT-10) must sweep user sync policy from localStorage
       await expect(page.getByRole('button', { name: /Connect with Strava/i })).toBeVisible({
         timeout: 15000,
       });
       const policyAfterLogout = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem('aeropulse_strava_sync_policy') || '{}')
+        localStorage.getItem('aeropulse_strava_sync_policy')
       );
-      expect(policyAfterLogout.window).toBe('all');
+      expect(policyAfterLogout).toBeNull();
 
       // Re-login via Strava -> enters workspace directly and keeps window='all'
       await page.evaluate(() => {

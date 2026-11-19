@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { isSafeHttpsUrl } from './securityUtils.ts';
 import type {
   ExternalTeamPlatform,
   PublicTeamHubAthleteResultItem,
@@ -317,10 +318,15 @@ function findOrCreateExternalMembership(
     : undefined;
   const nowIso = new Date().toISOString();
 
+  const cleanCandidateUrl =
+    candidate.externalProfileUrl && isSafeHttpsUrl(candidate.externalProfileUrl.trim())
+      ? candidate.externalProfileUrl.trim()
+      : undefined;
+
   if (existing) {
     existing.externalSource = existing.externalSource || candidate.externalSource;
     if (candidate.externalAthleteId) existing.externalAthleteId = candidate.externalAthleteId;
-    if (candidate.externalProfileUrl) existing.externalProfileUrl = candidate.externalProfileUrl;
+    if (cleanCandidateUrl) existing.externalProfileUrl = cleanCandidateUrl;
     if (candidate.graduationYear) existing.graduationYear = candidate.graduationYear;
     if (candidate.genderDivision) existing.genderDivision = candidate.genderDivision;
     if (candidate.seedMarkOrFtp && !existing.seedMarkOrFtp) {
@@ -371,7 +377,7 @@ function findOrCreateExternalMembership(
     seedMarkOrFtp: candidate.seedMarkOrFtp,
     externalSource: candidate.externalSource,
     externalAthleteId: candidate.externalAthleteId,
-    externalProfileUrl: candidate.externalProfileUrl,
+    externalProfileUrl: cleanCandidateUrl,
     genderDivision: candidate.genderDivision,
     status: 'INVITED',
     emailDeliveryStatus: 'READY_MANUAL_LINK',
@@ -609,7 +615,9 @@ export async function getPublicTeamHubBySlugOrCode(
         ...(m.seedMarkOrFtp ? { seedMarkOrFtp: m.seedMarkOrFtp } : {}),
         ...(m.externalSource ? { externalSource: m.externalSource } : {}),
         ...(m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {}),
-        ...(m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {}),
+        ...(m.externalProfileUrl && isSafeHttpsUrl(m.externalProfileUrl.trim())
+          ? { externalProfileUrl: m.externalProfileUrl.trim() }
+          : {}),
         officialResults,
       };
     });

@@ -17,13 +17,17 @@ import {
   type RuntimeSessionStore,
 } from './sessionContext.ts';
 import {
+  appendSetCookieHeader,
   clearSessionCookie,
   deriveStravaSessionSid,
   deriveUserSessionSid,
   getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
   resolveSafeOrigin,
 } from './securityUtils.ts';
 import {
+  buildClearUserCookieHeader,
+  buildClearVaultCookieHeader,
   deleteTenantVault,
   loadTenantVaultAsync,
   saveTenantVaultAsync,
@@ -79,7 +83,7 @@ export async function deleteThreshAccountPermanently(
   res: Response
 ): Promise<void> {
   const claims = getVerifiedSessionClaims(req);
-  if (!claims?.sid) {
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
     res.status(401).json({ ok: false, error: 'Authentication required.' });
     return;
   }
@@ -110,6 +114,11 @@ export async function deleteThreshAccountPermanently(
 
   // Gather upstream tokens before deleting session vaults
   let stravaAccessToken = activeStore?.stravaAccessToken || '';
+  let stravaRefreshToken = activeStore?.stravaRefreshToken || '';
+  let stravaExpiresAt = Number(activeStore?.stravaExpiresAt || 0);
+  let stravaClientId = activeStore?.stravaClientId || (process.env.STRAVA_CLIENT_ID || '').trim();
+  let stravaClientSecret =
+    activeStore?.stravaClientSecret || (process.env.STRAVA_CLIENT_SECRET || '').trim();
   let polarAccessToken = activeStore?.polarAccessToken || '';
   let polarUserId = activeStore?.polarUserId || '';
   for (const sid of candidateSids) {
@@ -119,8 +128,39 @@ export async function deleteThreshAccountPermanently(
       null
     );
     if (sDoc?.stravaAccessToken && !stravaAccessToken) stravaAccessToken = sDoc.stravaAccessToken;
+    if (sDoc?.stravaRefreshToken && !stravaRefreshToken) stravaRefreshToken = sDoc.stravaRefreshToken;
+    if (sDoc?.stravaExpiresAt && !stravaExpiresAt) stravaExpiresAt = Number(sDoc.stravaExpiresAt || 0);
+    if (sDoc?.stravaClientId && !stravaClientId) stravaClientId = sDoc.stravaClientId;
+    if (sDoc?.stravaClientSecret && !stravaClientSecret) stravaClientSecret = sDoc.stravaClientSecret;
     if (sDoc?.polarAccessToken && !polarAccessToken) polarAccessToken = sDoc.polarAccessToken;
     if (sDoc?.polarUserId && !polarUserId) polarUserId = sDoc.polarUserId;
+  }
+  const nowSecs = Math.floor(Date.now() / 1000);
+  if (
+    (!stravaAccessToken || (stravaExpiresAt > 0 && nowSecs >= stravaExpiresAt - 60)) &&
+    stravaRefreshToken &&
+    stravaClientId &&
+    stravaClientSecret
+  ) {
+    try {
+      const refResp = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: stravaClientId,
+          client_secret: stravaClientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: stravaRefreshToken,
+        }),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (refResp.ok) {
+        const refData = (await refResp.json()) as { access_token?: string };
+        if (refData.access_token) stravaAccessToken = refData.access_token;
+      }
+    } catch {
+      // best effort
+    }
   }
   await bestEffortRevokeUpstreamTokens(stravaAccessToken, polarAccessToken, polarUserId);
 
@@ -156,6 +196,7 @@ export async function deleteThreshAccountPermanently(
             m.invitedPhone = undefined;
             m.parentGuardianEmail = undefined;
             m.parentConsentToken = undefined;
+            m.parentConsentTokenHash = undefined;
             m.liveSnapshot = undefined;
             m.coachRecordedActivities = undefined;
             m.rawInviteToken = undefined;
@@ -234,6 +275,8 @@ export async function deleteThreshAccountPermanently(
   runtimeStore.stravaAthleteId = undefined;
   bindRequestScopeKey(req, '');
   clearSessionCookie(res);
+  appendSetCookieHeader(res, buildClearVaultCookieHeader());
+  appendSetCookieHeader(res, buildClearUserCookieHeader());
   res.setHeader('Cache-Control', 'no-store');
   res.json({ ok: true, deleted: true, origin: resolveSafeOrigin(req.headers.origin as string) });
 }

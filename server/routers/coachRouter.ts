@@ -13,9 +13,17 @@ import {
   getScopedRuntimeStore,
   runtimeStore,
   saveSessionCache,
+  saveSessionCacheAsync,
 } from '../sessionContext.ts';
 import { parseWorkoutSyntaxToSteps } from '../physiologyEngine.ts';
-import { assertSafeExternalFetch } from '../securityUtils.ts';
+import {
+  assertSafeExternalFetch,
+  getVerifiedSessionClaims,
+  isCanonicalAuthenticatedClaims,
+} from '../securityUtils.ts';
+import { getUserById } from '../authService.ts';
+import { listTeamsForUser } from '../teamService.ts';
+import { resolveAthleteAgeTier } from '../../src/physiology/ageAndComplianceEngine.ts';
 
 export const coachRouter = Router();
 
@@ -278,7 +286,7 @@ export function buildDeterministicCoachChatResponse(
         name: cfg.name,
         sportCategory: cfg.sport,
         environmentPreference: 'OUTDOOR',
-        description: `Prescribed by Thresh AI Coach based on ${hrvStatus || 'calibrated'} readiness.`,
+        description: `Prescribed by THRESH AI Coach based on ${hrvStatus || 'calibrated'} readiness.`,
         plannedLoad: cfg.load,
         plannedDurationSecs: cfg.dur,
         targetZoneSummary: `${cfg.load} TSS · AI Prescribed`,
@@ -333,11 +341,66 @@ export function buildDeterministicCoachChatResponse(
   };
 }
 
+async function resolveCallerYouthSafeguardStatus(
+  req: Request,
+  telemetrySummary: any
+): Promise<{ isMinorU18: boolean; forceZeroWeight: boolean }> {
+  let isMinorU18 = false;
+  let forceZeroWeight = Boolean(
+    telemetrySummary?.athleteProfile?.safeSportHideWeight ||
+      telemetrySummary?.safeSportHideWeight ||
+      telemetrySummary?.enforceZeroWeight
+  );
+
+  const clientAgeCheck = resolveAthleteAgeTier({
+    birthMonthYear:
+      telemetrySummary?.athleteProfile?.birthMonthYear || telemetrySummary?.birthMonthYear,
+  });
+  if (clientAgeCheck.isMinorU18 || Boolean(telemetrySummary?.isMinorU18)) {
+    isMinorU18 = true;
+    forceZeroWeight = true;
+  }
+
+  const claims = getVerifiedSessionClaims(req);
+  if (isCanonicalAuthenticatedClaims(claims)) {
+    if (claims?.sub?.startsWith('usr_')) {
+      const user = await getUserById(claims.sub).catch(() => null);
+      if (user?.birthMonthYear) {
+        const userAge = resolveAthleteAgeTier({ birthMonthYear: user.birthMonthYear });
+        if (userAge.isMinorU18) {
+          isMinorU18 = true;
+          forceZeroWeight = true;
+        }
+      }
+    }
+    if (claims?.sid) {
+      const teams = await listTeamsForUser(claims.sid, 'https://thresh.app').catch(() => []);
+      for (const t of teams) {
+        if (t.brand?.defaultSafeSportShield) {
+          forceZeroWeight = true;
+        }
+        const myMem = t.memberships?.find((m) => m.userSid === claims.sid);
+        if (myMem?.isMinorU18) {
+          isMinorU18 = true;
+          forceZeroWeight = true;
+        }
+      }
+    }
+  }
+
+  return { isMinorU18, forceZeroWeight };
+}
+
 // Save Google Gemini API Key at Runtime (for AI Coach & Daily Workout Generator)
-coachRouter.post('/api/gemini/config', (req: Request, res: Response) => {
+coachRouter.post('/api/gemini/config', async (req: Request, res: Response) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!isCanonicalAuthenticatedClaims(claims)) {
+    res.status(401).json({ error: 'Authentication required.' });
+    return;
+  }
   const rawApiKey = String(req.body?.apiKey || req.body?.geminiApiKey || '').trim();
   runtimeStore.geminiApiKey = rawApiKey;
-  saveSessionCache();
+  await saveSessionCacheAsync(req, res);
 
   res.json({
     ok: true,
@@ -362,24 +425,30 @@ coachRouter.post('/api/coach/options', async (req: Request, res: Response) => {
     telemetrySummary,
   } = req.body || {};
 
+  const youthStatus = await resolveCallerYouthSafeguardStatus(req, telemetrySummary);
+  const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary, {
+    forceZeroWeight: youthStatus.forceZeroWeight,
+    requireFirstPartyProvenance: true,
+  });
+
   try {
-    const ai = getGeminiClient(req);
+    const ai =
+      !isAuthorizedForAi(req) || youthStatus.isMinorU18 ? null : getGeminiClient(req);
     if (!ai) {
       res.json({
         options: buildDeterministicDailyWorkoutOptions(
           sportPreference,
           environmentPreference,
           durationMinutes,
-          telemetrySummary
+          cleanTelemetry
         ),
         engine: 'LOCAL_PHYSIOLOGY_ENGINE',
       });
       return;
     }
 
-    const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary);
     const prompt = `
-You are Thresh AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
+You are THRESH AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
 Generate 3 distinct, actionable daily workout options for today based on the athlete's live first-party Garmin health, sleep, HRV status, Training Status, and calibrated threshold telemetry:
 - Preferred Sport for Today: ${sportPreference}
 - Preferred Environment: ${environmentPreference} (e.g., OUTDOOR road/trail vs INDOOR Smart Trainer/Treadmill)
@@ -441,7 +510,7 @@ Include workoutSyntax (e.g., "- 10m 60% FTP\\n- 30m 85% FTP\\n- 10m 55% FTP") fo
         sportPreference,
         environmentPreference,
         durationMinutes,
-        telemetrySummary
+        cleanTelemetry
       ),
       engine: 'LOCAL_PHYSIOLOGY_ENGINE',
     });
@@ -472,11 +541,16 @@ coachRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
   }
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const youthStatus = await resolveCallerYouthSafeguardStatus(req, telemetrySummary);
+  const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary, {
+    forceZeroWeight: youthStatus.forceZeroWeight,
+    requireFirstPartyProvenance: true,
+  });
 
   try {
-    const ai = getGeminiClient(req);
+    const ai = youthStatus.isMinorU18 ? null : getGeminiClient(req);
     if (!ai) {
-      res.json(buildDeterministicCoachChatResponse(message, telemetrySummary, todayStr));
+      res.json(buildDeterministicCoachChatResponse(message, cleanTelemetry, todayStr));
       return;
     }
 
@@ -487,7 +561,6 @@ coachRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
           .join('\n\n')
       : '';
 
-    const cleanTelemetry = sanitizeTelemetryForCleanRoom(telemetrySummary);
     const response = await generateGeminiContentWithFallback(ai, {
       contents: `
 TODAY'S DATE: ${todayStr}
@@ -502,7 +575,7 @@ ATHLETE QUESTION OR PROGRAM REQUEST:
 ${message}
 `,
       config: {
-        systemInstruction: `You are Thresh AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside Thresh (THRESH — Run & Ride Readiness).
+        systemInstruction: `You are THRESH AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside THRESH (THRESH — Run & Ride Readiness).
 1. Ground every answer in the athlete's actual clean-room metrics provided in the snapshot: Sleep Score & Duration, 7d Sleep Debt, HRV Status & rMSSD (ms) vs baseline corridor, Training Status, Resting HR, CTL/ATL/TSB, Load Ratio (ACWR), calibrated Cycling FTP/eFTP, Running Threshold Pace, and first-party workouts. Never invent metrics that are missing or null—state clearly when calibration is needed.
 2. Whenever the user asks about today's workout, tomorrow's session, or a multi-day / weekly cycling or running training plan, ALWAYS populate "proposedWorkouts" with 1 to 7 concrete, ready-to-schedule workouts (with exact YYYY-MM-DD dates starting from ${todayStr}, sportCategory "Cycling" or "Running", environmentPreference "OUTDOOR" or "INDOOR", plannedDurationSecs, plannedLoad, and step workoutSyntax lines starting with "- ").`,
         responseMimeType: 'application/json',
@@ -593,7 +666,7 @@ ${message}
       engine: 'GEMINI_LIVE',
     });
   } catch {
-    res.json(buildDeterministicCoachChatResponse(message, telemetrySummary, todayStr));
+    res.json(buildDeterministicCoachChatResponse(message, cleanTelemetry, todayStr));
   }
 });
 
