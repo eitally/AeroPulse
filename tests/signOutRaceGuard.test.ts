@@ -202,4 +202,30 @@ describe('Track 2: Shared-Device Sign-Out Race Guards & Public Team Hub Fixes', 
     expect(demoCheckIdx).toBeGreaterThan(-1);
     expect(fetchIdx).toBeGreaterThan(demoCheckIdx);
   });
+
+  it('guards StravaAuthGate /api/auth/me hydration against in-flight Sign-Out cookie races and strips transient query params', () => {
+    const authGateSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/StravaAuthGate.tsx'),
+      'utf8'
+    );
+    const onboardingSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/hooks/useWorkspaceOnboarding.ts'),
+      'utf8'
+    );
+
+    const meFetchIdx = authGateSrc.indexOf("fetch('/api/auth/me'");
+    const preGuardIdx = authGateSrc.indexOf('if (!justSignedIn && isBrowserSessionLoggedOut())');
+    const postGuardIdx = authGateSrc.indexOf(
+      'if (cancelled || (!justSignedIn && isBrowserSessionLoggedOut()))',
+      meFetchIdx
+    );
+
+    expect(meFetchIdx).toBeGreaterThan(-1);
+    expect(preGuardIdx).toBeGreaterThan(-1);
+    expect(preGuardIdx).toBeLessThan(meFetchIdx);
+    expect(postGuardIdx).toBeGreaterThan(meFetchIdx);
+    expect(authGateSrc).toContain("searchParams.delete('auth_just_signed_in')");
+    expect(onboardingSrc).toContain("'auth_just_signed_in'");
+    expect(onboardingSrc).toContain('window.history.replaceState');
+  });
 });
