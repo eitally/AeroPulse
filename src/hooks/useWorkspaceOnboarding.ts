@@ -144,6 +144,31 @@ export function useWorkspaceOnboarding({
       // Always purge all user/credential/team browser keys unconditionally on Sign Out so shared devices
       // never leak User A tokens, backfill markers, check-ins, or goals into User B's session.
       clearAllUserBrowserStorage({ preserveLoggedOutFlag: true });
+      if (typeof window !== 'undefined') {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          let changed = false;
+          for (const transientKey of [
+            'auth_just_signed_in',
+            'oauth_just_connected',
+            'oauth',
+            'code',
+            'state',
+          ]) {
+            if (urlParams.has(transientKey)) {
+              urlParams.delete(transientKey);
+              changed = true;
+            }
+          }
+          if (changed) {
+            const cleanQs = urlParams.toString();
+            const nextUrl = `${window.location.pathname}${cleanQs ? `?${cleanQs}` : ''}${window.location.hash}`;
+            window.history.replaceState({}, '', nextUrl);
+          }
+        } catch {
+          // ignore URL cleanup errors
+        }
+      }
 
       applyTeamBrandToDocument(null);
       setActivities([]);

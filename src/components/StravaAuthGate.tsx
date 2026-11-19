@@ -51,6 +51,7 @@ import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
 import { SyncScopeTimelineBar } from './charts/MicroGraphics';
 import {
   getSavedIntervalsHeaders,
+  isBrowserSessionLoggedOut,
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
 import {
@@ -409,21 +410,37 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   // Hydrate session if already signed in via THRESH session cookie
   useEffect(() => {
     const search = typeof window !== 'undefined' ? window.location.search : '';
-    const justSignedIn = search.includes('auth_just_signed_in=1');
+    const searchParams = new URLSearchParams(search);
+    const justSignedIn = searchParams.get('auth_just_signed_in') === '1';
     if (justSignedIn) {
       try {
         localStorage.removeItem('aeropulse_logged_out');
       } catch {
         // ignore
       }
+      try {
+        searchParams.delete('auth_just_signed_in');
+        const nextQs = searchParams.toString();
+        const nextUrl = `${window.location.pathname}${nextQs ? `?${nextQs}` : ''}${window.location.hash}`;
+        window.history.replaceState({}, '', nextUrl);
+      } catch {
+        // ignore URL history errors
+      }
     }
+    if (!justSignedIn && isBrowserSessionLoggedOut()) {
+      return;
+    }
+    let cancelled = false;
     if (!localUser && !currentUser && !status.stravaConnected) {
       fetch('/api/auth/me', { credentials: 'include' })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
+          if (cancelled || (!justSignedIn && isBrowserSessionLoggedOut())) {
+            return;
+          }
           if (data?.authenticated && data?.user) {
             try {
-              const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
+              const notLoggedOut = !isBrowserSessionLoggedOut();
               if (justSignedIn) localStorage.removeItem('aeropulse_logged_out');
               if ((justSignedIn || notLoggedOut) && data.sessionToken) {
                 localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
@@ -439,6 +456,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         })
         .catch(() => null);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [localUser, currentUser, status.stravaConnected, athleteName, athleteEmail, onAuthenticatedUser]);
 
   // Advance Step 1 -> Step 2 only for non-Strava accounts or Strava users actively joining a team
