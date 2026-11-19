@@ -36,7 +36,6 @@ import {
   applyAthletePrivacyShield,
   buildInitialConnectedAthletes,
 } from './data/athleteRosterData';
-import { StravaAuthGate } from './components/StravaAuthGate';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
 import type { UserGuideChapterId } from './components/UserGuideModal';
@@ -58,6 +57,7 @@ import {
   loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   reRankActivitiesSegments,
+  recomputeWellnessDaysWithActivityImport,
   savePersistedTelemetrySnapshot,
   getSavedIntervalsHeaders,
 } from './utils/telemetryStorage';
@@ -96,6 +96,42 @@ import {
   sanitizePersistedTargetGoals,
 } from './utils/lazyWithRetry';
 import { STORAGE_KEYS } from './utils/storageKeys';
+
+const StravaAuthGate = lazyWithRetry(
+  () => import('./components/StravaAuthGate').then((m) => ({ default: m.StravaAuthGate })),
+  { chunkKey: 'StravaAuthGate' }
+);
+
+const DEMO_STOPWATCH_BACKUP_KEY = 'thresh_trackside_stopwatch_backup_v1';
+
+function backupRealStopwatchForDemo(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    if (!window.localStorage.getItem(DEMO_STOPWATCH_BACKUP_KEY)) {
+      const existingReal = window.localStorage.getItem('thresh_trackside_stopwatch_v1');
+      if (existingReal !== null) {
+        window.localStorage.setItem(DEMO_STOPWATCH_BACKUP_KEY, existingReal);
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function restoreRealStopwatchAfterDemo(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const backup = window.localStorage.getItem(DEMO_STOPWATCH_BACKUP_KEY);
+    if (backup !== null) {
+      window.localStorage.setItem('thresh_trackside_stopwatch_v1', backup);
+      window.localStorage.removeItem(DEMO_STOPWATCH_BACKUP_KEY);
+    }
+    window.localStorage.removeItem('thresh_sample_demo_active');
+    window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 function parseWorkspaceHash(rawHash: string): {
   tab?: ActiveTab;
@@ -372,9 +408,13 @@ export default function App() {
       if (typeof window !== 'undefined') {
         const search = window.location.search;
         if (search.includes('demo=1') || search.includes('sample=true')) {
+          backupRealStopwatchForDemo();
           return true;
         }
-        return localStorage.getItem('thresh_sample_demo_active') === 'true';
+        if (localStorage.getItem('thresh_sample_demo_active') === 'true') {
+          backupRealStopwatchForDemo();
+          return true;
+        }
       }
     } catch {
       // ignore
@@ -391,6 +431,9 @@ export default function App() {
   const [sampleDemoActivities, setSampleDemoActivities] = useState<UnifiedActivity[]>(
     () => sampleDemoDataset.activities
   );
+  const [sampleDemoWellnessDays, setSampleDemoWellnessDays] = useState<UnifiedWellnessDay[]>(
+    () => sampleDemoDataset.wellnessDays
+  );
   const [sampleDemoAnnualGoals, setSampleDemoAnnualGoals] = useState<AnnualMileageGoal[]>(
     () => INITIAL_ANNUAL_MILEAGE_GOALS
   );
@@ -406,29 +449,36 @@ export default function App() {
   const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(null);
   const [sampleDemoExplicitPersonal, setSampleDemoExplicitPersonal] = useState(false);
 
-  const resetSampleDemoEphemeralState = useCallback(() => {
-    const fresh = buildSampleDemoDataset();
-    setSampleDemoPlannedEvents(fresh.plannedEvents);
-    setSampleDemoProfile(fresh.athleteProfile);
-    setSampleDemoActivities(fresh.activities);
-    setSampleDemoAnnualGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
-    setSampleDemoTargetGoals(fresh.targetGoals);
-    setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
-    setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
-    setSampleDemoTeams([]);
-    setSampleDemoActiveTeamId(null);
-    setSampleDemoExplicitPersonal(false);
-    setSelectedActivity(null);
-    setActiveViewedAthleteId('SELF');
-    setInspectedFromCoach(false);
-    resetDemoCheckInsRef.current?.();
-    try {
-      window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
-      window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
+  const resetSampleDemoEphemeralState = useCallback(
+    (options?: { clearDemoStopwatch?: boolean }) => {
+      const fresh = buildSampleDemoDataset();
+      setSampleDemoPlannedEvents(fresh.plannedEvents);
+      setSampleDemoProfile(fresh.athleteProfile);
+      setSampleDemoActivities(fresh.activities);
+      setSampleDemoWellnessDays(fresh.wellnessDays);
+      setSampleDemoAnnualGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
+      setSampleDemoTargetGoals(fresh.targetGoals);
+      setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
+      setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
+      setSampleDemoTeams([]);
+      setSampleDemoActiveTeamId(null);
+      setSampleDemoExplicitPersonal(false);
+      setSelectedActivity(null);
+      setActiveViewedAthleteId('SELF');
+      setInspectedFromCoach(false);
+      resetDemoCheckInsRef.current?.();
+      if (options?.clearDemoStopwatch) {
+        backupRealStopwatchForDemo();
+        try {
+          window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
+          window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
+        } catch {
+          // ignore storage errors
+        }
+      }
+    },
+    []
+  );
 
   // Global Workspace Keyboard Accelerators: Alt+1..4 switches Today / Plan / Activities / Progress
   useEffect(() => {
@@ -534,9 +584,11 @@ export default function App() {
         athleteProfile,
         redactedStravaCount,
         earliestActivityDate,
-      }).then((savedTimestamp) => {
-        if (savedTimestamp) setIdbSavedAt(savedTimestamp);
-      });
+      })
+        .then((savedTimestamp) => {
+          if (savedTimestamp) setIdbSavedAt(savedTimestamp);
+        })
+        .catch(() => undefined);
     }, 400);
     return () => window.clearTimeout(timer);
   }, [
@@ -996,9 +1048,9 @@ export default function App() {
 
   const effectiveWellnessDays = useMemo(() => {
     if (shieldedConnectedTelemetry) return shieldedConnectedTelemetry.wellnessDays;
-    if (isSampleDemoMode) return sampleDemoDataset.wellnessDays;
+    if (isSampleDemoMode) return sampleDemoWellnessDays;
     return wellnessDays;
-  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoDataset.wellnessDays, wellnessDays]);
+  }, [shieldedConnectedTelemetry, isSampleDemoMode, sampleDemoWellnessDays, wellnessDays]);
 
   const effectiveActivities = useMemo(() => {
     if (shieldedConnectedTelemetry) return shieldedConnectedTelemetry.activities;
@@ -1084,7 +1136,7 @@ export default function App() {
     : selfPrivacySettings;
 
   const selfLatestWellness = isSampleDemoMode
-    ? sampleDemoDataset.wellnessDays[sampleDemoDataset.wellnessDays.length - 1] || undefined
+    ? sampleDemoWellnessDays[sampleDemoWellnessDays.length - 1] || undefined
     : wellnessDays[wellnessDays.length - 1] || undefined;
   const latestWellness = effectiveWellnessDays[effectiveWellnessDays.length - 1] || undefined;
 
@@ -1437,26 +1489,47 @@ export default function App() {
     setShowMetricsGuide(true);
   }, [closeAllGlobalModals]);
 
-  const handleImportSingleParsedActivity = useCallback(
-    (newAct: UnifiedActivity) => {
+  const applyImportedActivities = useCallback(
+    (incomingActs: UnifiedActivity[]) => {
+      if (!incomingActs || incomingActs.length === 0) return;
+      const todayIso = getLocalDateIso();
       if (isSampleDemoMode) {
-        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+        setSampleDemoActivities((prev) => {
+          const merged = mergeActivitiesNonDestructive(prev, incomingActs);
+          setSampleDemoWellnessDays((prevW) =>
+            recomputeWellnessDaysWithActivityImport(prevW, merged, todayIso, sampleDemoProfile)
+          );
+          return merged;
+        });
         return;
       }
-      setActivities((prev) => mergeActivitiesNonDestructive(prev, [newAct]));
+      const merged = mergeActivitiesNonDestructive(activitiesRef.current, incomingActs);
+      activitiesRef.current = merged;
+      setActivities(merged);
+      const rebuiltWellness = recomputeWellnessDaysWithActivityImport(
+        wellnessDaysRef.current,
+        merged,
+        todayIso,
+        athleteProfileRef.current
+      );
+      wellnessDaysRef.current = rebuiltWellness;
+      setWellnessDays(rebuiltWellness);
     },
-    [isSampleDemoMode]
+    [isSampleDemoMode, sampleDemoProfile]
+  );
+
+  const handleImportSingleParsedActivity = useCallback(
+    (newAct: UnifiedActivity) => {
+      applyImportedActivities([newAct]);
+    },
+    [applyImportedActivities]
   );
 
   const handleImportMultipleParsedActivities = useCallback(
     (newActs: UnifiedActivity[]) => {
-      if (isSampleDemoMode) {
-        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
-        return;
-      }
-      setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+      applyImportedActivities(newActs);
     },
-    [isSampleDemoMode]
+    [applyImportedActivities]
   );
 
   const applyUpdatedTeamToState = useCallback(
@@ -1533,20 +1606,26 @@ export default function App() {
 
       if (selfActs.length > 0) {
         if (isSampleDemoMode) {
-          setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, selfActs));
+          applyImportedActivities(selfActs);
         } else {
-          setActivities((prev) => {
-            const merged = mergeActivitiesNonDestructive(prev, selfActs);
-            activitiesRef.current = merged;
-            void savePersistedTelemetrySnapshot({
-              activities: merged,
-              wellnessDays: wellnessDaysRef.current,
-              plannedEvents: plannedEventsRef.current,
-              gearItems: gearItemsRef.current,
-              athleteProfile: athleteProfileRef.current,
-              redactedStravaCount: redactedStravaCountRef.current,
-            });
-            return merged;
+          const merged = mergeActivitiesNonDestructive(activitiesRef.current, selfActs);
+          activitiesRef.current = merged;
+          setActivities(merged);
+          const rebuiltWellness = recomputeWellnessDaysWithActivityImport(
+            wellnessDaysRef.current,
+            merged,
+            getLocalDateIso(),
+            athleteProfileRef.current
+          );
+          wellnessDaysRef.current = rebuiltWellness;
+          setWellnessDays(rebuiltWellness);
+          void savePersistedTelemetrySnapshot({
+            activities: merged,
+            wellnessDays: rebuiltWellness,
+            plannedEvents: plannedEventsRef.current,
+            gearItems: gearItemsRef.current,
+            athleteProfile: athleteProfileRef.current,
+            redactedStravaCount: redactedStravaCountRef.current,
           });
         }
       }
@@ -1607,6 +1686,7 @@ export default function App() {
       effectiveActiveTeam,
       setMyTeams,
       applyUpdatedTeamToState,
+      applyImportedActivities,
     ]
   );
 
@@ -1701,45 +1781,55 @@ export default function App() {
   ) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
-        <StravaAuthGate
-          status={connectionStatus}
-          currentUser={currentUser}
-          onAuthenticatedUser={(user) => {
-            setCurrentUser(user);
-            if (user.name && isGenericAthleteName(athleteProfile.name)) {
-              setAthleteProfile((prev) => ({ ...prev, name: user.name }));
+        <WorkspaceErrorBoundary fallbackTitle="THRESH Sign In">
+          <React.Suspense
+            fallback={
+              <div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">
+                Loading THRESH…
+              </div>
             }
-          }}
-          onLaunchStravaOAuth={async (mode = 'cloud', joinContext, forcePrompt) => {
-            await handleLaunchStravaOAuth(mode, joinContext, forcePrompt);
-          }}
-          onSaveStravaCredentials={handleSaveStravaCredentials}
-          onSaveStravaDirectToken={handleSaveStravaDirectToken}
-          onExchangeStravaCode={async (codeOrUrl) => {
-            await handleExchangeStravaCode(codeOrUrl);
-          }}
-          onConnectIntervals={handleConnectIntervals}
-          onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
-          onLaunchWahooOAuth={handleLaunchWahooOAuth}
-          onLaunchPolarOAuth={handleLaunchPolarOAuth}
-          onSyncNow={syncLiveTelemetry}
-          onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
-          onDisconnectCredentials={handleLogoutAndClearData}
-          isSyncing={isSyncing}
-          errorMessage={syncError}
-          isDark={isDark}
-          onToggleDark={toggleQuickLightDark}
-          onEnterSampleDemo={() => {
-            resetSampleDemoEphemeralState();
-            setIsSampleDemoMode(true);
-            setActiveTab('fitness');
-          }}
-          onImportBatchActivities={handleImportMultipleParsedActivities}
-          existingActivities={activities}
-          distanceUnit={distanceUnit}
-          onOpenBrandStudio={openBrand}
-          onBypassToLocalSession={handleBypassToLocalSession}
-        />
+          >
+            <StravaAuthGate
+              status={connectionStatus}
+              currentUser={currentUser}
+              onAuthenticatedUser={(user) => {
+                setCurrentUser(user);
+                if (user.name && isGenericAthleteName(athleteProfile.name)) {
+                  setAthleteProfile((prev) => ({ ...prev, name: user.name }));
+                }
+              }}
+              onLaunchStravaOAuth={async (mode = 'cloud', joinContext, forcePrompt) => {
+                await handleLaunchStravaOAuth(mode, joinContext, forcePrompt);
+              }}
+              onSaveStravaCredentials={handleSaveStravaCredentials}
+              onSaveStravaDirectToken={handleSaveStravaDirectToken}
+              onExchangeStravaCode={async (codeOrUrl) => {
+                await handleExchangeStravaCode(codeOrUrl);
+              }}
+              onConnectIntervals={handleConnectIntervals}
+              onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
+              onLaunchWahooOAuth={handleLaunchWahooOAuth}
+              onLaunchPolarOAuth={handleLaunchPolarOAuth}
+              onSyncNow={syncLiveTelemetry}
+              onCompleteCalibrationEntry={handleCompleteCalibrationEntry}
+              onDisconnectCredentials={handleLogoutAndClearData}
+              isSyncing={isSyncing}
+              errorMessage={syncError}
+              isDark={isDark}
+              onToggleDark={toggleQuickLightDark}
+              onEnterSampleDemo={() => {
+                resetSampleDemoEphemeralState({ clearDemoStopwatch: true });
+                setIsSampleDemoMode(true);
+                setActiveTab('fitness');
+              }}
+              onImportBatchActivities={handleImportMultipleParsedActivities}
+              existingActivities={activities}
+              distanceUnit={distanceUnit}
+              onOpenBrandStudio={openBrand}
+              onBypassToLocalSession={handleBypassToLocalSession}
+            />
+          </React.Suspense>
+        </WorkspaceErrorBoundary>
       </IconContext.Provider>
     );
   }
@@ -1868,6 +1958,19 @@ export default function App() {
               }}
               isSampleDemoMode={isSampleDemoMode}
               onExitSampleDemo={(connectStrava) => {
+                restoreRealStopwatchAfterDemo();
+                try {
+                  const params = new URLSearchParams(window.location.search);
+                  if (params.has('demo') || params.has('sample')) {
+                    params.delete('demo');
+                    params.delete('sample');
+                    const nextSearch = params.toString();
+                    const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+                    window.history.replaceState(null, '', cleanUrl);
+                  }
+                } catch {
+                  // ignore history errors
+                }
                 setIsSampleDemoMode(false);
                 resetSampleDemoEphemeralState();
                 if (connectStrava) {

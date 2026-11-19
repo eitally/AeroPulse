@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import React from 'react';
@@ -117,7 +118,11 @@ describe('UI-03 & UI-04 SVG Micro-Graphics, Today Stopwatch Link & Editorial Com
 
   it('passes Impeccable DESIGN.md static audit with 0 anti-patterns across src/components', () => {
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (!fs.existsSync(detectorPath)) {
       return;
     }

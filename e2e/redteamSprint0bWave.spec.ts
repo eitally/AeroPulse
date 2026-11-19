@@ -36,7 +36,11 @@ async function signInAndEnterWorkspace(
 
 async function openCoachStopwatchSubTab(page: Page) {
   const gunBtn = page.getByTestId('stopwatch-gun-btn');
-  if (await gunBtn.isVisible().catch(() => false)) {
+  if (
+    new URL(page.url()).hash === '#coach/stopwatch' ||
+    (await gunBtn.isVisible().catch(() => false))
+  ) {
+    await expect(gunBtn).toBeVisible({ timeout: 10000 });
     return;
   }
   const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);

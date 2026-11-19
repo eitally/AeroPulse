@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-const MAX_ENTRY_GZIP_BYTES = 220 * 1024; // 220 KB gzip strict ceiling
+const MAX_ENTRY_GZIP_BYTES = 220 * 1024; // 220 KB gzip strict entry chunk ceiling
+const MAX_CRITICAL_INITIAL_GZIP_BYTES = 290 * 1024; // 290 KB gzip total initial HTML scripts + modulepreloads + css ceiling
+const MAX_PWA_PRECACHE_RAW_BYTES = 1800 * 1024; // 1,800 KB raw ceiling for essential offline shell + stopwatch precache
 const distDir = path.resolve(process.cwd(), 'dist');
 const assetsDir = path.join(distDir, 'assets');
 
@@ -52,6 +54,62 @@ for (const file of entryJsFiles) {
   if (gzipped.length > MAX_ENTRY_GZIP_BYTES) {
     console.error(
       `ERROR: Entry chunk ${file} (${kbGzip} KB gzip) exceeds 220 KB gzip budget!`
+    );
+    process.exit(1);
+  }
+}
+
+// 2b. Check total critical initial JS+CSS load referenced by dist/index.html
+const indexHtmlPath = path.join(distDir, 'index.html');
+if (fs.existsSync(indexHtmlPath)) {
+  const indexHtml = fs.readFileSync(indexHtmlPath, 'utf8');
+  const assetRefs = Array.from(
+    new Set([...indexHtml.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]))
+  );
+  let criticalRaw = 0;
+  let criticalGzip = 0;
+  for (const ref of assetRefs) {
+    const refPath = path.join(distDir, ref.replace(/^\//, ''));
+    if (!fs.existsSync(refPath)) continue;
+    const raw = fs.readFileSync(refPath);
+    criticalRaw += raw.length;
+    criticalGzip += zlib.gzipSync(raw, { level: 9 }).length;
+  }
+  console.log(
+    `[Critical Initial Budget] ${assetRefs.length} assets: ${(criticalRaw / 1024).toFixed(2)} KB raw | ${(
+      criticalGzip / 1024
+    ).toFixed(2)} KB gzip (limit: ${(MAX_CRITICAL_INITIAL_GZIP_BYTES / 1024).toFixed(0)} KB gzip)`
+  );
+  if (criticalGzip > MAX_CRITICAL_INITIAL_GZIP_BYTES) {
+    console.error(
+      `ERROR: Critical initial load (${(criticalGzip / 1024).toFixed(2)} KB gzip) exceeds 290 KB gzip budget!`
+    );
+    process.exit(1);
+  }
+}
+
+// 2c. Check Workbox PWA precache size in dist/sw.js
+const swPath = path.join(distDir, 'sw.js');
+if (fs.existsSync(swPath)) {
+  const swSource = fs.readFileSync(swPath, 'utf8');
+  const precacheUrls = Array.from(
+    new Set([...swSource.matchAll(/url:\s*"([^"]+)"/g)].map((m) => m[1]))
+  );
+  let precacheRaw = 0;
+  for (const url of precacheUrls) {
+    const filePath = path.join(distDir, url.replace(/^\//, ''));
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      precacheRaw += fs.statSync(filePath).size;
+    }
+  }
+  console.log(
+    `[PWA Precache Budget] ${precacheUrls.length} entries: ${(precacheRaw / 1024).toFixed(
+      2
+    )} KB raw (limit: ${(MAX_PWA_PRECACHE_RAW_BYTES / 1024).toFixed(0)} KB raw)`
+  );
+  if (precacheRaw > MAX_PWA_PRECACHE_RAW_BYTES) {
+    console.error(
+      `ERROR: PWA precache (${(precacheRaw / 1024).toFixed(2)} KB raw) exceeds 1,800 KB raw budget!`
     );
     process.exit(1);
   }

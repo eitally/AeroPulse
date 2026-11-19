@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ActivityStreamSet,
   AthleteProfile,
@@ -18,8 +18,12 @@ import { buildEmpiricalMmpSummary } from '../physiology/mmpCurves';
 import { computeFatigueSlicedDurability } from '../physiology/durabilityEngine';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
-const AthletePerformanceRadar = lazy(() =>
-  import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar }))
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+
+const AthletePerformanceRadar = lazyWithRetry(
+  () => import('./AthletePerformanceRadar').then((m) => ({ default: m.AthletePerformanceRadar })),
+  { chunkKey: 'AthletePerformanceRadar', restoreTab: 'curves' }
 );
 
 const EMPTY_CONNECTED_ATHLETES: ConnectedAthleteRecord[] = [];
@@ -572,9 +576,18 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
               );
             }
 
-            // Running Pace Curve (faster pace = lower secs/km = higher on chart)
-            const minSecs = 150;
-            const maxSecs = 310;
+            // Running Pace Curve (faster pace = lower secs/km = higher on chart), dynamically scaled
+            const observedPaces = calibratedCurves
+              .flatMap((c) => [
+                c.runningOutdoorPaceSecsKm,
+                c.runningIndoorPaceSecsKm,
+                c.runningSeasonBestPaceSecsKm,
+              ])
+              .filter((p) => Number.isFinite(p) && p > 60 && p < 1200);
+            const rawMinPace = observedPaces.length > 0 ? Math.min(...observedPaces) : 160;
+            const rawMaxPace = observedPaces.length > 0 ? Math.max(...observedPaces) : 340;
+            const minSecs = Math.max(120, Math.floor((rawMinPace - 15) / 10) * 10);
+            const maxSecs = Math.max(minSecs + 80, Math.ceil((rawMaxPace + 20) / 10) * 10);
             const toY = (secs: number) =>
               plotBottom - ((maxSecs - Math.min(maxSecs, Math.max(minSecs, secs))) / (maxSecs - minSecs)) * plotH;
 
@@ -1003,22 +1016,24 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
 
       {/* 2. Coggan Power Profile & WMA Age-Graded Percentile Radars */}
       {athleteProfile && (
-        <Suspense
-          fallback={
-            <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-              Loading Performance Radar…
-            </div>
-          }
-        >
-          <AthletePerformanceRadar
-            selfName={athleteProfile.name || 'Athlete'}
-            selfProfile={athleteProfile}
-            selfWellnessDays={wellnessDays}
-            selfActivities={activities}
-            connectedAthletes={EMPTY_CONNECTED_ATHLETES}
-            onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-          />
-        </Suspense>
+        <WorkspaceErrorBoundary fallbackTitle="Performance Radar" restoreTab="curves">
+          <Suspense
+            fallback={
+              <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading Performance Radar…
+              </div>
+            }
+          >
+            <AthletePerformanceRadar
+              selfName={athleteProfile.name || 'Athlete'}
+              selfProfile={athleteProfile}
+              selfWellnessDays={wellnessDays}
+              selfActivities={activities}
+              connectedAthletes={EMPTY_CONNECTED_ATHLETES}
+              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
       )}
 
       {/* Canonical Segment Analytics Pointer (Deduplicated from PhysiologyView) */}

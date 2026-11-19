@@ -139,10 +139,31 @@ export function resolveStravaCallbackUrl(req: Request): string {
   return resolveStandardOAuthCallbackUrl(req, 'STRAVA_REDIRECT_URI', '/auth/strava/callback');
 }
 
+const MAX_VALIDATED_REDIRECT_ENTRIES = 200;
 const validatedStravaRedirectCache = new Map<
   string,
   { redirectUri: string; expiresAt: number }
 >();
+
+function setBoundedValidatedRedirect(cacheKey: string, redirectUri: string, ttlMs: number): void {
+  const now = Date.now();
+  if (validatedStravaRedirectCache.has(cacheKey)) {
+    validatedStravaRedirectCache.delete(cacheKey);
+  } else if (validatedStravaRedirectCache.size >= MAX_VALIDATED_REDIRECT_ENTRIES) {
+    for (const [k, v] of validatedStravaRedirectCache.entries()) {
+      if (now >= v.expiresAt) validatedStravaRedirectCache.delete(k);
+    }
+    while (validatedStravaRedirectCache.size >= MAX_VALIDATED_REDIRECT_ENTRIES) {
+      const oldestKey = validatedStravaRedirectCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      validatedStravaRedirectCache.delete(oldestKey);
+    }
+  }
+  validatedStravaRedirectCache.set(cacheKey, {
+    redirectUri,
+    expiresAt: now + ttlMs,
+  });
+}
 
 export function clearStravaRedirectCacheForTesting(): void {
   validatedStravaRedirectCache.clear();
@@ -214,10 +235,7 @@ export async function resolveValidatedStravaCallbackUrl(
 
   const primaryProbe = await probeStravaRedirectUri(clientId, primaryUri);
   if (primaryProbe === 'valid') {
-    validatedStravaRedirectCache.set(cacheKey, {
-      redirectUri: primaryUri,
-      expiresAt: Date.now() + 15_000,
-    });
+    setBoundedValidatedRedirect(cacheKey, primaryUri, 15_000);
     return primaryUri;
   }
   if (primaryProbe === 'unknown') {

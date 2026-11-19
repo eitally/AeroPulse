@@ -2,12 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test, type Page } from '@playwright/test';
 
-const LOCAL_BRAIN_EVIDENCE_DIR =
-  '/Users/elliottally/.gemini/antigravity/brain/b118f55f-6bcc-48bc-a4be-39ee1c8f6393/bug01_02_evidence';
 const EVIDENCE_DIR =
-  !process.env.CI && fs.existsSync(path.dirname(LOCAL_BRAIN_EVIDENCE_DIR))
-    ? LOCAL_BRAIN_EVIDENCE_DIR
-    : path.join(process.cwd(), 'test-results', 'bug01_02_evidence');
+  process.env.THRESH_EVIDENCE_DIR ||
+  path.join(process.cwd(), 'test-results', 'bug01_02_evidence');
 
 async function setupStravaPersistenceMocksAndSeed(
   page: Page,

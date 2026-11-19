@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
@@ -208,7 +209,11 @@ describe('UX-09 & UX-10 · Visual Workout Builder, Export Actions & 15-Plan Peri
     expect(calendarSrc).toContain('onUpdatePlannedEvent');
 
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (fs.existsSync(detectorPath)) {
       const detectorOut = execFileSync(
         'node',

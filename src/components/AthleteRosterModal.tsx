@@ -25,7 +25,7 @@ import type {
   ThreshUser,
 } from '../types';
 import { useModalDialog } from '../hooks/useModalDialog';
-import { useTracksideStopwatch } from '../hooks/useTracksideStopwatch';
+import { useIsStopwatchRunning } from '../hooks/useTracksideStopwatch';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import {
   changePrimaryEmailApi,
@@ -295,7 +295,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
   const formIdPrefix = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const { stopwatchRunning } = useTracksideStopwatch(50);
+  const stopwatchRunning = useIsStopwatchRunning();
   const [backdropRunningNotice, setBackdropRunningNotice] = useState<boolean>(false);
   const [confirmDeleteAthleteId, setConfirmDeleteAthleteId] = useState<string | null>(null);
 

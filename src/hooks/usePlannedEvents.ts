@@ -8,8 +8,8 @@ import type {
   TrackWorkoutSpec,
   WorkoutSessionSlot,
 } from '../types';
-import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
 import { sortPlannedEventsChronologically } from '../utils/workoutScheduleUtils';
+import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
 
 interface EventLogisticsFields {
   scheduledTime?: string;
@@ -105,10 +105,7 @@ export function usePlannedEvents({
               {
                 method: 'POST',
                 credentials: 'include',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...getSavedIntervalsHeaders(),
-                },
+                headers: buildThreshSessionHeaders(),
                 body: JSON.stringify({
                   origin: window.location.origin,
                   targetSquadGroup: 'INDIVIDUAL',
@@ -215,10 +212,7 @@ export function usePlannedEvents({
       try {
         const resp = await fetch('/api/calendar/events', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getSavedIntervalsHeaders(),
-          },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify(eventInput),
         });
         if (resp.ok) {
@@ -293,6 +287,11 @@ export function usePlannedEvents({
         plannedDurationSecs: number;
         targetZoneSummary?: string;
         workoutSyntax: string;
+        scheduledTime?: string;
+        sessionSlot?: WorkoutSessionSlot;
+        locationName?: string;
+        locationCategory?: PracticeVenueCategory;
+        meetingNotes?: string;
         trackSpec?: TrackWorkoutSpec;
         replaceExistingDate?: boolean;
         planBlockId?: string;
@@ -312,6 +311,7 @@ export function usePlannedEvents({
         plannedDurationSecs: item.plannedDurationSecs,
         targetZoneSummary: item.targetZoneSummary || 'Structured Workout',
         workoutSyntax: item.workoutSyntax,
+        ...buildLogisticsFields(item),
         ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
         ...(item.planBlockId ? { planBlockId: item.planBlockId } : {}),
         ...(item.planBlockName ? { planBlockName: item.planBlockName } : {}),
@@ -322,6 +322,49 @@ export function usePlannedEvents({
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'generate multi-week training plans');
           return;
+        }
+        if (!isSampleDemoMode && activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam) {
+          const targetMemId = activeConnectedAthlete.id.replace(/^team-mem-/, '');
+          try {
+            const resp = await fetch(
+              `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast-batch`,
+              {
+                method: 'POST',
+                credentials: 'include',
+                headers: buildThreshSessionHeaders(),
+                body: JSON.stringify({
+                  origin: window.location.origin,
+                  targetSquadGroup: 'INDIVIDUAL',
+                  targetMembershipIds: [targetMemId],
+                  planBlockId: items[0]?.planBlockId,
+                  planBlockName: items[0]?.planBlockName,
+                  workouts: items.map((item) => ({
+                    date: item.date,
+                    name: item.name,
+                    sportCategory: item.sportCategory,
+                    plannedDurationSecs: item.plannedDurationSecs,
+                    plannedLoad: item.plannedLoad,
+                    workoutSyntax: item.workoutSyntax,
+                    description: item.description,
+                    ...buildLogisticsFields(item),
+                    ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
+                    ...(typeof item.planWeekNum === 'number'
+                      ? { planWeekNum: item.planWeekNum }
+                      : {}),
+                  })),
+                }),
+              }
+            );
+            if (resp.ok) {
+              const data = await resp.json();
+              if (Array.isArray(data.teams)) {
+                handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+              }
+              return;
+            }
+          } catch {
+            // Fall through to local roster state when offline
+          }
         }
         const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
         const applyBatchToRoster = (prev: ConnectedAthleteRecord[]) =>
@@ -366,6 +409,8 @@ export function usePlannedEvents({
     },
     [
       activeConnectedAthlete,
+      activeTeam,
+      handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
@@ -416,6 +461,11 @@ export function usePlannedEvents({
             }
           : e;
 
+      const isTeamCoach = Boolean(
+        activeTeam &&
+          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+      );
+
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'edit planned workouts');
@@ -434,8 +484,37 @@ export function usePlannedEvents({
           );
         if (isSampleDemoMode) {
           setSampleDemoConnectedAthletes(updateRoster);
-        } else {
-          setConnectedAthletes(updateRoster);
+          return;
+        }
+        setConnectedAthletes(updateRoster);
+        if (
+          activeConnectedAthlete.id.startsWith('team-mem-') &&
+          isTeamCoach &&
+          activeTeam &&
+          id.startsWith('bw_')
+        ) {
+          try {
+            const resp = await fetch(
+              `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
+              {
+                method: 'PUT',
+                credentials: 'include',
+                headers: buildThreshSessionHeaders(),
+                body: JSON.stringify({
+                  origin: window.location.origin,
+                  ...patch,
+                }),
+              }
+            );
+            if (resp.ok) {
+              const data = await resp.json();
+              if (Array.isArray(data.teams)) {
+                handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+              }
+            }
+          } catch {
+            // ignore offline update error
+          }
         }
         return;
       }
@@ -450,13 +529,35 @@ export function usePlannedEvents({
       setPlannedEvents((prev) =>
         prev.map(mergeEvent).sort((a, b) => a.date.localeCompare(b.date))
       );
+      if (isTeamCoach && activeTeam && id.startsWith('bw_')) {
+        try {
+          const resp = await fetch(
+            `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
+            {
+              method: 'PUT',
+              credentials: 'include',
+              headers: buildThreshSessionHeaders(),
+              body: JSON.stringify({
+                origin: window.location.origin,
+                ...patch,
+              }),
+            }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data.teams)) {
+              handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+            }
+          }
+        } catch {
+          // ignore offline update error
+        }
+        return;
+      }
       try {
         await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getSavedIntervalsHeaders(),
-          },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify(patch),
         });
       } catch {
@@ -465,6 +566,8 @@ export function usePlannedEvents({
     },
     [
       activeConnectedAthlete,
+      activeTeam,
+      handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
@@ -476,6 +579,10 @@ export function usePlannedEvents({
 
   const handleDeletePlannedEvent = useCallback(
     async (id: string) => {
+      const isTeamCoach = Boolean(
+        activeTeam &&
+          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+      );
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete planned workouts');
@@ -492,14 +599,19 @@ export function usePlannedEvents({
           return;
         }
         setConnectedAthletes(removeFromRoster);
-        if (activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam && id.startsWith('bw_')) {
+        if (
+          activeConnectedAthlete.id.startsWith('team-mem-') &&
+          isTeamCoach &&
+          activeTeam &&
+          id.startsWith('bw_')
+        ) {
           try {
             const resp = await fetch(
               `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
               {
                 method: 'DELETE',
                 credentials: 'include',
-                headers: getSavedIntervalsHeaders(),
+                headers: buildThreshSessionHeaders(),
               }
             );
             if (resp.ok) {
@@ -521,14 +633,14 @@ export function usePlannedEvents({
       }
 
       setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
-      if (activeTeam && id.startsWith('bw_')) {
+      if (isTeamCoach && activeTeam && id.startsWith('bw_')) {
         try {
           const resp = await fetch(
             `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
             {
               method: 'DELETE',
               credentials: 'include',
-              headers: getSavedIntervalsHeaders(),
+              headers: buildThreshSessionHeaders(),
             }
           );
           if (resp.ok) {
@@ -545,7 +657,7 @@ export function usePlannedEvents({
       try {
         await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
           method: 'DELETE',
-          headers: getSavedIntervalsHeaders(),
+          headers: buildThreshSessionHeaders(),
         });
       } catch {
         // ignore
@@ -567,6 +679,10 @@ export function usePlannedEvents({
   const handleDeletePlanBlock = useCallback(
     async (planBlockId: string) => {
       if (!planBlockId) return;
+      const isTeamCoach = Boolean(
+        activeTeam &&
+          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+      );
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'clear training plan blocks');
@@ -586,14 +702,14 @@ export function usePlannedEvents({
           return;
         }
         setConnectedAthletes(clearFromRoster);
-        if (activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam) {
+        if (activeConnectedAthlete.id.startsWith('team-mem-') && isTeamCoach && activeTeam) {
           try {
             const resp = await fetch(
               `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/blocks/${encodeURIComponent(planBlockId)}`,
               {
                 method: 'DELETE',
                 credentials: 'include',
-                headers: getSavedIntervalsHeaders(),
+                headers: buildThreshSessionHeaders(),
               }
             );
             if (resp.ok) {
@@ -617,10 +733,35 @@ export function usePlannedEvents({
       }
 
       setPlannedEvents((prev) => prev.filter((e) => e.planBlockId !== planBlockId));
+      const hasTeamBlock = Boolean(
+        isTeamCoach &&
+          activeTeam?.broadcastWorkouts?.some((bw) => bw.planBlockId === planBlockId)
+      );
+      if (hasTeamBlock && activeTeam) {
+        try {
+          const resp = await fetch(
+            `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/blocks/${encodeURIComponent(planBlockId)}`,
+            {
+              method: 'DELETE',
+              credentials: 'include',
+              headers: buildThreshSessionHeaders(),
+            }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data.teams)) {
+              handleTeamsUpdated(data.teams, activeTeam.brand.teamId);
+            }
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
       try {
         await fetch(`/api/calendar/blocks/${encodeURIComponent(planBlockId)}`, {
           method: 'DELETE',
-          headers: getSavedIntervalsHeaders(),
+          headers: buildThreshSessionHeaders(),
         });
       } catch {
         // ignore

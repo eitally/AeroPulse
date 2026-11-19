@@ -674,7 +674,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           'Invite or import rosters via spreadsheet paste, .CSV upload, or native SMS/Email links—or let athletes join themselves with your 6-character Team Code.',
           'Assign Event Groups (Sprints, 800m/Mile, 3000m/3200m+) so daily workouts scale per runner.',
         ],
-        figureSrc: '/docs/figures/coach-fig-01-team-onboarding.png',
+        figureSrc: '/docs/figures/coach-fig-01-team-onboarding.webp',
         figureCaption: 'Simplified Team Setup, Join Code, QR Poster, and Roster table in Coach Roster.',
         ctaLabel: 'Open Coach Roster & Setup →',
         onAction: () =>
@@ -695,7 +695,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           'Click Inspect on any flagged runner to review readiness & recent load, then click Back to Coach Roster.',
           'Collegiate teams also see rolling 7-day 20-Hour Weekly / 3.0-Hour Comp Day CARA compliance cards.',
         ],
-        figureSrc: '/docs/figures/coach-fig-02-safety-squad-triage.png',
+        figureSrc: '/docs/figures/coach-fig-02-safety-squad-triage.webp',
         figureCaption: 'Morning Squad Triage showing shin pain safety swap, 7d adherence dots, and Inspect.',
         ctaLabel: 'Open Squad Triage →',
         onAction: () =>
@@ -717,7 +717,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           'Export any Clipboard session cleanly to .FIT, .ZWO, or .ERG, or stage straight into Trackside Stopwatch.',
         ],
         formulaOrSyntax: '2x200m R + 4x800m CV + 2x200m R',
-        figureSrc: '/docs/figures/coach-fig-03-clipboard-workout-pods.png',
+        figureSrc: '/docs/figures/coach-fig-03-clipboard-workout-pods.webp',
         figureCaption: 'Coach Clipboard shorthand parser building Pods A–C targets and calendar pushes.',
         ctaLabel: 'Open Coach Clipboard →',
         onAction: () =>
@@ -738,7 +738,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           'Inspect any runner to examine 1Hz stream decoupling (Pa:Hr), aerobic efficiency, and Banister load curves.',
           'Expand Relay Optimizer & NFHS FAT Top Times inside Clipboard for DMR / 4x400m lineups.',
         ],
-        figureSrc: '/docs/figures/coach-fig-05-trackside-stopwatch.png',
+        figureSrc: '/docs/figures/coach-fig-05-trackside-stopwatch.webp',
         figureCaption: 'Watchless Trackside Stopwatch capturing 0.01s splits against VDOT pod targets.',
         ctaLabel: 'Open Trackside Stopwatch →',
         onAction: () =>
@@ -761,7 +761,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           'Resolves non-5K California HS XC courses automatically (Crystal Springs 2.95 mi → 4,748m, Montgomery Hill 2.74 mi → 4,410m).',
           'Filter multi-school meet results to your team keyword and match "Last, First" athletes to calibrate VDOT.',
         ],
-        figureSrc: '/docs/figures/coach-fig-07-athleticnet-parent-hub.png',
+        figureSrc: '/docs/figures/coach-fig-07-athleticnet-parent-hub.webp',
         figureCaption: 'Clean-Room Public Parent Hub sharing meet schedules and official marks without private telemetry.',
         ctaLabel: 'Open Athletic.net / TFRRS Sync →',
         onAction: () =>

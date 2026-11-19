@@ -75,13 +75,13 @@ describe('Coach Onboarding Simplicity & Coach User Guide Contracts', () => {
     }
 
     const expectedFigures = [
-      'coach-fig-01-team-onboarding.png',
-      'coach-fig-02-safety-squad-triage.png',
-      'coach-fig-03-clipboard-workout-pods.png',
-      'coach-fig-04-cohort-plan-builder.png',
-      'coach-fig-05-trackside-stopwatch.png',
-      'coach-fig-06-post-workout-pmc.png',
-      'coach-fig-07-athleticnet-parent-hub.png',
+      'coach-fig-01-team-onboarding.webp',
+      'coach-fig-02-safety-squad-triage.webp',
+      'coach-fig-03-clipboard-workout-pods.webp',
+      'coach-fig-04-cohort-plan-builder.webp',
+      'coach-fig-05-trackside-stopwatch.webp',
+      'coach-fig-06-post-workout-pmc.webp',
+      'coach-fig-07-athleticnet-parent-hub.webp',
     ];
 
     for (const fig of expectedFigures) {

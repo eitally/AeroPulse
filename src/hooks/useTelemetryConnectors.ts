@@ -260,7 +260,9 @@ export function useTelemetryConnectors({
           }
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.removeItem('aeropulse_intervals_api_key');
-          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          void fetchServerConfigStatus()
+            .then(() => syncLiveTelemetry(false))
+            .catch(() => {});
           return;
         }
         if (payload.provider === 'wahoo') {
@@ -275,7 +277,9 @@ export function useTelemetryConnectors({
           }
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.setItem('aeropulse_wahoo_connected', '1');
-          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          void fetchServerConfigStatus()
+            .then(() => syncLiveTelemetry(false))
+            .catch(() => {});
           return;
         }
         if (payload.provider === 'polar') {
@@ -290,7 +294,9 @@ export function useTelemetryConnectors({
           }
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.setItem('aeropulse_polar_connected', '1');
-          void fetchServerConfigStatus().then(() => syncLiveTelemetry(false));
+          void fetchServerConfigStatus()
+            .then(() => syncLiveTelemetry(false))
+            .catch(() => {});
           return;
         }
         if (payload.tokens) {

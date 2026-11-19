@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   Activity,
   Calendar,
@@ -43,8 +43,12 @@ import {
   type PMCDayPoint,
 } from '../physiology/garminLoadFocus';
 
-const UPlotPMCDashboard = lazy(() =>
-  import('./charts/UPlotPMCDashboard').then((m) => ({ default: m.UPlotPMCDashboard }))
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+
+const UPlotPMCDashboard = lazyWithRetry(
+  () => import('./charts/UPlotPMCDashboard').then((m) => ({ default: m.UPlotPMCDashboard })),
+  { chunkKey: 'UPlotPMCDashboard', restoreTab: 'fitness' }
 );
 import { useLiveWorkoutStoreStats } from '../db/workoutStore';
 import {
@@ -2290,25 +2294,27 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             SINGLE CANONICAL uPLOT PERFORMANCE MANAGEMENT CHART (CTL / ATL / TSB / RAMP)
            ========================================================================== */}
         <div className="px-1 sm:px-2 lg:px-5 pt-2 sm:pt-3 pb-2">
-          <Suspense
-            fallback={
-              <div
-                className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
-                style={{ height: `${isCompactMobile ? 380 : 390}px` }}
-              >
-                Loading Performance Management Chart…
-              </div>
-            }
-          >
-            <UPlotPMCDashboard
-              embedded
-              timeline={echartsTimeline}
-              onSelectActivity={onSelectActivity}
-              onSelectDate={handleEChartsSelectDate}
-              onSelectDateRange={handleEChartsSelectDateRange}
-              height={isCompactMobile ? 380 : 390}
-            />
-          </Suspense>
+          <WorkspaceErrorBoundary fallbackTitle="Performance Management Chart" restoreTab="fitness">
+            <Suspense
+              fallback={
+                <div
+                  className="w-full rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300"
+                  style={{ height: `${isCompactMobile ? 380 : 390}px` }}
+                >
+                  Loading Performance Management Chart…
+                </div>
+              }
+            >
+              <UPlotPMCDashboard
+                embedded
+                timeline={echartsTimeline}
+                onSelectActivity={onSelectActivity}
+                onSelectDate={handleEChartsSelectDate}
+                onSelectDateRange={handleEChartsSelectDateRange}
+                height={isCompactMobile ? 380 : 390}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
         </div>
       </section>
         )}

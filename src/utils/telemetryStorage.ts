@@ -424,17 +424,19 @@ export const recalibrateActivityLoadClient = recalibrateStravaActivityLoadClient
 export function buildCompleteAthleteProfile(
   partial?: Partial<AthleteProfile> | null,
   latestWellness?: UnifiedWellnessDay,
-  activities?: UnifiedActivity[] | null
+  activities?: UnifiedActivity[] | null,
+  options?: { skipLocalStorageFallback?: boolean }
 ): AthleteProfile {
   // Detect if `partial` was saved with any of the hardcoded synthetic defaults (250W, 280W, or 300W)
   const isLegacyHardcodedProfile = isUncalibratedDefaultProfile(partial);
+  const allowLocalFallback = !options?.skipLocalStorageFallback;
 
   const storedWeight =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? Number(window.localStorage.getItem('aeropulse_strava_athlete_weight_kg') || 0)
       : 0;
   const storedFtp =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? Number(window.localStorage.getItem('aeropulse_strava_athlete_ftp') || 0)
       : 0;
 
@@ -617,15 +619,15 @@ export function buildCompleteAthleteProfile(
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
 
   const storedGarminName =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? window.localStorage.getItem('aeropulse_garmin_athlete_name')?.trim()
       : undefined;
   const storedStravaName =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
       : undefined;
   const storedIntervalsName =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? window.localStorage.getItem('aeropulse_intervals_athlete_name')?.trim()
       : undefined;
   const resolvedName =
@@ -640,7 +642,7 @@ export function buildCompleteAthleteProfile(
             : 'Athlete';
 
   const storedPrimarySportRaw =
-    typeof window !== 'undefined'
+    allowLocalFallback && typeof window !== 'undefined'
       ? window.localStorage.getItem('thresh_primary_sport')?.trim()
       : undefined;
   const storedPrimarySport: AthleteProfile['primarySport'] =
@@ -681,6 +683,7 @@ export function buildCompleteAthleteProfile(
       ? partial.thresholdHistory
       : undefined,
     safeSportHideWeight: Boolean(partial?.safeSportHideWeight),
+    ...(partial?.birthMonthYear ? { birthMonthYear: partial.birthMonthYear } : {}),
     academicDivision: partial?.academicDivision,
     competitionGender: partial?.competitionGender,
     ferritinNgMl:
@@ -961,6 +964,29 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
         };
       }
       purgeLegacyTelemetryDb();
+    }
+
+    const hasPersistedNonActivityState =
+      plannedEvents.length > 0 ||
+      wellnessDays.length > 0 ||
+      gearItems.length > 0 ||
+      Boolean(snapshotMeta?.athleteProfile || snapshotMeta?.ownerAthleteId || snapshotMeta?.savedAt);
+    if (hasPersistedNonActivityState) {
+      const sanitizedProfile = sanitizeStaleCollapsedProfile(snapshotMeta?.athleteProfile) as
+        | AthleteProfile
+        | undefined;
+      return {
+        activities: [],
+        wellnessDays,
+        plannedEvents,
+        gearItems,
+        athleteProfile: sanitizedProfile,
+        redactedStravaCount: snapshotMeta?.redactedStravaCount || 0,
+        earliestActivityDate: snapshotMeta?.earliestActivityDate,
+        pmcModelVersion: Number(snapshotMeta?.pmcModelVersion || CURRENT_PMC_MODEL_VERSION),
+        ownerAthleteId: snapshotMeta?.ownerAthleteId,
+        savedAt: snapshotMeta?.savedAt || new Date().toISOString(),
+      };
     }
 
     return null;
@@ -1943,6 +1969,29 @@ export function repairAndRecomputeWellnessDays(
   }
 
   return filteredExisting;
+}
+
+/**
+ * Rebuilds the Banister CTL/ATL/TSB spine after importing or logging new activities
+ * while preserving all synced hardware biometrics (HRV, RHR, sleep, weight, VO2).
+ */
+export function recomputeWellnessDaysWithActivityImport(
+  existingWellness: UnifiedWellnessDay[],
+  activities: UnifiedActivity[],
+  asOfDateIso: string = getLocalDateIso(),
+  profile?: Partial<AthleteProfile> | null
+): UnifiedWellnessDay[] {
+  const todayIso = (asOfDateIso || getLocalDateIso()).slice(0, 10);
+  const calibratedActivities = activities.map((act) =>
+    recalibrateStravaActivityLoadClient(act, profile)
+  );
+  const activitySpine = computeWellnessDaysFromActivities(calibratedActivities, todayIso);
+  if (activitySpine.length === 0) {
+    return Array.isArray(existingWellness)
+      ? existingWellness.filter((w) => w && w.date && w.date.slice(0, 10) <= todayIso)
+      : [];
+  }
+  return overlayBiometricsOntoActivityWellness(activitySpine, existingWellness, todayIso);
 }
 
 export function computeWellnessDaysFromActivities(

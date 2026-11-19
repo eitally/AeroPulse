@@ -58,11 +58,14 @@
           });
         }
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function (regs) {
-            regs.forEach(function (reg) {
-              reg.update().catch(function () {});
-            });
-          });
+          navigator.serviceWorker
+            .getRegistrations()
+            .then(function (regs) {
+              regs.forEach(function (reg) {
+                reg.update().catch(function () {});
+              });
+            })
+            .catch(function () {});
         }
       })();
     </script>
@@ -79,11 +82,11 @@
       content="Daily workout modulation and load focus for self-coached runners and cyclists, plus roster sync, 0.01s splits, and injury triage for teams."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/brand/thresh-og-1200x630.png" />
+    <meta property="og:image" content="https://thresh-dev.vercel.app/brand/thresh-og-1200x630.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="/brand/thresh-og-1200x630.png" />
+    <meta name="twitter:image" content="https://thresh-dev.vercel.app/brand/thresh-og-1200x630.png" />
     <meta name="theme-color" content="#163022" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#050A07" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -97,10 +100,17 @@
     <link
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
   </head>
   <body class="bg-[#163022] dark:bg-[#050A07] text-[#101411] dark:text-[#E6ECE8] antialiased selection:bg-[#C8FF00] selection:text-[#080A09]">
-    <!-- THESIS: Live Instrument Split homepage proving real-time readiness modulation and squad safety alongside immediate sign-in, refusing generic SaaS marketing hero fluff. OWN-WORLD: #1 Stadium Track Lab (2px Pine frame, Chalk/Track-Pine/Sundown-Slate stage, 80/15/5 Track Volt discipline, -14deg sheared lane badges, Plus Jakarta Sans + JetBrains Mono tabular). STORY: Solo athletes and team coaches immediately see readiness-modulated workouts and 0.01s/ACWR squad ops, then sign in via Strava/Google/Passkey/Team Code or explore the live Sample Cockpit. FIRST VIEWPORT: 7+5 asymmetric arena with interactive Solo/Coach Live Cockpit Preview + Dual-Audience wells on left and sticky Sign-In/Register Command Card on right (thumb-zone Auth Card second on 390px mobile). FORM: Mock A Live Instrument Split, Assigned Index 6, seed key fe3790a0. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

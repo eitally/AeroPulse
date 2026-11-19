@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import type {
   AthleteProfile,
   CoachWorkspaceSubTab,
@@ -6,6 +6,7 @@ import type {
   DistanceUnit,
   EnvironmentFilter,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SessionCheckInRecord,
   SportCategory,
   TargetGoal,
@@ -13,6 +14,7 @@ import type {
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutSessionSlot,
 } from '../types';
 import {
   summarizeNcaaCaraWeeklyHours,
@@ -21,17 +23,14 @@ import {
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
-import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
-import { CalendarView } from './CalendarView';
-import { TeamManagementPanel } from './TeamManagementPanel';
-import { AthleticNetTfrrsSyncModal } from './AthleticNetTfrrsSyncModal';
-import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
+import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+import type { SavedStopwatchEntry } from './TracksideStopwatchView';
 import type {
   StopwatchOutboxFlushResult,
   StopwatchSaveResult,
 } from '../utils/stopwatchTeamSync';
-import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
-import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
 import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
@@ -41,6 +40,40 @@ import {
   Shield,
   Users,
 } from './icons/PhosphorIcons';
+
+const CalendarView = lazyWithRetry(
+  () => import('./CalendarView').then((m) => ({ default: m.CalendarView })),
+  { chunkKey: 'CoachCalendarView', restoreTab: 'coach' }
+);
+const TeamManagementPanel = lazyWithRetry(
+  () => import('./TeamManagementPanel').then((m) => ({ default: m.TeamManagementPanel })),
+  { chunkKey: 'TeamManagementPanel', restoreTab: 'coach' }
+);
+const AthleticNetTfrrsSyncModal = lazyWithRetry(
+  () =>
+    import('./AthleticNetTfrrsSyncModal').then((m) => ({
+      default: m.AthleticNetTfrrsSyncModal,
+    })),
+  { chunkKey: 'AthleticNetTfrrsSyncModal', restoreTab: 'coach' }
+);
+const TracksideStopwatchView = lazyWithRetry(
+  () => import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView })),
+  { chunkKey: 'CoachTracksideStopwatchView', restoreTab: 'coach' }
+);
+const ScholasticRelayAndTopTimesPanel = lazyWithRetry(
+  () =>
+    import('./track/ScholasticRelayAndTopTimesPanel').then((m) => ({
+      default: m.ScholasticRelayAndTopTimesPanel,
+    })),
+  { chunkKey: 'ScholasticRelayAndTopTimesPanel', restoreTab: 'coach' }
+);
+const CoachClipboardWorkoutBuilder = lazyWithRetry(
+  () =>
+    import('./CoachClipboardWorkoutBuilder').then((m) => ({
+      default: m.CoachClipboardWorkoutBuilder,
+    })),
+  { chunkKey: 'CoachClipboardWorkoutBuilder', restoreTab: 'coach' }
+);
 
 export interface CoachWorkspaceViewProps {
   subTab: CoachWorkspaceSubTab;
@@ -214,6 +247,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }
   };
 
+  const [teamPlanError, setTeamPlanError] = useState<string | null>(null);
+
   const handleTeamPlanCreate = async (eventInput: {
     date: string;
     name: string;
@@ -223,9 +258,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     plannedLoad: number;
     workoutSyntax: string;
     description: string;
+    scheduledTime?: string;
+    sessionSlot?: WorkoutSessionSlot;
+    locationName?: string;
+    locationCategory?: PracticeVenueCategory;
+    meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
   }) => {
+    setTeamPlanError(null);
     const canBroadcastTeam =
       activeTeam &&
       (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH');
@@ -236,10 +277,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           {
             method: 'POST',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              ...getSavedIntervalsHeaders(),
-            },
+            headers: buildThreshSessionHeaders(),
             body: JSON.stringify({
               origin: window.location.origin,
               targetSquadGroup: 'ALL',
@@ -250,19 +288,33 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               plannedLoad: eventInput.plannedLoad,
               workoutSyntax: eventInput.workoutSyntax,
               description: eventInput.description,
+              ...(eventInput.scheduledTime ? { scheduledTime: eventInput.scheduledTime } : {}),
+              ...(eventInput.sessionSlot ? { sessionSlot: eventInput.sessionSlot } : {}),
+              ...(eventInput.locationName ? { locationName: eventInput.locationName } : {}),
+              ...(eventInput.locationCategory
+                ? { locationCategory: eventInput.locationCategory }
+                : {}),
+              ...(eventInput.meetingNotes ? { meetingNotes: eventInput.meetingNotes } : {}),
               ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+              replaceSameDateTarget:
+                typeof eventInput.replaceExistingDate === 'boolean'
+                  ? eventInput.replaceExistingDate &&
+                    (eventInput.sessionSlot || 'SINGLE') === 'SINGLE'
+                  : (eventInput.sessionSlot || 'SINGLE') === 'SINGLE',
             }),
           }
         );
+        const data = await resp.json().catch(() => ({}));
         if (resp.ok) {
-          const data = await resp.json().catch(() => ({}));
           if (Array.isArray(data.teams)) {
             onTeamsUpdated(data.teams, activeTeam.brand.teamId);
           }
           return;
         }
+        setTeamPlanError(data?.error || 'Could not broadcast team session to server.');
+        return;
       } catch {
-        // Fallback to local state if offline or sandboxed
+        // Fallback to local state only when offline
       }
     }
     await onCreatePlannedEvent(eventInput);
@@ -514,16 +566,26 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           )}
 
           {/* Track Multi-Set Workout Builder, Event Groups & Pace Pod Splits */}
-          <CoachClipboardWorkoutBuilder
-            activeTeam={activeTeam}
-            myTeams={myTeams}
-            connectedAthletes={connectedAthletesOnly}
-            primaryAthleteDisplayName={primaryAthleteDisplayName}
-            selfProfile={selfProfile}
-            onTeamsUpdated={onTeamsUpdated}
-            onCreatePlannedEvent={onCreatePlannedEvent}
-            onOpenStopwatchSubTab={() => setSubTab('STOPWATCH')}
-          />
+          <WorkspaceErrorBoundary fallbackTitle="Coach Clipboard" restoreTab="coach">
+            <Suspense
+              fallback={
+                <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Coach Clipboard…
+                </div>
+              }
+            >
+              <CoachClipboardWorkoutBuilder
+                activeTeam={activeTeam}
+                myTeams={myTeams}
+                connectedAthletes={connectedAthletesOnly}
+                primaryAthleteDisplayName={primaryAthleteDisplayName}
+                selfProfile={selfProfile}
+                onTeamsUpdated={onTeamsUpdated}
+                onCreatePlannedEvent={onCreatePlannedEvent}
+                onOpenStopwatchSubTab={() => setSubTab('STOPWATCH')}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
 
           <div className="rounded-2xl liquid-glass overflow-hidden">
             <button
@@ -541,14 +603,24 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </button>
             {showRelayAndTopTimes && (
               <div className="px-3 pb-3 pt-1">
-                <ScholasticRelayAndTopTimesPanel
-                  candidates={relayCandidates.length > 0 ? relayCandidates : podRoster}
-                  roster={combinedRoster.filter(
-                    (a) =>
-                      a.status === 'CONNECTED' &&
-                      a.teamMemberStatus !== 'REVOKED'
-                  )}
-                />
+                <WorkspaceErrorBoundary fallbackTitle="Relay & Top Times" restoreTab="coach">
+                  <Suspense
+                    fallback={
+                      <div className="h-32 rounded-xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                        Loading Relay Optimizer…
+                      </div>
+                    }
+                  >
+                    <ScholasticRelayAndTopTimesPanel
+                      candidates={relayCandidates.length > 0 ? relayCandidates : podRoster}
+                      roster={combinedRoster.filter(
+                        (a) =>
+                          a.status === 'CONNECTED' &&
+                          a.teamMemberStatus !== 'REVOKED'
+                      )}
+                    />
+                  </Suspense>
+                </WorkspaceErrorBoundary>
               </div>
             )}
           </div>
@@ -557,46 +629,76 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
       {/* 2. TEAM PLAN */}
       {subTab === 'TEAM_PLAN' && (
-        <CalendarView
-          activities={effectiveActivities}
-          wellnessDays={effectiveWellnessDays}
-          plannedEvents={teamPlanEvents}
-          targetGoals={effectiveTargetGoals}
-          envFilter={envFilter}
-          selectedSport={selectedSport}
-          onSelectSport={onSelectSport}
-          distanceUnit={distanceUnit}
-          athleteFtp={athleteFtp}
-          athleteProfile={selfProfile}
-          onSelectActivity={onSelectActivityAndOpenTab}
-          onCreatePlannedEvent={handleTeamPlanCreate}
-          onUpdatePlannedEvent={onUpdatePlannedEvent}
-          onDeletePlannedEvent={onDeletePlannedEvent}
-          onDeletePlanBlock={onDeletePlanBlock}
-          onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
-          onOpenTodayWorkout={onOpenAthleteToday}
-          onOpenAthleteProfileModal={onOpenProfileModal}
-          onOpenGoalsArchitect={onOpenGoalsTab}
-          onOpenOfficialRaceModal={onOpenOfficialRaceModal}
-          onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-          onOpenTracksideStopwatch={() => setSubTab('STOPWATCH')}
-        />
+        <div className="space-y-3">
+          {teamPlanError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-300 dark:border-red-800 bg-red-50/90 dark:bg-red-950/50 px-3.5 py-2 text-xs font-semibold text-red-700 dark:text-red-300"
+            >
+              {teamPlanError}
+            </div>
+          )}
+          <WorkspaceErrorBoundary fallbackTitle="Team Plan Calendar" restoreTab="coach">
+            <Suspense
+              fallback={
+                <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Team Plan Calendar…
+                </div>
+              }
+            >
+              <CalendarView
+                activities={effectiveActivities}
+                wellnessDays={effectiveWellnessDays}
+                plannedEvents={teamPlanEvents}
+                targetGoals={effectiveTargetGoals}
+                envFilter={envFilter}
+                selectedSport={selectedSport}
+                onSelectSport={onSelectSport}
+                distanceUnit={distanceUnit}
+                athleteFtp={athleteFtp}
+                athleteProfile={selfProfile}
+                onSelectActivity={onSelectActivityAndOpenTab}
+                onCreatePlannedEvent={handleTeamPlanCreate}
+                onUpdatePlannedEvent={onUpdatePlannedEvent}
+                onDeletePlannedEvent={onDeletePlannedEvent}
+                onDeletePlanBlock={onDeletePlanBlock}
+                onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
+                onOpenTodayWorkout={onOpenAthleteToday}
+                onOpenAthleteProfileModal={onOpenProfileModal}
+                onOpenGoalsArchitect={onOpenGoalsTab}
+                onOpenOfficialRaceModal={onOpenOfficialRaceModal}
+                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+                onOpenTracksideStopwatch={() => setSubTab('STOPWATCH')}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
+        </div>
       )}
 
       {/* 3. STOPWATCH */}
       {subTab === 'STOPWATCH' && (
-        <TracksideStopwatchView
-          selfName={primaryAthleteDisplayName}
-          selfProfile={selfProfile}
-          roster={combinedRoster}
-          myTeams={myTeams}
-          activeTeamId={activeTeamId}
-          onSaveStopwatchActivities={onSaveStopwatchActivities}
-          onFlushStopwatchOutbox={onFlushStopwatchOutbox}
-          onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
-          postSaveActionLabel="View Team Plan"
-          onOpenRosterModal={() => setSubTab('ROSTER')}
-        />
+        <WorkspaceErrorBoundary fallbackTitle="Trackside Stopwatch" restoreTab="coach">
+          <Suspense
+            fallback={
+              <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading Trackside Stopwatch…
+              </div>
+            }
+          >
+            <TracksideStopwatchView
+              selfName={primaryAthleteDisplayName}
+              selfProfile={selfProfile}
+              roster={combinedRoster}
+              myTeams={myTeams}
+              activeTeamId={activeTeamId}
+              onSaveStopwatchActivities={onSaveStopwatchActivities}
+              onFlushStopwatchOutbox={onFlushStopwatchOutbox}
+              onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
+              postSaveActionLabel="View Team Plan"
+              onOpenRosterModal={() => setSubTab('ROSTER')}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
       )}
 
       {/* 4. ROSTER, SQUAD TRIAGE & TEAM SETTINGS */}
@@ -619,19 +721,29 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
           />
 
-          <TeamManagementPanel
-            selfName={primaryAthleteDisplayName}
-            myTeams={myTeams}
-            activeTeamId={activeTeamId}
-            resendConfigured={resendConfigured}
-            isSampleDemoMode={isSampleDemoMode}
-            initialShowCreateStudio={openCreateTeamOnSwitch}
-            onSelectActiveTeam={onSelectActiveTeam}
-            onTeamsUpdated={onTeamsUpdated}
-            onOpenClipboard={() => setSubTab('CLIPBOARD')}
-            onOpenExternalSync={() => setIsExternalSyncOpen(true)}
-            onOpenPublicTeamHub={onOpenPublicTeamHub}
-          />
+          <WorkspaceErrorBoundary fallbackTitle="Team Roster & Management" restoreTab="coach">
+            <Suspense
+              fallback={
+                <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Team Management…
+                </div>
+              }
+            >
+              <TeamManagementPanel
+                selfName={primaryAthleteDisplayName}
+                myTeams={myTeams}
+                activeTeamId={activeTeamId}
+                resendConfigured={resendConfigured}
+                isSampleDemoMode={isSampleDemoMode}
+                initialShowCreateStudio={openCreateTeamOnSwitch}
+                onSelectActiveTeam={onSelectActiveTeam}
+                onTeamsUpdated={onTeamsUpdated}
+                onOpenClipboard={() => setSubTab('CLIPBOARD')}
+                onOpenExternalSync={() => setIsExternalSyncOpen(true)}
+                onOpenPublicTeamHub={onOpenPublicTeamHub}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
 
           {(!activeTeam || activeTeam.brand.orgType === 'COLLEGIATE') && (
           <section
@@ -684,15 +796,21 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </div>
       )}
 
-      <AthleticNetTfrrsSyncModal
-        isOpen={isExternalSyncOpen}
-        onClose={handleCloseExternalSync}
-        activeTeam={activeTeam}
-        myTeams={myTeams}
-        selfName={primaryAthleteDisplayName}
-        onTeamsUpdated={onTeamsUpdated}
-        onOpenPublicHub={onOpenPublicTeamHub}
-      />
+      {isExternalSyncOpen && (
+        <WorkspaceErrorBoundary fallbackTitle="External Roster & Meet Sync" restoreTab="coach">
+          <Suspense fallback={null}>
+            <AthleticNetTfrrsSyncModal
+              isOpen={isExternalSyncOpen}
+              onClose={handleCloseExternalSync}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              selfName={primaryAthleteDisplayName}
+              onTeamsUpdated={onTeamsUpdated}
+              onOpenPublicHub={onOpenPublicTeamHub}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
     </div>
   );
 };

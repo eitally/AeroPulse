@@ -38,6 +38,7 @@ import {
   requestEmailOtpCode,
   resendPendingTeamInvites,
   syncAthleteSnapshotAcrossTeams,
+  updateBroadcastWorkoutOnTeam,
   updateTeamBranding,
   updateTeamMemberEventGroup,
   verifyEmailOtpCode,
@@ -600,7 +601,54 @@ teamRouter.delete('/api/teams/:teamId/workouts/blocks/:blockId', async (req: Req
   }
 });
 
-// 11f. Recall / Delete Single Broadcast Workout from Team Calendar
+// 11f. Update Single Broadcast Workout on Team Calendar
+teamRouter.put('/api/teams/:teamId/workouts/:broadcastId', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const updated = await updateBroadcastWorkoutOnTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      broadcastId: String(req.params.broadcastId || ''),
+      originUrl,
+      updates: {
+        ...(typeof body.date === 'string' ? { date: body.date } : {}),
+        ...(typeof body.name === 'string' ? { name: body.name } : {}),
+        ...(body.sportCategory ? { sportCategory: body.sportCategory } : {}),
+        ...(body.plannedDurationSecs !== undefined
+          ? { plannedDurationSecs: Number(body.plannedDurationSecs) }
+          : {}),
+        ...(body.plannedLoad !== undefined ? { plannedLoad: Number(body.plannedLoad) } : {}),
+        ...(typeof body.workoutSyntax === 'string' ? { workoutSyntax: body.workoutSyntax } : {}),
+        ...(typeof body.description === 'string' ? { description: body.description } : {}),
+        ...('scheduledTime' in body ? { scheduledTime: body.scheduledTime } : {}),
+        ...('sessionSlot' in body ? { sessionSlot: body.sessionSlot } : {}),
+        ...('locationName' in body ? { locationName: body.locationName } : {}),
+        ...('locationCategory' in body ? { locationCategory: body.locationCategory } : {}),
+        ...('meetingNotes' in body ? { meetingNotes: body.meetingNotes } : {}),
+        ...('trackSpec' in body ? { trackSpec: body.trackSpec } : {}),
+      },
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: 'Coach permissions or broadcast workout not found.' });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to update broadcast workout.',
+    });
+  }
+});
+
+// 11g. Recall / Delete Single Broadcast Workout from Team Calendar
 teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);

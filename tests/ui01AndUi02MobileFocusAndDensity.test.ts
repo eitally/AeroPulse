@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
@@ -64,7 +65,11 @@ describe('UI-01 & UI-02 Mobile Focus Stopwatch, Squad Triage Placement & Compact
 
   it('passes Impeccable DESIGN.md static audit with 0 anti-patterns across src/components', () => {
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (!fs.existsSync(detectorPath)) {
       return;
     }

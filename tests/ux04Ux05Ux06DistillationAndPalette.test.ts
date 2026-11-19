@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
@@ -83,7 +84,11 @@ describe('UX-04, UX-05 & UX-06 Simplification, Deduplication & Palette Complianc
 
   it('UX-06: passes Impeccable DESIGN.md color detector with 0 off-palette chart or map hexes', () => {
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (!fs.existsSync(detectorPath)) {
       return;
     }
