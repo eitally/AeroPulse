@@ -40,5 +40,6 @@ jobs:
       - name: Run Playwright E2E visual regression suite (QA-01)
         run: npm run test:e2e
         env:
-          NODE_ENV: production
+          NODE_ENV: test
+          SERVE_BUILT_DIST: '1'
           CI: 'true'

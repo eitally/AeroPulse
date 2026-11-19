@@ -108,6 +108,7 @@ export interface WorkspaceRouterProps {
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  isSampleDemoMode?: boolean;
   stravaSyncWindow?: StravaSyncWindow;
   onOpenDataSources?: () => void;
 
@@ -236,6 +237,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
   onTeamsUpdated,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
+  isSampleDemoMode = false,
   stravaSyncWindow,
   onOpenDataSources,
 
@@ -555,6 +557,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           onOpenRosterModal={handleOpenRosterModal}
           onOpenPublicTeamHub={onOpenPublicTeamHub}
           onOpenCoachGuide={onOpenCoachGuide}
+          isSampleDemoMode={isSampleDemoMode}
         />
       )}
 

@@ -131,6 +131,7 @@ export interface CoachWorkspaceViewProps {
   onOpenRosterModal: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  isSampleDemoMode?: boolean;
 }
 
 export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
@@ -173,6 +174,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenRosterModal,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
+  isSampleDemoMode = false,
 }) => {
   const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
   const [isExternalSyncOpen, setIsExternalSyncOpen] = useState<boolean>(() => {
@@ -622,6 +624,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             myTeams={myTeams}
             activeTeamId={activeTeamId}
             resendConfigured={resendConfigured}
+            isSampleDemoMode={isSampleDemoMode}
             initialShowCreateStudio={openCreateTeamOnSwitch}
             onSelectActiveTeam={onSelectActiveTeam}
             onTeamsUpdated={onTeamsUpdated}

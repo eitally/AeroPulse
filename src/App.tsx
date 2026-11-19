@@ -1808,6 +1808,7 @@ export default function App() {
                 onTeamsUpdated={effectiveOnTeamsUpdated}
                 onOpenPublicTeamHub={openPublicTeamHub}
                 onOpenCoachGuide={handleOpenCoachGuideModal}
+                isSampleDemoMode={isSampleDemoMode}
                 effectiveActivities={effectiveActivities}
                 effectiveWellnessDays={effectiveWellnessDays}
                 effectivePlannedEvents={effectivePlannedEvents}

@@ -55,6 +55,7 @@ interface TeamManagementPanelProps {
   myTeams: TeamSummaryWithRole[];
   activeTeamId: string | null;
   resendConfigured: boolean;
+  isSampleDemoMode?: boolean;
   initialShowCreateStudio?: boolean;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
@@ -150,6 +151,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   myTeams,
   activeTeamId,
   resendConfigured,
+  isSampleDemoMode = false,
   initialShowCreateStudio = false,
   onSelectActiveTeam,
   onTeamsUpdated,
@@ -345,13 +347,106 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     setIsSavingStudio(true);
     setBannerMessage(null);
     try {
+      if (isSampleDemoMode) {
+        const resolvedShortName =
+          shortName.trim() || deriveShortNameFromTeamName(teamName);
+        if (studioMode === 'EDIT' && activeTeam) {
+          const updatedTeam: TeamSummaryWithRole = {
+            ...activeTeam,
+            brand: {
+              ...activeTeam.brand,
+              name: teamName.trim(),
+              shortName: resolvedShortName,
+              mascotOrMotto: mascotOrMotto.trim() || undefined,
+              orgType,
+              primarySport,
+              primaryHex,
+              secondaryHex,
+              logoDataUrl: logoDataUrl || undefined,
+              defaultSafeSportShield,
+              enableParentGuardianCc,
+              coachDisplayName: coachDisplayName.trim() || 'Coach',
+            },
+          };
+          const nextList = myTeams.map((t) =>
+            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+          );
+          onTeamsUpdated(nextList, updatedTeam.brand.teamId);
+          setShowCreateOrEditStudio(false);
+          setBannerMessage({
+            tone: 'success',
+            text: `Updated branding & safeguarding settings for ${updatedTeam.brand.name}.`,
+          });
+        } else {
+          const nowIso = new Date().toISOString();
+          const demoTeamId = `demo-team-${Date.now()}`;
+          const slugBase =
+            teamName
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '') || 'demo-team';
+          const joinPrefix =
+            resolvedShortName.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase() || 'DEMO';
+          const resolvedCoachName = coachDisplayName.trim() || selfName || 'Head Coach';
+          const created: TeamSummaryWithRole = {
+            brand: {
+              teamId: demoTeamId,
+              slug: slugBase,
+              joinCode: `${joinPrefix}-26`,
+              name: teamName.trim(),
+              shortName: resolvedShortName,
+              ...(mascotOrMotto.trim() ? { mascotOrMotto: mascotOrMotto.trim() } : {}),
+              orgType,
+              primarySport,
+              primaryHex,
+              secondaryHex,
+              ...(logoDataUrl ? { logoDataUrl } : {}),
+              defaultSafeSportShield,
+              enableParentGuardianCc,
+              coachDisplayName: resolvedCoachName,
+              createdAt: nowIso,
+            },
+            myMembershipId: 'mem_demo_coach',
+            myRole: 'HEAD_COACH',
+            mySquadGroup: 'Varsity',
+            totalInvited: 1,
+            openedCount: 0,
+            activeCount: 1,
+            watchConnectedCount: 0,
+            broadcastWorkouts: [],
+            memberships: [
+              {
+                membershipId: 'mem_demo_coach',
+                teamId: demoTeamId,
+                role: 'HEAD_COACH',
+                squadGroup: 'Varsity',
+                invitedName: resolvedCoachName,
+                isMinorU18: false,
+                status: 'ACTIVE',
+                sharingTier: 'FULL_STREAMS',
+                invitedAt: nowIso,
+                joinedAt: nowIso,
+              },
+            ],
+          };
+          onTeamsUpdated([...myTeams, created], created.brand.teamId);
+          setShowCreateOrEditStudio(false);
+          setBannerMessage({
+            tone: 'success',
+            text: `Created ${created.brand.name} (Join Code ${created.brand.joinCode}). Share the Join Code or paste your roster below.`,
+          });
+        }
+        return;
+      }
+
       if (studioMode === 'EDIT' && activeTeam) {
         const resp = await fetch(
           `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}`,
           {
             method: 'PUT',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildThreshSessionHeaders(),
             body: JSON.stringify({
               origin: originUrl,
               name: teamName.trim(),
@@ -392,7 +487,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
         const resp = await fetch('/api/teams', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify({
             origin: originUrl,
             name: teamName.trim(),

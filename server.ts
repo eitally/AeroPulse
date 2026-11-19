@@ -38,7 +38,9 @@ async function startServer() {
     });
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  const serveBuiltDist =
+    process.env.NODE_ENV === 'production' || process.env.SERVE_BUILT_DIST === '1';
+  if (!serveBuiltDist) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
