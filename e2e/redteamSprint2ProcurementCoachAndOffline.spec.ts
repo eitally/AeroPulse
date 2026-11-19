@@ -86,12 +86,23 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
     }
 
     // 2. Public Parent Hub skip-link, event-grouped PRs & legal footer
+    const consoleErrors: string[] = [];
+    const onConsole = (msg: { type: () => string; text: () => string }) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    };
+    page.on('console', onConsole);
     await page.goto('/team/willow-glen-high-school-xc?demo=1');
     const hub = page.getByTestId('public-team-hub-page');
     await expect(hub).toBeVisible({ timeout: 15000 });
     await expect(page.locator('a[href="#public-hub-main"]')).toHaveCount(1);
-    await expect(hub).toContainText('2.95 mi XC (Crystal Springs)');
+    await expect(hub).toContainText('Willow Glen High School XC');
+    await expect(hub).toContainText('5000m (5)');
+    await expect(hub).toContainText('1600m (4)');
+    await expect(hub).toContainText('Coach Morales');
+    await expect(hub).not.toContainText('Coach Coach Morales');
     await expect(page.locator('a[href="/privacy"]').first()).toBeVisible();
+    page.off('console', onConsole);
+    expect(consoleErrors).toEqual([]);
 
     // 3. Offline state does not wipe caches or trigger reload loop
     await page.goto('/?demo=1');

@@ -25,6 +25,7 @@ import {
   deduplicateActivitiesArchive,
   getSavedIntervalsHeaders,
   hasPendingTeamJoinInBrowser,
+  isBrowserSessionLoggedOut,
   isGenericAthleteName,
   isUncalibratedDefaultProfile,
   loadPersistedTelemetrySnapshot,
@@ -245,14 +246,7 @@ export function useTelemetrySync({
 
   const fetchServerConfigStatus = useCallback(async () => {
     try {
-      let notLoggedOut = true;
-      let savedStravaName: string | undefined;
-      try {
-        notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
-        savedStravaName = localStorage.getItem('aeropulse_strava_athlete_name') || undefined;
-      } catch {
-        // ignore
-      }
+      const isNotLoggedOut = () => !isBrowserSessionLoggedOut();
       const origin = encodeURIComponent(window.location.origin);
       const resp = await fetch(`/api/config/status?origin=${origin}`, {
         credentials: 'include',
@@ -262,13 +256,27 @@ export function useTelemetrySync({
       const data = await safeParseResponseJson(resp);
       if (data?.error && !data?.callbackUrl) return null;
 
-      const isActiveStravaSession = Boolean(
+      let notLoggedOut = isNotLoggedOut();
+      let savedStravaName: string | undefined;
+      if (notLoggedOut) {
+        try {
+          savedStravaName = localStorage.getItem('aeropulse_strava_athlete_name') || undefined;
+        } catch {
+          // ignore
+        }
+      }
+      let isActiveStravaSession = Boolean(
         notLoggedOut && (data.stravaConnected || hasStravaClientCredentials())
       );
 
       if (isActiveStravaSession && data.stravaAthleteId) {
         await reconcileStoreOwnerAthleteId(data.stravaAthleteId);
       }
+
+      notLoggedOut = isNotLoggedOut();
+      isActiveStravaSession = Boolean(
+        notLoggedOut && (data.stravaConnected || hasStravaClientCredentials())
+      );
 
       if (isActiveStravaSession && data.sessionToken) {
         try {
@@ -296,12 +304,12 @@ export function useTelemetrySync({
         }
       }
 
-      if (notLoggedOut) {
+      if (isNotLoggedOut()) {
         try {
           const authMeResp = await fetch('/api/auth/me', { credentials: 'include' });
           if (authMeResp.ok) {
             const authMeData = await authMeResp.json();
-            if (authMeData?.authenticated && authMeData?.user) {
+            if (isNotLoggedOut() && authMeData?.authenticated && authMeData?.user) {
               setCurrentUser(authMeData.user);
               const linkedIds: string[] = [
                 ...(data.stravaAthleteId ? [String(data.stravaAthleteId)] : []),
@@ -310,36 +318,51 @@ export function useTelemetrySync({
                   .map((p: any) => String(p.providerId))),
               ];
               await reconcileStoreOwnerAthleteId(authMeData.user.id, linkedIds);
-              if (authMeData.sessionToken) {
+              if (isNotLoggedOut()) {
+                if (authMeData.sessionToken) {
+                  try {
+                    localStorage.setItem('aeropulse_session_token', String(authMeData.sessionToken));
+                  } catch {
+                    // ignore
+                  }
+                }
                 try {
-                  localStorage.setItem('aeropulse_session_token', String(authMeData.sessionToken));
+                  if (localStorage.getItem('aeropulse_auth_gate_passed') === '1') {
+                    setIsSessionLoggedOut(false);
+                    hasEnteredWorkspaceRef.current = true;
+                    setHasEnteredWorkspace(true);
+                  }
                 } catch {
                   // ignore
                 }
-              }
-              try {
-                if (localStorage.getItem('aeropulse_auth_gate_passed') === '1') {
-                  setIsSessionLoggedOut(false);
-                  hasEnteredWorkspaceRef.current = true;
-                  setHasEnteredWorkspace(true);
+                if (authMeData.user.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
+                  setAthleteProfile((prev) => ({
+                    ...prev,
+                    name: authMeData.user.name,
+                    ...(authMeData.user.birthMonthYear ? { birthMonthYear: authMeData.user.birthMonthYear } : {}),
+                  }));
+                } else if (authMeData.user.birthMonthYear && !athleteProfileRef.current?.birthMonthYear) {
+                  setAthleteProfile((prev) => ({
+                    ...prev,
+                    birthMonthYear: authMeData.user.birthMonthYear,
+                  }));
                 }
-              } catch {
-                // ignore
-              }
-              if (authMeData.user.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
-                setAthleteProfile((prev) => ({
-                  ...prev,
-                  name: authMeData.user.name,
-                  ...(authMeData.user.birthMonthYear ? { birthMonthYear: authMeData.user.birthMonthYear } : {}),
-                }));
-              } else if (authMeData.user.birthMonthYear && !athleteProfileRef.current?.birthMonthYear) {
-                setAthleteProfile((prev) => ({
-                  ...prev,
-                  birthMonthYear: authMeData.user.birthMonthYear,
-                }));
               }
             }
           }
+        } catch {
+          // ignore
+        }
+      }
+      notLoggedOut = isNotLoggedOut();
+      isActiveStravaSession = Boolean(
+        notLoggedOut && (data.stravaConnected || hasStravaClientCredentials())
+      );
+      if (!notLoggedOut) {
+        savedStravaName = undefined;
+      } else if (!savedStravaName) {
+        try {
+          savedStravaName = localStorage.getItem('aeropulse_strava_athlete_name') || undefined;
         } catch {
           // ignore
         }
@@ -550,6 +573,7 @@ export function useTelemetrySync({
 
   const syncLiveTelemetry = useCallback(
     async (fullHistory = false, explicitStravaWindow?: StravaSyncWindow) => {
+      if (isBrowserSessionLoggedOut()) return;
       setIsSyncing(true);
       setSyncError(null);
       try {
@@ -559,6 +583,7 @@ export function useTelemetrySync({
           { credentials: 'include', headers }
         );
         const statusData = statusResp.ok ? await statusResp.json() : {};
+        if (isBrowserSessionLoggedOut()) return;
         if (statusData.stravaTokens) {
           saveRotatedStravaTokensToStorage(statusData.stravaTokens);
         }
@@ -585,8 +610,10 @@ export function useTelemetrySync({
             credentials: 'include',
             headers: activeHeaders,
           });
+          if (isBrowserSessionLoggedOut()) return;
           if (intResp.ok) {
             const intData = await intResp.json();
+            if (isBrowserSessionLoggedOut()) return;
             if (Array.isArray(intData.wellnessDays) && intData.wellnessDays.length > 0) {
               nextWellnessDays = mergeWellnessDaysNonDestructive(
                 wellnessDaysRef.current,
@@ -647,8 +674,10 @@ export function useTelemetrySync({
             credentials: 'include',
             headers: activeHeaders,
           });
+          if (isBrowserSessionLoggedOut()) return;
           if (garminResp.ok) {
             const garminData = await garminResp.json();
+            if (isBrowserSessionLoggedOut()) return;
             if (Array.isArray(garminData.wellnessDays) && garminData.wellnessDays.length > 0) {
               garminWellnessBiometrics = garminData.wellnessDays;
               if (nextWellnessDays.length > 0) {
@@ -716,8 +745,10 @@ export function useTelemetrySync({
             credentials: 'include',
             headers: tzSyncHeaders,
           });
+          if (isBrowserSessionLoggedOut()) return;
           if (wahooResp.ok) {
             const wahooData = await wahooResp.json();
+            if (isBrowserSessionLoggedOut()) return;
             if (Array.isArray(wahooData.activities) && wahooData.activities.length > 0) {
               const wahooActs = wahooData.activities.map((a: UnifiedActivity) =>
                 reclassifyActivityEnvironment(a)
@@ -734,8 +765,10 @@ export function useTelemetrySync({
             credentials: 'include',
             headers: tzSyncHeaders,
           });
+          if (isBrowserSessionLoggedOut()) return;
           if (polarResp.ok) {
             const polarData = await polarResp.json();
+            if (isBrowserSessionLoggedOut()) return;
             if (Array.isArray(polarData.activities) && polarData.activities.length > 0) {
               const polarActs = polarData.activities.map((a: UnifiedActivity) =>
                 reclassifyActivityEnvironment(a)
@@ -790,8 +823,10 @@ export function useTelemetrySync({
             credentials: 'include',
             headers: activeHeaders,
           });
+          if (isBrowserSessionLoggedOut()) return;
           if (stravaResp.ok) {
             const stravaData = await stravaResp.json();
+            if (isBrowserSessionLoggedOut()) return;
             const stravaBackfillKey = `aeropulse_strava_backfill_v4_${stravaData.athleteId || 'self'}`;
             const oldestStravaMs = stravaActs.reduce((minMs, a) => {
               const t = resolveActivityStartEpochMs(a);
@@ -828,8 +863,10 @@ export function useTelemetrySync({
                   credentials: 'include',
                   headers: activeHeaders,
                 });
+                if (isBrowserSessionLoggedOut()) return;
                 if (!passResp.ok) break;
                 const passData = await passResp.json();
+                if (isBrowserSessionLoggedOut()) return;
                 const passActs = Array.isArray(passData.activities) ? passData.activities : [];
                 let addedCount = 0;
                 for (const pa of passActs) {
@@ -858,7 +895,12 @@ export function useTelemetrySync({
               stravaData.activities = collectedActs;
               stravaData.hasMoreHistory = lastHasMore;
               stravaData.rateLimitPaused = lastRatePaused;
-              if (!lastHasMore && !lastRatePaused && typeof localStorage !== 'undefined') {
+              if (
+                !isBrowserSessionLoggedOut() &&
+                !lastHasMore &&
+                !lastRatePaused &&
+                typeof localStorage !== 'undefined'
+              ) {
                 try {
                   localStorage.setItem(stravaBackfillKey, '1');
                 } catch {
@@ -866,6 +908,7 @@ export function useTelemetrySync({
                 }
               }
             }
+            if (isBrowserSessionLoggedOut()) return;
             if (stravaData.missingActivityScope) {
               setConnectionStatus((prev) => ({
                 ...prev,
@@ -1223,6 +1266,8 @@ export function useTelemetrySync({
           mergedActivities = [];
         }
 
+        if (isBrowserSessionLoggedOut()) return;
+
         if (mergedActivities !== null) {
           // Non-destructively merge, deduplicate & ensure legacy v1/v2 Garmin/Strava entries recalibrate to v3
           const mergedArchiveRaw = deduplicateActivitiesArchive(
@@ -1300,6 +1345,7 @@ export function useTelemetrySync({
             lastSyncedAt: new Date().toISOString(),
           }));
 
+          if (isBrowserSessionLoggedOut()) return;
           const savedTimestamp = await savePersistedTelemetrySnapshot({
             activities: combinedArchive,
             wellnessDays: nextWellnessDays,
@@ -1309,13 +1355,14 @@ export function useTelemetrySync({
             redactedStravaCount: nextRedactedCount,
             earliestActivityDate: oldestLoaded,
           });
-          if (savedTimestamp) setIdbSavedAt(savedTimestamp);
+          if (savedTimestamp && !isBrowserSessionLoggedOut()) setIdbSavedAt(savedTimestamp);
           needsPmcModelV2SyncRef.current = false;
         } else if (garminWellnessBiometrics.length > 0 && nextWellnessDays.length === 0) {
           nextWellnessDays = garminWellnessBiometrics;
           setWellnessDays(nextWellnessDays);
           wellnessDaysRef.current = nextWellnessDays;
         }
+        if (isBrowserSessionLoggedOut()) return;
         await fetchServerConfigStatus();
       } catch (err) {
         setSyncError(err instanceof Error ? err.message : 'Telemetry sync failed.');
@@ -1518,15 +1565,15 @@ export function useTelemetrySync({
       let isGatePassed = false;
       let notLoggedOut = true;
       try {
-        notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
+        notLoggedOut = !isBrowserSessionLoggedOut();
         const storedGatePassed = localStorage.getItem('aeropulse_auth_gate_passed') === '1' && notLoggedOut;
-        const localSavedPolicy = loadStravaSyncPolicyFromStorage();
+        const localSavedPolicy = notLoggedOut ? loadStravaSyncPolicyFromStorage() : null;
         const pendingTeamJoin = hasPendingTeamJoinInBrowser();
         const hasPersistedStravaSession = Boolean(
           notLoggedOut && statusData?.stravaConnected && !pendingTeamJoin
         );
         isGatePassed = storedGatePassed || hasPersistedStravaSession;
-        if (hasPersistedStravaSession) {
+        if (hasPersistedStravaSession && !isBrowserSessionLoggedOut()) {
           if (!statusData?.stravaSyncPolicy?.window && !localSavedPolicy?.window) {
             const grantedScope = String(statusData?.stravaGrantedScope || '');
             const lacksScope = Boolean(grantedScope) && !grantedScope.includes('activity:read');
@@ -1537,11 +1584,13 @@ export function useTelemetrySync({
               grantedScope: grantedScope || undefined,
             });
           }
-          localStorage.setItem('aeropulse_auth_gate_passed', '1');
-          if (mounted) {
-            setIsSessionLoggedOut(false);
-            hasEnteredWorkspaceRef.current = true;
-            setHasEnteredWorkspace(true);
+          if (!isBrowserSessionLoggedOut()) {
+            localStorage.setItem('aeropulse_auth_gate_passed', '1');
+            if (mounted) {
+              setIsSessionLoggedOut(false);
+              hasEnteredWorkspaceRef.current = true;
+              setHasEnteredWorkspace(true);
+            }
           }
         }
       } catch {
@@ -1550,6 +1599,7 @@ export function useTelemetrySync({
 
       if (
         mounted &&
+        !isBrowserSessionLoggedOut() &&
         isGatePassed &&
         (hasStravaClientCredentials() || statusData?.stravaConnected) &&
         (justConnectedViaOAuth ||
