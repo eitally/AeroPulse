@@ -551,7 +551,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                     value={rawPrimaryHex}
                     onChange={(e) => setRawPrimaryHex(e.target.value)}
                     aria-label="Team Primary Hex Code"
-                    className="w-full bg-transparent font-mono text-xs font-bold text-slate-950 dark:text-white focus:outline-none"
+                    className="w-full bg-transparent font-mono text-xs font-bold text-slate-950 dark:text-white rounded px-1"
                   />
                 </div>
               </label>
@@ -573,7 +573,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                     value={rawSecondaryHex}
                     onChange={(e) => setRawSecondaryHex(e.target.value)}
                     aria-label="Team Secondary Hex Code"
-                    className="w-full bg-transparent font-mono text-xs font-bold text-slate-950 dark:text-white focus:outline-none"
+                    className="w-full bg-transparent font-mono text-xs font-bold text-slate-950 dark:text-white rounded px-1"
                   />
                 </div>
               </label>

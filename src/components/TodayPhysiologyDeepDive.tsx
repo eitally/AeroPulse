@@ -516,7 +516,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                           <span className="text-slate-500">
                             {ev.paceSecsPerKm > 0 ? formatPace(ev.paceSecsPerKm, distanceUnit) : '—'}
                           </span>
-                          <span className="font-bold text-[#059669] dark:text-[#C8FF00]">
+                          <span className="font-bold ap-ink-emerald dark:text-[#C8FF00]">
                             {ev.totalSecs > 0 ? formatDuration(ev.totalSecs) : '—'}
                           </span>
                         </div>
@@ -537,10 +537,10 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                 <section className="lg:col-span-6 rounded-2xl liquid-glass-subtle p-4 sm:p-5 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <TrendingUp className="w-4 h-4 text-[#0284C7]" />
+                      <TrendingUp className="w-4 h-4 ap-ink-sky" />
                       <span>90-Day Cycling FTP Trajectory</span>
                     </h3>
-                    <span className="text-2xs font-mono font-bold text-[#0284C7]">
+                    <span className="text-2xs font-mono font-bold ap-ink-sky">
                       {raceAndFtpPredictions.currentFtp > 0 ? `${raceAndFtpPredictions.currentFtp}W` : 'Uncalibrated'}
                     </span>
                   </div>
@@ -553,10 +553,10 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                         { label: '+90d Goal', watts: raceAndFtpPredictions.targetFtp },
                       ].map((pt) => (
                         <div key={pt.label} className="rounded-xl border border-slate-200 dark:border-[#244331] bg-white/75 dark:bg-[#101B15] p-3">
-                          <div className="text-2xs font-sans text-slate-500">{pt.label}</div>
+                          <div className="text-2xs font-sans text-slate-600 dark:text-slate-300">{pt.label}</div>
                           <div className="text-base font-bold text-slate-900 dark:text-white">{pt.watts}W</div>
                           {!athleteProfile.safeSportHideWeight && (
-                            <div className="text-2xs text-[#0284C7]">
+                            <div className="text-2xs font-semibold ap-ink-sky">
                               {(pt.watts / raceAndFtpPredictions.weightKg).toFixed(2)} W/kg
                             </div>
                           )}

@@ -5027,6 +5027,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z1",
     name: "Recovery",
     color: "#94A3B8",
+    inkClass: "text-slate-700 dark:text-slate-200",
     heightPct: 28
   },
   {
@@ -5034,6 +5035,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z2",
     name: "Endurance",
     color: "#0D9488",
+    inkClass: "ap-ink-teal",
     heightPct: 44
   },
   {
@@ -5041,6 +5043,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z3",
     name: "Tempo / Sweet Spot",
     color: "#D97706",
+    inkClass: "ap-ink-amber",
     heightPct: 62
   },
   {
@@ -5048,6 +5051,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z4",
     name: "Threshold",
     color: "#EA580C",
+    inkClass: "ap-ink-vermilion",
     heightPct: 78
   },
   {
@@ -5055,6 +5059,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z5",
     name: "VO2max",
     color: "#DC2626",
+    inkClass: "ap-ink-rose",
     heightPct: 92
   },
   {
@@ -5062,6 +5067,7 @@ var INTERVALS_EFFORT_ZONES = [
     code: "Z6+",
     name: "Anaerobic / Sprint",
     color: "#7C3AED",
+    inkClass: "ap-ink-violet",
     heightPct: 100
   }
 ];

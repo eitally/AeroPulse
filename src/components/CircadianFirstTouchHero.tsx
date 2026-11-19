@@ -1603,7 +1603,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   <button
                     type="button"
                     onClick={() => onSelectActivity(sessionReceipt.primaryActivity)}
-                    className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="ap-btn-pine !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Inspect 1Hz Telemetry →</span>
                   </button>

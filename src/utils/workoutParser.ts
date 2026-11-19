@@ -12,6 +12,7 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z1' as const,
     name: 'Recovery',
     color: '#94A3B8',
+    inkClass: 'text-slate-700 dark:text-slate-200',
     heightPct: 28,
   },
   {
@@ -19,6 +20,7 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z2' as const,
     name: 'Endurance',
     color: '#0D9488',
+    inkClass: 'ap-ink-teal',
     heightPct: 44,
   },
   {
@@ -26,6 +28,7 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z3' as const,
     name: 'Tempo / Sweet Spot',
     color: '#D97706',
+    inkClass: 'ap-ink-amber',
     heightPct: 62,
   },
   {
@@ -33,6 +36,7 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z4' as const,
     name: 'Threshold',
     color: '#EA580C',
+    inkClass: 'ap-ink-vermilion',
     heightPct: 78,
   },
   {
@@ -40,6 +44,7 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z5' as const,
     name: 'VO2max',
     color: '#DC2626',
+    inkClass: 'ap-ink-rose',
     heightPct: 92,
   },
   {
@@ -47,20 +52,21 @@ export const INTERVALS_EFFORT_ZONES = [
     code: 'Z6+' as const,
     name: 'Anaerobic / Sprint',
     color: '#7C3AED',
+    inkClass: 'ap-ink-violet',
     heightPct: 100,
   },
 ] as const;
 
 export const ZONE_META: Record<
   EffortZoneCode,
-  { name: string; color: string; heightPct: number }
+  { name: string; color: string; inkClass: string; heightPct: number }
 > = {
-  Z1: { name: 'Recovery', color: '#94A3B8', heightPct: 28 },
-  Z2: { name: 'Endurance', color: '#0D9488', heightPct: 44 },
-  Z3: { name: 'Tempo / Sweet Spot', color: '#D97706', heightPct: 62 },
-  Z4: { name: 'Threshold', color: '#EA580C', heightPct: 78 },
-  Z5: { name: 'VO2max', color: '#DC2626', heightPct: 92 },
-  'Z6+': { name: 'Anaerobic', color: '#7C3AED', heightPct: 100 },
+  Z1: { name: 'Recovery', color: '#94A3B8', inkClass: 'text-slate-700 dark:text-slate-200', heightPct: 28 },
+  Z2: { name: 'Endurance', color: '#0D9488', inkClass: 'ap-ink-teal', heightPct: 44 },
+  Z3: { name: 'Tempo / Sweet Spot', color: '#D97706', inkClass: 'ap-ink-amber', heightPct: 62 },
+  Z4: { name: 'Threshold', color: '#EA580C', inkClass: 'ap-ink-vermilion', heightPct: 78 },
+  Z5: { name: 'VO2max', color: '#DC2626', inkClass: 'ap-ink-rose', heightPct: 92 },
+  'Z6+': { name: 'Anaerobic', color: '#7C3AED', inkClass: 'ap-ink-violet', heightPct: 100 },
 };
 
 export interface ParsedWorkoutStep {

@@ -461,10 +461,17 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
 
       await expect(page.getByRole('link', { name: 'Today' })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('heading', { name: /Choose What Syncs From Strava/i })).toHaveCount(0);
-      const policyAfterRelogin = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem('aeropulse_strava_sync_policy') || '{}')
-      );
-      expect(policyAfterRelogin.window).toBe('all');
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(
+              () =>
+                JSON.parse(localStorage.getItem('aeropulse_strava_sync_policy') || '{}')
+                  .window
+            ),
+          { timeout: 10000 }
+        )
+        .toBe('all');
 
       // Now test Team Join link (?join=PAXC-26) still routes Strava user to Step 2 for roster claim
       await page.unroute('**/api/config/status*');

@@ -555,7 +555,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   `Analyze my long-term physiological trends over ${trendSpan}: VO2max is ${latestPoint.vo2Max} mL/kg/min, Cycling eFTP is ${latestPoint.rideEftp}W${hideWeight ? '' : ` (${latestPoint.wPerKg} W/kg)`}, Running eFTP is ${latestPoint.runEftp}W, 7d HRV is ${latestPoint.hrvRMSSD}ms, Resting HR is ${latestPoint.restingHR} bpm, and Aerobic EF is ${latestPoint.rawEf}. What is my primary physiological limiter and how should I structure the next mesocycle?`
                 )
               }
-              className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-semibold shadow-sm transition-all"
+              className="ap-btn-pine text-xs font-semibold cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Coach Trend Audit</span>
@@ -567,7 +567,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
+              <SlidersHorizontal className="w-3.5 h-3.5 ap-text-brand" />
               <span>Toggle Metrics Included on Graph ({effectiveSelectedMetrics.length} active):</span>
             </div>
 
@@ -577,7 +577,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['vo2Max', 'rideEftp'])}
-                className="px-2 py-0.5 rounded-md liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Ceiling + Bike eFTP
               </button>
@@ -590,21 +590,21 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       : ['rideEftp', 'wPerKg', 'efficiencyFactor']
                   )
                 }
-                className="px-2 py-0.5 rounded-md liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 {hideWeight ? 'Power + EF' : 'Power + W/kg + EF'}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['hrvRMSSD', 'restingHR'])}
-                className="px-2 py-0.5 rounded-md liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Autonomic (HRV + RHR)
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['rideEftp', 'runEftp'])}
-                className="px-2 py-0.5 rounded-md liquid-glass-subtle hover:border-blue-500/40 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Bike vs Run eFTP
               </button>
