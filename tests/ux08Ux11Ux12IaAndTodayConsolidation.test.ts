@@ -38,18 +38,20 @@ function makeActivity(id: string, sportCategory: UnifiedActivity['sportCategory'
 }
 
 describe('UX-08, UX-11 & UX-12 Post-Login 3-Pillar IA, Today Consolidation & Profile/Coach Fixes', () => {
-  it('UX-08: standardizes Athlete nav on 3 pillars (Today, Training Calendar, Plan Builder) with #plan-builder alias and in-place Inspector', () => {
+  it('UX-08: standardizes Athlete nav on 4 pillars (Today, Training Calendar, Progress, Plan Builder) with #plan-builder alias and in-place Inspector', () => {
     const header = readSrc('src/components/CockpitHeader.tsx');
     expect(header).toContain("label: 'Today'");
     expect(header).toContain("label: 'Training Calendar'");
+    expect(header).toContain("label: 'Progress'");
     expect(header).toContain("label: 'Plan Builder'");
     expect(header).toContain("href: '#plan-builder'");
     expect(header).toContain('data-testid={`coach-subtab-${item.id.toLowerCase()}`}');
     expect(header).toContain('Fitness ${latestWellness');
 
     const dock = readSrc('src/components/MobileDock.tsx');
-    expect(dock).toContain('grid-cols-3');
+    expect(dock).toContain('grid-cols-4');
     expect(dock).toContain("label: 'Calendar'");
+    expect(dock).toContain("label: 'Progress'");
     expect(dock).toContain("label: 'Plan Builder'");
 
     const app = readSrc('src/App.tsx');

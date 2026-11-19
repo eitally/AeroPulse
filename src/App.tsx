@@ -95,6 +95,46 @@ import {
   sanitizePersistedAnnualGoals,
   sanitizePersistedTargetGoals,
 } from './utils/lazyWithRetry';
+import { STORAGE_KEYS } from './utils/storageKeys';
+
+function parseWorkspaceHash(rawHash: string): {
+  tab?: ActiveTab;
+  coachSubTab?: CoachWorkspaceSubTab;
+} {
+  const hash = rawHash.replace(/^#/, '').trim();
+  if (!hash) return {};
+  if (hash === 'today' || hash === 'fitness') return { tab: 'fitness' };
+  if (hash === 'progress' || hash === 'curves') return { tab: 'curves' };
+  if (hash === 'trends') return { tab: 'trends' };
+  if (hash === 'charts') return { tab: 'charts' };
+  if (hash === 'plan-builder') return { tab: 'totals' };
+  if (hash === 'totals') return { tab: 'totals' };
+  if (hash === 'coach-sync' || hash === 'coach') return { tab: 'coach' };
+  if (hash.startsWith('coach/')) {
+    const sub = hash.slice('coach/'.length).toUpperCase();
+    if (sub === 'PLAN' || sub === 'TEAM_PLAN') {
+      return { tab: 'coach', coachSubTab: 'TEAM_PLAN' };
+    }
+    if (sub === 'ROSTER' || sub === 'CLIPBOARD' || sub === 'STOPWATCH') {
+      return { tab: 'coach', coachSubTab: sub as CoachWorkspaceSubTab };
+    }
+    return { tab: 'coach' };
+  }
+  if (['calendar', 'activities', 'stopwatch'].includes(hash)) {
+    return { tab: hash as ActiveTab };
+  }
+  return {};
+}
+
+function buildWorkspaceHash(tab: ActiveTab, coachSubTab: CoachWorkspaceSubTab): string {
+  if (tab === 'fitness') return '#today';
+  if (tab === 'totals') return '#plan-builder';
+  if (tab === 'coach') {
+    const sub = coachSubTab === 'TEAM_PLAN' ? 'plan' : coachSubTab.toLowerCase();
+    return `#coach/${sub}`;
+  }
+  return `#${tab}`;
+}
 
 const BrandGuidePage = lazyWithRetry(() => import('./components/BrandGuidePage'), {
   chunkKey: 'BrandGuidePage',
@@ -118,19 +158,25 @@ export default function App() {
     if (restoredTab) return restoredTab;
     try {
       if (typeof window !== 'undefined') {
-        const hash = window.location.hash.replace(/^#/, '');
-        if (hash === 'plan-builder') return 'totals';
-        if (hash === 'coach-sync') return 'coach';
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
-          return hash as ActiveTab;
-        }
+        const parsed = parseWorkspaceHash(window.location.hash);
+        if (parsed.tab) return parsed.tab;
       }
     } catch {
       // ignore
     }
     return 'fitness';
   });
-  const [coachSubTab, setCoachSubTab] = useState<CoachWorkspaceSubTab>('CLIPBOARD');
+  const [coachSubTab, setCoachSubTab] = useState<CoachWorkspaceSubTab>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const parsed = parseWorkspaceHash(window.location.hash);
+        if (parsed.coachSubTab) return parsed.coachSubTab;
+      }
+    } catch {
+      // ignore
+    }
+    return 'CLIPBOARD';
+  });
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -140,12 +186,12 @@ export default function App() {
           setActiveTab('totals');
           return;
         }
-        if (hash === 'coach-sync') {
-          setActiveTab('coach');
-          return;
+        const parsed = parseWorkspaceHash(hash);
+        if (parsed.coachSubTab) {
+          setCoachSubTab(parsed.coachSubTab);
         }
-        if (['fitness', 'calendar', 'activities', 'totals', 'curves', 'trends', 'charts', 'stopwatch', 'coach'].includes(hash)) {
-          setActiveTab(hash as ActiveTab);
+        if (parsed.tab) {
+          setActiveTab(parsed.tab);
         }
       } catch {
         // ignore
@@ -164,6 +210,24 @@ export default function App() {
     sunsetLabel12h,
     toggleQuickLightDark,
   } = useSundownTheme();
+  const [plainLanguageMode, setPlainLanguageMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.PLAIN_LANGUAGE) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const handleTogglePlainLanguage = useCallback(() => {
+    setPlainLanguageMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEYS.PLAIN_LANGUAGE, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() => {
     try {
       const saved = localStorage.getItem('thresh_distance_unit');
@@ -1546,6 +1610,36 @@ export default function App() {
     ]
   );
 
+  const isStopwatchFullscreen =
+    activeTab === 'stopwatch' ||
+    (activeTab === 'coach' && coachSubTab === 'STOPWATCH');
+
+  const isWorkspaceRendered = Boolean(
+    !publicTeamSlug &&
+      !isBrandRoute &&
+      !isShareRoute &&
+      (isSampleDemoMode ||
+        (!isSessionLoggedOut &&
+          hasEnteredWorkspace &&
+          (hasStravaClientCredentials() || Boolean(currentUser))))
+  );
+
+  useEffect(() => {
+    if (!isWorkspaceRendered || typeof window === 'undefined') return;
+    try {
+      const nextHash = buildWorkspaceHash(activeTab, coachSubTab);
+      if (window.location.hash !== nextHash) {
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${window.location.search}${nextHash}`
+        );
+      }
+    } catch {
+      // ignore history errors
+    }
+  }, [isWorkspaceRendered, activeTab, coachSubTab]);
+
   if (publicTeamSlug) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
@@ -1714,6 +1808,9 @@ export default function App() {
           onOpenGuide={handleOpenMetricsGuideModal}
           distanceUnit={distanceUnit}
           setDistanceUnit={setDistanceUnit}
+          isSampleDemoMode={isSampleDemoMode}
+          plainLanguageMode={plainLanguageMode}
+          onTogglePlainLanguage={handleTogglePlainLanguage}
           onLogoutSession={handleLogoutSession}
           onLogoutAndClearData={handleLogoutAndClearData}
         />
@@ -1796,6 +1893,7 @@ export default function App() {
               <WorkspaceRouter
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                plainLanguageMode={plainLanguageMode}
                 stravaSyncWindow={connectionStatus.stravaSyncPolicy?.window}
                 onOpenDataSources={handleOpenDataSourcesModal}
                 coachSubTab={coachSubTab}
@@ -1871,13 +1969,15 @@ export default function App() {
             </main>
             </div>
 
-            <CockpitFooter
-              athleteFtp={effectiveAthleteProfile.ftp}
-              onOpenProfile={handleOpenProfileModal}
-              onOpenDataSources={handleOpenDataSourcesModal}
-              onOpenGuide={handleOpenMetricsGuideModal}
-              onOpenBrandStudio={openBrand}
-            />
+            {!isStopwatchFullscreen && (
+              <CockpitFooter
+                athleteFtp={effectiveAthleteProfile.ftp}
+                onOpenProfile={handleOpenProfileModal}
+                onOpenDataSources={handleOpenDataSourcesModal}
+                onOpenGuide={handleOpenMetricsGuideModal}
+                onOpenBrandStudio={openBrand}
+              />
+            )}
           </div>
         </div>
 

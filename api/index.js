@@ -9907,6 +9907,35 @@ async function revokeAthleteGuardianConsentForTeam(params) {
     };
   });
 }
+async function updateMyTeamSharingTier(params) {
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const mem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!mem) return { ok: false, error: "Active team membership not found." };
+    if (mem.isMinorU18 && mem.parentConsentStatus !== "ACKNOWLEDGED" && params.sharingTier !== "LOAD_ONLY") {
+      return {
+        ok: false,
+        error: "Parent/guardian consent must be acknowledged before expanding sharing beyond Load & Readiness Only."
+      };
+    }
+    mem.sharingTier = params.sharingTier;
+    if (mem.liveSnapshot) {
+      mem.liveSnapshot.sharingTier = params.sharingTier;
+      if (params.sharingTier === "LOAD_ONLY") {
+        mem.liveSnapshot.activities = [];
+      }
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
 async function updateMemberRosterLifecycleStatus(params) {
   let archiveTarget = null;
   let detachSid;
@@ -10804,6 +10833,42 @@ teamRouter.delete("/api/teams/:teamId/members/me/guardian", async (req, res) => 
     });
   }
 });
+teamRouter.patch(
+  "/api/teams/:teamId/members/me/sharing-tier",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const rawTier = String(req.body?.sharingTier || "").toUpperCase();
+      if (rawTier !== "LOAD_ONLY" && rawTier !== "SUMMARY_ONLY" && rawTier !== "FULL_STREAMS") {
+        res.status(400).json({ ok: false, error: "Invalid coach data sharing tier." });
+        return;
+      }
+      const sharingTier = rawTier;
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await updateMyTeamSharingTier({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        sharingTier,
+        originUrl
+      });
+      if (!outcome.ok) {
+        res.status(400).json({ ok: false, error: outcome.error });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: outcome.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to update team sharing tier."
+      });
+    }
+  }
+);
 teamRouter.patch(
   "/api/teams/:teamId/members/:membershipId/status",
   async (req, res) => {

@@ -166,8 +166,9 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
     await page.getByTestId('account-change-email-btn').click();
     await expect(page.getByText(/Login email updated/i)).toBeVisible({ timeout: 10000 });
 
-    // Leave team while keeping solo workspace intact
+    // Leave team while keeping solo workspace intact (2-step confirmation)
     await page.getByTestId(`privacy-leave-team-${teamId}`).click();
+    await page.getByTestId(`privacy-leave-team-confirm-${teamId}`).click();
     await expect(page.getByText(/Left team/i)).toBeVisible({ timeout: 10000 });
 
     const modalOverflow = await page.evaluate(

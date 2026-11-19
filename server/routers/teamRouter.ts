@@ -19,6 +19,7 @@ import {
   transferTeamHeadCoachOwnership,
   updateMemberRole,
   updateMemberRosterLifecycleStatus,
+  updateMyTeamSharingTier,
 } from '../teamLifecycleService.ts';
 import {
   acknowledgeParentConsent,
@@ -41,7 +42,11 @@ import {
   updateTeamMemberEventGroup,
   verifyEmailOtpCode,
 } from '../teamService.ts';
-import type { CoachEventGroup, TeamInviteStatus } from '../../src/types.ts';
+import type {
+  CoachDataSharingTier,
+  CoachEventGroup,
+  TeamInviteStatus,
+} from '../../src/types.ts';
 
 export const teamRouter = express.Router();
 
@@ -751,6 +756,48 @@ teamRouter.delete('/api/teams/:teamId/members/me/guardian', async (req: Request,
     });
   }
 });
+
+// 11d-bis. Post-Join Athlete / Member Sharing Tier Self-Service Control (RT-14)
+teamRouter.patch(
+  '/api/teams/:teamId/members/me/sharing-tier',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const rawTier = String(req.body?.sharingTier || '').toUpperCase();
+      if (
+        rawTier !== 'LOAD_ONLY' &&
+        rawTier !== 'SUMMARY_ONLY' &&
+        rawTier !== 'FULL_STREAMS'
+      ) {
+        res.status(400).json({ ok: false, error: 'Invalid coach data sharing tier.' });
+        return;
+      }
+      const sharingTier = rawTier as CoachDataSharingTier;
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await updateMyTeamSharingTier({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        sharingTier,
+        originUrl,
+      });
+      if (!outcome.ok) {
+        res.status(400).json({ ok: false, error: outcome.error });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: outcome.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to update team sharing tier.',
+      });
+    }
+  }
+);
 
 // 11e. Coach Roster Member Lifecycle Status (ACTIVE / INJURED / OFF_SEASON / ALUMNI / REVOKED)
 teamRouter.patch(

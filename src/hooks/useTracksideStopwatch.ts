@@ -49,6 +49,14 @@ export const WORKOUT_STOPWATCH_PRESETS: WorkoutStopwatchPreset[] = [
     defaultRestSecs: 45,
   },
   {
+    id: '4x800',
+    label: '4 x 800m · VO2max',
+    repCount: 4,
+    repDistanceMeters: 800,
+    intensity: 'INTERVAL_VO2',
+    defaultRestSecs: 90,
+  },
+  {
     id: '6x800',
     label: '6 x 800m · VO2max',
     repCount: 6,

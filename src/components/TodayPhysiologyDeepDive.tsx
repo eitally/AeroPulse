@@ -61,6 +61,8 @@ export interface TodayPhysiologyDeepDiveProps {
   stravaSyncWindow?: StravaSyncWindow;
   initialOpen?: boolean;
   initialSection?: DeepDiveSectionId;
+  standalone?: boolean;
+  initialTrendsSubView?: 'TRENDS' | 'CUSTOM_LAB';
   onScanMoreSegments: () => Promise<void>;
   onSelectActivity: (act: UnifiedActivity) => void;
   onOpenActivitiesSegments: () => void;
@@ -89,6 +91,8 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   stravaSyncWindow,
   initialOpen = false,
   initialSection = 'CURVES',
+  standalone = false,
+  initialTrendsSubView = 'TRENDS',
   onScanMoreSegments,
   onSelectActivity,
   onOpenActivitiesSegments,
@@ -107,7 +111,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
     }
   });
   const [activeSection, setActiveSection] = useState<DeepDiveSectionId>(initialSection);
-  const [trendsSubView, setTrendsSubView] = useState<'TRENDS' | 'CUSTOM_LAB'>('TRENDS');
+  const [trendsSubView, setTrendsSubView] = useState<'TRENDS' | 'CUSTOM_LAB'>(initialTrendsSubView);
   const [durabilitySport, setDurabilitySport] = useState<'Cycling' | 'Running'>(() =>
     athleteProfile.primarySport === 'Running' ? 'Running' : 'Cycling'
   );
@@ -118,16 +122,22 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   const formId = useId();
 
   useEffect(() => {
-    if (initialOpen) {
+    if (initialOpen || standalone) {
       setIsOpen(true);
     }
-  }, [initialOpen]);
+  }, [initialOpen, standalone]);
 
   useEffect(() => {
     if (initialSection) {
       setActiveSection(initialSection);
     }
   }, [initialSection]);
+
+  useEffect(() => {
+    if (initialTrendsSubView) {
+      setTrendsSubView(initialTrendsSubView);
+    }
+  }, [initialTrendsSubView]);
 
   const setOpenPersisted = (next: boolean) => {
     setIsOpen(next);
@@ -415,36 +425,61 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
     );
   };
 
+  const effectiveOpen = standalone ? true : isOpen;
+
   return (
     <section
-      data-testid="today-physiology-deep-dive"
+      data-testid={standalone ? 'standalone-progress-view' : 'today-physiology-deep-dive'}
       aria-label="Physiology & Telemetry Deep-Dive"
       className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-4"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          data-testid="today-physiology-deep-dive-toggle"
-          aria-expanded={isOpen}
-          onClick={() => setOpenPersisted(!isOpen)}
-          className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 text-left cursor-pointer group"
-        >
-          <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
-            <Sliders className="w-4 h-4" weight="duotone" />
-          </span>
-          <span>
-            <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white group-hover:underline">
-              Physiology &amp; Telemetry Deep-Dive
+      <div
+        data-testid={standalone ? 'today-physiology-deep-dive' : undefined}
+        className="flex flex-wrap items-center justify-between gap-3"
+      >
+        {standalone ? (
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+              <Sliders className="w-4 h-4" weight="duotone" />
             </span>
-            <span className="block text-2xs text-slate-500 dark:text-slate-400">
-              Power/Pace curves, Durability, Zone progression, Calibration &amp; Custom charts
+            <div>
+              <h1 className="text-lg sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                Progress &amp; Physiology Analytics
+              </h1>
+              <p className="text-2xs text-slate-600 dark:text-slate-300">
+                Power/Pace curves, Durability, Zone progression, Calibration &amp; Custom charts
+              </p>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="today-physiology-deep-dive-toggle"
+            aria-expanded={effectiveOpen}
+            onClick={() => setOpenPersisted(!isOpen)}
+            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 text-left cursor-pointer group"
+          >
+            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+              <Sliders className="w-4 h-4" weight="duotone" />
             </span>
-          </span>
-          <span className="ml-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-glass-subtle text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200">
-            <span>{isOpen ? 'Hide' : 'Explore'}</span>
-            {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </span>
-        </button>
+            <span>
+              <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white group-hover:underline">
+                Physiology &amp; Telemetry Deep-Dive
+              </span>
+              <span className="block text-2xs text-slate-500 dark:text-slate-400">
+                Power/Pace curves, Durability, Zone progression, Calibration &amp; Custom charts
+              </span>
+            </span>
+            <span className="ml-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg liquid-glass-subtle text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200">
+              <span>{effectiveOpen ? 'Hide' : 'Explore'}</span>
+              {effectiveOpen ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </span>
+          </button>
+        )}
 
         <div
           role="tablist"
@@ -453,7 +488,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
         >
           {navTabs.map((tab) => {
             const Icon = tab.icon;
-            const active = isOpen && activeSection === tab.id;
+            const active = effectiveOpen && activeSection === tab.id;
             return (
               <button
                 key={tab.id}
@@ -476,7 +511,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
         </div>
       </div>
 
-      {isOpen && (
+      {effectiveOpen && (
         <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-6">
           {activeSection === 'CURVES' && (
             <div className="space-y-6">

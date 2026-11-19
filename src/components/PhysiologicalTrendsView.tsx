@@ -515,9 +515,9 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                 coachingAction="Toggle 2–3 complementary metrics below (e.g., Bike eFTP + HRV rMSSD, or VO2max + Aerobic EF) to verify that threshold gains are backed by autonomic stability rather than sympathetic overreaching."
               />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
               Long-Term Physiological Trends
-            </h1>
+            </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Click any metric pill below to include or remove it from the graph, or switch to{' '}
               <strong>% Change Mode</strong> to compare relative adaptation rates on a unified axis

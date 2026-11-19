@@ -2,6 +2,12 @@ import { expect, Page, test } from '@playwright/test';
 
 async function enterSampleDemoMode(page: Page, hash = '') {
   await page.goto(`/?demo=1${hash}`);
+  if (hash === '#stopwatch') {
+    await expect(page.getByRole('heading', { name: 'Trackside Stopwatch' })).toBeVisible({
+      timeout: 15000,
+    });
+    return;
+  }
   const cockpitNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
   await expect(cockpitNav).toBeVisible({ timeout: 15000 });
 }

@@ -80,6 +80,8 @@ export const STORAGE_KEYS = {
   DUSK_MODE: 'thresh_dusk_mode',
   DISTANCE_UNIT: 'thresh_distance_unit',
   DISTANCE_UNIT_USER_SET: 'thresh_distance_unit_user_set',
+  PLAIN_LANGUAGE: 'thresh_plain_language',
+  STOPWATCH_SHORTCUTS: 'thresh_stopwatch_shortcuts_v1',
 } as const;
 
 export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set([
@@ -89,6 +91,8 @@ export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set([
   STORAGE_KEYS.DUSK_MODE,
   STORAGE_KEYS.DISTANCE_UNIT,
   STORAGE_KEYS.DISTANCE_UNIT_USER_SET,
+  STORAGE_KEYS.PLAIN_LANGUAGE,
+  STORAGE_KEYS.STOPWATCH_SHORTCUTS,
 ]);
 
 export const USER_SCOPED_STORAGE_PREFIXES = ['aeropulse_', 'thresh_'] as const;

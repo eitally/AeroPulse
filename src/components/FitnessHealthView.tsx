@@ -62,6 +62,10 @@ import {
   BANISTER_CTL_DECAY,
   shiftIsoDate,
 } from '../physiology/stravaLoadCalibration';
+import {
+  formatMorphRunLabel,
+  formatOrthoChannelLabel,
+} from '../utils/plainLanguage';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
@@ -69,6 +73,7 @@ interface FitnessHealthViewProps {
   activities?: UnifiedActivity[];
   athleteProfile?: AthleteProfile;
   distanceUnit?: DistanceUnit;
+  plainLanguageMode?: boolean;
   selfName?: string;
   selfProfile?: AthleteProfile;
   selfWellnessDays?: UnifiedWellnessDay[];
@@ -151,6 +156,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   activities = [],
   athleteProfile,
   distanceUnit = 'mi',
+  plainLanguageMode = false,
   onSelectActivity,
   onSyncMorphedToCalendar,
   onOpenAthleteProfileModal,
@@ -932,6 +938,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         plannedEvents={plannedEvents}
         athleteProfile={athleteProfile}
         distanceUnit={distanceUnit}
+        plainLanguageMode={plainLanguageMode}
         todayCompliance={todayCompliance}
         orthopedicSummary={orthopedicSummary}
         studentGuardrail={studentGuardrail}
@@ -1237,7 +1244,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
                   <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    1. Central Cardiorespiratory (7d)
+                    {formatOrthoChannelLabel(1, plainLanguageMode)}
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
                     <span className="text-base font-bold text-slate-900 dark:text-white">
@@ -1251,7 +1258,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
                   <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    2. Eccentric Run Impact (7d)
+                    {formatOrthoChannelLabel(2, plainLanguageMode)}
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
                     <span className="text-base font-bold text-slate-900 dark:text-white">
@@ -1273,7 +1280,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
                   <div className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    3. Concentric Bike Torque (7d)
+                    {formatOrthoChannelLabel(3, plainLanguageMode)}
                   </div>
                   <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
                     <span className="text-base font-bold text-slate-900 dark:text-white">
@@ -1360,7 +1367,10 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                       }}
                       className="ap-btn-primary px-3.5 text-xs whitespace-nowrap"
                     >
-                      Morph Run → {orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Ride
+                      {formatMorphRunLabel(
+                        orthopedicSummary.suggestedBikeDurationMins,
+                        plainLanguageMode
+                      )}
                     </button>
                   )}
               </div>
@@ -2034,9 +2044,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             <select
               value={forwardDays}
               aria-label="Project future CTL, ATL and Form"
-              onChange={(e) =>
-                setForwardDays(Number(e.target.value) as 0 | 14 | 28 | 42)
-              }
+              onChange={(e) => {
+                const nextDays = Number(e.target.value) as 0 | 14 | 28 | 42;
+                setForwardDays(nextDays);
+                if (nextDays === 0) setIsCustomizeOpen(false);
+              }}
               className="min-h-[44px] sm:min-h-[36px] rounded-xl liquid-glass-subtle px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200"
               title="Project future CTL, ATL & Form"
             >
@@ -2046,20 +2058,23 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <option value={42}>+42d Projection</option>
             </select>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsCustomizeOpen((prev) => {
-                  if (!prev) setIsDatePickerOpen(false);
-                  return !prev;
-                });
-              }}
-              aria-expanded={isCustomizeOpen}
-              className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-blue-500/35 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-sky-300 text-xs font-bold tracking-wide transition-colors"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Customize Chart ▾</span>
-            </button>
+            {forwardDays > 0 && (
+              <button
+                type="button"
+                data-testid="pmc-customize-chart-btn"
+                onClick={() => {
+                  setIsCustomizeOpen((prev) => {
+                    if (!prev) setIsDatePickerOpen(false);
+                    return !prev;
+                  });
+                }}
+                aria-expanded={isCustomizeOpen}
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl ap-btn-secondary text-xs font-bold tracking-wide transition-colors cursor-pointer"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Projection Rate ▾</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -2072,7 +2087,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <ChevronUp className="w-3.5 h-3.5" />
             </button>
 
-            {isCustomizeOpen && (
+            {isCustomizeOpen && forwardDays > 0 && (
               <div className="absolute right-0 top-10 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-2xl liquid-glass p-4 space-y-3 text-xs shadow-2xl border border-slate-300/80 dark:border-white/15">
                 <div className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/70 dark:border-white/10 pb-1.5 flex items-center justify-between">
                   <span>Chart Options</span>
@@ -2085,32 +2100,26 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   </button>
                 </div>
 
-                {forwardDays > 0 ? (
-                  <div className="space-y-1">
-                    <div className="flex justify-between font-mono text-2xs">
-                      <label htmlFor={`${formId}-sim-daily-tss`}>Simulated TSS/day:</label>
-                      <span className="font-bold text-blue-500">
-                        {simulatedDailyTss} TSS
-                      </span>
-                    </div>
-                    <input
-                      id={`${formId}-sim-daily-tss`}
-                      type="range"
-                      min={0}
-                      max={150}
-                      step={5}
-                      value={simulatedDailyTss}
-                      onChange={(e) =>
-                        setSimulatedDailyTss(Number(e.target.value))
-                      }
-                      className="w-full accent-blue-600"
-                    />
+                <div className="space-y-1">
+                  <div className="flex justify-between font-mono text-2xs">
+                    <label htmlFor={`${formId}-sim-daily-tss`}>Simulated TSS/day:</label>
+                    <span className="font-bold ap-ink-teal">
+                      {simulatedDailyTss} TSS
+                    </span>
                   </div>
-                ) : (
-                  <p className="text-2xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Toggle Load Bars, Ramp Rate, or Threshold Pace directly on the chart toolbar above, or choose a Projection window to simulate future fitness.
-                  </p>
-                )}
+                  <input
+                    id={`${formId}-sim-daily-tss`}
+                    type="range"
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={simulatedDailyTss}
+                    onChange={(e) =>
+                      setSimulatedDailyTss(Number(e.target.value))
+                    }
+                    className="w-full accent-[#1C5436] dark:accent-[#C8FF00]"
+                  />
+                </div>
 
                 <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2">
                   <button

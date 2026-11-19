@@ -6,6 +6,7 @@ import {
   Target,
   Timer,
   ClipboardText,
+  TrendingUp,
   Users,
 } from './icons/PhosphorIcons';
 
@@ -23,6 +24,14 @@ export const MobileDock: React.FC<MobileDockProps> = ({
   coachSubTab = 'CLIPBOARD',
   onSelectCoachSubTab,
 }) => {
+  // Suppress bottom navigation during Stopwatch so a dedicated thumb-zone timing bar owns the bottom edge (RT-25)
+  if (
+    activeTab === 'stopwatch' ||
+    (activeTab === 'coach' && coachSubTab === 'STOPWATCH')
+  ) {
+    return null;
+  }
+
   if (activeTab === 'coach' && onSelectCoachSubTab) {
     const coachTabs: ReadonlyArray<{
       id: CoachWorkspaceSubTab;
@@ -71,13 +80,19 @@ export const MobileDock: React.FC<MobileDockProps> = ({
       id: 'fitness' as const,
       label: 'Today',
       icon: HeartPulse,
-      match: ['fitness', 'curves', 'trends', 'charts'],
+      match: ['fitness'],
     },
     {
       id: 'calendar' as const,
       label: 'Calendar',
       icon: Calendar,
-      match: ['calendar', 'activities', 'stopwatch'],
+      match: ['calendar', 'activities'],
+    },
+    {
+      id: 'curves' as const,
+      label: 'Progress',
+      icon: TrendingUp,
+      match: ['curves', 'trends', 'charts'],
     },
     {
       id: 'totals' as const,
@@ -90,7 +105,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
   return (
     <nav
       aria-label="Mobile primary workspaces"
-      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-3 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
+      className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
