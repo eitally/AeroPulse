@@ -21,6 +21,7 @@ import {
   sharedWorkoutToPlannedEventInput,
 } from '../utils/shareWorkoutEngine.ts';
 import { getSavedIntervalsHeaders, mergeActivitiesNonDestructive } from '../utils/telemetryStorage.ts';
+import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi.ts';
 
 const CLOUD_UPDATED_AT_KEY = 'thresh_cloud_state_updated_at';
 const CHECKINS_STORAGE_KEY = 'thresh_session_checkins_v1';
@@ -208,9 +209,11 @@ export function useAthleteCloudSync({
       thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm || 245,
       unit: distanceUnit,
     });
-    void handleCreatePlannedEvent(eventInput).then(() => {
-      onPendingWorkoutImported?.();
-    });
+    void handleCreatePlannedEvent(eventInput)
+      .then(() => {
+        onPendingWorkoutImported?.();
+      })
+      .catch(() => undefined);
   }, [
     hasAnyWorkspace,
     athleteProfile.ftp,
@@ -230,7 +233,7 @@ export function useAthleteCloudSync({
       try {
         const res = await fetch('/api/athlete-state', {
           credentials: 'include',
-          headers: getSavedIntervalsHeaders(),
+          headers: buildThreshSessionHeaders(),
         });
         if (!res.ok || cancelled) {
           hydratedIdentityRef.current = identityKey;
@@ -257,19 +260,24 @@ export function useAthleteCloudSync({
 
           skipNextSaveRef.current = true;
 
-          if (cloudState.plannedEvents.length > 0 && serverIsNewer) {
+          if (serverIsNewer && Array.isArray(cloudState.plannedEvents)) {
             setPlannedEvents(cloudState.plannedEvents);
           } else if (cloudState.plannedEvents.length > 0 && plannedEvents.length === 0) {
             setPlannedEvents(cloudState.plannedEvents);
           }
 
-          if (cloudState.targetGoals.length > 0 && serverIsNewer) {
+          if (serverIsNewer && Array.isArray(cloudState.targetGoals)) {
             setTargetGoals(cloudState.targetGoals);
           } else if (cloudState.targetGoals.length > 0 && targetGoals.length === 0) {
             setTargetGoals(cloudState.targetGoals);
           }
 
-          if (cloudState.annualMileageGoals.length > 0 && serverIsNewer) {
+          if (serverIsNewer && Array.isArray(cloudState.annualMileageGoals)) {
+            setAnnualMileageGoals(cloudState.annualMileageGoals);
+          } else if (
+            cloudState.annualMileageGoals.length > 0 &&
+            annualMileageGoals.length === 0
+          ) {
             setAnnualMileageGoals(cloudState.annualMileageGoals);
           }
 
@@ -298,8 +306,8 @@ export function useAthleteCloudSync({
 
           if (
             Array.isArray(cloudState.sessionCheckIns) &&
-            cloudState.sessionCheckIns.length > 0 &&
-            (serverIsNewer || sessionCheckIns.length === 0)
+            (serverIsNewer ||
+              (cloudState.sessionCheckIns.length > 0 && sessionCheckIns.length === 0))
           ) {
             setSessionCheckIns(cloudState.sessionCheckIns);
             try {
@@ -338,6 +346,7 @@ export function useAthleteCloudSync({
     identityKey,
     plannedEvents.length,
     targetGoals.length,
+    annualMileageGoals.length,
     sessionCheckIns.length,
     setPlannedEvents,
     setTargetGoals,
@@ -354,7 +363,7 @@ export function useAthleteCloudSync({
     let cancelled = false;
     fetch('/api/athlete-state', {
       credentials: 'include',
-      headers: getSavedIntervalsHeaders(),
+      headers: buildThreshSessionHeaders(),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -405,10 +414,7 @@ export function useAthleteCloudSync({
         const res = await fetch('/api/athlete-state', {
           method: 'PUT',
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getSavedIntervalsHeaders(),
-          },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify({
             plannedEvents,
             targetGoals,
@@ -478,10 +484,7 @@ export function useAthleteCloudSync({
       fetch('/api/teams/sync-snapshot', {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getSavedIntervalsHeaders(),
-        },
+        headers: buildThreshSessionHeaders(),
         body: JSON.stringify({
           origin: window.location.origin,
           athleteName: athleteProfile.name,

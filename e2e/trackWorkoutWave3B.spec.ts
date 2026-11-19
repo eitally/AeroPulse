@@ -2,12 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 
-const LOCAL_BRAIN_EVIDENCE_DIR =
-  '/Users/elliottally/.gemini/antigravity/brain/b118f55f-6bcc-48bc-a4be-39ee1c8f6393/wave3b_evidence';
 const EVIDENCE_DIR =
-  !process.env.CI && fs.existsSync(path.dirname(LOCAL_BRAIN_EVIDENCE_DIR))
-    ? LOCAL_BRAIN_EVIDENCE_DIR
-    : path.join(process.cwd(), 'test-results', 'wave3b_evidence');
+  process.env.THRESH_EVIDENCE_DIR ||
+  path.join(process.cwd(), 'test-results', 'wave3b_evidence');
 
 async function enterSampleDemoMode(page: Page, hash = '') {
   await page.goto(`/?demo=1${hash}`);

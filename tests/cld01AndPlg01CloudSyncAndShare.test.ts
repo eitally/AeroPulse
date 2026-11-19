@@ -3,6 +3,8 @@ import { execFileSync } from 'child_process';
 import express from 'express';
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { apiRouter } from '../server/apiRouter.ts';
 import {
   deriveStravaSessionSid,
@@ -376,7 +378,11 @@ describe('PLG-01: Share Workout Codec, Clean-Room Guard & Live Split Recalculati
 
   it('passes Impeccable static UI anti-pattern detector cleanly on ShareWorkoutPage when available locally', () => {
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (!fs.existsSync(detectorPath)) {
       return;
     }

@@ -2,9 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
-const EVIDENCE_ROOT =
-  '/Users/elliottally/.gemini/antigravity/brain/b118f55f-6bcc-48bc-a4be-39ee1c8f6393';
-const EVIDENCE_DIR = path.join(EVIDENCE_ROOT, 'brd01_evidence');
+const EVIDENCE_ROOT = process.env.THRESH_EVIDENCE_DIR || '';
+const EVIDENCE_DIR = EVIDENCE_ROOT ? path.join(EVIDENCE_ROOT, 'brd01_evidence') : '';
 
 async function mockExternalFonts(page: Page) {
   await page.route('https://fonts.googleapis.com/**', (route) =>

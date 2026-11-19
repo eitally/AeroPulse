@@ -24,6 +24,23 @@ const pendingCallbacks = new Map<
   }
 >();
 
+function failAllPendingWorkerCallbacks(reason: string): void {
+  const err = new Error(reason);
+  const entries = Array.from(pendingCallbacks.values());
+  pendingCallbacks.clear();
+  if (sharedWorker) {
+    try {
+      sharedWorker.terminate();
+    } catch {
+      // ignore terminate error
+    }
+    sharedWorker = null;
+  }
+  for (const pending of entries) {
+    pending.reject(err);
+  }
+}
+
 function getActivityWorker(): Worker | null {
   if (typeof window === 'undefined' || typeof Worker === 'undefined') {
     return null;
@@ -46,6 +63,12 @@ function getActivityWorker(): Worker | null {
     };
     sharedWorker.onerror = (err) => {
       console.error('ActivityProcessor Worker Error:', err);
+      failAllPendingWorkerCallbacks(
+        err?.message ? `Activity worker error: ${err.message}` : 'Activity worker crashed.'
+      );
+    };
+    sharedWorker.onmessageerror = () => {
+      failAllPendingWorkerCallbacks('Activity worker message deserialization failed.');
     };
   }
   return sharedWorker;

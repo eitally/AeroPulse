@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { execFileSync } from 'child_process';
 import http from 'http';
 import express from 'express';
@@ -527,7 +529,11 @@ describe('COACH-01 & COACH-02: Pure Engines + Safe-Sport Team API Sync & Cohort 
 
   it('passes Impeccable detect.mjs with 0 anti-pattern findings on Wave 2 UI files', () => {
     const detectorPath =
-      '/Users/elliottally/.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs';
+      process.env.IMPECCABLE_DETECT_PATH ||
+      path.join(
+        os.homedir(),
+        '.gemini/config/plugins/impeccable/skills/impeccable/scripts/detect.mjs'
+      );
     if (!fs.existsSync(detectorPath)) {
       return;
     }

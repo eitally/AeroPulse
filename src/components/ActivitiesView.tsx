@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useModalDialog } from '../hooks/useModalDialog';
 import {
   ArrowLeftRight,
@@ -45,11 +45,16 @@ import {
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
-const InteractiveRouteMap = lazy(() =>
-  import('./InteractiveRouteMap').then((m) => ({ default: m.InteractiveRouteMap }))
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+
+const InteractiveRouteMap = lazyWithRetry(
+  () => import('./InteractiveRouteMap').then((m) => ({ default: m.InteractiveRouteMap })),
+  { chunkKey: 'InteractiveRouteMap', restoreTab: 'activities' }
 );
-const UPlotStreamChart = lazy(() =>
-  import('./charts/UPlotStreamChart').then((m) => ({ default: m.UPlotStreamChart }))
+const UPlotStreamChart = lazyWithRetry(
+  () => import('./charts/UPlotStreamChart').then((m) => ({ default: m.UPlotStreamChart })),
+  { chunkKey: 'UPlotStreamChart', restoreTab: 'activities' }
 );
 import {
   buildSample1HzGpxString,
@@ -355,6 +360,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
       streams: activeSelectedStream,
     })
       .then(({ analytics }) => setWorkerAnalytics(analytics))
+      .catch(() => undefined)
       .finally(() => setIsWorkerProcessing(false));
   }, [selectedActivity, activeSelectedStream]);
 
@@ -1385,23 +1391,25 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                   {/* Left 7 Columns: Interactive Multi-Workout GPS Route Map */}
                   <div className="lg:col-span-7 space-y-2">
-                    <Suspense
-                      fallback={
-                        <div className="h-[460px] sm:h-[540px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                          Loading Route Map…
-                        </div>
-                      }
-                    >
-                      <InteractiveRouteMap
-                        mode="MULTI"
-                        activities={filteredActivities}
-                        distanceUnit={distanceUnit}
-                        highlightedActivityId={hoveredRouteActivityId}
-                        onHoverActivity={setHoveredRouteActivityId}
-                        onSelectActivity={handleRouteMapSelectActivity}
-                        heightClass="h-[460px] sm:h-[540px]"
-                      />
-                    </Suspense>
+                    <WorkspaceErrorBoundary fallbackTitle="Route Map" restoreTab="activities">
+                      <Suspense
+                        fallback={
+                          <div className="h-[460px] sm:h-[540px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                            Loading Route Map…
+                          </div>
+                        }
+                      >
+                        <InteractiveRouteMap
+                          mode="MULTI"
+                          activities={filteredActivities}
+                          distanceUnit={distanceUnit}
+                          highlightedActivityId={hoveredRouteActivityId}
+                          onHoverActivity={setHoveredRouteActivityId}
+                          onSelectActivity={handleRouteMapSelectActivity}
+                          heightClass="h-[460px] sm:h-[540px]"
+                        />
+                      </Suspense>
+                    </WorkspaceErrorBoundary>
                     {onHydrateMoreRoutes && (
                       <div className="flex items-center justify-between gap-2 px-1">
                         <span className="text-xs text-slate-500">
@@ -2007,38 +2015,40 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
             <div className="space-y-5">
               {/* SYNCHRONIZED 1HZ UPLOT TELEMETRY COMPARATOR (Shared uPlot.sync crosshair) */}
               {(compareActivityA.streams || compareActivityB.streams) && (
-                <Suspense
-                  fallback={
-                    <div className="h-56 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                      Loading 1Hz Stream Comparator…
+                <WorkspaceErrorBoundary fallbackTitle="1Hz Stream Comparator" restoreTab="activities">
+                  <Suspense
+                    fallback={
+                      <div className="h-56 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                        Loading 1Hz Stream Comparator…
+                      </div>
+                    }
+                  >
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {compareActivityA.streams && (
+                        <UPlotStreamChart
+                          streams={compareActivityA.streams}
+                          sportCategory={compareActivityA.sportCategory}
+                          distanceUnit={distanceUnit}
+                          athleteWeightKg={athleteWeightKg}
+                          intervals={compareActivityA.intervals}
+                          syncKey="aeropulse-compare-sync"
+                          height={220}
+                        />
+                      )}
+                      {compareActivityB.streams && (
+                        <UPlotStreamChart
+                          streams={compareActivityB.streams}
+                          sportCategory={compareActivityB.sportCategory}
+                          distanceUnit={distanceUnit}
+                          athleteWeightKg={athleteWeightKg}
+                          intervals={compareActivityB.intervals}
+                          syncKey="aeropulse-compare-sync"
+                          height={220}
+                        />
+                      )}
                     </div>
-                  }
-                >
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {compareActivityA.streams && (
-                      <UPlotStreamChart
-                        streams={compareActivityA.streams}
-                        sportCategory={compareActivityA.sportCategory}
-                        distanceUnit={distanceUnit}
-                        athleteWeightKg={athleteWeightKg}
-                        intervals={compareActivityA.intervals}
-                        syncKey="aeropulse-compare-sync"
-                        height={220}
-                      />
-                    )}
-                    {compareActivityB.streams && (
-                      <UPlotStreamChart
-                        streams={compareActivityB.streams}
-                        sportCategory={compareActivityB.sportCategory}
-                        distanceUnit={distanceUnit}
-                        athleteWeightKg={athleteWeightKg}
-                        intervals={compareActivityB.intervals}
-                        syncKey="aeropulse-compare-sync"
-                        height={220}
-                      />
-                    )}
-                  </div>
-                </Suspense>
+                  </Suspense>
+                </WorkspaceErrorBoundary>
               )}
 
               {/* 1. OVERLAID POWER / OUTPUT COMPARISON CHART */}
@@ -4099,25 +4109,27 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                   Boolean(
                     selectedActivity.streams?.latlng && selectedActivity.streams.latlng.length > 2
                   )) && (
-                <Suspense
-                  fallback={
-                    <div className="h-[340px] sm:h-[400px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                      Loading GPS Route Map…
-                    </div>
-                  }
-                >
-                  <InteractiveRouteMap
-                    mode="SINGLE"
-                    activity={selectedActivity}
-                    distanceUnit={distanceUnit}
-                    activeStreamIndex={streamHoverIndex}
-                    onHoverStreamIndex={setStreamHoverIndex}
-                    zoomStreamRange={streamZoomRange}
-                    selectedSegmentId={modalSelectedSegmentId}
-                    onSelectSegmentId={setModalSelectedSegmentId}
-                    heightClass="h-[340px] sm:h-[400px]"
-                  />
-                </Suspense>
+                <WorkspaceErrorBoundary fallbackTitle="GPS Route Map" restoreTab="activities">
+                  <Suspense
+                    fallback={
+                      <div className="h-[340px] sm:h-[400px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                        Loading GPS Route Map…
+                      </div>
+                    }
+                  >
+                    <InteractiveRouteMap
+                      mode="SINGLE"
+                      activity={selectedActivity}
+                      distanceUnit={distanceUnit}
+                      activeStreamIndex={streamHoverIndex}
+                      onHoverStreamIndex={setStreamHoverIndex}
+                      zoomStreamRange={streamZoomRange}
+                      selectedSegmentId={modalSelectedSegmentId}
+                      onSelectSegmentId={setModalSelectedSegmentId}
+                      heightClass="h-[340px] sm:h-[400px]"
+                    />
+                  </Suspense>
+                </WorkspaceErrorBoundary>
               )}
 
               {/* 5-Second Post-Workout RPE, Fueling (g/hr Carbs & mg/hr Sodium) & Gear Quick-Log */}
@@ -4384,35 +4396,37 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       </div>
                     )}
 
-                    <Suspense
-                      fallback={
-                        <div className="h-[280px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                          Loading 1Hz Stream Canvas…
-                        </div>
-                      }
-                    >
-                      <UPlotStreamChart
-                        streams={activeStream!}
-                        sportCategory={selectedActivity.sportCategory}
-                        distanceUnit={distanceUnit}
-                        athleteWeightKg={athleteWeightKg}
-                        intervals={
-                          workerAnalytics?.intervals ||
-                          liveDexieStream?.intervals ||
-                          selectedActivity.intervals
+                    <WorkspaceErrorBoundary fallbackTitle="1Hz Stream Canvas" restoreTab="activities">
+                      <Suspense
+                        fallback={
+                          <div className="h-[280px] rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                            Loading 1Hz Stream Canvas…
+                          </div>
                         }
-                        peakWindows={workerAnalytics?.peakWindows}
-                        workerMetrics={workerAnalytics}
-                        isWorkerProcessing={isWorkerProcessing}
-                        onTriggerWorker1HzUpsample={handleTriggerWorker1HzUpsample}
-                        syncKey="thresh-activity-inspector"
-                        onHoverIndex={setStreamHoverIndex}
-                        zoomRange={streamZoomRange}
-                        zoomWindowSecs={debriefZoomWindow}
-                        onZoomRangeChange={setStreamZoomRange}
-                        height={280}
-                      />
-                    </Suspense>
+                      >
+                        <UPlotStreamChart
+                          streams={activeStream!}
+                          sportCategory={selectedActivity.sportCategory}
+                          distanceUnit={distanceUnit}
+                          athleteWeightKg={athleteWeightKg}
+                          intervals={
+                            workerAnalytics?.intervals ||
+                            liveDexieStream?.intervals ||
+                            selectedActivity.intervals
+                          }
+                          peakWindows={workerAnalytics?.peakWindows}
+                          workerMetrics={workerAnalytics}
+                          isWorkerProcessing={isWorkerProcessing}
+                          onTriggerWorker1HzUpsample={handleTriggerWorker1HzUpsample}
+                          syncKey="thresh-activity-inspector"
+                          onHoverIndex={setStreamHoverIndex}
+                          zoomRange={streamZoomRange}
+                          zoomWindowSecs={debriefZoomWindow}
+                          onZoomRangeChange={setStreamZoomRange}
+                          height={280}
+                        />
+                      </Suspense>
+                    </WorkspaceErrorBoundary>
                   </div>
                 );
               })()}
@@ -5299,7 +5313,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                                   </td>
                                   <td className="py-2.5 px-3 text-right text-blue-600 dark:text-blue-400 font-semibold">
                                     {eff.avgWatts
-                                      ? athleteProfile?.safeSportHideWeight
+                                      ? athleteProfile?.safeSportHideWeight || athleteWeightKg <= 0
                                         ? `${eff.avgWatts}W`
                                         : `${eff.avgWatts}W (${(eff.avgWatts / athleteWeightKg).toFixed(2)} W/kg)`
                                       : eff.avgPaceSecsPerKm

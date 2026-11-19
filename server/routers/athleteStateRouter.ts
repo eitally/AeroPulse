@@ -138,6 +138,21 @@ export function sanitizeAthleteCloudState(
         ...(typeof ev?.workoutSyntax === 'string'
           ? { workoutSyntax: ev.workoutSyntax.slice(0, 4000) }
           : {}),
+        ...(typeof ev?.scheduledTime === 'string' && ev.scheduledTime.trim()
+          ? { scheduledTime: ev.scheduledTime.trim().slice(0, 16) }
+          : {}),
+        ...(ev?.sessionSlot === 'SINGLE' || ev?.sessionSlot === 'AM' || ev?.sessionSlot === 'PM'
+          ? { sessionSlot: ev.sessionSlot }
+          : {}),
+        ...(typeof ev?.locationName === 'string' && ev.locationName.trim()
+          ? { locationName: ev.locationName.trim().slice(0, 120) }
+          : {}),
+        ...(typeof ev?.locationCategory === 'string' && ev.locationCategory.trim()
+          ? { locationCategory: ev.locationCategory.trim().slice(0, 40) as any }
+          : {}),
+        ...(typeof ev?.meetingNotes === 'string' && ev.meetingNotes.trim()
+          ? { meetingNotes: ev.meetingNotes.trim().slice(0, 240) }
+          : {}),
         ...(Array.isArray(ev?.structuredSteps)
           ? { structuredSteps: ev.structuredSteps.slice(0, 80) }
           : {}),
@@ -256,11 +271,14 @@ export async function loadAthleteCloudState(req: Request): Promise<AthleteCloudS
     return migrated;
   }
 
-  return sanitizeAthleteCloudState({
+  const emptyUnsaved = sanitizeAthleteCloudState({
     plannedEvents: [],
     targetGoals: [],
     annualMileageGoals: [],
   });
+  // Empty string marks an uninitialized cloud vault so local plans created pre-sign-in are never wiped on first sync
+  emptyUnsaved.updatedAt = '';
+  return emptyUnsaved;
 }
 
 export async function saveAthleteCloudState(

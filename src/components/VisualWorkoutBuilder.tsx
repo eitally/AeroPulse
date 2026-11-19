@@ -1264,13 +1264,16 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                         <span>Rest</span>
                         <input
                           type="number"
-                          min={5}
+                          min={row.restUnit === 'min' ? 0.5 : 5}
                           max={800}
+                          step={row.restUnit === 'min' ? 0.5 : 1}
                           aria-label={`Block ${idx + 1} Rest`}
                           value={row.restValue}
                           onChange={(e) => {
                             setRawSyntaxOverride(null);
-                            const v = Math.max(5, Number(e.target.value) || 30);
+                            const minRest = row.restUnit === 'min' ? 0.5 : 5;
+                            const fallbackRest = row.restUnit === 'min' ? 1 : 30;
+                            const v = Math.max(minRest, Number(e.target.value) || fallbackRest);
                             setSets((prev) =>
                               prev.map((s) => (s.id === row.id ? { ...s, restValue: v } : s))
                             );

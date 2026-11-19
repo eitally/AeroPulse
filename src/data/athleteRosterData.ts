@@ -91,6 +91,7 @@ export function applyAthletePrivacyShield(record: ConnectedAthleteRecord): {
   activities: UnifiedActivity[];
   redactedWellness: boolean;
   redactedGpsRoutes: boolean;
+  redactedPmc: boolean;
 } {
   const isCoach = record.role === 'COACH_EDIT';
   const p = record.privacySettings;
@@ -99,18 +100,56 @@ export function applyAthletePrivacyShield(record: ConnectedAthleteRecord): {
     p.shareWellnessAndHrv === 'ALL_CONNECTIONS' ||
     (p.shareWellnessAndHrv === 'COACHES_ONLY' && isCoach);
 
+  const allowPmc =
+    p.sharePmcAndZones === 'ALL_CONNECTIONS' ||
+    (p.sharePmcAndZones === 'COACHES_ONLY' && isCoach);
+
   const allowGps =
     p.shareGpsRoutes === 'ALL_CONNECTIONS' ||
     (p.shareGpsRoutes === 'COACHES_ONLY' && isCoach);
 
-  const filteredWellness = record.wellnessDays.map((w) => {
-    if (allowWellness) return w;
+  const filteredWellness: UnifiedWellnessDay[] = record.wellnessDays.map((w) => {
+    if (allowWellness && allowPmc) return w;
     return {
       ...w,
-      hrvRMSSD: 0,
-      restingHR: 0,
-      sleepScore: 0,
-      sleepSecs: 0,
+      ...(allowWellness
+        ? {}
+        : {
+            hrvRMSSD: 0,
+            hrvBaseline7d: 0,
+            hrvNormalBandLow: undefined,
+            hrvNormalBandHigh: undefined,
+            hrvStatus: undefined,
+            restingHR: 0,
+            sleepScore: 0,
+            sleepSecs: 0,
+            sleepQuality: undefined,
+            sleepDebt7dSecs: undefined,
+            spO2: undefined,
+            respiration: undefined,
+            soreness: undefined,
+            readinessStatus: 'Optimal' as const,
+          }),
+      ...(allowPmc
+        ? {}
+        : {
+            ctl: 0,
+            atl: 0,
+            tsb: 0,
+            loadRatio: undefined,
+            rampRate: 0,
+            dailyLoad: 0,
+            rideEftp: undefined,
+            rideWPrime: undefined,
+            ridePMax: undefined,
+            runEftp: undefined,
+            runWPrime: undefined,
+            runPMax: undefined,
+            vo2MaxCycling: undefined,
+            vo2MaxRunning: undefined,
+            garminTrainingStatus: undefined,
+            trainingStatusReason: undefined,
+          }),
     };
   });
 
@@ -120,6 +159,8 @@ export function applyAthletePrivacyShield(record: ConnectedAthleteRecord): {
     if (allowGps) return a;
     return {
       ...a,
+      startLatLng: undefined,
+      endLatLng: undefined,
       routeLatLngs: undefined,
       summaryPolyline: undefined,
       streams: a.streams
@@ -136,5 +177,6 @@ export function applyAthletePrivacyShield(record: ConnectedAthleteRecord): {
     activities: filteredActivities,
     redactedWellness: !allowWellness,
     redactedGpsRoutes: !allowGps,
+    redactedPmc: !allowPmc,
   };
 }

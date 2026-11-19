@@ -145,7 +145,28 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
 }
 
 // In-memory decrypted hot cache per tenant (keeps sync reads fast while persisting encrypted to disk + Postgres)
+const MAX_MEMORY_VAULT_ENTRIES = 500;
+const MEMORY_VAULT_TTL_MS = 5 * 60 * 1000;
 const memoryVaultCache = new Map<string, { value: unknown; updatedAtMs: number }>();
+
+function setBoundedMemoryVaultEntry(safeId: string, value: unknown): void {
+  const now = Date.now();
+  if (memoryVaultCache.has(safeId)) {
+    memoryVaultCache.delete(safeId);
+  } else if (memoryVaultCache.size >= MAX_MEMORY_VAULT_ENTRIES) {
+    for (const [k, entry] of memoryVaultCache.entries()) {
+      if (now - entry.updatedAtMs >= MEMORY_VAULT_TTL_MS) {
+        memoryVaultCache.delete(k);
+      }
+    }
+    while (memoryVaultCache.size >= MAX_MEMORY_VAULT_ENTRIES) {
+      const oldestKey = memoryVaultCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      memoryVaultCache.delete(oldestKey);
+    }
+  }
+  memoryVaultCache.set(safeId, { value, updatedAtMs: now });
+}
 
 function getEncryptedVaultFilePath(tenantId: string): string {
   return `${VAULT_FILE_PREFIX}${sanitizeTenantId(tenantId)}.enc`;
@@ -158,8 +179,14 @@ function getEncryptedVaultFilePath(tenantId: string): string {
 export function loadTenantVaultSync<T>(tenantId: string, fallback: T): T {
   const safeId = sanitizeTenantId(tenantId);
   const cached = memoryVaultCache.get(safeId);
-  if (cached && Date.now() - cached.updatedAtMs < 5 * 60 * 1000) {
+  if (cached && Date.now() - cached.updatedAtMs < MEMORY_VAULT_TTL_MS) {
+    // Refresh LRU order on hot read
+    memoryVaultCache.delete(safeId);
+    memoryVaultCache.set(safeId, cached);
     return structuredClone(cached.value) as T;
+  }
+  if (cached) {
+    memoryVaultCache.delete(safeId);
   }
 
   try {
@@ -168,7 +195,7 @@ export function loadTenantVaultSync<T>(tenantId: string, fallback: T): T {
       const envelope = fs.readFileSync(encPath, 'utf8').trim();
       const decrypted = decryptJsonFromVault<T>(envelope);
       if (decrypted !== null) {
-        memoryVaultCache.set(safeId, { value: decrypted, updatedAtMs: Date.now() });
+        setBoundedMemoryVaultEntry(safeId, decrypted);
         return structuredClone(decrypted);
       }
     }
@@ -184,7 +211,7 @@ export function loadTenantVaultSync<T>(tenantId: string, fallback: T): T {
  */
 export function saveTenantVaultSync<T>(tenantId: string, data: T): void {
   const safeId = sanitizeTenantId(tenantId);
-  memoryVaultCache.set(safeId, { value: structuredClone(data), updatedAtMs: Date.now() });
+  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
   const envelope = encryptJsonForVault(data);
 
   try {
@@ -230,7 +257,7 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
       if (result.rows.length > 0) {
         const decrypted = decryptJsonFromVault<T>(result.rows[0].encrypted_envelope);
         if (decrypted !== null) {
-          memoryVaultCache.set(safeId, { value: decrypted, updatedAtMs: Date.now() });
+          setBoundedMemoryVaultEntry(safeId, decrypted);
           try {
             fs.writeFileSync(getEncryptedVaultFilePath(safeId), result.rows[0].encrypted_envelope, {
               encoding: 'utf8',
@@ -256,7 +283,7 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
  */
 export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promise<void> {
   const safeId = sanitizeTenantId(tenantId);
-  memoryVaultCache.set(safeId, { value: structuredClone(data), updatedAtMs: Date.now() });
+  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
   const envelope = encryptJsonForVault(data);
 
   try {

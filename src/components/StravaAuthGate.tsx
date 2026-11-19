@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -18,7 +18,13 @@ import {
   Sun,
   Users,
 } from './icons/PhosphorIcons';
-import { ArchiveOnboardingWizard } from './ArchiveOnboardingWizard';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+
+const ArchiveOnboardingWizard = lazyWithRetry(
+  () => import('./ArchiveOnboardingWizard').then((m) => ({ default: m.ArchiveOnboardingWizard })),
+  { chunkKey: 'ArchiveOnboardingWizard' }
+);
 import {
   CoachDataSharingTier,
   ConnectionStatus,
@@ -395,7 +401,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   // Check WebAuthn passkey availability
   useEffect(() => {
-    void isPasskeySupported().then(setPasskeySupported);
+    void isPasskeySupported()
+      .then(setPasskeySupported)
+      .catch(() => setPasskeySupported(false));
   }, []);
 
   // Hydrate session if already signed in via THRESH session cookie
@@ -3390,22 +3398,28 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         </div>
       )}
 
-      <ArchiveOnboardingWizard
-        isOpen={showArchiveWizard}
-        onClose={() => setShowArchiveWizard(false)}
-        existingActivities={existingActivities}
-        distanceUnit={distanceUnit}
-        onImportBatch={(acts) => {
-          onImportBatchActivities?.(acts);
-        }}
-        onCompleteOnboarding={async () => {
-          setShowArchiveWizard(false);
-          if (onBypassToLocalSession) {
-            await onBypassToLocalSession();
-          }
-          setStep(3);
-        }}
-      />
+      {showArchiveWizard && (
+        <WorkspaceErrorBoundary fallbackTitle="Archive Import Wizard">
+          <Suspense fallback={null}>
+            <ArchiveOnboardingWizard
+              isOpen={showArchiveWizard}
+              onClose={() => setShowArchiveWizard(false)}
+              existingActivities={existingActivities}
+              distanceUnit={distanceUnit}
+              onImportBatch={(acts) => {
+                onImportBatchActivities?.(acts);
+              }}
+              onCompleteOnboarding={async () => {
+                setShowArchiveWizard(false);
+                if (onBypassToLocalSession) {
+                  await onBypassToLocalSession();
+                }
+                setStep(3);
+              }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
     </div>
   );
 };

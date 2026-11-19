@@ -682,7 +682,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify({
             origin: originUrl,
             rows: parsedRosterPreview,
@@ -731,7 +731,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildThreshSessionHeaders(),
           body: JSON.stringify({ origin: originUrl, membershipId }),
         }
       );
@@ -1848,7 +1848,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                     {
                                       method: 'PATCH',
                                       credentials: 'include',
-                                      headers: { 'Content-Type': 'application/json' },
+                                      headers: buildThreshSessionHeaders(),
                                       body: JSON.stringify({ eventGroup: val, origin: originUrl }),
                                     }
                                   );

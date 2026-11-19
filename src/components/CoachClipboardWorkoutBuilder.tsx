@@ -39,6 +39,7 @@ import {
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
+import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
 import {
   Bike,
   Check,
@@ -551,19 +552,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             ? selectedAthleteIds.map((id) => id.replace(/^team-mem-/, ''))
             : undefined;
 
-        const token =
-          typeof localStorage !== 'undefined'
-            ? localStorage.getItem('aeropulse_session_token') || ''
-            : '';
         const resp = await fetch(
           `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
           {
             method: 'POST',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'x-session-token': token } : {}),
-            },
+            headers: buildThreshSessionHeaders(),
             body: JSON.stringify({
               origin: typeof window !== 'undefined' ? window.location.origin : '',
               targetSquadGroup: 'ALL',
@@ -586,7 +580,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             }),
           }
         );
-        const data = await resp.json();
+        const data = await resp.json().catch(() => ({}));
         if (resp.ok && data.team) {
           const updatedTeam = data.team as TeamSummaryWithRole;
           onTeamsUpdated(
@@ -595,6 +589,16 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             ),
             updatedTeam.brand.teamId
           );
+          setAssignFeedback(
+            `Assigned "${title}" to ${audienceLabel} for ${workoutDate}${logisticsBadge ? ` (${logisticsBadge})` : ''}.`
+          );
+          return;
+        }
+        if (!resp.ok) {
+          setAssignFeedback(
+            data?.error || 'Could not publish workout to the team cloud roster. Please try again.'
+          );
+          return;
         }
       }
 

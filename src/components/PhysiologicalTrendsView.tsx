@@ -125,15 +125,15 @@ const TREND_METRICS: TrendMetricMeta[] = [
 
 interface EnrichedTrendBucket {
   date: string;
-  vo2Max: number;
-  rideEftp: number;
-  wPerKg: number;
-  runEftp: number;
-  hrvRMSSD: number;
-  restingHR: number;
-  efficiencyFactor: number; // scaled x100 e.g. 1.78 -> 178
-  rawEf: number;
-  weightKg: number;
+  vo2Max: number | null;
+  rideEftp: number | null;
+  wPerKg: number | null;
+  runEftp: number | null;
+  hrvRMSSD: number | null;
+  restingHR: number | null;
+  efficiencyFactor: number | null; // scaled x100 e.g. 1.78 -> 178
+  rawEf: number | null;
+  weightKg: number | null;
   ctl: number;
 }
 
@@ -207,21 +207,21 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       }
     }
 
-    // Carry forward last valid values so sparse days don't drop to zero
-    let lastVo2 = 51;
-    let lastRideEftp = 310;
-    let lastRunEftp = 340;
-    let lastWeight = athleteWeightKg || 70;
-    let lastHrv = 52;
-    let lastRhr = 49;
-    let lastEf = 1.72;
+    // Only carry forward genuine observed positive values (never invent fake baselines)
+    let lastVo2: number | null = null;
+    let lastRideEftp: number | null = null;
+    let lastRunEftp: number | null = null;
+    let lastWeight: number | null = athleteWeightKg > 35 && athleteWeightKg !== 70 ? athleteWeightKg : null;
+    let lastHrv: number | null = null;
+    let lastRhr: number | null = null;
+    let lastEf: number | null = null;
 
     const dailyClean = source.map((w) => {
       const vo2 = w.vo2MaxCycling || w.vo2MaxRunning || 0;
       if (vo2 > 25) lastVo2 = vo2;
-      if (w.rideEftp && w.rideEftp > 120) lastRideEftp = Math.round(w.rideEftp);
-      if (w.runEftp && w.runEftp > 150) lastRunEftp = Math.round(w.runEftp);
-      if (w.weightKg && w.weightKg > 35) lastWeight = Number(w.weightKg.toFixed(1));
+      if (w.rideEftp && w.rideEftp > 60) lastRideEftp = Math.round(w.rideEftp);
+      if (w.runEftp && w.runEftp > 80) lastRunEftp = Math.round(w.runEftp);
+      if (w.weightKg && w.weightKg > 35 && w.weightKg !== 70) lastWeight = Number(w.weightKg.toFixed(1));
       if (w.hrvBaseline7d > 15) lastHrv = Math.round(w.hrvBaseline7d);
       else if (w.hrvRMSSD > 15) lastHrv = Math.round(w.hrvRMSSD);
       if (w.restingHR > 30) lastRhr = Math.round(w.restingHR);
@@ -229,20 +229,26 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       const dayEfs = efByDate.get(w.date);
       if (dayEfs && dayEfs.length > 0) {
         const meanDayEf = dayEfs.reduce((a, b) => a + b, 0) / dayEfs.length;
-        lastEf = Number((lastEf * 0.8 + meanDayEf * 0.2).toFixed(2));
+        lastEf =
+          lastEf === null
+            ? Number(meanDayEf.toFixed(2))
+            : Number((lastEf * 0.8 + meanDayEf * 0.2).toFixed(2));
       }
 
-      const wPerKg = Number((lastRideEftp / Math.max(40, lastWeight)).toFixed(2));
+      const wPerKg =
+        lastRideEftp !== null && lastWeight !== null && lastWeight > 0
+          ? Number((lastRideEftp / lastWeight).toFixed(2))
+          : null;
 
       return {
         date: w.date,
-        vo2Max: Number(lastVo2.toFixed(1)),
+        vo2Max: lastVo2 !== null ? Number(lastVo2.toFixed(1)) : null,
         rideEftp: lastRideEftp,
         wPerKg,
         runEftp: lastRunEftp,
         hrvRMSSD: lastHrv,
         restingHR: lastRhr,
-        efficiencyFactor: Math.round(lastEf * 100),
+        efficiencyFactor: lastEf !== null ? Math.round(lastEf * 100) : null,
         rawEf: lastEf,
         weightKg: lastWeight,
         ctl: Number((w.ctl || 0).toFixed(1)),
@@ -343,19 +349,21 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       .slice(0, 12);
   }, [activities, wellnessDays, envFilter]);
 
-  const firstPoint = trendSeries[0] || {
+  const EMPTY_TREND_BUCKET: EnrichedTrendBucket = {
     date: '—',
-    vo2Max: 51,
-    rideEftp: 310,
-    wPerKg: 4.4,
-    runEftp: 340,
-    hrvRMSSD: 52,
-    restingHR: 49,
-    efficiencyFactor: 172,
-    rawEf: 1.72,
-    weightKg: 70,
-    ctl: 65,
+    vo2Max: null,
+    rideEftp: null,
+    wPerKg: null,
+    runEftp: null,
+    hrvRMSSD: null,
+    restingHR: null,
+    efficiencyFactor: null,
+    rawEf: null,
+    weightKg: null,
+    ctl: 0,
   };
+
+  const firstPoint = trendSeries[0] || EMPTY_TREND_BUCKET;
 
   const latestPoint = trendSeries[trendSeries.length - 1] || firstPoint;
   const activeIdx =
@@ -364,7 +372,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
       : Math.max(0, trendSeries.length - 1);
   const activePoint = trendSeries[activeIdx] || latestPoint;
 
-  const getMetricValue = (pt: EnrichedTrendBucket, key: TrendMetricKey): number => {
+  const getMetricValue = (pt: EnrichedTrendBucket, key: TrendMetricKey): number | null => {
     switch (key) {
       case 'vo2Max':
         return pt.vo2Max;
@@ -384,10 +392,11 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   };
 
   const formatMetricDisplay = (pt: EnrichedTrendBucket, meta: TrendMetricMeta): string => {
-    if (meta.key === 'efficiencyFactor') {
-      return `${pt.rawEf.toFixed(2)} EF`;
-    }
     const val = getMetricValue(pt, meta.key);
+    if (val === null) return '—';
+    if (meta.key === 'efficiencyFactor') {
+      return pt.rawEf !== null ? `${pt.rawEf.toFixed(2)} EF` : '—';
+    }
     return `${val.toFixed(meta.decimals)} ${meta.unit}`;
   };
 
@@ -395,23 +404,35 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   const metricScales = useMemo(() => {
     const map = new Map<
       TrendMetricKey,
-      { min: number; max: number; baseline: number; pctMin: number; pctMax: number }
+      {
+        min: number;
+        max: number;
+        baseline: number;
+        pctMin: number;
+        pctMax: number;
+        hasData: boolean;
+      }
     >();
 
     let globalPctMin = -5;
     let globalPctMax = 5;
 
     for (const meta of TREND_METRICS) {
-      const vals = trendSeries.map((pt) => getMetricValue(pt, meta.key)).filter((v) => v > 0);
-      const baseline = vals[0] || 1;
-      const rawMin = vals.length > 0 ? Math.min(...vals) : 0;
-      const rawMax = vals.length > 0 ? Math.max(...vals) : 100;
+      const vals = trendSeries
+        .map((pt) => getMetricValue(pt, meta.key))
+        .filter((v): v is number => v !== null && v > 0);
+      const hasData = vals.length > 0;
+      const baseline = vals[0] ?? 1;
+      const rawMin = hasData ? Math.min(...vals) : 0;
+      const rawMax = hasData ? Math.max(...vals) : 100;
       const pad = Math.max(meta.key === 'wPerKg' ? 0.15 : 2, (rawMax - rawMin) * 0.18);
 
-      const pcts = vals.map((v) => ((v - baseline) / Math.max(0.01, baseline)) * 100);
+      const pcts = hasData
+        ? vals.map((v) => ((v - baseline) / Math.max(0.01, baseline)) * 100)
+        : [];
       const pMin = pcts.length > 0 ? Math.min(...pcts) : -5;
       const pMax = pcts.length > 0 ? Math.max(...pcts) : 5;
-      if (effectiveSelectedMetrics.includes(meta.key)) {
+      if (effectiveSelectedMetrics.includes(meta.key) && hasData) {
         globalPctMin = Math.min(globalPctMin, Math.floor(pMin - 2));
         globalPctMax = Math.max(globalPctMax, Math.ceil(pMax + 2));
       }
@@ -422,6 +443,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         baseline,
         pctMin: globalPctMin,
         pctMax: globalPctMax,
+        hasData,
       });
     }
 
@@ -436,10 +458,21 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   const activeMetaList = visibleMetrics.filter((m) =>
     effectiveSelectedMetrics.includes(m.key)
   );
+  const hasAnyActiveChartData = activeMetaList.some(
+    (m) => Boolean(metricScales.get(m.key)?.hasData)
+  );
   const primaryLeftMeta =
-    activeMetaList.find((m) => m.axisGroup === 'LEFT_POWER_VO2') || activeMetaList[0];
+    activeMetaList.find(
+      (m) => m.axisGroup === 'LEFT_POWER_VO2' && metricScales.get(m.key)?.hasData
+    ) ||
+    activeMetaList.find((m) => metricScales.get(m.key)?.hasData) ||
+    activeMetaList[0];
   const secondaryRightMeta =
-    activeMetaList.find((m) => m.key !== primaryLeftMeta?.key) || primaryLeftMeta;
+    activeMetaList.find(
+      (m) => m.key !== primaryLeftMeta?.key && metricScales.get(m.key)?.hasData
+    ) ||
+    activeMetaList.find((m) => m.key !== primaryLeftMeta?.key) ||
+    primaryLeftMeta;
 
   // Chart Geometry
   const svgW = isMobile ? 360 : 1100;
@@ -460,10 +493,10 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
   const xFor = (idx: number) =>
     plotLeft + (idx / Math.max(1, trendSeries.length - 1)) * plotW;
 
-  const yForMetric = (pt: EnrichedTrendBucket, key: TrendMetricKey): number => {
+  const yForMetric = (pt: EnrichedTrendBucket, key: TrendMetricKey): number | null => {
     const scale = metricScales.get(key);
-    if (!scale) return plotBottom;
     const val = getMetricValue(pt, key);
+    if (!scale || !scale.hasData || val === null) return null;
     if (scaleMode === 'PCT_CHANGE') {
       const pct = ((val - scale.baseline) / Math.max(0.01, scale.baseline)) * 100;
       const span = Math.max(1, scale.pctMax - scale.pctMin);
@@ -500,17 +533,36 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                     : 'True aerobic adaptation occurs when eFTP, W/kg, or EF rises while Overnight HRV remains stable within your baseline corridor and Resting HR stays steady or trends downward.'
                 }
                 liveStatus={{
-                  label: hideWeight
-                    ? `VO2max ${latestPoint.vo2Max} · Bike eFTP ${latestPoint.rideEftp}W · HRV ${latestPoint.hrvRMSSD}ms`
-                    : `VO2max ${latestPoint.vo2Max} · Bike eFTP ${latestPoint.rideEftp}W (${latestPoint.wPerKg} W/kg) · HRV ${latestPoint.hrvRMSSD}ms`,
+                  label: (() => {
+                    const parts: string[] = [];
+                    if (latestPoint.vo2Max !== null) parts.push(`VO2max ${latestPoint.vo2Max}`);
+                    if (latestPoint.rideEftp !== null) {
+                      parts.push(
+                        `Bike eFTP ${latestPoint.rideEftp}W${!hideWeight && latestPoint.wPerKg !== null ? ` (${latestPoint.wPerKg} W/kg)` : ''}`
+                      );
+                    }
+                    if (latestPoint.hrvRMSSD !== null) parts.push(`HRV ${latestPoint.hrvRMSSD}ms`);
+                    return parts.length > 0 ? parts.join(' · ') : 'Awaiting wearable / threshold readings';
+                  })(),
                   state:
+                    latestPoint.rideEftp !== null &&
+                    firstPoint.rideEftp !== null &&
                     latestPoint.rideEftp >= firstPoint.rideEftp &&
-                    latestPoint.hrvRMSSD >= firstPoint.hrvRMSSD * 0.9
+                    (latestPoint.hrvRMSSD === null ||
+                      firstPoint.hrvRMSSD === null ||
+                      latestPoint.hrvRMSSD >= firstPoint.hrvRMSSD * 0.9)
                       ? 'optimal'
                       : 'neutral',
-                  interpretation: `Over the ${trendSpan} window, Cycling eFTP moved ${
-                    latestPoint.rideEftp - firstPoint.rideEftp >= 0 ? '+' : ''
-                  }${latestPoint.rideEftp - firstPoint.rideEftp}W while 7d HRV is ${latestPoint.hrvRMSSD}ms and Resting HR is ${latestPoint.restingHR} bpm.`,
+                  interpretation:
+                    latestPoint.rideEftp !== null && firstPoint.rideEftp !== null
+                      ? `Over the ${trendSpan} window, Cycling eFTP moved ${
+                          latestPoint.rideEftp - firstPoint.rideEftp >= 0 ? '+' : ''
+                        }${latestPoint.rideEftp - firstPoint.rideEftp}W${
+                          latestPoint.hrvRMSSD !== null ? ` while 7d HRV is ${latestPoint.hrvRMSSD}ms` : ''
+                        }${
+                          latestPoint.restingHR !== null ? ` and Resting HR is ${latestPoint.restingHR} bpm` : ''
+                        }.`
+                      : 'Sync a wearable or threshold power/pace workout to unlock longitudinal trend deltas.',
                 }}
                 coachingAction="Toggle 2–3 complementary metrics below (e.g., Bike eFTP + HRV rMSSD, or VO2max + Aerobic EF) to verify that threshold gains are backed by autonomic stability rather than sympathetic overreaching."
               />
@@ -550,11 +602,24 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
 
             <button
               type="button"
-              onClick={() =>
-                onOpenCoachWithPrompt(
-                  `Analyze my long-term physiological trends over ${trendSpan}: VO2max is ${latestPoint.vo2Max} mL/kg/min, Cycling eFTP is ${latestPoint.rideEftp}W${hideWeight ? '' : ` (${latestPoint.wPerKg} W/kg)`}, Running eFTP is ${latestPoint.runEftp}W, 7d HRV is ${latestPoint.hrvRMSSD}ms, Resting HR is ${latestPoint.restingHR} bpm, and Aerobic EF is ${latestPoint.rawEf}. What is my primary physiological limiter and how should I structure the next mesocycle?`
-                )
-              }
+              onClick={() => {
+                const observedParts: string[] = [];
+                if (latestPoint.vo2Max !== null) observedParts.push(`VO2max is ${latestPoint.vo2Max} mL/kg/min`);
+                if (latestPoint.rideEftp !== null) {
+                  observedParts.push(
+                    `Cycling eFTP is ${latestPoint.rideEftp}W${!hideWeight && latestPoint.wPerKg !== null ? ` (${latestPoint.wPerKg} W/kg)` : ''}`
+                  );
+                }
+                if (latestPoint.runEftp !== null) observedParts.push(`Running eFTP is ${latestPoint.runEftp}W`);
+                if (latestPoint.hrvRMSSD !== null) observedParts.push(`7d HRV is ${latestPoint.hrvRMSSD}ms`);
+                if (latestPoint.restingHR !== null) observedParts.push(`Resting HR is ${latestPoint.restingHR} bpm`);
+                if (latestPoint.rawEf !== null) observedParts.push(`Aerobic EF is ${latestPoint.rawEf}`);
+                const summary =
+                  observedParts.length > 0
+                    ? `Analyze my long-term physiological trends over ${trendSpan}: ${observedParts.join(', ')}. What is my primary physiological limiter and how should I structure the next mesocycle?`
+                    : `I do not have recorded biometric or threshold test readings yet over ${trendSpan}. What minimal wearable or benchmark sessions should I record first to calibrate my baseline cleanly?`;
+                onOpenCoachWithPrompt(summary);
+              }}
               className="ap-btn-pine text-xs font-semibold cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -614,10 +679,16 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
             {visibleMetrics.map((meta) => {
               const isSelected = effectiveSelectedMetrics.includes(meta.key);
-              const startVal = getMetricValue(firstPoint, meta.key);
+              const firstObserved =
+                trendSeries
+                  .map((pt) => getMetricValue(pt, meta.key))
+                  .find((v): v is number => v !== null && v > 0) ?? null;
               const currVal = getMetricValue(activePoint, meta.key);
-              const delta = currVal - startVal;
-              const pctDelta = ((currVal - startVal) / Math.max(0.01, startVal)) * 100;
+              const hasDelta = firstObserved !== null && currVal !== null;
+              const delta = hasDelta ? currVal - firstObserved : 0;
+              const pctDelta = hasDelta
+                ? ((currVal - firstObserved) / Math.max(0.01, firstObserved)) * 100
+                : null;
 
               return (
                 <button
@@ -663,16 +734,22 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                     </span>
                     <span
                       className={`text-2xs font-semibold ${
-                        meta.key === 'restingHR'
-                          ? delta <= 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-amber-600 dark:text-amber-400'
-                          : delta >= 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-amber-600 dark:text-amber-400'
+                        pctDelta === null
+                          ? 'text-slate-500 dark:text-slate-400'
+                          : meta.key === 'restingHR'
+                            ? delta <= 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
+                            : delta >= 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
                       }`}
                     >
-                      {pctDelta >= 0 ? `+${pctDelta.toFixed(1)}%` : `${pctDelta.toFixed(1)}%`}
+                      {pctDelta === null
+                        ? 'No data'
+                        : pctDelta >= 0
+                          ? `+${pctDelta.toFixed(1)}%`
+                          : `${pctDelta.toFixed(1)}%`}
                     </span>
                   </div>
                 </button>
@@ -699,9 +776,10 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
             {activeMetaList.map((meta) => {
               const scale = metricScales.get(meta.key);
               const curr = getMetricValue(activePoint, meta.key);
-              const pct = scale
-                ? ((curr - scale.baseline) / Math.max(0.01, scale.baseline)) * 100
-                : 0;
+              const pct =
+                scale && scale.hasData && curr !== null
+                  ? ((curr - scale.baseline) / Math.max(0.01, scale.baseline)) * 100
+                  : null;
               return (
                 <div key={meta.key} className="inline-flex items-center gap-1.5">
                   <span
@@ -714,9 +792,11 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                   <strong className="text-slate-900 dark:text-white">
                     {formatMetricDisplay(activePoint, meta)}
                   </strong>
-                  <span className="text-2xs text-slate-500">
-                    ({pct >= 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`})
-                  </span>
+                  {pct !== null && (
+                    <span className="text-2xs text-slate-500">
+                      ({pct >= 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`})
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -725,6 +805,19 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
 
         {/* Large Unified SVG Multi-Metric Canvas */}
         <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-[#15231B]/45 p-2 sm:p-3">
+          {!hasAnyActiveChartData ? (
+            <div
+              data-testid="trends-empty-state"
+              className="py-12 px-4 text-center space-y-2"
+            >
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                No observed readings yet for the selected metric(s)
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto">
+                Sync a wearable (Garmin, Polar, Wahoo, or Intervals.icu) or record threshold workouts to populate genuine trend curves without placeholder numbers.
+              </p>
+            </div>
+          ) : (
           <svg
             viewBox={`0 0 ${svgW} ${svgH}`}
             className={
@@ -884,39 +977,56 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
             {/* Area Fill for the Primary Selected Metric (when 1 or 2 metrics selected) */}
             {activeMetaList.length <= 2 &&
               primaryLeftMeta &&
+              metricScales.get(primaryLeftMeta.key)?.hasData &&
               trendSeries.length > 1 &&
               (() => {
-                const pts = trendSeries
-                  .map((pt, i) => `${xFor(i)},${yForMetric(pt, primaryLeftMeta.key)}`)
-                  .join(' ');
-                const area = `${plotLeft},${plotBottom} ${pts} ${plotRight},${plotBottom}`;
+                const coords = trendSeries
+                  .map((pt, i) => {
+                    const y = yForMetric(pt, primaryLeftMeta.key);
+                    return y !== null ? { x: xFor(i), y } : null;
+                  })
+                  .filter((c): c is { x: number; y: number } => c !== null);
+                if (coords.length < 2) return null;
+                const pts = coords.map((c) => `${c.x},${c.y}`).join(' ');
+                const area = `${coords[0].x},${plotBottom} ${pts} ${coords[coords.length - 1].x},${plotBottom}`;
                 return <polygon points={area} fill={`url(#trend-grad-${primaryLeftMeta.key})`} />;
               })()}
 
             {/* Polylines for Every Selected Metric */}
             {activeMetaList.map((meta) => {
-              const pointsStr = trendSeries
-                .map((pt, i) => `${xFor(i)},${yForMetric(pt, meta.key)}`)
-                .join(' ');
+              if (!metricScales.get(meta.key)?.hasData) return null;
+              const coords = trendSeries
+                .map((pt, i) => {
+                  const y = yForMetric(pt, meta.key);
+                  return y !== null ? { x: xFor(i), y } : null;
+                })
+                .filter((c): c is { x: number; y: number } => c !== null);
+              if (coords.length === 0) return null;
+              const pointsStr = coords.map((c) => `${c.x},${c.y}`).join(' ');
+              const activeY = yForMetric(activePoint, meta.key);
               return (
                 <g key={`series-${meta.key}`}>
-                  <polyline
-                    fill="none"
-                    stroke={meta.color}
-                    strokeWidth="2.6"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    points={pointsStr}
-                  />
+                  {coords.length > 1 && (
+                    <polyline
+                      fill="none"
+                      stroke={meta.color}
+                      strokeWidth="2.6"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      points={pointsStr}
+                    />
+                  )}
                   {/* Active Hover Node */}
-                  <circle
-                    cx={xFor(activeIdx)}
-                    cy={yForMetric(activePoint, meta.key)}
-                    r={4.8}
-                    fill={meta.color}
-                    stroke="#ffffff"
-                    strokeWidth="1.8"
-                  />
+                  {activeY !== null && (
+                    <circle
+                      cx={xFor(activeIdx)}
+                      cy={activeY}
+                      r={4.8}
+                      fill={meta.color}
+                      stroke="#ffffff"
+                      strokeWidth="1.8"
+                    />
+                  )}
                 </g>
               );
             })}
@@ -981,6 +1091,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               );
             })}
           </svg>
+          )}
         </div>
       </section>
 

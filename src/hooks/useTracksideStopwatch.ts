@@ -1038,6 +1038,26 @@ export function computeRaceStandings(
   });
 }
 
+export function useIsStopwatchRunning(): boolean {
+  const [running, setRunning] = useState<boolean>(() => readPersistedTracksideStopwatch().isRunning);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncRunning = () => {
+      const next = readPersistedTracksideStopwatch().isRunning;
+      setRunning((prev) => (prev === next ? prev : next));
+    };
+    window.addEventListener(TRACKSIDE_SYNC_EVENT, syncRunning);
+    window.addEventListener('storage', syncRunning);
+    return () => {
+      window.removeEventListener(TRACKSIDE_SYNC_EVENT, syncRunning);
+      window.removeEventListener('storage', syncRunning);
+    };
+  }, []);
+
+  return running;
+}
+
 export function useTracksideStopwatch(tickIntervalMs: number = 50) {
   const [persisted, setPersisted] = useState<PersistedTracksideStopwatchState>(() =>
     readPersistedTracksideStopwatch()

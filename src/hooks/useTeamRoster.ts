@@ -205,18 +205,23 @@ export function buildConnectedRosterFromTeam(
                 },
               ]
             : [];
-      const prof = buildCompleteAthleteProfile({
-        name: m.invitedName,
-        ftp: snap?.ftpWatts || 250,
-        thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
-        safeSportHideWeight: hideWeight,
-        ...(m.birthMonthYear ? { birthMonthYear: m.birthMonthYear } : {}),
-        ...(m.genderDivision === 'M'
-          ? { competitionGender: 'MEN' }
-          : m.genderDivision === 'F'
-            ? { competitionGender: 'WOMEN' }
-            : {}),
-      });
+      const prof = buildCompleteAthleteProfile(
+        {
+          name: m.invitedName,
+          ftp: snap?.ftpWatts || 250,
+          thresholdPaceSecsPerKm: snap?.thresholdPaceSecsPerKm || 255,
+          safeSportHideWeight: hideWeight,
+          ...(m.birthMonthYear ? { birthMonthYear: m.birthMonthYear } : {}),
+          ...(m.genderDivision === 'M'
+            ? { competitionGender: 'MEN' }
+            : m.genderDivision === 'F'
+              ? { competitionGender: 'WOMEN' }
+              : {}),
+        },
+        undefined,
+        undefined,
+        { skipLocalStorageFallback: true }
+      );
 
       const squadBroadcasts: PlannedWorkoutEvent[] = (team.broadcastWorkouts || [])
         .filter((bw) => {
@@ -245,6 +250,11 @@ export function buildConnectedRosterFromTeam(
             plannedDurationSecs: ov?.plannedDurationSecs ?? bw.plannedDurationSecs,
             targetZoneSummary: `${team.brand.shortName} Squad Session`,
             workoutSyntax: ov?.workoutSyntax || bw.workoutSyntax,
+            ...(bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {}),
+            ...(bw.sessionSlot ? { sessionSlot: bw.sessionSlot } : {}),
+            ...(bw.locationName ? { locationName: bw.locationName } : {}),
+            ...(bw.locationCategory ? { locationCategory: bw.locationCategory } : {}),
+            ...(bw.meetingNotes ? { meetingNotes: bw.meetingNotes } : {}),
             ...(ov?.trackSpec || bw.trackSpec ? { trackSpec: ov?.trackSpec || bw.trackSpec } : {}),
             ...(bw.planBlockId ? { planBlockId: bw.planBlockId } : {}),
             ...(bw.planBlockName ? { planBlockName: bw.planBlockName } : {}),

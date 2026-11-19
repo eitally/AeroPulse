@@ -951,29 +951,42 @@ export function projectTeamSummaryForCaller(
               }
             : undefined;
 
+      const hidePmc = !isSelf && (!isCoach || hidePmcFromCoach);
+      const hideWellness = !isSelf && (!isCoach || hideWellnessFromCoach);
+      const rawVerdict = m.liveSnapshot.verdictLabel;
+      const isNeutralVerdict =
+        rawVerdict === 'Awaiting Parent Consent' ||
+        rawVerdict === 'Active' ||
+        rawVerdict === 'Connected' ||
+        rawVerdict === 'Joined · Awaiting First Sync';
+
       const baseSnapshot: TeamAthleteLiveSnapshot = {
         ...m.liveSnapshot,
-        verdictLabel: isPeerTeammate ? 'Connected' : m.liveSnapshot.verdictLabel,
-        readinessScore: isPeerTeammate ? 0 : m.liveSnapshot.readinessScore,
-        acuteLoad7d: isPeerTeammate ? 0 : m.liveSnapshot.acuteLoad7d,
-        caraHours7d: isPeerTeammate ? 0 : m.liveSnapshot.caraHours7d,
+        verdictLabel: isPeerTeammate
+          ? 'Connected'
+          : hideWellness && !isNeutralVerdict
+            ? 'Private'
+            : rawVerdict,
+        readinessScore: hideWellness ? 0 : m.liveSnapshot.readinessScore,
+        acuteLoad7d: hidePmc ? 0 : m.liveSnapshot.acuteLoad7d,
+        caraHours7d: hidePmc ? 0 : m.liveSnapshot.caraHours7d,
+        lowAerobicPct: hidePmc ? 0 : m.liveSnapshot.lowAerobicPct,
+        highAerobicPct: hidePmc ? 0 : m.liveSnapshot.highAerobicPct,
+        neuromuscularPct: hidePmc ? 0 : m.liveSnapshot.neuromuscularPct,
         ftpWatts:
-          isPeerTeammate || (safeSportShieldEnforced && !isCoach && !isSelf)
+          hidePmc || (safeSportShieldEnforced && !isCoach && !isSelf)
             ? undefined
             : m.liveSnapshot.ftpWatts,
-        ctl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.ctl,
-        atl: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.atl,
-        tsb: !isSelf && (!isCoach || hidePmcFromCoach) ? 0 : m.liveSnapshot.tsb,
+        thresholdPaceSecsPerKm: hidePmc
+          ? undefined
+          : m.liveSnapshot.thresholdPaceSecsPerKm,
+        ctl: hidePmc ? 0 : m.liveSnapshot.ctl,
+        atl: hidePmc ? 0 : m.liveSnapshot.atl,
+        tsb: hidePmc ? 0 : m.liveSnapshot.tsb,
         // Never leak raw biometric wellnessDays or activity logs to fellow teammates
-        wellnessDays:
-          isSelf || (isCoach && !hideWellnessFromCoach)
-            ? m.liveSnapshot.wellnessDays
-            : undefined,
+        wellnessDays: hideWellness ? undefined : m.liveSnapshot.wellnessDays,
         activities: isSelf || isCoach ? m.liveSnapshot.activities : undefined,
-        sessionCheckIns:
-          isSelf || (isCoach && !hideWellnessFromCoach)
-            ? m.liveSnapshot.sessionCheckIns
-            : undefined,
+        sessionCheckIns: hideWellness ? undefined : m.liveSnapshot.sessionCheckIns,
         safeSportWatch: projectedSafeSportWatch,
       };
       projectedSnapshot = safeSportShieldEnforced
@@ -2121,93 +2134,95 @@ export async function broadcastWorkoutToTeamSquad(params: {
   publishMode?: 'ROLLING_1W' | 'ROLLING_2W' | 'FULL_BLOCK';
   replaceSameDateTarget?: boolean;
 }): Promise<TeamSummaryWithRole | null> {
-  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return null;
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
 
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (
-    !callerMem ||
-    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-  ) {
-    return null;
-  }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
 
-  const nowIso = new Date().toISOString();
-  const cleanTargets = Array.isArray(params.targetMembershipIds)
-    ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
-    : undefined;
-  const cleanEventGroups = Array.isArray(params.targetEventGroups)
-    ? params.targetEventGroups.filter(
-        (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-      )
-    : undefined;
-  const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
-  const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
-  const scheduledTime = sanitizeScheduledTime(params.scheduledTime);
-  const sessionSlot = sanitizeSessionSlot(params.sessionSlot);
-  const locationName = params.locationName
-    ? String(params.locationName).trim().slice(0, 120)
-    : undefined;
-  const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
-  const meetingNotes = params.meetingNotes
-    ? String(params.meetingNotes).trim().slice(0, 240)
-    : undefined;
+    const nowIso = new Date().toISOString();
+    const cleanTargets = Array.isArray(params.targetMembershipIds)
+      ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
+      : undefined;
+    const cleanEventGroups = Array.isArray(params.targetEventGroups)
+      ? params.targetEventGroups.filter(
+          (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
+        )
+      : undefined;
+    const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
+    const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
+    const scheduledTime = sanitizeScheduledTime(params.scheduledTime);
+    const sessionSlot = sanitizeSessionSlot(params.sessionSlot);
+    const locationName = params.locationName
+      ? String(params.locationName).trim().slice(0, 120)
+      : undefined;
+    const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
+    const meetingNotes = params.meetingNotes
+      ? String(params.meetingNotes).trim().slice(0, 240)
+      : undefined;
 
-  const workout: TeamBroadcastWorkout = {
-    broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
-    teamId: doc.brand.teamId,
-    targetSquadGroup,
-    ...(cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {}),
-    ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
-    date: dateStr,
-    name: String(params.name || 'Team Prescribed Session').trim().slice(0, 100),
-    sportCategory: params.sportCategory || 'Running',
-    plannedDurationSecs: Math.max(300, Number(params.plannedDurationSecs) || 3600),
-    plannedLoad: Math.max(5, Number(params.plannedLoad) || 65),
-    workoutSyntax: String(params.workoutSyntax || '').slice(0, 3000),
-    description: String(params.description || '').slice(0, 1000),
-    ...(scheduledTime ? { scheduledTime } : {}),
-    ...(sessionSlot ? { sessionSlot } : {}),
-    ...(locationName ? { locationName } : {}),
-    ...(locationCategory ? { locationCategory } : {}),
-    ...(meetingNotes ? { meetingNotes } : {}),
-    ...(params.trackSpec ? { trackSpec: params.trackSpec } : {}),
-    ...(params.athleteOverrides && Object.keys(params.athleteOverrides).length > 0
-      ? { athleteOverrides: params.athleteOverrides }
-      : {}),
-    ...(params.planBlockId ? { planBlockId: String(params.planBlockId).slice(0, 80) } : {}),
-    ...(params.planBlockName ? { planBlockName: String(params.planBlockName).slice(0, 120) } : {}),
-    ...(typeof params.planWeekNum === 'number' ? { planWeekNum: params.planWeekNum } : {}),
-    ...(params.publishMode ? { publishMode: params.publishMode } : {}),
-    pushedByCoachName: callerMem.invitedName || doc.brand.coachDisplayName,
-    createdAt: nowIso,
-  };
+    const workout: TeamBroadcastWorkout = {
+      broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
+      teamId: doc.brand.teamId,
+      targetSquadGroup,
+      ...(cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {}),
+      ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
+      date: dateStr,
+      name: String(params.name || 'Team Prescribed Session').trim().slice(0, 100),
+      sportCategory: params.sportCategory || 'Running',
+      plannedDurationSecs: Math.max(300, Number(params.plannedDurationSecs) || 3600),
+      plannedLoad: Math.max(5, Number(params.plannedLoad) || 65),
+      workoutSyntax: String(params.workoutSyntax || '').slice(0, 3000),
+      description: String(params.description || '').slice(0, 1000),
+      ...(scheduledTime ? { scheduledTime } : {}),
+      ...(sessionSlot ? { sessionSlot } : {}),
+      ...(locationName ? { locationName } : {}),
+      ...(locationCategory ? { locationCategory } : {}),
+      ...(meetingNotes ? { meetingNotes } : {}),
+      ...(params.trackSpec ? { trackSpec: params.trackSpec } : {}),
+      ...(params.athleteOverrides && Object.keys(params.athleteOverrides).length > 0
+        ? { athleteOverrides: params.athleteOverrides }
+        : {}),
+      ...(params.planBlockId ? { planBlockId: String(params.planBlockId).slice(0, 80) } : {}),
+      ...(params.planBlockName ? { planBlockName: String(params.planBlockName).slice(0, 120) } : {}),
+      ...(typeof params.planWeekNum === 'number' ? { planWeekNum: params.planWeekNum } : {}),
+      ...(params.publishMode ? { publishMode: params.publishMode } : {}),
+      pushedByCoachName: callerMem.invitedName || doc.brand.coachDisplayName,
+      createdAt: nowIso,
+    };
 
-  const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
-  const nextSlot = workout.sessionSlot || 'SINGLE';
-  const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
-    if (params.replaceSameDateTarget === false) return true;
-    const sameDate = bw.date === dateStr;
-    const sameSquad = bw.targetSquadGroup === targetSquadGroup;
-    const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
-    const sameMembers =
-      JSON.stringify((bw.targetMembershipIds || []).slice().sort()) ===
-      JSON.stringify((cleanTargets || []).slice().sort());
-    const sameSlot = (bw.sessionSlot || 'SINGLE') === nextSlot;
-    const sameSport = (bw.sportCategory || 'Running') === workout.sportCategory;
-    return !(sameDate && sameSquad && sameGroups && sameMembers && sameSlot && sameSport);
+    const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
+    const nextSlot = workout.sessionSlot || 'SINGLE';
+    const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
+      if (params.replaceSameDateTarget === false) return true;
+      const sameDate = bw.date === dateStr;
+      const sameSquad = bw.targetSquadGroup === targetSquadGroup;
+      const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
+      const sameMembers =
+        JSON.stringify((bw.targetMembershipIds || []).slice().sort()) ===
+        JSON.stringify((cleanTargets || []).slice().sort());
+      const sameSlot = (bw.sessionSlot || 'SINGLE') === nextSlot;
+      const sameSport = (bw.sportCategory || 'Running') === workout.sportCategory;
+      return !(sameDate && sameSquad && sameGroups && sameMembers && sameSlot && sameSport);
+    });
+
+    doc.broadcastWorkouts = [workout, ...existingFiltered].slice(0, 400);
+    doc.updatedAt = nowIso;
+    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
   });
-
-  doc.broadcastWorkouts = [workout, ...existingFiltered].slice(0, 400);
-  doc.updatedAt = nowIso;
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
-
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
 
 export async function broadcastWorkoutBatchToTeamSquad(params: {
@@ -2238,101 +2253,208 @@ export async function broadcastWorkoutBatchToTeamSquad(params: {
     planWeekNum?: number;
   }>;
 }): Promise<TeamSummaryWithRole | null> {
-  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return null;
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
 
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (
-    !callerMem ||
-    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-  ) {
-    return null;
-  }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
 
-  const nowIso = new Date().toISOString();
-  const cleanTargets = Array.isArray(params.targetMembershipIds)
-    ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
-    : undefined;
-  const cleanEventGroups = Array.isArray(params.targetEventGroups)
-    ? params.targetEventGroups.filter(
-        (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-      )
-    : undefined;
-  const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
-  const cleanBlockId = params.planBlockId
-    ? String(params.planBlockId).slice(0, 80)
-    : `tm-blk-${Date.now()}`;
-  const cleanBlockName = params.planBlockName
-    ? String(params.planBlockName).slice(0, 120)
-    : undefined;
-  const publishMode =
-    params.publishMode === 'ROLLING_1W' ||
-    params.publishMode === 'ROLLING_2W' ||
-    params.publishMode === 'FULL_BLOCK'
-      ? params.publishMode
-      : 'FULL_BLOCK';
+    const nowIso = new Date().toISOString();
+    const cleanTargets = Array.isArray(params.targetMembershipIds)
+      ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
+      : undefined;
+    const cleanEventGroups = Array.isArray(params.targetEventGroups)
+      ? params.targetEventGroups.filter(
+          (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
+        )
+      : undefined;
+    const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
+    const cleanBlockId = params.planBlockId
+      ? String(params.planBlockId).slice(0, 80)
+      : `tm-blk-${Date.now()}`;
+    const cleanBlockName = params.planBlockName
+      ? String(params.planBlockName).slice(0, 120)
+      : undefined;
+    const publishMode =
+      params.publishMode === 'ROLLING_1W' ||
+      params.publishMode === 'ROLLING_2W' ||
+      params.publishMode === 'FULL_BLOCK'
+        ? params.publishMode
+        : 'FULL_BLOCK';
 
-  const createdWorkouts: TeamBroadcastWorkout[] = (params.workouts || [])
-    .slice(0, 160)
-    .map((w) => {
-      const scheduledTime = sanitizeScheduledTime(w.scheduledTime);
-      const sessionSlot = sanitizeSessionSlot(w.sessionSlot);
-      const locationName = w.locationName ? String(w.locationName).trim().slice(0, 120) : undefined;
-      const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
-      const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : undefined;
-      return {
-        broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
-        teamId: doc.brand.teamId,
-        targetSquadGroup,
-        ...(cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {}),
-        ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
-        date: String(w.date || nowIso.slice(0, 10)).slice(0, 10),
-        name: String(w.name || 'Team Prescribed Session').trim().slice(0, 100),
-        sportCategory: w.sportCategory || 'Running',
-        plannedDurationSecs: Math.max(300, Number(w.plannedDurationSecs) || 3600),
-        plannedLoad: Math.max(5, Number(w.plannedLoad) || 65),
-        workoutSyntax: String(w.workoutSyntax || '').slice(0, 3000),
-        description: String(w.description || '').slice(0, 1000),
-        ...(scheduledTime ? { scheduledTime } : {}),
-        ...(sessionSlot ? { sessionSlot } : {}),
-        ...(locationName ? { locationName } : {}),
-        ...(locationCategory ? { locationCategory } : {}),
-        ...(meetingNotes ? { meetingNotes } : {}),
-        ...(w.trackSpec ? { trackSpec: w.trackSpec } : {}),
-        planBlockId: cleanBlockId,
-        ...(cleanBlockName ? { planBlockName: cleanBlockName } : {}),
-        ...(typeof w.planWeekNum === 'number' ? { planWeekNum: w.planWeekNum } : {}),
-        publishMode,
-        pushedByCoachName: doc.brand.coachDisplayName,
-        createdAt: nowIso,
-      };
+    const createdWorkouts: TeamBroadcastWorkout[] = (params.workouts || [])
+      .slice(0, 160)
+      .map((w) => {
+        const scheduledTime = sanitizeScheduledTime(w.scheduledTime);
+        const sessionSlot = sanitizeSessionSlot(w.sessionSlot);
+        const locationName = w.locationName ? String(w.locationName).trim().slice(0, 120) : undefined;
+        const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
+        const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : undefined;
+        return {
+          broadcastId: `bw_${crypto.randomBytes(6).toString('hex')}`,
+          teamId: doc.brand.teamId,
+          targetSquadGroup,
+          ...(cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {}),
+          ...(cleanTargets && cleanTargets.length > 0 ? { targetMembershipIds: cleanTargets } : {}),
+          date: String(w.date || nowIso.slice(0, 10)).slice(0, 10),
+          name: String(w.name || 'Team Prescribed Session').trim().slice(0, 100),
+          sportCategory: w.sportCategory || 'Running',
+          plannedDurationSecs: Math.max(300, Number(w.plannedDurationSecs) || 3600),
+          plannedLoad: Math.max(5, Number(w.plannedLoad) || 65),
+          workoutSyntax: String(w.workoutSyntax || '').slice(0, 3000),
+          description: String(w.description || '').slice(0, 1000),
+          ...(scheduledTime ? { scheduledTime } : {}),
+          ...(sessionSlot ? { sessionSlot } : {}),
+          ...(locationName ? { locationName } : {}),
+          ...(locationCategory ? { locationCategory } : {}),
+          ...(meetingNotes ? { meetingNotes } : {}),
+          ...(w.trackSpec ? { trackSpec: w.trackSpec } : {}),
+          planBlockId: cleanBlockId,
+          ...(cleanBlockName ? { planBlockName: cleanBlockName } : {}),
+          ...(typeof w.planWeekNum === 'number' ? { planWeekNum: w.planWeekNum } : {}),
+          publishMode,
+          pushedByCoachName: doc.brand.coachDisplayName,
+          createdAt: nowIso,
+        };
+      });
+
+    const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
+    const membersSignature = JSON.stringify((cleanTargets || []).slice().sort());
+    const dates = createdWorkouts.map((c) => c.date).sort();
+    const minDate = dates[0] || '';
+    const maxDate = dates[dates.length - 1] || '';
+
+    const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
+      if (params.replaceExistingCohortRange === false || !minDate || !maxDate) return true;
+      const inRange = bw.date >= minDate && bw.date <= maxDate;
+      const sameSquad = bw.targetSquadGroup === targetSquadGroup;
+      const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
+      const sameMembers = JSON.stringify((bw.targetMembershipIds || []).slice().sort()) === membersSignature;
+      return !(inRange && sameSquad && sameGroups && sameMembers);
     });
 
-  const eventGroupSignature = JSON.stringify((cleanEventGroups || []).slice().sort());
-  const membersSignature = JSON.stringify((cleanTargets || []).slice().sort());
-  const dates = createdWorkouts.map((c) => c.date).sort();
-  const minDate = dates[0] || '';
-  const maxDate = dates[dates.length - 1] || '';
+    doc.broadcastWorkouts = [...createdWorkouts, ...existingFiltered].slice(0, 400);
+    doc.updatedAt = nowIso;
+    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
-  const existingFiltered = (doc.broadcastWorkouts || []).filter((bw) => {
-    if (params.replaceExistingCohortRange === false || !minDate || !maxDate) return true;
-    const inRange = bw.date >= minDate && bw.date <= maxDate;
-    const sameSquad = bw.targetSquadGroup === targetSquadGroup;
-    const sameGroups = JSON.stringify((bw.targetEventGroups || []).slice().sort()) === eventGroupSignature;
-    const sameMembers = JSON.stringify((bw.targetMembershipIds || []).slice().sort()) === membersSignature;
-    return !(inRange && sameSquad && sameGroups && sameMembers);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
   });
+}
 
-  doc.broadcastWorkouts = [...createdWorkouts, ...existingFiltered].slice(0, 400);
-  doc.updatedAt = nowIso;
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+export async function updateBroadcastWorkoutOnTeam(params: {
+  callerSid: string;
+  teamId: string;
+  broadcastId: string;
+  originUrl: string;
+  updates: {
+    date?: string;
+    name?: string;
+    sportCategory?: SportCategory;
+    plannedDurationSecs?: number;
+    plannedLoad?: number;
+    workoutSyntax?: string;
+    description?: string;
+    scheduledTime?: string | null;
+    sessionSlot?: WorkoutSessionSlot | null;
+    locationName?: string | null;
+    locationCategory?: PracticeVenueCategory | null;
+    meetingNotes?: string | null;
+    trackSpec?: TrackWorkoutSpec | null;
+  };
+}): Promise<TeamSummaryWithRole | null> {
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
 
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
+
+    const cleanId = String(params.broadcastId || '').trim();
+    const list = Array.isArray(doc.broadcastWorkouts) ? doc.broadcastWorkouts : [];
+    const targetIdx = list.findIndex((bw) => bw.broadcastId === cleanId);
+    if (targetIdx === -1) return null;
+
+    const existing = list[targetIdx];
+    const u = params.updates || {};
+    const updatedWorkout: TeamBroadcastWorkout = {
+      ...existing,
+      ...(typeof u.date === 'string' && u.date.trim() ? { date: u.date.trim().slice(0, 10) } : {}),
+      ...(typeof u.name === 'string' && u.name.trim()
+        ? { name: u.name.trim().slice(0, 100) }
+        : {}),
+      ...(u.sportCategory ? { sportCategory: u.sportCategory } : {}),
+      ...(typeof u.plannedDurationSecs === 'number' && Number.isFinite(u.plannedDurationSecs)
+        ? { plannedDurationSecs: Math.max(60, Math.round(u.plannedDurationSecs)) }
+        : {}),
+      ...(typeof u.plannedLoad === 'number' && Number.isFinite(u.plannedLoad)
+        ? { plannedLoad: Math.max(1, Math.round(u.plannedLoad)) }
+        : {}),
+      ...(typeof u.workoutSyntax === 'string'
+        ? { workoutSyntax: u.workoutSyntax.slice(0, 3000) }
+        : {}),
+      ...(typeof u.description === 'string'
+        ? { description: u.description.slice(0, 1000) }
+        : {}),
+      ...(u.trackSpec === null ? { trackSpec: undefined } : u.trackSpec ? { trackSpec: u.trackSpec } : {}),
+    };
+
+    if ('scheduledTime' in u) {
+      const cleanTime = sanitizeScheduledTime(u.scheduledTime ?? undefined);
+      if (cleanTime) updatedWorkout.scheduledTime = cleanTime;
+      else delete updatedWorkout.scheduledTime;
+    }
+    if ('sessionSlot' in u) {
+      const cleanSlot = sanitizeSessionSlot(u.sessionSlot ?? undefined);
+      if (cleanSlot) updatedWorkout.sessionSlot = cleanSlot;
+      else delete updatedWorkout.sessionSlot;
+    }
+    if ('locationName' in u) {
+      const cleanLoc = u.locationName ? String(u.locationName).trim().slice(0, 120) : '';
+      if (cleanLoc) updatedWorkout.locationName = cleanLoc;
+      else delete updatedWorkout.locationName;
+    }
+    if ('locationCategory' in u) {
+      const cleanCat = sanitizePracticeVenueCategory(u.locationCategory ?? undefined);
+      if (cleanCat) updatedWorkout.locationCategory = cleanCat;
+      else delete updatedWorkout.locationCategory;
+    }
+    if ('meetingNotes' in u) {
+      const cleanNotes = u.meetingNotes ? String(u.meetingNotes).trim().slice(0, 240) : '';
+      if (cleanNotes) updatedWorkout.meetingNotes = cleanNotes;
+      else delete updatedWorkout.meetingNotes;
+    }
+
+    doc.broadcastWorkouts = [
+      ...list.slice(0, targetIdx),
+      updatedWorkout,
+      ...list.slice(targetIdx + 1),
+    ];
+    doc.updatedAt = new Date().toISOString();
+    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
 }
 
 export async function deleteBroadcastPlanBlockFromTeam(params: {
@@ -2341,30 +2463,32 @@ export async function deleteBroadcastPlanBlockFromTeam(params: {
   blockId: string;
   originUrl: string;
 }): Promise<TeamSummaryWithRole | null> {
-  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return null;
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
 
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (
-    !callerMem ||
-    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-  ) {
-    return null;
-  }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
 
-  const cleanBlockId = String(params.blockId || '').trim();
-  doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
-    (bw) => bw.planBlockId !== cleanBlockId
-  );
-  doc.updatedAt = new Date().toISOString();
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+    const cleanBlockId = String(params.blockId || '').trim();
+    doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
+      (bw) => bw.planBlockId !== cleanBlockId
+    );
+    doc.updatedAt = new Date().toISOString();
+    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
 }
 
 export async function deleteBroadcastWorkoutFromTeam(params: {
@@ -2373,30 +2497,32 @@ export async function deleteBroadcastWorkoutFromTeam(params: {
   broadcastId: string;
   originUrl: string;
 }): Promise<TeamSummaryWithRole | null> {
-  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return null;
+  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
 
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (
-    !callerMem ||
-    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-  ) {
-    return null;
-  }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
 
-  const cleanBroadcastId = String(params.broadcastId || '').trim();
-  doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
-    (bw) => bw.broadcastId !== cleanBroadcastId
-  );
-  doc.updatedAt = new Date().toISOString();
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+    const cleanBroadcastId = String(params.broadcastId || '').trim();
+    doc.broadcastWorkouts = (doc.broadcastWorkouts || []).filter(
+      (bw) => bw.broadcastId !== cleanBroadcastId
+    );
+    doc.updatedAt = new Date().toISOString();
+    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
 
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
 }
 
 export async function recordCoachStopwatchActivities(params: {

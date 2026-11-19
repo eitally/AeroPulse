@@ -112,6 +112,32 @@ export async function deleteThreshAccountPermanently(
     candidateSids.add(deriveStravaSessionSid(sidVal));
   }
 
+  // Sole Head Coach safety guard: prevent leaving active athletes/staff orphaned on a headless team
+  const dirForGuard = await loadDirectory();
+  for (const teamId of dirForGuard.allTeamIds || []) {
+    const doc = await loadTeamDocRaw(teamId);
+    if (!doc) continue;
+    const isMyHeadCoach = doc.memberships.some(
+      (m) =>
+        candidateSids.has(m.userSid || '') &&
+        m.role === 'HEAD_COACH' &&
+        m.status !== 'REVOKED'
+    );
+    if (!isMyHeadCoach) continue;
+    const otherActive = doc.memberships.filter(
+      (m) => !candidateSids.has(m.userSid || '') && m.status !== 'REVOKED'
+    );
+    const hasAnotherHeadCoach = otherActive.some((m) => m.role === 'HEAD_COACH');
+    if (otherActive.length > 0 && !hasAnotherHeadCoach) {
+      res.status(409).json({
+        ok: false,
+        error:
+          'You are the sole Head Coach of an active team. Transfer Head Coach ownership to another staff member in Team Settings before permanently deleting your account.',
+      });
+      return;
+    }
+  }
+
   // Gather upstream tokens before deleting session vaults
   let stravaAccessToken = activeStore?.stravaAccessToken || '';
   let stravaRefreshToken = activeStore?.stravaRefreshToken || '';
