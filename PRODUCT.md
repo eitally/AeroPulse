@@ -38,14 +38,14 @@ THRESH combines in one workflow:
 
 ## Capabilities and Constraints
 
-- **Strava-first read-only identity**: Strava OAuth 2.0 is the sole primary sign-in identity (deterministic HMAC session binding + `AES-256-GCM` encrypted token vault with serverless cookie backup and optional PostgreSQL persistence). THRESH never writes to, modifies, or posts on an athlete's Strava account.
+- **Multi-provider read-only identity & vaults**: Athletes, coaches, and parents sign in with **Google OAuth**, **WebAuthn Passkeys**, **Magic Link**, **Email OTP**, or **optional Strava OAuth** (deterministic HMAC session binding + `AES-256-GCM` encrypted token vault with serverless cookie backup and normalized PostgreSQL persistence). THRESH never writes to, modifies, or posts on an athlete's Strava account.
 - **Clean-Room Strava API firewall**: Third-party `'Strava'`-only raw activity payloads are stripped before building Google Gemini AI prompts or exposing peer teammate views (`server/cleanRoomFirewall.ts`). Peer teammates never receive another athlete's raw Strava activities.
 - **Optional secondary wellness connectors**: Garmin Connect and Intervals.icu are strictly optional add-ons for overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and wellness metadata—never required to onboard or use THRESH. Multi-source activities within `±5 minutes` deduplicate automatically so `TSS` is never double-counted.
 - **Honest Day-1 calibration**: New accounts with zero workouts render an explicit `CALIBRATING` state and never fabricate synthetic `CTL`, `FTP`, or resting HR numbers.
 - **Athlete-controlled coach sharing & youth safeguarding**: Team athletes explicitly select their `CoachDataSharingTier` (`SUMMARY_ONLY`, `FULL_STREAMS`, or `LOAD_ONLY`). `HIGH_SCHOOL` rosters default U18 Safe-Sport weight shielding (`isMinorU18: true`) and Parent/Guardian CC `ON`; `COLLEGIATE` rosters default standard college grad years to adult settings unless an incoming U18 recruit year is specified.
 - **Strict performance & security gates**: Production builds (`npm run build && npm run check:bundle`) enforce a hard `< 220 KB` gzipped ceiling on the entry JS chunk (`scripts/checkBundleBudget.mjs`), zero leaked `.env` or screenshot files in `dist/`, and zero hardcoded personal API credentials.
 - **Canonical domain terminology**: Preserve exact physiological and regulatory terms (`CTL`, `ATL`, `TSB`, `TSS`, `rTSS`, `NP`, `IF`, `EF`, `Pa:Hr`, `CP`, `W'`, `VDOT`, `FAT`, `ACWR`, `CARA`, `RED-S`) rather than paraphrasing them into vague fitness jargon.
-- **Undecided product facts**: Commercial model, pricing tiers, billing, and school/club licensing terms are **explicitly undecided (pre-monetization)**. Future product surfaces and copy must not invent prices, subscription tiers, free-trial claims, or commercial packaging.
+- **Transparent institutional & individual access**: Core access is free forever for individual athletes and parents (`$0/yr`), with transparent flat-rate PO/ASB institutional licensing for High School programs (`$250/yr`), Collegiate programs (`$1,200/yr`), Club Coaches (`$49/mo`), and School Districts (`$2,000/yr`) published on `/procurement`.
 
 ## Brand Commitments
 
@@ -59,9 +59,10 @@ THRESH combines in one workflow:
 - **Shipped brand & icon assets**: `public/brand/*.svg`, `public/icon.svg`, `public/apple-touch-icon.png`, `public/pwa-192x192.png`, `public/pwa-512x512.png`, `public/pwa-maskable-512x512.png`.
 - **Shipped product & technical documentation**:
   - Standalone searchable documentation portal: `public/docs/index.html`
-  - In-app interactive guide & formula cards: `src/components/UserGuideModal.tsx`
-  - Reference manuals: `docs/USER_GUIDE.md`, `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`, `docs/PHYSIOLOGY_AND_METRICS.md`, `docs/API_AND_SECURITY.md`, `docs/DESIGN_SYSTEM.md`
-- **Explicit absences (do not fabricate)**: No external athlete or coach testimonials, named school/university customer logos or endorsements, aggregate user/workout count claims, press mentions, clinical/medical certifications, or pricing/plan comparisons exist.
+  - Illustrated Coach User Guide: `public/docs/coach.html`
+  - Legal & School District Procurement Pack: `/privacy`, `/terms`, `/subprocessors`, `/procurement` (`public/legal/`)
+  - Reference manuals: `docs/USER_GUIDE.md`, `docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md`, `docs/PHYSIOLOGY_AND_METRICS.md`, `docs/API_AND_SECURITY.md`, `docs/SCHOLASTIC_COMPLIANCE.md`, `docs/DESIGN_SYSTEM.md`
+- **Explicit absences (do not fabricate)**: No external athlete or coach testimonials, named school/university customer logos or endorsements, aggregate user/workout count claims, press mentions, or clinical/medical certifications exist.
 
 ## Product Principles
 

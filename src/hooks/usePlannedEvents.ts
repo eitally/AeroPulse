@@ -97,7 +97,12 @@ export function usePlannedEvents({
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'schedule workouts');
           return;
         }
-        if (activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam) {
+        if (
+          !isSampleDemoMode &&
+          activeConnectedAthlete.id.startsWith('team-mem-') &&
+          activeTeam &&
+          !activeTeam.brand.teamId.startsWith('demo_team_')
+        ) {
           const targetMemId = activeConnectedAthlete.id.replace(/^team-mem-/, '');
           try {
             const resp = await fetch(
@@ -323,7 +328,12 @@ export function usePlannedEvents({
           triggerReadOnlyAlert(activeConnectedAthlete.name, 'generate multi-week training plans');
           return;
         }
-        if (!isSampleDemoMode && activeConnectedAthlete.id.startsWith('team-mem-') && activeTeam) {
+        if (
+          !isSampleDemoMode &&
+          activeConnectedAthlete.id.startsWith('team-mem-') &&
+          activeTeam &&
+          !activeTeam.brand.teamId.startsWith('demo_team_')
+        ) {
           const targetMemId = activeConnectedAthlete.id.replace(/^team-mem-/, '');
           try {
             const resp = await fetch(
@@ -462,8 +472,12 @@ export function usePlannedEvents({
           : e;
 
       const isTeamCoach = Boolean(
-        activeTeam &&
-          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+        !isSampleDemoMode &&
+          activeTeam &&
+          !activeTeam.brand.teamId.startsWith('demo_team_') &&
+          (activeTeam.myRole === 'HEAD_COACH' ||
+            activeTeam.myRole === 'ASSISTANT_COACH' ||
+            activeTeam.myRole === 'ORG_ADMIN')
       );
 
       if (activeConnectedAthlete) {
@@ -580,8 +594,12 @@ export function usePlannedEvents({
   const handleDeletePlannedEvent = useCallback(
     async (id: string) => {
       const isTeamCoach = Boolean(
-        activeTeam &&
-          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+        !isSampleDemoMode &&
+          activeTeam &&
+          !activeTeam.brand.teamId.startsWith('demo_team_') &&
+          (activeTeam.myRole === 'HEAD_COACH' ||
+            activeTeam.myRole === 'ASSISTANT_COACH' ||
+            activeTeam.myRole === 'ORG_ADMIN')
       );
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
@@ -680,8 +698,12 @@ export function usePlannedEvents({
     async (planBlockId: string) => {
       if (!planBlockId) return;
       const isTeamCoach = Boolean(
-        activeTeam &&
-          (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH')
+        !isSampleDemoMode &&
+          activeTeam &&
+          !activeTeam.brand.teamId.startsWith('demo_team_') &&
+          (activeTeam.myRole === 'HEAD_COACH' ||
+            activeTeam.myRole === 'ASSISTANT_COACH' ||
+            activeTeam.myRole === 'ORG_ADMIN')
       );
       if (activeConnectedAthlete) {
         if (activeConnectedAthlete.role === 'FRIEND_VIEW') {

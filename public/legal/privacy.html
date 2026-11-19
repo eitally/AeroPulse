@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH — Privacy Policy</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
+  <link rel="stylesheet" href="/legal/legal.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
+        var isDark =
+          saved === '1'
+            ? true
+            : saved === '0'
+              ? false
+              : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="legal-header">
+    <a class="legal-brand" href="/" aria-label="THRESH Home">
+      <img class="doc-logo-light" src="/brand/thresh-lockup-light-2x.png" alt="THRESH" width="122" height="32" />
+      <img class="doc-logo-dark" src="/brand/thresh-lockup-dark-2x.png" alt="THRESH" width="122" height="32" />
+      <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Privacy &amp; Compliance</span>
+    </a>
+    <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/privacy" aria-current="page">Privacy</a>
+      <a class="legal-nav-link" href="/terms">Terms</a>
+      <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
+      <a class="legal-nav-link" href="/procurement">District &amp; NCAA Pack</a>
+      <button type="button" class="legal-btn" id="legalThemeBtn">Theme</button>
+      <a class="legal-btn legal-btn-primary" href="/">Open THRESH</a>
+    </nav>
+  </header>
+
+  <main id="main-content" tabindex="-1" class="legal-shell">
+    <section class="legal-hero">
+      <div class="legal-kicker">PRIVACY POLICY · UPDATED NOV 2026</div>
+      <h1>THRESH Privacy Policy &amp; Youth Data Protection</h1>
+      <p class="legal-meta">Applies to individual athletes, coaches, parents/guardians, high school programs, collegiate programs, and clubs across THRESH web and PWA surfaces.</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>1. Data We Collect &amp; Strict Minimization</h2>
+      <ul>
+        <li><strong>Account Identity:</strong> Display name, sign-in identifier (Google OAuth, WebAuthn Passkey credential, verified email for OTP/Magic Link, or optional Strava athlete ID), and explicit role (<code>ATHLETE</code>, <code>HEAD_COACH</code>, <code>ASSISTANT_COACH</code>, <code>ORG_ADMIN</code>, <code>ATHLETIC_TRAINER</code>, or <code>PARENT_FOLLOWER</code>).</li>
+        <li><strong>Birth Month &amp; Year Only (<code>YYYY-MM</code>):</strong> THRESH intentionally avoids collecting full calendar birth dates for minor age-tier routing. Age verification computes age tiers strictly from month/year boundaries.</li>
+        <li><strong>Endurance Telemetry &amp; Manual Logs:</strong> Workout duration, distance, splits, power/pace, heart rate, trackside stopwatch splits, planned sessions, and voluntary post-session check-ins (RPE &amp; soreness/pain flags).</li>
+        <li><strong>Optional Body Mass &amp; Safe-Sport Shield:</strong> When an athlete is under 18 (<code>isMinorU18</code>) or joins a <code>HIGH_SCHOOL</code> team, Safe-Sport weight suppression (<code>safeSportHideWeight</code>) is locked ON and body mass / <code>W/kg</code> metrics are excluded from team projections and reports.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Children Under 13 (COPPA) &amp; Youth Athletes Ages 13–17</h2>
+      <div class="legal-callout">
+        <p><strong>No Unmanaged Child Accounts:</strong> Under the Children&apos;s Online Privacy Protection Act (COPPA, 15 U.S.C. § 6501 et seq.), THRESH does not knowingly collect personal information from children under 13 years of age and hard-blocks account creation for under-13 birthdates.</p>
+      </div>
+      <ul>
+        <li><strong>Verifiable Parent / Guardian Consent (Ages 13–17 &amp; High School Programs):</strong> High school and U18 minor memberships remain in pending-consent quarantine (<code>LOAD_ONLY</code> load &amp; readiness triage summary only, zero AI access, zero weight exposure) until a parent/guardian receives and confirms the single-use consent link.</li>
+        <li><strong>Hashed Consent Tokens &amp; Instant Revocation:</strong> Parent consent tokens are stored as SHA-256 hashes at rest and never exposed back to student-athlete browsers. Parents can click <strong>Decline &amp; Delete Child Data</strong> at any time to purge minor team telemetry immediately.</li>
+        <li><strong>SafeSport MAAPP Anti-1-on-1 Communication:</strong> Un-CC&apos;d direct 1-on-1 SMS links and private coach-to-minor workout comment threads are blocked on the server (<code>403 Forbidden</code>). Minor workout comments automatically apply visible parent/guardian CC and audit logging.</li>
+        <li><strong>Automatic Age-18 Graduation Transfer:</strong> Upon reaching 18 years of age (FERPA rights transfer) or graduating on July 15, adult athletes control guardian visibility and retain portable personal workout &amp; stopwatch history.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. SOPIPA, California AB-1584 (Ed Code § 49073.1) &amp; FERPA</h2>
+      <ul>
+        <li><strong>Zero Advertising &amp; Zero Data Sales:</strong> Student and athlete records are never sold, rented, or used for targeted advertising, behavioral profiling, or third-party ad networks.</li>
+        <li><strong>School Official &amp; LEA Ownership:</strong> When provisioned by a school or district, pupil records remain under the legal control of the Educational Agency in compliance with FERPA and California Education Code § 49073.1 (AB-1584) / SOPIPA.</li>
+        <li><strong>FERPA Directory Opt-Out:</strong> Coaches and school administrators control public meet leaderboard opt-outs for <code>/team/:slug</code>; public hubs never expose athlete emails, phone numbers, guardian emails, GPS routes, HRV, sleep, RPE, or weight.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. Strava Clean-Room Firewall &amp; Optional Gemini AI</h2>
+      <p>THRESH operates a strict server-side allowlist firewall (<code>server/cleanRoomFirewall.ts</code>) before any prompt reaches Google Gemini AI:</p>
+      <ul>
+        <li><strong>100% Strava Exclusion:</strong> Activities originating from Strava (across all payload keys including <code>recentWorkouts</code>) are stripped unconditionally and never transmitted to Gemini AI or displayed inside unowned third-party views.</li>
+        <li><strong>Minor AI Default-Off:</strong> AI Coach insights are disabled by default for all minors (<code>U18</code>) and high school athletes, and body weight / body composition fields are stripped server-side.</li>
+        <li><strong>Strict Read-Only Coach Scope:</strong> Coaches only see physiology tiers explicitly authorized by the athlete&apos;s per-team sharing setting (<code>LOAD_ONLY</code>, <code>SUMMARY_ONLY</code>, or <code>FULL_STREAMS</code>) and privacy shield toggles (<code>Share Wellness &amp; HRV</code>, <code>Share GPS</code>).</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>5. Security Controls, Encryption &amp; Permanent Erasure</h2>
+      <ul>
+        <li><strong>Encryption:</strong> Credentials and tenant vaults are encrypted at rest with AES-256-GCM; PostgreSQL connections enforce strict TLS (<code>rejectUnauthorized: true</code> in production); WebAuthn Passkeys verify cryptographic COSE keys via <code>@simplewebauthn/server</code>.</li>
+        <li><strong>Self-Serve Deletion:</strong> Athletes can revoke Strava/wearable connectors or execute permanent erasure via <strong>Account &amp; Privacy → Delete My Account</strong>, which wipes session cookies, team memberships, and encrypted vault state (preventing deletion only if a sole active Head Coach has not transferred ownership).</li>
+      </ul>
+      <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@thresh.app">privacy@thresh.app</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
+    </section>
+  </main>
+
+  <footer class="legal-footer">
+    <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+    <div>
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/subprocessors">Subprocessors</a> · <a href="/procurement">Procurement</a> · <a href="/docs/">Docs</a>
+    </div>
+  </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById('legalThemeBtn');
+      if (!btn) return;
+      function syncLabel() {
+        var dark = document.documentElement.classList.contains('dark');
+        var slate = document.documentElement.classList.contains('theme-slate');
+        btn.textContent = dark ? (slate ? 'Slate Dark' : 'Pine Dark') : 'Chalk Light';
+      }
+      syncLabel();
+      btn.addEventListener('click', function () {
+        var nextDark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', nextDark);
+        try { localStorage.setItem('thresh_theme_dark', nextDark ? '1' : '0'); } catch (e) {}
+        syncLabel();
+      });
+    })();
+  </script>
+</body>
+</html>

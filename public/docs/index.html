@@ -15,6 +15,7 @@
     (function () {
       try {
         var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
         var isDark =
           saved === '1'
             ? true
@@ -22,6 +23,7 @@
               ? false
               : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
       } catch (e) {}
     })();
   </script>
@@ -59,6 +61,16 @@
       --accent-vermilion: #C8FF00;
       --code-bg: #070B09;
       --code-fg: #E6EFEA;
+    }
+    html.dark.theme-slate {
+      --bg-outer: #080D14;
+      --bg-canvas: #0B1117;
+      --bg-surface: #111923;
+      --bg-recessed: #16212E;
+      --content-border: #2D4259;
+      --text-secondary: #CBD5E1;
+      --text-muted: #94A3B8;
+      --border-hairline: rgba(94, 129, 172, 0.32);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -184,11 +196,11 @@
     .header-controls {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.55rem;
       flex: 1;
-      max-width: 620px;
+      max-width: 780px;
       justify-content: flex-end;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
     .search-input {
       flex: 1;
@@ -462,7 +474,7 @@
       aside { display: none; }
       .mobile-toc { display: block; }
       main { padding: 1.25rem 1rem 3rem; }
-      .header-controls { max-width: none; width: 100%; justify-content: stretch; }
+      .header-controls { max-width: none; width: 100%; justify-content: stretch; flex-wrap: wrap; }
       .search-input { min-width: 100%; order: 3; font-size: 0.9375rem; }
     }
     @media (max-width: 640px) {
@@ -564,7 +576,7 @@
       <section id="sec-overview" class="doc-section">
         <h1>THRESH — Precision Endurance Physiology &amp; Team Operations</h1>
         <p>
-          <strong>THRESH</strong> is an installable Progressive Web App (PWA) unifying laboratory-grade running and cycling physiology, closed-loop daily workout adaptivity, and high school or collegiate team operations in one workspace. <strong>Strava OAuth</strong> serves as your read-only cross-device identity, followed by an explicit post-auth choice of what syncs to THRESH, with <strong>Garmin Connect</strong> and <strong>Intervals.icu</strong> available anytime as optional overnight HRV and Sleep add-ons.
+          <strong>THRESH</strong> is an installable Progressive Web App (PWA) unifying laboratory-grade running and cycling physiology, closed-loop daily workout adaptivity, and high school or collegiate team operations in one 4-pillar workspace (<strong>Today</strong>, <strong>Calendar</strong>, <strong>Log</strong>, <strong>Progress</strong>). Sign in with <strong>Google OAuth</strong>, <strong>WebAuthn Passkeys</strong>, <strong>Magic Link</strong>, <strong>Email OTP</strong>, or optional <strong>Strava OAuth</strong>—with <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong> (including COROS &amp; WHOOP relays), <strong>Wahoo</strong>, and <strong>Polar</strong> supported anytime. <em>Informational coaching telemetry only — not medical advice.</em>
         </p>
 
         <div class="table-wrap">
@@ -649,17 +661,17 @@
 
       <!-- SECTION 2 -->
       <section id="sec-onboarding" class="doc-section">
-        <h2>2. Strava-First Onboarding, Sync Windows &amp; Team Join Flow</h2>
+        <h2>2. Multi-Auth Onboarding, Sync Windows &amp; Team Join Flow</h2>
         <p>
-          Every individual athlete, coach, and student-athlete enters THRESH through a transparent 3-step onboarding flow—with zero passwords, zero unconsented background imports, and zero mandatory secondary integrations:
+          Individual athletes, coaches, parents, and student-athletes enter THRESH cleanly with zero mandatory Strava accounts for school squads and zero unconsented background imports:
         </p>
         <div class="grid-2">
           <div class="card">
-            <h3>Step 1 · Continue With Strava (Primary Identity)</h3>
+            <h3>Step 1 · Multi-Provider Identity</h3>
             <ul>
-              <li><strong>Universal Identity:</strong> Deterministic HMAC-SHA256 session derivation (<code>deriveStravaSessionSid</code>) restores your encrypted vault and team memberships across laptop and mobile browsers.</li>
-              <li><strong>Inline Team Join:</strong> Athletes arriving via <code>/join/&lt;slug&gt;</code>, QR poster scan, or a 6-character Team Code see a live preview of their school/club crest before signing in with Strava.</li>
-              <li><strong>Read-Only Pledge:</strong> THRESH never posts to your Strava feed, never modifies activity titles, and lets you revoke access in 1 click.</li>
+              <li><strong>School &amp; Athlete Choice:</strong> Sign in with <strong>Google OAuth</strong>, <strong>WebAuthn Passkeys</strong> (cryptographic hardware verification), fail-closed <strong>Magic Link</strong>, <strong>6-Digit Email OTP</strong>, or optional <strong>Strava OAuth</strong>.</li>
+              <li><strong>Inline Team Join:</strong> Athletes arriving via <code>/join/&lt;slug&gt;</code>, QR poster scan, or a 6-character Team Code see their team preview before signing in.</li>
+              <li><strong>Read-Only Strava Pledge:</strong> THRESH never posts to your Strava feed, never modifies activities, and lets you disconnect &amp; deauthorize anytime.</li>
             </ul>
           </div>
           <div class="card">
@@ -993,9 +1005,9 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
                 <td>Rubber-bands raw GPS splits to certified USATF/World Athletics distance and mints a <code>THV-...</code> Verified Passport.</td>
               </tr>
               <tr>
-                <td class="mono">/api/webhooks/:provider</td>
-                <td class="mono">POST</td>
-                <td>First-party webhook ingestion for <code>garmin</code>, <code>wahoo</code>, <code>coros</code>, <code>polar</code>, <code>oura</code>, <code>whoop</code>, and <code>apple-healthkit</code>.</td>
+                <td class="mono">/api/webhooks/strava &amp; /api/teams/:teamId/*</td>
+                <td class="mono">GET / POST / PUT / DELETE</td>
+                <td>Verified Strava webhook deauth, <code>ORG_ADMIN</code>/<code>ATHLETIC_TRAINER</code> RBAC, reusable Workout Library, Guardian-CC Comments, Safety Alerts, and <code>thresh_audit_log</code>.</td>
               </tr>
               <tr>
                 <td class="mono">/api/workouts/export</td>
@@ -1006,6 +1018,16 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
           </table>
         </div>
       </section>
+
+      <footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border-hairline);display:flex;flex-wrap:wrap;justify-content:space-between;gap:0.75rem;font-size:0.8125rem;color:var(--text-muted);">
+        <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+        <div style="display:flex;flex-wrap:wrap;gap:0.9rem;">
+          <a href="/privacy" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Privacy</a>
+          <a href="/terms" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Terms</a>
+          <a href="/subprocessors" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Subprocessors</a>
+          <a href="/procurement" style="color:var(--accent-cobalt);font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">District &amp; NCAA Pack</a>
+        </div>
+      </footer>
     </main>
   </div>
 

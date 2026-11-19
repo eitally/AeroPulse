@@ -66,19 +66,27 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
     );
     expect(overflow).toBe(false);
 
-    // 1. Toggle Readiness Simulation: Optimal (+6 TSB) -> Fatigued (-14 TSB)
+    // 1. Toggle Readiness Simulation: Optimal (+6 TSB) -> Fatigued (-24 TSB)
     await expect(page.getByTestId('specimen-atl-value')).toHaveText('58');
     await expect(page.getByTestId('specimen-tsb-value')).toHaveText('+6');
+    await expect(page.locator('body')).toContainText('920');
     await expect(page.getByTestId('specimen-prescription-text')).toContainText(
       'Today: 5 × 1km @ 3:42/km'
     );
 
     await page.getByTestId('specimen-readiness-fatigued').click();
-    await expect(page.getByTestId('specimen-atl-value')).toHaveText('78');
-    await expect(page.getByTestId('specimen-tsb-value')).toHaveText('-14');
+    await expect(page.getByTestId('specimen-atl-value')).toHaveText('88');
+    await expect(page.getByTestId('specimen-tsb-value')).toHaveText('-24');
     await expect(page.getByTestId('specimen-prescription-text')).toContainText(
       'Today: 4 × 1km @ 3:48/km · Auto-modulated -15% strain guard'
     );
+
+    // Verify 1,180 TSS Fatigued weekly load, FREE FOR ATHLETES pricing badge & legal links
+    await expect(page.locator('body')).toContainText('1,180');
+    await expect(page.locator('body')).toContainText(/FREE FOR ATHLETES/i);
+    await expect(page.locator('a[href="/privacy"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/terms"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/procurement"]').first()).toBeVisible();
 
     // 2. Role selector syncs Live Cockpit Preview to Team Coach & updates helper copy
     await page.getByTestId('onboarding-role-coach').click();

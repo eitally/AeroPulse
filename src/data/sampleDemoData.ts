@@ -1,8 +1,17 @@
 import type {
   ActivityStreamSet,
   AthleteProfile,
+  CoachEventGroup,
+  GuardianSafetyAlertRecord,
   PlannedWorkoutEvent,
+  SessionCheckInRecord,
   TargetGoal,
+  TeamBroadcastWorkout,
+  TeamMembershipRecord,
+  TeamSummaryWithRole,
+  TeamWorkoutComment,
+  TeamWorkoutLibraryTemplate,
+  TrackSplitTimingContext,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -131,6 +140,811 @@ export interface SampleDemoDataset {
   wellnessDays: UnifiedWellnessDay[];
   plannedEvents: PlannedWorkoutEvent[];
   targetGoals: TargetGoal[];
+  demoTeams: TeamSummaryWithRole[];
+}
+
+interface DemoCoachAthleteSpec {
+  idNum: string;
+  name: string;
+  squadGroup: string;
+  eventGroup: CoachEventGroup;
+  gradYear: number;
+  birthMonthYear: string;
+  thresholdPaceSecsPerKm: number;
+  raceEventLabel: string;
+  raceDistanceMeters: number;
+  fatTimeSecs: number;
+  displayFatTime: string;
+  vdot: number;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  hrv: number;
+  readiness: number;
+  verdictLabel: string;
+  rpe: number;
+  painFlag?: boolean;
+  painArea?: SessionCheckInRecord['painArea'];
+  autoSwapped?: boolean;
+  sorenessNote?: string;
+}
+
+const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
+  {
+    idNum: '01',
+    name: 'Lucas Alvarez',
+    squadGroup: 'Varsity',
+    eventGroup: 'DISTANCE',
+    gradYear: 2026,
+    birthMonthYear: '2008-03',
+    thresholdPaceSecsPerKm: 208,
+    raceEventLabel: '5000m',
+    raceDistanceMeters: 5000,
+    fatTimeSecs: 954.12,
+    displayFatTime: '15:54.12',
+    vdot: 65.4,
+    ctl: 64,
+    atl: 61,
+    tsb: 3,
+    hrv: 74,
+    readiness: 88,
+    verdictLabel: 'Prime Readiness',
+    rpe: 6,
+  },
+  {
+    idNum: '02',
+    name: 'Maya Chen',
+    squadGroup: 'Varsity',
+    eventGroup: 'DISTANCE',
+    gradYear: 2027,
+    birthMonthYear: '2009-05',
+    thresholdPaceSecsPerKm: 234,
+    raceEventLabel: '5000m',
+    raceDistanceMeters: 5000,
+    fatTimeSecs: 1092.45,
+    displayFatTime: '18:12.45',
+    vdot: 56.1,
+    ctl: 56,
+    atl: 62,
+    tsb: -6,
+    hrv: 62,
+    readiness: 54,
+    verdictLabel: 'MODIFIED · Shin Pain',
+    rpe: 7,
+    painFlag: true,
+    painArea: 'SHIN',
+    autoSwapped: true,
+    sorenessNote: 'Right medial shin tightness after track reps — swapped to Easy Spin.',
+  },
+  {
+    idNum: '03',
+    name: 'Ethan Patel',
+    squadGroup: 'Varsity',
+    eventGroup: 'MID_DISTANCE',
+    gradYear: 2027,
+    birthMonthYear: '2009-02',
+    thresholdPaceSecsPerKm: 214,
+    raceEventLabel: '1600m',
+    raceDistanceMeters: 1600,
+    fatTimeSecs: 274.8,
+    displayFatTime: '4:34.80',
+    vdot: 63.2,
+    ctl: 48,
+    atl: 69,
+    tsb: -21,
+    hrv: 59,
+    readiness: 58,
+    verdictLabel: 'Caution · ACWR 1.44',
+    rpe: 9,
+  },
+  {
+    idNum: '04',
+    name: 'Sofia Rodriguez',
+    squadGroup: 'Varsity',
+    eventGroup: 'DISTANCE',
+    gradYear: 2026,
+    birthMonthYear: '2008-08',
+    thresholdPaceSecsPerKm: 238,
+    raceEventLabel: '5000m',
+    raceDistanceMeters: 5000,
+    fatTimeSecs: 1116.2,
+    displayFatTime: '18:36.20',
+    vdot: 54.8,
+    ctl: 54,
+    atl: 51,
+    tsb: 3,
+    hrv: 72,
+    readiness: 85,
+    verdictLabel: 'Prime Readiness',
+    rpe: 6,
+  },
+  {
+    idNum: '05',
+    name: 'Nolan Brooks',
+    squadGroup: 'Varsity',
+    eventGroup: 'MID_DISTANCE',
+    gradYear: 2026,
+    birthMonthYear: '2008-11',
+    thresholdPaceSecsPerKm: 212,
+    raceEventLabel: '1600m',
+    raceDistanceMeters: 1600,
+    fatTimeSecs: 271.15,
+    displayFatTime: '4:31.15',
+    vdot: 64.1,
+    ctl: 59,
+    atl: 57,
+    tsb: 2,
+    hrv: 70,
+    readiness: 83,
+    verdictLabel: 'On Track',
+    rpe: 6,
+  },
+  {
+    idNum: '06',
+    name: 'Kira Nakamura',
+    squadGroup: 'Varsity',
+    eventGroup: 'MID_DISTANCE',
+    gradYear: 2028,
+    birthMonthYear: '2010-01',
+    thresholdPaceSecsPerKm: 242,
+    raceEventLabel: '1600m',
+    raceDistanceMeters: 1600,
+    fatTimeSecs: 314.9,
+    displayFatTime: '5:14.90',
+    vdot: 54.0,
+    ctl: 51,
+    atl: 49,
+    tsb: 2,
+    hrv: 75,
+    readiness: 86,
+    verdictLabel: 'On Track',
+    rpe: 5,
+  },
+  {
+    idNum: '07',
+    name: 'Mateo Flores',
+    squadGroup: 'JV',
+    eventGroup: 'DISTANCE',
+    gradYear: 2028,
+    birthMonthYear: '2010-04',
+    thresholdPaceSecsPerKm: 232,
+    raceEventLabel: '5000m',
+    raceDistanceMeters: 5000,
+    fatTimeSecs: 1068.9,
+    displayFatTime: '17:48.90',
+    vdot: 57.5,
+    ctl: 44,
+    atl: 43,
+    tsb: 1,
+    hrv: 69,
+    readiness: 81,
+    verdictLabel: 'On Track',
+    rpe: 5,
+  },
+  {
+    idNum: '08',
+    name: 'Hannah Kim',
+    squadGroup: 'JV',
+    eventGroup: 'MID_DISTANCE',
+    gradYear: 2028,
+    birthMonthYear: '2010-09',
+    thresholdPaceSecsPerKm: 252,
+    raceEventLabel: '1600m',
+    raceDistanceMeters: 1600,
+    fatTimeSecs: 332.1,
+    displayFatTime: '5:32.10',
+    vdot: 50.8,
+    ctl: 41,
+    atl: 40,
+    tsb: 1,
+    hrv: 73,
+    readiness: 82,
+    verdictLabel: 'On Track',
+    rpe: 5,
+  },
+  {
+    idNum: '09',
+    name: 'Devon Carter',
+    squadGroup: 'Varsity',
+    eventGroup: 'SPRINTS',
+    gradYear: 2027,
+    birthMonthYear: '2009-07',
+    thresholdPaceSecsPerKm: 226,
+    raceEventLabel: '800m',
+    raceDistanceMeters: 800,
+    fatTimeSecs: 117.85,
+    displayFatTime: '1:57.85',
+    vdot: 60.4,
+    ctl: 46,
+    atl: 45,
+    tsb: 1,
+    hrv: 76,
+    readiness: 84,
+    verdictLabel: 'On Track',
+    rpe: 6,
+  },
+  {
+    idNum: '10',
+    name: 'Chloe Okafor',
+    squadGroup: 'Varsity',
+    eventGroup: 'SPRINTS',
+    gradYear: 2026,
+    birthMonthYear: '2008-12',
+    thresholdPaceSecsPerKm: 248,
+    raceEventLabel: '800m',
+    raceDistanceMeters: 800,
+    fatTimeSecs: 138.6,
+    displayFatTime: '2:18.60',
+    vdot: 52.3,
+    ctl: 45,
+    atl: 44,
+    tsb: 1,
+    hrv: 74,
+    readiness: 83,
+    verdictLabel: 'On Track',
+    rpe: 5,
+  },
+  {
+    idNum: '11',
+    name: 'Liam Gallagher',
+    squadGroup: 'JV',
+    eventGroup: 'DISTANCE',
+    gradYear: 2029,
+    birthMonthYear: '2011-02',
+    thresholdPaceSecsPerKm: 256,
+    raceEventLabel: '5000m',
+    raceDistanceMeters: 5000,
+    fatTimeSecs: 1162.4,
+    displayFatTime: '19:22.40',
+    vdot: 52.0,
+    ctl: 38,
+    atl: 36,
+    tsb: 2,
+    hrv: 77,
+    readiness: 85,
+    verdictLabel: 'On Track',
+    rpe: 4,
+  },
+  {
+    idNum: '12',
+    name: 'Ava Washington',
+    squadGroup: 'Return-to-Run',
+    eventGroup: 'MID_DISTANCE',
+    gradYear: 2028,
+    birthMonthYear: '2010-06',
+    thresholdPaceSecsPerKm: 268,
+    raceEventLabel: '800m',
+    raceDistanceMeters: 800,
+    fatTimeSecs: 152.4,
+    displayFatTime: '2:32.40',
+    vdot: 47.6,
+    ctl: 31,
+    atl: 29,
+    tsb: 2,
+    hrv: 78,
+    readiness: 80,
+    verdictLabel: 'Return Build',
+    rpe: 4,
+  },
+];
+
+function buildDemoAthleteActivity(
+  id: string,
+  dateIso: string,
+  name: string,
+  distanceMeters: number,
+  movingTimeSecs: number,
+  trainingLoad: number,
+  thresholdPaceSecsPerKm: number,
+  officialRace?: {
+    meetName: string;
+    eventLabel: string;
+    eventDistanceMeters: number;
+    fatTimeSecs: number;
+    displayFatTime: string;
+    vdotScore: number;
+    placeFinish?: string;
+    timingMethod?: 'FAT' | 'HAND';
+    splitContext?: TrackSplitTimingContext;
+  }
+): UnifiedActivity {
+  const paceSecsPerKm = movingTimeSecs / Math.max(0.5, distanceMeters / 1000);
+  const ratio = thresholdPaceSecsPerKm / Math.max(150, paceSecsPerKm);
+  return {
+    id,
+    startDateLocal: `${dateIso}T15:30:00`,
+    name,
+    sportCategory: 'Running',
+    environment: 'OUTDOOR',
+    subType: officialRace ? 'Track' : 'Road',
+    movingTimeSecs,
+    distanceMeters,
+    elevationGainMeters: officialRace ? 0 : 48,
+    intensityFactor: Number(ratio.toFixed(2)),
+    variabilityIndex: 1.02,
+    trainingLoad,
+    avgHr: Math.round(148 + ratio * 18),
+    maxHr: Math.round(176 + ratio * 12),
+    avgCadence: 178,
+    avgPaceSecsPerKm: Math.round(paceSecsPerKm),
+    gapPaceSecsPerKm: Math.round(paceSecsPerKm),
+    aerobicDecouplingPct: 2.1,
+    efficiencyFactor: 1.82,
+    firstHalfEf: 1.84,
+    secondHalfEf: 1.8,
+    calories: Math.round(trainingLoad * 9),
+    deviceName: officialRace ? 'HY-TEK FAT Timing' : 'GPS Watch',
+    zoneSecs: {
+      hr: [120, Math.round(movingTimeSecs * 0.5), Math.round(movingTimeSecs * 0.35), Math.round(movingTimeSecs * 0.15), 0],
+      pace: [100, Math.round(movingTimeSecs * 0.55), Math.round(movingTimeSecs * 0.3), Math.round(movingTimeSecs * 0.15), 0],
+    },
+    stravaPrCount: officialRace ? 1 : 0,
+    segmentEfforts: [],
+    ...(officialRace
+      ? {
+          officialRaceData: {
+            platform: 'Athletic.net',
+            meetName: officialRace.meetName,
+            eventLabel: officialRace.eventLabel,
+            eventDistanceMeters: officialRace.eventDistanceMeters,
+            fatTimeSecs: officialRace.fatTimeSecs,
+            displayFatTime: officialRace.displayFatTime,
+            trackType: 'OUTDOOR_400M',
+            placeFinish: officialRace.placeFinish,
+            vdotScore: officialRace.vdotScore,
+            lapSplitsSecs: [officialRace.fatTimeSecs],
+            includeWarmupCooldown: true,
+            ...(officialRace.timingMethod ? { timingMethod: officialRace.timingMethod } : {}),
+            ...(officialRace.splitContext ? { splitContext: officialRace.splitContext } : {}),
+          },
+        }
+      : {}),
+    sourceBadges: officialRace ? ['Official FAT', 'Athletic.net'] : ['Garmin'],
+  };
+}
+
+export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWithRole {
+  const todayIso = baseDateIso || getLocalDateIso();
+  const teamId = 'demo_team_willow_glen_xc';
+
+  const coachMember: TeamMembershipRecord = {
+    membershipId: 'demo-mem-coach',
+    teamId,
+    role: 'HEAD_COACH',
+    squadGroup: 'Coaching Staff',
+    invitedName: 'Coach Morales',
+    invitedEmail: 'morales@wghs-track.example.org',
+    isMinorU18: false,
+    status: 'ACTIVE',
+    invitedAt: `${shiftDateIso(todayIso, -45)}T08:00:00Z`,
+    joinedAt: `${shiftDateIso(todayIso, -45)}T08:05:00Z`,
+  };
+
+  const athleteMembers: TeamMembershipRecord[] = DEMO_COACH_ATHLETE_SPECS.map((spec, idx) => {
+    const membershipId = `demo-mem-ath-${spec.idNum}`;
+    const raceActivity = buildDemoAthleteActivity(
+      `demo-race-${spec.idNum}`,
+      shiftDateIso(todayIso, -9),
+      `Crystal Springs / Track Opener — ${spec.raceEventLabel}`,
+      spec.raceDistanceMeters,
+      Math.round(spec.fatTimeSecs),
+      Math.max(35, Math.round(spec.fatTimeSecs / 12)),
+      spec.thresholdPaceSecsPerKm,
+      {
+        meetName: 'BVAL Center Meet #1',
+        eventLabel: spec.raceEventLabel,
+        eventDistanceMeters: spec.raceDistanceMeters,
+        fatTimeSecs: spec.fatTimeSecs,
+        displayFatTime: spec.displayFatTime,
+        vdotScore: spec.vdot,
+        placeFinish: `#${idx + 1}`,
+      }
+    );
+
+    const relayFlyingActivity =
+      spec.idNum === '09'
+        ? buildDemoAthleteActivity(
+            `demo-relay-${spec.idNum}`,
+            shiftDateIso(todayIso, -5),
+            '4x400m Flying Relay Leg #2 (Hand→FAT)',
+            400,
+            51,
+            32,
+            spec.thresholdPaceSecsPerKm,
+            {
+              meetName: 'BVAL Center Meet #1',
+              eventLabel: '400m',
+              eventDistanceMeters: 400,
+              fatTimeSecs: 51.42,
+              displayFatTime: '51.42',
+              vdotScore: spec.vdot,
+              placeFinish: 'Leg #2',
+              timingMethod: 'HAND',
+              splitContext: 'RELAY_FLYING',
+            }
+          )
+        : null;
+
+    const recentActivities: UnifiedActivity[] = [
+      buildDemoAthleteActivity(
+        `demo-act-${spec.idNum}-1`,
+        shiftDateIso(todayIso, -1),
+        idx === 1 ? 'Easy Aerobic Spin (Safe-Sport Swap)' : 'Threshold Aerobic Run · 45m',
+        8400,
+        2450,
+        idx === 2 ? 96 : 64,
+        spec.thresholdPaceSecsPerKm
+      ),
+      buildDemoAthleteActivity(
+        `demo-act-${spec.idNum}-3`,
+        shiftDateIso(todayIso, -3),
+        '4 × 800m CV + 4 × 200m Strides',
+        9600,
+        2820,
+        idx === 2 ? 112 : 78,
+        spec.thresholdPaceSecsPerKm
+      ),
+      buildDemoAthleteActivity(
+        `demo-act-${spec.idNum}-5`,
+        shiftDateIso(todayIso, -5),
+        'Willow Glen Aerobic Loop',
+        10200,
+        2940,
+        62,
+        spec.thresholdPaceSecsPerKm
+      ),
+    ];
+
+    const wellnessDays: UnifiedWellnessDay[] = [];
+    for (let d = -6; d <= 0; d++) {
+      const dateStr = shiftDateIso(todayIso, d);
+      const dayShift = (6 + d) * 0.2;
+      wellnessDays.push({
+        date: dateStr,
+        ctl: Number((spec.ctl - 0.6 + dayShift).toFixed(1)),
+        atl: Number((spec.atl - 0.8 + dayShift * 1.2).toFixed(1)),
+        tsb: Number((spec.tsb + (d === 0 ? 0 : 0.4)).toFixed(1)),
+        loadRatio: Number((spec.atl / Math.max(1, spec.ctl)).toFixed(2)),
+        rampRate: Number((spec.ctl * 0.04).toFixed(1)),
+        hrvRMSSD: spec.hrv,
+        hrvBaseline7d: spec.hrv + 2,
+        hrvNormalBandLow: spec.hrv - 8,
+        hrvNormalBandHigh: spec.hrv + 8,
+        hrvStatus: spec.hrv < 63 ? 'Low' : 'Balanced',
+        restingHR: 50 + (idx % 5),
+        sleepSecs: 27600,
+        sleepScore: spec.readiness,
+        weightKg: 0,
+        readinessStatus:
+          spec.tsb < -18 ? 'Caution' : spec.painFlag ? 'Strain' : 'Optimal',
+        dailyLoad: d === -1 ? (idx === 2 ? 96 : 64) : d === -3 ? 78 : 48,
+      });
+    }
+
+    const sessionCheckIns: SessionCheckInRecord[] = [
+      {
+        id: `demo-ci-ath-${spec.idNum}-today`,
+        date: todayIso,
+        rpe: spec.rpe,
+        painFlag: Boolean(spec.painFlag),
+        ...(spec.painArea ? { painArea: spec.painArea } : {}),
+        ...(spec.sorenessNote ? { sorenessNote: spec.sorenessNote } : {}),
+        ...(spec.autoSwapped ? { autoSwappedToRecovery: true } : {}),
+        legFeel: spec.tsb < -15 || spec.painFlag ? 'HEAVY' : 'FRESH',
+        createdAt: `${todayIso}T07:35:00Z`,
+      },
+      {
+        id: `demo-ci-ath-${spec.idNum}-yest`,
+        date: shiftDateIso(todayIso, -2),
+        rpe: Math.max(4, spec.rpe - 1),
+        painFlag: false,
+        legFeel: 'NORMAL',
+        createdAt: `${shiftDateIso(todayIso, -2)}T17:15:00Z`,
+      },
+    ];
+
+    return {
+      membershipId,
+      teamId,
+      role: 'ATHLETE',
+      squadGroup: spec.squadGroup,
+      eventGroup: spec.eventGroup,
+      invitedName: spec.name,
+      invitedEmail: `${spec.name.toLowerCase().replace(/\s+/g, '.')}@wghs.example.org`,
+      parentGuardianEmail: `guardian.${spec.name.toLowerCase().split(' ')[1]}@family.example.org`,
+      graduationYear: spec.gradYear,
+      birthMonthYear: spec.birthMonthYear,
+      isMinorU18: true,
+      parentConsentStatus: 'ACKNOWLEDGED',
+      seedMarkOrFtp: `${spec.raceEventLabel} ${spec.displayFatTime}`,
+      externalSource: 'ATHLETIC_NET',
+      externalAthleteId: `anet-wg-${spec.idNum}`,
+      status: 'ACTIVE',
+      invitedAt: `${shiftDateIso(todayIso, -40)}T09:00:00Z`,
+      joinedAt: `${shiftDateIso(todayIso, -38)}T16:10:00Z`,
+      sharingTier: 'SUMMARY_ONLY',
+      coachRecordedActivities: relayFlyingActivity
+        ? [raceActivity, relayFlyingActivity]
+        : [raceActivity],
+      liveSnapshot: {
+        updatedAt: `${todayIso}T08:00:00Z`,
+        hasConnectedWatch: spec.idNum !== '12',
+        verdictLabel: spec.verdictLabel,
+        readinessScore: spec.readiness,
+        ctl: spec.ctl,
+        atl: spec.atl,
+        tsb: spec.tsb,
+        acuteLoad7d: Math.round(spec.atl * 6.2),
+        lowAerobicPct: 76,
+        highAerobicPct: 18,
+        neuromuscularPct: 6,
+        caraHours7d: Number((5.2 + (idx % 4) * 0.6).toFixed(1)),
+        thresholdPaceSecsPerKm: spec.thresholdPaceSecsPerKm,
+        safeSportHideWeight: true,
+        birthMonthYear: spec.birthMonthYear,
+        sharingTier: 'SUMMARY_ONLY',
+        wellnessDays,
+        activities: recentActivities,
+        sessionCheckIns,
+        safeSportWatch: {
+          trafficLight: spec.painFlag
+            ? 'RED_MEDICAL_REVIEW'
+            : spec.tsb < -18
+              ? 'AMBER_WATCH'
+              : 'GREEN_CLEAR',
+          coachSafeSummaryLabel: spec.painFlag
+            ? 'Medical Check Recommended (Shin Pain)'
+            : spec.tsb < -18
+              ? 'Elevated Acute Strain (ACWR 1.44)'
+              : 'Healthy Baseline',
+        },
+      },
+    };
+  });
+
+  const broadcastWorkouts: TeamBroadcastWorkout[] = [
+    {
+      broadcastId: 'bw_demo_track_cv',
+      teamId,
+      targetSquadGroup: 'ALL',
+      date: shiftDateIso(todayIso, 2),
+      name: '4 × 1000m CV + 4 × 200m Strides',
+      sportCategory: 'Running',
+      plannedDurationSecs: 3300,
+      plannedLoad: 74,
+      workoutSyntax:
+        'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 4x1000m at CV pace (90s jog)\n\nMain Set 2\n- 4x200m at mile pace (200m jog)\n\nCooldown\n- 1.5mi Z1 Cooldown',
+      description: '2 mi WU · 4×1000m CV + 4×200m Strides · 1.5 mi CD',
+      scheduledTime: '15:45',
+      sessionSlot: 'SINGLE',
+      locationName: 'Willow Glen Track',
+      locationCategory: 'TRACK',
+      pushedByCoachName: 'Coach Morales',
+      createdAt: `${todayIso}T09:00:00Z`,
+    },
+    {
+      broadcastId: 'bw_demo_meet_bval2',
+      teamId,
+      targetSquadGroup: 'ALL',
+      date: shiftDateIso(todayIso, 6),
+      name: 'BVAL League Center Meet #2 @ Montgomery Hill',
+      sportCategory: 'Running',
+      plannedDurationSecs: 3600,
+      plannedLoad: 88,
+      workoutSyntax: 'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 1x4800m at CV pace (3m)',
+      description: 'Bus departs Willow Glen HS main gate at 13:30.',
+      scheduledTime: '15:30',
+      locationName: 'Montgomery Hill Park',
+      locationCategory: 'XC_COURSE',
+      isOfficialMeet: true,
+      externalSource: 'ATHLETIC_NET',
+      pushedByCoachName: 'Coach Morales',
+      createdAt: `${todayIso}T09:00:00Z`,
+    },
+    {
+      broadcastId: 'bw_demo_meet_crystal',
+      teamId,
+      targetSquadGroup: 'ALL',
+      date: shiftDateIso(todayIso, 14),
+      name: 'Crystal Springs Invitational (2.95 mi XC)',
+      sportCategory: 'Running',
+      plannedDurationSecs: 3600,
+      plannedLoad: 92,
+      workoutSyntax: 'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 1x4750m at 5K pace (3m)',
+      description: 'Varsity & JV races at Hallmark Park / Crystal Springs course.',
+      scheduledTime: '10:00',
+      locationName: 'Crystal Springs XC Course, Belmont',
+      locationCategory: 'XC_COURSE',
+      isOfficialMeet: true,
+      externalSource: 'ATHLETIC_NET',
+      pushedByCoachName: 'Coach Morales',
+      createdAt: `${todayIso}T09:00:00Z`,
+    },
+    {
+      broadcastId: 'bw_demo_meet_ccs',
+      teamId,
+      targetSquadGroup: 'Varsity',
+      date: shiftDateIso(todayIso, 28),
+      name: 'CCS Section XC Championships',
+      sportCategory: 'Running',
+      plannedDurationSecs: 3900,
+      plannedLoad: 95,
+      workoutSyntax: 'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 1x4800m at 5K pace (3m)',
+      description: 'Toro Park 3.0 mi Championship Course.',
+      scheduledTime: '11:15',
+      locationName: 'Toro Park, Salinas',
+      locationCategory: 'XC_COURSE',
+      isOfficialMeet: true,
+      externalSource: 'ATHLETIC_NET',
+      pushedByCoachName: 'Coach Morales',
+      createdAt: `${todayIso}T09:00:00Z`,
+    },
+  ];
+
+  const workoutLibrary: TeamWorkoutLibraryTemplate[] = [
+    {
+      id: 'lib-demo-cv-800s',
+      name: '5×800m CV + 4×200m R',
+      category: 'TRACK',
+      sportCategory: 'Running',
+      workoutSyntax: 'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 5x800m at CV pace (90s jog)\n\nMain Set 2\n- 4x200m at mile pace (200m jog)\n\nCooldown\n- 2mi Z1 Cooldown',
+      description: 'Aerobic power + closing leg turnover for 1600m/5000m runners.',
+      plannedDurationSecs: 3420,
+      plannedLoad: 78,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -12)}T12:00:00Z`,
+    },
+    {
+      id: 'lib-demo-subt-1000',
+      name: '6×1000m Sub-T Track Ladder',
+      category: 'TRACK',
+      sportCategory: 'Running',
+      workoutSyntax: 'Warmup\n- 2mi Z1 Warmup\n\nMain Set 1\n- 6x1000m at Sub-T pace (60s jog)\n\nCooldown\n- 1.5mi Z1 Cooldown',
+      description: 'Bakken-style controlled lactate ceiling with short 60s float.',
+      plannedDurationSecs: 3600,
+      plannedLoad: 76,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -10)}T12:00:00Z`,
+    },
+    {
+      id: 'lib-demo-xc-hills',
+      name: 'Montgomery Hill XC Tempo + 6×150m',
+      category: 'XC_TEMPO',
+      sportCategory: 'Running',
+      workoutSyntax: 'Warmup\n- 1.5mi Z1 Warmup\n\nMain Set 1\n- 3x1600m at CV pace (90s jog)\n\nMain Set 2\n- 6x150m at mile pace (walk back)\n\nCooldown\n- 1.5mi Z1 Cooldown',
+      description: 'Specific undulating XC strength before BVAL meets.',
+      plannedDurationSecs: 3300,
+      plannedLoad: 74,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -8)}T12:00:00Z`,
+    },
+    {
+      id: 'lib-demo-road-prog',
+      name: '40m Aerobic Progression Run',
+      category: 'ROAD',
+      sportCategory: 'Running',
+      workoutSyntax: 'Warmup\n- 10m 68% Pace\n\nMain Set 1\n- 30m 84% Pace\n\nCooldown\n- 10m 66% Pace',
+      description: 'Controlled midweek aerobic durability block.',
+      plannedDurationSecs: 3000,
+      plannedLoad: 64,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -6)}T12:00:00Z`,
+    },
+    {
+      id: 'lib-demo-spin-flush',
+      name: 'Zero-Impact Aerobic Spin Flush (45m)',
+      category: 'CYCLING',
+      sportCategory: 'Cycling',
+      workoutSyntax: 'Warmup\n- 10m 55% FTP Warmup\n\nMain Set 1\n- 25m 68% FTP (95 rpm)\n\nCooldown\n- 10m 52% FTP Cooldown',
+      description: 'Shin-safe cross-training load substitution.',
+      plannedDurationSecs: 2700,
+      plannedLoad: 42,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -5)}T12:00:00Z`,
+    },
+    {
+      id: 'lib-demo-shakeout',
+      name: 'Pre-Meet Shakeout + 4×100m Strides',
+      category: 'RECOVERY',
+      sportCategory: 'Running',
+      workoutSyntax: 'Warmup\n- 1.5mi Z1 Warmup\n\nMain Set 1\n- 4x150m at mile pace (90s walk)\n\nCooldown\n- 1mi Z1 Cooldown',
+      description: 'Neuromuscular prime 24h before Invitational racing.',
+      plannedDurationSecs: 1800,
+      plannedLoad: 32,
+      createdByName: 'Coach Morales',
+      createdAt: `${shiftDateIso(todayIso, -4)}T12:00:00Z`,
+    },
+  ];
+
+  const workoutComments: TeamWorkoutComment[] = [
+    {
+      id: 'demo-comment-1',
+      teamId,
+      targetMembershipId: 'demo-mem-ath-02',
+      targetAthleteName: 'Maya Chen',
+      workoutDate: todayIso,
+      authorSid: 'demo-mem-coach',
+      authorName: 'Coach Morales',
+      authorRole: 'HEAD_COACH',
+      body: 'Saw the right medial shin soreness flag — keep today on the stationary bike spin (Z1/Z2) and check in with our Athletic Trainer after 6th period.',
+      guardianCcApplied: true,
+      guardianVisible: true,
+      createdAt: `${todayIso}T08:10:00Z`,
+    },
+    {
+      id: 'demo-comment-2',
+      teamId,
+      targetMembershipId: 'demo-mem-ath-01',
+      targetAthleteName: 'Lucas Alvarez',
+      workoutDate: shiftDateIso(todayIso, -1),
+      authorSid: 'demo-mem-coach',
+      authorName: 'Coach Morales',
+      authorRole: 'HEAD_COACH',
+      body: 'Strong even splits on the final 800m rep. Stay capped at CV pace on Thursday ahead of BVAL #2.',
+      guardianCcApplied: true,
+      guardianVisible: true,
+      createdAt: `${shiftDateIso(todayIso, -1)}T18:20:00Z`,
+    },
+  ];
+
+  const guardianSafetyAlerts: GuardianSafetyAlertRecord[] = [
+    {
+      id: 'demo-alert-maya-shin',
+      teamId,
+      targetMembershipId: 'demo-mem-ath-02',
+      athleteName: 'Maya Chen',
+      sourceCheckInId: 'demo-ci-ath-02-today',
+      severity: 'HIGH',
+      category: 'PAIN_FLAG',
+      summary:
+        'Maya Chen reported right medial shin pain (SHIN) and auto-swapped to Easy Aerobic Spin (Zero-Impact).',
+      painLocation: 'SHIN',
+      guardianEmailMasked: 'g***@family.example.org',
+      deliveryStatus: 'SENT',
+      createdAt: `${todayIso}T07:42:00Z`,
+    },
+  ];
+
+  return {
+    brand: {
+      teamId,
+      slug: 'willow-glen-high-school-xc',
+      joinCode: 'WGHS26',
+      name: 'Willow Glen High School XC',
+      shortName: 'WGHS XC',
+      mascotOrMotto: 'Rams XC & Track',
+      orgType: 'HIGH_SCHOOL',
+      primarySport: 'Running',
+      primaryHex: '#1C5436',
+      secondaryHex: '#C8FF00',
+      defaultSafeSportShield: true,
+      enableParentGuardianCc: true,
+      coachDisplayName: 'Coach Morales',
+      planTier: 'FOUNDING_TEAM',
+      externalSync: {
+        platform: 'ATHLETIC_NET',
+        athleticNetSchoolId: '1073',
+        athleticNetSportSlug: 'xc',
+        athleticNetUrl: 'https://www.athletic.net/CrossCountry/School.aspx?SchoolID=1073',
+        teamFilterKeyword: 'Willow Glen',
+        enablePublicParentHub: true,
+        lastSyncedAt: `${todayIso}T08:00:00Z`,
+      },
+      createdAt: `${shiftDateIso(todayIso, -45)}T08:00:00Z`,
+    },
+    myRole: 'HEAD_COACH',
+    mySquadGroup: 'Coaching Staff',
+    myMembershipId: 'demo-mem-coach',
+    totalInvited: athleteMembers.length,
+    openedCount: athleteMembers.length,
+    activeCount: athleteMembers.length,
+    watchConnectedCount: 11,
+    memberships: [coachMember, ...athleteMembers],
+    broadcastWorkouts,
+    workoutLibrary,
+    workoutComments,
+    guardianSafetyAlerts,
+  };
 }
 
 /**
@@ -648,5 +1462,6 @@ export function buildSampleDemoDataset(anchorDateIso?: string): SampleDemoDatase
     wellnessDays,
     plannedEvents,
     targetGoals,
+    demoTeams: [buildSampleDemoCoachSquad(todayIso)],
   };
 }

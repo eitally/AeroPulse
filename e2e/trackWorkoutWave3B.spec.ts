@@ -141,8 +141,16 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
       await toggleDarkMode(page, false);
 
       await page.getByTestId('coach-subtab-roster').click();
+      // High School program must NOT display NCAA 20h CARA panel
+      await expect(page.getByTestId('coach-cara-audit')).toHaveCount(0);
+
+      // Load Collegiate TFRRS preset and confirm NCAA 20h CARA panel renders cleanly
+      await page.getByTestId('coach-open-external-sync-btn').click();
+      await page.getByTestId('sync-quick-setup-tfrrs').click();
+      await expect(page.getByTestId('sync-status-banner')).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Close Athletic.net and TFRRS sync modal' }).click();
       const caraAudit = page.getByTestId('coach-cara-audit');
-      await expect(caraAudit).toBeVisible();
+      await expect(caraAudit).toBeVisible({ timeout: 15000 });
       await expect(caraAudit).toContainText(/3\.0h Comp Day/i);
 
       await page.evaluate(() => localStorage.removeItem('thresh_trackside_stopwatch_v1'));

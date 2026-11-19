@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   CheckCircle2,
+  MessageSquare,
+  Send,
   Shield,
+  ShieldCheck,
   Users,
 } from './icons/PhosphorIcons';
 import {
@@ -11,13 +14,23 @@ import {
 } from '../physiology/sessionCheckInAndDigestEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
-import type { ConnectedAthleteRecord } from '../types';
+import type {
+  ConnectedAthleteRecord,
+  TeamSummaryWithRole,
+  TeamWorkoutComment,
+} from '../types';
+import { postTeamWorkoutCommentApi } from '../utils/teamLifecycleApi';
 import { Adherence7dDots } from './charts/MicroGraphics';
 
 export interface CoachExecutionDigestPanelProps {
   roster: ConnectedAthleteRecord[];
   selfFallback: DigestFallbackAthleteInput;
   todayIso: string;
+  activeTeam?: TeamSummaryWithRole | null;
+  myTeams?: TeamSummaryWithRole[];
+  isSampleDemoMode?: boolean;
+  onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  primaryAthleteDisplayName?: string;
   onInspectAthlete: (athleteId: string) => void;
   onOpenTeamPlan: () => void;
 }
@@ -26,10 +39,104 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
   roster,
   selfFallback,
   todayIso,
+  activeTeam = null,
+  myTeams = [],
+  isSampleDemoMode = false,
+  onTeamsUpdated,
+  primaryAthleteDisplayName,
   onInspectAthlete,
   onOpenTeamPlan,
 }) => {
   const [filterMode, setFilterMode] = useState<'ALL' | 'ATTENTION' | 'ON_TRACK'>('ALL');
+  const athleteMembers = useMemo(
+    () =>
+      (activeTeam?.memberships || []).filter(
+        (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED'
+      ),
+    [activeTeam?.memberships]
+  );
+  const [commentTargetMembershipId, setCommentTargetMembershipId] = useState<string>(
+    () => athleteMembers[0]?.membershipId || ''
+  );
+  useEffect(() => {
+    if (
+      athleteMembers.length > 0 &&
+      !athleteMembers.some((m) => m.membershipId === commentTargetMembershipId)
+    ) {
+      setCommentTargetMembershipId(athleteMembers[0].membershipId);
+    }
+  }, [athleteMembers, commentTargetMembershipId]);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+
+  const selectedCommentMember = useMemo(
+    () => athleteMembers.find((m) => m.membershipId === commentTargetMembershipId) || athleteMembers[0] || null,
+    [athleteMembers, commentTargetMembershipId]
+  );
+  const isGuardianCcRequired = Boolean(
+    activeTeam &&
+      (activeTeam.brand.orgType === 'HIGH_SCHOOL' ||
+        activeTeam.brand.enableParentGuardianCc ||
+        selectedCommentMember?.isMinorU18)
+  );
+
+  const handlePostWorkoutComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTeam || !selectedCommentMember || !commentDraft.trim()) return;
+    setCommentError(null);
+    const body = commentDraft.trim();
+
+    if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+      const nextComment: TeamWorkoutComment = {
+        id: `demo-comment-${Date.now()}`,
+        teamId: activeTeam.brand.teamId,
+        targetMembershipId: selectedCommentMember.membershipId,
+        targetAthleteName: selectedCommentMember.invitedName,
+        workoutDate: todayIso,
+        authorSid: activeTeam.myMembershipId,
+        authorName: activeTeam.brand.coachDisplayName || primaryAthleteDisplayName || 'Coach',
+        authorRole: activeTeam.myRole,
+        body,
+        guardianCcApplied: isGuardianCcRequired,
+        guardianVisible: true,
+        createdAt: new Date().toISOString(),
+      };
+      const updatedTeam: TeamSummaryWithRole = {
+        ...activeTeam,
+        workoutComments: [nextComment, ...(activeTeam.workoutComments || [])],
+      };
+      onTeamsUpdated?.(
+        myTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
+        updatedTeam.brand.teamId
+      );
+      setCommentDraft('');
+      return;
+    }
+
+    setIsPostingComment(true);
+    try {
+      const res = await postTeamWorkoutCommentApi(activeTeam.brand.teamId, {
+        targetMembershipId: selectedCommentMember.membershipId,
+        workoutDate: todayIso,
+        body,
+        guardianCc: true,
+      });
+      if (Array.isArray(res.teams)) {
+        onTeamsUpdated?.(res.teams, activeTeam.brand.teamId);
+      } else if (res.team) {
+        onTeamsUpdated?.(
+          myTeams.map((t) => (t.brand.teamId === res.team!.brand.teamId ? res.team! : t)),
+          res.team.brand.teamId
+        );
+      }
+      setCommentDraft('');
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Could not post comment.');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
 
   const digest = useMemo(
     () =>
@@ -285,6 +392,123 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {activeTeam && (activeTeam.guardianSafetyAlerts?.length || 0) > 0 && (
+        <div
+          data-testid="guardian-safety-alerts-banner"
+          className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 space-y-1 text-xs"
+        >
+          <div className="font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Guardian Safety Alerts ({activeTeam.guardianSafetyAlerts!.length})
+            </span>
+          </div>
+          {activeTeam.guardianSafetyAlerts!.slice(0, 3).map((al) => (
+            <div
+              key={al.id}
+              className="text-2xs font-mono text-slate-800 dark:text-slate-200 flex flex-wrap items-center justify-between gap-2"
+            >
+              <span>{al.summary}</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200">
+                {al.deliveryStatus === 'SENT' ? 'Guardian Notified' : al.deliveryStatus}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTeam && athleteMembers.length > 0 && (
+        <div
+          data-testid="coach-workout-comments"
+          className="pt-2 border-t border-stone-200/80 dark:border-[#244331] space-y-2.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
+              <h3 className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4]">
+                Workout Notes &amp; SafeSport Comments
+              </h3>
+            </div>
+            {isGuardianCcRequired && (
+              <span
+                data-testid="guardian-cc-badge"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-mono font-semibold ap-status-prime"
+              >
+                <ShieldCheck className="w-3 h-3" />
+                <span>Parent/Guardian CC Active</span>
+              </span>
+            )}
+          </div>
+
+          <form onSubmit={(e) => void handlePostWorkoutComment(e)} className="flex flex-wrap items-center gap-2">
+            <select
+              data-testid="workout-comment-athlete-select"
+              aria-label="Target athlete for workout comment"
+              value={commentTargetMembershipId}
+              onChange={(e) => setCommentTargetMembershipId(e.target.value)}
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#101B15] px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100"
+            >
+              {athleteMembers.map((m) => (
+                <option key={m.membershipId} value={m.membershipId}>
+                  {m.invitedName}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              data-testid="workout-comment-input"
+              aria-label="Workout feedback note"
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              placeholder="Share split feedback or recovery cue (auto-CC'd to guardian for minors)..."
+              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#101B15] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+            />
+            <button
+              type="submit"
+              data-testid="workout-comment-submit"
+              disabled={isPostingComment || !commentDraft.trim()}
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isPostingComment ? 'Posting…' : 'Post Note'}</span>
+            </button>
+          </form>
+
+          {commentError && (
+            <div role="alert" className="text-2xs font-mono text-red-600 dark:text-red-400">
+              {commentError}
+            </div>
+          )}
+
+          {(activeTeam.workoutComments || []).length > 0 && (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {(activeTeam.workoutComments || []).slice(0, 6).map((c) => (
+                <div
+                  key={c.id}
+                  className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] px-3 py-2 text-xs space-y-0.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-500">
+                    <span>
+                      <strong className="text-slate-900 dark:text-white">{c.authorName}</strong>
+                      {' → '}
+                      {c.targetAthleteName || 'Athlete'} · {c.workoutDate}
+                    </span>
+                    {c.guardianCcApplied && (
+                      <span className="px-1.5 py-0.5 rounded ap-status-info text-2xs">
+                        Guardian CC ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-800 dark:text-slate-200 leading-snug">
+                    {c.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>

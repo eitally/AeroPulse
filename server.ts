@@ -24,11 +24,23 @@ async function startServer() {
   app.use(express.urlencoded({ extended: false }));
   app.use(apiRouter);
 
+  const serveBuiltDist =
+    process.env.NODE_ENV === 'production' || process.env.SERVE_BUILT_DIST === '1';
+
   const publicPath = path.resolve(__dirname, 'public');
   app.use(express.static(publicPath));
   app.get(['/docs', '/docs/'], (_req, res) => {
     res.sendFile(path.join(publicPath, 'docs', 'index.html'));
   });
+  for (const page of ['privacy', 'terms', 'subprocessors', 'procurement'] as const) {
+    app.get([`/${page}`, `/${page}/`], (_req, res) => {
+      const target = serveBuiltDist
+        ? path.resolve(__dirname, 'dist', 'legal', `${page}.html`)
+        : path.join(publicPath, 'legal', `${page}.html`);
+      res.type('text/html; charset=utf-8');
+      res.sendFile(target);
+    });
+  }
 
   app.get('/manifest.webmanifest', (_req, res, next) => {
     const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');
@@ -37,9 +49,6 @@ async function startServer() {
       if (err) next();
     });
   });
-
-  const serveBuiltDist =
-    process.env.NODE_ENV === 'production' || process.env.SERVE_BUILT_DIST === '1';
   if (!serveBuiltDist) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

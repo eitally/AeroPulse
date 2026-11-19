@@ -1,76 +1,66 @@
-# THRESH v2.3 — REST API, Strava OAuth Identity, Webhooks & Security Architecture
+# THRESH — REST API, Multi-Provider Identity & Security Architecture
 
-This document covers the server-side architecture of **THRESH v2.3**, including Strava-first deterministic session identity, CSRF-protected OAuth handshakes, the `AES-256-GCM` OAuth Token Vault, Clean-Room Provider Firewall, multi-team safeguarding & coach sharing tiers, physiological calculation endpoints, and hardware webhooks.
+This document covers the server-side architecture of **THRESH**, including Multi-Auth identity (Google OAuth 2.0, WebAuthn Passkeys via `@simplewebauthn/server`, fail-closed Magic Link GET/POST, 6-digit Email OTP, and optional Strava OAuth), CSRF-protected OAuth cookie-nonce handshakes, the `AES-256-GCM` Token Vault, strict Postgres TLS (`rejectUnauthorized: true`) with normalized tables (`thresh_teams`, `thresh_team_members`, `thresh_audit_log`), Clean-Room Allowlist AI Firewall, RBAC governance, and hardware connectors.
+
+> **Legal & Procurement Docs:** [`/privacy`](/privacy) · [`/terms`](/terms) · [`/subprocessors`](/subprocessors) · [`/procurement`](/procurement)
 
 ---
 
 ## 1. Identity, Session & Clean-Room Security Architecture
 
-### 1.1 Strava-First Deterministic Session Identity (`server/securityUtils.ts` & `server/apiRouter.ts`)
-- **Primary Identity**: Strava OAuth 2.0 is the sole primary sign-in identity for individual athletes, coaches, and team members.
-- **Deterministic Cross-Device Vault Binding**: Upon verified Strava authentication, `deriveStravaSessionSid(athleteId)` computes `strv_<HMAC-SHA256(athleteId, SESSION_SECRET)[0..28]>` and binds an `HttpOnly`, `SameSite=Lax`, HMAC-signed `thresh_session` cookie (plus header token `x-session-token` for strict cookie-blocked webviews). Signing in with Strava on a laptop and later on iOS Safari automatically re-attaches the athlete's encrypted vault and team memberships.
-- **Account-Switch IndexedDB Wipe**: On the client, `reconcileStoreOwnerAthleteId` tracks the authenticated Strava `athleteId` and purges local IndexedDB (`Dexie`) + cached team state if a different Strava athlete signs in on a shared computer.
+### 1.1 Multi-Provider Canonical Identity (`server/authService.ts` & `server/securityUtils.ts`)
+- **Supported Authentication Methods**: Athletes, coaches, and parents sign in with **Google OAuth 2.0**, **WebAuthn Passkeys** (`@simplewebauthn/server` cryptographic COSE key + counter verification), **Magic Links** (read-only `GET` preview + explicit `POST` burn; fail-closed HTTP `503` in production when email delivery is unconfigured), **6-Digit Email OTP**, or **optional Strava OAuth** (school teams never require Strava).
+- **Deterministic Cross-Device Vault Binding**: Verified sessions receive `HttpOnly`, `SameSite=Lax`, HMAC-SHA256 signed `thresh_session` cookies (plus `x-session-token` for strict mobile/webview contexts). Verified email changes require single-use OTP confirmation on the new address before committing or claiming roster invites.
+- **Full Sign-Out & Account Deletion Isolation**: Signing out sweeps all user `localStorage` keys, IndexedDB tables, and React slices cleanly to prevent shared-device credential bleed. Permanent deletion revokes Strava tokens and clears `thresh_session`, `thresh_vault`, and `thresh_user`.
 
-### 1.2 HMAC-Signed OAuth CSRF State (`issueOAuthStateToken` / `verifyOAuthStateToken`)
-- `GET /api/strava/auth/url` generates a short-lived (`20 min`) HMAC-SHA256 signed `state` token containing `{ nonce, sid, joinCode, slug, exp }` and sets an `HttpOnly` `thresh_oauth_state` cookie.
-- `/api/strava/callback` verifies the cryptographic signature, expiration, and cookie binding before exchanging any authorization `code`, preserving `/join/<slug>` and Team Code claims across popup and full-page mobile redirects.
-- User cancellation (`error=access_denied`) renders a clean branded THRESH response and auto-closes popup windows via `postMessage`.
+### 1.2 HMAC-Signed OAuth Cookie-Nonce Binding (`issueOAuthStateToken` / `verifyOAuthStateToken`)
+- All 5 OAuth flows (Strava, Google, Intervals.icu, Wahoo, Polar) mint short-lived HMAC-SHA256 `state` tokens paired with `HttpOnly` cookie nonces compared via `timingSafeEqual`.
+- Session IDs rotate cleanly upon authentication, preserving `/join/<slug>` and Team Code claims without exposing raw provider tokens in JSON polls or `postMessage`.
 
-### 1.3 `AES-256-GCM` OAuth Token Vault & Serverless Persistence (`server/tokenVault.ts`)
-- Encrypts Strava, Garmin Connect, and Intervals.icu credentials at rest using `AES-256-GCM` (`96-bit` random IV + `128-bit` auth tag).
+### 1.3 `AES-256-GCM` Token Vault & Normalized Postgres Storage (`server/tokenVault.ts`)
+- Encrypts provider credentials and tenant state at rest using `AES-256-GCM` (`96-bit` random IV + `128-bit` auth tag).
 - Unified secret key resolution: `TOKEN_VAULT_KEY || OAUTH_ENCRYPTION_KEY || SESSION_SECRET` (generate production 256-bit keys via `npm run secrets:generate`).
-- **Dual-Layer Persistence**: Writes asynchronously to PostgreSQL (`thresh_kv_store` JSONB when `DATABASE_URL` / `POSTGRES_URL` is configured) AND mirrors a compact `AES-256-GCM` `HttpOnly` `thresh_vault` backup cookie so credentials survive cold starts even on zero-database serverless deployments.
-- **Zero Hardcoded Personal Keys**: No personal Garmin Connect API tokens or OAuth secrets exist in source code; optional developer `.env` fallbacks require `ALLOW_DEV_ENV_CREDENTIALS=true`.
+- **Normalized Postgres Persistence & Strict TLS**: Writes to `thresh_tenant_vault`, `thresh_teams`, `thresh_team_members`, and append-only `thresh_audit_log` with `pg_advisory_xact_lock` row serialization and `ssl: { rejectUnauthorized: true }` in production, alongside encrypted `HttpOnly` backup cookies (`thresh_vault`, `thresh_user`).
 
-### 1.4 Clean-Room Provider Firewall (`server/cleanRoomFirewall.ts`)
-- Enforces **Strava API Agreement** compliance by stripping third-party `'Strava'`-only raw activity payloads before constructing Google Gemini AI prompts or exposing peer teammate views, while enforcing athlete-selected Coach Data Sharing Tiers (`SUMMARY_ONLY` | `FULL_STREAMS` | `LOAD_ONLY`).
+### 1.4 Clean-Room Allowlist AI Firewall (`server/cleanRoomFirewall.ts`)
+- **Strict Allowlist Schema**: Strips 100% of Strava-sourced activities (including `recentWorkouts`) before any request reaches Google Gemini AI.
+- **U18 / High School Protection**: AI Coach endpoints authenticate caller sessions, disable Gemini by default for minors (`U18` / `HIGH_SCHOOL`), and strip `weightKg` / body-composition fields server-side.
 
 ---
 
 ## 2. REST API Endpoints
 
-### 2.1 Strava OAuth, Sync Policy & Secondary Connections (`server/apiRouter.ts`)
+### 2.1 Auth, Sync Policy & Connectors (`server/routers/`)
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
-| `GET` | `/api/config/status` | Returns active session identity (`stravaConnected`, `stravaAthleteId`, `stravaMeasurementPreference`, `stravaGrantedScope`, `stravaSyncPolicy`) and optional `garminConnected` / `intervalsConnected` status. |
-| `GET` | `/api/strava/auth/url` | Mints CSRF-signed Strava OAuth URL (`activity:read_all,profile:read_all`) and sets `thresh_oauth_state` cookie. |
-| `GET` | `/api/strava/callback` | Validates signed `state`, exchanges code, activates canonical Strava session (`activateStravaCanonicalScope`), migrates any pre-created teams, and returns branded popup/redirect completion HTML. |
-| `GET` | `/api/strava/auth/poll` | Verified signed-`state` fallback poll for strict mobile/Safari COOP popup contexts. |
-| `POST` | `/api/strava/sync-policy` | Saves the athlete's explicit Strava sync choice (`window: '90d' \| '180d' \| '365d' \| 'all' \| 'none'`, `includeGearAndProfile`). |
-| `GET` | `/api/strava/sync` | Syncs Strava activities within `?window=...` using `after` epoch pagination, unchecked-scope protection (`missingActivityScope`), and two-pass calibrated running `rTSS` + `efficiencyFactor`. |
-| `POST` | `/api/strava/disconnect` | Revokes Strava tokens from the encrypted vault and clears session cookies. |
-| `POST` | `/api/garmin/disconnect` | Granularly disconnects optional Garmin Connect credentials without signing out of Strava identity. |
-| `POST` | `/api/auth/logout` | Clears server vault/session cookies for clean sign-out. |
+| `GET` | `/api/config/status` | Returns active session state and connected provider flags (requires verified credentials for secret config fields). |
+| `POST` | `/api/auth/passkey/*`, `/api/auth/magic-link/*`, `/api/auth/email/*`, `/api/auth/change-email`, `DELETE /api/auth/account` | WebAuthn passkey registration/auth, GET/POST split magic links, OTP verification, email verification, and permanent account erasure. |
+| `GET / POST` | `/api/strava/*`, `/api/intervals/*`, `/api/wahoo/*`, `/api/polar/*`, `/api/garmin/*` | Cookie-nonce verified OAuth flows, 1Hz workout sync, canonical `startDateUtcMs` deduplication, and credential revocation. |
+| `POST` | `/api/auth/logout` | Clears server vault/session cookies for clean shared-device sign-out. |
 
-### 2.2 Multi-Team, CSV Invites & Coach Broadcast Router (`server/routers/teamRouter.ts`)
+### 2.2 Multi-Team, Safe-Sport Governance, Library & Comments (`server/routers/teamRouter.ts`)
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
-| `GET` | `/api/teams` | Lists caller's active teams projected according to role (`HEAD_COACH`, `ASSISTANT_COACH`, `ATHLETE`), U18 Safe-Sport shield, and `sharingTier`. |
-| `POST` | `/api/teams` | Creates a branded school/club workspace with WCAG-clamped palette, Join Code, and `/join/<slug>`. |
-| `GET` | `/api/teams/join-preview` | Public preview of team branding and safeguarding settings for `/join/<slug>` or 6-char Join Code (read-only `?peek=1` supported). |
-| `POST` | `/api/teams/join-claim` | Claims team membership for the authenticated Strava athlete, auto-matching pending CSV roster invites by token, Strava ID, email, or name. |
-| `POST` | `/api/teams/:teamId/invites/bulk` | Imports CSV/spreadsheet roster rows with U18 safeguarding defaults and optional Resend branded email + Parent/Guardian CC. |
-| `POST` | `/api/teams/:teamId/workouts/broadcast` | Pushes structured workouts to an entire squad pod or targeted `targetMembershipIds`. |
+| `GET / POST` | `/api/teams`, `/api/teams/join-preview`, `/api/teams/join-claim` | Lists/creates teams with `ORG_ADMIN` / `ATHLETIC_TRAINER` / coach / parent RBAC; hashes and strips `parentConsentToken`; enforces COPPA `<13` block and U18 quarantine. |
+| `PATCH / DELETE` | `/api/teams/:teamId/members/me/sharing-tier`, `/api/teams/:teamId/members/:id/role`, `/api/teams/:teamId/members/me/guardian` | Post-join `sharingTier` editing, staff role assignments (`HEAD_COACH`, `ASSISTANT_COACH`, `ORG_ADMIN`, `ATHLETIC_TRAINER`), and immutable minor DOB guardian controls. |
+| `POST / PUT / DELETE` | `/api/teams/:teamId/workouts/broadcast`, `/broadcast-batch`, `/workouts/:broadcastId`, `/blocks/:blockId` | Cloud team workout CRUD and cohort block recall (`canProgramWorkoutsRole`: `HEAD_COACH` / `ASSISTANT_COACH` only). |
+| `GET / POST / DELETE` | `/api/teams/:teamId/workout-library`, `/comments`, `/safety-alerts`, `/audit-log` | Reusable team Workout Library, workout comments with mandatory `403` U18 Guardian-CC enforcement, Guardian safety alerts, and `HEAD_COACH`/`ORG_ADMIN` immutable audit log. |
 
 ### 2.3 Vault, Physiology, Webhooks & OTA Workout Export
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
 | `GET` | `/api/vault/status` | Returns encrypted provider connection metadata with zero raw token leakage. |
-| `POST` | `/api/physiology/mmp-debrief` | Computes 1Hz Empirical MMP/GAP (`CP/W'`), 3-Channel Orthopedic Load, and 30s Post-Workout Debrief. |
-| `POST` | `/api/physiology/durability` | Computes `0–40 kJ/kg` (Cycling) or `0–2,000 kcal` (Running) fatigue-sliced durability. |
-| `POST` | `/api/physiology/race-simulator` | Computes 5-segment Course Physics, Weather/Altitude & Carb/Sodium Race Simulation. |
-| `POST` | `/api/physiology/race-passport` | Rubber-bands GPS splits to certified course distance and mints `THV-...` Verified Passports. |
-| `POST` | `/api/webhooks/:provider` | First-party hardware webhook ingestion for `garmin`, `wahoo`, `coros`, `polar`, `oura`, `whoop`, and `apple-healthkit`. |
-| `POST` | `/api/workouts/export` | Compiles Intervals-syntax workouts into `WORKOUTKIT_JSON`, `GARMIN_TRAINING_JSON`, `ZWO`, or `ERG`. |
+| `POST` | `/api/physiology/mmp-debrief`, `/durability`, `/race-simulator`, `/race-passport` | Computes 1Hz MMP/GAP (`CP/W'`), `0–40 kJ/kg` & `0–2,000 kcal` durability, 5-segment Course Physics, and `THV-...` Race Passports. |
+| `POST` | `/api/workouts/export` | Compiles structured workouts into `WORKOUTKIT_JSON`, `GARMIN_TRAINING_JSON`, `ZWO`, `ERG`, or binary `.FIT`. |
+| `POST` | `/api/webhooks/strava` | Strava deauthorization & verified `subscription_id` webhook handler. |
 
 ---
 
 ## 3. Environment Variables & Production Quality Gates
 
-- **Required for Hosted OAuth**: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `SESSION_SECRET`, `TOKEN_VAULT_KEY` (or `OAUTH_ENCRYPTION_KEY`).
-- **Recommended for Persistent Multi-Device Teams**: `DATABASE_URL` (PostgreSQL).
-- **Optional**: `RESEND_API_KEY` (direct team invite emails), `GEMINI_API_KEY` (live AI Coach), `GARMIN_OAUTH_CONSUMER_KEY` / `GARMIN_OAUTH_CONSUMER_SECRET` (custom Garmin OAuth).
-- **Bundle Budget Gate (`scripts/checkBundleBudget.mjs`)**: Verifies primary entry bundle remains under `220 KB` gzip with zero `.map` or secret leakage in `dist/`.
+- **Core Secrets**: `SESSION_SECRET`, `TOKEN_VAULT_KEY` (or `OAUTH_ENCRYPTION_KEY`), `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `APP_BASE_URL`.
+- **Normalized Persistence & Notifications**: `DATABASE_URL` (PostgreSQL with strict TLS), optional `RESEND_API_KEY` (invites, magic links, Guardian alerts), `GEMINI_API_KEY` (adult opt-in AI Coach).
+- **CI Gates (`npm run check:bundle`)**: Enforces entry bundle `< 220 KB` gzip, Critical Initial JS+CSS `<= 290 KB` gzip, PWA Precache `<= 1,800 KB` raw, and `0` mixed-case brand casing leaks (`scripts/checkBrandCasing.mjs`).

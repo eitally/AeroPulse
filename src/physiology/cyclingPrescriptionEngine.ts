@@ -16,6 +16,8 @@ export type EndurancePlanArchetypeId =
   | 'CYC_CLIMBING_WKG'
   | 'CYC_GRAVEL_FONDO'
   | 'CYC_POLARIZED_BASE'
+  | 'ROAD_RETURN_TO_RUN'
+  | 'ROAD_FIRST_5K'
   | 'ROAD_5K'
   | 'ROAD_10K'
   | 'ROAD_HALF_MARATHON'
@@ -113,6 +115,28 @@ export const ENDURANCE_PLAN_ARCHETYPES: EnduranceArchetypeMeta[] = [
     targetLabel: '80% Z1/Z2 · 20% Z4/Z5',
     defaultWeeks: 12,
     targetProgressionLevels: [9.4, 6.2, 7.2, 8.8, 6.4, 5.2],
+  },
+  {
+    id: 'ROAD_RETURN_TO_RUN',
+    category: 'ROAD',
+    badge: 'Beginner · Rebuild',
+    title: 'Return-to-Run & Joint Rebuild',
+    subtitle: 'Gentle Walk/Jog Progression, Cadence Cues & Zero-Impact Swaps',
+    sportCategory: 'Running',
+    targetLabel: 'Pain-Free 30m Continuous Run',
+    defaultWeeks: 8,
+    targetProgressionLevels: [6.4, 5.2, 4.0, 2.5, 2.0, 1.5],
+  },
+  {
+    id: 'ROAD_FIRST_5K',
+    category: 'ROAD',
+    badge: 'Beginner · First 5K',
+    title: 'First 5K Confidence Builder',
+    subtitle: 'Conversational Easy Runs, Gradual Duration & Optional Strides',
+    sportCategory: 'Running',
+    targetLabel: 'Finish Strong 5K (3×/wk Min)',
+    defaultWeeks: 8,
+    targetProgressionLevels: [7.0, 6.2, 5.2, 4.0, 2.8, 2.0],
   },
   {
     id: 'ROAD_5K',
@@ -656,7 +680,48 @@ export function generateEnduranceTrainingPlan(
       const vo2PaceStr = formatPace(vo2PaceSecs, distanceUnit);
       const rPaceStr = formatPace(rPaceSecs, distanceUnit);
 
-      if (isFinalRaceWeek) {
+      if (archetypeId === 'ROAD_RETURN_TO_RUN' || archetypeId === 'ROAD_FIRST_5K') {
+        const isRebuild = archetypeId === 'ROAD_RETURN_TO_RUN';
+        const jogMins = isRebuild ? Math.min(34, 14 + weekNum * 3) : Math.min(40, 20 + weekNum * 3);
+        const walkJogReps = isRebuild ? Math.max(4, 7 - Math.floor(weekNum / 2)) : 4;
+        const runIntervalMins = isRebuild ? Math.min(8, 3 + Math.floor(weekNum / 2)) : Math.min(10, 5 + Math.floor(weekNum / 2));
+
+        if (isFinalRaceWeek) {
+          addRunningSession(
+            longOffset,
+            isRebuild ? `Wk${weekNum} 30-Minute Pain-Free Milestone Run` : `Wk${weekNum} First 5K Celebration Run`,
+            `- 5m 54% Pace Brisk Walk Warmup\n- ${isRebuild ? 25 : 28}m 66% Pace Steady Conversational Effort\n- 3m 52% Pace Cool-Down Walk`,
+            `Focus on smooth tall posture and relaxed breathing — completion over pace.`
+          );
+        } else {
+          addRunningSession(
+            q1Offset,
+            isRebuild
+              ? `Wk${weekNum} Walk/Jog Tendon Prep (${walkJogReps}× ${runIntervalMins}m Jog / 90s Walk)`
+              : `Wk${weekNum} Easy Rhythm Walk/Jog (${jogMins}m Total)`,
+            `- 5m 52% Pace Brisk Walk Warmup\nMain Set ${walkJogReps}x\n- ${runIntervalMins}m 66% Pace Gentle Jog\n- 90s 52% Pace Walk Recovery\n- 5m 52% Pace Cooldown Walk`,
+            `Gentle cyclic loading at conversational effort (~${ePaceStr}). Keep soreness at or below 2/10.`
+          );
+          if (q2Offset !== q1Offset && q2Offset !== longOffset) {
+            addRunningSession(
+              q2Offset,
+              isRebuild
+                ? `Wk${weekNum} Low-Impact Flush + Stride Balance (${jogMins}m)`
+                : `Wk${weekNum} Conversational Base + Gentle Strides (${jogMins}m)`,
+              `- 5m 52% Pace Brisk Walk Warmup\n- ${Math.max(12, jogMins - 10)}m 66% Pace Conversational Effort\n- 5m 52% Pace Cooldown Walk`,
+              `Easy conversational miles (~${ePaceStr}). Swap to an easy stationary bike or pool session anytime legs feel heavy.`
+            );
+          }
+          addRunningSession(
+            longOffset,
+            isRebuild
+              ? `Wk${weekNum} Weekend Progressive Walk/Jog (${jogMins + 6}m)`
+              : `Wk${weekNum} Weekend Endurance Anchor (${Math.min(45, jogMins + 10)}m)`,
+            `- 5m 52% Pace Brisk Walk Warmup\n- ${Math.min(36, jogMins)}m 68% Pace Comfortable Jog\n- 5m 52% Pace Cooldown Walk`,
+            `Gradual endurance progression prioritizing consistency over speed.`
+          );
+        }
+      } else if (isFinalRaceWeek) {
         addRunningSession(
           q1Offset,
           `Wk${weekNum} Taper Sharpener: 4x400m @ ${formatTrackSplitToken(

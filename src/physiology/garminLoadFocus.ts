@@ -72,7 +72,7 @@ export interface PMCDayPoint {
 /**
  * Classifies a single workout into Garmin's Training Load Focus channels:
  * - Low Aerobic (Z1/Z2 Recovery, Base, Endurance, Warmup, Cooldown) -> Aerobic Teal (#0d9488)
- * - High Aerobic (Z3/Z4 Tempo, Sweet Spot, Lactate Threshold, Cruise Intervals) -> Thresh Vermilion (#ea580c)
+ * - High Aerobic (Z3/Z4 Tempo, Sweet Spot, Lactate Threshold, Cruise Intervals) -> THRESH Vermilion (#ea580c)
  * - Anaerobic (Z5–Z6 VO2max, Anaerobic Capacity, Track Repeats, Sprints, Crit/Zwift Races, HIIT) -> Deep Violet (#7c3aed)
  */
 export function classifyActivityGarminLoad(

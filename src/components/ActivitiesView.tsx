@@ -478,7 +478,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
       );
       const parsed = await parseWorkoutFileInWorker(
         gpxStr,
-        'Thresh-1Hz-Threshold-Telemetry.gpx'
+        'THRESH-1Hz-Threshold-Telemetry.gpx'
       );
       if (onImportParsedActivity) {
         onImportParsedActivity(parsed.activity);

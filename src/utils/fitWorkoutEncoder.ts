@@ -102,7 +102,7 @@ export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
   dataPayload.push(0x00); // Data header, local mesg 0
   dataPayload.push(0x05); // type = 5 (workout)
   writeUint16LE(dataPayload, 1); // manufacturer = 1 (Garmin)
-  writeUint16LE(dataPayload, 2026); // product = Thresh
+  writeUint16LE(dataPayload, 2026); // product = THRESH
   writeUint32LE(dataPayload, fitTimestamp);
 
   // 2. Definition & Data Message: workout (Global Mesg Num 26, Local Mesg 1)
@@ -120,7 +120,7 @@ export function encodeGarminFitWorkout(workout: FitWorkoutInput): Uint8Array {
   dataPayload.push(0x01); // Data header, local mesg 1
   dataPayload.push(workout.sport === 'Running' ? 0x01 : 0x02);
   writeUint16LE(dataPayload, workout.steps.length);
-  writeFixedAscii(dataPayload, workout.name || 'Thresh Workout', 24);
+  writeFixedAscii(dataPayload, workout.name || 'THRESH Workout', 24);
 
   // 3. Definition Message: workout_step (Global Mesg Num 27, Local Mesg 2)
   dataPayload.push(

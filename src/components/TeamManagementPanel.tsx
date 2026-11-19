@@ -23,7 +23,9 @@ import {
 } from './icons/PhosphorIcons';
 import type {
   CoachEventGroup,
+  TeamAuditLogEntry,
   TeamBrandConfig,
+  TeamMemberRole,
   TeamOrgType,
   TeamSummaryWithRole,
 } from '../types';
@@ -41,6 +43,7 @@ import {
 } from '../utils/teamQrHelper';
 import {
   buildThreshSessionHeaders,
+  fetchTeamAuditLogApi,
   graduateClassApi,
   leaveOrGraduateTeamApi,
   mergeRosterMembersApi,
@@ -205,6 +208,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [isLeavingTeam, setIsLeavingTeam] = useState(false);
   const [busyRosterMemberId, setBusyRosterMemberId] = useState<string | null>(null);
   const [isGraduatingClass, setIsGraduatingClass] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<TeamAuditLogEntry[]>([]);
+  const [isLoadingAuditLog, setIsLoadingAuditLog] = useState(false);
+  const [auditLogError, setAuditLogError] = useState<string | null>(null);
 
   // Bulk Roster CSV / Paste Inviter State
   const [rawRosterInput, setRawRosterInput] = useState('');
@@ -758,7 +765,55 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   };
 
   const isActiveTeamCoach =
-    activeTeam?.myRole === 'HEAD_COACH' || activeTeam?.myRole === 'ASSISTANT_COACH';
+    activeTeam?.myRole === 'HEAD_COACH' ||
+    activeTeam?.myRole === 'ASSISTANT_COACH' ||
+    activeTeam?.myRole === 'ORG_ADMIN';
+  const canManageGovernance =
+    activeTeam?.myRole === 'HEAD_COACH' || activeTeam?.myRole === 'ORG_ADMIN';
+  const isDemoTeam = Boolean(
+    isSampleDemoMode || activeTeam?.brand.teamId.startsWith('demo_team_')
+  );
+
+  const handleToggleAuditLog = async () => {
+    if (!activeTeam) return;
+    if (showAuditLog) {
+      setShowAuditLog(false);
+      return;
+    }
+    setShowAuditLog(true);
+    setAuditLogError(null);
+    if (isDemoTeam) {
+      setAuditEntries([
+        {
+          eventId: 'demo-audit-1',
+          createdAt: activeTeam.brand.createdAt,
+          teamId: activeTeam.brand.teamId,
+          actorSid: activeTeam.myMembershipId,
+          action: 'TEAM_CREATED',
+          metadata: { orgType: activeTeam.brand.orgType, safeSportShield: true },
+        },
+        {
+          eventId: 'demo-audit-2',
+          createdAt: new Date().toISOString(),
+          teamId: activeTeam.brand.teamId,
+          actorSid: activeTeam.myMembershipId,
+          action: 'GUARDIAN_SAFETY_ALERT_SENT',
+          targetId: 'demo-mem-ath-02',
+          metadata: { category: 'PAIN_FLAG', painLocation: 'SHIN', ccGuardian: true },
+        },
+      ]);
+      return;
+    }
+    setIsLoadingAuditLog(true);
+    try {
+      const res = await fetchTeamAuditLogApi(activeTeam.brand.teamId, 100);
+      setAuditEntries(res.entries || []);
+    } catch (err) {
+      setAuditLogError(err instanceof Error ? err.message : 'Could not load audit log.');
+    } finally {
+      setIsLoadingAuditLog(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -782,6 +837,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
               <button
                 type="button"
+                data-testid="team-create-new-btn"
                 onClick={openCreateNewTeam}
                 className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
@@ -818,7 +874,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       ? 'Athlete'
                       : t.myRole === 'PARENT_FOLLOWER'
                         ? 'Parent / Fan'
-                        : 'Coach'}
+                        : t.myRole === 'ORG_ADMIN'
+                          ? 'Org Admin'
+                          : t.myRole === 'ATHLETIC_TRAINER'
+                            ? 'Trainer'
+                            : 'Coach'}
                   </span>
                 </button>
               );
@@ -1668,6 +1728,18 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               </h4>
 
               <div className="flex flex-wrap items-center gap-2">
+                {canManageGovernance && (
+                  <button
+                    type="button"
+                    data-testid="team-audit-log-btn"
+                    onClick={() => void handleToggleAuditLog()}
+                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5 ap-text-brand" />
+                    <span>{showAuditLog ? 'Hide Audit Log' : 'Compliance & Audit Log'}</span>
+                  </button>
+                )}
+
                 {activeTeam.myRole === 'HEAD_COACH' &&
                   (() => {
                     const gradYears = activeTeam.memberships
@@ -1709,6 +1781,57 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   )}
               </div>
             </div>
+
+            {showAuditLog && canManageGovernance && (
+              <div
+                data-testid="team-audit-log-panel"
+                className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 bg-stone-50/90 dark:bg-[#101B15] space-y-2 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 ap-text-brand" />
+                    <span>Immutable Governance &amp; Compliance Audit Log</span>
+                  </span>
+                  <span className="text-2xs font-mono text-slate-500">
+                    {auditEntries.length} events
+                  </span>
+                </div>
+                {isLoadingAuditLog && (
+                  <p className="text-2xs font-mono text-slate-500">Loading audit trail…</p>
+                )}
+                {auditLogError && (
+                  <p role="alert" className="text-2xs font-mono text-red-600 dark:text-red-400">
+                    {auditLogError}
+                  </p>
+                )}
+                {!isLoadingAuditLog && !auditLogError && auditEntries.length === 0 && (
+                  <p className="text-2xs font-mono text-slate-500">
+                    No governance events recorded for this team yet.
+                  </p>
+                )}
+                {auditEntries.length > 0 && (
+                  <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                    {auditEntries.map((ev) => (
+                      <div
+                        key={ev.eventId}
+                        className="rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-2xs"
+                      >
+                        <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                          {ev.action}
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-300 truncate max-w-[320px]">
+                          {ev.targetId ? `Target: ${ev.targetId} · ` : ''}
+                          {Object.keys(ev.metadata || {}).length > 0
+                            ? JSON.stringify(ev.metadata)
+                            : 'Recorded'}
+                        </span>
+                        <span className="text-slate-500">{ev.createdAt.slice(0, 19).replace('T', ' ')}Z</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -1783,35 +1906,55 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         <td className="py-3 px-3">
                           <div className="font-medium">{m.squadGroup}</div>
                           <div className="text-2xs font-mono uppercase text-slate-500">
-                            {m.role.replace('_', ' ')}
+                            {m.role.replace(/_/g, ' ')}
                           </div>
-                          {activeTeam.myRole === 'HEAD_COACH' &&
+                          {canManageGovernance &&
                             !isSelfRow &&
                             m.status === 'ACTIVE' &&
+                            m.role !== 'HEAD_COACH' &&
                             m.role !== 'PARENT_FOLLOWER' && (
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                 <select
                                   aria-label={`Role for ${m.invitedName}`}
                                   disabled={isRowBusy}
                                   value={
-                                    m.role === 'ASSISTANT_COACH'
-                                      ? 'ASSISTANT_COACH'
+                                    m.role === 'ASSISTANT_COACH' ||
+                                    m.role === 'ORG_ADMIN' ||
+                                    m.role === 'ATHLETIC_TRAINER'
+                                      ? m.role
                                       : 'ATHLETE'
                                   }
-                                  onChange={(e) =>
+                                  onChange={(e) => {
+                                    const nextRole = e.target.value as Extract<
+                                      TeamMemberRole,
+                                      'ATHLETE' | 'ASSISTANT_COACH' | 'ORG_ADMIN' | 'ATHLETIC_TRAINER'
+                                    >;
+                                    if (isDemoTeam) {
+                                      applyUpdatedTeamSummary({
+                                        ...activeTeam,
+                                        memberships: activeTeam.memberships.map((mem) =>
+                                          mem.membershipId === m.membershipId
+                                            ? { ...mem, role: nextRole }
+                                            : mem
+                                        ),
+                                      });
+                                      return;
+                                    }
                                     void runMemberMutation(m.membershipId, () =>
                                       updateMemberRoleApi(
                                         activeTeam.brand.teamId,
                                         m.membershipId,
-                                        e.target.value as 'ATHLETE' | 'ASSISTANT_COACH',
+                                        nextRole,
                                         originUrl
                                       )
-                                    )
-                                  }
+                                    );
+                                  }}
                                   className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                                 >
                                   <option value="ATHLETE">Athlete</option>
                                   <option value="ASSISTANT_COACH">Assistant Coach</option>
+                                  <option value="ORG_ADMIN">Org / Athletic Admin</option>
+                                  <option value="ATHLETIC_TRAINER">Athletic Trainer</option>
                                 </select>
                                 {m.role === 'ASSISTANT_COACH' && (
                                   <button
@@ -1911,16 +2054,28 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 aria-label={`Status for ${m.invitedName}`}
                                 disabled={isRowBusy}
                                 value={m.status}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  const nextStatus = e.target.value as typeof m.status;
+                                  if (isDemoTeam) {
+                                    applyUpdatedTeamSummary({
+                                      ...activeTeam,
+                                      memberships: activeTeam.memberships.map((mem) =>
+                                        mem.membershipId === m.membershipId
+                                          ? { ...mem, status: nextStatus }
+                                          : mem
+                                      ),
+                                    });
+                                    return;
+                                  }
                                   void runMemberMutation(m.membershipId, () =>
                                     updateMemberStatusApi(
                                       activeTeam.brand.teamId,
                                       m.membershipId,
-                                      e.target.value,
+                                      nextStatus,
                                       originUrl
                                     )
-                                  )
-                                }
+                                  );
+                                }}
                                 className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                               >
                                 <option value="ACTIVE">Joined</option>

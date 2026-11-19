@@ -206,8 +206,8 @@ describe('Plan Builder resilience, chunk-mismatch recovery & legacy origin elimi
     // Advance microtasks + 250ms cache cleanup timeout
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(env.replaceSpy).toHaveBeenCalledTimes(1);
-    expect(env.replaceSpy).toHaveBeenCalledWith('https://thresh-dev.vercel.app/#fitness');
+    expect(env.reloadSpy).toHaveBeenCalledTimes(1);
+    expect(env.replaceSpy).not.toHaveBeenCalledWith(expect.stringContaining('aeropulse-eta'));
     expect(consumeRestoredTabAfterChunkReload()).toBe('totals');
     // Second read consumes and clears the restored tab
     expect(consumeRestoredTabAfterChunkReload()).toBeNull();

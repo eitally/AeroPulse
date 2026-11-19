@@ -1,4 +1,14 @@
-import type { CoachDataSharingTier, TeamSummaryWithRole, ThreshUser } from '../types.ts';
+import type {
+  CoachDataSharingTier,
+  GuardianSafetyAlertRecord,
+  TeamAuditLogEntry,
+  TeamMemberRole,
+  TeamSummaryWithRole,
+  TeamWorkoutComment,
+  TeamWorkoutLibraryCategory,
+  TeamWorkoutLibraryTemplate,
+  ThreshUser,
+} from '../types.ts';
 import { getSavedIntervalsHeaders } from './telemetryStorage.ts';
 
 export function buildThreshSessionHeaders(): Record<string, string> {
@@ -70,13 +80,91 @@ export function updateMemberStatusApi(
 export function updateMemberRoleApi(
   teamId: string,
   membershipId: string,
-  role: 'ATHLETE' | 'ASSISTANT_COACH',
+  role: Extract<TeamMemberRole, 'ATHLETE' | 'ASSISTANT_COACH' | 'ORG_ADMIN' | 'ATHLETIC_TRAINER'>,
   origin?: string
 ) {
   return requestLifecycleJson<{ team?: TeamSummaryWithRole }>(
     `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(membershipId)}/role`,
     { method: 'PATCH', body: JSON.stringify({ role, origin }) }
   );
+}
+
+export function fetchTeamAuditLogApi(teamId: string, limit = 100) {
+  return requestLifecycleJson<{ entries: TeamAuditLogEntry[] }>(
+    `/api/teams/${encodeURIComponent(teamId)}/audit-log?limit=${encodeURIComponent(String(limit))}`,
+    { method: 'GET' }
+  );
+}
+
+export function saveWorkoutLibraryTemplateApi(
+  teamId: string,
+  template: {
+    id?: string;
+    name: string;
+    category: TeamWorkoutLibraryCategory;
+    sportCategory: TeamWorkoutLibraryTemplate['sportCategory'];
+    workoutSyntax: string;
+    description: string;
+    plannedDurationSecs: number;
+    plannedLoad: number;
+    trackSpec?: TeamWorkoutLibraryTemplate['trackSpec'];
+  }
+) {
+  return requestLifecycleJson<{
+    template: TeamWorkoutLibraryTemplate;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(teamId)}/workout-library`, {
+    method: 'POST',
+    body: JSON.stringify(template),
+  });
+}
+
+export function deleteWorkoutLibraryTemplateApi(teamId: string, templateId: string) {
+  return requestLifecycleJson<{ team?: TeamSummaryWithRole; teams?: TeamSummaryWithRole[] }>(
+    `/api/teams/${encodeURIComponent(teamId)}/workout-library/${encodeURIComponent(templateId)}`,
+    { method: 'DELETE' }
+  );
+}
+
+export function postTeamWorkoutCommentApi(
+  teamId: string,
+  payload: {
+    targetMembershipId: string;
+    workoutDate?: string;
+    activityId?: string;
+    body: string;
+    guardianCc?: boolean;
+  }
+) {
+  return requestLifecycleJson<{
+    comment: TeamWorkoutComment;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(teamId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function recordGuardianSafetyAlertApi(
+  teamId: string,
+  payload: {
+    targetMembershipId: string;
+    category: GuardianSafetyAlertRecord['category'];
+    severity: GuardianSafetyAlertRecord['severity'];
+    summary: string;
+    painLocation?: string;
+  }
+) {
+  return requestLifecycleJson<{
+    alert: GuardianSafetyAlertRecord;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(teamId)}/safety-alerts`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function transferHeadCoachApi(

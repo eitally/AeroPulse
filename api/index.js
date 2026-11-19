@@ -554,6 +554,15 @@ var pgSchemaPromise = null;
 function getVaultStorageBackend() {
   return process.env.DATABASE_URL?.trim() ? "POSTGRES" : "ENCRYPTED_FILE";
 }
+function buildPostgresSslConfig(dbUrl, env = process.env) {
+  const clean = String(dbUrl || "").trim().toLowerCase();
+  if (!clean || clean.includes("localhost") || clean.includes("127.0.0.1")) {
+    return void 0;
+  }
+  return {
+    rejectUnauthorized: env.PG_SSL_ALLOW_SELF_SIGNED === "true" ? false : true
+  };
+}
 function getPostgresPool() {
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (!dbUrl) return null;
@@ -563,7 +572,7 @@ function getPostgresPool() {
       max: 5,
       idleTimeoutMillis: 15e3,
       connectionTimeoutMillis: 5e3,
-      ssl: dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1") ? void 0 : { rejectUnauthorized: false }
+      ssl: buildPostgresSslConfig(dbUrl)
     });
   }
   return pgPool;
@@ -578,6 +587,40 @@ async function ensurePostgresVaultSchema(pool) {
           encrypted_envelope TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS thresh_teams (
+          team_id TEXT PRIMARY KEY,
+          slug TEXT,
+          join_code TEXT,
+          org_type TEXT,
+          encrypted_doc TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS thresh_team_members (
+          team_id TEXT NOT NULL,
+          membership_id TEXT NOT NULL,
+          user_sid TEXT,
+          invited_email TEXT,
+          role TEXT NOT NULL,
+          status TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, membership_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_members_sid
+          ON thresh_team_members (user_sid);
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_members_email
+          ON thresh_team_members (invited_email);
+        CREATE TABLE IF NOT EXISTS thresh_audit_log (
+          id BIGSERIAL PRIMARY KEY,
+          event_id TEXT UNIQUE NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          team_id TEXT,
+          actor_sid TEXT,
+          action TEXT NOT NULL,
+          target_id TEXT,
+          metadata_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_audit_log_team_created
+          ON thresh_audit_log (team_id, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -786,6 +829,160 @@ async function withVaultLock(tenantId, fn) {
       vaultOperationQueues.delete(safeId);
     }
   }
+}
+async function syncNormalizedTeamPostgresAsync(teamId, metadata, docPayload, members) {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  const safeTeamId = sanitizeTenantId(teamId);
+  const envelope = encryptJsonForVault(docPayload);
+  const client = await pool.connect().catch(() => null);
+  if (!client) return;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (team_id)
+       DO UPDATE SET
+         slug = EXCLUDED.slug,
+         join_code = EXCLUDED.join_code,
+         org_type = EXCLUDED.org_type,
+         encrypted_doc = EXCLUDED.encrypted_doc,
+         updated_at = NOW();`,
+      [
+        safeTeamId,
+        metadata.slug ? String(metadata.slug).slice(0, 80) : null,
+        metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
+        metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
+        envelope
+      ]
+    );
+    await client.query("DELETE FROM thresh_team_members WHERE team_id = $1", [safeTeamId]);
+    for (const m of members) {
+      await client.query(
+        `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [
+          safeTeamId,
+          String(m.membershipId).slice(0, 64),
+          m.userSid ? String(m.userSid).slice(0, 96) : null,
+          m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null,
+          String(m.role || "ATHLETE").slice(0, 32),
+          String(m.status || "INVITED").slice(0, 32)
+        ]
+      );
+    }
+    await client.query("COMMIT");
+  } catch {
+    await client.query("ROLLBACK").catch(() => void 0);
+  } finally {
+    client.release();
+  }
+}
+async function withTeamRowLock(teamId, fn) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
+  return withVaultLock(lockKey, async () => {
+    const pool = getPostgresPool();
+    if (!pool) return fn();
+    const client = await pool.connect().catch(() => null);
+    if (!client) return fn();
+    try {
+      await ensurePostgresVaultSchema(pool);
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
+      const result = await fn();
+      await client.query("COMMIT");
+      return result;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => void 0);
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+}
+var MAX_LOCAL_AUDIT_ENTRIES = 500;
+function auditVaultKey(teamId) {
+  return `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+}
+async function appendAuditLogAsync(params) {
+  const entry = {
+    eventId: `aud_${crypto2.randomBytes(8).toString("hex")}`,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    teamId: sanitizeTenantId(params.teamId),
+    actorSid: String(params.actorSid || "system").slice(0, 96),
+    action: String(params.action || "UNKNOWN").slice(0, 64),
+    ...params.targetId ? { targetId: String(params.targetId).slice(0, 96) } : {},
+    metadata: params.metadata || {}
+  };
+  const key = auditVaultKey(entry.teamId);
+  await withVaultLock(key, async () => {
+    const existing = await loadTenantVaultAsync(key, []);
+    const next = [...existing, entry].slice(-MAX_LOCAL_AUDIT_ENTRIES);
+    await saveTenantVaultAsync(key, next);
+  });
+  const pool = getPostgresPool();
+  if (pool) {
+    try {
+      await ensurePostgresVaultSchema(pool);
+      await pool.query(
+        `INSERT INTO thresh_audit_log (event_id, created_at, team_id, actor_sid, action, target_id, metadata_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [
+          entry.eventId,
+          entry.createdAt,
+          entry.teamId,
+          entry.actorSid,
+          entry.action,
+          entry.targetId || null,
+          JSON.stringify(entry.metadata)
+        ]
+      );
+    } catch {
+    }
+  }
+  return entry;
+}
+async function listTeamAuditLogAsync(teamId, limit = 100) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
+  const pool = getPostgresPool();
+  if (pool) {
+    try {
+      await ensurePostgresVaultSchema(pool);
+      const res = await pool.query(
+        `SELECT event_id, created_at, team_id, actor_sid, action, target_id, metadata_json
+         FROM thresh_audit_log
+         WHERE team_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [safeTeamId, clampedLimit]
+      );
+      if (res.rows.length > 0) {
+        return res.rows.map((r) => ({
+          eventId: r.event_id,
+          createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+          teamId: r.team_id,
+          actorSid: r.actor_sid,
+          action: r.action,
+          ...r.target_id ? { targetId: r.target_id } : {},
+          metadata: (() => {
+            try {
+              return JSON.parse(r.metadata_json);
+            } catch {
+              return {};
+            }
+          })()
+        }));
+      }
+    } catch {
+    }
+  }
+  const local = await loadTenantVaultAsync(auditVaultKey(safeTeamId), []);
+  return [...local].reverse().slice(0, clampedLimit);
 }
 
 // src/physiology/stravaLoadCalibration.ts
@@ -2026,7 +2223,7 @@ async function pushWorkoutToGarminConnect(session, input) {
     sportType,
     subSportType: null,
     workoutName: input.name.slice(0, 64),
-    description: (input.description || "Prescribed by Thresh Readiness Engine").slice(
+    description: (input.description || "Prescribed by THRESH Readiness Engine").slice(
       0,
       512
     ),
@@ -5546,7 +5743,7 @@ function encodeGarminFitWorkout(workout) {
   dataPayload.push(1);
   dataPayload.push(workout.sport === "Running" ? 1 : 2);
   writeUint16LE(dataPayload, workout.steps.length);
-  writeFixedAscii(dataPayload, workout.name || "Thresh Workout", 24);
+  writeFixedAscii(dataPayload, workout.name || "THRESH Workout", 24);
   dataPayload.push(
     66,
     // Definition header, local mesg 2
@@ -6039,7 +6236,7 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
   };
   const zwoLines = [
     "<workout_file>",
-    "  <author>Thresh</author>",
+    "  <author>THRESH</author>",
     `  <name>${title.replace(/[<>&]/g, "")}</name>`,
     `  <sportType>${sport === "Running" ? "run" : "bike"}</sportType>`,
     "  <workout>",
@@ -7983,6 +8180,23 @@ function sanitizePracticeVenueCategory(raw) {
 }
 
 // server/teamService.ts
+function canProgramWorkoutsRole(role) {
+  return role === "HEAD_COACH" || role === "ASSISTANT_COACH";
+}
+function canViewSafeguardingMedicalRole(role) {
+  return role === "HEAD_COACH" || role === "ASSISTANT_COACH" || role === "ATHLETIC_TRAINER" || role === "ORG_ADMIN";
+}
+function canViewAuditLogRole(role) {
+  return role === "HEAD_COACH" || role === "ORG_ADMIN";
+}
+function maskEmailForDisplay(email) {
+  const clean = String(email || "").trim().toLowerCase();
+  const atIdx = clean.indexOf("@");
+  if (atIdx <= 0) return void 0;
+  const local = clean.slice(0, atIdx);
+  const domain = clean.slice(atIdx + 1);
+  return `${local.slice(0, 2)}***@${domain}`;
+}
 function sanitizeExternalSyncConfig(raw, existing) {
   if (!raw && !existing) return void 0;
   const merged = { ...existing || {}, ...raw || {} };
@@ -8009,6 +8223,22 @@ async function loadTeamDocRaw(teamId) {
 }
 async function saveTeamDocRaw(teamId, doc) {
   await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+  await syncNormalizedTeamPostgresAsync(
+    teamId,
+    {
+      slug: doc.brand.slug,
+      joinCode: doc.brand.joinCode,
+      orgType: doc.brand.orgType
+    },
+    doc,
+    (doc.memberships || []).map((m) => ({
+      membershipId: m.membershipId,
+      userSid: m.userSid,
+      invitedEmail: m.invitedEmail,
+      role: m.role,
+      status: m.status
+    }))
+  );
 }
 var TEAMS_DIRECTORY_KEY = "teams_index_v1";
 var EMAIL_DIRECTORY_KEY = "users_email_idx_v1";
@@ -8548,7 +8778,7 @@ async function autoLinkPendingTeamInvitesByEmail(params) {
 }
 function resolveTeamPlanTier(memberships) {
   const activeOrInvitedAthletes = (memberships || []).filter(
-    (m) => m.status !== "REVOKED" && m.status !== "ALUMNI" && m.role !== "HEAD_COACH" && m.role !== "ASSISTANT_COACH" && m.role !== "PARENT_FOLLOWER"
+    (m) => m.status !== "REVOKED" && m.status !== "ALUMNI" && m.role !== "HEAD_COACH" && m.role !== "ASSISTANT_COACH" && m.role !== "ORG_ADMIN" && m.role !== "ATHLETIC_TRAINER" && m.role !== "PARENT_FOLLOWER"
   ).length;
   return activeOrInvitedAthletes <= 5 ? "SANDBOX" : "FOUNDING_TEAM";
 }
@@ -8557,8 +8787,15 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
   );
   if (!myMembership) return null;
-  const isCoach = myMembership.role === "HEAD_COACH" || myMembership.role === "ASSISTANT_COACH";
+  const isStaffViewer = canViewSafeguardingMedicalRole(myMembership.role);
+  const isCoach = isStaffViewer;
   const isParentFollower = myMembership.role === "PARENT_FOLLOWER";
+  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
+  const linkedChildMembershipIds = isParentFollower ? new Set(
+    doc.memberships.filter(
+      (m) => m.role === "ATHLETE" && m.status !== "REVOKED" && Boolean(parentFollowerEmail) && m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
+    ).map((m) => m.membershipId)
+  ) : null;
   const athleteMembers = doc.memberships.filter(
     (m) => m.status !== "REVOKED" && (!isParentFollower || m.role === "ATHLETE")
   );
@@ -8700,16 +8937,28 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     return true;
   }).map((bw) => {
     if (!isParentFollower) return bw;
-    const stripPracticeVenue = doc.brand.orgType === "HIGH_SCHOOL" && !bw.isOfficialMeet;
     return {
       ...bw,
-      athleteOverrides: void 0,
-      ...stripPracticeVenue ? {
-        scheduledTime: void 0,
-        locationName: void 0,
-        meetingNotes: void 0
-      } : {}
+      athleteOverrides: void 0
     };
+  });
+  const visibleComments = (doc.workoutComments || []).filter((c) => {
+    if (isStaffViewer) return true;
+    if (isParentFollower) {
+      return Boolean(
+        c.guardianVisible && linkedChildMembershipIds && linkedChildMembershipIds.has(c.targetMembershipId)
+      );
+    }
+    return c.targetMembershipId === myMembership.membershipId;
+  });
+  const visibleSafetyAlerts = (doc.guardianSafetyAlerts || []).filter((a) => {
+    if (isStaffViewer) return true;
+    if (isParentFollower) {
+      return Boolean(
+        linkedChildMembershipIds && linkedChildMembershipIds.has(a.targetMembershipId)
+      );
+    }
+    return a.targetMembershipId === myMembership.membershipId;
   });
   return {
     brand: {
@@ -8725,7 +8974,10 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     activeCount,
     watchConnectedCount,
     memberships: sanitizedMemberships,
-    broadcastWorkouts: visibleBroadcasts
+    broadcastWorkouts: visibleBroadcasts,
+    ...isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] },
+    workoutComments: visibleComments,
+    guardianSafetyAlerts: visibleSafetyAlerts
   };
 }
 async function listTeamsForUser(callerSid, originUrl) {
@@ -8811,7 +9063,7 @@ async function createTeamForCoach(params) {
     latestDir.bySlug[slug] = teamId;
     latestDir.byJoinCode[joinCode.toUpperCase()] = teamId;
     if (!latestDir.allTeamIds.includes(teamId)) latestDir.allTeamIds.push(teamId);
-    await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+    await saveTeamDocRaw(teamId, doc);
     await saveTenantVaultAsync(TEAMS_DIRECTORY_KEY, latestDir);
   });
   await addTeamToUserIndex(
@@ -8820,10 +9072,17 @@ async function createTeamForCoach(params) {
     brand.coachDisplayName,
     params.coachEmail
   );
+  await appendAuditLogAsync({
+    teamId,
+    actorSid: params.callerSid,
+    action: "TEAM_CREATED",
+    targetId: teamId,
+    metadata: { orgType, name: cleanName }
+  });
   return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
 }
 async function updateTeamBranding(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -8832,7 +9091,7 @@ async function updateTeamBranding(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH" && callerMem.role !== "ORG_ADMIN") {
       return null;
     }
     const u = params.updates;
@@ -8908,7 +9167,7 @@ async function bulkCreateAndSendInvites(params) {
   const cleanOrigin = params.originUrl.replace(/\/+$/, "");
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const pendingEmails = [];
-  const lockedResult = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const latestDoc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -8970,7 +9229,7 @@ async function bulkCreateAndSendInvites(params) {
       addedCount2 += 1;
     }
     latestDoc.updatedAt = nowIso;
-    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), latestDoc);
+    await saveTeamDocRaw(params.teamId, latestDoc);
     return { latestDoc, addedCount: addedCount2, manualLinkCount: manualLinkCount2 };
   });
   if (!lockedResult) {
@@ -9003,7 +9262,7 @@ async function bulkCreateAndSendInvites(params) {
         })
       );
     }
-    await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+    await withTeamRowLock(params.teamId, async () => {
       const finalDoc2 = await loadTenantVaultAsync(
         teamDocVaultKey(params.teamId),
         null
@@ -9014,7 +9273,7 @@ async function bulkCreateAndSendInvites(params) {
         if (nextStatus) m.emailDeliveryStatus = nextStatus;
       }
       finalDoc2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(params.teamId), finalDoc2);
+      await saveTeamDocRaw(params.teamId, finalDoc2);
     });
   }
   const finalDoc = await loadTenantVaultAsync(
@@ -9130,7 +9389,7 @@ async function claimTeamJoinInvite(params) {
       error: "No team matched that Join Code or link. Check the 6-character code with your coach."
     };
   }
-  return withVaultLock(teamDocVaultKey(initialDoc.brand.teamId), async () => {
+  return withTeamRowLock(initialDoc.brand.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(initialDoc.brand.teamId),
       null
@@ -9336,13 +9595,24 @@ async function claimTeamJoinInvite(params) {
       mem.liveSnapshot.sharingTier = mem.sharingTier;
     }
     doc.updatedAt = nowIso;
-    await saveTenantVaultAsync(teamDocVaultKey(doc.brand.teamId), doc);
+    await saveTeamDocRaw(doc.brand.teamId, doc);
     await addTeamToUserIndex(
       params.callerSid,
       doc.brand.teamId,
       mem.invitedName,
       mem.invitedEmail
     );
+    await appendAuditLogAsync({
+      teamId: doc.brand.teamId,
+      actorSid: params.callerSid,
+      action: "MEMBER_JOINED",
+      targetId: mem.membershipId,
+      metadata: {
+        role: mem.role,
+        isMinorU18: mem.isMinorU18,
+        parentConsentStatus: mem.parentConsentStatus
+      }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
@@ -9368,50 +9638,44 @@ async function acknowledgeParentConsent(token) {
       (m) => m.status !== "REVOKED" && (m.parentConsentTokenHash && timingSafeStringEqual(m.parentConsentTokenHash, targetHash) || m.parentConsentToken && timingSafeStringEqual(m.parentConsentToken, cleanToken))
     );
     if (mem) {
-      const wasAcknowledged = mem.parentConsentStatus === "ACKNOWLEDGED";
-      if (!wasAcknowledged) {
-        mem.parentConsentStatus = "ACKNOWLEDGED";
-        mem.parentConsentAt = (/* @__PURE__ */ new Date()).toISOString();
-        doc.updatedAt = mem.parentConsentAt;
-        await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-      }
-      return {
-        ok: true,
-        athleteName: mem.invitedName,
-        teamName: doc.brand.name,
-        coachName: doc.brand.coachDisplayName,
-        sport: doc.brand.primarySport,
-        parentEmail: mem.parentGuardianEmail,
-        acknowledgedAt: mem.parentConsentAt,
-        alreadyAcknowledged: wasAcknowledged
-      };
+      return withTeamRowLock(teamId, async () => {
+        const freshDoc = await loadTenantVaultAsync(
+          teamDocVaultKey(teamId),
+          null
+        ) || doc;
+        const lockedMem = freshDoc.memberships.find((m) => m.membershipId === mem.membershipId);
+        if (!lockedMem) return { ok: false, error: "Membership not found." };
+        const wasAcknowledged = lockedMem.parentConsentStatus === "ACKNOWLEDGED";
+        if (!wasAcknowledged) {
+          lockedMem.parentConsentStatus = "ACKNOWLEDGED";
+          lockedMem.parentConsentAt = (/* @__PURE__ */ new Date()).toISOString();
+          freshDoc.updatedAt = lockedMem.parentConsentAt;
+          await saveTeamDocRaw(teamId, freshDoc);
+          await appendAuditLogAsync({
+            teamId,
+            actorSid: lockedMem.parentGuardianEmail || "guardian",
+            action: "PARENT_CONSENT_ACKNOWLEDGED",
+            targetId: lockedMem.membershipId,
+            metadata: { athleteName: lockedMem.invitedName }
+          });
+        }
+        return {
+          ok: true,
+          athleteName: lockedMem.invitedName,
+          teamName: freshDoc.brand.name,
+          coachName: freshDoc.brand.coachDisplayName,
+          sport: freshDoc.brand.primarySport,
+          parentEmail: lockedMem.parentGuardianEmail,
+          acknowledgedAt: lockedMem.parentConsentAt,
+          alreadyAcknowledged: wasAcknowledged
+        };
+      });
     }
   }
   return { ok: false, error: "Invalid or expired parent consent link." };
 }
 async function updateTeamMemberEventGroup(params) {
-  const doc = await loadTenantVaultAsync(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return null;
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
-    return null;
-  }
-  const targetMem = doc.memberships.find(
-    (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
-  );
-  if (!targetMem) return null;
-  targetMem.eventGroup = params.eventGroup || void 0;
-  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-}
-async function broadcastWorkoutToTeamSquad(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9420,7 +9684,30 @@ async function broadcastWorkoutToTeamSquad(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
+      return null;
+    }
+    const targetMem = doc.memberships.find(
+      (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
+    );
+    if (!targetMem) return null;
+    targetMem.eventGroup = params.eventGroup || void 0;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
+}
+async function broadcastWorkoutToTeamSquad(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return null;
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -9481,7 +9768,7 @@ async function broadcastWorkoutToTeamSquad(params) {
   });
 }
 async function broadcastWorkoutBatchToTeamSquad(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9490,7 +9777,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -9555,7 +9842,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
   });
 }
 async function updateBroadcastWorkoutOnTeam(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9564,7 +9851,7 @@ async function updateBroadcastWorkoutOnTeam(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const cleanId = String(params.broadcastId || "").trim();
@@ -9620,7 +9907,7 @@ async function updateBroadcastWorkoutOnTeam(params) {
   });
 }
 async function deleteBroadcastPlanBlockFromTeam(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9629,7 +9916,7 @@ async function deleteBroadcastPlanBlockFromTeam(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const cleanBlockId = String(params.blockId || "").trim();
@@ -9642,7 +9929,7 @@ async function deleteBroadcastPlanBlockFromTeam(params) {
   });
 }
 async function deleteBroadcastWorkoutFromTeam(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9651,7 +9938,7 @@ async function deleteBroadcastWorkoutFromTeam(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const cleanBroadcastId = String(params.broadcastId || "").trim();
@@ -9665,7 +9952,7 @@ async function deleteBroadcastWorkoutFromTeam(params) {
 }
 async function recordCoachStopwatchActivities(params) {
   const archiveQueue = [];
-  const summary = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const summary = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(params.teamId),
       null
@@ -9674,7 +9961,7 @@ async function recordCoachStopwatchActivities(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
       return null;
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -9777,7 +10064,7 @@ async function syncAthleteSnapshotAcrossTeams(params) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const summaries = [];
   for (const teamId of userIdx.teamIds) {
-    const proj = await withVaultLock(teamDocVaultKey(teamId), async () => {
+    const proj = await withTeamRowLock(teamId, async () => {
       const doc = await loadTenantVaultAsync(
         teamDocVaultKey(teamId),
         null
@@ -9904,13 +10191,333 @@ async function syncAthleteSnapshotAcrossTeams(params) {
       mem.liveSnapshot = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(assembledSnapshot, {
         maskWellnessWeightKgZero: true
       }) : assembledSnapshot;
+      const latestPainCheckIn = Array.isArray(params.snapshot.sessionCheckIns) ? params.snapshot.sessionCheckIns.find((c) => Boolean(c?.painFlag)) : void 0;
+      if (latestPainCheckIn && (effectiveIsMinor || doc.brand.orgType === "HIGH_SCHOOL")) {
+        const painCheckInId = String(latestPainCheckIn.id || "").slice(0, 64);
+        const existingAlerts = Array.isArray(doc.guardianSafetyAlerts) ? doc.guardianSafetyAlerts : [];
+        const alreadyRecorded = Boolean(painCheckInId) && existingAlerts.some(
+          (a) => a.sourceCheckInId === painCheckInId && a.targetMembershipId === mem.membershipId
+        );
+        if (!alreadyRecorded) {
+          const painArea = latestPainCheckIn.painArea || "OTHER";
+          const guardianEmail = mem.parentGuardianEmail?.trim().toLowerCase();
+          let deliveryStatus = guardianEmail ? "LOCAL_LOGGED" : "NO_GUARDIAN_ON_FILE";
+          const alertSummary = `${mem.invitedName} flagged ${painArea} pain (${latestPainCheckIn.autoSwappedToRecovery ? "auto-swapped to low-impact recovery" : "safety review requested"}).`;
+          if (guardianEmail && isResendConfigured()) {
+            const sendRes = await sendEmailViaResend({
+              to: guardianEmail,
+              subject: `[THRESH Safety Alert] ${mem.invitedName} \xB7 ${doc.brand.shortName}`,
+              html: `<p>${escapeHtml(alertSummary)}</p><p>Logged inside ${escapeHtml(doc.brand.name)} under U18 Safe-Sport &amp; Guardian visibility.</p>`,
+              text: `${alertSummary}
+Team: ${doc.brand.name}`
+            });
+            deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
+          }
+          const alertRecord = {
+            id: `gsa_${crypto6.randomBytes(6).toString("hex")}`,
+            teamId: doc.brand.teamId,
+            targetMembershipId: mem.membershipId,
+            athleteName: mem.invitedName,
+            ...painCheckInId ? { sourceCheckInId: painCheckInId } : {},
+            severity: "CAUTION",
+            category: "PAIN_FLAG",
+            summary: alertSummary,
+            painLocation: painArea,
+            guardianEmailMasked: maskEmailForDisplay(guardianEmail),
+            deliveryStatus,
+            createdAt: nowIso
+          };
+          doc.guardianSafetyAlerts = [alertRecord, ...existingAlerts].slice(0, 120);
+          await appendAuditLogAsync({
+            teamId: doc.brand.teamId,
+            actorSid: params.callerSid,
+            action: "GUARDIAN_SAFETY_ALERT",
+            targetId: mem.membershipId,
+            metadata: {
+              category: alertRecord.category,
+              painLocation: painArea,
+              deliveryStatus
+            }
+          });
+        }
+      }
       doc.updatedAt = nowIso;
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      await saveTeamDocRaw(teamId, doc);
       return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
     });
     if (proj) summaries.push(proj);
   }
   return summaries;
+}
+async function recordGuardianSafetyAlert(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem) return { ok: false, error: "Not a member of this team." };
+    const target = doc.memberships.find(
+      (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED"
+    );
+    if (!target) return { ok: false, error: "Target athlete not found." };
+    const isSelf = target.userSid === params.callerSid;
+    if (!isSelf && !canViewSafeguardingMedicalRole(callerMem.role)) {
+      return { ok: false, error: "Coach or Athletic Trainer permission required." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const guardianEmail = target.parentGuardianEmail?.trim().toLowerCase();
+    const cleanSummary = String(params.summary || "").trim().slice(0, 280);
+    if (!cleanSummary) {
+      return { ok: false, error: "Safety alert summary is required." };
+    }
+    let deliveryStatus = guardianEmail ? "LOCAL_LOGGED" : "NO_GUARDIAN_ON_FILE";
+    if (guardianEmail && isResendConfigured()) {
+      const sendRes = await sendEmailViaResend({
+        to: guardianEmail,
+        subject: `[THRESH Safety Alert] ${target.invitedName} \xB7 ${doc.brand.shortName}`,
+        html: `<p>${escapeHtml(cleanSummary)}</p><p>Reported via ${escapeHtml(doc.brand.name)} Safeguarding Desk.</p>`,
+        text: `${cleanSummary}
+Team: ${doc.brand.name}`
+      });
+      deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
+    }
+    const alertRecord = {
+      id: `gsa_${crypto6.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      targetMembershipId: target.membershipId,
+      athleteName: target.invitedName,
+      severity: params.severity === "HIGH" ? "HIGH" : "CAUTION",
+      category: params.category === "HIGH_STRAIN" || params.category === "SAFE_SPORT_WATCH" ? params.category : "PAIN_FLAG",
+      summary: cleanSummary,
+      ...params.painLocation ? { painLocation: String(params.painLocation).trim().slice(0, 32) } : {},
+      guardianEmailMasked: maskEmailForDisplay(guardianEmail),
+      deliveryStatus,
+      createdAt: nowIso
+    };
+    doc.guardianSafetyAlerts = [alertRecord, ...doc.guardianSafetyAlerts || []].slice(0, 120);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "GUARDIAN_SAFETY_ALERT",
+      targetId: target.membershipId,
+      metadata: {
+        category: alertRecord.category,
+        severity: alertRecord.severity,
+        deliveryStatus
+      }
+    });
+    return {
+      ok: true,
+      alert: alertRecord,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function listTeamWorkoutLibrary(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) return { ok: false, error: "Membership required." };
+  return { ok: true, templates: doc.workoutLibrary || [] };
+}
+async function saveTeamWorkoutLibraryTemplate(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only Head or Assistant Coaches may edit the team Workout Library."
+      };
+    }
+    const cleanName = String(params.template.name || "").trim().slice(0, 100);
+    if (!cleanName) {
+      return { ok: false, status: 400, error: "Template name is required." };
+    }
+    const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto6.randomBytes(6).toString("hex")}`;
+    const record = {
+      id: id || `wlib_${crypto6.randomBytes(6).toString("hex")}`,
+      name: cleanName,
+      category: validCat,
+      sportCategory: params.template.sportCategory || "Running",
+      workoutSyntax: String(params.template.workoutSyntax || "").slice(0, 3e3),
+      description: String(params.template.description || "").slice(0, 1e3),
+      plannedDurationSecs: Math.max(300, Number(params.template.plannedDurationSecs) || 2400),
+      plannedLoad: Math.max(5, Number(params.template.plannedLoad) || 55),
+      ...params.template.trackSpec ? { trackSpec: params.template.trackSpec } : {},
+      createdByName: callerMem.invitedName || doc.brand.coachDisplayName,
+      createdAt: nowIso
+    };
+    const existing = Array.isArray(doc.workoutLibrary) ? doc.workoutLibrary : [];
+    doc.workoutLibrary = [record, ...existing.filter((t) => t.id !== record.id)].slice(0, 120);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "WORKOUT_LIBRARY_SAVED",
+      targetId: record.id,
+      metadata: { name: record.name, category: record.category }
+    });
+    return {
+      ok: true,
+      template: record,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function deleteTeamWorkoutLibraryTemplate(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only Head or Assistant Coaches may delete Workout Library templates."
+      };
+    }
+    const cleanId = String(params.templateId || "").trim();
+    doc.workoutLibrary = (doc.workoutLibrary || []).filter((t) => t.id !== cleanId);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "WORKOUT_LIBRARY_DELETED",
+      targetId: cleanId,
+      metadata: {}
+    });
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function listTeamWorkoutComments(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, error: "Team not found." };
+  const summary = projectTeamSummaryForCaller(doc, params.callerSid, "https://thresh.app");
+  if (!summary) return { ok: false, error: "Membership required." };
+  const allVisible = summary.workoutComments || [];
+  const filtered = params.targetMembershipId ? allVisible.filter((c) => c.targetMembershipId === params.targetMembershipId) : allVisible;
+  return { ok: true, comments: filtered };
+}
+async function postTeamWorkoutComment(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Membership required to post workout comments." };
+    }
+    const targetMem = doc.memberships.find(
+      (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED"
+    );
+    if (!targetMem) {
+      return { ok: false, status: 404, error: "Target athlete not found." };
+    }
+    const isSelf = targetMem.userSid === params.callerSid;
+    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+    if (!isSelf && !isStaff) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only coaching/medical staff or the athlete may post workout comments."
+      };
+    }
+    const targetIsProtectedMinor = Boolean(
+      targetMem.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
+    );
+    if (targetIsProtectedMinor && (params.privateDirectToMinor === true || params.guardianCc === false)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "SafeSport policy requires parent/guardian visibility on all youth athlete workout comments."
+      };
+    }
+    const cleanBody = String(params.body || "").trim().slice(0, 600);
+    if (!cleanBody) {
+      return { ok: false, status: 400, error: "Comment text is required." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const guardianCcApplied = Boolean(
+      targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
+    );
+    const comment = {
+      id: `cmt_${crypto6.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      targetMembershipId: targetMem.membershipId,
+      targetAthleteName: targetMem.invitedName,
+      ...params.activityId ? { activityId: String(params.activityId).slice(0, 80) } : {},
+      workoutDate: String(params.workoutDate || nowIso.slice(0, 10)).slice(0, 10),
+      authorSid: params.callerSid,
+      authorName: callerMem.invitedName || doc.brand.coachDisplayName,
+      authorRole: callerMem.role,
+      body: cleanBody,
+      guardianCcApplied,
+      guardianVisible: true,
+      createdAt: nowIso
+    };
+    if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
+      void sendEmailViaResend({
+        to: targetMem.parentGuardianEmail,
+        subject: `[THRESH Guardian CC] Coach note for ${targetMem.invitedName}`,
+        html: `<p><strong>${escapeHtml(comment.authorName)}</strong> commented on ${escapeHtml(targetMem.invitedName)}&apos;s ${escapeHtml(comment.workoutDate)} workout:</p><blockquote>${escapeHtml(cleanBody)}</blockquote>`,
+        text: `${comment.authorName} commented on ${targetMem.invitedName}'s ${comment.workoutDate} workout: ${cleanBody}`
+      });
+    }
+    doc.workoutComments = [comment, ...doc.workoutComments || []].slice(0, 300);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "WORKOUT_COMMENT_POSTED",
+      targetId: targetMem.membershipId,
+      metadata: {
+        guardianCcApplied,
+        workoutDate: comment.workoutDate
+      }
+    });
+    return {
+      ok: true,
+      comment,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function getTeamGovernanceAuditLog(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewAuditLogRole(callerMem.role)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Audit log access requires HEAD_COACH or ORG_ADMIN role."
+    };
+  }
+  const entries = await listTeamAuditLogAsync(params.teamId, params.limit ?? 100);
+  return { ok: true, entries };
 }
 
 // server/teamLifecycleService.ts
@@ -9928,7 +10535,7 @@ function sanitizeMemberPublicNameForDeletion(m) {
 }
 async function leaveOrGraduateTeam(params) {
   const archiveQueue = [];
-  const result = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const result = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const mem = doc.memberships.find(
@@ -9983,7 +10590,7 @@ async function leaveOrGraduateTeam(params) {
   return result;
 }
 async function revokeAthleteGuardianConsentForTeam(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const mem = doc.memberships.find(
@@ -10014,6 +10621,13 @@ async function revokeAthleteGuardianConsentForTeam(params) {
     }
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "GUARDIAN_CONSENT_REVOKED",
+      targetId: mem.membershipId,
+      metadata: { reason: "ADULT_18_PLUS" }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10021,7 +10635,7 @@ async function revokeAthleteGuardianConsentForTeam(params) {
   });
 }
 async function updateMyTeamSharingTier(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const mem = doc.memberships.find(
@@ -10043,6 +10657,13 @@ async function updateMyTeamSharingTier(params) {
     }
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "SHARING_TIER_CHANGED",
+      targetId: mem.membershipId,
+      metadata: { sharingTier: params.sharingTier }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10052,7 +10673,7 @@ async function updateMyTeamSharingTier(params) {
 async function updateMemberRosterLifecycleStatus(params) {
   let archiveTarget = null;
   let detachSid;
-  const outcome = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -10086,6 +10707,13 @@ async function updateMemberRosterLifecycleStatus(params) {
     }
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "MEMBER_REMOVED_OR_GRADUATED",
+      targetId: target.membershipId,
+      metadata: { status: params.status, targetName: target.invitedName }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10102,7 +10730,7 @@ async function updateMemberRosterLifecycleStatus(params) {
 }
 async function graduateTeamClass(params) {
   const archiveList = [];
-  const res = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const res = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, graduatedCount: 0, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -10145,14 +10773,14 @@ async function graduateTeamClass(params) {
   return res;
 }
 async function updateMemberRole(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH") {
-      return { ok: false, error: "Only the Head Coach can manage coaching staff roles." };
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ORG_ADMIN") {
+      return { ok: false, error: "Only Head Coach or Org Admin can manage staff roles." };
     }
     const target = doc.memberships.find(
       (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
@@ -10160,10 +10788,18 @@ async function updateMemberRole(params) {
     if (!target || target.role === "HEAD_COACH") {
       return { ok: false, error: "Target member cannot be reassigned." };
     }
+    const prevRole = target.role;
     target.role = params.role;
-    target.isMinorU18 = params.role === "ASSISTANT_COACH" ? false : target.isMinorU18;
+    target.isMinorU18 = params.role !== "ATHLETE" ? false : target.isMinorU18;
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "ROLE_CHANGED",
+      targetId: target.membershipId,
+      metadata: { prevRole, nextRole: params.role, targetName: target.invitedName }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10171,7 +10807,7 @@ async function updateMemberRole(params) {
   });
 }
 async function transferTeamHeadCoachOwnership(params) {
-  return withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const currentHead = doc.memberships.find(
@@ -10195,6 +10831,13 @@ async function transferTeamHeadCoachOwnership(params) {
     doc.brand.coachDisplayName = nextHead.invitedName || doc.brand.coachDisplayName;
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "OWNERSHIP_TRANSFERRED",
+      targetId: nextHead.membershipId,
+      metadata: { nextHeadName: nextHead.invitedName }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10206,7 +10849,7 @@ async function mergeDuplicateRosterMembers(params) {
     return { ok: false, error: "Source and target roster rows must be different." };
   }
   let archiveTarget = null;
-  const outcome = await withVaultLock(teamDocVaultKey(params.teamId), async () => {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -10263,6 +10906,13 @@ async function mergeDuplicateRosterMembers(params) {
     }
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "MEMBERS_MERGED",
+      targetId: target.membershipId,
+      metadata: { mergedSourceId: source.membershipId }
+    });
     return {
       ok: true,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
@@ -10322,7 +10972,7 @@ async function declineAndPurgeParentConsent(token) {
     let detachedSid;
     const athleteName = targetMem.invitedName;
     const teamName = doc.brand.name;
-    await withVaultLock(teamDocVaultKey(teamId), async () => {
+    await withTeamRowLock(teamId, async () => {
       const freshDoc = await loadTeamDocRaw(teamId);
       if (!freshDoc) return;
       const mem = freshDoc.memberships.find((m) => matchesToken(m));
@@ -10335,6 +10985,13 @@ async function declineAndPurgeParentConsent(token) {
       mem.coachRecordedActivities = void 0;
       freshDoc.updatedAt = mem.leftAt;
       await saveTeamDocRaw(teamId, freshDoc);
+      await appendAuditLogAsync({
+        teamId,
+        actorSid: "guardian",
+        action: "PARENT_CONSENT_DECLINED",
+        targetId: mem.membershipId,
+        metadata: { originalName: athleteName }
+      });
     });
     if (detachedSid) {
       await removeTeamFromUserIndex(detachedSid, teamId).catch(() => void 0);
@@ -11102,8 +11759,11 @@ teamRouter.patch(
         return;
       }
       const role = String(req.body?.role || "").toUpperCase();
-      if (role !== "ATHLETE" && role !== "ASSISTANT_COACH") {
-        res.status(400).json({ ok: false, error: "Role must be ATHLETE or ASSISTANT_COACH." });
+      if (role !== "ATHLETE" && role !== "ASSISTANT_COACH" && role !== "ORG_ADMIN" && role !== "ATHLETIC_TRAINER") {
+        res.status(400).json({
+          ok: false,
+          error: "Role must be ATHLETE, ASSISTANT_COACH, ORG_ADMIN, or ATHLETIC_TRAINER."
+        });
         return;
       }
       const originUrl = resolveRequestOrigin(req);
@@ -11279,6 +11939,222 @@ teamRouter.post(
     }
   }
 );
+teamRouter.get("/api/teams/:teamId/audit-log", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const limit = Number(req.query?.limit || 100);
+    const result = await getTeamGovernanceAuditLog({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      limit: Number.isFinite(limit) ? limit : 100
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Audit log permission required."
+      });
+      return;
+    }
+    res.json({ ok: true, entries: result.entries || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading audit log."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/safety-alerts", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await recordGuardianSafetyAlert({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      targetMembershipId: String(req.body?.targetMembershipId || ""),
+      category: req.body?.category || "PAIN_FLAG",
+      severity: req.body?.severity || "CAUTION",
+      summary: String(req.body?.summary || ""),
+      painLocation: req.body?.painLocation ? String(req.body.painLocation) : void 0,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || "Unable to record safety alert." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, alert: result.alert, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed recording safety alert."
+    });
+  }
+});
+teamRouter.get("/api/teams/:teamId/workout-library", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const result = await listTeamWorkoutLibrary({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || "")
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || "Forbidden." });
+      return;
+    }
+    res.json({ ok: true, templates: result.templates || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading workout library."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/workout-library", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await saveTeamWorkoutLibraryTemplate({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      template: {
+        ...body.id ? { id: String(body.id) } : {},
+        name: String(body.name || ""),
+        category: body.category || "TRACK",
+        sportCategory: body.sportCategory || "Running",
+        workoutSyntax: String(body.workoutSyntax || ""),
+        description: String(body.description || ""),
+        plannedDurationSecs: Number(body.plannedDurationSecs || 2400),
+        plannedLoad: Number(body.plannedLoad || 55),
+        ...body.trackSpec ? { trackSpec: body.trackSpec } : {}
+      }
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Coach permissions required."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, template: result.template, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed saving workout template."
+    });
+  }
+});
+teamRouter.delete(
+  "/api/teams/:teamId/workout-library/:templateId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const result = await deleteTeamWorkoutLibraryTemplate({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        templateId: String(req.params.templateId || ""),
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Coach permissions required."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed deleting workout template."
+      });
+    }
+  }
+);
+teamRouter.get("/api/teams/:teamId/comments", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const result = await listTeamWorkoutComments({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      targetMembershipId: req.query?.targetMembershipId ? String(req.query.targetMembershipId) : void 0
+    });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error || "Forbidden." });
+      return;
+    }
+    res.json({ ok: true, comments: result.comments || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading comments."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/comments", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await postTeamWorkoutComment({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      targetMembershipId: String(body.targetMembershipId || ""),
+      workoutDate: body.workoutDate ? String(body.workoutDate) : void 0,
+      activityId: body.activityId ? String(body.activityId) : void 0,
+      body: String(body.body || ""),
+      privateDirectToMinor: body.privateDirectToMinor === true,
+      guardianCc: body.guardianCc,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to post workout comment."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, comment: result.comment, team: result.summary, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed posting workout comment."
+    });
+  }
+});
 
 // server/routers/teamSyncRouter.ts
 import express4 from "express";
@@ -11743,41 +12619,50 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
   };
 }
 async function followTeamAsParentOrFan(params) {
-  const doc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
-  if (!doc) {
+  const initialDoc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
+  if (!initialDoc) {
     return { ok: false, error: "Team not found for this code or URL." };
   }
-  if (!doc.brand.externalSync?.enablePublicParentHub) {
-    return { ok: false, error: "Public parent/supporter following is disabled for this team." };
-  }
-  let mem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!mem) {
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    mem = {
-      membershipId: `mem_${crypto7.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      userSid: params.callerSid,
-      role: "PARENT_FOLLOWER",
-      squadGroup: "Parents & Supporters",
-      invitedName: String(params.followerName || "").trim().slice(0, 48) || "Parent / Supporter",
-      isMinorU18: false,
-      parentConsentStatus: "NOT_REQUIRED",
-      status: "ACTIVE",
-      invitedAt: nowIso,
-      openedAt: nowIso,
-      joinedAt: nowIso
+  return withTeamRowLock(initialDoc.brand.teamId, async () => {
+    const doc = await loadTeamDocRaw(initialDoc.brand.teamId) || initialDoc;
+    if (!doc.brand.externalSync?.enablePublicParentHub) {
+      return { ok: false, error: "Public parent/supporter following is disabled for this team." };
+    }
+    const cleanVerifiedEmail = params.verifiedEmail?.trim().toLowerCase();
+    let mem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!mem) {
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      mem = {
+        membershipId: `mem_${crypto7.randomBytes(6).toString("hex")}`,
+        teamId: doc.brand.teamId,
+        userSid: params.callerSid,
+        role: "PARENT_FOLLOWER",
+        squadGroup: "Parents & Supporters",
+        invitedName: String(params.followerName || "").trim().slice(0, 48) || "Parent / Supporter",
+        ...cleanVerifiedEmail ? { invitedEmail: cleanVerifiedEmail } : {},
+        isMinorU18: false,
+        parentConsentStatus: "NOT_REQUIRED",
+        status: "ACTIVE",
+        invitedAt: nowIso,
+        openedAt: nowIso,
+        joinedAt: nowIso
+      };
+      doc.memberships.push(mem);
+      doc.updatedAt = nowIso;
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    } else if (cleanVerifiedEmail && mem.invitedEmail !== cleanVerifiedEmail) {
+      mem.invitedEmail = cleanVerifiedEmail;
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    }
+    await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName, cleanVerifiedEmail);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
-    doc.memberships.push(mem);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(doc.brand.teamId, doc);
-  }
-  await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName);
-  return {
-    ok: true,
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-  };
+  });
 }
 
 // server/routers/teamSyncRouter.ts
@@ -11945,10 +12830,12 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
       sid = decodeAndVerifyToken(sessionToken)?.sid || "000000000000000000000000";
     }
     const originUrl = resolveSyncOrigin(req);
+    const verifiedUser = sid ? await getUserById(sid).catch(() => null) : null;
     const result = await followTeamAsParentOrFan({
       callerSid: sid,
       codeOrSlug: String(req.body?.codeOrSlug || ""),
       followerName: req.body?.followerName ? String(req.body.followerName) : void 0,
+      verifiedEmail: verifiedUser?.email,
       originUrl
     });
     if (!result.ok || !result.summary) {
@@ -13386,7 +14273,7 @@ var SERVER_ZONE_COLORS = [
   "#D97706",
   // Z3 Ochre Tempo
   "#EA580C",
-  // Z4 Thresh Vermilion
+  // Z4 THRESH Vermilion
   "#DC2626",
   // Z5 VO2 Crimson
   "#7C3AED",
@@ -19964,7 +20851,7 @@ garminRouter.post("/api/garmin/workout/push", async (req, res) => {
     }
     const body = req.body || {};
     const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
-    const name = String(body.name || "Thresh Daily Prescription");
+    const name = String(body.name || "THRESH Daily Prescription");
     const sportCategory = body.sportCategory || "Cycling";
     const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
     const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);

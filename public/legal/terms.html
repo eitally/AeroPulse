@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH — Terms of Service</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
+  <link rel="stylesheet" href="/legal/legal.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
+        var isDark =
+          saved === '1'
+            ? true
+            : saved === '0'
+              ? false
+              : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="legal-header">
+    <a class="legal-brand" href="/" aria-label="THRESH Home">
+      <img class="doc-logo-light" src="/brand/thresh-lockup-light-2x.png" alt="THRESH" width="122" height="32" />
+      <img class="doc-logo-dark" src="/brand/thresh-lockup-dark-2x.png" alt="THRESH" width="122" height="32" />
+      <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Terms of Service</span>
+    </a>
+    <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/privacy">Privacy</a>
+      <a class="legal-nav-link" href="/terms" aria-current="page">Terms</a>
+      <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
+      <a class="legal-nav-link" href="/procurement">District &amp; NCAA Pack</a>
+      <button type="button" class="legal-btn" id="legalThemeBtn">Theme</button>
+      <a class="legal-btn legal-btn-primary" href="/">Open THRESH</a>
+    </nav>
+  </header>
+
+  <main id="main-content" tabindex="-1" class="legal-shell">
+    <section class="legal-hero">
+      <div class="legal-kicker">TERMS OF SERVICE · UPDATED NOV 2026</div>
+      <h1>THRESH Terms of Service</h1>
+      <p class="legal-meta">Governing use of THRESH readiness modeling, trackside timing, workout planning, and scholastic/collegiate coaching workspaces.</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>1. Informational &amp; Non-Medical Disclaimer</h2>
+      <div class="legal-callout">
+        <p><strong>Not Medical Advice:</strong> THRESH metrics (CTL, ATL, TSB, ACWR, HRV trends, cardiac drift, iron/ferritin reserve reminders, and training modulation) are informational endurance coaching tools only. THRESH is not a medical device and does not diagnose, treat, cure, or prevent any disease or injury. Consult a licensed physician or certified athletic trainer before making medical or return-to-play decisions.</p>
+      </div>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Eligibility, Youth Accounts &amp; SafeSport Governance</h2>
+      <ul>
+        <li>Users must be at least 13 years of age (COPPA minimum). Athletes ages 13–17 require verified parent/guardian acknowledgment before accessing full team sync beyond Safe-Sport quarantine.</li>
+        <li>Coaches and staff agree to abide by applicable school district, NCAA Bylaw 17.1 CARA, and U.S. Center for SafeSport Minor Athlete Abuse Prevention Policies (MAAPP). Attempting to bypass guardian visibility on minor workout comments or contact minors privately outside guardian-CC&apos;d team channels is prohibited.</li>
+        <li>Only authorized coaching staff (<code>HEAD_COACH</code>, <code>ASSISTANT_COACH</code>) may program or broadcast team workouts; <code>ATHLETIC_TRAINER</code> and <code>ORG_ADMIN</code> roles carry scoped safeguarding, audit, or governance permissions.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. Athlete Data Ownership &amp; Third-Party Connectors</h2>
+      <ul>
+        <li><strong>Athlete Ownership:</strong> You retain ownership of all workout telemetry and manual logs you upload or record. You may export or delete your account data at any time.</li>
+        <li><strong>Supported Connectors:</strong> THRESH integrates with user-authorized accounts from Strava, Garmin Connect, Intervals.icu (including Intervals.icu-relayed devices such as COROS and WHOOP), Wahoo, Polar, and direct <code>.FIT/.GPX/.TCX/.ZIP</code> file imports. THRESH is not affiliated with or endorsed by those third-party brands.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. Institutional Subscriptions &amp; PO Billing</h2>
+      <p>Individual athletes and parents/guardians receive free core access. Institutional licenses for High Schools, Collegiate Programs, Clubs, and School Districts follow transparent published rates on <a href="/procurement">/procurement</a> with annual Purchase Order (PO), ASB check, or invoice billing.</p>
+    </section>
+  </main>
+
+  <footer class="legal-footer">
+    <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+    <div>
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/subprocessors">Subprocessors</a> · <a href="/procurement">Procurement</a> · <a href="/docs/">Docs</a>
+    </div>
+  </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById('legalThemeBtn');
+      if (!btn) return;
+      function syncLabel() {
+        var dark = document.documentElement.classList.contains('dark');
+        var slate = document.documentElement.classList.contains('theme-slate');
+        btn.textContent = dark ? (slate ? 'Slate Dark' : 'Pine Dark') : 'Chalk Light';
+      }
+      syncLabel();
+      btn.addEventListener('click', function () {
+        var nextDark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', nextDark);
+        try { localStorage.setItem('thresh_theme_dark', nextDark ? '1' : '0'); } catch (e) {}
+        syncLabel();
+      });
+    })();
+  </script>
+</body>
+</html>

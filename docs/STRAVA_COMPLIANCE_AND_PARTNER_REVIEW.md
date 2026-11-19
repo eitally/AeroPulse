@@ -31,8 +31,8 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
    All outbound requests to generative AI endpoints (e.g., Google Gemini for optional workout syntax generation in `/api/coach/options` and `/api/coach/chat`) pass through `sanitizeTelemetryForCleanRoom()`.
 2. **Strict Payload Stripping:**  
    The firewall checks every activity record against `isStravaOriginRecord()`. Any activity synced via Strava is completely stripped from the context window, along with `stravaSegments`, `stravaKudos`, `stravaAthleteId`, and `segmentEfforts`.
-3. **First-Party Hardware Only:**  
-   The AI coach context window receives *only* first-party hardware biometrics (Garmin Connect overnight HRV, sleep score, resting HR, and direct `.FIT` file telemetry). Strava activity data is **100% excluded from all AI prompt payloads**.
+3. **Strict Allowlist Schema (`recentWorkouts` Blocked)**:  
+   All payloads pass through `sanitizeTelemetryForCleanRoom()` (`server/cleanRoomFirewall.ts`), which enforces a strict allowlist accepting only first-party hardware provenance (`Garmin`, `Polar`, `Wahoo`, direct `.FIT`), blocks alternate keys such as `recentWorkouts`, disables AI by default for minors (`U18`/`HIGH_SCHOOL`), and strips `weightKg`. Strava activity data is **100% excluded from all AI prompt payloads**.
 4. **No Model Training:**  
    THRESH does not train, fine-tune, or distill any AI model on user data.
 
@@ -48,7 +48,7 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
    Athletes select their explicit Coach Sharing Tier (`LOAD_ONLY`, `SUMMARY_ONLY`, or `FULL_STREAMS`):
    - Under `LOAD_ONLY`: Zero activities are shared with coaches; only aggregate load numbers are visible.
    - Under `SUMMARY_ONLY` (Default): Strava activities are excluded entirely by the Clean-Room firewall.
-   - Under `FULL_STREAMS`: Coaches receive workout summaries, but **GPS polylines, route coordinates, and second-by-second sensor streams are restricted strictly to first-party hardware (Garmin/FIT/Wahoo/COROS)**. Raw Strava sensor streams and GPS polylines are **never** projected to coaches (`server/teamService.ts:1354-1370`).
+   - Under `FULL_STREAMS`: Coaches receive workout summaries, but **GPS polylines, route coordinates, and second-by-second sensor streams are restricted strictly to first-party hardware (Garmin, Polar, Wahoo, or direct `.FIT`)**. Raw Strava sensor streams and GPS polylines are **never** projected to coaches (`server/teamService.ts`).
 3. **Private Notes & Descriptions Shielded:**  
    Personal descriptions, journal entries, gear IDs, comments, and kudoers from Strava are stripped before any cross-user projection.
 4. **Safe-Sport U18 Shielding:**  
@@ -75,11 +75,8 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 **THRESH Implementation:**
 1. **2-Step Onboarding with Sync Choice:**  
    Step 1 authenticates the athlete's identity. In Step 2, the athlete explicitly chooses their sync window (`90 days`, `180 days`, `365 days`, `all`, or `none`). Selecting `none` allows an athlete to use THRESH with zero workout sync.
-2. **Instant Disconnect & Vault Purge (`POST /api/strava/disconnect`):**  
-   Athletes can disconnect Strava at any time from Settings or Data Sources. Calling disconnect immediately:
-   - Revokes and wipes Strava OAuth tokens from the encrypted server vault (`AES-256-GCM`).
-   - Clears session cookies (`thresh_session`, `thresh_vault`).
-   - Purges athlete profile cache.
+2. **Instant Disconnect & Vault Purge (`POST /api/strava/disconnect`)**:  
+   Athletes can disconnect Strava anytime or run permanent erasure (`DELETE /api/auth/account`), which calls Strava `/oauth/deauthorize`, wipes vault tokens, clears `thresh_session` / `thresh_vault` / `thresh_user`, and purges user-scoped caches.
 
 ---
 

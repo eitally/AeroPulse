@@ -654,8 +654,8 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
           </button>
         </div>
 
-        {/* Quick Setup Bar when no team is active */}
-        {!activeTeam && (
+        {/* Quick Setup Bar when no team is active (or exploring Sample Demo) */}
+        {(!activeTeam || activeTeam.brand.teamId.startsWith('demo_team_')) && (
           <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3.5 flex flex-wrap items-center justify-between gap-2.5">
             <div className="text-xs text-[#101411] dark:text-[#F4F7F4]">
               <strong>No team yet?</strong> Try a pre-configured demo program or paste your own roster below:

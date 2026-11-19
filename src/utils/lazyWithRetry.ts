@@ -89,6 +89,7 @@ export function isDynamicChunkLoadError(error: unknown): boolean {
  */
 export async function purgeStaleRuntimeChunkCaches(): Promise<void> {
   if (typeof window === 'undefined') return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   const tasks: Promise<unknown>[] = [];
 
   if ('caches' in window && window.caches) {
@@ -128,6 +129,7 @@ function getCurrentBrowserTargetUrl(): string {
  */
 export function triggerChunkSkewReload(chunkKey: string, restoreTab?: ActiveTab): boolean {
   if (typeof window === 'undefined') return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   const now = Date.now();
   const safeKey = String(chunkKey || 'default');
 
@@ -160,7 +162,11 @@ export function triggerChunkSkewReload(chunkKey: string, restoreTab?: ActiveTab)
 
   void Promise.race([purgeStaleRuntimeChunkCaches(), cacheTimeout]).finally(() => {
     try {
-      window.location.replace(targetUrl);
+      if (targetUrl === window.location.href && Boolean(window.location.hash)) {
+        window.location.reload();
+      } else {
+        window.location.replace(targetUrl);
+      }
     } catch {
       window.location.reload();
     }

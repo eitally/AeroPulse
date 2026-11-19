@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { deriveShortNameFromTeamName } from '../src/components/TeamManagementPanel';
+import { deriveShortNameFromTeamName, TeamManagementPanel } from '../src/components/TeamManagementPanel';
+import { AthleteRosterModal } from '../src/components/AthleteRosterModal';
+import { buildSampleDemoDataset } from '../src/data/sampleDemoData';
 
 function walkFiles(dirPath: string): string[] {
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -26,37 +30,127 @@ describe('Coach Onboarding Simplicity & Coach User Guide Contracts', () => {
     expect(deriveShortNameFromTeamName('   ')).toBe('TEAM');
   });
 
-  it('keeps AthleteRosterModal focused on 2 Connections & Privacy tabs while preserving key test contracts', () => {
-    const modalSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/components/AthleteRosterModal.tsx'),
-      'utf8'
+  it('renders AthleteRosterModal with 2 focused Connections & Privacy tabs and zero duplicated Coach/Stopwatch tabs', () => {
+    const demo = buildSampleDemoDataset('2026-11-19');
+    const modalHtml = renderToStaticMarkup(
+      React.createElement(AthleteRosterModal, {
+        isOpen: true,
+        onClose: () => {},
+        selfName: 'Sample Athlete',
+        selfInviteCode: 'THR-TEST',
+        selfCtl: 54,
+        selfAtl: 52,
+        selfTsb: 2,
+        selfHrv: 72,
+        selfProfile: demo.athleteProfile,
+        selfPrivacySettings: {
+          sharePmcAndZones: 'ALL_CONNECTIONS',
+          shareWellnessAndHrv: 'COACHES_ONLY',
+          shareGpsRoutes: 'COACHES_ONLY',
+          stravaComplianceShield: true,
+          allowCoachCalendarEdits: true,
+        },
+        onUpdateSelfPrivacy: () => {},
+        roster: [
+          {
+            id: 'ath-view',
+            name: 'Jordan Pace',
+            avatarInitials: 'JP',
+            location: 'San Jose, CA',
+            stravaAthleteId: '99123',
+            inviteCode: 'THR-JP1',
+            role: 'FRIEND_VIEW',
+            status: 'CONNECTED',
+            primaryGoalSummary: '5000m Track Build',
+            primarySport: 'Running',
+            athleteProfile: demo.athleteProfile,
+            privacySettings: {
+              sharePmcAndZones: 'ALL_CONNECTIONS',
+              shareWellnessAndHrv: 'PRIVATE',
+              shareGpsRoutes: 'PRIVATE',
+              stravaComplianceShield: true,
+              allowCoachCalendarEdits: false,
+            },
+            wellnessDays: [],
+            activities: [],
+            plannedEvents: [],
+            targetGoals: [],
+          },
+        ],
+        activeAthleteId: 'SELF',
+        onSelectAthleteViewport: () => {},
+        onApproveRequest: () => {},
+        onRemoveOrDeclineAthlete: () => {},
+        onToggleAthleteRole: () => {},
+        onAddFollowByInviteOrName: () => {},
+        onPushCoachWorkout: () => {},
+        distanceUnit: 'mi',
+        myTeams: [],
+        onOpenCoachWorkspace: () => {},
+        onOpenFullScreenStopwatch: () => {},
+      })
     );
 
-    expect(modalSource).toContain("type VisibleConnectionsTab = 'CONNECT_INVITE' | 'PRIVACY_SHIELD'");
-    expect(modalSource).toContain("const order: VisibleConnectionsTab[] = ['CONNECT_INVITE', 'PRIVACY_SHIELD']");
-    expect(modalSource).toContain('Open THRESH Coach Desk');
-    expect(modalSource).toContain('data-testid="roster-open-stopwatch-btn"');
-    expect(modalSource).toContain('Teammate (View Only)');
-    expect(modalSource).toContain('Shield Active');
-    expect(modalSource).toContain('onOpenCoachWorkspace');
+    expect(modalHtml).toContain('Open THRESH Coach Desk');
+    expect(modalHtml).toContain('data-testid="roster-open-stopwatch-btn"');
+    expect(modalHtml).toContain('Teammate (View Only)');
+    expect(modalHtml).toContain('Connections (1)');
+    expect(modalHtml).toContain('Privacy Shield');
+    expect(modalHtml).not.toContain('Teams &amp; Branding');
+    expect(modalHtml).not.toContain('Scholastic Coach');
+    expect(modalHtml).not.toContain('Trackside Split Pad');
 
-    // Duplicated Team Creation / Coach Triage / VDOT Pods tabs must stay removed from the modal UI
-    expect(modalSource).not.toContain("activeTab === 'TEAMS_BRANDING'");
-    expect(modalSource).not.toContain("activeTab === 'SCHOLASTIC_COACH'");
-    expect(modalSource).not.toContain("activeTab === 'TRACKSIDE_PAD'");
+    const privacyHtml = renderToStaticMarkup(
+      React.createElement(AthleteRosterModal, {
+        isOpen: true,
+        onClose: () => {},
+        initialTab: 'PRIVACY_SHIELD',
+        selfName: 'Sample Athlete',
+        selfInviteCode: 'THR-TEST',
+        selfCtl: 54,
+        selfAtl: 52,
+        selfTsb: 2,
+        selfHrv: 72,
+        selfProfile: demo.athleteProfile,
+        selfPrivacySettings: {
+          sharePmcAndZones: 'ALL_CONNECTIONS',
+          shareWellnessAndHrv: 'COACHES_ONLY',
+          shareGpsRoutes: 'COACHES_ONLY',
+          stravaComplianceShield: true,
+          allowCoachCalendarEdits: true,
+        },
+        onUpdateSelfPrivacy: () => {},
+        roster: [],
+        activeAthleteId: 'SELF',
+        onSelectAthleteViewport: () => {},
+        onApproveRequest: () => {},
+        onRemoveOrDeclineAthlete: () => {},
+        onToggleAthleteRole: () => {},
+        onAddFollowByInviteOrName: () => {},
+        onPushCoachWorkout: () => {},
+        distanceUnit: 'mi',
+        myTeams: [],
+      })
+    );
+    expect(privacyHtml).toContain('Shield Active');
   });
 
-  it('keeps advanced branding and safeguarding collapsed by default when creating a team', () => {
-    const panelSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/components/TeamManagementPanel.tsx'),
-      'utf8'
+  it('keeps advanced branding and safeguarding collapsed by default when opening team creation studio', () => {
+    const panelHtml = renderToStaticMarkup(
+      React.createElement(TeamManagementPanel, {
+        selfName: 'Coach Morales',
+        myTeams: [],
+        activeTeamId: null,
+        resendConfigured: false,
+        initialShowCreateStudio: true,
+        onSelectActiveTeam: () => {},
+        onTeamsUpdated: () => {},
+      })
     );
 
-    expect(panelSource).toContain(
-      'const [showAdvancedBranding, setShowAdvancedBranding] = useState<boolean>(false);'
-    );
-    expect(panelSource).toContain('data-testid="team-toggle-advanced-branding"');
-    expect(panelSource).toContain('aria-expanded={showAdvancedBranding}');
+    expect(panelHtml).toContain('data-testid="team-studio-form"');
+    expect(panelHtml).toContain('data-testid="team-toggle-advanced-branding"');
+    expect(panelHtml).toMatch(/data-testid="team-toggle-advanced-branding"[^>]*aria-expanded="false"/);
   });
 
   it('ships complete 5-chapter illustrated Coach User Guide with all 7 verified figures and zero forbidden filenames', () => {

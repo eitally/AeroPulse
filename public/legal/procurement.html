@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THRESH — District, School &amp; NCAA Procurement Pack</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
+  <link rel="stylesheet" href="/legal/legal.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('thresh_theme_dark');
+        var variant = localStorage.getItem('thresh_theme_variant');
+        var isDark =
+          saved === '1'
+            ? true
+            : saved === '0'
+              ? false
+              : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+        document.documentElement.classList.toggle('theme-slate', Boolean(isDark && variant === 'slate'));
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="legal-header">
+    <a class="legal-brand" href="/" aria-label="THRESH Home">
+      <img class="doc-logo-light" src="/brand/thresh-lockup-light-2x.png" alt="THRESH" width="122" height="32" />
+      <img class="doc-logo-dark" src="/brand/thresh-lockup-dark-2x.png" alt="THRESH" width="122" height="32" />
+      <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Procurement &amp; DPA</span>
+    </a>
+    <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/privacy">Privacy</a>
+      <a class="legal-nav-link" href="/terms">Terms</a>
+      <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
+      <a class="legal-nav-link" href="/procurement" aria-current="page">District &amp; NCAA Pack</a>
+      <button type="button" class="legal-btn" id="legalThemeBtn">Theme</button>
+      <a class="legal-btn legal-btn-primary" href="/">Open THRESH</a>
+    </nav>
+  </header>
+
+  <main id="main-content" tabindex="-1" class="legal-shell">
+    <section class="legal-hero">
+      <div class="legal-kicker">SCHOOL DISTRICT, AD &amp; NCAA PROCUREMENT PACK</div>
+      <h1>CA SDPC NDPA, FERPA Addendum, HECVAT Lite &amp; PO Pricing</h1>
+      <p class="legal-meta">Prepared for District IT Directors, Athletic Directors, Compliance Officers, and University Procurement Teams.</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>1. California SDPC NDPA &amp; FERPA School Official Addendum</h2>
+      <ul>
+        <li><strong>California AB-1584 (Ed Code § 49073.1) &amp; SOPIPA Commitment:</strong> THRESH acts strictly as a FERPA &ldquo;School Official&rdquo; for institutional rosters. Student data remains District-owned, is prohibited from sale or behavioral ad targeting, and is erased upon District request or graduation transfer.</li>
+        <li><strong>U18 &amp; High School Safeguards Enforced in Code:</strong> COPPA <code>&lt;13</code> hard rejection, mandatory parent/guardian consent &amp; quarantine for ages 13–17 and <code>HIGH_SCHOOL</code> squads, immutable minor DOB, Safe-Sport body-weight suppression locked ON, AI Coach default-disabled for minors, and mandatory Guardian CC on youth workout comments.</li>
+        <li><strong>RBAC Separation of Duties:</strong> Dedicated <code>ORG_ADMIN</code> (AD / District IT governance + immutable audit log access) and <code>ATHLETIC_TRAINER</code> (sports-medicine triage visibility without unauthorized workout prescribing) alongside <code>HEAD_COACH</code> and <code>ASSISTANT_COACH</code>.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. HECVAT Lite — Security &amp; Architecture Attestation</h2>
+      <div class="legal-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Control Domain</th>
+              <th>THRESH Implementation</th>
+              <th>Verification Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Authentication &amp; WebAuthn</td>
+              <td><code>@simplewebauthn/server</code> cryptographic COSE signature + replay check; HMAC-SHA256 sessions; Google OAuth &amp; Magic Link fail-closed (no prod previewUrl leak)</td>
+              <td>Verified in automated CI security tests</td>
+            </tr>
+            <tr>
+              <td>Encryption at Rest &amp; Transit</td>
+              <td>AES-256-GCM per-tenant vault envelopes; SHA-256 hashed consent/invite/OTP tokens; strict TLS <code>rejectUnauthorized: true</code> Postgres connections</td>
+              <td>Active in API server &amp; Neon driver</td>
+            </tr>
+            <tr>
+              <td>Concurrency &amp; Auditability</td>
+              <td>Normalized Postgres <code>thresh_teams</code>, <code>thresh_team_members</code> row locks + append-only <code>thresh_audit_log</code> queryable by <code>HEAD_COACH</code> / <code>ORG_ADMIN</code></td>
+              <td>Active across team governance endpoints</td>
+            </tr>
+            <tr>
+              <td>AI &amp; Strava Firewall</td>
+              <td>Server-side allowlist firewall stripping 100% of Strava payloads &amp; minor weights prior to optional adult-only Gemini calls</td>
+              <td>Unit &amp; integration tested</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. Transparent Institutional &amp; Individual Pricing</h2>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">INDIVIDUAL ATHLETES &amp; PARENTS</span>
+          <div class="price-value">$0 / yr</div>
+          <p>Free forever for solo runners/cyclists and verified <code>PARENT_FOLLOWER</code> accounts.</p>
+        </div>
+        <div class="price-card">
+          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">HIGH SCHOOL PROGRAM</span>
+          <div class="price-value">$250 / yr</div>
+          <p>Flat per school, unlimited XC/Track athletes, watchless Stopwatch, Guardian Hub &amp; PO/ASB invoice.</p>
+        </div>
+        <div class="price-card">
+          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">COLLEGIATE / NCAA PROGRAM</span>
+          <div class="price-value">$1,200 / yr</div>
+          <p>Combined M+W roster, TFRRS sync, NCAA Bylaw 17.1 CARA tracking, Sports Med AT role &amp; HECVAT pack.</p>
+        </div>
+        <div class="price-card">
+          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">CLUB / DISTRICT MULTI-SCHOOL</span>
+          <div class="price-value">$49/mo · $2,000/yr</div>
+          <p>Club Coach ($49/mo up to 25 athletes) or District-wide PO license ($2,000/yr) with CA NDPA execution.</p>
+        </div>
+      </div>
+      <div class="legal-callout" style="margin-top:1rem;">
+        <p><strong>Purchase Orders, Signed CA NDPA &amp; W-9 Requests:</strong> Email <a href="mailto:procurement@thresh.app">procurement@thresh.app</a> with your District/University name, billing contact, and tax-exempt or PO form to receive a countersigned California SDPC NDPA, IRS Form W-9, and Net-30 invoice within 1 business day.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="legal-footer">
+    <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+    <div>
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/subprocessors">Subprocessors</a> · <a href="/procurement">Procurement</a> · <a href="/docs/">Docs</a>
+    </div>
+  </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById('legalThemeBtn');
+      if (!btn) return;
+      function syncLabel() {
+        var dark = document.documentElement.classList.contains('dark');
+        var slate = document.documentElement.classList.contains('theme-slate');
+        btn.textContent = dark ? (slate ? 'Slate Dark' : 'Pine Dark') : 'Chalk Light';
+      }
+      syncLabel();
+      btn.addEventListener('click', function () {
+        var nextDark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', nextDark);
+        try { localStorage.setItem('thresh_theme_dark', nextDark ? '1' : '0'); } catch (e) {}
+        syncLabel();
+      });
+    })();
+  </script>
+</body>
+</html>

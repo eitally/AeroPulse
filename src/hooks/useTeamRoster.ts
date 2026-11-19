@@ -60,7 +60,9 @@ export function buildMergedTeamBroadcastEvents(
   for (const teamSource of sourceTeams) {
     if (!Array.isArray(teamSource.broadcastWorkouts)) continue;
     const isTeamCoach =
-      teamSource.myRole === 'HEAD_COACH' || teamSource.myRole === 'ASSISTANT_COACH';
+      teamSource.myRole === 'HEAD_COACH' ||
+      teamSource.myRole === 'ASSISTANT_COACH' ||
+      teamSource.myRole === 'ORG_ADMIN';
     for (const bw of teamSource.broadcastWorkouts) {
       if (!bw || seenIds.has(bw.broadcastId)) continue;
       if (!isTeamCoach) {
@@ -132,8 +134,15 @@ export function buildConnectedRosterFromTeam(
   team: TeamSummaryWithRole | null
 ): ConnectedAthleteRecord[] {
   if (!team) return [];
-  const isCoach =
-    team.myRole === 'HEAD_COACH' || team.myRole === 'ASSISTANT_COACH';
+  const isStaffViewer =
+    team.myRole === 'HEAD_COACH' ||
+    team.myRole === 'ASSISTANT_COACH' ||
+    team.myRole === 'ORG_ADMIN' ||
+    team.myRole === 'ATHLETIC_TRAINER';
+  const isProgrammingCoach =
+    team.myRole === 'HEAD_COACH' ||
+    team.myRole === 'ASSISTANT_COACH' ||
+    team.myRole === 'ORG_ADMIN';
   const todayIso = getLocalDateIso();
 
   return team.memberships
@@ -142,19 +151,21 @@ export function buildConnectedRosterFromTeam(
         m.status === 'REVOKED' ||
         m.role === 'PARENT_FOLLOWER' ||
         m.role === 'HEAD_COACH' ||
-        m.role === 'ASSISTANT_COACH'
+        m.role === 'ASSISTANT_COACH' ||
+        m.role === 'ORG_ADMIN' ||
+        m.role === 'ATHLETIC_TRAINER'
       ) {
         return false;
       }
       if (m.membershipId === team.myMembershipId && team.myRole === 'ATHLETE') {
         return false;
       }
-      if (m.membershipId === team.myMembershipId && isCoach) {
+      if (m.membershipId === team.myMembershipId && isStaffViewer) {
         return false;
       }
       return (
         m.status === 'ACTIVE' ||
-        (isCoach && (m.status === 'INVITED' || m.status === 'OPENED')) ||
+        (isStaffViewer && (m.status === 'INVITED' || m.status === 'OPENED')) ||
         Boolean(m.externalSource) ||
         (Array.isArray(m.coachRecordedActivities) && m.coachRecordedActivities.length > 0)
       );
@@ -276,7 +287,7 @@ export function buildConnectedRosterFromTeam(
         teamMemberStatus: m.status,
         isMinorU18: m.isMinorU18,
         ...(m.genderDivision ? { genderDivision: m.genderDivision } : {}),
-        role: isCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
+        role: isProgrammingCoach ? 'COACH_EDIT' : 'FRIEND_VIEW',
         status: 'CONNECTED',
         connectedSince: (m.joinedAt || m.invitedAt).slice(0, 10),
         primaryGoalSummary: snap?.verdictLabel || `${m.squadGroup} Roster`,
@@ -286,7 +297,7 @@ export function buildConnectedRosterFromTeam(
           shareWellnessAndHrv:
             m.sharingTier === 'LOAD_ONLY'
               ? 'PRIVATE'
-              : isCoach
+              : isStaffViewer
                 ? 'ALL_CONNECTIONS'
                 : 'COACHES_ONLY',
           shareGpsRoutes: m.sharingTier === 'FULL_STREAMS' ? 'COACHES_ONLY' : 'PRIVATE',

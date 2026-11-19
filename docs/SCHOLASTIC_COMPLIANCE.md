@@ -1,66 +1,47 @@
 # THRESH Scholastic Youth Privacy & Safe Sport Compliance Framework
 
-**Version:** 2.1 (Scholastic Release)  
-**Applicability:** High School, Middle School, Junior Development Clubs, and Collegiate Programs  
-**Statutory Scope:** COPPA (15 U.S.C. §§ 6501–6506), FERPA (34 CFR Part 99), Protecting Young Victims from Sexual Abuse and Safe Sport Authorization Act of 2017 (36 U.S.C. §§ 220541–220543), California Age-Appropriate Design Code Act (AB 2273).
+**Version:** 2.4 (Youth Safeguarding & Procurement Pack)  
+**Applicability:** High School, Middle School (`<13` Watchless Only), Junior Development Clubs, and Collegiate Programs  
+**Statutory & Policy Scope:** COPPA (15 U.S.C. §§ 6501–6506, Under-13 Hard Block), FERPA (34 CFR Part 99 School Official Addendum), SOPIPA (Cal. Bus. & Prof. Code §§ 22584–22585), California AB-1584 (Cal. Ed. Code § 49073.1), and U.S. Center for SafeSport MAAPP (36 U.S.C. §§ 220541–220543).
+
+> **Procurement Pack & Legal Links:** [`/procurement`](/procurement) (CA SDPC NDPA, HECVAT Lite & PO Pricing) · [`/privacy`](/privacy) · [`/subprocessors`](/subprocessors)
 
 ---
 
-## 1. Architectural Safeguards for Minor Athletes (< 18)
+## 1. COPPA Under-13 Block & Minor Safeguards (Ages 13–17 / High School)
 
-### Closed-Roster Onboarding Gate
-1. **No Standalone Minor Registration:**
-   - Minor student-athletes cannot create standalone unmanaged accounts in THRESH.
-   - Any athlete indicating age < 18 or birth year within 18 years of current calendar year must join through a certified school or club athletic team via a 6-character Join Code or coach roster invite.
-2. **Coach-Initiated Roster Import:**
-   - Head coaches create the team container (`HIGH_SCHOOL` or `COACH_SQUAD`) and upload roster information (First Name, Last Name, Athlete Email, Squad Pod, Parent/Guardian Email, Graduation/Birth Year).
-   - The team serves as the protective legal boundary under school athletic sponsorship.
-
----
-
-## 2. Children's Online Privacy Protection Act (COPPA) Compliance
-
-### Verifiable Parent / Guardian Acknowledgment
-1. **Notice at Enrollment:**
-   - When a student-athlete claims their roster spot, THRESH collects or confirms `parentGuardianEmail`.
-   - An automated, branded notification is dispatched to the parent/guardian via Resend containing:
-     - Identity of the coach and school athletic team.
-     - Description of athletic telemetry collected (GPS coordinates, heart rate, pacing, power, cadence).
-     - Explicit disclosure that biometrics are shielded (Safe-Sport Weight Shield active).
-     - 1-click Acknowledgment link (`/api/teams/parent-consent?token=...`).
-2. **Consent State Tracking:**
-   - `parentConsentStatus`: `PENDING` | `ACKNOWLEDGED` | `NOT_REQUIRED` (adult athletes).
-   - Timestamp and verified token logged in encrypted tenant vault (`parentConsentAt`).
+### Closed-Roster Onboarding & Age Verification (`YYYY-MM`)
+1. **Under-13 Account Prohibition (COPPA):**
+   - Server and client age gates hard-block standalone or team account creation when age is `< 13` (coaches may time watchless trackside splits without creating child accounts).
+2. **Mandatory Parental Consent & Quarantine (Ages 13–17 & `HIGH_SCHOOL`):**
+   - Minor athletes (`13–17`) and `HIGH_SCHOOL` rosters require `parentGuardianEmail`, cannot bypass immutable minor `birthMonthYear` rules, and stay in Safe-Sport quarantine (`LOAD_ONLY` + Gemini AI disabled) until parental consent is acknowledged.
+3. **Zero Un-CC'd 1-on-1 Minor Messaging (SafeSport MAAPP):**
+   - Direct coach-to-minor `sms:` buttons are disabled and private un-CC&apos;d coach-to-minor workout comments are rejected with HTTP `403`. Every minor comment automatically enforces Guardian visibility and audit logging.
 
 ---
 
-## 3. Safe Sport & RED-S Eating Disorder Protection
+## 2. Verifiable Parent / Guardian Acknowledgment & Instant Revocation
 
-### Weight & W/kg Shielding
-1. **Automatic Enforcement:**
-   - All `HIGH_SCHOOL` rosters and athletes flagged `isMinorU18: true` have `safeSportHideWeight` enforced on server-side and client-side views.
-2. **Data Obfuscation:**
-   - Body weight (`kg` / `lbs`) and power-to-weight ratio (`W/kg`) are concealed from fellow teammates, public leaderboards, and coach roster cards.
-   - Absolute power (`Watts`), pace (`min/mi` or `min/km`), heart rate zones, and CTL/ATL load models remain calibrated underneath without triggering weight scrutiny or disordered eating triggers.
-
----
-
-## 4. Family Educational Rights and Privacy Act (FERPA) Alignment
-
-1. **School Official Exception:**
-   - THRESH functions as a school official / athletic vendor with legitimate educational interest in tracking student-athlete conditioning, academic stress balance, and injury risk prevention.
-2. **Zero Commercial Exploitation:**
-   - **Zero Advertising:** THRESH serves zero third-party ads.
-   - **Zero Data Broker Sales:** Student-athlete biometrics, GPS paths, and wellness survey responses are never monetized, rented, or transferred to third-party data brokers.
-   - **Local-First Clean-Room Firewall:** Telemetry stays within the tenant vault and browser Dexie storage. Fellow teammates only see squad names and sanitized activity summaries.
+1. **Hashed Consent Tokens & Two-Step Confirmation:**
+   - `parentConsentToken` values are stored exclusively as SHA-256 hashes at rest (`parentConsentTokenHash`) and are never returned to athlete browsers.
+   - `GET /api/teams/parent-consent` renders a non-mutating confirmation screen (safe from email-scanner prefetch links); explicit `POST` approves consent or triggers **Decline & Delete Child Data** to immediately revoke and clear minor team telemetry.
+2. **Guardian Safety Alerts:**
+   - Pain flags or high-strain safeguarding notices for minors trigger `GUARDIAN_SAFETY_ALERT` notifications and appear in the verified `PARENT_FOLLOWER` portal alongside official practice venues and schedule times.
 
 ---
 
-## 5. Scholastic Data Retention & Parental Rights
+## 3. Safe-Sport & RED-S Body-Weight Suppression
 
-1. **Parental Inspection:**
-   - Parents retain the legal right to review their child's training records upon request to the head coach or support team (`support@thresh.app`).
-2. **Deletion & Data Portability:**
-   - Upon graduation or athlete request, student-athletes or parents may export their entire workout history via JSON/CSV/FIT and request permanent deletion from school team tenant vaults.
-3. **Audit Trail:**
-   - NCAA CARA (Countable Athletically Related Activities) 20-hour weekly and 4-hour daily limits are audited in real time to prevent overtraining and athletic exploitation.
+- All `HIGH_SCHOOL` rosters and `isMinorU18: true` athletes lock `safeSportHideWeight` ON (`effectiveSafeSportHideWeight`) across team summaries, Wellness, Curves, Radar, Trends, and Profile views.
+- Pre-race caffeine dosing cues are automatically suppressed whenever `isMinorU18` or Safe-Sport weight suppression is active.
+
+---
+
+## 4. Governance RBAC, FERPA School Official Rights & Audit Log
+
+1. **Separated Staff Roles (`ORG_ADMIN`, `ATHLETIC_TRAINER`, Coaching Staff):**
+   - `HEAD_COACH` & `ASSISTANT_COACH` program workouts; `ATHLETIC_TRAINER` reviews Squad Triage and injury/safety alerts without modifying workout broadcasts; `ORG_ADMIN` administers District/AD compliance and reads immutable `thresh_audit_log` records.
+2. **Zero Ads & Zero Data Sales (SOPIPA / AB-1584 / FERPA):**
+   - Student data is never sold, rented, or used for advertising, and leaves `100%` of Strava payloads outside Google Gemini AI prompts.
+3. **Deletion, Portability & Automatic July 15 Graduation:**
+   - Parents or adult athletes (`18+` FERPA rights transfer) can export data or permanently delete accounts at any time, and graduating seniors roll over automatically to Alumni while retaining portable workout & stopwatch history.

@@ -33,6 +33,7 @@ import {
 import { getLocalDateIso } from '../src/physiology/stravaLoadCalibration.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import { assertSafeExternalFetch } from './securityUtils.ts';
+import { withTeamRowLock } from './tokenVault.ts';
 import {
   addTeamToUserIndex,
   findTeamDocumentByCodeOrSlug,
@@ -655,44 +656,54 @@ export async function followTeamAsParentOrFan(params: {
   callerSid: string;
   codeOrSlug: string;
   followerName?: string;
+  verifiedEmail?: string;
   originUrl: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole; error?: string }> {
-  const doc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
-  if (!doc) {
+  const initialDoc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
+  if (!initialDoc) {
     return { ok: false, error: 'Team not found for this code or URL.' };
   }
-  if (!doc.brand.externalSync?.enablePublicParentHub) {
-    return { ok: false, error: 'Public parent/supporter following is disabled for this team.' };
-  }
+  return withTeamRowLock(initialDoc.brand.teamId, async () => {
+    const doc = (await loadTeamDocRaw(initialDoc.brand.teamId)) || initialDoc;
+    if (!doc.brand.externalSync?.enablePublicParentHub) {
+      return { ok: false, error: 'Public parent/supporter following is disabled for this team.' };
+    }
 
-  let mem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (!mem) {
-    const nowIso = new Date().toISOString();
-    mem = {
-      membershipId: `mem_${crypto.randomBytes(6).toString('hex')}`,
-      teamId: doc.brand.teamId,
-      userSid: params.callerSid,
-      role: 'PARENT_FOLLOWER',
-      squadGroup: 'Parents & Supporters',
-      invitedName:
-        String(params.followerName || '').trim().slice(0, 48) || 'Parent / Supporter',
-      isMinorU18: false,
-      parentConsentStatus: 'NOT_REQUIRED',
-      status: 'ACTIVE',
-      invitedAt: nowIso,
-      openedAt: nowIso,
-      joinedAt: nowIso,
+    const cleanVerifiedEmail = params.verifiedEmail?.trim().toLowerCase();
+    let mem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (!mem) {
+      const nowIso = new Date().toISOString();
+      mem = {
+        membershipId: `mem_${crypto.randomBytes(6).toString('hex')}`,
+        teamId: doc.brand.teamId,
+        userSid: params.callerSid,
+        role: 'PARENT_FOLLOWER',
+        squadGroup: 'Parents & Supporters',
+        invitedName:
+          String(params.followerName || '').trim().slice(0, 48) || 'Parent / Supporter',
+        ...(cleanVerifiedEmail ? { invitedEmail: cleanVerifiedEmail } : {}),
+        isMinorU18: false,
+        parentConsentStatus: 'NOT_REQUIRED',
+        status: 'ACTIVE',
+        invitedAt: nowIso,
+        openedAt: nowIso,
+        joinedAt: nowIso,
+      };
+      doc.memberships.push(mem);
+      doc.updatedAt = nowIso;
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    } else if (cleanVerifiedEmail && mem.invitedEmail !== cleanVerifiedEmail) {
+      mem.invitedEmail = cleanVerifiedEmail;
+      doc.updatedAt = new Date().toISOString();
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    }
+
+    await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName, cleanVerifiedEmail);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)!,
     };
-    doc.memberships.push(mem);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(doc.brand.teamId, doc);
-  }
-
-  await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName);
-  return {
-    ok: true,
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)!,
-  };
+  });
 }

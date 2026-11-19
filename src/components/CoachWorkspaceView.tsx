@@ -269,8 +269,45 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     setTeamPlanError(null);
     const canBroadcastTeam =
       activeTeam &&
-      (activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ASSISTANT_COACH');
+      (activeTeam.myRole === 'HEAD_COACH' ||
+        activeTeam.myRole === 'ASSISTANT_COACH' ||
+        activeTeam.myRole === 'ORG_ADMIN');
     if (canBroadcastTeam && activeTeam) {
+      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+        const newBroadcast = {
+          broadcastId: `bw_demo_${Date.now()}`,
+          teamId: activeTeam.brand.teamId,
+          targetSquadGroup: 'ALL',
+          date: eventInput.date,
+          name: eventInput.name,
+          sportCategory: eventInput.sportCategory,
+          plannedDurationSecs: eventInput.plannedDurationSecs,
+          plannedLoad: eventInput.plannedLoad,
+          workoutSyntax: eventInput.workoutSyntax,
+          description: eventInput.description,
+          ...(eventInput.scheduledTime ? { scheduledTime: eventInput.scheduledTime } : {}),
+          ...(eventInput.sessionSlot ? { sessionSlot: eventInput.sessionSlot } : {}),
+          ...(eventInput.locationName ? { locationName: eventInput.locationName } : {}),
+          ...(eventInput.locationCategory
+            ? { locationCategory: eventInput.locationCategory }
+            : {}),
+          ...(eventInput.meetingNotes ? { meetingNotes: eventInput.meetingNotes } : {}),
+          ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
+          pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
+          createdAt: new Date().toISOString(),
+        };
+        const updatedTeam = {
+          ...activeTeam,
+          broadcastWorkouts: [...(activeTeam.broadcastWorkouts || []), newBroadcast],
+        };
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+          ),
+          updatedTeam.brand.teamId
+        );
+        return;
+      }
       try {
         const resp = await fetch(
           `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
@@ -587,6 +624,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </Suspense>
           </WorkspaceErrorBoundary>
 
+          {activeTeam?.brand?.orgType !== 'CYCLING_CLUB' &&
+            activeTeam?.brand?.primarySport !== 'Cycling' && (
           <div className="rounded-2xl liquid-glass overflow-hidden">
             <button
               type="button"
@@ -624,6 +663,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -714,6 +754,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               sessionCheckIns: selfSessionCheckIns,
             }}
             todayIso={todayIso}
+            activeTeam={activeTeam}
+            myTeams={myTeams}
+            isSampleDemoMode={isSampleDemoMode}
+            onTeamsUpdated={onTeamsUpdated}
+            primaryAthleteDisplayName={primaryAthleteDisplayName}
             onInspectAthlete={(athId) => {
               onSelectAthleteViewport(athId);
               onOpenAthleteToday();
@@ -745,7 +790,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </Suspense>
           </WorkspaceErrorBoundary>
 
-          {(!activeTeam || activeTeam.brand.orgType === 'COLLEGIATE') && (
+          {activeTeam?.brand?.orgType === 'COLLEGIATE' && (
           <section
             data-testid="coach-cara-audit"
             className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3"

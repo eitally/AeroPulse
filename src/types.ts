@@ -1294,7 +1294,75 @@ export type TeamOrgType =
   | 'CYCLING_CLUB'
   | 'COACH_SQUAD';
 
-export type TeamMemberRole = 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETE' | 'PARENT_FOLLOWER';
+export type TeamMemberRole =
+  | 'HEAD_COACH'
+  | 'ASSISTANT_COACH'
+  | 'ORG_ADMIN'
+  | 'ATHLETIC_TRAINER'
+  | 'ATHLETE'
+  | 'PARENT_FOLLOWER';
+
+export type TeamWorkoutLibraryCategory =
+  | 'TRACK'
+  | 'XC_TEMPO'
+  | 'ROAD'
+  | 'CYCLING'
+  | 'RECOVERY';
+
+export interface TeamWorkoutLibraryTemplate {
+  id: string;
+  name: string;
+  category: TeamWorkoutLibraryCategory;
+  sportCategory: SportCategory;
+  workoutSyntax: string;
+  description: string;
+  plannedDurationSecs: number;
+  plannedLoad: number;
+  trackSpec?: TrackWorkoutSpec;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface TeamWorkoutComment {
+  id: string;
+  teamId: string;
+  targetMembershipId: string;
+  targetAthleteName?: string;
+  activityId?: string;
+  workoutDate: string;
+  authorSid: string;
+  authorName: string;
+  authorRole: TeamMemberRole;
+  body: string;
+  guardianCcApplied: boolean;
+  guardianVisible: boolean;
+  createdAt: string;
+}
+
+export interface GuardianSafetyAlertRecord {
+  id: string;
+  teamId: string;
+  targetMembershipId: string;
+  athleteName: string;
+  sourceCheckInId?: string;
+  severity: 'CAUTION' | 'HIGH';
+  category: 'PAIN_FLAG' | 'HIGH_STRAIN' | 'SAFE_SPORT_WATCH';
+  summary: string;
+  painLocation?: string;
+  guardianEmailMasked?: string;
+  deliveryStatus: 'SENT' | 'LOCAL_LOGGED' | 'NO_GUARDIAN_ON_FILE';
+  createdAt: string;
+}
+
+export interface TeamAuditLogEntry {
+  eventId: string;
+  createdAt: string;
+  teamId: string;
+  actorSid: string;
+  action: string;
+  targetId?: string;
+  metadata: Record<string, unknown>;
+}
 
 export type TeamInviteStatus =
   | 'INVITED'
@@ -1535,6 +1603,9 @@ export interface TeamSummaryWithRole {
   watchConnectedCount: number;
   memberships: TeamMembershipRecord[];
   broadcastWorkouts: TeamBroadcastWorkout[];
+  workoutLibrary?: TeamWorkoutLibraryTemplate[];
+  workoutComments?: TeamWorkoutComment[];
+  guardianSafetyAlerts?: GuardianSafetyAlertRecord[];
 }
 
 export interface TeamInvitePreviewPayload {

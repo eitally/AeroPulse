@@ -501,7 +501,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const rosterInputs = useMemo<VdotPodRosterInput[]>(() => {
     const showSelf =
-      includeSelfRunner || (connectedRoster.length === 0 && extraPodAthletes.length === 0);
+      includeSelfRunner ||
+      (connectedRoster.length === 0 && extraPodAthletes.length === 0) ||
+      Boolean(athleteLapTimestampsSecs.SELF?.length);
     return [
       ...(showSelf
         ? [
@@ -596,30 +598,37 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const runnerPodLookup = useMemo(() => {
     const map = new Map<string, { podKey: string; targetLapSecs: number }>();
-    const useDirectCustomTarget =
+    const hasCustomTargetSplit =
       workoutPresetId === 'custom-plan' &&
       typeof customWorkoutSpec?.targetSplitSecs === 'number' &&
-      customWorkoutSpec.targetSplitSecs > 0 &&
-      rosterInputs.length <= 1;
+      customWorkoutSpec.targetSplitSecs > 0;
+    const directCustomSplitSecs = hasCustomTargetSplit
+      ? computeTrackEnvironmentSplitAdjustment({
+          baseTargetSplitSecs: customWorkoutSpec!.targetSplitSecs!,
+          repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
+          baseRestDurationSecs: restDurationSecs,
+          zoneCode: customWorkoutSpec?.zoneCode,
+          intensity: activeWorkoutPreset.intensity,
+          environment: environmentConditions,
+          isIntervalSession: true,
+        }).adjustedTargetSplitSecs
+      : null;
 
     for (const pod of vdotPods) {
       const podKey = pod.podName.split(' — ')[0] || pod.podName;
-      const splitSecs = useDirectCustomTarget
-        ? computeTrackEnvironmentSplitAdjustment({
-            baseTargetSplitSecs: customWorkoutSpec!.targetSplitSecs!,
-            repDistanceMeters: activeWorkoutPreset.repDistanceMeters,
-            baseRestDurationSecs: restDurationSecs,
-            zoneCode: customWorkoutSpec?.zoneCode,
-            intensity: activeWorkoutPreset.intensity,
-            environment: environmentConditions,
-            isIntervalSession: true,
-          }).adjustedTargetSplitSecs
-        : pod.targetRepSplitSecs ??
-          Number(
-            ((pod.targetPaceSecsPerKm / 1000) * activeWorkoutPreset.repDistanceMeters).toFixed(1)
-          );
+      const podSplitSecs =
+        hasCustomTargetSplit && rosterInputs.length <= 1 && directCustomSplitSecs !== null
+          ? directCustomSplitSecs
+          : pod.targetRepSplitSecs ??
+            Number(
+              ((pod.targetPaceSecsPerKm / 1000) * activeWorkoutPreset.repDistanceMeters).toFixed(1)
+            );
       for (const athlete of pod.athletes) {
-        map.set(athlete.id, { podKey, targetLapSecs: splitSecs });
+        const athleteTarget =
+          athlete.id === 'SELF' && directCustomSplitSecs !== null
+            ? directCustomSplitSecs
+            : podSplitSecs;
+        map.set(athlete.id, { podKey, targetLapSecs: athleteTarget });
       }
     }
     return map;

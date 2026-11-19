@@ -12,6 +12,7 @@ import {
   syncTeamIcsCalendar,
   updateTeamExternalSyncConfig,
 } from '../athleticSyncService.ts';
+import { getUserById } from '../authService.ts';
 import { listTeamsForUser } from '../teamService.ts';
 
 export const teamSyncRouter = express.Router();
@@ -187,10 +188,12 @@ teamSyncRouter.post('/api/teams/follow', async (req: Request, res: Response) => 
       sid = decodeAndVerifyToken(sessionToken)?.sid || '000000000000000000000000';
     }
     const originUrl = resolveSyncOrigin(req);
+    const verifiedUser = sid ? await getUserById(sid).catch(() => null) : null;
     const result = await followTeamAsParentOrFan({
       callerSid: sid,
       codeOrSlug: String(req.body?.codeOrSlug || ''),
       followerName: req.body?.followerName ? String(req.body.followerName) : undefined,
+      verifiedEmail: verifiedUser?.email,
       originUrl,
     });
     if (!result.ok || !result.summary) {

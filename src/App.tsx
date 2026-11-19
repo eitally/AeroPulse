@@ -445,8 +445,12 @@ export default function App() {
   const [sampleDemoConnectedAthletes, setSampleDemoConnectedAthletes] = useState<
     ConnectedAthleteRecord[]
   >(() => buildInitialConnectedAthletes());
-  const [sampleDemoTeams, setSampleDemoTeams] = useState<TeamSummaryWithRole[]>([]);
-  const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(null);
+  const [sampleDemoTeams, setSampleDemoTeams] = useState<TeamSummaryWithRole[]>(
+    () => sampleDemoDataset.demoTeams || []
+  );
+  const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(
+    () => sampleDemoDataset.demoTeams?.[0]?.brand.teamId || null
+  );
   const [sampleDemoExplicitPersonal, setSampleDemoExplicitPersonal] = useState(false);
 
   const resetSampleDemoEphemeralState = useCallback(
@@ -460,8 +464,8 @@ export default function App() {
       setSampleDemoTargetGoals(fresh.targetGoals);
       setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
       setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
-      setSampleDemoTeams([]);
-      setSampleDemoActiveTeamId(null);
+      setSampleDemoTeams(fresh.demoTeams || []);
+      setSampleDemoActiveTeamId(fresh.demoTeams?.[0]?.brand.teamId || null);
       setSampleDemoExplicitPersonal(false);
       setSelectedActivity(null);
       setActiveViewedAthleteId('SELF');
@@ -1817,10 +1821,15 @@ export default function App() {
               errorMessage={syncError}
               isDark={isDark}
               onToggleDark={toggleQuickLightDark}
-              onEnterSampleDemo={() => {
+              onEnterSampleDemo={(preferredRole) => {
                 resetSampleDemoEphemeralState({ clearDemoStopwatch: true });
                 setIsSampleDemoMode(true);
-                setActiveTab('fitness');
+                if (preferredRole === 'COACH') {
+                  setActiveTab('coach');
+                  setCoachSubTab('CLIPBOARD');
+                } else {
+                  setActiveTab('fitness');
+                }
               }}
               onImportBatchActivities={handleImportMultipleParsedActivities}
               existingActivities={activities}
