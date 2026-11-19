@@ -5,6 +5,7 @@ import type {
   TeamInviteStatus,
   TeamMemberRole,
   TeamSummaryWithRole,
+  UnifiedActivity,
 } from '../src/types.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import {
@@ -52,7 +53,7 @@ export async function leaveOrGraduateTeam(params: {
   mode: 'LEAVE' | 'GRADUATE_ALUMNI';
   originUrl: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const archiveQueue: { member: StoredMembershipInternal; activities: any[] }[] = [];
+  const archiveQueue: { member: StoredMembershipInternal; activities: UnifiedActivity[] }[] = [];
 
   const result = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -251,7 +252,7 @@ export async function updateMemberRosterLifecycleStatus(params: {
   status: Extract<TeamInviteStatus, 'ACTIVE' | 'INJURED' | 'OFF_SEASON' | 'ALUMNI' | 'REVOKED'>;
   originUrl: string;
 }): Promise<{ ok: boolean; summary?: TeamSummaryWithRole | null; error?: string }> {
-  let archiveTarget: { member: StoredMembershipInternal; activities: any[] } | null = null;
+  let archiveTarget: { member: StoredMembershipInternal; activities: UnifiedActivity[] } | null = null;
   let detachSid: string | undefined;
 
   const outcome = await withTeamRowLock(params.teamId, async () => {
@@ -314,7 +315,7 @@ export async function updateMemberRosterLifecycleStatus(params: {
   });
 
   if (archiveTarget) {
-    const item = archiveTarget as { member: StoredMembershipInternal; activities: any[] };
+    const item = archiveTarget as { member: StoredMembershipInternal; activities: UnifiedActivity[] };
     await archiveCoachActivitiesForMember(item.member, item.activities).catch(() => undefined);
   }
   if (detachSid) {
@@ -332,7 +333,7 @@ export async function graduateTeamClass(params: {
   graduationYear: number;
   originUrl: string;
 }): Promise<{ ok: boolean; graduatedCount: number; summary?: TeamSummaryWithRole | null; error?: string }> {
-  const archiveList: Array<{ member: StoredMembershipInternal; activities: any[]; sid?: string }> = [];
+  const archiveList: Array<{ member: StoredMembershipInternal; activities: UnifiedActivity[]; sid?: string }> = [];
 
   const res = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -501,7 +502,7 @@ export async function mergeDuplicateRosterMembers(params: {
     return { ok: false, error: 'Source and target roster rows must be different.' };
   }
 
-  let archiveTarget: { member: StoredMembershipInternal; activities: any[] } | null = null;
+  let archiveTarget: { member: StoredMembershipInternal; activities: UnifiedActivity[] } | null = null;
 
   const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -522,7 +523,7 @@ export async function mergeDuplicateRosterMembers(params: {
     );
     if (!source || !target) return { ok: false, error: 'Duplicate or target member not found.' };
 
-    const mergedActsMap = new Map<string, any>();
+    const mergedActsMap = new Map<string, UnifiedActivity>();
     for (const act of [
       ...(target.coachRecordedActivities || []),
       ...(source.coachRecordedActivities || []),
@@ -583,7 +584,7 @@ export async function mergeDuplicateRosterMembers(params: {
   });
 
   if (archiveTarget) {
-    const item = archiveTarget as { member: StoredMembershipInternal; activities: any[] };
+    const item = archiveTarget as { member: StoredMembershipInternal; activities: UnifiedActivity[] };
     await archiveCoachActivitiesForMember(item.member, item.activities).catch(() => undefined);
   }
   return outcome;

@@ -6,7 +6,7 @@
  */
 
 export function extractStravaId(
-  entity: Record<string, any> | null | undefined,
+  entity: Record<string, unknown> | null | undefined,
   strField = 'id_str',
   numField = 'id'
 ): string {
@@ -24,9 +24,9 @@ export function extractStravaId(
 
 export function strava64BitJsonReviver(
   _key: string,
-  value: any,
+  value: unknown,
   context?: { source?: string }
-): any {
+): unknown {
   if (
     typeof value === 'number' &&
     !Number.isSafeInteger(value) &&
@@ -38,22 +38,26 @@ export function strava64BitJsonReviver(
   return value;
 }
 
-export function parseStravaJson64Safe<T = any>(rawText: string): T {
+export function parseStravaJson64Safe<T = unknown>(rawText: string): T {
   return JSON.parse(
     rawText,
-    strava64BitJsonReviver as unknown as (this: any, key: string, value: any) => any
+    strava64BitJsonReviver as (this: unknown, key: string, value: unknown) => unknown
   ) as T;
 }
 
-export async function readStravaResponseJson<T = any>(resp: {
+export interface JsonFetchResponse<T = unknown> {
   text?: () => Promise<string>;
-  json: () => Promise<any>;
-}): Promise<T> {
+  json: () => Promise<T>;
+}
+
+export async function readStravaResponseJson<T = unknown>(
+  resp: JsonFetchResponse<T>
+): Promise<T> {
   if (typeof resp.text === 'function') {
     const raw = await resp.text();
     if (typeof raw === 'string' && raw.length > 0) {
       return parseStravaJson64Safe<T>(raw);
     }
   }
-  return (await resp.json()) as T;
+  return resp.json();
 }
