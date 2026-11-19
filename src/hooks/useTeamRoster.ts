@@ -12,6 +12,7 @@ import {
   buildCompleteAthleteProfile,
   mergeActivitiesNonDestructive,
 } from '../utils/telemetryStorage';
+import { overlayPendingStopwatchOutboxOnTeams } from '../utils/stopwatchTeamSync';
 
 interface UseTeamRosterParams {
   isSampleDemoMode: boolean;
@@ -153,6 +154,7 @@ export function buildConnectedRosterFromTeam(
       }
       return (
         m.status === 'ACTIVE' ||
+        (isCoach && (m.status === 'INVITED' || m.status === 'OPENED')) ||
         Boolean(m.externalSource) ||
         (Array.isArray(m.coachRecordedActivities) && m.coachRecordedActivities.length > 0)
       );
@@ -304,7 +306,7 @@ export function useTeamRoster({
       const raw = localStorage.getItem('thresh_my_teams_v1');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return overlayPendingStopwatchOutboxOnTeams(parsed);
       }
     } catch {
       // ignore
@@ -401,14 +403,15 @@ export function useTeamRoster({
           setResendConfigured(data.resendConfigured);
         }
         if (Array.isArray(data.teams)) {
-          setMyTeams(data.teams);
+          const teamsWithPending = overlayPendingStopwatchOutboxOnTeams(data.teams);
+          setMyTeams(teamsWithPending);
           try {
-            localStorage.setItem('thresh_my_teams_v1', JSON.stringify(data.teams));
+            localStorage.setItem('thresh_my_teams_v1', JSON.stringify(teamsWithPending));
           } catch {
             // ignore
           }
-          if (!activeTeamId && !isExplicitPersonalModeSaved() && data.teams.length > 0) {
-            handleSelectActiveTeam(data.teams[0].brand.teamId);
+          if (!activeTeamId && !isExplicitPersonalModeSaved() && teamsWithPending.length > 0) {
+            handleSelectActiveTeam(teamsWithPending[0].brand.teamId);
           }
         }
       } catch {
@@ -496,6 +499,7 @@ export function useTeamRoster({
     setActiveTeamId,
     activeTeam,
     explicitPersonalMode,
+    setExplicitPersonalMode,
     resendConfigured,
     pendingUrlJoinOffer,
     handleSelectActiveTeam,

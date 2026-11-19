@@ -254,7 +254,8 @@ export interface UnifiedActivity {
   stravaId?: string;
   wahooId?: string;
   polarId?: string;
-  startDateLocal: string; // ISO string
+  startDateLocal: string; // Local wall-clock ISO string YYYY-MM-DDTHH:mm:ss (no trailing Z)
+  startDateUtcMs?: number; // Canonical UTC epoch ms for timezone- & DST-safe dedup/fusion
   name: string;
   sportCategory: SportCategory;
   environment: ActivityEnvironment; // 'OUTDOOR' | 'INDOOR'

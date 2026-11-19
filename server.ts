@@ -26,6 +26,9 @@ async function startServer() {
 
   const publicPath = path.resolve(__dirname, 'public');
   app.use(express.static(publicPath));
+  app.get(['/docs', '/docs/'], (_req, res) => {
+    res.sendFile(path.join(publicPath, 'docs', 'index.html'));
+  });
 
   app.get('/manifest.webmanifest', (_req, res, next) => {
     const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');

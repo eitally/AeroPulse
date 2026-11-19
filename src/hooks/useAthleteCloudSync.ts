@@ -123,6 +123,19 @@ export function useAthleteCloudSync({
     setSampleDemoCheckIns([]);
   }, []);
 
+  const resetUserCloudSyncState = useCallback(() => {
+    hydratedIdentityRef.current = null;
+    skipNextSaveRef.current = false;
+    setSessionCheckIns([]);
+    setArchivedCoachActivities([]);
+    try {
+      localStorage.removeItem(CHECKINS_STORAGE_KEY);
+      localStorage.removeItem(CLOUD_UPDATED_AT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const handleRecordSessionCheckIn = useCallback(
     async (
       input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
@@ -545,5 +558,6 @@ export function useAthleteCloudSync({
     archivedCoachActivities,
     handleRecordSessionCheckIn,
     resetDemoSessionCheckIns,
+    resetUserCloudSyncState,
   };
 }

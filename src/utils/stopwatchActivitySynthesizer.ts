@@ -181,6 +181,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
   lapSplitsSecs: number[];
   dateIso?: string;
   startDateLocalIso?: string;
+  startDateUtcMs?: number;
   lane?: TrackLaneNumber;
   footwearClass?: TrackFootwearClass;
   trackFacility?: NcaaTrackFacilityType;
@@ -201,6 +202,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
     lapSplitsSecs,
     dateIso,
     startDateLocalIso,
+    startDateUtcMs,
     lane = 1,
     footwearClass = 'DAILY_TRAINER',
     trackFacility = 'OUTDOOR_400M',
@@ -341,6 +343,9 @@ export function synthesizeTracksideWorkoutActivity(params: {
   return {
     id: activityId,
     startDateLocal: resolvedStartDateLocal,
+    ...(typeof startDateUtcMs === 'number' && Number.isFinite(startDateUtcMs) && startDateUtcMs > 0
+      ? { startDateUtcMs }
+      : {}),
     name: `${titlePrefix} (${formatTrackMark(avgLapSecs, 2)} avg · ${runnerName})`,
     sportCategory: 'Running',
     environment,
@@ -661,6 +666,7 @@ export function synthesizeTracksideRaceActivity(params: {
   includeWarmupCooldown?: boolean;
   dateIso?: string;
   startDateLocalIso?: string;
+  startDateUtcMs?: number;
   lane?: TrackLaneNumber;
 }): UnifiedActivity {
   const {
@@ -678,6 +684,7 @@ export function synthesizeTracksideRaceActivity(params: {
     includeWarmupCooldown = true,
     dateIso,
     startDateLocalIso,
+    startDateUtcMs,
     lane = 1,
   } = params;
 
@@ -716,6 +723,9 @@ export function synthesizeTracksideRaceActivity(params: {
 
   return {
     ...synthesized,
+    ...(typeof startDateUtcMs === 'number' && Number.isFinite(startDateUtcMs) && startDateUtcMs > 0
+      ? { startDateUtcMs }
+      : {}),
     stopwatchFusionMeta: {
       stopwatchActivityId: raceId,
       lapSplitsSecs: lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0).map((s) => Number(s.toFixed(2))),

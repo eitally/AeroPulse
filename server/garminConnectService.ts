@@ -13,6 +13,10 @@ import {
   computeStravaActivityLoadV2,
   isEBikeActivityText,
 } from '../src/physiology/stravaLoadCalibration.ts';
+import {
+  normalizeActivityTimestamps,
+  stripTimezoneSuffix,
+} from '../src/utils/activityTimestamp.ts';
 
 export interface GarminSessionStore {
   personalApiKey?: string; // Official Garmin Connect Personal API Key (GCDC_...)
@@ -1608,14 +1612,20 @@ export function normalizeGarminPersonalApiActivities(
       ];
       const hasPowerZones = powerZones.some((s) => s > 0);
 
-      const startDateLocal = String(a.startTimeLocal || a.startTimeGMT || '')
-        .trim()
-        .replace(' ', 'T');
-
       const startLatLng: [number, number] | undefined =
         Math.abs(startLat) > 0.01 && Math.abs(startLng) > 0.01
           ? [Number(startLat.toFixed(5)), Number(startLng.toFixed(5))]
           : undefined;
+      const garminTimestamps = normalizeActivityTimestamps({
+        startDateLocal: a.startTimeLocal
+          ? stripTimezoneSuffix(String(a.startTimeLocal).trim().replace(' ', 'T'))
+          : undefined,
+        startDateUtc: a.startTimeGMT
+          ? String(a.startTimeGMT).trim().replace(' ', 'T')
+          : undefined,
+        startLatLng,
+        fallbackBrowserTz: true,
+      });
       const endLat = Number(a.endLatitude ?? 0);
       const endLng = Number(a.endLongitude ?? 0);
       const endLatLng: [number, number] | undefined =
@@ -1626,7 +1636,10 @@ export function normalizeGarminPersonalApiActivities(
       return {
         id: `garmin-${id}`,
         garminId: id,
-        startDateLocal,
+        startDateLocal: garminTimestamps.startDateLocal,
+        ...(garminTimestamps.startDateUtcMs !== undefined
+          ? { startDateUtcMs: garminTimestamps.startDateUtcMs }
+          : {}),
         name,
         sportCategory,
         rawSportType: typeKey || undefined,

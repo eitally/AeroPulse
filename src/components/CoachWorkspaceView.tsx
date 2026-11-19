@@ -26,6 +26,10 @@ import { CalendarView } from './CalendarView';
 import { TeamManagementPanel } from './TeamManagementPanel';
 import { AthleticNetTfrrsSyncModal } from './AthleticNetTfrrsSyncModal';
 import { TracksideStopwatchView, type SavedStopwatchEntry } from './TracksideStopwatchView';
+import type {
+  StopwatchOutboxFlushResult,
+  StopwatchSaveResult,
+} from '../utils/stopwatchTeamSync';
 import { ScholasticRelayAndTopTimesPanel } from './track/ScholasticRelayAndTopTimesPanel';
 import { CoachClipboardWorkoutBuilder } from './CoachClipboardWorkoutBuilder';
 import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
@@ -119,7 +123,10 @@ export interface CoachWorkspaceViewProps {
   onOpenGoalsTab: () => void;
   onOpenOfficialRaceModal: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
-  onSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
+  onSaveStopwatchActivities: (
+    entries: SavedStopwatchEntry[]
+  ) => Promise<StopwatchSaveResult> | StopwatchSaveResult | number;
+  onFlushStopwatchOutbox?: () => Promise<StopwatchOutboxFlushResult>;
   onOpenAthleteToday: () => void;
   onOpenRosterModal: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
@@ -161,6 +168,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
   onSaveStopwatchActivities,
+  onFlushStopwatchOutbox,
   onOpenAthleteToday,
   onOpenRosterModal,
   onOpenPublicTeamHub,
@@ -582,6 +590,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           myTeams={myTeams}
           activeTeamId={activeTeamId}
           onSaveStopwatchActivities={onSaveStopwatchActivities}
+          onFlushStopwatchOutbox={onFlushStopwatchOutbox}
           onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
           postSaveActionLabel="View Team Plan"
           onOpenRosterModal={() => setSubTab('ROSTER')}

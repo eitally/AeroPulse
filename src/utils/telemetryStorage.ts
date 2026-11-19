@@ -13,6 +13,11 @@ import {
 } from '../types';
 import { fuseWearableStreamWithStopwatchSplits } from './stopwatchActivitySynthesizer';
 import {
+  areActivityTimestampsClose,
+  resolveActivityStartEpochMs,
+  stripTimezoneSuffix,
+} from './activityTimestamp';
+import {
   bulkUpsertActivitiesToDexie,
   db,
   getStoreMetadata,
@@ -1056,23 +1061,20 @@ export async function clearPersistedTelemetrySnapshot(): Promise<void> {
 
 /**
  * Finds an existing activity that matches a candidate activity within a time proximity window (default ±300s / 5 min)
- * and matching sport category to prevent duplicate ingestion across Strava, Garmin, Wahoo, and Intervals.icu.
+ * and matching sport category to prevent duplicate ingestion across Strava, Garmin, Wahoo, Polar, and Intervals.icu.
  */
 export function findMatchingActivityByProximity(
-  candidate: { startDateLocal?: string; sportCategory?: string },
+  candidate: { startDateLocal?: string; startDateUtcMs?: number; sportCategory?: string },
   existing: UnifiedActivity[],
   windowSecs = 300
 ): UnifiedActivity | undefined {
-  if (!candidate.startDateLocal) return undefined;
-  const candidateTimeMs = new Date(candidate.startDateLocal).getTime();
-  if (Number.isNaN(candidateTimeMs)) return undefined;
+  if (!candidate.startDateLocal && !(candidate.startDateUtcMs && candidate.startDateUtcMs > 0)) {
+    return undefined;
+  }
 
   for (const act of existing) {
     if (candidate.sportCategory && act.sportCategory !== candidate.sportCategory) continue;
-    const actTimeMs = new Date(act.startDateLocal).getTime();
-    if (Number.isNaN(actTimeMs)) continue;
-    const diffSecs = Math.abs(candidateTimeMs - actTimeMs) / 1000;
-    if (diffSecs <= windowSecs) {
+    if (areActivityTimestampsClose(candidate, act, windowSecs)) {
       return act;
     }
   }
@@ -1220,15 +1222,25 @@ function isStopwatchWearableSameSessionMatch(
   const bIsSw = isSyntheticStopwatchActivity(b);
   if (aIsSw === bIsSw) return false;
   if (a.sportCategory !== 'Running' || b.sportCategory !== 'Running') return false;
+  const stopwatchAct = aIsSw ? a : b;
+  const wearableAct = aIsSw ? b : a;
+  if (
+    typeof stopwatchAct.startDateUtcMs === 'number' &&
+    stopwatchAct.startDateUtcMs > 0 &&
+    typeof wearableAct.startDateUtcMs === 'number' &&
+    wearableAct.startDateUtcMs > 0
+  ) {
+    const deltaSecs = (stopwatchAct.startDateUtcMs - wearableAct.startDateUtcMs) / 1000;
+    return deltaSecs >= -2700 && deltaSecs <= 7200;
+  }
+
   if (!a.startDateLocal || !b.startDateLocal) return false;
 
-  // Must share the same local calendar date so overnight activities never collide
+  // Must share the same local calendar date so overnight activities never collide when UTC ms is unavailable
   if (String(a.startDateLocal).slice(0, 10) !== String(b.startDateLocal).slice(0, 10)) {
     return false;
   }
 
-  const stopwatchAct = aIsSw ? a : b;
-  const wearableAct = aIsSw ? b : a;
   const swMs = new Date(stopwatchAct.startDateLocal).getTime();
   const watchMs = new Date(wearableAct.startDateLocal).getTime();
   if (Number.isNaN(swMs) || Number.isNaN(watchMs)) return false;
@@ -1416,24 +1428,20 @@ export function mergeActivitiesNonDestructive(
         proximityMatchKey = existingAct.id;
         break;
       }
-      if (inc.startDateLocal && existingAct.startDateLocal) {
-        const incTimeMs = new Date(inc.startDateLocal).getTime();
-        const existingTimeMs = new Date(existingAct.startDateLocal).getTime();
-        if (!Number.isNaN(incTimeMs) && !Number.isNaN(existingTimeMs)) {
-          const sameSport = existingAct.sportCategory === inc.sportCategory;
-          const diffSecs = Math.abs(incTimeMs - existingTimeMs) / 1000;
-          const sameDurationClose =
-            Math.abs((existingAct.movingTimeSecs || 0) - (inc.movingTimeSecs || 0)) <= 180;
-          const hasMiscSportOverlap =
-            existingAct.sportCategory === 'Strength' ||
-            inc.sportCategory === 'Strength' ||
-            existingAct.sportCategory === 'Multisport' ||
-            inc.sportCategory === 'Multisport';
-          if ((sameSport && diffSecs <= 300) || (hasMiscSportOverlap && diffSecs <= 120 && sameDurationClose)) {
-            proximityMatchKey = existingAct.id;
-            break;
-          }
-        }
+      const sameSport = existingAct.sportCategory === inc.sportCategory;
+      const sameDurationClose =
+        Math.abs((existingAct.movingTimeSecs || 0) - (inc.movingTimeSecs || 0)) <= 180;
+      const hasMiscSportOverlap =
+        existingAct.sportCategory === 'Strength' ||
+        inc.sportCategory === 'Strength' ||
+        existingAct.sportCategory === 'Multisport' ||
+        inc.sportCategory === 'Multisport';
+      if (
+        (sameSport && areActivityTimestampsClose(existingAct, inc, 300)) ||
+        (hasMiscSportOverlap && sameDurationClose && areActivityTimestampsClose(existingAct, inc, 120))
+      ) {
+        proximityMatchKey = existingAct.id;
+        break;
       }
     }
 
@@ -1528,10 +1536,22 @@ export function mergeActivitiesNonDestructive(
           ? prev.stopwatchFusionMeta
           : inc.stopwatchFusionMeta || prev.stopwatchFusionMeta;
 
+    const prevLocalClean =
+      prev.startDateLocal && !/Z$/i.test(prev.startDateLocal) ? prev.startDateLocal : '';
+    const incLocalClean =
+      inc.startDateLocal && !/Z$/i.test(inc.startDateLocal) ? inc.startDateLocal : '';
+    const resolvedStartDateLocal = stripTimezoneSuffix(
+      incLocalClean || prevLocalClean || inc.startDateLocal || prev.startDateLocal
+    );
+
     const mergedRaw: UnifiedActivity = {
       ...prev,
       ...inc,
       id: canonicalId,
+      startDateLocal: resolvedStartDateLocal,
+      ...(inc.startDateUtcMs !== undefined || prev.startDateUtcMs !== undefined
+        ? { startDateUtcMs: inc.startDateUtcMs ?? prev.startDateUtcMs }
+        : {}),
       intervalsId: incIntervalId || prevIntId,
       stravaId: inc.stravaId || prev.stravaId,
       wahooId: inc.wahooId || prev.wahooId,
@@ -1632,7 +1652,7 @@ export function mergeActivitiesNonDestructive(
   }
 
   return Array.from(byId.values()).sort(
-    (a, b) => new Date(b.startDateLocal).getTime() - new Date(a.startDateLocal).getTime()
+    (a, b) => resolveActivityStartEpochMs(b) - resolveActivityStartEpochMs(a)
   );
 }
 
@@ -2170,8 +2190,8 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
     const mapTileApiKey = localStorage.getItem('aeropulse_map_tile_api_key') || '';
     const mapTileProvider = localStorage.getItem('aeropulse_map_tile_provider') || '';
     const geminiApiKey = localStorage.getItem('aeropulse_gemini_api_key') || '';
-    if (stravaClientId) setClean('x-strava-client-id', stravaClientId);
-    if (stravaClientSecret) setClean('x-strava-client-secret', stravaClientSecret);
+    if (stravaClientId && notLoggedOut) setClean('x-strava-client-id', stravaClientId);
+    if (stravaClientSecret && notLoggedOut) setClean('x-strava-client-secret', stravaClientSecret);
     if (stravaRefreshToken && notLoggedOut) setClean('x-strava-refresh-token', stravaRefreshToken);
     if (stravaAccessToken && notLoggedOut) setClean('x-strava-access-token', stravaAccessToken);
     if (stravaExpiresAt && notLoggedOut) setClean('x-strava-expires-at', stravaExpiresAt);
@@ -2182,9 +2202,9 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
         headers['x-strava-import-gear'] = savedPolicy.importProfileAndGear === false ? '0' : '1';
       }
     }
-    if (mapTileApiKey) setClean('x-map-tile-api-key', mapTileApiKey);
-    if (mapTileProvider) setClean('x-map-tile-provider', mapTileProvider);
-    if (geminiApiKey) setClean('x-gemini-api-key', geminiApiKey);
+    if (mapTileApiKey && notLoggedOut) setClean('x-map-tile-api-key', mapTileApiKey);
+    if (mapTileProvider && notLoggedOut) setClean('x-map-tile-provider', mapTileProvider);
+    if (geminiApiKey && notLoggedOut) setClean('x-gemini-api-key', geminiApiKey);
     const garminPersonalKey = localStorage.getItem('aeropulse_garmin_personal_api_key');
     const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token');
     const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token');

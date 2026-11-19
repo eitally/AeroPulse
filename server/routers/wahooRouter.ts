@@ -28,6 +28,12 @@ import {
   disconnectServiceFromUser,
 } from '../authService.ts';
 import { isGenericName } from '../physiologyEngine.ts';
+import {
+  normalizeActivityTimestamps,
+  parseClientTzOffsetMins,
+  parseIsoWithExplicitOffsetToUtcMs,
+  resolveIanaTimeZoneOffsetMinutes,
+} from '../../src/utils/activityTimestamp.ts';
 
 export const wahooRouter = Router();
 
@@ -545,16 +551,41 @@ wahooRouter.get('/api/wahoo/sync', async (req: Request, res: Response) => {
 
     const data = await resp.json();
     const rawWorkouts = Array.isArray(data) ? data : Array.isArray(data?.workouts) ? data.workouts : [];
+    const clientTzName = String(
+      req.headers['x-client-tz'] || req.query.tz || ''
+    ).trim();
+    const clientTzOffsetMins = parseClientTzOffsetMins(
+      req.headers['x-client-tz-offset-mins'] ?? req.query.tzOffsetMins
+    );
 
     const activities = rawWorkouts.map((w: any) => {
       const summary = w.workout_summary || {};
       const sport = w.workout_type_id === 2 ? 'Running' : 'Cycling';
       const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
       const isIndoor = /kickr|indoor|trainer/i.test(w.name || '');
+      const rawStartUtc = w.starts || new Date().toISOString();
+      const rawUtcMs = parseIsoWithExplicitOffsetToUtcMs(rawStartUtc) ?? Date.parse(rawStartUtc);
+      const resolvedOffsetMins =
+        (typeof w.timezone === 'string' && Number.isFinite(rawUtcMs)
+          ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, w.timezone)
+          : undefined) ??
+        (clientTzName && Number.isFinite(rawUtcMs)
+          ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, clientTzName)
+          : undefined) ??
+        clientTzOffsetMins;
+      const normalizedTimestamps = normalizeActivityTimestamps({
+        startDateUtc: rawStartUtc,
+        timeZoneOffsetMins: resolvedOffsetMins,
+        fallbackBrowserTz: true,
+      });
+
       return {
         id: `wahoo_${w.id}`,
         wahooId: String(w.id),
-        startDateLocal: w.starts || new Date().toISOString(),
+        startDateLocal: normalizedTimestamps.startDateLocal,
+        ...(normalizedTimestamps.startDateUtcMs !== undefined
+          ? { startDateUtcMs: normalizedTimestamps.startDateUtcMs }
+          : {}),
         name: w.name || 'Wahoo Workout',
         sportCategory: sport,
         environment: isIndoor ? 'INDOOR' : 'OUTDOOR',

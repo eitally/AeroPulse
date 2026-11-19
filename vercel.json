@@ -38,7 +38,15 @@
       "destination": "/api/index"
     },
     {
-      "source": "/((?!api/|auth/|assets/|docs/|.*\\..*).*)",
+      "source": "/docs",
+      "destination": "/docs/index.html"
+    },
+    {
+      "source": "/docs/",
+      "destination": "/docs/index.html"
+    },
+    {
+      "source": "/((?!api/|auth/|assets/|docs(?:/|$)|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

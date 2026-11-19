@@ -33,6 +33,10 @@ import {
   shiftIsoDate,
 } from '../../src/physiology/stravaLoadCalibration.ts';
 import { normalizeRawStravaActivity } from '../stravaSyncService.ts';
+import {
+  areActivityTimestampsClose,
+  resolveActivityStartEpochMs,
+} from '../../src/utils/activityTimestamp.ts';
 
 export const garminRouter = Router();
 
@@ -200,14 +204,15 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
     await saveSessionCacheAsync(req, res);
 
     const loadByDate = new Map<string, number>();
-    const garminTimestamps: number[] = [];
+    const garminActivitiesList: any[] = [];
     for (const a of normalizedActivities) {
       const d = String(a.startDateLocal || '').slice(0, 10);
       if (d) {
         loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
       }
-      const ts = new Date(a.startDateLocal || 0).getTime();
-      if (Number.isFinite(ts) && ts > 0) garminTimestamps.push(ts);
+      if (resolveActivityStartEpochMs(a) > 0) {
+        garminActivitiesList.push(a);
+      }
     }
 
     // Include non-duplicate cached Strava activities so pre-28d CTL warmup is accurate
@@ -222,12 +227,11 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
       restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52)),
     };
     for (const rawSa of sActs) {
-      if (!rawSa || !rawSa.start_date_local) continue;
+      if (!rawSa || (!rawSa.start_date_local && !rawSa.start_date)) continue;
       const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
-      const saTs = new Date(saNorm.startDateLocal || 0).getTime();
-      const isDup =
-        Number.isFinite(saTs) &&
-        garminTimestamps.some((gTs) => Math.abs(gTs - saTs) <= 300 * 1000);
+      const isDup = garminActivitiesList.some((gAct) =>
+        areActivityTimestampsClose(gAct, saNorm, 300)
+      );
       if (isDup) continue;
       const d = saNorm.startDateLocal.slice(0, 10);
       if (d) {

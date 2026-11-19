@@ -74,6 +74,10 @@
       font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       font-variant-numeric: tabular-nums;
     }
+    p code, li code, .step-card code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     header {
       position: sticky;
       top: 0;
@@ -218,6 +222,7 @@
       padding-bottom: 2.25rem;
       border-bottom: 1px solid var(--border-hairline);
       scroll-margin-top: 90px;
+      min-width: 0;
     }
     .doc-section:last-child { border-bottom: none; margin-bottom: 0; }
     h1 {
@@ -239,6 +244,7 @@
       font-size: 0.975rem;
       max-width: 70ch;
       margin-bottom: 0.85rem;
+      overflow-wrap: break-word;
     }
     ol, ul {
       padding-left: 1.35rem;
@@ -247,11 +253,11 @@
       max-width: 70ch;
       margin-bottom: 1rem;
     }
-    li { margin-bottom: 0.45rem; }
+    li { margin-bottom: 0.45rem; overflow-wrap: break-word; }
     li strong { color: var(--text-primary); }
     .step-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
       gap: 0.85rem;
       margin: 1rem 0 1.25rem;
     }
@@ -260,6 +266,8 @@
       border: 1px solid var(--border-hairline);
       border-radius: 12px;
       padding: 1rem;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
     .step-card h3 {
       font-size: 0.95rem;

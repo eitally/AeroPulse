@@ -80,6 +80,10 @@
       font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       font-variant-numeric: tabular-nums;
     }
+    p code, li code, .card code, td code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     header {
       position: sticky;
       top: 0;
@@ -346,6 +350,7 @@
       padding-bottom: 2.25rem;
       border-bottom: 1px solid var(--border-hairline);
       scroll-margin-top: 90px;
+      min-width: 0;
     }
     .doc-section:last-child {
       border-bottom: none;
@@ -377,6 +382,7 @@
       font-size: 1rem;
       max-width: 72ch;
       margin-bottom: 0.85rem;
+      overflow-wrap: break-word;
     }
     ul, ol {
       padding-left: 1.25rem;
@@ -385,11 +391,11 @@
       max-width: 72ch;
       margin-bottom: 1rem;
     }
-    li { margin-bottom: 0.4rem; }
+    li { margin-bottom: 0.4rem; overflow-wrap: break-word; }
     li strong { color: var(--text-primary); }
     .grid-2 {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
       gap: 1rem;
       margin: 1rem 0;
     }
@@ -398,6 +404,8 @@
       border: 1px solid var(--border-hairline);
       border-radius: 14px;
       padding: 1.15rem;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
     .formula-box {
       background: var(--code-bg);
@@ -405,6 +413,7 @@
       padding: 0.85rem 1rem;
       border-radius: 10px;
       font-size: 0.75rem;
+      max-width: 100%;
       overflow-x: auto;
       margin: 0.65rem 0 1rem;
       border: 1px solid var(--border-hairline);
@@ -412,6 +421,7 @@
     }
     .table-wrap {
       width: 100%;
+      max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       margin: 1rem 0 1.25rem;

@@ -27,6 +27,10 @@ import {
   disconnectServiceFromUser,
 } from '../authService.ts';
 import { isGenericName } from '../physiologyEngine.ts';
+import {
+  normalizeActivityTimestamps,
+  parseClientTzOffsetMins,
+} from '../../src/utils/activityTimestamp.ts';
 
 export const polarRouter = Router();
 
@@ -68,7 +72,8 @@ export function parsePolarDurationSecs(rawDuration: any): number {
 export function normalizePolarExercise(
   exercise: any,
   thresholdPaceSecsPerKm = 245,
-  lthr = 165
+  lthr = 165,
+  clientTzOffsetMins?: number
 ): Record<string, any> {
   const durationSecs = Math.max(
     1,
@@ -131,11 +136,25 @@ export function normalizePolarExercise(
 
   const avgPaceSecsPerKm =
     distanceMeters > 0 ? Math.round((durationSecs / distanceMeters) * 1000) : undefined;
+  const polarOffsetMins =
+    typeof exercise.start_time_utc_offset === 'number' &&
+    Number.isFinite(exercise.start_time_utc_offset)
+      ? Math.round(exercise.start_time_utc_offset)
+      : clientTzOffsetMins;
+  const polarTimestamps = normalizeActivityTimestamps({
+    startDateLocal: exercise.start_time || exercise.startTime || undefined,
+    startDateUtc: exercise.start_time_utc || exercise.startTimeUtc || undefined,
+    timeZoneOffsetMins: polarOffsetMins,
+    fallbackBrowserTz: true,
+  });
 
   return {
     id: `polar_${exercise.id}`,
     polarId: String(exercise.id),
-    startDateLocal: exercise.start_time || exercise.startTime || new Date().toISOString(),
+    startDateLocal: polarTimestamps.startDateLocal,
+    ...(polarTimestamps.startDateUtcMs !== undefined
+      ? { startDateUtcMs: polarTimestamps.startDateUtcMs }
+      : {}),
     name: exercise.title || exercise.name || (isRun ? 'Polar Run' : 'Polar Ride'),
     sportCategory,
     environment: isIndoor ? 'INDOOR' : 'OUTDOOR',
@@ -565,9 +584,12 @@ polarRouter.get('/api/polar/sync', async (req: Request, res: Response) => {
     const store = getScopedRuntimeStore(req);
     const athleteThresholdPace = 245;
     const athleteLthr = store.athleteLthr || 165;
+    const clientTzOffsetMins = parseClientTzOffsetMins(
+      req.headers['x-client-tz-offset-mins'] ?? req.query.tzOffsetMins
+    );
 
     const activities = rawExercises.map((ex: any) =>
-      normalizePolarExercise(ex, athleteThresholdPace, athleteLthr)
+      normalizePolarExercise(ex, athleteThresholdPace, athleteLthr, clientTzOffsetMins)
     );
 
     res.json({

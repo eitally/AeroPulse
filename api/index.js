@@ -1313,6 +1313,200 @@ function computeStravaActivityLoadV2(input) {
   return buildResult(hrs * 30, 0.55);
 }
 
+// src/utils/activityTimestamp.ts
+var HAS_EXPLICIT_TZ_SUFFIX_RE = /(Z|[+-]\d{2}:?\d{2})$/i;
+var WALL_CLOCK_PARTS_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/;
+function pad2(n) {
+  return String(Math.trunc(n)).padStart(2, "0");
+}
+function formatWallClockIsoFromUtcMs(utcMs, offsetMinutes) {
+  const safeOffsetMins = Number.isFinite(offsetMinutes) ? offsetMinutes : 0;
+  const shifted = new Date(utcMs + safeOffsetMins * 6e4);
+  return `${shifted.getUTCFullYear()}-${pad2(shifted.getUTCMonth() + 1)}-${pad2(
+    shifted.getUTCDate()
+  )}T${pad2(shifted.getUTCHours())}:${pad2(shifted.getUTCMinutes())}:${pad2(
+    shifted.getUTCSeconds()
+  )}`;
+}
+function formatLocalWallClockFromDate(date = /* @__PURE__ */ new Date()) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate()
+  )}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+function estimateUtcOffsetMinutesFromLon(lonDeg) {
+  if (!Number.isFinite(lonDeg) || lonDeg < -180 || lonDeg > 180) return 0;
+  const hours = Math.round(lonDeg / 15);
+  return Math.max(-720, Math.min(840, hours * 60));
+}
+function resolveIanaTimeZoneOffsetMinutes(utcMs, timeZone) {
+  if (!timeZone || typeof timeZone !== "string" || !Number.isFinite(utcMs)) {
+    return void 0;
+  }
+  const cleanTz = timeZone.trim();
+  if (!cleanTz) return void 0;
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: cleanTz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    });
+    const parts = formatter.formatToParts(new Date(utcMs));
+    const lookup = {};
+    for (const p of parts) {
+      if (p.type !== "literal") {
+        lookup[p.type] = Number(p.value);
+      }
+    }
+    if (!Number.isFinite(lookup.year) || !Number.isFinite(lookup.month) || !Number.isFinite(lookup.day) || !Number.isFinite(lookup.hour) || !Number.isFinite(lookup.minute) || !Number.isFinite(lookup.second)) {
+      return void 0;
+    }
+    const hourNorm = lookup.hour === 24 ? 0 : lookup.hour;
+    const asUtcMs = Date.UTC(
+      lookup.year,
+      lookup.month - 1,
+      lookup.day,
+      hourNorm,
+      lookup.minute,
+      lookup.second
+    );
+    const truncatedUtcMs = Math.floor(utcMs / 1e3) * 1e3;
+    const offsetMins = Math.round((asUtcMs - truncatedUtcMs) / 6e4);
+    return Math.max(-720, Math.min(840, offsetMins));
+  } catch {
+    return void 0;
+  }
+}
+function parseIsoWithExplicitOffsetToUtcMs(iso) {
+  if (typeof iso !== "string") return null;
+  const trimmed = iso.trim();
+  if (!trimmed || !HAS_EXPLICIT_TZ_SUFFIX_RE.test(trimmed)) return null;
+  const normalized = trimmed.includes(" ") && !trimmed.includes("T") ? trimmed.replace(" ", "T") : trimmed;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
+}
+function stripTimezoneSuffix(iso) {
+  const trimmed = String(iso || "").trim().replace(" ", "T");
+  const match = trimmed.match(WALL_CLOCK_PARTS_RE);
+  if (match) {
+    const [, y, m, d, hh = "00", mm = "00", ss = "00"] = match;
+    return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
+  }
+  return trimmed.replace(/\.\d+(?=(Z|[+-]\d{2}:?\d{2})?$)/i, "").replace(HAS_EXPLICIT_TZ_SUFFIX_RE, "");
+}
+function parseFloatingWallClockAsUtcMs(floatingIso) {
+  const match = stripTimezoneSuffix(floatingIso).match(WALL_CLOCK_PARTS_RE);
+  if (!match) return null;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const hh = Number(match[4] || 0);
+  const mm = Number(match[5] || 0);
+  const ss = Number(match[6] || 0);
+  const ms = Date.UTC(y, m - 1, d, hh, mm, ss);
+  return Number.isFinite(ms) ? ms : null;
+}
+function resolveExplicitOffsetMinutes(input) {
+  if (typeof input.timeZoneOffsetMins === "number" && Number.isFinite(input.timeZoneOffsetMins)) {
+    return Math.max(-720, Math.min(840, Math.round(input.timeZoneOffsetMins)));
+  }
+  if (typeof input.utcOffsetSecs === "number" && Number.isFinite(input.utcOffsetSecs)) {
+    return Math.max(-720, Math.min(840, Math.round(input.utcOffsetSecs / 60)));
+  }
+  return void 0;
+}
+function normalizeActivityTimestamps(input) {
+  const rawLocal = typeof input.startDateLocal === "string" ? input.startDateLocal.trim() : "";
+  const explicitOffsetMins = resolveExplicitOffsetMinutes(input);
+  const validLatLng = Array.isArray(input.startLatLng) && input.startLatLng.length >= 2 && Number.isFinite(input.startLatLng[1]) && Math.abs(input.startLatLng[0]) <= 90 && Math.abs(input.startLatLng[1]) <= 180 && (Math.abs(input.startLatLng[0]) > 0.01 || Math.abs(input.startLatLng[1]) > 0.01);
+  const localHasNonUtcOffset = /[+-]\d{2}:?\d{2}$/.test(rawLocal);
+  const localEndsWithZ = /Z$/i.test(rawLocal);
+  let resolvedUtcMs = typeof input.startDateUtcMs === "number" && Number.isFinite(input.startDateUtcMs) && input.startDateUtcMs > 0 ? Math.round(input.startDateUtcMs) : void 0;
+  if (resolvedUtcMs === void 0 && input.startDateUtc) {
+    const parsedUtc = parseIsoWithExplicitOffsetToUtcMs(
+      HAS_EXPLICIT_TZ_SUFFIX_RE.test(input.startDateUtc.trim()) ? input.startDateUtc : `${input.startDateUtc.trim().replace(" ", "T")}Z`
+    );
+    if (parsedUtc !== null) resolvedUtcMs = parsedUtc;
+  }
+  if (resolvedUtcMs === void 0 && rawLocal && HAS_EXPLICIT_TZ_SUFFIX_RE.test(rawLocal)) {
+    const parsedLocalOffset = parseIsoWithExplicitOffsetToUtcMs(rawLocal);
+    if (parsedLocalOffset !== null) resolvedUtcMs = parsedLocalOffset;
+  }
+  if (resolvedUtcMs === void 0 && rawLocal && !localEndsWithZ) {
+    const floatingUtcMs = parseFloatingWallClockAsUtcMs(rawLocal);
+    if (floatingUtcMs !== null) {
+      if (explicitOffsetMins !== void 0) {
+        resolvedUtcMs = floatingUtcMs - explicitOffsetMins * 6e4;
+      } else if (validLatLng) {
+        resolvedUtcMs = floatingUtcMs - estimateUtcOffsetMinutesFromLon(input.startLatLng[1]) * 6e4;
+      }
+    }
+  }
+  let resolvedLocal = "";
+  if (rawLocal && (localHasNonUtcOffset || !localEndsWithZ && rawLocal.length >= 10)) {
+    resolvedLocal = stripTimezoneSuffix(rawLocal);
+  } else if (resolvedUtcMs !== void 0) {
+    if (explicitOffsetMins !== void 0) {
+      resolvedLocal = formatWallClockIsoFromUtcMs(resolvedUtcMs, explicitOffsetMins);
+    } else if (validLatLng) {
+      resolvedLocal = formatWallClockIsoFromUtcMs(
+        resolvedUtcMs,
+        estimateUtcOffsetMinutesFromLon(input.startLatLng[1])
+      );
+    } else if (input.fallbackBrowserTz) {
+      resolvedLocal = formatLocalWallClockFromDate(new Date(resolvedUtcMs));
+    } else {
+      resolvedLocal = formatWallClockIsoFromUtcMs(resolvedUtcMs, 0);
+    }
+  } else if (rawLocal) {
+    resolvedLocal = stripTimezoneSuffix(rawLocal);
+  } else {
+    const nowMs = Date.now();
+    resolvedLocal = formatLocalWallClockFromDate(new Date(nowMs));
+    if (resolvedUtcMs === void 0) resolvedUtcMs = nowMs;
+  }
+  return {
+    startDateLocal: resolvedLocal,
+    ...resolvedUtcMs !== void 0 ? { startDateUtcMs: resolvedUtcMs } : {}
+  };
+}
+function resolveActivityStartEpochMs(act) {
+  if (!act) return 0;
+  if (typeof act.startDateUtcMs === "number" && Number.isFinite(act.startDateUtcMs) && act.startDateUtcMs > 0) {
+    return act.startDateUtcMs;
+  }
+  const parsed = act.startDateLocal ? Date.parse(act.startDateLocal) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function resolveComparableUtcMs(act) {
+  if (typeof act.startDateUtcMs === "number" && Number.isFinite(act.startDateUtcMs) && act.startDateUtcMs > 0) {
+    return act.startDateUtcMs;
+  }
+  return parseIsoWithExplicitOffsetToUtcMs(act.startDateLocal);
+}
+function areActivityTimestampsClose(a, b, windowSecs = 300) {
+  const utcA = resolveComparableUtcMs(a);
+  const utcB = resolveComparableUtcMs(b);
+  if (utcA !== null && utcB !== null) {
+    return Math.abs(utcA - utcB) / 1e3 <= windowSecs;
+  }
+  if (!a.startDateLocal || !b.startDateLocal) return false;
+  const parsedA = Date.parse(a.startDateLocal);
+  const parsedB = Date.parse(b.startDateLocal);
+  if (Number.isNaN(parsedA) || Number.isNaN(parsedB)) return false;
+  return Math.abs(parsedA - parsedB) / 1e3 <= windowSecs;
+}
+function parseClientTzOffsetMins(raw) {
+  if (raw === void 0 || raw === null || raw === "") return void 0;
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  if (!Number.isFinite(n) || n < -720 || n > 840) return void 0;
+  return Math.round(n);
+}
+
 // server/garminConnectService.ts
 var DEFAULT_GARMIN_OAUTH_KEY = process.env.GARMIN_CONSUMER_KEY || "";
 var DEFAULT_GARMIN_OAUTH_SECRET = process.env.GARMIN_CONSUMER_SECRET || "";
@@ -2383,15 +2577,21 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250, cal
       Math.round(Number(a.powerTimeInZone_7 ?? 0))
     ];
     const hasPowerZones = powerZones.some((s) => s > 0);
-    const startDateLocal = String(a.startTimeLocal || a.startTimeGMT || "").trim().replace(" ", "T");
     const startLatLng = Math.abs(startLat) > 0.01 && Math.abs(startLng) > 0.01 ? [Number(startLat.toFixed(5)), Number(startLng.toFixed(5))] : void 0;
+    const garminTimestamps = normalizeActivityTimestamps({
+      startDateLocal: a.startTimeLocal ? stripTimezoneSuffix(String(a.startTimeLocal).trim().replace(" ", "T")) : void 0,
+      startDateUtc: a.startTimeGMT ? String(a.startTimeGMT).trim().replace(" ", "T") : void 0,
+      startLatLng,
+      fallbackBrowserTz: true
+    });
     const endLat = Number(a.endLatitude ?? 0);
     const endLng = Number(a.endLongitude ?? 0);
     const endLatLng = Math.abs(endLat) > 0.01 && Math.abs(endLng) > 0.01 ? [Number(endLat.toFixed(5)), Number(endLng.toFixed(5))] : void 0;
     return {
       id: `garmin-${id}`,
       garminId: id,
-      startDateLocal,
+      startDateLocal: garminTimestamps.startDateLocal,
+      ...garminTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: garminTimestamps.startDateUtcMs } : {},
       name,
       sportCategory,
       rawSportType: typeKey || void 0,
@@ -4670,7 +4870,7 @@ function simulateCoursePacingAndFueling(input) {
         carbsGramsTarget: Math.round(carbsGramsPerHour * segHours),
         sodiumMgTarget: Math.round(sodiumMgPerHour * segHours),
         fluidMlTarget: Math.round(fluidMlPerHour * segHours),
-        coachingCue: i === 0 ? `Cap surges strictly at ${Math.round(targetWatts * 1.06)}W for the first 12 minutes to preserve W'.` : i === 2 ? `Crux climb (${segGradePct}% avg): hold ${targetWatts}W${hideWeightOrMinor ? "" : ` (${targetWkg} W/kg)`} seated at 85+ rpm.` : i === 3 ? `Entering deep work (${fatigueLabel}): take 1 gel + 200mL fluid before kilometer ${startKm}.` : `Empty remaining W' tank over the final ${(endKm - startKm).toFixed(1)} km.`
+        coachingCue: i === 0 ? `Cap surges strictly at ${Math.round(targetWatts * 1.06)}W for the first 12 minutes to preserve W'.` : i === 1 ? `Settle into steady aerodynamic rhythm at ${targetWatts}W${hideWeightOrMinor ? "" : ` (${targetWkg} W/kg)`} and begin fueling (${Math.max(15, Math.round(carbsGramsPerHour * segHours))}g carbs).` : i === 2 ? `Crux climb (${segGradePct}% avg): hold ${targetWatts}W${hideWeightOrMinor ? "" : ` (${targetWkg} W/kg)`} seated at 85+ rpm.` : i === 3 ? `Entering deep work (${fatigueLabel}): take 1 gel + 200mL fluid before kilometer ${startKm}.` : `Empty remaining W' tank over the final ${(endKm - startKm).toFixed(1)} km.`
       });
       totalTimeSecs += segSecs;
       weightedWattsSum += targetWatts * segSecs;
@@ -4698,7 +4898,7 @@ function simulateCoursePacingAndFueling(input) {
         carbsGramsTarget: Math.round(carbsGramsPerHour * segHours),
         sodiumMgTarget: Math.round(sodiumMgPerHour * segHours),
         fluidMlTarget: Math.round(fluidMlPerHour * segHours),
-        coachingCue: i === 0 ? "Bank zero seconds early \u2014 lock onto target GAP rhythm and protect glycogen stores." : i === 2 ? `Grade rises to ${segGradePct}%: shorten stride, keep cadence >=176 spm, and run by GAP effort.` : i === 3 ? `Passing ${fatigueLabel}: ingest ${Math.max(20, Math.round(carbsGramsPerHour * segHours))}g carbs before neuromuscular fade sets in.` : "Final segment: lift cadence +3 spm and empty remaining D' reserve to the line."
+        coachingCue: i === 0 ? "Bank zero seconds early \u2014 lock onto target GAP rhythm and protect glycogen stores." : i === 1 ? `Settle into relaxed cruise rhythm (${segGradePct >= 0 ? `+${segGradePct}%` : `${segGradePct}%`} avg grade) and stay ahead of fueling (${Math.max(15, Math.round(carbsGramsPerHour * segHours))}g carbs).` : i === 2 ? `Grade rises to ${segGradePct}%: shorten stride, keep cadence >=176 spm, and run by GAP effort.` : i === 3 ? `Passing ${fatigueLabel}: ingest ${Math.max(20, Math.round(carbsGramsPerHour * segHours))}g carbs before neuromuscular fade sets in.` : "Final segment: lift cadence +3 spm and empty remaining D' reserve to the line."
       });
       totalTimeSecs += segSecs;
       weightedPaceSum += targetPaceSecsPerKm * segDistKm;
@@ -13909,9 +14109,17 @@ function normalizeRawStravaActivity(a, calibration, options) {
   const decodedRoute = summaryPolyline ? decodeGooglePolyline(summaryPolyline) : void 0;
   const startLatLng = Array.isArray(a.start_latlng) && a.start_latlng.length === 2 ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])] : decodedRoute && decodedRoute.length > 0 ? decodedRoute[0] : void 0;
   const endLatLng = Array.isArray(a.end_latlng) && a.end_latlng.length === 2 ? [Number(a.end_latlng[0]), Number(a.end_latlng[1])] : decodedRoute && decodedRoute.length > 0 ? decodedRoute[decodedRoute.length - 1] : void 0;
+  const normalizedTimestamps = normalizeActivityTimestamps({
+    startDateLocal: a.start_date_local ? stripTimezoneSuffix(String(a.start_date_local)) : void 0,
+    startDateUtc: a.start_date ? String(a.start_date) : void 0,
+    utcOffsetSecs: typeof a.utc_offset === "number" && Number.isFinite(a.utc_offset) ? a.utc_offset : void 0,
+    startLatLng,
+    fallbackBrowserTz: true
+  });
   return {
     stravaId: activityStravaId,
-    startDateLocal: String(a.start_date_local || "").replace(/Z$/i, ""),
+    startDateLocal: normalizedTimestamps.startDateLocal,
+    ...normalizedTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: normalizedTimestamps.startDateUtcMs } : {},
     name: String(a.name || sportType || sportCategory),
     sportCategory,
     rawSportType: sportType || void 0,
@@ -16220,6 +16428,12 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
         ...a.source === "GARMIN_CONNECT" ? ["Garmin"] : a.source === "STRAVA" ? ["Strava"] : []
       ])
     );
+    const intervalsTimestamps = normalizeActivityTimestamps({
+      startDateLocal: a.start_date_local ? stripTimezoneSuffix(String(a.start_date_local)) : void 0,
+      startDateUtc: a.start_date ? String(a.start_date) : void 0,
+      startLatLng: Array.isArray(a.latlng) && a.latlng.length === 2 ? [Number(a.latlng[0]), Number(a.latlng[1])] : void 0,
+      fallbackBrowserTz: true
+    });
     return {
       id: String(a.id),
       intervalsId: String(a.id),
@@ -16230,7 +16444,8 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
       sourceBadges: intervalsSourceBadges,
       rawSportType: rawType || void 0,
       name: rawName || `${subType} ${sportCategory}`,
-      startDateLocal: String(a.start_date_local || "").replace(/Z$/i, ""),
+      startDateLocal: intervalsTimestamps.startDateLocal,
+      ...intervalsTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: intervalsTimestamps.startDateUtcMs } : {},
       sportCategory,
       environment: isIndoor ? "INDOOR" : "OUTDOOR",
       subType,
@@ -17642,15 +17857,30 @@ wahooRouter.get("/api/wahoo/sync", async (req, res) => {
     }
     const data = await resp.json();
     const rawWorkouts = Array.isArray(data) ? data : Array.isArray(data?.workouts) ? data.workouts : [];
+    const clientTzName = String(
+      req.headers["x-client-tz"] || req.query.tz || ""
+    ).trim();
+    const clientTzOffsetMins = parseClientTzOffsetMins(
+      req.headers["x-client-tz-offset-mins"] ?? req.query.tzOffsetMins
+    );
     const activities = rawWorkouts.map((w) => {
       const summary = w.workout_summary || {};
       const sport = w.workout_type_id === 2 ? "Running" : "Cycling";
       const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
       const isIndoor = /kickr|indoor|trainer/i.test(w.name || "");
+      const rawStartUtc = w.starts || (/* @__PURE__ */ new Date()).toISOString();
+      const rawUtcMs = parseIsoWithExplicitOffsetToUtcMs(rawStartUtc) ?? Date.parse(rawStartUtc);
+      const resolvedOffsetMins = (typeof w.timezone === "string" && Number.isFinite(rawUtcMs) ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, w.timezone) : void 0) ?? (clientTzName && Number.isFinite(rawUtcMs) ? resolveIanaTimeZoneOffsetMinutes(rawUtcMs, clientTzName) : void 0) ?? clientTzOffsetMins;
+      const normalizedTimestamps = normalizeActivityTimestamps({
+        startDateUtc: rawStartUtc,
+        timeZoneOffsetMins: resolvedOffsetMins,
+        fallbackBrowserTz: true
+      });
       return {
         id: `wahoo_${w.id}`,
         wahooId: String(w.id),
-        startDateLocal: w.starts || (/* @__PURE__ */ new Date()).toISOString(),
+        startDateLocal: normalizedTimestamps.startDateLocal,
+        ...normalizedTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: normalizedTimestamps.startDateUtcMs } : {},
         name: w.name || "Wahoo Workout",
         sportCategory: sport,
         environment: isIndoor ? "INDOOR" : "OUTDOOR",
@@ -17722,7 +17952,7 @@ function parsePolarDurationSecs(rawDuration) {
   const secs = Number(match[3] || 0);
   return Math.round(hours * 3600 + mins * 60 + secs);
 }
-function normalizePolarExercise(exercise, thresholdPaceSecsPerKm = 245, lthr = 165) {
+function normalizePolarExercise(exercise, thresholdPaceSecsPerKm = 245, lthr = 165, clientTzOffsetMins) {
   const durationSecs = Math.max(
     1,
     parsePolarDurationSecs(exercise.duration || exercise.duration_seconds || exercise.durationSecs)
@@ -17772,10 +18002,18 @@ function normalizePolarExercise(exercise, thresholdPaceSecsPerKm = 245, lthr = 1
     });
   }
   const avgPaceSecsPerKm = distanceMeters > 0 ? Math.round(durationSecs / distanceMeters * 1e3) : void 0;
+  const polarOffsetMins = typeof exercise.start_time_utc_offset === "number" && Number.isFinite(exercise.start_time_utc_offset) ? Math.round(exercise.start_time_utc_offset) : clientTzOffsetMins;
+  const polarTimestamps = normalizeActivityTimestamps({
+    startDateLocal: exercise.start_time || exercise.startTime || void 0,
+    startDateUtc: exercise.start_time_utc || exercise.startTimeUtc || void 0,
+    timeZoneOffsetMins: polarOffsetMins,
+    fallbackBrowserTz: true
+  });
   return {
     id: `polar_${exercise.id}`,
     polarId: String(exercise.id),
-    startDateLocal: exercise.start_time || exercise.startTime || (/* @__PURE__ */ new Date()).toISOString(),
+    startDateLocal: polarTimestamps.startDateLocal,
+    ...polarTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: polarTimestamps.startDateUtcMs } : {},
     name: exercise.title || exercise.name || (isRun ? "Polar Run" : "Polar Ride"),
     sportCategory,
     environment: isIndoor ? "INDOOR" : "OUTDOOR",
@@ -18148,8 +18386,11 @@ polarRouter.get("/api/polar/sync", async (req, res) => {
     const store = getScopedRuntimeStore(req);
     const athleteThresholdPace = 245;
     const athleteLthr = store.athleteLthr || 165;
+    const clientTzOffsetMins = parseClientTzOffsetMins(
+      req.headers["x-client-tz-offset-mins"] ?? req.query.tzOffsetMins
+    );
     const activities = rawExercises.map(
-      (ex) => normalizePolarExercise(ex, athleteThresholdPace, athleteLthr)
+      (ex) => normalizePolarExercise(ex, athleteThresholdPace, athleteLthr, clientTzOffsetMins)
     );
     res.json({
       ok: true,
@@ -19325,14 +19566,15 @@ garminRouter.get("/api/garmin/sync", async (req, res) => {
     runtimeStore.athleteProfile = syncedProfile;
     await saveSessionCacheAsync(req, res);
     const loadByDate = /* @__PURE__ */ new Map();
-    const garminTimestamps = [];
+    const garminActivitiesList = [];
     for (const a of normalizedActivities) {
       const d = String(a.startDateLocal || "").slice(0, 10);
       if (d) {
         loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
       }
-      const ts = new Date(a.startDateLocal || 0).getTime();
-      if (Number.isFinite(ts) && ts > 0) garminTimestamps.push(ts);
+      if (resolveActivityStartEpochMs(a) > 0) {
+        garminActivitiesList.push(a);
+      }
     }
     const stravaCal = {
       calibratedFtp: Math.max(120, syncedProfile.ftp || 250),
@@ -19345,10 +19587,11 @@ garminRouter.get("/api/garmin/sync", async (req, res) => {
       restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52))
     };
     for (const rawSa of sActs) {
-      if (!rawSa || !rawSa.start_date_local) continue;
+      if (!rawSa || !rawSa.start_date_local && !rawSa.start_date) continue;
       const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
-      const saTs = new Date(saNorm.startDateLocal || 0).getTime();
-      const isDup = Number.isFinite(saTs) && garminTimestamps.some((gTs) => Math.abs(gTs - saTs) <= 300 * 1e3);
+      const isDup = garminActivitiesList.some(
+        (gAct) => areActivityTimestampsClose(gAct, saNorm, 300)
+      );
       if (isDup) continue;
       const d = saNorm.startDateLocal.slice(0, 10);
       if (d) {

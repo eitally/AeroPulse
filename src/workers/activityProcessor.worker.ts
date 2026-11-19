@@ -8,6 +8,10 @@ import type {
 } from '../types';
 import { autoDetectUnstructuredIntervals } from '../physiology/scholasticEngine';
 import { computeStravaActivityLoadV2 } from '../physiology/stravaLoadCalibration';
+import {
+  formatLocalWallClockFromDate,
+  normalizeActivityTimestamps,
+} from '../utils/activityTimestamp';
 
 export interface WorkerAthleteThresholds {
   ftp: number;
@@ -747,6 +751,7 @@ function parseGpxOrTcxText(
 ): {
   name: string;
   startDateLocal: string;
+  startDateUtcMs: number;
   sportCategory: SportCategory;
   streams: ActivityStreamSet;
 } {
@@ -772,7 +777,7 @@ function parseGpxOrTcxText(
   const velocitySmooth: number[] = [];
 
   let firstEpochMs: number | null = null;
-  let startDateLocal = formatLocalWallClockTimestamp();
+  let firstRawTimeStr: string | undefined;
   let cumulativeDist = 0;
 
   let match: RegExpExecArray | null;
@@ -790,11 +795,12 @@ function parseGpxOrTcxText(
 
     let elapsedSecs = time.length;
     if (timeTag) {
-      const parsedMs = Date.parse(timeTag[1].trim());
+      const rawTimeStr = timeTag[1].trim();
+      const parsedMs = Date.parse(rawTimeStr);
       if (!Number.isNaN(parsedMs)) {
         if (firstEpochMs === null) {
           firstEpochMs = parsedMs;
-          startDateLocal = formatLocalWallClockTimestamp(new Date(parsedMs));
+          firstRawTimeStr = rawTimeStr;
         }
         elapsedSecs = Math.max(0, Math.round((parsedMs - firstEpochMs) / 1000));
       }
@@ -835,9 +841,18 @@ function parseGpxOrTcxText(
     }
   }
 
+  const startDateUtcMs = firstEpochMs ?? Date.now();
+  const normalizedXmlTimestamps = normalizeActivityTimestamps({
+    startDateLocal: firstRawTimeStr,
+    startDateUtcMs,
+    startLatLng: latlng.length > 0 ? latlng[0] : undefined,
+    fallbackBrowserTz: true,
+  });
+
   return {
     name,
-    startDateLocal,
+    startDateLocal: normalizedXmlTimestamps.startDateLocal,
+    startDateUtcMs: normalizedXmlTimestamps.startDateUtcMs ?? startDateUtcMs,
     sportCategory,
     streams: {
       time,
@@ -864,6 +879,7 @@ export function parseFitBinaryBuffer(
 ): {
   name: string;
   startDateLocal: string;
+  startDateUtcMs: number;
   sportCategory: SportCategory;
   streams: ActivityStreamSet;
 } {
@@ -903,7 +919,9 @@ export function parseFitBinaryBuffer(
   const localDefs = new Map<number, LocalMsgDef>();
   let offset = headerSize;
   let firstTimestamp: number | null = null;
+  let sessionStartTimestamp: number | null = null;
   let lastTimestamp = 0;
+  let fitDeviceOffsetSecs: number | undefined;
   const FIT_EPOCH_OFFSET_SECS = 631065600; // 1989-12-31T00:00:00Z
   const SEMICIRCLE_TO_DEG = 180 / Math.pow(2, 31);
 
@@ -970,12 +988,17 @@ export function parseFitBinaryBuffer(
     if (!def || offset + def.recordSize > endOffset) break;
 
     if (def.globalMsgNum === 18) {
-      // Session Message (extract sport type when present: 1 = Running, 2 = Cycling, 5 = Swimming)
+      // Session Message (extract sport type and start_time when present: 1 = Running, 2 = Cycling, 5 = Swimming)
       let fieldCursor = offset;
       for (const f of def.fields) {
         if (f.fieldNum === 253 && f.size === 4) {
           const rawTs = view.getUint32(fieldCursor, def.littleEndian);
           if (rawTs !== 0xffffffff) lastTimestamp = rawTs;
+        } else if (f.fieldNum === 2 && f.size === 4) {
+          const rawStart = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawStart !== 0xffffffff && rawStart > 100_000_000) {
+            sessionStartTimestamp = rawStart;
+          }
         } else if (f.fieldNum === 5 && f.size === 1) {
           const fitSport = view.getUint8(fieldCursor);
           if (fitSport === 1) sportCategory = 'Running';
@@ -983,6 +1006,33 @@ export function parseFitBinaryBuffer(
           else if (fitSport === 5) sportCategory = 'Swimming';
         }
         fieldCursor += f.size;
+      }
+    } else if (def.globalMsgNum === 34) {
+      // Activity Message (field 253 = UTC timestamp, field 5 = local_timestamp)
+      let fieldCursor = offset;
+      let activityUtcTs: number | undefined;
+      let activityLocalTs: number | undefined;
+      for (const f of def.fields) {
+        if (f.fieldNum === 253 && f.size === 4) {
+          const rawTs = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawTs !== 0xffffffff && rawTs > 100_000_000) {
+            activityUtcTs = rawTs;
+            lastTimestamp = rawTs;
+          }
+        } else if (f.fieldNum === 5 && f.size === 4) {
+          const rawLocalTs = view.getUint32(fieldCursor, def.littleEndian);
+          if (rawLocalTs !== 0xffffffff && rawLocalTs > 100_000_000) {
+            activityLocalTs = rawLocalTs;
+          }
+        }
+        fieldCursor += f.size;
+      }
+      if (activityUtcTs !== undefined && activityLocalTs !== undefined) {
+        const diffSecs = activityLocalTs - activityUtcTs;
+        const roundedSecs = Math.round(diffSecs / 900) * 900;
+        if (roundedSecs >= -43200 && roundedSecs <= 50400) {
+          fitDeviceOffsetSecs = roundedSecs;
+        }
       }
     } else if (def.globalMsgNum === 20) {
       // Global Message 20 = Record (1Hz data point)
@@ -1078,14 +1128,25 @@ export function parseFitBinaryBuffer(
     );
   }
 
-  const startIso =
-    firstTimestamp !== null
-      ? formatLocalWallClockTimestamp(new Date((firstTimestamp + FIT_EPOCH_OFFSET_SECS) * 1000))
-      : formatLocalWallClockTimestamp();
+  const canonicalFitTs =
+    firstTimestamp !== null && firstTimestamp > 100_000_000
+      ? firstTimestamp
+      : sessionStartTimestamp;
+  const fitStartDateUtcMs =
+    canonicalFitTs !== null
+      ? (canonicalFitTs + FIT_EPOCH_OFFSET_SECS) * 1000
+      : Date.now();
+  const fitTimestamps = normalizeActivityTimestamps({
+    startDateUtcMs: fitStartDateUtcMs,
+    utcOffsetSecs: fitDeviceOffsetSecs,
+    startLatLng: latlng.length > 0 ? latlng[0] : undefined,
+    fallbackBrowserTz: true,
+  });
 
   return {
     name: cleanTitle || 'Imported FIT Workout',
-    startDateLocal: startIso,
+    startDateLocal: fitTimestamps.startDateLocal,
+    startDateUtcMs: fitTimestamps.startDateUtcMs ?? fitStartDateUtcMs,
     sportCategory,
     streams: {
       time,
@@ -1214,7 +1275,8 @@ if (ctx) {
       const lower = fileName.toLowerCase();
 
       let parsedName = fileName;
-      let startDateLocal = formatLocalWallClockTimestamp();
+      let startDateLocal = formatLocalWallClockFromDate();
+      let startDateUtcMs: number | undefined;
       let sportCategory: SportCategory = overrideSport || 'Cycling';
       let streams: ActivityStreamSet;
 
@@ -1222,18 +1284,27 @@ if (ctx) {
         const fitParsed = parseFitBinaryBuffer(fileBuffer, fileName, thresholds);
         parsedName = fitParsed.name;
         startDateLocal = fitParsed.startDateLocal;
+        startDateUtcMs = fitParsed.startDateUtcMs;
         sportCategory = overrideSport || fitParsed.sportCategory;
         streams = fitParsed.streams;
       } else if ((lower.endsWith('.gpx') || lower.endsWith('.tcx')) && fileText) {
         const xmlParsed = parseGpxOrTcxText(fileText, fileName);
         parsedName = xmlParsed.name;
         startDateLocal = xmlParsed.startDateLocal;
+        startDateUtcMs = xmlParsed.startDateUtcMs;
         sportCategory = overrideSport || xmlParsed.sportCategory;
         streams = xmlParsed.streams;
       } else if (fileText) {
         const json = JSON.parse(fileText);
         parsedName = json.name || fileName.replace(/\.json$/i, '');
-        startDateLocal = json.startDateLocal || startDateLocal;
+        const jsonTs = normalizeActivityTimestamps({
+          startDateLocal: json.startDateLocal || startDateLocal,
+          startDateUtcMs:
+            typeof json.startDateUtcMs === 'number' ? json.startDateUtcMs : undefined,
+          fallbackBrowserTz: true,
+        });
+        startDateLocal = jsonTs.startDateLocal;
+        startDateUtcMs = jsonTs.startDateUtcMs;
         sportCategory = overrideSport || json.sportCategory || 'Cycling';
         streams = json.streams || json;
       } else {
@@ -1246,6 +1317,7 @@ if (ctx) {
       const activity: UnifiedActivity = {
         id: `worker-import-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         startDateLocal,
+        ...(startDateUtcMs !== undefined ? { startDateUtcMs } : {}),
         name: parsedName,
         sportCategory,
         environment: hasGps ? 'OUTDOOR' : 'INDOOR',

@@ -1639,7 +1639,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-8 sm:grid-cols-12 lg:grid-cols-16 gap-1.5 items-end h-36 pt-4 px-1">
+                  <div
+                    data-testid="plan-builder-load-arc"
+                    className="flex items-end gap-1.5 overflow-x-auto pb-2 pt-3 px-1"
+                  >
                     {generatedPlanWeeks.map((wk, idx) => {
                       const maxTss = Math.max(...generatedPlanWeeks.map((w) => w.targetTss), 300);
                       const hPct = Math.max(20, Math.round((wk.targetTss / maxTss) * 100));
@@ -1655,7 +1658,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           key={wk.weekNum}
                           type="button"
                           onClick={() => setSelectedPreviewWeekIdx(idx)}
-                          className={`group flex flex-col items-center justify-end h-full rounded-lg p-1 transition-all cursor-pointer ${
+                          className={`group flex-1 min-w-[44px] shrink-0 flex flex-col items-center justify-end rounded-lg p-1 transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-[#0D9488]/15 dark:bg-[#2DD4BF]/15 ring-1 ring-[#0D9488] dark:ring-[#2DD4BF]'
                               : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'

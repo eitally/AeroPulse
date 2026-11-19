@@ -43,6 +43,11 @@ import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideMeetPassportPanel } from './track/TracksideMeetPassportPanel';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import {
+  countPendingStopwatchOutboxEntries,
+  type StopwatchOutboxFlushResult,
+  type StopwatchSaveResult,
+} from '../utils/stopwatchTeamSync';
+import {
   ArrowCounterClockwise,
   BellRinging,
   Check,
@@ -81,7 +86,10 @@ export interface TracksideStopwatchViewProps {
   roster: ConnectedAthleteRecord[];
   myTeams: TeamSummaryWithRole[];
   activeTeamId: string | null;
-  onSaveStopwatchActivities: (entries: SavedStopwatchEntry[]) => number;
+  onSaveStopwatchActivities: (
+    entries: SavedStopwatchEntry[]
+  ) => Promise<StopwatchSaveResult> | StopwatchSaveResult | number;
+  onFlushStopwatchOutbox?: () => Promise<StopwatchOutboxFlushResult>;
   onOpenActivitiesTab: () => void;
   postSaveActionLabel?: string;
   onOpenRosterModal: () => void;
@@ -101,6 +109,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   myTeams,
   activeTeamId,
   onSaveStopwatchActivities,
+  onFlushStopwatchOutbox,
   onOpenActivitiesTab,
   postSaveActionLabel = 'View in Activities',
   onOpenRosterModal,
@@ -193,6 +202,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const [copiedCsv, setCopiedCsv] = useState<boolean>(false);
   const [includeWarmupCooldown, setIncludeWarmupCooldown] = useState<boolean>(true);
   const [saveFeedbackMsg, setSaveFeedbackMsg] = useState<string | null>(null);
+  const [saveFeedbackTone, setSaveFeedbackTone] = useState<'prime' | 'caution'>('prime');
+  const [isSavingToThresh, setIsSavingToThresh] = useState<boolean>(false);
+  const [isFlushingOutbox, setIsFlushingOutbox] = useState<boolean>(false);
+  const [pendingOutboxCount, setPendingOutboxCount] = useState<number>(() =>
+    countPendingStopwatchOutboxEntries(activeTeamId || undefined)
+  );
   const [liveAnnouncement, setLiveAnnouncement] = useState<string>('');
   const [isOnline, setIsOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -210,15 +225,51 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const refreshOutboxCount = () => {
+      setPendingOutboxCount(countPendingStopwatchOutboxEntries(activeTeamId || undefined));
+    };
+    refreshOutboxCount();
+    const handleOnline = () => {
+      setIsOnline(true);
+      refreshOutboxCount();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      refreshOutboxCount();
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('thresh:stopwatch-outbox-updated', refreshOutboxCount);
+    window.addEventListener('storage', refreshOutboxCount);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('thresh:stopwatch-outbox-updated', refreshOutboxCount);
+      window.removeEventListener('storage', refreshOutboxCount);
     };
-  }, []);
+  }, [activeTeamId]);
+
+  const handleManualFlushOutbox = async () => {
+    if (!onFlushStopwatchOutbox || isFlushingOutbox) return;
+    setIsFlushingOutbox(true);
+    try {
+      const flushRes = await onFlushStopwatchOutbox();
+      setPendingOutboxCount(countPendingStopwatchOutboxEntries(activeTeamId || undefined));
+      if (flushRes.syncedEntries > 0 && flushRes.remainingEntries === 0) {
+        setSaveFeedbackTone('prime');
+        setSaveFeedbackMsg(
+          `Synced ${flushRes.syncedEntries} pending athlete stopwatch ${flushRes.syncedEntries === 1 ? 'log' : 'logs'} to team cloud roster.`
+        );
+      } else if (flushRes.remainingEntries > 0) {
+        setSaveFeedbackTone('caution');
+        setSaveFeedbackMsg(
+          `Pending Sync: ${flushRes.remainingEntries} athlete ${flushRes.remainingEntries === 1 ? 'log' : 'logs'} queued on device until connection restores.`
+        );
+      }
+    } finally {
+      setIsFlushingOutbox(false);
+    }
+  };
 
   useEffect(() => {
     if (!confirmReset) return;
@@ -843,39 +894,17 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     });
   };
 
-  const handleSaveToThresh = () => {
+  const handleSaveToThresh = async () => {
     const timed = runnerTelemetries.filter((t) => t.lapCount > 0 && t.netTotalSecs !== null);
-    if (timed.length === 0) return;
+    if (timed.length === 0 || isSavingToThresh) return;
 
     const rosterById = new Map(roster.map((r) => [r.id, r]));
-    const writableDirect: RunnerSplitTelemetry[] = [];
-    const fallbackToSelf: RunnerSplitTelemetry[] = [];
-
-    for (const t of timed) {
-      if (t.runnerId === 'SELF') {
-        writableDirect.push(t);
-      } else {
-        const match = rosterById.get(t.runnerId);
-        if (match?.role === 'COACH_EDIT') {
-          writableDirect.push(t);
-        } else if (!match) {
-          // Walk-on athletes can be archived under Coach / Self log when SELF has no separate entry
-          fallbackToSelf.push(t);
-        }
-      }
-    }
-
-    const targets = [
-      ...writableDirect,
-      ...fallbackToSelf.map((t) => ({ ...t, saveTargetId: 'SELF' })),
-    ];
-
     const derivedStartMs =
       sessionStartedEpochMs ?? Math.max(0, Date.now() - Math.max(0, stopwatchElapsedMs));
     const startDateLocalIso = formatLocalWallClockIso(derivedStartMs);
 
-    const entries: SavedStopwatchEntry[] = targets.map((t) => {
-      const targetId = 'saveTargetId' in t ? String(t.saveTargetId) : t.runnerId;
+    const entries: SavedStopwatchEntry[] = timed.map((t) => {
+      const targetId = t.runnerId;
       const athleteProfileForTarget =
         targetId === 'SELF'
           ? selfProfile
@@ -900,6 +929,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               placeFinish: t.placeLabel ? `${t.placeLabel} (Stopwatch)` : undefined,
               includeWarmupCooldown,
               startDateLocalIso,
+              startDateUtcMs: derivedStartMs,
               lane: trackLane,
             })
           : synthesizeTracksideWorkoutActivity({
@@ -914,6 +944,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               restDurationSecs,
               lapSplitsSecs: t.lapSplitsSecs,
               startDateLocalIso,
+              startDateUtcMs: derivedStartMs,
               lane: trackLane,
               footwearClass,
               trackFacility,
@@ -932,16 +963,69 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       };
     });
 
-    const savedCount = onSaveStopwatchActivities(entries);
-    setSaveFeedbackMsg(
-      savedCount > 0
-        ? sessionType === 'RACE'
-          ? `Saved ${savedCount} Official Race ${savedCount === 1 ? 'Mark' : 'Marks'} into THRESH Activities.`
-          : endedEarlyStimulusRatio !== null
-            ? `Saved ${savedCount} Interval Workout ${savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into THRESH Activities.`
-            : `Saved ${savedCount} Interval Workout ${savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into THRESH Activities.`
-        : 'No writable athlete logs selected.'
-    );
+    setIsSavingToThresh(true);
+    try {
+      const rawResult = await onSaveStopwatchActivities(entries);
+      const saveResult: StopwatchSaveResult =
+        typeof rawResult === 'number'
+          ? {
+              savedCount: rawResult,
+              selfCount: rawResult,
+              rosterCount: 0,
+              teamCount: 0,
+              walkOnCount: 0,
+              pendingTeamCount: 0,
+              skippedReadOnlyNames: [],
+              syncStatus: 'LOCAL_ONLY',
+            }
+          : rawResult;
+
+      setPendingOutboxCount(countPendingStopwatchOutboxEntries(activeTeamId || undefined));
+
+      if (saveResult.savedCount === 0) {
+        setSaveFeedbackTone('caution');
+        setSaveFeedbackMsg(
+          saveResult.skippedReadOnlyNames.length > 0
+            ? `Skipped read-only teammate logs (${saveResult.skippedReadOnlyNames.join(', ')}).`
+            : 'No writable athlete logs selected.'
+        );
+        return;
+      }
+
+      const parts: string[] = [];
+      if (saveResult.syncStatus === 'PENDING_OFFLINE') {
+        setSaveFeedbackTone('caution');
+        parts.push(
+          `Saved ${saveResult.savedCount} ${sessionType === 'RACE' ? 'Race' : 'Interval'} ${
+            saveResult.savedCount === 1 ? 'Log' : 'Logs'
+          } locally — Pending Sync (${saveResult.pendingTeamCount} team ${
+            saveResult.pendingTeamCount === 1 ? 'entry' : 'entries'
+          } queued until back online).`
+        );
+      } else {
+        setSaveFeedbackTone('prime');
+        parts.push(
+          sessionType === 'RACE'
+            ? `Saved ${saveResult.savedCount} Official Race ${saveResult.savedCount === 1 ? 'Mark' : 'Marks'} into THRESH Activities.`
+            : endedEarlyStimulusRatio !== null
+              ? `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into THRESH Activities.`
+              : `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into THRESH Activities.`
+        );
+      }
+
+      if (saveResult.walkOnCount > 0) {
+        parts.push(
+          `${saveResult.walkOnCount} walk-on ${saveResult.walkOnCount === 1 ? 'entry' : 'entries'} saved to local Walk-On Archive (kept separate from your personal log).`
+        );
+      }
+      if (saveResult.skippedReadOnlyNames.length > 0) {
+        parts.push(`Skipped read-only: ${saveResult.skippedReadOnlyNames.join(', ')}.`);
+      }
+
+      setSaveFeedbackMsg(parts.join(' '));
+    } finally {
+      setIsSavingToThresh(false);
+    }
   };
 
   const renderModeRadioGroup = (compact = false) => (
@@ -2193,8 +2277,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           <button
             type="button"
             data-testid="stopwatch-save-thresh"
-            onClick={handleSaveToThresh}
-            disabled={totalSplitCount === 0}
+            onClick={() => void handleSaveToThresh()}
+            disabled={totalSplitCount === 0 || isSavingToThresh}
             className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed transition-colors"
           >
             {sessionType === 'RACE' ? (
@@ -2203,12 +2287,42 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               <CheckCircle2 className="w-4 h-4 shrink-0" weight="duotone" />
             )}
             <span>
-              {sessionType === 'RACE'
-                ? 'Save Official Race Marks to THRESH'
-                : 'Save Workout Splits to THRESH'}
+              {isSavingToThresh
+                ? 'Saving Splits…'
+                : sessionType === 'RACE'
+                  ? 'Save Official Race Marks to THRESH'
+                  : 'Save Workout Splits to THRESH'}
             </span>
           </button>
         </div>
+
+        {pendingOutboxCount > 0 && (
+          <div
+            role="status"
+            data-testid="stopwatch-outbox-banner"
+            className="rounded-xl ap-status-caution px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold"
+          >
+            <span className="inline-flex items-center gap-2">
+              <WifiSlash className="w-4 h-4 shrink-0" weight="bold" />
+              <span>
+                Pending Sync: {pendingOutboxCount} offline athlete stopwatch{' '}
+                {pendingOutboxCount === 1 ? 'log' : 'logs'} saved safely on device.
+              </span>
+            </span>
+            {onFlushStopwatchOutbox && (
+              <button
+                type="button"
+                data-testid="stopwatch-outbox-sync-now"
+                onClick={() => void handleManualFlushOutbox()}
+                disabled={!isOnline || isFlushingOutbox}
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0B120E] text-[#C8FF00] font-mono text-2xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <ArrowCounterClockwise className="w-3.5 h-3.5" weight="bold" />
+                <span>{isFlushingOutbox ? 'Syncing…' : 'Sync Now'}</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {sessionType === 'RACE' && (
           <TracksideMeetPassportPanel
@@ -2229,7 +2343,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         {saveFeedbackMsg && (
           <div
             role="status"
-            className="rounded-xl ap-status-prime px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold"
+            data-testid="stopwatch-save-feedback"
+            className={`rounded-xl ${
+              saveFeedbackTone === 'caution' ? 'ap-status-caution' : 'ap-status-prime'
+            } px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold`}
           >
             <span>{saveFeedbackMsg}</span>
             <button

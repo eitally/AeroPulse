@@ -275,10 +275,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   const [crossTrainToast, setCrossTrainToast] = useState<string | null>(null);
 
   const dualSportLatest = useMemo(() => {
-    if (!athleteProfile || activities.length === 0) return null;
-    const series = computeDualSportPmcSeries(activities, athleteProfile, 14);
+    if (!athleteProfile || (activities.length === 0 && wellnessDays.length === 0)) return null;
+    const series = computeDualSportPmcSeries(activities, athleteProfile, 14, {
+      seedWellnessDays: wellnessDays,
+    });
     return series.length > 0 ? series[series.length - 1] : null;
-  }, [activities, athleteProfile]);
+  }, [activities, athleteProfile, wellnessDays]);
 
   const isMinorAthleteContext = useMemo(() => {
     if (!athleteProfile) return false;
@@ -821,8 +823,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     setHasManualRxSport(true);
     setSharedRxSport(nextSport);
   };
-  const [isOrthoDrawerOpen, setIsOrthoDrawerOpen] = useState<boolean>(false);
-  const [showGuardrailsBar, setShowGuardrailsBar] = useState<boolean>(false);
+  const [guardrailsBarOverride, setGuardrailsBarOverride] = useState<boolean | null>(null);
+  const [orthoDrawerOverride, setOrthoDrawerOverride] = useState<boolean | null>(null);
 
   const [collapsedSections, setCollapsedSections] = useState<
     Record<'pmc' | 'ledger', boolean>
@@ -894,6 +896,31 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const autoExpandGuardrails = Boolean(
+    orthopedicSummary?.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
+      studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
+  );
+  const isGuardrailsBarOpen =
+    guardrailsBarOverride !== null
+      ? guardrailsBarOverride
+      : autoExpandGuardrails || isGitDiffOpen || isStudentCheckInOpen;
+  const isOrthoDrawerVisible =
+    isGuardrailsBarOpen &&
+    (orthoDrawerOverride !== null
+      ? orthoDrawerOverride
+      : orthopedicSummary?.riskTier === 'HIGH_IMPACT_GUARDRAIL');
+
+  const hasTodayOrthoBikeSwap = useMemo(
+    () =>
+      plannedEvents.some(
+        (p) =>
+          (p.date || '').slice(0, 10) === todayIso &&
+          p.sportCategory === 'Cycling' &&
+          p.name.toLowerCase().includes('orthopedic swap')
+      ),
+    [plannedEvents, todayIso]
+  );
+
   return (
     <div className="space-y-4 sm:space-y-5">
       {/* ==========================================================================
@@ -906,6 +933,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         athleteProfile={athleteProfile}
         distanceUnit={distanceUnit}
         todayCompliance={todayCompliance}
+        orthopedicSummary={orthopedicSummary}
+        studentGuardrail={studentGuardrail}
         isWorkbenchExpanded={isPrescriptionExpanded}
         onToggleWorkbench={() => setIsPrescriptionExpanded((prev) => !prev)}
         rxSport={sharedRxSport}
@@ -1031,24 +1060,21 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             </div>
             <button
               type="button"
-              aria-expanded={
-                showGuardrailsBar ||
-                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
-                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
-              }
-              onClick={() => setShowGuardrailsBar((prev) => !prev)}
+              data-testid="toggle-guardrails-tools"
+              aria-expanded={isGuardrailsBarOpen}
+              onClick={() => {
+                const nextOpen = !isGuardrailsBarOpen;
+                setGuardrailsBarOverride(nextOpen);
+                if (!nextOpen) {
+                  setOrthoDrawerOverride(false);
+                  setIsGitDiffOpen(false);
+                  setIsStudentCheckInOpen(false);
+                }
+              }}
               className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-3 sm:px-2.5 py-1 rounded-xl liquid-capsule-track text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 hover:opacity-90 cursor-pointer"
             >
-              <span>
-                {showGuardrailsBar ||
-                orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
-                studentGuardrail.status !== 'CLEARED_FULL_WORKOUT'
-                  ? 'Hide Tools'
-                  : 'Open Tools'}
-              </span>
-              {showGuardrailsBar ||
-              orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
-              studentGuardrail.status !== 'CLEARED_FULL_WORKOUT' ? (
+              <span>{isGuardrailsBarOpen ? 'Hide Tools' : 'Open Tools'}</span>
+              {isGuardrailsBarOpen ? (
                 <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
               ) : (
                 <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
@@ -1056,20 +1082,14 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
             </button>
           </div>
 
-          {(showGuardrailsBar ||
-            orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL' ||
-            studentGuardrail.status !== 'CLEARED_FULL_WORKOUT' ||
-            isOrthoDrawerOpen ||
-            isGitDiffOpen ||
-            isStudentCheckInOpen) && (
+          {isGuardrailsBarOpen && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
               {/* Pill 1: Dual-Sport CTL & Impact Balance */}
               <button
                 type="button"
-                onClick={() => setIsOrthoDrawerOpen((prev) => !prev)}
+                onClick={() => setOrthoDrawerOverride(!isOrthoDrawerVisible)}
                 className={`rounded-xl px-3 py-2 text-left border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                  isOrthoDrawerOpen ||
-                  orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL'
+                  isOrthoDrawerVisible
                     ? 'border-[#84CC16] bg-[#C8FF00]/15 dark:border-[#C8FF00]/55 dark:bg-[#C8FF00]/10'
                     : 'liquid-glass-subtle hover:border-[#84CC16] dark:hover:border-[#C8FF00]/40'
                 }`}
@@ -1101,7 +1121,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                       : `Impact Ratio ${orthopedicSummary.impactAcwr.toFixed(2)}x · Torque ${orthopedicSummary.torqueAcwr.toFixed(2)}x`}
                   </div>
                 </div>
-                {isOrthoDrawerOpen ? (
+                {isOrthoDrawerVisible ? (
                   <ChevronUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                 ) : (
                   <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
@@ -1193,8 +1213,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           )}
 
           {/* Expandable Drawer 1: 3-Channel Orthopedic Interference & Run->Bike Swap */}
-          {(isOrthoDrawerOpen ||
-            orthopedicSummary.riskTier === 'HIGH_IMPACT_GUARDRAIL') && (
+          {isOrthoDrawerVisible && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
@@ -1310,6 +1329,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 </p>
 
                 {onSyncMorphedToCalendar &&
+                  !hasTodayOrthoBikeSwap &&
                   (orthopedicSummary.canMorphTodayRunToBike ||
                     plannedEvents.some(
                       (p) =>
@@ -1354,7 +1374,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           )}
 
           {/* Expandable Drawer 2: Plan vs. Actual Ledger */}
-          {weeklyGitDiffProposal && isGitDiffOpen && (
+          {isGuardrailsBarOpen && weeklyGitDiffProposal && isGitDiffOpen && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#15231B]/70 p-3.5 space-y-2.5 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
@@ -1470,7 +1490,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           )}
 
           {/* Expandable Drawer 3: Scholastic / Collegiate Student-Athlete Check-In & Cross-Training Equivalence */}
-          {(isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
+          {isGuardrailsBarOpen &&
+            (isStudentCheckInOpen || studentGuardrail.status !== 'CLEARED_FULL_WORKOUT') && (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
                 {/* Left 6 Cols: 5-Second Readiness & Soreness Check-In */}

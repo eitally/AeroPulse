@@ -32,6 +32,10 @@ import {
   isGenericName,
 } from '../physiologyEngine.ts';
 import {
+  normalizeActivityTimestamps,
+  stripTimezoneSuffix,
+} from '../../src/utils/activityTimestamp.ts';
+import {
   ensureRequestSessionSid,
   renderThreshOAuthHtml,
   resolveIntervalsCallbackUrl,
@@ -748,6 +752,18 @@ export async function syncIntervalsAllHistory(
         ])
       );
 
+      const intervalsTimestamps = normalizeActivityTimestamps({
+        startDateLocal: a.start_date_local
+          ? stripTimezoneSuffix(String(a.start_date_local))
+          : undefined,
+        startDateUtc: a.start_date ? String(a.start_date) : undefined,
+        startLatLng:
+          Array.isArray(a.latlng) && a.latlng.length === 2
+            ? [Number(a.latlng[0]), Number(a.latlng[1])]
+            : undefined,
+        fallbackBrowserTz: true,
+      });
+
       return {
         id: String(a.id),
         intervalsId: String(a.id),
@@ -758,7 +774,10 @@ export async function syncIntervalsAllHistory(
         sourceBadges: intervalsSourceBadges,
         rawSportType: rawType || undefined,
         name: rawName || `${subType} ${sportCategory}`,
-        startDateLocal: String(a.start_date_local || '').replace(/Z$/i, ''),
+        startDateLocal: intervalsTimestamps.startDateLocal,
+        ...(intervalsTimestamps.startDateUtcMs !== undefined
+          ? { startDateUtcMs: intervalsTimestamps.startDateUtcMs }
+          : {}),
         sportCategory,
         environment: isIndoor ? ('INDOOR' as const) : ('OUTDOOR' as const),
         subType,
