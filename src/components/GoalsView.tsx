@@ -105,7 +105,7 @@ import {
   type GoalArchetypeTemplate,
   type TrackArchetypeId,
 } from './goals/goalArchetypeTemplates';
-import { TrackSpeedReservePanel } from './goals/TrackSpeedReservePanel';
+import { getTrackEventSeedPresets, TrackSpeedReservePanel } from './goals/TrackSpeedReservePanel';
 import { RacePhysicsSimulatorBody } from './goals/RacePhysicsSimulatorBody';
 export type {
   GoalArchetypeCategory,
@@ -516,11 +516,20 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   ]);
 
   const handleSelectArchetype = (arch: GoalArchetypeTemplate) => {
+    const prevEventGroup = selectedArchetype.trackEventGroup;
     setSelectedArchetypeId(arch.id);
     setBlockWeeks(arch.defaultWeeks);
     setSelectedPreviewWeekIdx(0);
     setSessionOverrides({});
     setPopulatedSuccessMsg(null);
+    if (
+      arch.trackEventGroup &&
+      prevEventGroup &&
+      arch.trackEventGroup !== prevEventGroup &&
+      getTrackEventSeedPresets(prevEventGroup).presets.includes(trackSeedInput.trim())
+    ) {
+      setTrackSeedInput('');
+    }
     if (arch.category === 'TRACK') {
       setSelectedWeekdays([1, 2, 4, 6]);
       setLongDayPreference('Sunday');
@@ -1085,6 +1094,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               <TrackSpeedReservePanel
                 formId={formId}
                 distanceUnit={distanceUnit}
+                trackEventGroup={selectedArchetype.trackEventGroup}
                 trackStartingPhase={trackStartingPhase}
                 setTrackStartingPhase={setTrackStartingPhase}
                 trackPhenotypeOverride={trackPhenotypeOverride}

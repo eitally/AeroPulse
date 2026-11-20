@@ -3,6 +3,7 @@ import type {
   ActivityStreamSet,
   CrossTrainingEquivalence,
   CrossTrainingModality,
+  NcaaCaraSeasonSegment,
   NcaaCaraWeeklyAudit,
   NcaaTrackConversionResult,
   NcaaTrackFacilityType,
@@ -1001,15 +1002,87 @@ export function computeCrossTrainingEquivalence(params: {
   };
 }
 
+export interface NcaaCaraAuditOptions {
+  seasonSegment?: NcaaCaraSeasonSegment;
+  strengthHours?: number;
+  meetingFilmHours?: number;
+  varaHours?: number;
+}
+
+export interface NcaaCaraCsvRow {
+  athleteName: string;
+  seasonSegment: NcaaCaraSeasonSegment;
+  weekEndingIso: string;
+  audit: NcaaCaraWeeklyAudit;
+  varaHours?: number;
+}
+
+function escapeCaraCsvCell(raw: string | number | boolean): string {
+  const str = String(raw ?? '').replace(/\r?\n/g, ' ');
+  const neutralized = /^[=+\-@\t]/.test(str) ? `'${str}` : str;
+  if (neutralized.includes(',') || neutralized.includes('"') || neutralized.includes("'")) {
+    return `"${neutralized.replace(/"/g, '""')}"`;
+  }
+  return neutralized;
+}
+
+/**
+ * Formats an ARMS / Teamworks-ready CSV export summarizing NCAA Bylaw 17.1
+ * CARA countable hours, weights, meetings, VARA exclusions, and mandatory days off.
+ */
+export function buildNcaaCaraComplianceCsv(rows: NcaaCaraCsvRow[]): string {
+  const header = [
+    'Athlete',
+    'SeasonSegment',
+    'WeekEnding',
+    'CountableCaraHours',
+    'WeeklyCapHours',
+    'RemainingHours',
+    'MaxSingleDayHours',
+    'CompetitionDays',
+    'WeightsHours',
+    'MeetingsFilmHours',
+    'VaraExcludedHours',
+    'DaysOff',
+    'RequiredDaysOff',
+    'Compliant',
+    'Status',
+  ].join(',');
+
+  const lines = rows.map(({ athleteName, seasonSegment, weekEndingIso, audit, varaHours }) =>
+    [
+      escapeCaraCsvCell(athleteName),
+      escapeCaraCsvCell(seasonSegment),
+      escapeCaraCsvCell(weekEndingIso),
+      audit.rolling7dCountableHours.toFixed(2),
+      audit.weeklyCapHours,
+      audit.remainingWeeklyHours.toFixed(2),
+      audit.maxSingleDayHours.toFixed(2),
+      audit.competitionDaysCount ?? 0,
+      (audit.strengthHours ?? 0).toFixed(2),
+      (audit.meetingFilmHours ?? 0).toFixed(2),
+      (varaHours ?? audit.varaHours ?? 0).toFixed(2),
+      audit.daysOffCount ?? 0,
+      audit.requiredDaysOff ?? 1,
+      audit.compliant ? 'YES' : 'NO',
+      escapeCaraCsvCell(audit.statusLabel),
+    ].join(',')
+  );
+
+  return [header, ...lines].join('\n');
+}
+
 /**
  * Audits rolling 7-day training volume against NCAA Bylaw 17.1 Countable Athletically Related
- * Activities (CARA: 20 hours/week max in-season, 4 hours/day max, statutory flat `3.0h` on any Competition Day).
+ * Activities (CARA: 20h/wk & 1 day off in-season; 8h/wk, <=2h skill/film & 2 days off out-of-season;
+ * 4 hours/day max; statutory flat `3.0h` on any Competition Day; VARA excluded).
  */
 export function summarizeNcaaCaraWeeklyHours(
   activities: UnifiedActivity[],
   referenceDateStr?: string,
   extraStrengthOrMeetingHours = 0,
-  competitionDates: string[] = []
+  competitionDates: string[] = [],
+  options?: NcaaCaraAuditOptions
 ): NcaaCaraWeeklyAudit {
   const refMs = referenceDateStr
     ? new Date(`${referenceDateStr.slice(0, 10)}T23:59:59Z`).getTime()
@@ -1039,37 +1112,59 @@ export function summarizeNcaaCaraWeeklyHours(
     hoursByDay.set(dayKey, (hoursByDay.get(dayKey) || 0) + secs / 3600);
   }
 
-  // NCAA Bylaw 17.1.7.1: any competition day counts flat 3.0 hours regardless of race duration or multi-event count
+  // NCAA Bylaw 17.1.7.1: each competition day counts flat 3.0 hours regardless of race duration or multi-event count
   for (const compDay of competitionDays) {
     hoursByDay.set(compDay, 3.0);
   }
 
   let practiceAndCompHours = 0;
+  let activeDaysCount = 0;
   for (const dayHours of hoursByDay.values()) {
     practiceAndCompHours += dayHours;
+    if (dayHours > 0.05) {
+      activeDaysCount += 1;
+    }
   }
 
-  const rolling7dCountableHours = Number(
-    (practiceAndCompHours + Math.max(0, extraStrengthOrMeetingHours)).toFixed(2)
-  );
+  const seasonSegment: NcaaCaraSeasonSegment = options?.seasonSegment || 'IN_SEASON';
+  const weeklyCapHours = seasonSegment === 'OUT_OF_SEASON' ? 8 : 20;
+  const dailyCapHours = 4;
+  const requiredDaysOff = seasonSegment === 'OUT_OF_SEASON' ? 2 : 1;
+  const daysOffCount = Math.max(0, 7 - Math.min(7, activeDaysCount));
+  const daysOffCompliant = daysOffCount >= requiredDaysOff;
+
+  const strengthHours = Number(Math.max(0, Number(options?.strengthHours || 0)).toFixed(2));
+  const meetingFilmHours = Number(Math.max(0, Number(options?.meetingFilmHours || 0)).toFixed(2));
+  const varaHours = Number(Math.max(0, Number(options?.varaHours || 0)).toFixed(2));
+  const extraTotal = Math.max(0, extraStrengthOrMeetingHours) + strengthHours + meetingFilmHours;
+  const outOfSeasonSkillCompliant =
+    seasonSegment === 'OUT_OF_SEASON' ? meetingFilmHours <= 2.0 : true;
+
+  const rolling7dCountableHours = Number((practiceAndCompHours + extraTotal).toFixed(2));
   const maxSingleDayHours = Number(
     Math.max(0, ...Array.from(hoursByDay.values())).toFixed(2)
   );
-  const weeklyCapHours = 20;
-  const dailyCapHours = 4;
   const remainingWeeklyHours = Number(
     Math.max(0, weeklyCapHours - rolling7dCountableHours).toFixed(2)
   );
   const compliant =
-    rolling7dCountableHours <= weeklyCapHours && maxSingleDayHours <= dailyCapHours;
+    rolling7dCountableHours <= weeklyCapHours &&
+    maxSingleDayHours <= dailyCapHours &&
+    daysOffCompliant &&
+    outOfSeasonSkillCompliant;
 
-  const statusLabel = !compliant
-    ? rolling7dCountableHours > weeklyCapHours
-      ? `Exceeds 20h NCAA CARA Cap (${rolling7dCountableHours}h)`
-      : `Exceeds 4h Single-Day CARA Cap (${maxSingleDayHours}h)`
-    : rolling7dCountableHours >= 17.5
-      ? `Near 20h Cap (${remainingWeeklyHours}h remaining)`
-      : `NCAA CARA Compliant (${rolling7dCountableHours}h / 20h)`;
+  const statusLabel =
+    rolling7dCountableHours > weeklyCapHours
+      ? `Exceeds ${weeklyCapHours}h NCAA CARA Cap (${rolling7dCountableHours}h)`
+      : maxSingleDayHours > dailyCapHours
+        ? `Exceeds 4h Single-Day CARA Cap (${maxSingleDayHours}h)`
+        : !daysOffCompliant
+          ? `Missing Required Day Off (${daysOffCount}/${requiredDaysOff} off)`
+          : !outOfSeasonSkillCompliant
+            ? `Exceeds 2h Out-of-Season Skill/Film Cap (${meetingFilmHours}h)`
+            : rolling7dCountableHours >= weeklyCapHours - 2.5
+              ? `Near ${weeklyCapHours}h Cap (${remainingWeeklyHours}h remaining)`
+              : `NCAA CARA Compliant (${rolling7dCountableHours}h / ${weeklyCapHours}h)`;
 
   return {
     rolling7dCountableHours,
@@ -1078,6 +1173,14 @@ export function summarizeNcaaCaraWeeklyHours(
     dailyCapHours,
     remainingWeeklyHours,
     competitionDaysCount: competitionDays.size,
+    seasonSegment,
+    strengthHours,
+    meetingFilmHours,
+    varaHours,
+    daysOffCount,
+    requiredDaysOff,
+    daysOffCompliant,
+    outOfSeasonSkillCompliant,
     compliant,
     statusLabel,
   };

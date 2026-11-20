@@ -5,6 +5,7 @@ import type {
   ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
+  NcaaCaraSeasonSegment,
   PlannedWorkoutEvent,
   PracticeVenueCategory,
   SessionCheckInRecord,
@@ -17,7 +18,9 @@ import type {
   WorkoutSessionSlot,
 } from '../types';
 import {
+  buildNcaaCaraComplianceCsv,
   summarizeNcaaCaraWeeklyHours,
+  type NcaaCaraCsvRow,
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
@@ -36,6 +39,7 @@ import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   ChevronDown,
+  Download,
   Globe,
   HelpCircle,
   Shield,
@@ -409,6 +413,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   );
 
   const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
+  const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
+  const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
+  const [caraMeetingHours, setCaraMeetingHours] = useState<number>(0);
+  const [caraVaraHours, setCaraVaraHours] = useState<number>(0);
 
   const workspaceScope = useMemo(
     () =>
@@ -805,30 +813,183 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                Weekly Practice Hours (20h Cap)
-              </h2>
-              <span className="px-2 py-0.5 rounded font-mono text-2xs font-bold ap-status-info">
-                3.0h Comp Day
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  Weekly Practice Hours ({caraSegment === 'OUT_OF_SEASON' ? '8h Out-of-Season' : '20h In-Season'} Cap)
+                </h2>
+                <span className="px-2 py-0.5 rounded font-mono text-2xs font-bold ap-status-info">
+                  3.0h Comp Day
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label="NCAA CARA Season Segment"
+                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
+                >
+                  <button
+                    type="button"
+                    data-testid="cara-segment-in-season"
+                    aria-pressed={caraSegment === 'IN_SEASON'}
+                    onClick={() => setCaraSegment('IN_SEASON')}
+                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md cursor-pointer ${
+                      caraSegment === 'IN_SEASON'
+                        ? 'ap-nav-volt-active'
+                        : 'text-ap-muted dark:text-ap-muted-dark'
+                    }`}
+                  >
+                    In-Season (20h)
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="cara-segment-out-of-season"
+                    aria-pressed={caraSegment === 'OUT_OF_SEASON'}
+                    onClick={() => setCaraSegment('OUT_OF_SEASON')}
+                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md cursor-pointer ${
+                      caraSegment === 'OUT_OF_SEASON'
+                        ? 'ap-nav-volt-active'
+                        : 'text-ap-muted dark:text-ap-muted-dark'
+                    }`}
+                  >
+                    Out-of-Season (8h)
+                  </button>
+                </div>
+
+                {connectedAthletesOnly.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="cara-export-csv-btn"
+                    onClick={() => {
+                      const csvRows: NcaaCaraCsvRow[] = connectedAthletesOnly.map((ath) => {
+                        const audit = summarizeNcaaCaraWeeklyHours(
+                          ath.activities,
+                          todayIso,
+                          0,
+                          [],
+                          {
+                            seasonSegment: caraSegment,
+                            strengthHours: caraStrengthHours,
+                            meetingFilmHours: caraMeetingHours,
+                            varaHours: caraVaraHours,
+                          }
+                        );
+                        return {
+                          athleteName: ath.name,
+                          seasonSegment: caraSegment,
+                          weekEndingIso: todayIso,
+                          audit,
+                          varaHours: caraVaraHours,
+                        };
+                      });
+                      const csvContent = buildNcaaCaraComplianceCsv(csvRows);
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const anchor = document.createElement('a');
+                      anchor.href = url;
+                      anchor.download = `thresh-ncaa-cara-${todayIso}.csv`;
+                      document.body.appendChild(anchor);
+                      anchor.click();
+                      document.body.removeChild(anchor);
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 ap-text-brand" />
+                    <span>Export ARMS / Teamworks CSV</span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
+                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+                  Weights / S&amp;C (h)
+                </span>
+                <input
+                  data-testid="cara-weights-input"
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={caraStrengthHours}
+                  onChange={(e) =>
+                    setCaraStrengthHours(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
+                  }
+                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
+                />
+              </label>
+              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
+                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+                  Meetings / Film (h)
+                </span>
+                <input
+                  data-testid="cara-meetings-input"
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={caraMeetingHours}
+                  onChange={(e) =>
+                    setCaraMeetingHours(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
+                  }
+                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
+                />
+              </label>
+              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
+                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
+                  VARA Excluded (h)
+                </span>
+                <input
+                  data-testid="cara-vara-input"
+                  type="number"
+                  min={0}
+                  max={15}
+                  step={0.5}
+                  value={caraVaraHours}
+                  onChange={(e) =>
+                    setCaraVaraHours(Math.max(0, Math.min(15, Number(e.target.value) || 0)))
+                  }
+                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
+                />
+              </label>
+            </div>
+
             {connectedAthletesOnly.length === 0 ? (
               <p className="text-xs text-slate-600 dark:text-slate-300">
-                Connect roster athletes above to monitor rolling 7-day 20h practice hour caps and 3.0h competition day limits.
+                Connect roster athletes above to monitor rolling 7-day {caraSegment === 'OUT_OF_SEASON' ? '8h out-of-season' : '20h in-season'} practice hour caps, mandatory days off, and 3.0h competition day limits.
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {connectedAthletesOnly.map((ath) => {
-                  const baseAudit = summarizeNcaaCaraWeeklyHours(ath.activities);
+                  const baseAudit = summarizeNcaaCaraWeeklyHours(
+                    ath.activities,
+                    todayIso,
+                    0,
+                    [],
+                    {
+                      seasonSegment: caraSegment,
+                      strengthHours: caraStrengthHours,
+                      meetingFilmHours: caraMeetingHours,
+                      varaHours: caraVaraHours,
+                    }
+                  );
                   const hours =
                     ath.activities.length === 0 && typeof ath.caraHours7d === 'number'
-                      ? Number(ath.caraHours7d.toFixed(1))
+                      ? Number(
+                          (ath.caraHours7d + caraStrengthHours + caraMeetingHours).toFixed(1)
+                        )
                       : baseAudit.rolling7dCountableHours;
-                  const compliant = hours <= baseAudit.weeklyCapHours;
+                  const compliant =
+                    hours <= baseAudit.weeklyCapHours &&
+                    baseAudit.maxSingleDayHours <= baseAudit.dailyCapHours &&
+                    (ath.activities.length === 0 || baseAudit.daysOffCompliant !== false) &&
+                    baseAudit.outOfSeasonSkillCompliant !== false;
                   return (
                     <div
                       key={`cara-${ath.id}`}
-                      className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-3 text-xs space-y-1"
+                      className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-3 text-xs space-y-1.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-slate-900 dark:text-white">{ath.name}</span>
@@ -837,9 +998,22 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                             compliant ? 'ap-status-prime' : 'ap-status-strained'
                           }`}
                         >
-                          {hours}h / 20h
+                          {hours}h / {baseAudit.weeklyCapHours}h
                         </span>
                       </div>
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300">
+                        <span>
+                          Days Off: {baseAudit.daysOffCount ?? 7}/{baseAudit.requiredDaysOff ?? 1}
+                        </span>
+                        {caraVaraHours > 0 && (
+                          <span>VARA Excl: {caraVaraHours.toFixed(1)}h</span>
+                        )}
+                      </div>
+                      {!compliant && (
+                        <div className="text-2xs font-semibold text-rose-700 dark:text-rose-300">
+                          {baseAudit.statusLabel}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
