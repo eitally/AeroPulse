@@ -456,12 +456,15 @@ describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-12, RT-13 & RT-26 /docs route', 
   });
 
   it('RT-13: seeds Dual-Sport PMC CTL/TSB from canonical Banister baseline and fixes Race Simulator Segment 2 cue', () => {
-    const demo = buildSampleDemoDataset('2026-11-19');
+    const demo = buildSampleDemoDataset();
     const latestW = demo.wellnessDays[demo.wellnessDays.length - 1];
     const dualSeeded = computeDualSportPmcSeries(demo.activities, demo.athleteProfile, 14, {
       seedWellnessDays: demo.wellnessDays,
     });
-    const latestDual = dualSeeded[dualSeeded.length - 1];
+    const latestDual =
+      dualSeeded.find((point) => point.date === latestW.date) ??
+      dualSeeded[dualSeeded.length - 1];
+    expect(latestDual.date).toBe(latestW.date);
     expect(Math.abs(latestDual.systemicCtl - latestW.ctl)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(latestDual.systemicTsb - latestW.tsb)).toBeLessThanOrEqual(0.5);
 
