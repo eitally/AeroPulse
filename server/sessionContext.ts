@@ -82,7 +82,7 @@ export interface RuntimeSessionStore {
   athleteRunFtp: number;
   athleteLthr: number;
   athleteMaxHr: number;
-  athleteProfile?: Record<string, any>;
+  athleteProfile?: Record<string, unknown>;
   geminiApiKey?: string;
   mapTileApiKey: string;
   mapTileProvider: 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
@@ -447,8 +447,9 @@ export const runtimeStore: RuntimeSessionStore = new Proxy({} as RuntimeSessionS
   get(_target, prop: keyof RuntimeSessionStore) {
     return getScopedRuntimeStore()[prop];
   },
-  set(_target, prop: keyof RuntimeSessionStore, value: any) {
-    (getScopedRuntimeStore() as Record<string, any>)[prop] = value;
+  set(_target, prop: keyof RuntimeSessionStore, value: unknown) {
+    (getScopedRuntimeStore() as unknown as Record<keyof RuntimeSessionStore, unknown>)[prop] =
+      value;
     return true;
   },
 });

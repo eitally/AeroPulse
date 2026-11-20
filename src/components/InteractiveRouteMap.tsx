@@ -25,7 +25,7 @@ function getStoredMapTileSettings(): {
   try {
     const savedKey =
       localStorage.getItem('aeropulse_map_tile_api_key') ||
-      (import.meta as any).env?.VITE_MAPBOX_ACCESS_TOKEN ||
+      (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_MAPBOX_ACCESS_TOKEN ||
       '';
     const savedProvider =
       (localStorage.getItem('aeropulse_map_tile_provider') as MapTileProvider | null) ||
@@ -260,7 +260,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
       tileSize: cfg.tileSize || 256,
       zoomOffset: cfg.zoomOffset || 0,
     });
-    tl.on('tileerror', (errEvt: any) => {
+    tl.on('tileerror', (errEvt: L.TileErrorEvent) => {
       const img = errEvt?.tile as HTMLImageElement | undefined;
       const coords = errEvt?.coords;
       if (img && coords && !img.dataset.fallbackApplied) {
@@ -306,7 +306,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
       tileSize: cfg.tileSize || 256,
       zoomOffset: cfg.zoomOffset || 0,
     });
-    tl.on('tileerror', (errEvt: any) => {
+    tl.on('tileerror', (errEvt: L.TileErrorEvent) => {
       const img = errEvt?.tile as HTMLImageElement | undefined;
       const coords = errEvt?.coords;
       if (img && coords && !img.dataset.fallbackApplied) {

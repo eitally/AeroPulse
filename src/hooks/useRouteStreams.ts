@@ -88,7 +88,7 @@ export function useRouteStreams({
       });
       if (resp.ok) {
         const data = await resp.json();
-        const segMap = (data.segmentsByActivity || {}) as Record<string, any[]>;
+        const segMap = (data.segmentsByActivity || {}) as Record<string, StravaSegmentEffort[]>;
         const routesMap = (data.routesByActivity || {}) as Record<string, [number, number][]>;
         setActivities((prev) => {
           const merged = prev.map((act) => {

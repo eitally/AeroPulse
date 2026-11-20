@@ -266,7 +266,7 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
 });
 
 configRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
-  const incoming = (req.body?.athleteProfile || req.body || {}) as Record<string, any>;
+  const incoming = (req.body?.athleteProfile || req.body || {}) as Record<string, unknown>;
   const updated = buildServerAthleteProfile(
     { ...incoming, source: 'CUSTOM_OVERRIDE' },
     null

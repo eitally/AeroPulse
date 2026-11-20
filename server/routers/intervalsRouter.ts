@@ -30,7 +30,24 @@ import {
   buildServerAthleteProfile,
   parseWorkoutSyntaxToSteps,
   isGenericName,
+  type ServerLatestWellnessInput,
+  type ServerRawProfileInput,
+  type ServerRawSportSetting,
+  type ServerStravaZonesPayload,
 } from '../physiologyEngine.ts';
+import type {
+  RawStravaActivity,
+  RawStravaAthleteProfile,
+  StravaCachedSocialEntry,
+} from '../stravaSyncService.ts';
+import type {
+  ActivityInterval,
+  PlannedWorkoutEvent,
+  StravaActivityComment,
+  StravaKudoer,
+  StravaSegmentEffort,
+  StructuredWorkoutStep,
+} from '../../src/types.ts';
 import {
   normalizeActivityTimestamps,
   stripTimezoneSuffix,
@@ -107,10 +124,170 @@ export function getEffectiveIntervalsClientConfig(req?: Request) {
   return { clientId, clientSecret };
 }
 
+export interface RawIntervalsGear {
+  id?: string | number;
+  name?: string;
+  distance?: number;
+  primary?: boolean;
+}
+
+export interface RawIntervalsAthleteProfile extends ServerRawProfileInput {
+  strava_id?: string | number;
+  bikes?: RawIntervalsGear[];
+  shoes?: RawIntervalsGear[];
+  sportSettings?: ServerRawSportSetting[];
+}
+
+interface RawIntervalsSportInfoEntry {
+  type?: string;
+  eftp?: number;
+  wPrime?: number;
+  pMax?: number;
+}
+
+interface RawIntervalsWellnessRow {
+  [key: string]: unknown;
+  id?: string;
+  date?: string;
+  weight?: number;
+  restingHR?: number;
+  vo2max?: number;
+  hrv?: number;
+  hrvRMSSD?: number;
+  hrvBaseline7d?: number;
+  hrvNormalBandLow?: number;
+  hrvNormalBandHigh?: number;
+  rampRate?: number;
+  sleepSecs?: number;
+  sleepQuality?: string | number;
+  sleepScore?: number;
+  steps?: number;
+  ctl?: number;
+  atl?: number;
+  ctlLoad?: number;
+  atlLoad?: number;
+  sportInfo?: RawIntervalsSportInfoEntry[];
+}
+
+interface RawIntervalsInterval {
+  id?: string | number;
+  type?: string;
+  label?: string;
+  group_id?: string;
+  start_time?: number;
+  moving_time?: number;
+  elapsed_time?: number;
+  distance?: number;
+  average_speed?: number;
+  gap?: number;
+  average_watts?: number;
+  weighted_average_watts?: number;
+  intensity?: number;
+  zone?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_cadence?: number;
+  decoupling?: number;
+  average_stride?: number;
+}
+
+interface RawIntervalsActivity {
+  [key: string]: unknown;
+  id?: string | number;
+  strava_id?: string | number;
+  source?: string;
+  type?: string;
+  sub_type?: string;
+  name?: string;
+  device_name?: string;
+  trainer?: boolean;
+  start_date?: string;
+  start_date_local?: string;
+  start_latlng?: number[];
+  latlng?: number[];
+  stream_types?: string[];
+  moving_time?: number;
+  elapsed_time?: number;
+  distance?: number;
+  total_elevation_gain?: number;
+  icu_average_watts?: number;
+  average_watts?: number;
+  icu_weighted_avg_watts?: number;
+  icu_intensity?: number;
+  icu_training_load?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_cadence?: number;
+  gap?: number;
+  decoupling?: number;
+  gear?: { name?: string };
+  has_segments?: boolean;
+  icu_hr_zone_times?: number[];
+  icu_zone_times?: number[];
+  icu_intervals?: RawIntervalsInterval[];
+}
+
+interface RawIntervalsPlannedEvent {
+  id?: string | number;
+  start_date_local?: string;
+  name?: string;
+  type?: string;
+  description?: string;
+  moving_time?: number;
+  icu_training_load?: number;
+}
+
+interface NormalizedIntervalsSyncActivity {
+  id: string;
+  intervalsId: string;
+  intervalsActivityId: string;
+  stravaId?: string;
+  garminActivityId?: string;
+  source: string;
+  sourceBadges: string[];
+  rawSportType?: string;
+  name: string;
+  startDateLocal: string;
+  startDateUtcMs?: number;
+  sportCategory: string;
+  environment: 'OUTDOOR' | 'INDOOR';
+  subType: string;
+  movingTimeSecs: number;
+  distanceMeters: number;
+  elevationGainMeters: number;
+  avgPower?: number;
+  normalizedPower?: number;
+  intensityFactor?: number;
+  trainingLoad: number;
+  avgHr?: number;
+  maxHr?: number;
+  avgCadence?: number;
+  avgPaceSecsPerKm?: number;
+  gapPaceSecsPerKm?: number;
+  efficiencyFactor: number;
+  aerobicDecouplingPct?: number;
+  variabilityIndex?: number;
+  zoneSecs: { hr: number[]; power?: number[] };
+  gearName?: string;
+  deviceName?: string;
+  hasSegments: boolean;
+  intervals: ActivityInterval[];
+  segmentEfforts?: StravaSegmentEffort[];
+  stravaPrCount?: number;
+  routeLatLngs?: [number, number][];
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
+  kudosCount?: number;
+  hasKudoed?: boolean;
+  kudoers?: StravaKudoer[];
+  comments?: StravaActivityComment[];
+  commentCount?: number;
+}
+
 export interface CachedIntervalsIdentity {
   athleteId: string;
   athleteName: string;
-  rawProfile?: Record<string, any>;
+  rawProfile?: RawIntervalsAthleteProfile;
 }
 
 export const intervalsIdentityByKey = new Map<string, CachedIntervalsIdentity>();
@@ -132,7 +309,7 @@ export async function resolveIntervalsAthleteIdentity(req?: Request): Promise<Ca
       }
     );
     if (!resp.ok) return null;
-    const rawProfile = (await resp.json()) as Record<string, any>;
+    const rawProfile = (await resp.json()) as RawIntervalsAthleteProfile;
     const resolvedId = String(rawProfile.id || config.athleteId || '0');
     const fullName =
       String(rawProfile.name || '').trim() ||
@@ -154,8 +331,8 @@ export async function resolveIntervalsAthleteIdentity(req?: Request): Promise<Ca
   }
 }
 
-function rankSegmentEffortsAcrossActivities(activities: any[]) {
-  const bySegmentId = new Map<string, any[]>();
+function rankSegmentEffortsAcrossActivities(activities: NormalizedIntervalsSyncActivity[]) {
+  const bySegmentId = new Map<string, StravaSegmentEffort[]>();
   for (const act of activities) {
     if (!Array.isArray(act.segmentEfforts)) continue;
     for (const eff of act.segmentEfforts) {
@@ -179,7 +356,7 @@ function rankSegmentEffortsAcrossActivities(activities: any[]) {
 
   for (const act of activities) {
     if (Array.isArray(act.segmentEfforts) && act.segmentEfforts.length > 0) {
-      const prCount = act.segmentEfforts.filter((e: any) => e.prRank === 1).length;
+      const prCount = act.segmentEfforts.filter((e) => e.prRank === 1).length;
       if (prCount > (act.stravaPrCount || 0)) {
         act.stravaPrCount = prCount;
       }
@@ -254,9 +431,9 @@ export async function syncIntervalsAllHistory(
   }
 
   // Extract Athlete Profile, Sport Thresholds (FTP, LTHR, Max HR), and Real Bikes & Shoes
-  let parsedRawProfile: Record<string, any> | null = null;
+  let parsedRawProfile: RawIntervalsAthleteProfile | null = null;
   if (profileResp.ok) {
-    const profile = (await profileResp.json()) as Record<string, any>;
+    const profile = (await profileResp.json()) as RawIntervalsAthleteProfile;
     parsedRawProfile = profile;
     runtimeStore.intervalsAthleteName =
       profile.name ||
@@ -265,10 +442,10 @@ export async function syncIntervalsAllHistory(
 
     if (Array.isArray(profile.sportSettings)) {
       const bikeSetting = profile.sportSettings.find(
-        (s: any) => Array.isArray(s.types) && s.types.includes('Ride')
+        (s) => Array.isArray(s.types) && s.types.includes('Ride')
       );
       const runSetting = profile.sportSettings.find(
-        (s: any) => Array.isArray(s.types) && s.types.includes('Run')
+        (s) => Array.isArray(s.types) && s.types.includes('Run')
       );
       if (bikeSetting) {
         if (bikeSetting.ftp) runtimeStore.athleteFtp = Number(bikeSetting.ftp);
@@ -282,7 +459,7 @@ export async function syncIntervalsAllHistory(
     }
 
     const bikes = Array.isArray(profile.bikes)
-      ? profile.bikes.map((b: any) => ({
+      ? profile.bikes.map((b) => ({
           id: String(b.id),
           name: String(b.name || 'Road Bike'),
           type: 'BIKE' as const,
@@ -292,7 +469,7 @@ export async function syncIntervalsAllHistory(
         }))
       : [];
     const shoes = Array.isArray(profile.shoes)
-      ? profile.shoes.map((s: any) => ({
+      ? profile.shoes.map((s) => ({
           id: String(s.id),
           name: String(s.name || 'Running Shoe'),
           type: 'SHOE' as const,
@@ -306,9 +483,9 @@ export async function syncIntervalsAllHistory(
     }
   }
 
-  const rawWellnessAll = (await wellnessResp.json()) as Record<string, any>[];
-  const rawActivities = (await activitiesResp.json()) as Record<string, any>[];
-  const rawEvents = eventsResp.ok ? ((await eventsResp.json()) as Record<string, any>[]) : [];
+  const rawWellnessAll = (await wellnessResp.json()) as RawIntervalsWellnessRow[];
+  const rawActivities = (await activitiesResp.json()) as RawIntervalsActivity[];
+  const rawEvents = eventsResp.ok ? ((await eventsResp.json()) as RawIntervalsPlannedEvent[]) : [];
 
   // Filter out future empty wellness rows beyond today (or UTC tomorrow before morning sync)
   const rawWellness = rawWellnessAll.filter((w, i, a) => {
@@ -403,10 +580,10 @@ export async function syncIntervalsAllHistory(
 
     // Extract eFTP & W' from sportInfo
     const rideSport = Array.isArray(w.sportInfo)
-      ? w.sportInfo.find((s: any) => s.type === 'Ride')
+      ? w.sportInfo.find((s) => s.type === 'Ride')
       : undefined;
     const runSport = Array.isArray(w.sportInfo)
-      ? w.sportInfo.find((s: any) => s.type === 'Run')
+      ? w.sportInfo.find((s) => s.type === 'Run')
       : undefined;
     const rideEftp = rideSport?.eftp ? Math.round(Number(rideSport.eftp)) : undefined;
     const rideWPrime = rideSport?.wPrime ? Math.round(Number(rideSport.wPrime)) : undefined;
@@ -515,19 +692,19 @@ export async function syncIntervalsAllHistory(
   // Enrich & reconstruct Strava-originated Virtual Cycling / Trainer sessions from Strava cache or Intervals.icu daily wellness residual load
   const icuStravaAthleteId = String(parsedRawProfile?.strava_id || '').replace(/[^0-9]/g, '');
   const cachedStravaArchive = icuStravaAthleteId
-    ? loadJsonFile<Record<string, any>[]>(
+    ? loadJsonFile<RawStravaActivity[]>(
         `/tmp/aeropulse-strava-archive-${icuStravaAthleteId}.json`,
         []
       )
     : [];
-  const stravaArchiveById = new Map<string, Record<string, any>>();
+  const stravaArchiveById = new Map<string, RawStravaActivity>();
   for (const sa of cachedStravaArchive) {
     if (sa && sa.id) stravaArchiveById.set(String(sa.id), sa);
   }
 
   const garminStravaIds = new Set<string>();
   const knownGarminLoadByDate = new Map<string, number>();
-  const stubsByDate = new Map<string, Record<string, any>[]>();
+  const stubsByDate = new Map<string, RawIntervalsActivity[]>();
 
   for (const a of rawActivities) {
     if (!a || !a.start_date_local) continue;
@@ -547,7 +724,7 @@ export async function syncIntervalsAllHistory(
     }
   }
 
-  const enrichedRawActivities: Record<string, any>[] = [];
+  const enrichedRawActivities: RawIntervalsActivity[] = [];
   for (const a of rawActivities) {
     if (!a || !a.start_date_local) continue;
     if (a.source === 'STRAVA' && !a.type && a.moving_time == null && a.elapsed_time == null) {
@@ -597,7 +774,7 @@ export async function syncIntervalsAllHistory(
       }
       return true;
     })
-    .map((a) => {
+    .map((a): NormalizedIntervalsSyncActivity => {
       const rawType = String(a.type || '').trim();
       const rawSubType = String(a.sub_type || '').trim();
       const rawName = String(a.name || '').trim();
@@ -701,7 +878,7 @@ export async function syncIntervalsAllHistory(
       }
 
       const rawIntervals = Array.isArray(a.icu_intervals) ? a.icu_intervals : [];
-      const intervals = rawIntervals.map((iv: any, idx: number) => {
+      const intervals: ActivityInterval[] = rawIntervals.map((iv, idx: number) => {
         const dist = Number(iv.distance || 0);
         const dur = Number(iv.moving_time || iv.elapsed_time || 0);
         const avgSpeed = Number(iv.average_speed || 0);
@@ -736,10 +913,10 @@ export async function syncIntervalsAllHistory(
       });
 
       const hrZoneSecs = Array.isArray(a.icu_hr_zone_times)
-        ? a.icu_hr_zone_times.slice(0, 7).map((v: any) => Math.max(0, Math.round(Number(v || 0))))
+        ? a.icu_hr_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0))))
         : [0, 0, 0, 0, 0, 0, 0];
       const pwrZoneSecs = Array.isArray(a.icu_zone_times)
-        ? a.icu_zone_times.slice(0, 7).map((v: any) => Math.max(0, Math.round(Number(v || 0))))
+        ? a.icu_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0))))
         : undefined;
       const intervalsSourceBadges = Array.from(
         new Set([
@@ -812,24 +989,20 @@ export async function syncIntervalsAllHistory(
     });
 
   // Attach cached Strava segment efforts & GPS routes
-  const segmentsCache = loadJsonFile<Record<string, any[]>>(SEGMENTS_BY_ACTIVITY_CACHE_FILE, {});
+  const segmentsCache = loadJsonFile<Record<string, StravaSegmentEffort[]>>(
+    SEGMENTS_BY_ACTIVITY_CACHE_FILE,
+    {}
+  );
   const routesCache = loadJsonFile<Record<string, [number, number][]>>(
     ROUTES_BY_ACTIVITY_CACHE_FILE,
     {}
   );
-  const kudosCache = loadJsonFile<
-    Record<
-      string,
-      {
-        kudosCount?: number;
-        hasKudoed?: boolean;
-        kudoers?: any[];
-        comments?: any[];
-      }
-    >
-  >(STRAVA_KUDOS_CACHE_FILE, {});
+  const kudosCache = loadJsonFile<Record<string, StravaCachedSocialEntry>>(
+    STRAVA_KUDOS_CACHE_FILE,
+    {}
+  );
 
-  for (const act of activities as any[]) {
+  for (const act of activities) {
     if (Array.isArray(segmentsCache[act.id]) && segmentsCache[act.id].length > 0) {
       act.segmentEfforts = segmentsCache[act.id].map((eff) => ({ ...eff }));
     }
@@ -869,7 +1042,9 @@ export async function syncIntervalsAllHistory(
       ? configOrKey
       : configOrKey.apiKey || configOrKey.accessToken || 'default';
   const scopedPlannedFile = getScopedPlannedEventsFile(undefined, cacheKey);
-  const localPlanned = scopedPlannedFile ? loadJsonFile<any[]>(scopedPlannedFile, []) : [];
+  const localPlanned = scopedPlannedFile
+    ? loadJsonFile<PlannedWorkoutEvent[]>(scopedPlannedFile, [])
+    : [];
   const icuPlanned = rawEvents
     .filter((ev) => ev && ev.start_date_local)
     .map((ev) => {
@@ -911,7 +1086,7 @@ export async function syncIntervalsAllHistory(
     activities.length > 0
       ? activities[activities.length - 1].startDateLocal.slice(0, 10)
       : runtimeStore.earliestActivityDate;
-  const accumulatedWellnessSummary: Record<string, any> = {};
+  const accumulatedWellnessSummary: ServerLatestWellnessInput = {};
   for (const w of wellnessDays) {
     if (w.weightKg && w.weightKg > 30 && w.weightKg !== 70) {
       accumulatedWellnessSummary.weightKg = w.weightKg;
@@ -1206,20 +1381,22 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
       ]);
 
       if (validStravaToken || garminDirect) {
-        let sAth: Record<string, any> = {};
-        let sZones: Record<string, any> | null = null;
+        let sAth: RawStravaAthleteProfile = {};
+        let sZones: ServerStravaZonesPayload | null = null;
         if (validStravaToken) {
           const sHeaders = { Authorization: `Bearer ${validStravaToken}` };
           const [sAthResp, sZonesResp] = await Promise.all([
             fetch('https://www.strava.com/api/v3/athlete', { headers: sHeaders }),
             fetch('https://www.strava.com/api/v3/athlete/zones', { headers: sHeaders }),
           ]);
-          sAth = sAthResp.ok ? await readStravaResponseJson<Record<string, any>>(sAthResp) : {};
-          sZones = sZonesResp.ok ? await readStravaResponseJson<Record<string, any>>(sZonesResp) : null;
+          sAth = sAthResp.ok ? await readStravaResponseJson<RawStravaAthleteProfile>(sAthResp) : {};
+          sZones = sZonesResp.ok
+            ? await readStravaResponseJson<ServerStravaZonesPayload>(sZonesResp)
+            : null;
         }
         const sId = (extractStravaId(sAth) || stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
         const sActs = sId
-          ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
+          ? loadJsonFile<RawStravaActivity[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
           : [];
         const sName =
           garminDirect?.rawProfile?.name ||
@@ -1247,13 +1424,16 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
             )
           : [];
 
+        const firstGarminSetting = Array.isArray(garminDirect?.rawProfile?.sportSettings)
+          ? garminDirect.rawProfile.sportSettings[0]
+          : undefined;
         const directSyncedProfile = buildServerAthleteProfile(
           {
             ...(garminDirect?.rawProfile || {}),
             id: sId || garminDirect?.rawProfile?.id || '0',
             name: sName,
             ftp:
-              garminDirect?.rawProfile?.sportSettings?.[0]?.ftp ??
+              firstGarminSetting?.ftp ??
               garminDirect?.rawProfile?.ftp ??
               (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : undefined),
             weightKg:
@@ -1315,16 +1495,16 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
     }
 
     const rawProfile = profileResp.ok
-      ? ((await profileResp.json()) as Record<string, any>)
+      ? ((await profileResp.json()) as RawIntervalsAthleteProfile)
       : {};
     const rawWellnessList = wellnessResp.ok
-      ? ((await wellnessResp.json()) as Record<string, any>[])
+      ? ((await wellnessResp.json()) as RawIntervalsWellnessRow[])
       : [];
     const rawActsList = actsResp.ok
-      ? ((await actsResp.json()) as Record<string, any>[])
+      ? ((await actsResp.json()) as RawIntervalsActivity[])
       : [];
 
-    const latestWellnessSummary: Record<string, any> = {};
+    const latestWellnessSummary: ServerLatestWellnessInput = {};
     for (const w of rawWellnessList) {
       if (w.weight && Number(w.weight) > 25) latestWellnessSummary.weightKg = Number(w.weight);
       if (w.restingHR && Number(w.restingHR) > 25)
@@ -1334,8 +1514,8 @@ intervalsRouter.post('/api/intervals/profile/sync', async (req: Request, res: Re
         latestWellnessSummary.vo2MaxRunning = Number(w.vo2max);
       }
       if (Array.isArray(w.sportInfo)) {
-        const rideInfo = w.sportInfo.find((s: any) => s.type === 'Ride');
-        const runInfo = w.sportInfo.find((s: any) => s.type === 'Run');
+        const rideInfo = w.sportInfo.find((s) => s.type === 'Ride');
+        const runInfo = w.sportInfo.find((s) => s.type === 'Run');
         if (rideInfo?.eftp) latestWellnessSummary.rideEftp = Math.round(Number(rideInfo.eftp));
         if (rideInfo?.wPrime) latestWellnessSummary.rideWPrime = Math.round(Number(rideInfo.wPrime));
         if (rideInfo?.pMax) latestWellnessSummary.ridePMax = Math.round(Number(rideInfo.pMax));
@@ -1504,8 +1684,8 @@ intervalsRouter.post('/api/intervals/connect', async (req: Request, res: Respons
       return;
     }
 
-    const profileData = (await profileResp.json()) as Record<string, any>;
-    const resolvedId = profileData.id || athleteId;
+    const profileData = (await profileResp.json()) as RawIntervalsAthleteProfile;
+    const resolvedId = String(profileData.id || athleteId);
     const resolvedName =
       profileData.name ||
       [profileData.firstname, profileData.lastname].filter(Boolean).join(' ') ||
@@ -1656,12 +1836,12 @@ intervalsRouter.get('/api/intervals/activities/:id/streams', async (req: Request
       }
     }
 
-    let intervals: any[] = [];
-    let detailJson: Record<string, any> = {};
+    let intervals: ActivityInterval[] = [];
+    let detailJson: RawIntervalsActivity = {};
     if (detailResp.ok) {
-      detailJson = (await detailResp.json()) as Record<string, any>;
+      detailJson = (await detailResp.json()) as RawIntervalsActivity;
       if (Array.isArray(detailJson.icu_intervals)) {
-        intervals = detailJson.icu_intervals.map((iv: any, idx: number) => {
+        intervals = detailJson.icu_intervals.map((iv, idx: number) => {
           const dist = Number(iv.distance || 0);
           const dur = Number(iv.moving_time || iv.elapsed_time || 0);
           const avgSpeed = Number(iv.average_speed || 0);
@@ -1697,9 +1877,10 @@ intervalsRouter.get('/api/intervals/activities/:id/streams', async (req: Request
       }
     }
 
-    let segmentEfforts: any[] = [];
+    let segmentEfforts: StravaSegmentEffort[] = [];
     if (segmentsResp.ok) {
-      const rawSegments = (await segmentsResp.json()) as any[];
+      const rawSegments =
+        (await segmentsResp.json()) as Parameters<typeof computeIntervalsSegmentEfforts>[0];
       const rawType = String(detailJson.type || '');
       const sportCategory = /run|trailrun|virtualrun|treadmill/i.test(rawType)
         ? 'Running'
@@ -1714,7 +1895,7 @@ intervalsRouter.get('/api/intervals/activities/:id/streams', async (req: Request
           : undefined,
       });
       if (segmentEfforts.length > 0) {
-        const segmentsCache = loadJsonFile<Record<string, any[]>>(
+        const segmentsCache = loadJsonFile<Record<string, StravaSegmentEffort[]>>(
           SEGMENTS_BY_ACTIVITY_CACHE_FILE,
           {}
         );
@@ -1756,7 +1937,7 @@ intervalsRouter.get('/api/calendar/events', async (req: Request, res: Response) 
     res.json({ events: [] });
     return;
   }
-  const localPlanned = loadJsonFile<any[]>(scopedFile, []);
+  const localPlanned = loadJsonFile<PlannedWorkoutEvent[]>(scopedFile, []);
   res.json({ events: localPlanned });
 });
 
@@ -1809,7 +1990,7 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
 
     const scopedFile = getScopedPlannedEventsFile(req);
     const cloud = await loadAthleteCloudState(req);
-    const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+    const existingLocal = scopedFile ? loadJsonFile<PlannedWorkoutEvent[]>(scopedFile, []) : [];
     const existing =
       cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
     const updated = [newEvent, ...existing];
@@ -1864,7 +2045,7 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
     const garminSession = getActiveGarminSession(req);
     if (garminSession && body.syncToGarmin !== false) {
       try {
-        const garminSteps = (newEvent.structuredSteps || []).map((st: any) => ({
+        const garminSteps = (newEvent.structuredSteps || []).map((st: StructuredWorkoutStep) => ({
           label: st.label || 'Interval',
           durationSecs: Number(st.durationSecs || 600),
           targetPctFtp: Number(st.targetPctFtp || 75),
@@ -1912,7 +2093,7 @@ intervalsRouter.put('/api/calendar/events/:id', async (req: Request, res: Respon
     res.json({ updated: true, event: { id, ...body } });
     return;
   }
-  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existingLocal = scopedFile ? loadJsonFile<PlannedWorkoutEvent[]>(scopedFile, []) : [];
   const existing =
     cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const idx = existing.findIndex((e) => e.id === id);
@@ -1946,7 +2127,7 @@ intervalsRouter.delete('/api/calendar/blocks/:blockId', async (req: Request, res
     return;
   }
   const blockId = req.params.blockId;
-  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existingLocal = scopedFile ? loadJsonFile<PlannedWorkoutEvent[]>(scopedFile, []) : [];
   const existing =
     cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.planBlockId !== blockId);
@@ -1965,7 +2146,7 @@ intervalsRouter.delete('/api/calendar/events/:id', async (req: Request, res: Res
     return;
   }
   const id = req.params.id;
-  const existingLocal = scopedFile ? loadJsonFile<any[]>(scopedFile, []) : [];
+  const existingLocal = scopedFile ? loadJsonFile<PlannedWorkoutEvent[]>(scopedFile, []) : [];
   const existing =
     cloud && cloud.plannedEvents.length > 0 ? cloud.plannedEvents : existingLocal;
   const updated = existing.filter((e) => e.id !== id);

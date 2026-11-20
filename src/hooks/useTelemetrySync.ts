@@ -18,6 +18,9 @@ import {
 } from '../utils/activityTimestamp';
 import {
   CURRENT_PMC_MODEL_VERSION,
+  type ServerConfigStatusResponse,
+  type StravaExchangeResponse,
+  type StravaTokenHandshakePayload,
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   computeWellnessDaysFromActivities,
@@ -57,10 +60,117 @@ export function hasStravaClientCredentials(): boolean {
 }
 
 export type CompleteStravaAuthFn = (opts: {
-  tokens?: any;
+  tokens?: StravaTokenHandshakePayload;
   sessionToken?: string;
   hasExistingSyncPolicy?: boolean;
 }) => Promise<void>;
+
+interface StravaSyncActivityDto {
+  stravaId: string | number;
+  startDateLocal: string;
+  startDateUtcMs?: number;
+  name: string;
+  sportCategory: UnifiedActivity['sportCategory'];
+  rawSportType?: string;
+  environment: UnifiedActivity['environment'];
+  subType?: UnifiedActivity['subType'];
+  movingTimeSecs: number;
+  distanceMeters: number;
+  elevationGainMeters: number;
+  avgPower?: number;
+  normalizedPower?: number;
+  deviceWatts?: boolean;
+  intensityFactor?: number;
+  variabilityIndex?: number;
+  trainingLoad?: number;
+  loadModelVersion?: number;
+  avgHr?: number;
+  maxHr?: number;
+  avgCadence?: number;
+  avgPaceSecsPerKm?: number;
+  efficiencyFactor?: number;
+  gearName?: string;
+  stravaPrCount?: number;
+  kudosCount?: number;
+  commentCount?: number;
+  achievementCount?: number;
+  athleteCount?: number;
+  hasKudoed?: boolean;
+  kudoers?: UnifiedActivity['kudoers'];
+  comments?: UnifiedActivity['comments'];
+  summaryPolyline?: string;
+  routeLatLngs?: [number, number][];
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
+  segmentEfforts?: UnifiedActivity['segmentEfforts'];
+}
+
+interface StravaSyncPayload {
+  athleteId?: string;
+  athleteName?: string;
+  athleteProfile?: Partial<AthleteProfile>;
+  hasMoreHistory?: boolean;
+  nextBeforeEpoch?: number;
+  rateLimitPaused?: boolean;
+  syncPaused?: boolean;
+  missingActivityScope?: boolean;
+  stravaTokens?: StravaTokenHandshakePayload;
+  gearItems?: AthleteGearItem[];
+  redactedStravaCount?: number;
+  activities?: StravaSyncActivityDto[];
+}
+
+function toUnifiedFromStravaDto(sa: StravaSyncActivityDto): UnifiedActivity {
+  const resolvedRoute =
+    Array.isArray(sa.routeLatLngs) && sa.routeLatLngs.length >= 2
+      ? sa.routeLatLngs
+      : decodeGooglePolylineClient(sa.summaryPolyline);
+  return reclassifyActivityEnvironment({
+    id: `strava-${sa.stravaId}`,
+    stravaId: String(sa.stravaId),
+    startDateLocal: sa.startDateLocal,
+    ...(typeof sa.startDateUtcMs === 'number' ? { startDateUtcMs: sa.startDateUtcMs } : {}),
+    name: sa.name,
+    sportCategory: sa.sportCategory,
+    rawSportType: sa.rawSportType,
+    environment: sa.environment,
+    subType: sa.subType || (sa.environment === 'INDOOR' ? 'Smart Trainer' : 'Road'),
+    movingTimeSecs: sa.movingTimeSecs,
+    distanceMeters: sa.distanceMeters,
+    elevationGainMeters: sa.elevationGainMeters,
+    avgPower: sa.avgPower,
+    normalizedPower: sa.normalizedPower,
+    deviceWatts: sa.deviceWatts,
+    intensityFactor: sa.intensityFactor,
+    trainingLoad: sa.trainingLoad ?? 0,
+    loadModelVersion: sa.loadModelVersion,
+    avgHr: sa.avgHr || 0,
+    maxHr: sa.maxHr || 0,
+    avgCadence: sa.avgCadence,
+    avgPaceSecsPerKm: sa.avgPaceSecsPerKm,
+    gapPaceSecsPerKm: sa.avgPaceSecsPerKm,
+    aerobicDecouplingPct: 0,
+    efficiencyFactor: sa.efficiencyFactor || 0,
+    firstHalfEf: 0,
+    secondHalfEf: 0,
+    zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
+    gearName: sa.gearName,
+    stravaPrCount: sa.stravaPrCount || 0,
+    kudosCount: sa.kudosCount || 0,
+    commentCount: sa.commentCount || 0,
+    achievementCount: sa.achievementCount || 0,
+    athleteCount: sa.athleteCount || 1,
+    hasKudoed: Boolean(sa.hasKudoed),
+    kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
+    comments: Array.isArray(sa.comments) ? sa.comments : [],
+    summaryPolyline: sa.summaryPolyline,
+    routeLatLngs: resolvedRoute,
+    startLatLng: sa.startLatLng,
+    endLatLng: sa.endLatLng,
+    segmentEfforts: sa.segmentEfforts || [],
+    sourceBadges: ['Strava'],
+  });
+}
 
 interface UseTelemetrySyncParams {
   activitiesRef: React.MutableRefObject<UnifiedActivity[]>;
@@ -253,7 +363,7 @@ export function useTelemetrySync({
         headers: getSavedIntervalsHeaders(),
       });
       if (!resp.ok) return null;
-      const data = await safeParseResponseJson(resp);
+      const data = await safeParseResponseJson<ServerConfigStatusResponse>(resp);
       if (data?.error && !data?.callbackUrl) return null;
 
       let notLoggedOut = isNotLoggedOut();
@@ -308,16 +418,21 @@ export function useTelemetrySync({
         try {
           const authMeResp = await fetch('/api/auth/me', { credentials: 'include' });
           if (authMeResp.ok) {
-            const authMeData = await authMeResp.json();
+            const authMeData = (await authMeResp.json()) as {
+              authenticated?: boolean;
+              sessionToken?: string;
+              user?: ThreshUser;
+            };
             if (isNotLoggedOut() && authMeData?.authenticated && authMeData?.user) {
-              setCurrentUser(authMeData.user);
+              const authenticatedUser = authMeData.user;
+              setCurrentUser(authenticatedUser);
               const linkedIds: string[] = [
                 ...(data.stravaAthleteId ? [String(data.stravaAthleteId)] : []),
-                ...((authMeData.user.authProviders || [])
-                  .filter((p: any) => p.provider === 'strava' && p.providerId)
-                  .map((p: any) => String(p.providerId))),
+                ...((authenticatedUser.authProviders || [])
+                  .filter((p) => p.provider === 'strava' && p.providerId)
+                  .map((p) => String(p.providerId))),
               ];
-              await reconcileStoreOwnerAthleteId(authMeData.user.id, linkedIds);
+              await reconcileStoreOwnerAthleteId(authenticatedUser.id, linkedIds);
               if (isNotLoggedOut()) {
                 if (authMeData.sessionToken) {
                   try {
@@ -335,16 +450,21 @@ export function useTelemetrySync({
                 } catch {
                   // ignore
                 }
-                if (authMeData.user.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
+                if (authenticatedUser.name && isGenericAthleteName(athleteProfileRef.current?.name)) {
                   setAthleteProfile((prev) => ({
                     ...prev,
-                    name: authMeData.user.name,
-                    ...(authMeData.user.birthMonthYear ? { birthMonthYear: authMeData.user.birthMonthYear } : {}),
+                    name: authenticatedUser.name,
+                    ...(authenticatedUser.birthMonthYear
+                      ? { birthMonthYear: authenticatedUser.birthMonthYear }
+                      : {}),
                   }));
-                } else if (authMeData.user.birthMonthYear && !athleteProfileRef.current?.birthMonthYear) {
+                } else if (
+                  authenticatedUser.birthMonthYear &&
+                  !athleteProfileRef.current?.birthMonthYear
+                ) {
                   setAthleteProfile((prev) => ({
                     ...prev,
-                    birthMonthYear: authMeData.user.birthMonthYear,
+                    birthMonthYear: authenticatedUser.birthMonthYear,
                   }));
                 }
               }
@@ -498,7 +618,7 @@ export function useTelemetrySync({
           : undefined,
         intervalsConnected: isClientIntervalsConnected,
         intervalsAuthMethod: isClientIntervalsConnected
-          ? data.intervalsAuthMethod || 'USER_INPUT'
+          ? data.intervalsAuthMethod || 'API_KEY'
           : 'NONE',
         intervalsAthleteId: isClientIntervalsConnected ? data.intervalsAthleteId || '0' : '0',
         intervalsAthleteName: isClientIntervalsConnected
@@ -825,7 +945,7 @@ export function useTelemetrySync({
           });
           if (isBrowserSessionLoggedOut()) return;
           if (stravaResp.ok) {
-            const stravaData = await stravaResp.json();
+            const stravaData = (await stravaResp.json()) as StravaSyncPayload;
             if (isBrowserSessionLoggedOut()) return;
             const stravaBackfillKey = `aeropulse_strava_backfill_v4_${stravaData.athleteId || 'self'}`;
             const oldestStravaMs = stravaActs.reduce((minMs, a) => {
@@ -845,10 +965,10 @@ export function useTelemetrySync({
             if (cursorBeforeEpoch > 0 && !stravaData.rateLimitPaused) {
               const seenStravaIds = new Set<string>(
                 Array.isArray(stravaData.activities)
-                  ? stravaData.activities.map((a: any) => String(a.stravaId))
+                  ? stravaData.activities.map((a) => String(a.stravaId))
                   : []
               );
-              const collectedActs: any[] = Array.isArray(stravaData.activities)
+              const collectedActs: StravaSyncActivityDto[] = Array.isArray(stravaData.activities)
                 ? [...stravaData.activities]
                 : [];
               let lastHasMore = Boolean(stravaData.hasMoreHistory);
@@ -865,7 +985,7 @@ export function useTelemetrySync({
                 });
                 if (isBrowserSessionLoggedOut()) return;
                 if (!passResp.ok) break;
-                const passData = await passResp.json();
+                const passData = (await passResp.json()) as StravaSyncPayload;
                 if (isBrowserSessionLoggedOut()) return;
                 const passActs = Array.isArray(passData.activities) ? passData.activities : [];
                 let addedCount = 0;
@@ -947,7 +1067,9 @@ export function useTelemetrySync({
                       : {}),
                   },
                   latestW,
-                  stravaData.activities || activitiesRef.current
+                  Array.isArray(stravaData.activities)
+                    ? stravaData.activities.map(toUnifiedFromStravaDto)
+                    : activitiesRef.current
                 );
                 setAthleteProfile(completeProf);
                 athleteProfileRef.current = completeProf;
@@ -1050,64 +1172,12 @@ export function useTelemetrySync({
               }
             }
             if (Array.isArray(stravaData.activities) && stravaData.activities.length > 0) {
-              const toUnifiedFromStrava = (sa: any): UnifiedActivity => {
-                const resolvedRoute =
-                  Array.isArray(sa.routeLatLngs) && sa.routeLatLngs.length >= 2
-                    ? sa.routeLatLngs
-                    : decodeGooglePolylineClient(sa.summaryPolyline);
-                return reclassifyActivityEnvironment({
-                  id: `strava-${sa.stravaId}`,
-                  stravaId: String(sa.stravaId),
-                  startDateLocal: sa.startDateLocal,
-                  ...(typeof sa.startDateUtcMs === 'number'
-                    ? { startDateUtcMs: sa.startDateUtcMs }
-                    : {}),
-                  name: sa.name,
-                  sportCategory: sa.sportCategory,
-                  rawSportType: sa.rawSportType,
-                  environment: sa.environment,
-                  subType: sa.subType || (sa.environment === 'INDOOR' ? 'Smart Trainer' : 'Road'),
-                  movingTimeSecs: sa.movingTimeSecs,
-                  distanceMeters: sa.distanceMeters,
-                  elevationGainMeters: sa.elevationGainMeters,
-                  avgPower: sa.avgPower,
-                  normalizedPower: sa.normalizedPower,
-                  deviceWatts: sa.deviceWatts,
-                  intensityFactor: sa.intensityFactor,
-                  trainingLoad: sa.trainingLoad ?? 0,
-                  loadModelVersion: sa.loadModelVersion,
-                  avgHr: sa.avgHr || 0,
-                  maxHr: sa.maxHr || 0,
-                  avgCadence: sa.avgCadence,
-                  avgPaceSecsPerKm: sa.avgPaceSecsPerKm,
-                  gapPaceSecsPerKm: sa.avgPaceSecsPerKm,
-                  aerobicDecouplingPct: 0,
-                  efficiencyFactor: sa.efficiencyFactor || 0,
-                  firstHalfEf: 0,
-                  secondHalfEf: 0,
-                  zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
-                  gearName: sa.gearName,
-                  stravaPrCount: sa.stravaPrCount || 0,
-                  kudosCount: sa.kudosCount || 0,
-                  commentCount: sa.commentCount || 0,
-                  achievementCount: sa.achievementCount || 0,
-                  athleteCount: sa.athleteCount || 1,
-                  hasKudoed: Boolean(sa.hasKudoed),
-                  kudoers: Array.isArray(sa.kudoers) ? sa.kudoers : [],
-                  comments: Array.isArray(sa.comments) ? sa.comments : [],
-                  summaryPolyline: sa.summaryPolyline,
-                  routeLatLngs: resolvedRoute,
-                  startLatLng: sa.startLatLng,
-                  endLatLng: sa.endLatLng,
-                  segmentEfforts: sa.segmentEfforts || [],
-                  sourceBadges: ['Strava'],
-                });
-              };
+              const toUnifiedFromStrava = toUnifiedFromStravaDto;
 
               if (!mergedActivities) {
                 mergedActivities = stravaData.activities.map(toUnifiedFromStrava);
               } else {
-                const byStravaId = new Map<string, any>();
+                const byStravaId = new Map<string, StravaSyncActivityDto>();
                 for (const sa of stravaData.activities) {
                   byStravaId.set(String(sa.stravaId), sa);
                 }
@@ -1483,7 +1553,7 @@ export function useTelemetrySync({
             headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
             body: JSON.stringify({ code: urlCode }),
           });
-          const exData = await safeParseResponseJson(exResp);
+          const exData = await safeParseResponseJson<StravaExchangeResponse>(exResp);
           if (exResp.ok && (exData.accessToken || exData.refreshToken || exData.tokens)) {
             const tokens = exData.tokens || {
               refreshToken: exData.refreshToken,

@@ -276,13 +276,54 @@ export interface ObservedPhysiologyMetrics {
   obsVo2Run: number;
 }
 
+export interface ObservedPhysiologyActivityInput {
+  sportCategory?: string;
+  rawSportType?: string;
+  sport_type?: string;
+  type?: string;
+  activityType?: { typeKey?: string };
+  name?: string;
+  activityName?: string;
+  movingTimeSecs?: number;
+  movingDuration?: number;
+  moving_time?: number;
+  elapsed_time?: number;
+  duration?: number;
+  distanceMeters?: number;
+  distance?: number;
+  avgPower?: number;
+  icu_average_watts?: number;
+  average_watts?: number;
+  normalizedPower?: number;
+  normPower?: number;
+  icu_weighted_avg_watts?: number;
+  weighted_average_watts?: number;
+  max20MinPower?: number;
+  maxAvgPower_1200?: number;
+  max_watts?: number;
+  maxPower?: number;
+  maxAvgPower_1?: number;
+  pMax?: number;
+  avgHr?: number;
+  averageHR?: number;
+  average_heartrate?: number;
+  maxHr?: number;
+  maxHR?: number;
+  max_heartrate?: number;
+  device_watts?: boolean;
+  deviceWatts?: boolean;
+  fastestSplit_5000?: number;
+  gapPaceSecsPerKm?: number;
+  avgPaceSecsPerKm?: number;
+}
+
 /**
  * Derives empirical cycling/running thresholds from activity history while strictly
  * ignoring un-metered Strava power estimates (`device_watts === false`), e-bikes,
  * and low-intensity / casual sessions so light weeks never collapse FTP/LTHR/LT2 downward.
  */
 export function deriveObservedPhysiologyMetrics(
-  activities?: Record<string, any>[] | null,
+  activities?: readonly (ObservedPhysiologyActivityInput | Record<string, unknown>)[] | null,
   weightKg = 70
 ): ObservedPhysiologyMetrics {
   let maxBikeWatts20m = 0;
@@ -295,8 +336,9 @@ export function deriveObservedPhysiologyMetrics(
   let bestRunPaceSecsPerKm = 0;
 
   if (Array.isArray(activities)) {
-    for (const a of activities) {
-      if (!a) continue;
+    for (const rawItem of activities) {
+      if (!rawItem) continue;
+      const a = rawItem as ObservedPhysiologyActivityInput;
       const sport = String(
         a.sportCategory ||
           a.rawSportType ||

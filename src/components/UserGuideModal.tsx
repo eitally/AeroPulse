@@ -283,7 +283,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
     shortTitle: string;
     fullTitle: string;
     subtitle: string;
-    icon: React.ComponentType<any>;
+    icon: React.ComponentType<{
+      className?: string;
+      weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+    }>;
     accentClass: string;
   }[] = [
     {

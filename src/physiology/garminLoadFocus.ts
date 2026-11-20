@@ -83,7 +83,9 @@ export function classifyActivityGarminLoad(
   const ftp = opts?.ftp && opts.ftp > 80 ? opts.ftp : 300;
   const lthr = opts?.lthr && opts.lthr > 110 ? opts.lthr : 168;
   const athleteMaxHr = opts?.maxHr && opts.maxHr > 140 ? opts.maxHr : 190;
-  const explicitLoad = Number(activity.trainingLoad ?? (activity as any).tss ?? 0);
+  const explicitLoad = Number(
+    activity.trainingLoad ?? (activity as UnifiedActivity & { tss?: number }).tss ?? 0
+  );
 
   const hasHighIntensityTitleKeyword =
     /\b(race|interval|intervals|tempo|threshold|vo2|vo2max|anaerobic|sprint|sprints|track|crit|criterium|hiit|over-under|over\/under|sweet\s*spot|\bsst\b|time trial|\btt\b)\b/i.test(
@@ -236,7 +238,9 @@ export function buildDayLoadSegments(
 
     const rawList = chronological.map((act, idx) => {
       const focus = classifyActivityGarminLoad(act, opts);
-      const explicitLoad = Number(act.trainingLoad ?? (act as any).tss ?? 0);
+      const explicitLoad = Number(
+        act.trainingLoad ?? (act as UnifiedActivity & { tss?: number }).tss ?? 0
+      );
       const fallbackLoad = Math.max(
         8,
         Math.round(

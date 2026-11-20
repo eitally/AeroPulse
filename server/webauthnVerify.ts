@@ -252,8 +252,19 @@ function assertRpIdHashAndFlags(authData: Buffer, expectedRpId: string, requireA
   return authData.readUInt32BE(33);
 }
 
+export interface WebAuthnCredentialPayload {
+  id?: unknown;
+  rawId?: unknown;
+  response?: {
+    clientDataJSON?: unknown;
+    attestationObject?: unknown;
+    authenticatorData?: unknown;
+    signature?: unknown;
+  };
+}
+
 export function verifyWebAuthnRegistration(params: {
-  credential: any;
+  credential: WebAuthnCredentialPayload;
   expectedChallenge: string;
   expectedRpId: string;
   expectedOrigins: string[];
@@ -320,7 +331,7 @@ export function verifyWebAuthnRegistration(params: {
 }
 
 export function verifyWebAuthnAssertion(params: {
-  credential: any;
+  credential: WebAuthnCredentialPayload;
   expectedChallenge: string;
   expectedRpId: string;
   expectedOrigins: string[];

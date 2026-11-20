@@ -19,7 +19,7 @@ let sharedWorker: Worker | null = null;
 const pendingCallbacks = new Map<
   string,
   {
-    resolve: (res: any) => void;
+    resolve: (res: unknown) => void;
     reject: (err: Error) => void;
   }
 >();
@@ -84,7 +84,10 @@ function dispatchToWorker<T>(
       return;
     }
     const id = `wk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    pendingCallbacks.set(id, { resolve, reject });
+    pendingCallbacks.set(id, {
+      resolve: (res: unknown) => resolve(res as T),
+      reject,
+    });
     const fullRequest = { ...request, id } as ActivityWorkerRequest;
     worker.postMessage(fullRequest);
   });

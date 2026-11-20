@@ -20,6 +20,7 @@ import type {
   TargetGoal,
   UnifiedActivity,
 } from '../../src/types.ts';
+import { sanitizePracticeVenueCategory } from '../../src/utils/workoutScheduleUtils.ts';
 
 export const athleteStateRouter = express.Router();
 
@@ -147,9 +148,10 @@ export function sanitizeAthleteCloudState(
         ...(typeof ev?.locationName === 'string' && ev.locationName.trim()
           ? { locationName: ev.locationName.trim().slice(0, 120) }
           : {}),
-        ...(typeof ev?.locationCategory === 'string' && ev.locationCategory.trim()
-          ? { locationCategory: ev.locationCategory.trim().slice(0, 40) as any }
-          : {}),
+        ...(() => {
+          const cleanCat = sanitizePracticeVenueCategory(ev?.locationCategory);
+          return cleanCat ? { locationCategory: cleanCat } : {};
+        })(),
         ...(typeof ev?.meetingNotes === 'string' && ev.meetingNotes.trim()
           ? { meetingNotes: ev.meetingNotes.trim().slice(0, 240) }
           : {}),

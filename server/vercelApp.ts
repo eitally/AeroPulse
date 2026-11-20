@@ -10,7 +10,7 @@ app.use(securityHeadersMiddleware);
 app.use(
   express.json({
     limit: '2mb',
-    reviver: strava64BitJsonReviver as unknown as (key: string, value: any) => any,
+    reviver: strava64BitJsonReviver as (key: string, value: unknown) => unknown,
   })
 );
 app.use(express.urlencoded({ extended: false }));

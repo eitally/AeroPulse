@@ -55,6 +55,18 @@ import {
   linkProviderToUser,
 } from '../authService.ts';
 import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
+import type {
+  RawStravaActivity,
+  RawStravaAthleteProfile,
+  RawStravaCommentApi,
+  RawStravaKudoerApi,
+  RawStravaSegmentEffort,
+  StravaCachedSocialEntry,
+} from '../stravaSyncService.ts';
+import type {
+  StravaKudoer,
+  StravaSegmentEffort,
+} from '../../src/types.ts';
 
 export interface StoredStravaSyncPolicy {
   window: '90d' | '180d' | '365d' | 'all' | 'none';
@@ -294,7 +306,7 @@ export async function resolveStravaAthleteIdentity(req?: Request): Promise<Cache
       }
     }
     if (!resp.ok) return null;
-    const rawAthlete = await readStravaResponseJson<Record<string, any>>(resp);
+    const rawAthlete = await readStravaResponseJson<RawStravaAthleteProfile>(resp);
     const athleteId = extractStravaId(rawAthlete);
     const fullName =
       [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ').trim() ||
@@ -467,7 +479,7 @@ export async function activateStravaCanonicalScope(
   }
 
   if (prevScopeKey && prevScopeKey !== scopeKey) {
-    const existingGarmin = await loadTenantVaultAsync<Record<string, any> | null>(
+    const existingGarmin = await loadTenantVaultAsync<Record<string, unknown> | null>(
       `garmin_${prevScopeKey}`,
       null
     );
@@ -777,7 +789,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           headers: { Authorization: `Bearer ${tokenData.access_token}` },
         });
         if (athResp.ok) {
-          const rawAth = await readStravaResponseJson<Record<string, any>>(athResp);
+          const rawAth = await readStravaResponseJson<RawStravaAthleteProfile>(athResp);
           const enrichedName =
             [rawAth.firstname, rawAth.lastname].filter(Boolean).join(' ').trim() ||
             String(rawAth.username || '').trim();
@@ -1575,13 +1587,16 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
       return;
     }
 
+    interface RawStravaStreamBucket {
+      data?: Array<number | [number, number]>;
+    }
     const raw = streamsResp.ok
-      ? await readStravaResponseJson<Record<string, { data?: any[] }>>(streamsResp)
+      ? await readStravaResponseJson<Record<string, RawStravaStreamBucket>>(streamsResp)
       : {};
     const timeData = Array.isArray(raw?.time?.data) ? (raw.time.data as number[]) : [];
     const step = Math.max(1, Math.floor(timeData.length / 500));
-    const downsample = (arr?: number[]) =>
-      Array.isArray(arr) ? arr.filter((_, idx) => idx % step === 0) : undefined;
+    const downsample = (arr?: Array<number | [number, number]>) =>
+      Array.isArray(arr) ? (arr as number[]).filter((_, idx) => idx % step === 0) : undefined;
 
     const rawLatLng = Array.isArray(raw?.latlng?.data) ? (raw.latlng.data as [number, number][]) : undefined;
     const downsampledLatLng = rawLatLng
@@ -1591,16 +1606,16 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
           .map((pt): [number, number] => [Number(Number(pt[0]).toFixed(5)), Number(Number(pt[1]).toFixed(5))])
       : undefined;
 
-    let segmentEfforts: any[] = [];
+    let segmentEfforts: StravaSegmentEffort[] = [];
     if (detailResp.ok) {
-      const detail = await readStravaResponseJson<Record<string, any>>(detailResp);
+      const detail = await readStravaResponseJson<RawStravaActivity>(detailResp);
       const resolvedActivityId = extractStravaId(detail) || activityId;
       const rawEfforts = Array.isArray(detail.segment_efforts) ? detail.segment_efforts : [];
       const sportType = String(detail.sport_type || detail.type || '');
       const sportCat = /run|trailrun|virtualrun|treadmill/i.test(sportType)
         ? ('Running' as const)
         : ('Cycling' as const);
-      segmentEfforts = rawEfforts.slice(0, 40).map((se: Record<string, any>) => {
+      segmentEfforts = rawEfforts.slice(0, 40).map((se: RawStravaSegmentEffort) => {
         const dist = Math.round(Number(se.distance || se.segment?.distance || 0));
         const elTime = Number(se.elapsed_time || 0);
         const sIdx = typeof se.start_index === 'number' ? se.start_index : undefined;
@@ -1617,10 +1632,10 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
           }
           if (pts.length >= 2) pathLatLngs = pts;
         }
-        const effortId = extractStravaId(se);
+        const effortId = extractStravaId(se as Record<string, unknown>);
         return {
           id: effortId,
-          segmentId: extractStravaId(se.segment) || effortId,
+          segmentId: extractStravaId(se.segment as Record<string, unknown>) || effortId,
           name: String(se.name || se.segment?.name || 'Segment'),
           sportCategory: sportCat,
           distanceMeters: dist,
@@ -1647,11 +1662,11 @@ stravaRouter.get('/api/strava/activities/:id/streams', async (req: Request, res:
       });
     }
 
-    let kudoers: any[] | undefined;
+    let kudoers: StravaKudoer[] | undefined;
     if (kudosResp.ok) {
-      const rawKudos = await readStravaResponseJson<any[]>(kudosResp);
+      const rawKudos = await readStravaResponseJson<RawStravaKudoerApi[]>(kudosResp);
       if (Array.isArray(rawKudos)) {
-        kudoers = rawKudos.map((k: any) => ({
+        kudoers = rawKudos.map((k) => ({
           firstname: String(k.firstname || 'Athlete'),
           lastname: String(k.lastname || ''),
           profileMedium: k.profile_medium || k.profile || undefined,
@@ -1697,17 +1712,7 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
     const scopedKudosFile = `/tmp/thresh-strava-kudos-${scopeKey}.json`;
     const activityId = String(req.params.id);
     const stravaId = String(req.query.stravaId || activityId).replace(/^strava-/, '');
-    const kudosCache = loadJsonFile<
-      Record<
-        string,
-        {
-          kudosCount?: number;
-          hasKudoed?: boolean;
-          kudoers?: any[];
-          comments?: any[];
-        }
-      >
-    >(scopedKudosFile, {});
+    const kudosCache = loadJsonFile<Record<string, StravaCachedSocialEntry>>(scopedKudosFile, {});
 
     const activeAccessToken = await ensureValidStravaAccessToken(req, false);
 
@@ -1725,9 +1730,9 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
       ]);
 
       if (kResp.ok) {
-        const rawKudos = await readStravaResponseJson<any[]>(kResp);
+        const rawKudos = await readStravaResponseJson<RawStravaKudoerApi[]>(kResp);
         const kudoers = Array.isArray(rawKudos)
-          ? rawKudos.map((k: any) => ({
+          ? rawKudos.map((k) => ({
               firstname: String(k.firstname || 'Athlete'),
               lastname: String(k.lastname || ''),
               profileMedium: k.profile_medium || k.profile || undefined,
@@ -1739,10 +1744,10 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
         const existing = kudosCache[activityId] || kudosCache[stravaId] || {};
         let mergedComments = existing.comments || [];
         if (cResp.ok) {
-          const rawComments = await readStravaResponseJson<any[]>(cResp);
+          const rawComments = await readStravaResponseJson<RawStravaCommentApi[]>(cResp);
           if (Array.isArray(rawComments)) {
-            const remoteComments = rawComments.map((c: any, idx: number) => ({
-              id: extractStravaId(c) || `sc-${stravaId}-${idx}`,
+            const remoteComments = rawComments.map((c, idx: number) => ({
+              id: extractStravaId(c as Record<string, unknown>) || `sc-${stravaId}-${idx}`,
               text: String(c.text || ''),
               createdAt: String(c.created_at || new Date().toISOString()),
               athleteName:
@@ -1750,7 +1755,7 @@ stravaRouter.get('/api/strava/activities/:id/kudos', async (req: Request, res: R
                 'Strava Athlete',
               avatarUrl: c.athlete?.profile_medium || undefined,
             }));
-            const seenIds = new Set(mergedComments.map((mc: any) => mc.id));
+            const seenIds = new Set(mergedComments.map((mc) => mc.id));
             mergedComments = [
               ...mergedComments,
               ...remoteComments.filter((rc) => !seenIds.has(rc.id)),
@@ -1797,17 +1802,7 @@ stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => 
     const scopedKudosFile = `/tmp/thresh-strava-kudos-${scopeKey}.json`;
     const activityId = String(req.params.id);
     const { action = 'toggle_kudos', commentText, athleteName } = req.body || {};
-    const kudosCache = loadJsonFile<
-      Record<
-        string,
-        {
-          kudosCount?: number;
-          hasKudoed?: boolean;
-          kudoers?: any[];
-          comments?: any[];
-        }
-      >
-    >(scopedKudosFile, {});
+    const kudosCache = loadJsonFile<Record<string, StravaCachedSocialEntry>>(scopedKudosFile, {});
 
     const current = kudosCache[activityId] || {
       kudosCount: Number(req.body?.currentKudosCount || 0),

@@ -866,10 +866,19 @@ teamRouter.patch(
         return;
       }
       const rawStatus = String(req.body?.status || '').toUpperCase();
-      const allowed: Array<
-        Extract<TeamInviteStatus, 'ACTIVE' | 'INJURED' | 'OFF_SEASON' | 'ALUMNI' | 'REVOKED'>
-      > = ['ACTIVE', 'INJURED', 'OFF_SEASON', 'ALUMNI', 'REVOKED'];
-      if (!allowed.includes(rawStatus as any)) {
+      type MemberLifecycleStatus = Extract<
+        TeamInviteStatus,
+        'ACTIVE' | 'INJURED' | 'OFF_SEASON' | 'ALUMNI' | 'REVOKED'
+      >;
+      const allowed: MemberLifecycleStatus[] = [
+        'ACTIVE',
+        'INJURED',
+        'OFF_SEASON',
+        'ALUMNI',
+        'REVOKED',
+      ];
+      const validatedStatus = allowed.find((s) => s === rawStatus);
+      if (!validatedStatus) {
         res.status(400).json({ ok: false, error: 'Invalid member lifecycle status.' });
         return;
       }
@@ -878,7 +887,7 @@ teamRouter.patch(
         callerSid: claims.sid,
         teamId: String(req.params.teamId || ''),
         membershipId: String(req.params.membershipId || ''),
-        status: rawStatus as any,
+        status: validatedStatus,
         originUrl,
       });
       if (!outcome.ok || !outcome.summary) {

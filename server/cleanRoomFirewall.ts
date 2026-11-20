@@ -115,12 +115,27 @@ export function stripSafeSportWeightAndBodyCompFields<T>(
   return out as T;
 }
 
+export interface CleanRoomSanitizedMetadata {
+  cleanRoomPolicy: 'FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY';
+  stravaRecordsFiltered: number;
+  safeSportHideWeight?: boolean;
+  zeroWeightEnforced?: boolean;
+}
+
+export function sanitizeTelemetryForCleanRoom<T extends Record<string, unknown>>(
+  rawSummary: T,
+  options?: { forceZeroWeight?: boolean; requireFirstPartyProvenance?: boolean }
+): T & CleanRoomSanitizedMetadata;
 export function sanitizeTelemetryForCleanRoom(
   rawSummary: unknown,
   options?: { forceZeroWeight?: boolean; requireFirstPartyProvenance?: boolean }
-): Record<string, any> {
+): Record<string, unknown> & Partial<CleanRoomSanitizedMetadata>;
+export function sanitizeTelemetryForCleanRoom(
+  rawSummary: unknown,
+  options?: { forceZeroWeight?: boolean; requireFirstPartyProvenance?: boolean }
+): Record<string, unknown> & Partial<CleanRoomSanitizedMetadata> {
   if (!rawSummary || typeof rawSummary !== 'object') return {};
-  let clone: Record<string, any> = { ...(rawSummary as Record<string, any>) };
+  let clone: Record<string, unknown> = { ...(rawSummary as Record<string, unknown>) };
 
   let strippedCount = 0;
   for (const key of [
@@ -130,15 +145,17 @@ export function sanitizeTelemetryForCleanRoom(
     'workouts',
     'completedActivities',
   ]) {
-    if (Array.isArray(clone[key])) {
-      const before = clone[key].length;
+    const rawList = clone[key];
+    if (Array.isArray(rawList)) {
+      const before = rawList.length;
       const requirePositive = Boolean(
         options?.requireFirstPartyProvenance || key === 'recentWorkouts'
       );
-      clone[key] = clone[key].filter((item: unknown) =>
+      const filtered = rawList.filter((item: unknown) =>
         requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
       );
-      strippedCount += before - clone[key].length;
+      clone[key] = filtered;
+      strippedCount += before - filtered.length;
     }
   }
 

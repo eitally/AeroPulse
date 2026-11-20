@@ -77,7 +77,7 @@ interface UseWorkspaceOnboardingParams {
   setIsRosterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   resetSampleDemoEphemeralState: () => void;
   resetUserCloudSyncState: () => void;
-  fetchServerConfigStatus: () => Promise<void>;
+  fetchServerConfigStatus: () => Promise<unknown>;
   handleTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
   handleSaveProfileOverride: (profile: AthleteProfile) => Promise<void>;
 }

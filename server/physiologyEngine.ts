@@ -1,7 +1,108 @@
 import {
   deriveObservedPhysiologyMetrics,
+  type ObservedPhysiologyActivityInput,
   type ObservedPhysiologyMetrics,
 } from '../src/physiology/stravaLoadCalibration.ts';
+
+export interface ServerPowerZone {
+  zone?: number;
+  code?: string;
+  name?: string;
+  minPct?: number;
+  maxPct?: number;
+  minWatts?: number;
+  maxWatts?: number;
+  minIndoorWatts?: number;
+  maxIndoorWatts?: number;
+  color?: string;
+}
+
+export interface ServerHrZone {
+  zone?: number;
+  code?: string;
+  name?: string;
+  minBpm?: number;
+  maxBpm?: number;
+  minPctLthr?: number;
+  maxPctLthr?: number;
+  color?: string;
+}
+
+export interface ServerRawSportSetting {
+  type?: string;
+  types?: string[];
+  ftp?: number;
+  indoor_ftp?: number;
+  eftp?: number;
+  eFtp?: number;
+  w_prime?: number;
+  p_max?: number;
+  lthr?: number;
+  max_hr?: number;
+  sweet_spot_min?: number;
+  sweet_spot_max?: number;
+  threshold_pace?: number;
+  power_zones?: number[];
+  power_zone_names?: string[];
+  hr_zones?: number[];
+  hr_zone_floors?: number[];
+  hr_zone_names?: string[];
+}
+
+export interface ServerStravaZonesPayload {
+  heart_rate?: { zones?: Array<{ min?: number; max?: number }> };
+  power?: { zones?: Array<{ min?: number; max?: number }> };
+}
+
+export interface ServerRawProfileInput {
+  id?: string | number;
+  athleteId?: string;
+  name?: string;
+  firstname?: string;
+  lastname?: string;
+  username?: string;
+  source?: string;
+  icu_weight?: number;
+  weight?: number;
+  weightKg?: number;
+  ftp?: number;
+  indoorFtp?: number;
+  eFtp?: number;
+  wPrime?: number;
+  pMax?: number;
+  lthr?: number;
+  maxHr?: number;
+  sweetSpotMinPct?: number;
+  sweetSpotMaxPct?: number;
+  icu_resting_hr?: number;
+  restingHr?: number;
+  vo2MaxCycling?: number;
+  vo2MaxRunning?: number;
+  vo2max?: number;
+  thresholdPaceSecsPerKm?: number;
+  runFtp?: number;
+  runEFtp?: number;
+  runLthr?: number;
+  runMaxHr?: number;
+  sportSettings?: ServerRawSportSetting[] | Record<string, ServerRawSportSetting>;
+  stravaZones?: ServerStravaZonesPayload | null;
+  powerZones?: ServerPowerZone[];
+  hrZones?: ServerHrZone[];
+  runHrZones?: ServerHrZone[];
+}
+
+export interface ServerLatestWellnessInput {
+  weightKg?: number;
+  restingHR?: number;
+  rideEftp?: number;
+  rideWPrime?: number;
+  ridePMax?: number;
+  runEftp?: number;
+  vo2MaxCycling?: number;
+  vo2MaxRunning?: number;
+}
+
+export type ServerActivityStatsInput = ObservedPhysiologyActivityInput | Record<string, unknown>;
 
 export const SERVER_ZONE_COLORS = [
   '#94A3B8', // Z1 Cool Mist
@@ -25,26 +126,26 @@ export function isGenericName(name?: string | null): boolean {
 }
 
 export function deriveObservedPhysiologyFromActivities(
-  activities?: Record<string, any>[] | null,
+  activities?: readonly ServerActivityStatsInput[] | null,
   weightKg = 70
 ): ObservedPhysiologyMetrics {
   return deriveObservedPhysiologyMetrics(activities, weightKg);
 }
 
 export function buildServerAthleteProfile(
-  rawProfile?: Record<string, any> | null,
-  latestWellness?: Record<string, any> | null,
-  activities?: Record<string, any>[] | null
+  rawProfile?: ServerRawProfileInput | null,
+  latestWellness?: ServerLatestWellnessInput | null,
+  activities?: readonly ServerActivityStatsInput[] | null
 ) {
-  const prev: Record<string, any> = {};
-  const sportSettingsList: Record<string, any>[] = Array.isArray(rawProfile?.sportSettings)
-    ? rawProfile!.sportSettings
+  const prev: Partial<ServerRawProfileInput> = {};
+  const sportSettingsList: ServerRawSportSetting[] = Array.isArray(rawProfile?.sportSettings)
+    ? rawProfile.sportSettings
     : rawProfile?.sportSettings && typeof rawProfile.sportSettings === 'object'
       ? Object.values(rawProfile.sportSettings)
       : [];
 
   const bikeSetting = sportSettingsList.find(
-    (s: any) =>
+    (s) =>
       (Array.isArray(s?.types) &&
         (s.types.includes('Ride') ||
           s.types.includes('VirtualRide') ||
@@ -53,7 +154,7 @@ export function buildServerAthleteProfile(
       /ride|bike|cycling/i.test(String(s?.type || ''))
   );
   const runSetting = sportSettingsList.find(
-    (s: any) =>
+    (s) =>
       (Array.isArray(s?.types) &&
         (s.types.includes('Run') ||
           s.types.includes('VirtualRun') ||
@@ -246,17 +347,17 @@ export function buildServerAthleteProfile(
   // Power Zones (Z1..Z7)
   const rawPowerCeilings: number[] =
     Array.isArray(bikeSetting?.power_zones) && bikeSetting.power_zones.length >= 5
-      ? bikeSetting.power_zones.map((v: any) => Number(v))
+      ? bikeSetting.power_zones.map((v) => Number(v))
       : Array.isArray(rawProfile?.powerZones) && rawProfile.powerZones.length >= 5
-        ? rawProfile.powerZones.map((z: any) => Number(z.maxPct))
+        ? rawProfile.powerZones.map((z) => Number(z.maxPct))
         : Array.isArray(prev.powerZones) && prev.powerZones.length >= 5
-          ? prev.powerZones.map((z: any) => Number(z.maxPct))
+          ? prev.powerZones.map((z) => Number(z.maxPct))
           : [55, 75, 90, 105, 120, 150, 999];
   const rawPowerNames: string[] =
     Array.isArray(bikeSetting?.power_zone_names) && bikeSetting.power_zone_names.length >= 5
       ? bikeSetting.power_zone_names
       : Array.isArray(rawProfile?.powerZones) && rawProfile.powerZones.length >= 5
-        ? rawProfile.powerZones.map((z: any) => String(z.name || ''))
+        ? rawProfile.powerZones.map((z) => String(z.name || ''))
         : [
             'Active Recovery',
             'Endurance',
@@ -319,19 +420,19 @@ export function buildServerAthleteProfile(
   ];
   const rawHrCeilings: number[] =
     Array.isArray(bikeSetting?.hr_zones) && bikeSetting.hr_zones.length >= 5
-      ? bikeSetting.hr_zones.map((v: any) => Number(v))
+      ? bikeSetting.hr_zones.map((v) => Number(v))
       : Array.isArray(rawProfile?.hrZones) && rawProfile.hrZones.length >= 5
-        ? rawProfile.hrZones.map((z: any) => Number(z.maxBpm))
+        ? rawProfile.hrZones.map((z) => Number(z.maxBpm))
         : Array.isArray(prev.hrZones) && prev.hrZones.length >= 5
-          ? prev.hrZones.map((z: any) => Number(z.maxBpm))
+          ? prev.hrZones.map((z) => Number(z.maxBpm))
           : defaultBikeHrCeilings;
   const rawHrFloors: number[] =
     Array.isArray(bikeSetting?.hr_zone_floors) &&
     bikeSetting.hr_zone_floors.length === rawHrCeilings.length
-      ? bikeSetting.hr_zone_floors.map((v: any) => Number(v))
+      ? bikeSetting.hr_zone_floors.map((v) => Number(v))
       : Array.isArray(rawProfile?.hrZones) &&
           rawProfile.hrZones.length === rawHrCeilings.length
-        ? rawProfile.hrZones.map((z: any) => Number(z.minBpm))
+        ? rawProfile.hrZones.map((z) => Number(z.minBpm))
         : rawHrCeilings.length === 5
           ? defaultBikeHrFloors
           : [];
@@ -340,7 +441,7 @@ export function buildServerAthleteProfile(
       ? bikeSetting.hr_zone_names
       : Array.isArray(rawProfile?.hrZones) &&
           rawProfile.hrZones.length === rawHrCeilings.length
-        ? rawProfile.hrZones.map((z: any) => String(z.name || ''))
+        ? rawProfile.hrZones.map((z) => String(z.name || ''))
         : rawHrCeilings.length === 5
           ? garmin5ZoneNames
           : friel7ZoneNames;
@@ -384,17 +485,17 @@ export function buildServerAthleteProfile(
   ];
   const rawRunHrCeilings: number[] =
     Array.isArray(runSetting?.hr_zones) && runSetting.hr_zones.length >= 5
-      ? runSetting.hr_zones.map((v: any) => Number(v))
+      ? runSetting.hr_zones.map((v) => Number(v))
       : Array.isArray(rawProfile?.runHrZones) && rawProfile.runHrZones.length >= 5
-        ? rawProfile.runHrZones.map((z: any) => Number(z.maxBpm))
+        ? rawProfile.runHrZones.map((z) => Number(z.maxBpm))
         : defaultRunHrCeilings;
   const rawRunHrFloors: number[] =
     Array.isArray(runSetting?.hr_zone_floors) &&
     runSetting.hr_zone_floors.length === rawRunHrCeilings.length
-      ? runSetting.hr_zone_floors.map((v: any) => Number(v))
+      ? runSetting.hr_zone_floors.map((v) => Number(v))
       : Array.isArray(rawProfile?.runHrZones) &&
           rawProfile.runHrZones.length === rawRunHrCeilings.length
-        ? rawProfile.runHrZones.map((z: any) => Number(z.minBpm))
+        ? rawProfile.runHrZones.map((z) => Number(z.minBpm))
         : rawRunHrCeilings.length === 5
           ? defaultRunHrFloors
           : [];
@@ -403,7 +504,7 @@ export function buildServerAthleteProfile(
       ? runSetting.hr_zone_names
       : Array.isArray(rawProfile?.runHrZones) &&
           rawProfile.runHrZones.length === rawRunHrCeilings.length
-        ? rawProfile.runHrZones.map((z: any) => String(z.name || ''))
+        ? rawProfile.runHrZones.map((z) => String(z.name || ''))
         : rawRunHrCeilings.length === 5
           ? garmin5ZoneNames
           : friel7ZoneNames;

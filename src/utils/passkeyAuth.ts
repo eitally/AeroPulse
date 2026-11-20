@@ -1,3 +1,5 @@
+import type { ThreshUser } from '../types';
+
 /**
  * THRESH Client-Side Passkey & WebAuthn Utilities
  * Pure browser standard APIs with zero external vendor dependencies ($0 SaaS).
@@ -40,7 +42,7 @@ export async function isPasskeySupported(): Promise<boolean> {
 export async function registerPasskey(
   email: string,
   name?: string
-): Promise<{ ok: boolean; user?: any; error?: string }> {
+): Promise<{ ok: boolean; user?: ThreshUser; error?: string }> {
   try {
     const optRes = await fetch('/api/auth/passkey/register-options', {
       method: 'POST',
@@ -119,7 +121,11 @@ export async function registerPasskey(
   }
 }
 
-export async function authenticateWithPasskey(): Promise<{ ok: boolean; user?: any; error?: string }> {
+export async function authenticateWithPasskey(): Promise<{
+  ok: boolean;
+  user?: ThreshUser;
+  error?: string;
+}> {
   try {
     const optRes = await fetch('/api/auth/passkey/auth-options', {
       method: 'POST',

@@ -7,13 +7,13 @@ import {
   isProductionDeployment,
   timingSafeStringEqual,
 } from '../securityUtils.ts';
-import { loadTenantVaultAsync, saveTenantVaultAsync } from '../tokenVault.ts';
+import { loadTenantVaultAsync, saveTenantVaultAsync, warnServerFallback } from '../tokenVault.ts';
 import { getEffectiveIntervalsConfig, syncIntervalsAllHistory } from './intervalsRouter.ts';
 import { syncStravaAllHistory } from './stravaRouter.ts';
 import { extractStravaId } from '../stravaIdUtils.ts';
 
 export async function executeHourlyBackgroundPoll() {
-  const results: Record<string, any> = {
+  const results: Record<string, unknown> = {
     triggeredAt: new Date().toISOString(),
     intervalsPolled: false,
     stravaPolled: false,
@@ -153,7 +153,7 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
       (String(updates?.authorized || '').toLowerCase() === 'false' || aspectType === 'delete')
     ) {
       const scopeKey = deriveStravaSessionSid(ownerId).slice(0, 24);
-      const vaultDoc = await loadTenantVaultAsync<Record<string, any> | null>(
+      const vaultDoc = await loadTenantVaultAsync<Record<string, unknown> | null>(
         `session_${scopeKey}`,
         null
       );
@@ -167,8 +167,8 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
       try {
         const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
         if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        warnServerFallback('webhook:athlete-deauth-archive-unlink', err);
       }
       res.json({ ok: true, source: 'strava-webhook', handled: 'athlete-deauthorize', ownerId });
       return;
@@ -194,8 +194,8 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
             }
           }
         }
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        warnServerFallback('webhook:activity-delete-archive-prune', err);
       }
       res.json({
         ok: true,

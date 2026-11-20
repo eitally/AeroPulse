@@ -17,6 +17,213 @@ import {
   normalizeActivityTimestamps,
   stripTimezoneSuffix,
 } from '../src/utils/activityTimestamp.ts';
+import type {
+  ServerLatestWellnessInput,
+  ServerRawProfileInput,
+} from './physiologyEngine.ts';
+
+export interface GarminWeightEntry {
+  summaryDate?: string;
+  calendarDate?: string;
+  summaryWeight?: number;
+  weight?: number;
+  latestWeight?: { calendarDate?: string; weight?: number };
+}
+
+export interface GarminWeightRangeResponse {
+  dailyWeightSummaries?: GarminWeightEntry[];
+  dateWeightList?: GarminWeightEntry[];
+}
+
+export interface GarminHrZoneEntry {
+  sport?: string;
+  sportType?: string;
+  lactateThresholdHeartRateUsed?: number;
+  lactateThresholdHeartRate?: number;
+  maxHeartRateUsed?: number;
+  maxHeartRate?: number;
+  restingHeartRateUsed?: number;
+  restingHeartRate?: number;
+  zone1Floor?: number;
+  zone2Floor?: number;
+  zone3Floor?: number;
+  zone4Floor?: number;
+  zone5Floor?: number;
+}
+
+export interface GarminHrZonesResponse extends GarminHrZoneEntry {
+  heartRateZones?: GarminHrZoneEntry[];
+}
+
+export interface GarminUserDataSettings {
+  weight?: number;
+  lactateThresholdHeartRate?: number;
+  maxHeartRate?: number;
+  restingHeartRate?: number;
+  ftp?: number;
+  fullName?: string;
+  displayName?: string;
+  vo2MaxCycling?: number;
+  vo2MaxRunning?: number;
+  vo2Max?: number;
+}
+
+export interface GarminProfileSettingsResponse extends GarminUserDataSettings {
+  id?: string | number;
+  displayName?: string;
+  userData?: GarminUserDataSettings;
+}
+
+export interface GarminFitnessAgeResponse {
+  components?: { rhr?: { value?: number } };
+}
+
+export interface GarminSleepDto {
+  calendarDate?: string;
+  date?: string;
+  sleepTimeSeconds?: number;
+  durationInSeconds?: number;
+  sleepScore?: number;
+  sleepScores?: { overall?: { value?: number } };
+  overallSleepScore?: { value?: number };
+  deepSleepSeconds?: number;
+  remSleepSeconds?: number;
+  lightSleepSeconds?: number;
+  awakeSleepSeconds?: number;
+  avgOvernightHrv?: number;
+  restingHeartRate?: number;
+  dailySleepDTO?: GarminSleepDto;
+}
+
+export interface GarminSleepSummariesResponse {
+  dailySleepDTOs?: GarminSleepDto[];
+  sleepSummaries?: GarminSleepDto[];
+  dailySleepDTO?: GarminSleepDto;
+  restingHeartRate?: number;
+  avgOvernightHrv?: number;
+}
+
+export interface GarminHrvDto {
+  calendarDate?: string;
+  date?: string;
+  lastNightAvg?: number;
+  weeklyAvg?: number;
+  hrvValue?: number;
+  status?: string;
+  baseline?: { balancedLow?: number; balancedUpper?: number };
+  hrvSummary?: GarminHrvDto;
+}
+
+export interface GarminHrvSummariesResponse {
+  hrvSummaries?: GarminHrvDto[];
+  hrvSummary?: GarminHrvDto;
+}
+
+export interface GarminDailySummaryItem {
+  calendarDate?: string;
+  date?: string;
+  startTimeLocal?: string;
+  restingHeartRate?: number;
+  minHeartRate?: number;
+  currentDayRestingHeartRate?: number;
+  totalSteps?: number;
+  bodyBatteryHighestValue?: number;
+}
+
+export interface GarminDailySummariesResponse {
+  dailySummaries?: GarminDailySummaryItem[];
+  summaries?: GarminDailySummaryItem[];
+}
+
+export interface GarminRawActivity {
+  id?: string | number;
+  activityId?: string | number;
+  ownerId?: string | number;
+  ownerFullName?: string;
+  activityName?: string;
+  name?: string;
+  type?: string;
+  activityType?: { typeKey?: string; parentTypeId?: string };
+  startTimeLocal?: string;
+  startTimeGMT?: string;
+  startLatitude?: number;
+  startLongitude?: number;
+  endLatitude?: number;
+  endLongitude?: number;
+  movingDuration?: number;
+  duration?: number;
+  elapsedDuration?: number;
+  distance?: number;
+  elevationGain?: number;
+  avgPower?: number;
+  normPower?: number;
+  maxPower?: number;
+  maxAvgPower_1?: number;
+  max20MinPower?: number;
+  maxAvgPower_1200?: number;
+  fastestSplit_1000?: number;
+  fastestSplit_1609?: number;
+  fastestSplit_5000?: number;
+  averageHR?: number;
+  maxHR?: number;
+  averageBikingCadenceInRevPerMinute?: number;
+  averageRunningCadenceInStepsPerMinute?: number;
+  activityTrainingLoad?: number;
+  calories?: number;
+  hrTimeInZone_1?: number;
+  hrTimeInZone_2?: number;
+  hrTimeInZone_3?: number;
+  hrTimeInZone_4?: number;
+  hrTimeInZone_5?: number;
+  powerTimeInZone_1?: number;
+  powerTimeInZone_2?: number;
+  powerTimeInZone_3?: number;
+  powerTimeInZone_4?: number;
+  powerTimeInZone_5?: number;
+  powerTimeInZone_6?: number;
+  powerTimeInZone_7?: number;
+}
+
+export interface GarminActivitySearchResponse {
+  activities?: GarminRawActivity[];
+}
+
+export interface GarminWellnessRow extends ServerLatestWellnessInput {
+  id: string;
+  weight?: number;
+  steps?: number;
+  bodyBatteryHigh?: number;
+  sleepSecs?: number;
+  sleepScore?: number;
+  deepSleepSecs?: number;
+  remSleepSecs?: number;
+  lightSleepSecs?: number;
+  awakeSecs?: number;
+  hrv?: number;
+  hrvBaseline7d?: number;
+  hrvNormalLow?: number;
+  hrvNormalHigh?: number;
+  garminHrvStatus?: string;
+  vo2max?: number;
+}
+
+export interface GarminSocialProfileResponse {
+  profileId?: string | number;
+  fullName?: string;
+  displayName?: string;
+  userName?: string;
+}
+
+export interface GarminPersonalInfoResponse {
+  weight?: number;
+  userInfo?: { fullName?: string };
+  biometricProfile?: {
+    weight?: number;
+    functionalThresholdPower?: number;
+    maxHeartRate?: number;
+    restingHeartRate?: number;
+  };
+}
 
 export interface GarminSessionStore {
   personalApiKey?: string; // Official Garmin Connect Personal API Key (GCDC_...)
@@ -182,10 +389,10 @@ export async function obtainGarminPersonalApiBearerToken(
  * Performs an authenticated GET request against https://personal.connectapi.garmin.com
  * using a Garmin Personal API Key (GCDC_...).
  */
-export async function fetchGarminPersonalApiJson(
+export async function fetchGarminPersonalApiJson<T = Record<string, unknown>>(
   endpointPath: string,
   session: GarminSessionStore
-): Promise<any> {
+): Promise<T | null> {
   let token = await obtainGarminPersonalApiBearerToken(session, false);
   const url = endpointPath.startsWith('http')
     ? endpointPath
@@ -220,7 +427,7 @@ export async function fetchGarminPersonalApiJson(
   }
 
   const text = await resp.text();
-  return text ? JSON.parse(text) : null;
+  return text ? (JSON.parse(text) as T) : null;
 }
 
 /**
@@ -383,7 +590,11 @@ export async function refreshGarminOAuth2Token(
     throw new Error(`Garmin OAuth2 token refresh failed (${resp.status})`);
   }
 
-  const data = (await resp.json()) as any;
+  const data = (await resp.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+  };
   if (data?.access_token) {
     session.oauth2AccessToken = data.access_token;
     session.oauth2RefreshToken = data.refresh_token || session.oauth2RefreshToken;
@@ -422,7 +633,7 @@ export async function authenticateGarminConnect(params: {
       connectedAt: new Date().toISOString(),
     };
     await obtainGarminPersonalApiBearerToken(session, true);
-    const settings = await fetchGarminPersonalApiJson(
+    const settings = await fetchGarminPersonalApiJson<GarminProfileSettingsResponse>(
       '/userprofile-service/userprofile/settings',
       session
     ).catch(() => null);
@@ -452,7 +663,7 @@ export async function authenticateGarminConnect(params: {
       connectedAt: new Date().toISOString(),
     };
 
-    const profile = await fetchGarminJson(
+    const profile = await fetchGarminJson<GarminSocialProfileResponse>(
       '/userprofile-service/socialProfile',
       session
     ).catch(() => null);
@@ -471,7 +682,7 @@ export async function authenticateGarminConnect(params: {
       connectedAt: new Date().toISOString(),
     };
     await refreshGarminOAuth2Token(session);
-    const profile = await fetchGarminJson(
+    const profile = await fetchGarminJson<GarminSocialProfileResponse>(
       '/userprofile-service/socialProfile',
       session
     ).catch(() => null);
@@ -609,7 +820,7 @@ export async function authenticateGarminConnect(params: {
 
   await refreshGarminOAuth2Token(session);
 
-  const profile = await fetchGarminJson(
+  const profile = await fetchGarminJson<GarminSocialProfileResponse>(
     '/userprofile-service/socialProfile',
     session
   ).catch(() => null);
@@ -624,11 +835,11 @@ export async function authenticateGarminConnect(params: {
 /**
  * Helper to perform authenticated GET/POST requests against connectapi.garmin.com
  */
-export async function fetchGarminJson(
+export async function fetchGarminJson<T = Record<string, unknown>>(
   endpointPath: string,
   session: GarminSessionStore,
-  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: any } = {}
-): Promise<any> {
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown } = {}
+): Promise<T> {
   const nowSec = Math.floor(Date.now() / 1000);
   if (
     (!session.oauth2AccessToken ||
@@ -677,7 +888,7 @@ export async function fetchGarminJson(
   }
 
   const text = await resp.text();
-  return text ? JSON.parse(text) : {};
+  return (text ? JSON.parse(text) : {}) as T;
 }
 
 /**
@@ -791,7 +1002,7 @@ export async function pushWorkoutToGarminConnect(
     ],
   };
 
-  const createdWorkout = await fetchGarminJson(
+  const createdWorkout = await fetchGarminJson<{ workoutId?: string | number }>(
     '/workout-service/workout',
     session,
     {
@@ -805,7 +1016,7 @@ export async function pushWorkoutToGarminConnect(
     throw new Error('Garmin Connect did not return a workoutId.');
   }
 
-  const scheduled = await fetchGarminJson(
+  const scheduled = await fetchGarminJson<{ workoutScheduleId?: string | number }>(
     `/workout-service/schedule/${encodeURIComponent(String(workoutId))}`,
     session,
     {
@@ -831,9 +1042,9 @@ export async function fetchDirectGarminProfileAndWellness(
   session: GarminSessionStore,
   daysToFetch = 28
 ): Promise<{
-  rawProfile: Record<string, any>;
-  wellnessRows: Record<string, any>[];
-  activities: Record<string, any>[];
+  rawProfile: ServerRawProfileInput;
+  wellnessRows: GarminWellnessRow[];
+  activities: GarminRawActivity[];
 }> {
   const endDate = new Date(Date.now() + 86400 * 1000).toISOString().slice(0, 10);
   const startDate = new Date(
@@ -859,52 +1070,54 @@ export async function fetchDirectGarminProfileAndWellness(
       dailySummaries,
       activitiesData,
     ] = await Promise.all([
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminProfileSettingsResponse>(
         '/userprofile-service/userprofile/settings',
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminHrZonesResponse | GarminHrZoneEntry[]>(
         '/biometric-service/heartRateZones/v2',
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminWeightRangeResponse | GarminWeightEntry[]>(
         `/weight-service/weight/range/${weightStart180d}/${endDate}?includeAll=true`,
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminFitnessAgeResponse>(
         `/fitnessage-service/fitnessage/v2/${endDate}`,
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminSleepSummariesResponse | GarminSleepDto[]>(
         `/sleep-service/sleep/dailySleepSummariesByDate?startDate=${startDate}&endDate=${endDate}`,
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminHrvSummariesResponse | GarminHrvDto[]>(
         `/hrv-service/hrv/daily/${startDate}/${endDate}`,
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminDailySummariesResponse | GarminDailySummaryItem[]>(
         `/usersummary-service/v2/dailysummaries?startDate=${startDate}&endDate=${endDate}`,
         session
       ).catch(() => null),
-      fetchGarminPersonalApiJson(
+      fetchGarminPersonalApiJson<GarminActivitySearchResponse | GarminRawActivity[]>(
         `/activitylist-service/activities/search/activities?start=0&limit=100`,
         session
       ).catch(() => null),
     ]);
 
-    const userData = profileSettings?.userData || profileSettings || {};
+    const userData: GarminUserDataSettings =
+      profileSettings?.userData || profileSettings || {};
 
     // Extract weight from weight-service (180d window) or profileSettings (Garmin uses grams)
     // Note: Garmin /weight-service/weight/range returns dailyWeightSummaries NEWEST-FIRST (index 0 is latest).
     // Sort explicitly by date descending so we always pick the most recent scale weigh-in.
     let weightKg: number | undefined;
-    const weightList =
-      weightRangeData?.dailyWeightSummaries ||
-      weightRangeData?.dateWeightList ||
-      (Array.isArray(weightRangeData) ? weightRangeData : []);
+    const weightList: GarminWeightEntry[] = Array.isArray(weightRangeData)
+      ? weightRangeData
+      : weightRangeData?.dailyWeightSummaries ||
+        weightRangeData?.dateWeightList ||
+        [];
     if (Array.isArray(weightList) && weightList.length > 0) {
-      const sortedWeights = [...weightList].sort((a: any, b: any) => {
+      const sortedWeights = [...weightList].sort((a, b) => {
         const dA = String(
           a?.summaryDate || a?.calendarDate || a?.latestWeight?.calendarDate || ''
         );
@@ -940,7 +1153,7 @@ export async function fetchDirectGarminProfileAndWellness(
     }
 
     // Extract Heart Rate Zones, LTHR, Max HR, Resting HR from /biometric-service/heartRateZones/v2
-    const zonesArray = Array.isArray(hrZonesData)
+    const zonesArray: GarminHrZoneEntry[] = Array.isArray(hrZonesData)
       ? hrZonesData
       : Array.isArray(hrZonesData?.heartRateZones)
         ? hrZonesData.heartRateZones
@@ -948,17 +1161,17 @@ export async function fetchDirectGarminProfileAndWellness(
           ? [hrZonesData]
           : [];
 
-    const cyclingZoneObj =
-      zonesArray.find((z: any) =>
+    const cyclingZoneObj: GarminHrZoneEntry =
+      zonesArray.find((z) =>
         /cycling|bike|ride/i.test(String(z?.sport || z?.sportType || ''))
       ) ||
-      zonesArray.find((z: any) =>
+      zonesArray.find((z) =>
         /default/i.test(String(z?.sport || z?.sportType || ''))
       ) ||
       zonesArray[0] ||
       {};
-    const runningZoneObj =
-      zonesArray.find((z: any) =>
+    const runningZoneObj: GarminHrZoneEntry =
+      zonesArray.find((z) =>
         /running|run/i.test(String(z?.sport || z?.sportType || ''))
       ) ||
       cyclingZoneObj ||
@@ -1048,8 +1261,8 @@ export async function fetchDirectGarminProfileAndWellness(
     }
 
     // Build daily wellness map by YYYY-MM-DD from sleepSummaries, hrvSummaries, dailySummaries
-    const wellnessByDate = new Map<string, Record<string, any>>();
-    const ensureDay = (d: string) => {
+    const wellnessByDate = new Map<string, GarminWellnessRow>();
+    const ensureDay = (d?: string) => {
       const dateStr = String(d || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
       if (!wellnessByDate.has(dateStr)) {
@@ -1061,13 +1274,11 @@ export async function fetchDirectGarminProfileAndWellness(
       return wellnessByDate.get(dateStr)!;
     };
 
-    const dailyList = Array.isArray(dailySummaries)
+    const dailyList: GarminDailySummaryItem[] = Array.isArray(dailySummaries)
       ? dailySummaries
-      : Array.isArray(dailySummaries?.dailySummaries)
-        ? dailySummaries.dailySummaries
-        : Array.isArray(dailySummaries?.summaries)
-          ? dailySummaries.summaries
-          : [];
+      : dailySummaries?.dailySummaries ||
+        dailySummaries?.summaries ||
+        [];
     for (const ds of dailyList) {
       const row = ensureDay(ds?.calendarDate || ds?.date || ds?.startTimeLocal);
       if (!row) continue;
@@ -1081,13 +1292,11 @@ export async function fetchDirectGarminProfileAndWellness(
       }
     }
 
-    const sleepList = Array.isArray(sleepSummaries)
+    const sleepList: GarminSleepDto[] = Array.isArray(sleepSummaries)
       ? sleepSummaries
-      : Array.isArray(sleepSummaries?.dailySleepDTOs)
-        ? sleepSummaries.dailySleepDTOs
-        : Array.isArray(sleepSummaries?.sleepSummaries)
-          ? sleepSummaries.sleepSummaries
-          : [];
+      : sleepSummaries?.dailySleepDTOs ||
+        sleepSummaries?.sleepSummaries ||
+        [];
     for (const sl of sleepList) {
       const dto = sl?.dailySleepDTO || sl;
       const row = ensureDay(dto?.calendarDate || dto?.date);
@@ -1132,11 +1341,9 @@ export async function fetchDirectGarminProfileAndWellness(
         row.restingHR = Number(dto.restingHeartRate);
     }
 
-    const hrvList = Array.isArray(hrvSummaries)
+    const hrvList: GarminHrvDto[] = Array.isArray(hrvSummaries)
       ? hrvSummaries
-      : Array.isArray(hrvSummaries?.hrvSummaries)
-        ? hrvSummaries.hrvSummaries
-        : [];
+      : hrvSummaries?.hrvSummaries || [];
     for (const h of hrvList) {
       const hDto = h?.hrvSummary || h;
       const row = ensureDay(hDto?.calendarDate || hDto?.date);
@@ -1149,10 +1356,10 @@ export async function fetchDirectGarminProfileAndWellness(
         row.hrvBaseline7d = Number(hDto.weeklyAvg);
       }
       if (Number(hDto?.baseline?.balancedLow) > 0) {
-        row.hrvNormalLow = Number(hDto.baseline.balancedLow);
+        row.hrvNormalLow = Number(hDto?.baseline?.balancedLow);
       }
       if (Number(hDto?.baseline?.balancedUpper) > 0) {
-        row.hrvNormalHigh = Number(hDto.baseline.balancedUpper);
+        row.hrvNormalHigh = Number(hDto?.baseline?.balancedUpper);
       }
       if (hDto?.status) row.garminHrvStatus = String(hDto.status);
     }
@@ -1168,19 +1375,19 @@ export async function fetchDirectGarminProfileAndWellness(
         .reverse()
         .find((w) => Number(w.restingHR) >= 30)?.restingHR;
 
-    const rawActivitiesList = Array.isArray(activitiesData)
+    const rawActivitiesList: GarminRawActivity[] = Array.isArray(activitiesData)
       ? activitiesData
       : Array.isArray(activitiesData?.activities)
         ? activitiesData.activities
         : [];
 
     const activityOwnerFullName = rawActivitiesList.find(
-      (a: any) =>
+      (a) =>
         a?.ownerFullName &&
         typeof a.ownerFullName === 'string' &&
         a.ownerFullName.trim().length > 1
     )?.ownerFullName;
-    const activityOwnerId = rawActivitiesList.find((a: any) => a?.ownerId)?.ownerId;
+    const activityOwnerId = rawActivitiesList.find((a) => a?.ownerId)?.ownerId;
 
     const resolvedFullName =
       activityOwnerFullName ||
@@ -1270,7 +1477,7 @@ export async function fetchDirectGarminProfileAndWellness(
         ? Math.round(maxRunSustainedPower * 0.92)
         : undefined;
 
-    const rawProfile: Record<string, any> = {
+    const rawProfile: ServerRawProfileInput = {
       id: activityOwnerId || profileSettings?.id || 'garmin-personal-api',
       name: resolvedFullName,
       weight: weightKg,
@@ -1327,22 +1534,23 @@ export async function fetchDirectGarminProfileAndWellness(
   // ---------------------------------------------------------------------------
   const [socialProfile, personalInfo, userSettings, latestFtp, latestLthr] =
     await Promise.all([
-      fetchGarminJson('/userprofile-service/socialProfile', session).catch(
-        () => null
-      ),
-      fetchGarminJson(
+      fetchGarminJson<GarminSocialProfileResponse>(
+        '/userprofile-service/socialProfile',
+        session
+      ).catch(() => null),
+      fetchGarminJson<GarminPersonalInfoResponse>(
         '/userprofile-service/userprofile/personal-information',
         session
       ).catch(() => null),
-      fetchGarminJson(
+      fetchGarminJson<GarminProfileSettingsResponse>(
         '/userprofile-service/userprofile/user-settings',
         session
       ).catch(() => null),
-      fetchGarminJson(
+      fetchGarminJson<{ functionalThresholdPower?: number }>(
         '/biometric-service/biometric/powerToWeight/latest',
         session
       ).catch(() => null),
-      fetchGarminJson(
+      fetchGarminJson<{ heartRate?: number; lactateThresholdHeartRate?: number }>(
         '/biometric-service/biometric/lactateThreshold/latest',
         session
       ).catch(() => null),
@@ -1403,14 +1611,17 @@ export async function fetchDirectGarminProfileAndWellness(
     dateStrings.push(d.toISOString().slice(0, 10));
   }
 
-  const wellnessRows: Record<string, any>[] = [];
+  const wellnessRows: GarminWellnessRow[] = [];
   for (const dateStr of dateStrings) {
     const [sleepData, hrvData] = await Promise.all([
-      fetchGarminJson(
+      fetchGarminJson<GarminSleepSummariesResponse>(
         `/wellness-service/wellness/dailySleepData?date=${dateStr}&nonSleepBufferMinutes=60`,
         session
       ).catch(() => null),
-      fetchGarminJson(`/hrv-service/hrv/${dateStr}`, session).catch(() => null),
+      fetchGarminJson<GarminHrvSummariesResponse>(
+        `/hrv-service/hrv/${dateStr}`,
+        session
+      ).catch(() => null),
     ]);
 
     const sleepDto = sleepData?.dailySleepDTO;
@@ -1443,7 +1654,7 @@ export async function fetchDirectGarminProfileAndWellness(
     }
   }
 
-  const rawProfile: Record<string, any> = {
+  const rawProfile: ServerRawProfileInput = {
     id: socialProfile?.profileId || session.email || 'garmin-direct',
     name,
     weight: weightKg,
@@ -1477,7 +1688,7 @@ export function getEnvGarminPersonalApiKey(): string {
 
 
 export function normalizeGarminPersonalApiActivities(
-  rawActivities: Record<string, any>[],
+  rawActivities: GarminRawActivity[],
   ftpWatts = 250,
   calibrationOpts?: {
     lthr?: number;
@@ -1485,7 +1696,7 @@ export function normalizeGarminPersonalApiActivities(
     thresholdPaceSecsPerKm?: number;
     restingHr?: number;
   }
-): Record<string, any>[] {
+) {
   if (!Array.isArray(rawActivities)) return [];
   const activeFtp = Math.max(120, Number(ftpWatts || 250));
 

@@ -490,6 +490,13 @@ var VAULT_FILE_PREFIX = "/tmp/thresh-vault-";
 var VAULT_ENVELOPE_PREFIX = "v1.";
 var derivedKeyCache = null;
 var warnedMissingVaultKey = false;
+function warnServerFallback(scope, err) {
+  if (process.env.NODE_ENV === "test" || Boolean(process.env.VITEST)) {
+    return;
+  }
+  const msg = err instanceof Error ? err.message : "unknown error";
+  console.warn(`[thresh:${scope}] ${msg}`);
+}
 function getVaultEncryptionKey() {
   if (derivedKeyCache) return derivedKeyCache;
   const rawSecret = (process.env.TOKEN_VAULT_KEY || process.env.OAUTH_ENCRYPTION_KEY || process.env.SESSION_SECRET || process.env.STRAVA_CLIENT_SECRET || process.env.CRON_SECRET || "").trim();
@@ -700,7 +707,8 @@ function saveTenantVaultSync(tenantId, data) {
            DO UPDATE SET encrypted_envelope = EXCLUDED.encrypted_envelope, updated_at = NOW();`,
           [safeId, envelope]
         );
-      } catch {
+      } catch (err) {
+        warnServerFallback("vault:bg-postgres-upsert", err);
       }
     })();
   }
@@ -729,7 +737,8 @@ async function loadTenantVaultAsync(tenantId, fallback) {
           return structuredClone(decrypted);
         }
       }
-    } catch {
+    } catch (err) {
+      warnServerFallback("vault:postgres-read-fallback", err);
     }
   }
   return loadTenantVaultSync(safeId, fallback);
@@ -754,7 +763,8 @@ async function saveTenantVaultAsync(tenantId, data) {
          DO UPDATE SET encrypted_envelope = EXCLUDED.encrypted_envelope, updated_at = NOW();`,
         [safeId, envelope]
       );
-    } catch {
+    } catch (err) {
+      warnServerFallback("vault:postgres-upsert", err);
     }
   }
 }
@@ -805,14 +815,16 @@ async function deleteTenantVault(tenantId) {
   try {
     const encPath = getEncryptedVaultFilePath(safeId);
     if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
-  } catch {
+  } catch (err) {
+    warnServerFallback("vault:local-unlink", err);
   }
   const pool = getPostgresPool();
   if (pool) {
     try {
       await ensurePostgresVaultSchema(pool);
       await pool.query("DELETE FROM thresh_tenant_vault WHERE tenant_id = $1", [safeId]);
-    } catch {
+    } catch (err) {
+      warnServerFallback("vault:postgres-delete", err);
     }
   }
 }
@@ -941,7 +953,8 @@ async function appendAuditLogAsync(params) {
           JSON.stringify(entry.metadata)
         ]
       );
-    } catch {
+    } catch (err) {
+      warnServerFallback("audit:postgres-insert", err);
     }
   }
   return entry;
@@ -978,7 +991,8 @@ async function listTeamAuditLogAsync(teamId, limit = 100) {
           })()
         }));
       }
-    } catch {
+    } catch (err) {
+      warnServerFallback("audit:postgres-list-fallback", err);
     }
   }
   const local = await loadTenantVaultAsync(auditVaultKey(safeTeamId), []);
@@ -1202,8 +1216,9 @@ function deriveObservedPhysiologyMetrics(activities, weightKg = 70) {
   let maxRunSustainedWatts = 0;
   let bestRunPaceSecsPerKm = 0;
   if (Array.isArray(activities)) {
-    for (const a of activities) {
-      if (!a) continue;
+    for (const rawItem of activities) {
+      if (!rawItem) continue;
+      const a = rawItem;
       const sport = String(
         a.sportCategory || a.rawSportType || a.sport_type || a.type || a.activityType?.typeKey || ""
       );
@@ -2315,7 +2330,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
     ]);
     const userData2 = profileSettings?.userData || profileSettings || {};
     let weightKg2;
-    const weightList = weightRangeData?.dailyWeightSummaries || weightRangeData?.dateWeightList || (Array.isArray(weightRangeData) ? weightRangeData : []);
+    const weightList = Array.isArray(weightRangeData) ? weightRangeData : weightRangeData?.dailyWeightSummaries || weightRangeData?.dateWeightList || [];
     if (Array.isArray(weightList) && weightList.length > 0) {
       const sortedWeights = [...weightList].sort((a, b) => {
         const dA = String(
@@ -2421,7 +2436,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
       }
       return wellnessByDate.get(dateStr);
     };
-    const dailyList = Array.isArray(dailySummaries) ? dailySummaries : Array.isArray(dailySummaries?.dailySummaries) ? dailySummaries.dailySummaries : Array.isArray(dailySummaries?.summaries) ? dailySummaries.summaries : [];
+    const dailyList = Array.isArray(dailySummaries) ? dailySummaries : dailySummaries?.dailySummaries || dailySummaries?.summaries || [];
     for (const ds of dailyList) {
       const row = ensureDay(ds?.calendarDate || ds?.date || ds?.startTimeLocal);
       if (!row) continue;
@@ -2434,7 +2449,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
         row.bodyBatteryHigh = Number(ds.bodyBatteryHighestValue);
       }
     }
-    const sleepList = Array.isArray(sleepSummaries) ? sleepSummaries : Array.isArray(sleepSummaries?.dailySleepDTOs) ? sleepSummaries.dailySleepDTOs : Array.isArray(sleepSummaries?.sleepSummaries) ? sleepSummaries.sleepSummaries : [];
+    const sleepList = Array.isArray(sleepSummaries) ? sleepSummaries : sleepSummaries?.dailySleepDTOs || sleepSummaries?.sleepSummaries || [];
     for (const sl of sleepList) {
       const dto = sl?.dailySleepDTO || sl;
       const row = ensureDay(dto?.calendarDate || dto?.date);
@@ -2473,7 +2488,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
       if (Number(dto?.restingHeartRate) >= 30 && !row.restingHR)
         row.restingHR = Number(dto.restingHeartRate);
     }
-    const hrvList = Array.isArray(hrvSummaries) ? hrvSummaries : Array.isArray(hrvSummaries?.hrvSummaries) ? hrvSummaries.hrvSummaries : [];
+    const hrvList = Array.isArray(hrvSummaries) ? hrvSummaries : hrvSummaries?.hrvSummaries || [];
     for (const h of hrvList) {
       const hDto = h?.hrvSummary || h;
       const row = ensureDay(hDto?.calendarDate || hDto?.date);
@@ -2486,10 +2501,10 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
         row.hrvBaseline7d = Number(hDto.weeklyAvg);
       }
       if (Number(hDto?.baseline?.balancedLow) > 0) {
-        row.hrvNormalLow = Number(hDto.baseline.balancedLow);
+        row.hrvNormalLow = Number(hDto?.baseline?.balancedLow);
       }
       if (Number(hDto?.baseline?.balancedUpper) > 0) {
-        row.hrvNormalHigh = Number(hDto.baseline.balancedUpper);
+        row.hrvNormalHigh = Number(hDto?.baseline?.balancedUpper);
       }
       if (hDto?.status) row.garminHrvStatus = String(hDto.status);
     }
@@ -2601,9 +2616,10 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
     return { rawProfile: rawProfile2, wellnessRows: wellnessRows2, activities: rawActivitiesList };
   }
   const [socialProfile, personalInfo, userSettings, latestFtp, latestLthr] = await Promise.all([
-    fetchGarminJson("/userprofile-service/socialProfile", session).catch(
-      () => null
-    ),
+    fetchGarminJson(
+      "/userprofile-service/socialProfile",
+      session
+    ).catch(() => null),
     fetchGarminJson(
       "/userprofile-service/userprofile/personal-information",
       session
@@ -2661,7 +2677,10 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
         `/wellness-service/wellness/dailySleepData?date=${dateStr}&nonSleepBufferMinutes=60`,
         session
       ).catch(() => null),
-      fetchGarminJson(`/hrv-service/hrv/${dateStr}`, session).catch(() => null)
+      fetchGarminJson(
+        `/hrv-service/hrv/${dateStr}`,
+        session
+      ).catch(() => null)
     ]);
     const sleepDto = sleepData?.dailySleepDTO;
     const hrvSummary = hrvData?.hrvSummary;
@@ -4540,6 +4559,27 @@ vaultAndPhysiologyRouter.post("/api/physiology/debrief", (req, res) => {
 
 // server/routers/athleteStateRouter.ts
 import express2 from "express";
+
+// src/utils/workoutScheduleUtils.ts
+function sanitizeScheduledTime(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim();
+  const m = trimmed.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return void 0;
+  return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+}
+function sanitizeSessionSlot(raw) {
+  if (raw === "AM" || raw === "PM" || raw === "SINGLE") return raw;
+  return void 0;
+}
+function sanitizePracticeVenueCategory(raw) {
+  if (raw === "TRACK" || raw === "XC_COURSE" || raw === "ROAD_CAMPUS" || raw === "GYM_WEIGHTS" || raw === "POOL_CROSS" || raw === "OTHER") {
+    return raw;
+  }
+  return void 0;
+}
+
+// server/routers/athleteStateRouter.ts
 var athleteStateRouter = express2.Router();
 async function ensureStoreSessionHydrated(req) {
   const store = getScopedRuntimeStore(req);
@@ -4629,7 +4669,10 @@ function sanitizeAthleteCloudState(raw, existing) {
     ...typeof ev?.scheduledTime === "string" && ev.scheduledTime.trim() ? { scheduledTime: ev.scheduledTime.trim().slice(0, 16) } : {},
     ...ev?.sessionSlot === "SINGLE" || ev?.sessionSlot === "AM" || ev?.sessionSlot === "PM" ? { sessionSlot: ev.sessionSlot } : {},
     ...typeof ev?.locationName === "string" && ev.locationName.trim() ? { locationName: ev.locationName.trim().slice(0, 120) } : {},
-    ...typeof ev?.locationCategory === "string" && ev.locationCategory.trim() ? { locationCategory: ev.locationCategory.trim().slice(0, 40) } : {},
+    ...(() => {
+      const cleanCat = sanitizePracticeVenueCategory(ev?.locationCategory);
+      return cleanCat ? { locationCategory: cleanCat } : {};
+    })(),
     ...typeof ev?.meetingNotes === "string" && ev.meetingNotes.trim() ? { meetingNotes: ev.meetingNotes.trim().slice(0, 240) } : {},
     ...Array.isArray(ev?.structuredSteps) ? { structuredSteps: ev.structuredSteps.slice(0, 80) } : {},
     ...ev?.trackSpec && typeof ev.trackSpec === "object" ? { trackSpec: ev.trackSpec } : {},
@@ -7874,15 +7917,17 @@ function sanitizeTelemetryForCleanRoom(rawSummary, options) {
     "workouts",
     "completedActivities"
   ]) {
-    if (Array.isArray(clone[key])) {
-      const before = clone[key].length;
+    const rawList = clone[key];
+    if (Array.isArray(rawList)) {
+      const before = rawList.length;
       const requirePositive = Boolean(
         options?.requireFirstPartyProvenance || key === "recentWorkouts"
       );
-      clone[key] = clone[key].filter(
+      const filtered = rawList.filter(
         (item) => requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
       );
-      strippedCount += before - clone[key].length;
+      clone[key] = filtered;
+      strippedCount += before - filtered.length;
     }
   }
   delete clone.stravaSegments;
@@ -8811,25 +8856,6 @@ function evaluateSafeSportPatternWatch(params) {
     authorizedRecipients,
     coachSafeSummaryLabel
   };
-}
-
-// src/utils/workoutScheduleUtils.ts
-function sanitizeScheduledTime(raw) {
-  if (typeof raw !== "string") return void 0;
-  const trimmed = raw.trim();
-  const m = trimmed.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
-  if (!m) return void 0;
-  return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
-}
-function sanitizeSessionSlot(raw) {
-  if (raw === "AM" || raw === "PM" || raw === "SINGLE") return raw;
-  return void 0;
-}
-function sanitizePracticeVenueCategory(raw) {
-  if (raw === "TRACK" || raw === "XC_COURSE" || raw === "ROAD_CAMPUS" || raw === "GYM_WEIGHTS" || raw === "POOL_CROSS" || raw === "OTHER") {
-    return raw;
-  }
-  return void 0;
 }
 
 // server/teamWorkoutAndGovernanceService.ts
@@ -11704,8 +11730,15 @@ teamRouter.patch(
         return;
       }
       const rawStatus = String(req.body?.status || "").toUpperCase();
-      const allowed = ["ACTIVE", "INJURED", "OFF_SEASON", "ALUMNI", "REVOKED"];
-      if (!allowed.includes(rawStatus)) {
+      const allowed = [
+        "ACTIVE",
+        "INJURED",
+        "OFF_SEASON",
+        "ALUMNI",
+        "REVOKED"
+      ];
+      const validatedStatus = allowed.find((s) => s === rawStatus);
+      if (!validatedStatus) {
         res.status(400).json({ ok: false, error: "Invalid member lifecycle status." });
         return;
       }
@@ -11714,7 +11747,7 @@ teamRouter.patch(
         callerSid: claims.sid,
         teamId: String(req.params.teamId || ""),
         membershipId: String(req.params.membershipId || ""),
-        status: rawStatus,
+        status: validatedStatus,
         originUrl
       });
       if (!outcome.ok || !outcome.summary) {
@@ -15610,7 +15643,10 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
     const did = extractStravaId(d);
     if (d && did) detailById.set(did, d);
   }
-  const kudosCache = loadJsonFile(STRAVA_KUDOS_CACHE_FILE, {});
+  const kudosCache = loadJsonFile(
+    STRAVA_KUDOS_CACHE_FILE,
+    {}
+  );
   const recentKudoCandidates = isCursorContinuation ? [] : activitiesList.filter((a) => {
     const aid = extractStravaId(a);
     return Boolean(aid && Number(a.kudos_count || 0) > 0 && !kudosCache[aid]?.kudoers);
@@ -15636,13 +15672,15 @@ async function syncStravaAllHistory(req, forceFull = false, deltaOnly = false, e
             state: k.state || void 0,
             country: k.country || void 0
           })) : [];
-          const comments = cResp.ok ? (await readStravaResponseJson(cResp) || []).map((c, idx) => ({
-            id: extractStravaId(c) || `sc-${sid}-${idx}`,
-            text: String(c.text || ""),
-            createdAt: String(c.created_at || act.start_date_local || ""),
-            athleteName: [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(" ") || "Strava Athlete",
-            avatarUrl: c.athlete?.profile_medium || void 0
-          })) : [];
+          const comments = cResp.ok ? (await readStravaResponseJson(cResp) || []).map(
+            (c, idx) => ({
+              id: extractStravaId(c) || `sc-${sid}-${idx}`,
+              text: String(c.text || ""),
+              createdAt: String(c.created_at || act.start_date_local || ""),
+              athleteName: [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(" ") || "Strava Athlete",
+              avatarUrl: c.athlete?.profile_medium || void 0
+            })
+          ) : [];
           kudosCache[sid] = {
             ...kudosCache[sid],
             kudosCount: Math.max(Number(act.kudos_count || 0), kudoers.length),
@@ -17637,12 +17675,18 @@ async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldest
       intervals
     };
   });
-  const segmentsCache = loadJsonFile(SEGMENTS_BY_ACTIVITY_CACHE_FILE, {});
+  const segmentsCache = loadJsonFile(
+    SEGMENTS_BY_ACTIVITY_CACHE_FILE,
+    {}
+  );
   const routesCache = loadJsonFile(
     ROUTES_BY_ACTIVITY_CACHE_FILE,
     {}
   );
-  const kudosCache = loadJsonFile(STRAVA_KUDOS_CACHE_FILE, {});
+  const kudosCache = loadJsonFile(
+    STRAVA_KUDOS_CACHE_FILE,
+    {}
+  );
   for (const act of activities) {
     if (Array.isArray(segmentsCache[act.id]) && segmentsCache[act.id].length > 0) {
       act.segmentEfforts = segmentsCache[act.id].map((eff) => ({ ...eff }));
@@ -17983,12 +18027,13 @@ intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
           garminDirect2.activities,
           garminDirect2.rawProfile?.ftp || 250
         ) : [];
+        const firstGarminSetting = Array.isArray(garminDirect2?.rawProfile?.sportSettings) ? garminDirect2.rawProfile.sportSettings[0] : void 0;
         const directSyncedProfile = buildServerAthleteProfile(
           {
             ...garminDirect2?.rawProfile || {},
             id: sId || garminDirect2?.rawProfile?.id || "0",
             name: sName,
-            ftp: garminDirect2?.rawProfile?.sportSettings?.[0]?.ftp ?? garminDirect2?.rawProfile?.ftp ?? (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : void 0),
+            ftp: firstGarminSetting?.ftp ?? garminDirect2?.rawProfile?.ftp ?? (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : void 0),
             weightKg: garminDirect2?.rawProfile?.weight ?? (Number(sAth.weight) > 30 ? Number(sAth.weight) : void 0),
             stravaZones: sZones,
             source: garminDirect2 ? "INTERVALS_GARMIN" : "STRAVA_OAUTH"
@@ -18186,7 +18231,7 @@ intervalsRouter.post("/api/intervals/connect", async (req, res) => {
       return;
     }
     const profileData = await profileResp.json();
-    const resolvedId = profileData.id || athleteId;
+    const resolvedId = String(profileData.id || athleteId);
     const resolvedName = profileData.name || [profileData.firstname, profileData.lastname].filter(Boolean).join(" ") || `Athlete ${resolvedId}`;
     const sessionToken = setSessionCookie(req, res, resolvedName);
     const createdClaims = decodeAndVerifyToken(sessionToken);
@@ -20871,7 +20916,8 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
       try {
         const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
         if (fs8.existsSync(archivePath)) fs8.unlinkSync(archivePath);
-      } catch {
+      } catch (err) {
+        warnServerFallback("webhook:athlete-deauth-archive-unlink", err);
       }
       res.json({ ok: true, source: "strava-webhook", handled: "athlete-deauthorize", ownerId });
       return;
@@ -20895,7 +20941,8 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
             }
           }
         }
-      } catch {
+      } catch (err) {
+        warnServerFallback("webhook:activity-delete-archive-prune", err);
       }
       res.json({
         ok: true,
