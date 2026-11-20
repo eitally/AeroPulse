@@ -37,8 +37,6 @@ export interface UPlotPMCDashboardProps {
   embedded?: boolean;
 }
 
-export type EChartsPMCDashboardProps = UPlotPMCDashboardProps;
-
 const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
   timeline,
   onSelectActivity,
@@ -1132,15 +1130,15 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
             <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-800">
               Form Zone:{' '}
               {activeHoverDay.tsb > 15 ? (
-                <span className="text-amber-500 font-semibold">Transition (&gt; +15)</span>
+                <span className="text-amber-700 dark:text-amber-400 font-semibold">Transition (&gt; +15)</span>
               ) : activeHoverDay.tsb >= 5 ? (
-                <span className="text-sky-500 font-semibold">Fresh / Race Ready (+5 to +15)</span>
+                <span className="text-sky-700 dark:text-sky-400 font-semibold">Fresh / Race Ready (+5 to +15)</span>
               ) : activeHoverDay.tsb >= -10 ? (
-                <span className="text-slate-400 font-semibold">Grey Zone (-10 to +5)</span>
+                <span className="text-slate-600 dark:text-slate-400 font-semibold">Grey Zone (-10 to +5)</span>
               ) : activeHoverDay.tsb >= -30 ? (
-                <span className="text-emerald-500 font-semibold">Optimal Overload (-10 to -30)</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Optimal Overload (-10 to -30)</span>
               ) : (
-                <span className="text-rose-500 font-semibold">High Risk (&lt; -30)</span>
+                <span className="text-rose-700 dark:text-rose-400 font-semibold">High Risk (&lt; -30)</span>
               )}
             </div>
 
@@ -1224,5 +1222,4 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
 };
 
 export const UPlotPMCDashboard = React.memo(UPlotPMCDashboardInner);
-export const EChartsPMCDashboard = UPlotPMCDashboard;
 export default UPlotPMCDashboard;

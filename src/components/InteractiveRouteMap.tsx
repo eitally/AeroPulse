@@ -859,7 +859,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
                 </span>
               )}
               {props.activity.segmentEfforts?.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-amber-400">
+                <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
                   <Navigation className="w-3 h-3" />
                   {props.activity.segmentEfforts.length} Strava Segments Plotted
                 </span>

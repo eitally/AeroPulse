@@ -1,7 +1,7 @@
 import {
   computeAccessibleTeamPalette,
   escapeTextForSafeAttr,
-} from './teamQrHelper';
+} from './teamPalette';
 import {
   FAV_F_SHIELD_T_PATH,
 } from './brandVectors';

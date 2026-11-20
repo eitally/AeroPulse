@@ -439,7 +439,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
               {indoorFtp}W{' '}
               {!effectiveSafeSportHideWeight && safeWeightForWkg > 0 && (
-                <span className="text-xs font-semibold text-indigo-400">({indoorWkg} W/kg)</span>
+                <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">({indoorWkg} W/kg)</span>
               )}
             </div>
             <div className="text-2xs font-mono text-slate-600 dark:text-slate-400">

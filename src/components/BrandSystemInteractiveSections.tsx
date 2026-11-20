@@ -119,7 +119,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
             {copied?.key === lightKey ? (
               <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400 shrink-0" />
             ) : (
-              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Copy className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
             )}
           </button>
 
@@ -145,7 +145,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
             {copied?.key === darkKey ? (
               <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400 shrink-0" />
             ) : (
-              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Copy className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
             )}
           </button>
         </div>

@@ -1018,7 +1018,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </p>
                 </div>
               </div>
-              <CaretDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
+              <CaretDown className="w-4 h-4 text-slate-600 dark:text-slate-400 group-open:rotate-180 transition-transform" />
             </summary>
 
             <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-3">
@@ -1050,7 +1050,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       onClick={() => onLaunchWahooOAuth?.()}
                       className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                     >
-                      <Lightning className="w-4 h-4 text-sky-400" />
+                      <Lightning className="w-4 h-4 text-current" />
                       <span>1-Click Connect with Wahoo (OAuth 2.0 / PKCE)</span>
                     </button>
                   )}
@@ -1092,7 +1092,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </p>
                 </div>
               </div>
-              <CaretDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
+              <CaretDown className="w-4 h-4 text-slate-600 dark:text-slate-400 group-open:rotate-180 transition-transform" />
             </summary>
 
             <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-3">
@@ -1124,7 +1124,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       onClick={() => onLaunchPolarOAuth?.()}
                       className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                     >
-                      <Lightning className="w-4 h-4 text-rose-400" />
+                      <Lightning className="w-4 h-4 text-current" />
                       <span>1-Click Connect with Polar (OAuth 2.0)</span>
                     </button>
                   )}

@@ -7320,52 +7320,7 @@ function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
   return results;
 }
 
-// src/physiology/teamOnboardingEngine.ts
-function getOrgTypeSafeguardingDefaults(orgType) {
-  switch (orgType) {
-    case "HIGH_SCHOOL":
-      return {
-        defaultSafeSportShield: true,
-        enableParentGuardianCc: true,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Varsity", "Junior Varsity", "Frosh/Soph"],
-        orgBadgeLabel: "High School \xB7 Safe-Sport Defaults ON"
-      };
-    case "COLLEGIATE":
-      return {
-        defaultSafeSportShield: true,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Varsity Distance", "Mid-Distance", "Development"],
-        orgBadgeLabel: "Collegiate \xB7 NCAA CARA Enabled"
-      };
-    case "RUNNING_CLUB":
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Marathon / Roads", "Track Group", "Community"],
-        orgBadgeLabel: "Running Club"
-      };
-    case "CYCLING_CLUB":
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Cycling",
-        defaultSquads: ["A Group / Race", "B Group / Tempo", "Social / Z2"],
-        orgBadgeLabel: "Cycling Team / Club"
-      };
-    case "COACH_SQUAD":
-    default:
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Hybrid",
-        defaultSquads: ["Squad A", "Squad B", "1-on-1 Coached"],
-        orgBadgeLabel: "Coaching Squad"
-      };
-  }
-}
+// src/utils/teamPalette.ts
 function normalizeHexColor(input, fallback = "#1C5436") {
   const clean = String(input || "").trim().replace(/^#/, "");
   if (/^[0-9a-fA-F]{3}$/.test(clean)) {
@@ -7484,11 +7439,7 @@ function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
   const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#15231B", 4.65);
   let secondaryOnLight = ensureContrastAgainstSurface(secondaryHex, "#E9EFE9", 4.55);
   secondaryOnLight = ensureContrastAgainstSurface(secondaryOnLight, "#FFFFFF", 4.6);
-  const secondaryOnDark = ensureContrastAgainstSurface(
-    secondaryHex,
-    "#15231B",
-    4.6
-  );
+  const secondaryOnDark = ensureContrastAgainstSurface(secondaryHex, "#15231B", 4.6);
   const textOnPrimaryLight = selectButtonInk(primaryOnLight);
   const textOnPrimaryDark = selectButtonInk(primaryOnDark);
   return {
@@ -7503,6 +7454,53 @@ function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
     hairlineGradientLight: `linear-gradient(90deg, ${primaryOnLight} 0%, ${secondaryOnLight} 100%)`,
     hairlineGradientDark: `linear-gradient(90deg, ${primaryOnDark} 0%, ${secondaryOnDark} 100%)`
   };
+}
+
+// src/physiology/teamOnboardingEngine.ts
+function getOrgTypeSafeguardingDefaults(orgType) {
+  switch (orgType) {
+    case "HIGH_SCHOOL":
+      return {
+        defaultSafeSportShield: true,
+        enableParentGuardianCc: true,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Varsity", "Junior Varsity", "Frosh/Soph"],
+        orgBadgeLabel: "High School \xB7 Safe-Sport Defaults ON"
+      };
+    case "COLLEGIATE":
+      return {
+        defaultSafeSportShield: true,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Varsity Distance", "Mid-Distance", "Development"],
+        orgBadgeLabel: "Collegiate \xB7 NCAA CARA Enabled"
+      };
+    case "RUNNING_CLUB":
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Marathon / Roads", "Track Group", "Community"],
+        orgBadgeLabel: "Running Club"
+      };
+    case "CYCLING_CLUB":
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Cycling",
+        defaultSquads: ["A Group / Race", "B Group / Tempo", "Social / Z2"],
+        orgBadgeLabel: "Cycling Team / Club"
+      };
+    case "COACH_SQUAD":
+    default:
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Hybrid",
+        defaultSquads: ["Squad A", "Squad B", "1-on-1 Coached"],
+        orgBadgeLabel: "Coaching Squad"
+      };
+  }
 }
 function slugifyTeamName(name) {
   const base = String(name || "team").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);

@@ -87,7 +87,7 @@ import { useCoachChat } from './hooks/useCoachChat';
 import { useRosterActions } from './hooks/useRosterActions';
 import { useBrandStudioRoute } from './utils/brandRoute';
 import { usePublicTeamHubRoute } from './utils/publicTeamHubRoute';
-import { useShareWorkoutRoute, sharedWorkoutToPlannedEventInput } from './utils/shareWorkoutEngine';
+import { useShareWorkoutRoute } from './utils/shareWorkoutRoute';
 import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
 import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
 import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
@@ -2118,7 +2118,18 @@ export default function App() {
           <ShareWorkoutPage
             sharedWorkout={sharedWorkout} isDark={isDark} onToggleDark={toggleQuickLightDark} hasActiveWorkspace={hasWorkspace}
             initialFtpWatts={athleteProfile.ftp} initialThresholdPaceSecsPerKm={athleteProfile.thresholdPaceSecsPerKm} initialUnit={distanceUnit}
-            onImportToWorkspace={async (p, f, pace, u) => { await handleCreatePlannedEvent(sharedWorkoutToPlannedEventInput(p, { ftpWatts: f, thresholdPaceSecsPerKm: pace, unit: u })); closeShareWorkout(); setActiveTab('calendar'); }}
+            onImportToWorkspace={async (p, f, pace, u) => {
+              const { sharedWorkoutToPlannedEventInput } = await import('./utils/shareWorkoutEngine');
+              await handleCreatePlannedEvent(
+                sharedWorkoutToPlannedEventInput(p, {
+                  ftpWatts: f,
+                  thresholdPaceSecsPerKm: pace,
+                  unit: u,
+                })
+              );
+              closeShareWorkout();
+              setActiveTab('calendar');
+            }}
             onExitToSignIn={closeShareWorkout} onExitToWorkspace={closeShareWorkout}
           />
         </React.Suspense>

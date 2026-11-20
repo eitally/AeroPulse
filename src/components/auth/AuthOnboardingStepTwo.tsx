@@ -372,7 +372,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                     Athlete Profile &amp; Eligibility
                   </h2>
                   {isMinorAthlete && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                       <ShieldCheck className="w-3.5 h-3.5" />
                       <span>Safe-Sport Minor Protection</span>
                     </span>
@@ -402,7 +402,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       htmlFor={`${formId}-birth-year`}
                       className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
                     >
-                      Birth Month &amp; Year <span className="text-slate-400 font-normal">(Age verification)</span>
+                      Birth Month &amp; Year <span className="text-slate-600 dark:text-slate-400 font-normal">(Age verification)</span>
                     </label>
                     <div className="flex gap-2">
                       <select
@@ -514,7 +514,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       htmlFor={`${formId}-parent-email`}
                       className="block text-2xs font-semibold text-slate-600 dark:text-slate-300"
                     >
-                      Parent or Guardian Email <span className="text-amber-400 font-bold">*Required for Athletes Under 18</span>
+                      Parent or Guardian Email <span className="text-amber-700 dark:text-amber-400 font-bold">*Required for Athletes Under 18</span>
                     </label>
                     <input
                       id={`${formId}-parent-email`}
@@ -748,7 +748,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         <strong>Safe-Sport Privacy Mode:</strong> Hide body weight &amp; W/kg on team views
                       </span>
                       {isMinorAthlete && (
-                        <span className="block text-2xs text-emerald-400 font-medium mt-0.5">
+                        <span className="block text-2xs text-emerald-700 dark:text-emerald-400 font-medium mt-0.5">
                           Enforced &amp; locked ON for minor athletes to prevent RED-S &amp; weight-sensitive eating disorder risks.
                         </span>
                       )}
