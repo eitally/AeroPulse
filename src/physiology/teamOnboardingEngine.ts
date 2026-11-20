@@ -653,7 +653,7 @@ function formatPaceDisplay(secsPerKm: number, unit: DistanceUnit): string {
  */
 export function calibrateThresholdsFromSeedMark(
   seedInput: string,
-  primarySport: 'Running' | 'Cycling' | 'Hybrid' = 'Running',
+  primarySport: TeamBrandConfig['primarySport'] = 'Running',
   distanceUnit: DistanceUnit = 'mi'
 ): CalibratedSeedThresholds {
   const raw = String(seedInput || '').trim();

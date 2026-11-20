@@ -1,4 +1,5 @@
 import { DistanceUnit, EnvironmentFilter, UnifiedActivity } from '../types';
+import { formatSwimPacePer100 } from '../physiology/swimZones';
 
 const METERS_PER_MILE = 1609.344;
 const METERS_PER_KM = 1000;
@@ -85,6 +86,9 @@ export function formatGoalMetricValue(
   ) {
     return formatPace(value, distanceUnit);
   }
+  if (u === 's/100m' || u === 'secs/100m' || u === 'sec/100m') {
+    return formatSwimPacePer100(value, distanceUnit);
+  }
   if (u === 'kg' || u === 'lbs') {
     const kgValue = u === 'lbs' ? value / 2.20462 : value;
     return formatWeight(kgValue, distanceUnit);
@@ -160,7 +164,7 @@ export function formatSleepDuration(totalSecs: number): string {
 }
 
 export interface AnnualMileageSummary {
-  sportCategory: 'Running' | 'Cycling';
+  sportCategory: 'Running' | 'Cycling' | 'Swimming';
   year: number;
   workoutCount: number;
   outdoorCount: number;
@@ -179,7 +183,7 @@ export interface AnnualMileageSummary {
 }
 
 export function computeAnnualMileageSummary(
-  sportCategory: 'Running' | 'Cycling',
+  sportCategory: 'Running' | 'Cycling' | 'Swimming',
   targetMeters: number,
   activities: UnifiedActivity[],
   envFilter: EnvironmentFilter,

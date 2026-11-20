@@ -61,6 +61,8 @@ const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
   'runLthr',
   'runMaxHr',
   'thresholdPaceSecsPerKm',
+  'swimCssSecsPer100m',
+  'swimZones',
   'thresholdHistory',
   'safeSportHideWeight',
   'birthMonthYear',

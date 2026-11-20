@@ -41,8 +41,10 @@ export interface AuthOnboardingStepTwoProps {
   setBirthMonth: React.Dispatch<React.SetStateAction<string>>;
   parentGuardianEmail: string;
   setParentGuardianEmail: React.Dispatch<React.SetStateAction<string>>;
-  primarySport: 'Cycling' | 'Running' | 'Hybrid';
-  setPrimarySport: React.Dispatch<React.SetStateAction<'Cycling' | 'Running' | 'Hybrid'>>;
+  primarySport: 'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid';
+  setPrimarySport: React.Dispatch<
+    React.SetStateAction<'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid'>
+  >;
   distanceUnit: DistanceUnit;
   setDistanceUnit: React.Dispatch<React.SetStateAction<DistanceUnit>>;
   setHasEditedUnits: React.Dispatch<React.SetStateAction<boolean>>;
@@ -542,9 +544,9 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                     <div
                       role="group"
                       aria-labelledby={`${formId}-primary-sport`}
-                      className="inline-flex rounded-xl p-0.5 liquid-capsule-track text-xs"
+                      className="inline-flex flex-wrap gap-0.5 rounded-xl p-0.5 liquid-capsule-track text-xs"
                     >
-                      {(['Running', 'Cycling', 'Hybrid'] as const).map((sp) => (
+                      {(['Running', 'Cycling', 'Swimming', 'Triathlon', 'Hybrid'] as const).map((sp) => (
                         <button
                           key={sp}
                           type="button"

@@ -88,7 +88,7 @@ export interface TelemetryWorkspaceContextValue {
   handleAddActivityComment: (activity: UnifiedActivity, text: string) => Promise<void>;
   handleImportSingleParsedActivity: (activity: UnifiedActivity) => void;
   handleImportMultipleParsedActivities: (activities: UnifiedActivity[]) => void;
-  handleUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling', targetMeters: number) => void;
+  handleUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => void;
   handleAddTargetGoal: (newGoal: Omit<TargetGoal, 'id'>) => void;
   handleDeleteTargetGoal: (id: string) => void;
   handleSaveProfileOverride: (updatedProfile: AthleteProfile) => Promise<void>;

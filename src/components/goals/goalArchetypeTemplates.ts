@@ -12,7 +12,7 @@ export type TrackArchetypeId =
 
 export type GoalArchetypeId = TrackArchetypeId | EndurancePlanArchetypeId;
 
-export type GoalArchetypeCategory = 'ALL' | 'CYCLING' | 'ROAD' | 'TRACK';
+export type GoalArchetypeCategory = 'ALL' | 'CYCLING' | 'ROAD' | 'TRACK' | 'SWIM_TRI';
 
 export interface GoalArchetypeTemplate {
   id: GoalArchetypeId;

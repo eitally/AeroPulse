@@ -17,6 +17,7 @@ import {
   SessionCheckInRecord,
   SportCategory,
   StudentAthleteCheckIn,
+  TeamSummaryWithRole,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -72,12 +73,14 @@ import {
   formatMorphRunLabel,
   formatOrthoChannelLabel,
 } from '../utils/plainLanguage';
+import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 
 interface FitnessHealthViewProps {
   wellnessDays: UnifiedWellnessDay[];
   plannedEvents: PlannedWorkoutEvent[];
   activities?: UnifiedActivity[];
   athleteProfile?: AthleteProfile;
+  activeTeam?: TeamSummaryWithRole | null;
   distanceUnit?: DistanceUnit;
   plainLanguageMode?: boolean;
   selfName?: string;
@@ -161,6 +164,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   plannedEvents,
   activities = [],
   athleteProfile,
+  activeTeam = null,
   distanceUnit = 'mi',
   plainLanguageMode = false,
   onSelectActivity,
@@ -848,6 +852,15 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     athleteProfile?.academicDivision && athleteProfile.academicDivision !== 'CLUB_OPEN' ||
       isMinorAthleteContext
   );
+  const workspaceScope = useMemo(
+    () =>
+      resolveWorkspaceSportAndRoleScope({
+        athleteProfile,
+        activeTeam,
+        isMinorU18: isMinorAthleteContext,
+      }),
+    [athleteProfile, activeTeam, isMinorAthleteContext]
+  );
 
   const studentCheckIn = useMemo<StudentAthleteCheckIn>(
     () => ({
@@ -1249,7 +1262,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
               <div
                 className={`grid grid-cols-1 sm:grid-cols-2 ${
-                  athleteProfile?.primarySport === 'Cycling' ? 'lg:grid-cols-3' : 'lg:grid-cols-4'
+                  workspaceScope.showSpikedMeter ? 'lg:grid-cols-4' : 'lg:grid-cols-3'
                 } gap-2.5`}
               >
                 <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5">
@@ -1302,7 +1315,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                   </div>
                 </div>
 
-                {athleteProfile?.primarySport !== 'Cycling' && (
+                {workspaceScope.showSpikedMeter && (
                 <div
                   data-testid="ortho-spike-budget-tile"
                   className="rounded-xl liquid-glass-subtle px-3.5 py-2.5"
@@ -1520,6 +1533,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               distanceUnit={distanceUnit}
               latestDay={latestDay}
               isStudentContext={isStudentContext}
+              showNcaaCara={workspaceScope.showNcaaCara}
+              showGrowthPlatePhv={workspaceScope.showGrowthPlatePhv}
               studentGuardrail={studentGuardrail}
               safeSportWatchReport={safeSportWatchReport}
               crossTrainEquiv={crossTrainEquiv}

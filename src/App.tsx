@@ -1311,11 +1311,24 @@ export default function App() {
     effectiveTargetGoals,
   });
   const handleUpdateAnnualMileageGoal = useCallback(
-    (sport: 'Running' | 'Cycling', targetMeters: number) => {
-      const updater = (prev: AnnualMileageGoal[]) =>
-        prev.map((g) =>
+    (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => {
+      const updater = (prev: AnnualMileageGoal[]) => {
+        const exists = prev.some((g) => g.sportCategory === sport);
+        if (!exists) {
+          const fallbackYear = prev[0]?.year || new Date().getFullYear();
+          return [
+            ...prev,
+            {
+              sportCategory: sport,
+              year: fallbackYear,
+              targetDistanceMeters: targetMeters,
+            },
+          ];
+        }
+        return prev.map((g) =>
           g.sportCategory === sport ? { ...g, targetDistanceMeters: targetMeters } : g
         );
+      };
       if (isSampleDemoMode) {
         setSampleDemoAnnualGoals(updater);
         return;

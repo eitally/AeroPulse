@@ -17,6 +17,8 @@ export interface FitnessCheckInAndCrossTrainingDrawerProps {
   distanceUnit: DistanceUnit;
   latestDay: UnifiedWellnessDay;
   isStudentContext: boolean;
+  showNcaaCara?: boolean;
+  showGrowthPlatePhv?: boolean;
   studentGuardrail: ReturnType<typeof evaluateStudentAthleteGuardrail>;
   safeSportWatchReport: ReturnType<typeof evaluateSafeSportPatternWatch>;
   crossTrainEquiv: ReturnType<typeof computeCrossTrainingEquivalence>;
@@ -59,6 +61,8 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
   distanceUnit,
   latestDay,
   isStudentContext,
+  showNcaaCara = false,
+  showGrowthPlatePhv,
   studentGuardrail,
   safeSportWatchReport,
   crossTrainEquiv,
@@ -82,6 +86,7 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
   setCrossTrainToast,
   onSyncMorphedToCalendar,
 }) => {
+  const effectiveShowGrowthPlatePhv = showGrowthPlatePhv ?? isStudentContext;
   return (
             <div className="pt-2 border-t border-slate-200/70 dark:border-white/10 space-y-2.5">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 text-xs">
@@ -183,7 +188,7 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
                         htmlFor={`${formId}-phv-knee`}
                         className="block text-2xs font-mono text-slate-500 mb-1"
                       >
-                        {isStudentContext ? 'Knee Growth-Plate' : 'Front Knee Tendon'}
+                        {effectiveShowGrowthPlatePhv ? 'Knee Growth-Plate' : 'Front Knee Tendon'}
                       </label>
                       <select
                         id={`${formId}-phv-knee`}
@@ -206,7 +211,7 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
                         htmlFor={`${formId}-phv-heel`}
                         className="block text-2xs font-mono text-slate-500 mb-1"
                       >
-                        {isStudentContext ? 'Heel Growth-Plate' : 'Heel / Plantar Soreness'}
+                        {effectiveShowGrowthPlatePhv ? 'Heel Growth-Plate' : 'Heel / Plantar Soreness'}
                       </label>
                       <select
                         id={`${formId}-phv-heel`}
@@ -311,7 +316,8 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-2xs text-slate-500 flex-1 min-w-[180px]">
-                      {crossTrainEquiv.coachingNote} ({crossTrainEquiv.caraCountableHours}h NCAA CARA)
+                      {crossTrainEquiv.coachingNote}
+                      {showNcaaCara ? ` (${crossTrainEquiv.caraCountableHours}h NCAA CARA)` : ''}
                     </span>
                     {onSyncMorphedToCalendar && (
                       <button
@@ -375,8 +381,9 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
                           : 'Zero-Weight Clear'}
                     </span>
                     <span className="font-bold text-slate-900 dark:text-white">
-                      Longitudinal Energy, Iron &amp; Growth-Plate Watch ({safeSportWatchReport.windowRecentDays}d vs{' '}
-                      {safeSportWatchReport.windowBaselineDays}d)
+                      {effectiveShowGrowthPlatePhv
+                        ? `Longitudinal Energy, Iron & Growth-Plate Watch (${safeSportWatchReport.windowRecentDays}d vs ${safeSportWatchReport.windowBaselineDays}d)`
+                        : `Longitudinal Energy & Iron Watch (${safeSportWatchReport.windowRecentDays}d vs ${safeSportWatchReport.windowBaselineDays}d)`}
                     </span>
                   </div>
                   <span className="font-mono text-2xs text-slate-600 dark:text-slate-300">
@@ -410,9 +417,11 @@ export const FitnessCheckInAndCrossTrainingDrawer: React.FC<
                     </div>
                   </div>
                   <div className="rounded-lg bg-white/80 dark:bg-ap-carbon/80 px-2.5 py-2 border border-slate-200/80 dark:border-white/10">
-                    <div className="text-slate-500 dark:text-slate-400">Ferritin / PHV</div>
+                    <div className="text-slate-500 dark:text-slate-400">
+                      {effectiveShowGrowthPlatePhv ? 'Ferritin / PHV' : 'Iron / Ferritin'}
+                    </div>
                     <div className="font-bold text-slate-900 dark:text-white mt-0.5">
-                      {safeSportWatchReport.phvGrowthPlateFlag
+                      {effectiveShowGrowthPlatePhv && safeSportWatchReport.phvGrowthPlateFlag
                         ? 'PHV Protection'
                         : safeSportWatchReport.ferritinStatus === 'DEPLETED_UNDER_30'
                           ? 'Ferritin < 30'

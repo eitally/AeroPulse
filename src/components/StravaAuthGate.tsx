@@ -64,7 +64,7 @@ import {
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
-  primarySport: 'Cycling' | 'Running' | 'Hybrid';
+  primarySport: 'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid';
   distanceUnit: DistanceUnit;
   hasCustomSeedMark?: boolean;
   weightDisplay?: number;
@@ -271,7 +271,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [birthYear, setBirthYear] = useState<string>('');
   const [birthMonth, setBirthMonth] = useState<string>('');
   const [parentGuardianEmail, setParentGuardianEmail] = useState<string>('');
-  const [primarySport, setPrimarySport] = useState<'Cycling' | 'Running' | 'Hybrid'>('Running');
+  const [primarySport, setPrimarySport] = useState<
+    'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid'
+  >('Running');
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(
     status.stravaMeasurementPreference || propDistanceUnit || 'mi'
   );

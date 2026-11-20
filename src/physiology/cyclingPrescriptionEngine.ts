@@ -7,6 +7,11 @@ import type {
 import { formatPace } from '../utils/formatters';
 import { parseWorkoutSteps } from '../utils/workoutParser';
 import { formatTrackSplitToken } from './trackPrescriptionEngine';
+import {
+  DEFAULT_SWIM_CSS_SECS_PER_100M,
+  formatSwimDistance,
+  formatSwimPacePer100,
+} from './swimZones';
 
 export type EndurancePlanArchetypeId =
   | 'CYC_FTP_BUILDER'
@@ -21,14 +26,17 @@ export type EndurancePlanArchetypeId =
   | 'ROAD_5K'
   | 'ROAD_10K'
   | 'ROAD_HALF_MARATHON'
-  | 'ROAD_MARATHON';
+  | 'ROAD_MARATHON'
+  | 'SWIM_CSS_ENDURANCE'
+  | 'TRI_OLYMPIC'
+  | 'TRI_70_3';
 
 export type PlanStartAnchorMode = 'NEXT_MONDAY' | 'THIS_WEEK' | 'RACE_DATE';
 export type PlanVolumeTier = 'AUTO' | 'STARTER' | 'INTERMEDIATE' | 'COMPETITIVE';
 
 export interface EnduranceArchetypeMeta {
   id: EndurancePlanArchetypeId;
-  category: 'CYCLING' | 'ROAD';
+  category: 'CYCLING' | 'ROAD' | 'SWIM_TRI';
   badge: string;
   title: string;
   subtitle: string;
@@ -181,6 +189,39 @@ export const ENDURANCE_PLAN_ARCHETYPES: EnduranceArchetypeMeta[] = [
     targetLabel: '42.2 km Durability Peak',
     defaultWeeks: 16,
     targetProgressionLevels: [9.4, 8.8, 7.8, 6.0, 4.8, 4.5],
+  },
+  {
+    id: 'SWIM_CSS_ENDURANCE',
+    category: 'SWIM_TRI',
+    badge: 'Swim · CSS',
+    title: 'Swim CSS Threshold & 1500m',
+    subtitle: 'Pool CSS Intervals, Pull/Drill Economy & Open-Water Pacing',
+    sportCategory: 'Swimming',
+    targetLabel: 'CSS Pace & Stroke Efficiency',
+    defaultWeeks: 8,
+    targetProgressionLevels: [7.6, 8.2, 8.8, 7.8, 6.2, 5.0],
+  },
+  {
+    id: 'TRI_OLYMPIC',
+    category: 'SWIM_TRI',
+    badge: 'Triathlon · Olympic',
+    title: 'Olympic Triathlon (1.5k / 40k / 10k)',
+    subtitle: 'Balanced Swim CSS, Aero Bike Tempo & T2 Off-Bike Brick Runs',
+    sportCategory: 'Multisport',
+    targetLabel: 'Swim + Bike + T2 Brick',
+    defaultWeeks: 12,
+    targetProgressionLevels: [8.2, 8.6, 8.4, 7.4, 6.0, 5.2],
+  },
+  {
+    id: 'TRI_70_3',
+    category: 'SWIM_TRI',
+    badge: 'Triathlon · 70.3',
+    title: 'Half-Ironman 70.3 Endurance Peak',
+    subtitle: 'Long Aero Rides, 1.9km CSS Swims, Brick Runs & 2-Week Taper',
+    sportCategory: 'Multisport',
+    targetLabel: '70.3 Durability + 90g/h Fuel',
+    defaultWeeks: 16,
+    targetProgressionLevels: [9.2, 8.8, 8.0, 6.6, 5.4, 4.8],
   },
 ];
 
@@ -394,12 +435,18 @@ export function generateEnduranceTrainingPlan(
   } = input;
 
   const isRunning = archetypeId.startsWith('ROAD_');
-  const sport: SportCategory = isRunning ? 'Running' : 'Cycling';
+  const isSwimOnly = archetypeId === 'SWIM_CSS_ENDURANCE';
+  const isTri = archetypeId === 'TRI_OLYMPIC' || archetypeId === 'TRI_70_3';
   const isTimeCrunched = archetypeId === 'CYC_TIME_CRUNCHED_INDOOR';
   const effectiveFtp = isTimeCrunched
     ? Math.max(100, athleteProfile?.indoorFtp || athleteProfile?.ftp || ftpWatts || 250)
     : Math.max(100, athleteProfile?.ftp || ftpWatts || 260);
   const safeThresholdPace = Math.max(150, athleteProfile?.thresholdPaceSecsPerKm || 255);
+  const safeCssSecs = Math.max(
+    65,
+    Math.min(220, athleteProfile?.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M)
+  );
+  const cssPaceStr = formatSwimPacePer100(safeCssSecs, distanceUnit);
   const easyPaceSecs = Math.round(safeThresholdPace * 1.28);
   const tempoPaceSecs = Math.round(safeThresholdPace * 1.09);
   const mpPaceSecs = Math.round(safeThresholdPace * 1.1);
@@ -414,7 +461,10 @@ export function generateEnduranceTrainingPlan(
   );
 
   const twoWeekTaper =
-    (archetypeId === 'CYC_GRAVEL_FONDO' || archetypeId === 'ROAD_MARATHON') && blockWeeks >= 12;
+    (archetypeId === 'CYC_GRAVEL_FONDO' ||
+      archetypeId === 'ROAD_MARATHON' ||
+      archetypeId === 'TRI_70_3') &&
+    blockWeeks >= 12;
 
   const weeks: GeneratedEnduranceWeek[] = [];
 
@@ -497,7 +547,234 @@ export function generateEnduranceTrainingPlan(
       });
     };
 
-    if (!isRunning) {
+    const addSwimSession = (
+      dayOffset: number,
+      name: string,
+      workoutSyntax: string,
+      description: string,
+      durationSecs: number,
+      load: number
+    ) => {
+      sessions.push({
+        date: addDaysIso(weekMondayIso, dayOffset),
+        name,
+        sportCategory: 'Swimming',
+        environmentPreference: 'INDOOR',
+        plannedDurationSecs: Math.max(600, Math.round(durationSecs)),
+        plannedLoad: Math.max(10, Math.round(load)),
+        workoutSyntax,
+        description,
+        replaceExistingDate: true,
+      });
+    };
+
+    const addBrickSession = (
+      dayOffset: number,
+      name: string,
+      workoutSyntax: string,
+      description: string,
+      durationSecs: number,
+      load: number
+    ) => {
+      sessions.push({
+        date: addDaysIso(weekMondayIso, dayOffset),
+        name,
+        sportCategory: 'Multisport',
+        environmentPreference: envForSession(false),
+        plannedDurationSecs: Math.max(1200, Math.round(durationSecs)),
+        plannedLoad: Math.max(15, Math.round(load)),
+        workoutSyntax,
+        description,
+        replaceExistingDate: true,
+      });
+    };
+
+    if (isSwimOnly) {
+      // ==================== SWIM CSS ARCHETYPE (0 % FTP LEAKS!) ====================
+      const easySwimPaceStr = formatSwimPacePer100(Math.round(safeCssSecs * 1.14), distanceUnit);
+      if (isFinalRaceWeek) {
+        addSwimSession(
+          q1Offset,
+          `Wk${weekNum} CSS Opener: 4x100m @ ${cssPaceStr}`,
+          `Warmup\n- 300m Easy Choice + 4x50 Drill @ ${easySwimPaceStr}\n\nMain Set 1\n- 4x100m @ ${cssPaceStr} CSS (20s rest)\n\nCooldown\n- 200m Z1 Swim Down`,
+          `Crisp neuromuscular CSS activation (~${cssPaceStr}) shedding fatigue for meet/open-water peak.`,
+          1320,
+          22
+        );
+        addSwimSession(
+          q2Offset,
+          `Wk${weekNum} Pre-Race Drill Shakeout (${formatSwimDistance(900, distanceUnit)})`,
+          `Warmup\n- 300m Z1 Free @ ${easySwimPaceStr}\n\nMain Set 1\n- 4x75m Build Sighting & Turns\n\nCooldown\n- 300m Easy Choice`,
+          `Relaxed catch and streamline feel at ${easySwimPaceStr}.`,
+          1080,
+          14
+        );
+        addSwimSession(
+          longOffset,
+          `Wk${weekNum} Race Activation Warmup Swim (${formatSwimDistance(800, distanceUnit)})`,
+          `Warmup\n- 400m Z1 Flush\n\nMain Set 1\n- 4x50m Controlled Snap @ ${cssPaceStr}\n\nCooldown\n- 200m Easy`,
+          `Short taper shakeout keeping water feel sharp (~50% taper volume).`,
+          960,
+          14
+        );
+      } else {
+        const repDist = weekNum % 2 === 1 ? 100 : 200;
+        const repCount = isDeload ? (repDist === 100 ? 6 : 4) : repDist === 100 ? 10 : 6;
+        const q1Meters = 400 + repCount * repDist + 200;
+        const q1Secs = Math.round((q1Meters / 100) * safeCssSecs * 1.18);
+        addSwimSession(
+          q1Offset,
+          `Wk${weekNum} CSS Threshold Pool Set: ${repCount}x${repDist}m @ ${cssPaceStr}`,
+          `Warmup\n- 400m Easy Choice + 4x50 Drill @ ${easySwimPaceStr}\n\nMain Set 1\n- ${repCount}x${repDist}m @ ${cssPaceStr} CSS (${repDist === 100 ? '15s' : '25s'} rest)\n\nCooldown\n- 200m Z1 Swim Down`,
+          `Primary CSS pace repeatability at ${cssPaceStr} (${formatSwimDistance(q1Meters, distanceUnit)}).`,
+          q1Secs,
+          (q1Secs / 3600) * (isDeload ? 56 : 74)
+        );
+
+        const q2CruiseCount = isDeload ? 3 : 5;
+        const q2Meters = 400 + q2CruiseCount * 300 + 200;
+        const q2Secs = Math.round((q2Meters / 100) * safeCssSecs * 1.2);
+        addSwimSession(
+          q2Offset,
+          `Wk${weekNum} Aerobic Pull & CSS Cruise: ${q2CruiseCount}x300m`,
+          `Warmup\n- 400m Z1 Free/Back @ ${easySwimPaceStr}\n\nMain Set 1\n- ${q2CruiseCount}x300m Pull Buoy Smooth CSS+4s (${formatSwimPacePer100(safeCssSecs + 4, distanceUnit)}, 20s rest)\n\nCooldown\n- 200m Easy`,
+          `Distance-per-stroke endurance and catch stability (${formatSwimDistance(q2Meters, distanceUnit)}).`,
+          q2Secs,
+          (q2Secs / 3600) * (isDeload ? 50 : 64)
+        );
+
+        easyOffsets.forEach((off, idx) => {
+          const drillMeters = Math.round(1400 * weekDurScale);
+          const drillSecs = Math.round((drillMeters / 100) * safeCssSecs * 1.24);
+          addSwimSession(
+            off,
+            `Wk${weekNum} Technique & Aerobic Flush (${formatSwimDistance(drillMeters, distanceUnit)})`,
+            `Warmup\n- 300m Easy Choice\n\nMain Set 1\n- ${formatSwimDistance(Math.max(600, drillMeters - 500), distanceUnit)} Catch-Up & Fingertip Drag Drills @ ${easySwimPaceStr}\n\nCooldown\n- 200m Z1 Easy`,
+            idx === 0
+              ? `Low-strain streamline mechanics around ${easySwimPaceStr}.`
+              : `Parasympathetic aerobic water feel.`,
+            drillSecs,
+            (drillSecs / 3600) * 46
+          );
+        });
+
+        const longSwimMeters = Math.max(
+          1500,
+          Math.min(3600, Math.round((1800 + w * 200) * weekDurScale / 100) * 100)
+        );
+        const longSecs = Math.round((longSwimMeters / 100) * safeCssSecs * 1.18);
+        addSwimSession(
+          longOffset,
+          `Wk${weekNum} Continuous Open-Water / 1500m Endurance (${formatSwimDistance(longSwimMeters, distanceUnit)})`,
+          `Warmup\n- 400m Z1 Progressive @ ${easySwimPaceStr}\n\nMain Set 1\n- ${formatSwimDistance(Math.max(800, longSwimMeters - 600), distanceUnit)} Negative-Split Sighting Endurance near ${cssPaceStr}\n\nCooldown\n- 200m Z1 Flush`,
+          `Sustained open-water pacing & bilateral breathing rhythm (${formatSwimDistance(longSwimMeters, distanceUnit)}).`,
+          longSecs,
+          (longSecs / 3600) * (isDeload ? 54 : 68)
+        );
+      }
+    } else if (isTri) {
+      // ==================== TRIATHLON ARCHETYPES (OLYMPIC & 70.3) ====================
+      const is703 = archetypeId === 'TRI_70_3';
+      const easyRunStr = formatPace(easyPaceSecs, distanceUnit);
+      const tRunStr = formatPace(safeThresholdPace, distanceUnit);
+      const aeroBikeWatts = Math.round(effectiveFtp * (is703 ? 0.8 : 0.88));
+      const ssBikeWatts = Math.round(effectiveFtp * 0.9);
+
+      if (isFinalRaceWeek) {
+        addSwimSession(
+          q1Offset,
+          `Wk${weekNum} Race-Week Swim Opener (4x100m @ ${cssPaceStr})`,
+          `Warmup\n- 300m Z1 Free\n\nMain Set 1\n- 4x100m @ ${cssPaceStr} CSS (20s rest)\n\nCooldown\n- 200m Easy`,
+          `Light open-water/pool sharpness without arm fatigue.`,
+          1200,
+          20
+        );
+        addBrickSession(
+          q2Offset,
+          `Wk${weekNum} Taper Bike → Run T2 Opener (28m)`,
+          `Warmup\n- 10m 56% FTP Easy Bike\n\nMain Set 1\n- 8m 88% FTP Bike Opener\n\nMain Set 2\n- 2m T2 Change\n- 8m 86% Pace T2 Crisp Run`,
+          `Short neuromuscular T2 primer calibrated to ${effectiveFtp}W FTP & ${tRunStr} run pace.`,
+          1680,
+          26
+        );
+        addSwimSession(
+          longOffset,
+          `Wk${weekNum} Pre-Race Shakeout Swim (600m Easy)`,
+          `Warmup\n- 400m Z1 Flush\n\nMain Set 1\n- 4x50m Progressive Sighting`,
+          `Calm pre-start taper flush (~50% peak volume).`,
+          900,
+          12
+        );
+      } else {
+        // Q1: Pool CSS Threshold Swim (zero % FTP)
+        const swimReps = isDeload ? 6 : is703 ? 10 : 8;
+        const swimMeters = 400 + swimReps * 150 + 200;
+        const swimSecs = Math.round((swimMeters / 100) * safeCssSecs * 1.18);
+        addSwimSession(
+          q1Offset,
+          `Wk${weekNum} Tri Swim CSS: ${swimReps}x150m @ ${cssPaceStr}`,
+          `Warmup\n- 400m Easy Choice + 4x50 Sighting Drill\n\nMain Set 1\n- ${swimReps}x150m @ ${cssPaceStr} CSS (20s rest)\n\nCooldown\n- 200m Easy`,
+          `Race-pace sighting & CSS swim durability (${formatSwimDistance(swimMeters, distanceUnit)}).`,
+          swimSecs,
+          (swimSecs / 3600) * (isDeload ? 54 : 70)
+        );
+
+        // Q2: Aero Bike Threshold / Sweet-Spot
+        const bikeReps = isDeload ? 2 : is703 ? 4 : 3;
+        const bikeRepMins = is703 ? 15 : 12;
+        addCyclingSession(
+          q2Offset,
+          `Wk${weekNum} Tri Aero Bike: ${bikeReps}x${bikeRepMins}m @ ${ssBikeWatts}W`,
+          `- 12m 56% FTP Warmup\nMain Set ${bikeReps}x\n- ${bikeRepMins}m 88% FTP Aero Position\n- 4m 52% FTP Easy Spin\n- 8m 50% FTP Cooldown`,
+          `Sustained aero-bar power holding ~${ssBikeWatts}W while keeping legs ready to run.`,
+          false
+        );
+
+        // Easy / balanced weekday sessions across Run, Swim, Bike
+        easyOffsets.forEach((off, idx) => {
+          if (idx % 2 === 0) {
+            const runMins = capMins((is703 ? 45 : 38) * weekDurScale, 55);
+            addRunningSession(
+              off,
+              `Wk${weekNum} Tri Easy Aerobic Run (${runMins}m @ ${easyRunStr})`,
+              `- 8m 64% Pace Warmup\n- ${Math.max(15, runMins - 14)}m 72% Pace Easy Z2 Run\n- 6m 60% Pace Cooldown`,
+              `Low-impact Z2 mileage at ${easyRunStr} building run durability under bike load.`
+            );
+          } else {
+            const aerobicSwimMeters = is703 ? 2000 : 1600;
+            const sSecs = Math.round((aerobicSwimMeters / 100) * safeCssSecs * 1.22);
+            addSwimSession(
+              off,
+              `Wk${weekNum} Aerobic Pull & Buoy Swim (${formatSwimDistance(aerobicSwimMeters, distanceUnit)})`,
+              `Warmup\n- 400m Z1 Free\n\nMain Set 1\n- ${formatSwimDistance(aerobicSwimMeters - 600, distanceUnit)} Pull Buoy Tempo @ ${formatSwimPacePer100(safeCssSecs + 5, distanceUnit)}\n\nCooldown\n- 200m Easy`,
+              `Upper-body aerobic endurance saving legs for weekend brick work.`,
+              sSecs,
+              (sSecs / 3600) * 58
+            );
+          }
+        });
+
+        // Weekend Long Brick: Aero Ride -> Off-Bike T2 Run
+        const bikeBrickMins = capMins(
+          (is703 ? 95 + Math.min(45, w * 4) : 60 + Math.min(25, w * 3)) * weekDurScale,
+          155
+        );
+        const runBrickMins = capMins(
+          (is703 ? 30 + Math.min(20, w * 2) : 20 + Math.min(12, w)) * weekDurScale,
+          55
+        );
+        const totalBrickMins = 12 + bikeBrickMins + 2 + runBrickMins + 6;
+        const brickTss = Math.round((totalBrickMins / 60) * (isDeload || isTaper ? 58 : 78));
+        addBrickSession(
+          longOffset,
+          `Wk${weekNum} ${is703 ? '70.3' : 'Olympic'} Long Ride → T2 Brick (${bikeBrickMins}m Bike + ${runBrickMins}m Run)`,
+          `Warmup\n- 12m 58% FTP Aero Warmup\n\nMain Set 1 (Aero Bike)\n- ${bikeBrickMins}m ${is703 ? 78 : 84}% FTP Race Effort (${aeroBikeWatts}W)\n\nMain Set 2 (T2 Brick Run)\n- 2m T2 Transition\n- ${runBrickMins}m 88% Pace Off-Bike Run\n\nCooldown\n- 6m 60% Pace Easy Walk/Jog`,
+          `Practice race fueling (60–90g CHO/hr on bike) and T2 cadence transition into ${runBrickMins}m steady run (~${tRunStr} threshold).`,
+          totalBrickMins * 60,
+          brickTss
+        );
+      }
+    } else if (!isRunning) {
       // ==================== 7 CYCLING ARCHETYPES ====================
       const ssWatts = Math.round(effectiveFtp * 0.9);
       const ftpTargetW = Math.round(effectiveFtp * 0.98);

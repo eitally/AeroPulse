@@ -47,6 +47,13 @@ import {
   saveWorkoutLibraryTemplateApi,
 } from '../utils/teamLifecycleApi';
 import {
+  DEFAULT_SWIM_CSS_SECS_PER_100M,
+  SWIM_TRI_CLIPBOARD_TEMPLATES,
+  buildSwimClipboardWorkout,
+  buildTriBrickClipboardWorkout,
+} from '../physiology/swimZones';
+import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
+import {
   Bike,
   Check,
   ChevronDown,
@@ -56,12 +63,14 @@ import {
   Download,
   Dumbbell,
   Footprints,
+  Layers,
   MapPin,
   Plus,
   Send,
   ShareNetwork,
   Timer,
   Trash,
+  Waves,
 } from './icons/PhosphorIcons';
 
 export interface CoachClipboardWorkoutBuilderProps {
@@ -96,7 +105,7 @@ type AudienceMode = 'ALL' | CoachEventGroup | 'INDIVIDUAL';
 interface BuilderSetRow {
   id: string;
   repCount: number;
-  repDistanceMeters: TrackRepDistanceMeters;
+  repDistanceMeters: number;
   measureMode?: 'DISTANCE_M' | 'TIME_MINS';
   durationMins?: number;
   targetPctFtp?: number;
@@ -108,6 +117,8 @@ interface BuilderSetRow {
 const VALID_REP_DISTS: TrackRepDistanceMeters[] = [
   150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
 ];
+
+const SWIM_REP_DISTS: number[] = [50, 100, 150, 200, 300, 400, 500, 800];
 
 const BUILTIN_WORKOUT_LIBRARY: Array<TeamWorkoutLibraryTemplate & { isBuiltin?: boolean }> = [
   {
@@ -179,6 +190,7 @@ const BUILTIN_WORKOUT_LIBRARY: Array<TeamWorkoutLibraryTemplate & { isBuiltin?: 
     createdAt: '2026-01-01T00:00:00Z',
     isBuiltin: true,
   },
+  ...SWIM_TRI_CLIPBOARD_TEMPLATES,
 ];
 
 const LIBRARY_CATEGORY_CHIPS: Array<{ id: 'ALL' | TeamWorkoutLibraryCategory; label: string }> = [
@@ -187,6 +199,8 @@ const LIBRARY_CATEGORY_CHIPS: Array<{ id: 'ALL' | TeamWorkoutLibraryCategory; la
   { id: 'XC_TEMPO', label: 'XC / Tempo' },
   { id: 'ROAD', label: 'Road' },
   { id: 'CYCLING', label: 'Cycling' },
+  { id: 'SWIMMING', label: 'Swimming' },
+  { id: 'TRIATHLON', label: 'Triathlon' },
   { id: 'RECOVERY', label: 'Recovery' },
 ];
 
@@ -278,7 +292,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   onCreatePlannedEvent,
   onOpenStopwatchSubTab,
 }) => {
-  const [clipboardSport, setClipboardSport] = useState<'Running' | 'Cycling' | 'Strength'>('Running');
+  const [clipboardSport, setClipboardSport] = useState<SportCategory>('Running');
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
   const [workoutDate, setWorkoutDate] = useState(() => getLocalDateIso());
@@ -322,13 +336,27 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const [isSavingLibrary, setIsSavingLibrary] = useState(false);
   const [deletingLibraryId, setDeletingLibraryId] = useState<string | null>(null);
 
-  const audienceChips: Array<{ id: AudienceMode; label: string }> = [
-    { id: 'ALL', label: 'Whole Team' },
-    { id: 'SPRINTS', label: 'Sprints' },
-    { id: 'MID_DISTANCE', label: '800m / Mile' },
-    { id: 'DISTANCE', label: '3000m / 3200m+' },
-    { id: 'INDIVIDUAL', label: 'Individuals' },
-  ];
+  const workspaceScope = useMemo(
+    () =>
+      resolveWorkspaceSportAndRoleScope({
+        athleteProfile: selfProfile,
+        activeTeam,
+      }),
+    [selfProfile, activeTeam]
+  );
+
+  const audienceChips: Array<{ id: AudienceMode; label: string }> = useMemo(() => {
+    const base: Array<{ id: AudienceMode; label: string }> = [
+      { id: 'ALL', label: 'Whole Team' },
+      { id: 'SPRINTS', label: 'Sprints' },
+      { id: 'MID_DISTANCE', label: '800m / Mile' },
+      { id: 'DISTANCE', label: '3000m / 3200m+' },
+      { id: 'INDIVIDUAL', label: 'Individuals' },
+    ];
+    return workspaceScope.showTrackEventGroupChips(clipboardSport)
+      ? base
+      : base.filter((c) => c.id === 'ALL' || c.id === 'INDIVIDUAL');
+  }, [workspaceScope, clipboardSport]);
 
   const scopedAthletes = useMemo(() => {
     if (connectedAthletes.length === 0) return [];
@@ -364,7 +392,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const multiSetPreview = useMemo(() => {
     const inputs: MultiSetPodSetInput[] = sets.map((s) => ({
       repCount: s.repCount,
-      repDistanceMeters: s.repDistanceMeters,
+      repDistanceMeters: snapRepDist(s.repDistanceMeters),
       intensity: s.intensity,
       restLabel: s.restLabel,
       ...(s.setRestAfterSecs > 0 ? { setRestAfterSecs: s.setRestAfterSecs } : {}),
@@ -380,6 +408,59 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     WARMUP_COOLDOWN_PRESETS[2];
 
   const builtWorkout = useMemo(() => {
+    if (clipboardSport === 'Swimming') {
+      const swimRes = buildSwimClipboardWorkout({
+        sets,
+        cssSecsPer100m: selfProfile.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M,
+        includeWarmup,
+        includeCooldown,
+      });
+      const firstRep = sets[0];
+      const swimTrackSpec: TrackWorkoutSpec = {
+        repCount: firstRep?.repCount || 10,
+        repDistanceMeters: snapRepDist(firstRep?.repDistanceMeters || 150),
+        zoneCode: 'CV',
+        podIntensity: 'THRESHOLD_CV',
+        restDurationSecs: parseRestLabelSecs(firstRep?.restLabel || '15s'),
+        waveMode: stopwatchWaveMode,
+        sets: [],
+      };
+      return {
+        workoutSyntax: swimRes.workoutSyntax,
+        plannedDurationSecs: swimRes.plannedDurationSecs,
+        plannedLoad: swimRes.plannedLoad,
+        trackSpec: swimTrackSpec,
+        setsSummary: swimRes.summaryLine,
+      };
+    }
+
+    if (clipboardSport === 'Multisport') {
+      const brickRes = buildTriBrickClipboardWorkout({
+        bikeMins: sets[0]?.durationMins || 45,
+        runMins: sets[1]?.durationMins || 20,
+        ftpWatts: selfProfile.ftp,
+        thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm,
+        includeWarmup,
+        includeCooldown,
+      });
+      const brickTrackSpec: TrackWorkoutSpec = {
+        repCount: 1,
+        repDistanceMeters: 800,
+        zoneCode: 'SUB_T',
+        podIntensity: 'SUB_THRESHOLD',
+        restDurationSecs: 120,
+        waveMode: stopwatchWaveMode,
+        sets: [],
+      };
+      return {
+        workoutSyntax: brickRes.workoutSyntax,
+        plannedDurationSecs: brickRes.plannedDurationSecs,
+        plannedLoad: brickRes.plannedLoad,
+        trackSpec: brickTrackSpec,
+        setsSummary: brickRes.summaryLine,
+      };
+    }
+
     const isCycling = clipboardSport === 'Cycling';
     const isStrength = clipboardSport === 'Strength';
     const lines: string[] = [];
@@ -474,7 +555,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
     const trackSets: TrackSetSpec[] = sets.map((s, idx) => ({
       repCount: s.repCount,
-      repDistanceMeters: s.repDistanceMeters,
+      repDistanceMeters: snapRepDist(s.repDistanceMeters),
       zoneCode: INTENSITY_TO_ZONE[s.intensity],
       podIntensity: s.intensity,
       targetSplitSecs: multiSetPreview[0]?.setSplits[idx]?.targetSplitSecs,
@@ -486,7 +567,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     const firstSet = trackSets[0];
     const trackSpec: TrackWorkoutSpec = {
       repCount: trackSets.reduce((acc, s) => acc + s.repCount, 0),
-      repDistanceMeters: firstSet?.repDistanceMeters || 800,
+      repDistanceMeters: snapRepDist(firstSet?.repDistanceMeters || 800),
       zoneCode: firstSet?.zoneCode || 'CV',
       podIntensity: firstSet?.podIntensity || 'THRESHOLD_CV',
       targetSplitSecs: firstSet?.targetSplitSecs,
@@ -515,6 +596,9 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     sets,
     multiSetPreview,
     stopwatchWaveMode,
+    selfProfile.swimCssSecsPer100m,
+    selfProfile.ftp,
+    selfProfile.thresholdPaceSecsPerKm,
   ]);
 
   const applyShorthandText = (rawText: string) => {
@@ -746,7 +830,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         name: title,
         sportCategory: clipboardSport,
         environmentPreference:
-          clipboardSport === 'Strength'
+          clipboardSport === 'Strength' || clipboardSport === 'Swimming'
             ? 'INDOOR'
             : clipboardSport === 'Cycling'
               ? 'FLEXIBLE'
@@ -863,17 +947,64 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   );
 
   const handleLoadLibraryTemplate = (tpl: TeamWorkoutLibraryTemplate) => {
-    const nextSport: 'Running' | 'Cycling' | 'Strength' =
-      tpl.sportCategory === 'Cycling'
-        ? 'Cycling'
-        : tpl.sportCategory === 'Strength'
-          ? 'Strength'
-          : 'Running';
+    const nextSport: SportCategory =
+      tpl.sportCategory === 'Cycling' ||
+      tpl.sportCategory === 'Strength' ||
+      tpl.sportCategory === 'Swimming' ||
+      tpl.sportCategory === 'Multisport'
+        ? tpl.sportCategory
+        : 'Running';
     setClipboardSport(nextSport);
     setWorkoutTitle(tpl.name);
     if (nextSport === 'Running') {
       applyShorthandText(tpl.workoutSyntax);
       setWorkoutTitle(tpl.name);
+    } else if (nextSport === 'Swimming') {
+      const swimMatch = tpl.workoutSyntax.match(/(\d+)\s*x\s*(\d+)\s*m/i);
+      const reps = swimMatch ? Math.max(1, Number(swimMatch[1])) : 10;
+      const dist = swimMatch ? Math.max(50, Number(swimMatch[2])) : 100;
+      setLocationCategory('POOL_CROSS');
+      setLocationName('Competition Pool');
+      setSets([
+        {
+          id: `lib-set-${Date.now()}`,
+          repCount: reps,
+          repDistanceMeters: dist,
+          measureMode: 'DISTANCE_M',
+          intensity: 'THRESHOLD_CV',
+          restLabel: '15s rest',
+          setRestAfterSecs: 0,
+        },
+      ]);
+      setShowManualSetRows(true);
+    } else if (nextSport === 'Multisport') {
+      setLocationCategory('ROAD_CAMPUS');
+      setLocationName('Transition / Loop');
+      setSets([
+        {
+          id: `lib-brick-bike-${Date.now()}`,
+          repCount: 1,
+          repDistanceMeters: 800,
+          measureMode: 'TIME_MINS',
+          durationMins: 45,
+          targetPctFtp: 88,
+          intensity: 'SUB_THRESHOLD',
+          restLabel: '2m T2',
+          setRestAfterSecs: 0,
+        },
+        {
+          id: `lib-brick-run-${Date.now()}`,
+          repCount: 1,
+          repDistanceMeters: 800,
+          measureMode: 'TIME_MINS',
+          durationMins: 20,
+          targetPctFtp: 90,
+          intensity: 'THRESHOLD_CV',
+          restLabel: 'cooldown',
+          setRestAfterSecs: 0,
+        },
+      ]);
+      setShowManualSetRows(true);
     } else {
       const durMatch = tpl.workoutSyntax.match(/(\d+)\s*x\s*(\d+)m\s*(\d+)%/i);
       const mins = durMatch ? Number(durMatch[2]) : Math.max(10, Math.round(tpl.plannedDurationSecs / 120));
@@ -900,15 +1031,19 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const handleSaveToLibrary = async () => {
     const name = (workoutTitle.trim() || builtWorkout.setsSummary || 'Custom Session').slice(0, 100);
     const category: TeamWorkoutLibraryCategory =
-      clipboardSport === 'Cycling'
-        ? 'CYCLING'
-        : builtWorkout.plannedLoad < 45
-          ? 'RECOVERY'
-          : /tempo|sub-t|xc|hill/i.test(`${name} ${builtWorkout.setsSummary}`)
-            ? 'XC_TEMPO'
-            : builtWorkout.trackSpec
-              ? 'TRACK'
-              : 'ROAD';
+      clipboardSport === 'Swimming'
+        ? 'SWIMMING'
+        : clipboardSport === 'Multisport'
+          ? 'TRIATHLON'
+          : clipboardSport === 'Cycling'
+            ? 'CYCLING'
+            : builtWorkout.plannedLoad < 45
+              ? 'RECOVERY'
+              : /tempo|sub-t|xc|hill/i.test(`${name} ${builtWorkout.setsSummary}`)
+                ? 'XC_TEMPO'
+                : builtWorkout.trackSpec
+                  ? 'TRACK'
+                  : 'ROAD';
     const payload = {
       name,
       category,
@@ -1009,7 +1144,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
           <h2 className="text-sm sm:text-base font-bold text-ap-ink dark:text-ap-chalk">
             Clipboard Builder &amp; Pods
           </h2>
-          <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
+          <div className="inline-flex flex-wrap items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
             <button
               type="button"
               aria-pressed={clipboardSport === 'Running'}
@@ -1026,7 +1161,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             <button
               type="button"
               aria-pressed={clipboardSport === 'Cycling'}
-              onClick={() => setClipboardSport('Cycling')}
+              onClick={() => {
+                setClipboardSport('Cycling');
+                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                  setAudienceMode('ALL');
+                }
+              }}
               className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
                 clipboardSport === 'Cycling'
                   ? 'ap-nav-volt-active'
@@ -1038,10 +1178,98 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </button>
             <button
               type="button"
+              data-testid="clipboard-sport-swimming"
+              aria-pressed={clipboardSport === 'Swimming'}
+              onClick={() => {
+                setClipboardSport('Swimming');
+                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                  setAudienceMode('ALL');
+                }
+                setLocationCategory('POOL_CROSS');
+                setLocationName('Competition Pool');
+                if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Triathlon T2 Brick') {
+                  setWorkoutTitle('Pool CSS Set');
+                }
+                setSets([
+                  {
+                    id: `swim-set-${Date.now()}`,
+                    repCount: 10,
+                    repDistanceMeters: 100,
+                    measureMode: 'DISTANCE_M',
+                    intensity: 'THRESHOLD_CV',
+                    restLabel: '15s rest',
+                    setRestAfterSecs: 0,
+                  },
+                ]);
+                setShowManualSetRows(true);
+              }}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                clipboardSport === 'Swimming'
+                  ? 'ap-nav-volt-active'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
+              }`}
+            >
+              <Waves className="w-3 h-3" />
+              <span>Swim</span>
+            </button>
+            <button
+              type="button"
+              data-testid="clipboard-sport-multisport"
+              aria-pressed={clipboardSport === 'Multisport'}
+              onClick={() => {
+                setClipboardSport('Multisport');
+                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                  setAudienceMode('ALL');
+                }
+                setLocationCategory('ROAD_CAMPUS');
+                setLocationName('Transition / Loop');
+                if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Pool CSS Set') {
+                  setWorkoutTitle('Triathlon T2 Brick');
+                }
+                setSets([
+                  {
+                    id: `brick-bike-${Date.now()}`,
+                    repCount: 1,
+                    repDistanceMeters: 800,
+                    measureMode: 'TIME_MINS',
+                    durationMins: 45,
+                    targetPctFtp: 88,
+                    intensity: 'SUB_THRESHOLD',
+                    restLabel: '2m T2',
+                    setRestAfterSecs: 0,
+                  },
+                  {
+                    id: `brick-run-${Date.now() + 1}`,
+                    repCount: 1,
+                    repDistanceMeters: 800,
+                    measureMode: 'TIME_MINS',
+                    durationMins: 20,
+                    targetPctFtp: 90,
+                    intensity: 'THRESHOLD_CV',
+                    restLabel: 'cooldown',
+                    setRestAfterSecs: 0,
+                  },
+                ]);
+                setShowManualSetRows(true);
+              }}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                clipboardSport === 'Multisport'
+                  ? 'ap-nav-volt-active'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              <span>Tri Brick</span>
+            </button>
+            <button
+              type="button"
               data-testid="clipboard-sport-strength"
               aria-pressed={clipboardSport === 'Strength'}
               onClick={() => {
                 setClipboardSport('Strength');
+                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                  setAudienceMode('ALL');
+                }
                 setLocationCategory('GYM_WEIGHTS');
                 setLocationName('Weight Room');
                 if (workoutTitle === 'Track Multi-Set') {
@@ -1535,7 +1763,17 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
               <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                 <div className="flex items-center justify-between gap-1">
-                  <span>{clipboardSport === 'Cycling' || clipboardSport === 'Strength' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
+                  <span>
+                    {clipboardSport === 'Multisport'
+                      ? idx === 0
+                        ? 'Bike Mins'
+                        : 'Run Mins'
+                      : clipboardSport === 'Cycling' ||
+                          clipboardSport === 'Strength' ||
+                          row.measureMode === 'TIME_MINS'
+                        ? 'Minutes'
+                        : 'Distance'}
+                  </span>
                   {clipboardSport === 'Running' && (
                     <button
                       type="button"
@@ -1558,11 +1796,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     </button>
                   )}
                 </div>
-                {clipboardSport === 'Cycling' || clipboardSport === 'Strength' || row.measureMode === 'TIME_MINS' ? (
+                {clipboardSport === 'Cycling' ||
+                clipboardSport === 'Strength' ||
+                clipboardSport === 'Multisport' ||
+                row.measureMode === 'TIME_MINS' ? (
                   <input
                     type="number"
                     min={1}
-                    max={90}
+                    max={180}
                     aria-label={`Set ${idx + 1} Minutes`}
                     value={row.durationMins || 6}
                     onChange={(e) => {
@@ -1578,14 +1819,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     aria-label={`Set ${idx + 1} Distance`}
                     value={row.repDistanceMeters}
                     onChange={(e) => {
-                      const v = Number(e.target.value) as TrackRepDistanceMeters;
+                      const v = Number(e.target.value);
                       setSets((prev) =>
                         prev.map((s) => (s.id === row.id ? { ...s, repDistanceMeters: v } : s))
                       );
                     }}
                     className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   >
-                    {VALID_REP_DISTS.map((dist) => (
+                    {(clipboardSport === 'Swimming' ? SWIM_REP_DISTS : VALID_REP_DISTS).map((dist) => (
                       <option key={`set-${idx}-d-${dist}`} value={dist}>
                         {dist}m
                       </option>
@@ -1595,8 +1836,24 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               </label>
 
               <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
-                <span>{clipboardSport === 'Cycling' ? 'Target % FTP' : 'Target Pace'}</span>
-                {clipboardSport === 'Cycling' ? (
+                <span>
+                  {clipboardSport === 'Cycling'
+                    ? 'Target % FTP'
+                    : clipboardSport === 'Swimming'
+                      ? 'Swim Effort'
+                      : clipboardSport === 'Multisport'
+                        ? 'Brick Leg'
+                        : 'Target Pace'}
+                </span>
+                {clipboardSport === 'Swimming' ? (
+                  <div className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white/70 dark:bg-ap-turf px-2 flex items-center font-mono text-xs text-teal-700 dark:text-teal-400">
+                    Z3 CSS Threshold
+                  </div>
+                ) : clipboardSport === 'Multisport' ? (
+                  <div className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white/70 dark:bg-ap-turf px-2 flex items-center font-mono text-xs text-ap-ink dark:text-ap-chalk">
+                    {idx === 0 ? 'Aero Bike (88% FTP)' : 'T2 Run Off-Bike (90%)'}
+                  </div>
+                ) : clipboardSport === 'Cycling' ? (
                   <select
                     aria-label={`Set ${idx + 1} Cycling Intensity`}
                     value={row.targetPctFtp || 90}

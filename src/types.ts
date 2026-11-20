@@ -363,7 +363,7 @@ export interface PlannedWorkoutEvent {
 }
 
 export interface AnnualMileageGoal {
-  sportCategory: 'Running' | 'Cycling';
+  sportCategory: 'Running' | 'Cycling' | 'Swimming';
   year: number;
   targetDistanceMeters: number;
 }
@@ -496,6 +496,17 @@ export interface AthleteHrZone {
   color: string;
 }
 
+export interface AthleteSwimZone {
+  zone: number; // 1..5
+  code: string; // 'Z1'..'Z5'
+  name: string;
+  minPaceSecsPer100m: number;
+  maxPaceSecsPer100m: number;
+  minPctCss: number;
+  maxPctCss: number;
+  color: string;
+}
+
 export interface ThresholdHistoryEntry {
   id: string;
   effectiveDate: string; // YYYY-MM-DD
@@ -511,7 +522,7 @@ export interface ThresholdHistoryEntry {
 export interface AthleteProfile {
   athleteId: string;
   name: string;
-  primarySport?: 'Running' | 'Cycling' | 'Hybrid';
+  primarySport?: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
   weightKg: number;
   restingHr: number;
   vo2MaxCycling: number;
@@ -532,6 +543,9 @@ export interface AthleteProfile {
   runLthr: number; // Running LTHR (bpm)
   runMaxHr: number; // Running Max HR (bpm)
   thresholdPaceSecsPerKm: number; // Running Threshold Pace (s/km)
+  // Swimming Critical Swim Speed (CSS)
+  swimCssSecsPer100m?: number; // Seconds per 100m
+  swimZones?: AthleteSwimZone[];
   // Authoritative Zone Tables
   powerZones: AthletePowerZone[];
   hrZones: AthleteHrZone[];
@@ -1307,6 +1321,8 @@ export type TeamWorkoutLibraryCategory =
   | 'XC_TEMPO'
   | 'ROAD'
   | 'CYCLING'
+  | 'SWIMMING'
+  | 'TRIATHLON'
   | 'RECOVERY';
 
 export interface TeamWorkoutLibraryTemplate {
@@ -1398,7 +1414,7 @@ export interface TeamBrandConfig {
   shortName: string; // e.g. 'PALY XC'
   mascotOrMotto?: string;
   orgType: TeamOrgType;
-  primarySport: 'Running' | 'Cycling' | 'Hybrid';
+  primarySport: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
   logoDataUrl?: string; // Optional SVG/PNG/WebP crest data URL
   primaryHex: string; // e.g. '#1E5631'
   secondaryHex: string; // e.g. '#D97706'
@@ -1573,7 +1589,7 @@ export interface PublicTeamHubPayload {
     shortName: string;
     mascotOrMotto?: string;
     orgType: TeamOrgType;
-    primarySport: 'Running' | 'Cycling' | 'Hybrid';
+    primarySport: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
     logoDataUrl?: string;
     primaryHex: string;
     secondaryHex: string;

@@ -17,6 +17,11 @@ export const INITIAL_ANNUAL_MILEAGE_GOALS: AnnualMileageGoal[] = [
     year: CURRENT_YEAR,
     targetDistanceMeters: 0,
   },
+  {
+    sportCategory: 'Swimming',
+    year: CURRENT_YEAR,
+    targetDistanceMeters: 0,
+  },
 ];
 
 export const INITIAL_POWER_PACE_CURVES: PowerPaceCurvePoint[] = [];
