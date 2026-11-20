@@ -193,6 +193,10 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             isSyncingProfile={isSyncingProfile}
             onSyncProfileFromRemote={onSyncProfileFromRemote}
             onSaveProfileOverride={onSaveProfileOverride}
+            onOpenOfficialRaceModal={() => {
+              onCloseProfileModal();
+              onOpenOfficialRaceModalFromGuide();
+            }}
           />
         </Suspense>
       )}

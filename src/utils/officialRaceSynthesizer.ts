@@ -520,6 +520,51 @@ export const SAMPLE_OFFICIAL_TRACK_SEASON_TEXT = `Athletic.net / TFRRS Official 
 2026-09-12 | Golden Gate Distance Carnival | 3200m | 9:18.60a | 4th (Final) | Outdoor 400m | MileSplit
 2026-08-29 | Crystal Springs XC Opener | XC 5K | 15:34.20 | 5th (Varsity) | XC Course | Athletic.net`;
 
+const MONTH_NAME_MAP: Record<string, string> = {
+  jan: '01',
+  january: '01',
+  feb: '02',
+  february: '02',
+  mar: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  may: '05',
+  jun: '06',
+  june: '06',
+  jul: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  oct: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dec: '12',
+  december: '12',
+};
+
+function normalizeRaceEventToken(rawToken: string): string {
+  const clean = rawToken.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  if (/^400\s*(?:m|meters?)$/.test(clean)) return '400m';
+  if (/^800\s*(?:m|meters?)$/.test(clean)) return '800m';
+  if (/^1500\s*(?:m|meters?)$/.test(clean)) return '1500m';
+  if (/^1600\s*(?:m|meters?)$/.test(clean)) return '1600m';
+  if (/^(?:1\s*)?mile$/.test(clean)) return '1 Mile';
+  if (/^3000\s*(?:m|meters?|s|sc|m\s*steeple(?:chase)?)$/.test(clean)) return '3000m';
+  if (/^3200\s*(?:m|meters?)$/.test(clean)) return '3200m';
+  if (/^5000\s*(?:m|meters?)$/.test(clean)) return '5000m';
+  if (/^10000\s*(?:m|meters?)$/.test(clean)) return '10000m';
+  if (/^xc\s*5k$/.test(clean)) return 'XC 5K';
+  if (/^road\s*5k$/.test(clean)) return 'Road 5K';
+  if (/^5k$/.test(clean)) return 'XC 5K';
+  if (/half\s*marathon/.test(clean)) return 'Half Marathon';
+  return rawToken;
+}
+
 /**
  * Deterministic text/table parser that extracts official race rows from pasted
  * Athletic.net, TFRRS, MileSplit, FlashResults, or formatted meet tables.
@@ -544,6 +589,7 @@ export function parseOfficialResultsTextDeterministically(
     : 'Athletic.net';
 
   const results: ParsedOfficialRaceCandidate[] = [];
+  const seenKeys = new Set<string>();
   const todayIso = getLocalDateIso();
 
   for (let i = 0; i < lines.length; i++) {
@@ -553,9 +599,9 @@ export function parseOfficialResultsTextDeterministically(
       continue;
     }
 
-    // Match Event distance token (400m, 800m, 1500m, 1600m, 1 Mile, Mile, 3000m, 3200m, 5000m, 10000m, XC 5K, 5K)
+    // Match Event distance token (Athletic.net & TFRRS formats incl. "800 METERS", "3000S", "10,000 METERS")
     const eventMatch = line.match(
-      /\b(400\s*m|800\s*m|1500\s*m|1600\s*m|1\s*Mile|Mile|3000\s*m|3200\s*m|5000\s*m|10000\s*m|10,000\s*m|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
+      /\b(400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
     );
     // Match FAT time token (e.g. 50.84, 1:56.38a, 4:16.42, 9:18.60, 15:34.20)
     const timeMatch = line.match(
@@ -564,25 +610,23 @@ export function parseOfficialResultsTextDeterministically(
 
     if (!eventMatch || !timeMatch) continue;
 
-    const rawEventToken = eventMatch[1].replace(/\s+/g, ' ').trim();
+    const canonicalEventLabel = normalizeRaceEventToken(eventMatch[1]);
     const matchedDef =
       OFFICIAL_RACE_EVENTS.find(
-        (d) => d.label.toLowerCase() === rawEventToken.toLowerCase()
-      ) ||
-      (/mile/i.test(rawEventToken)
-        ? OFFICIAL_RACE_EVENTS.find((d) => d.label === '1 Mile')
-        : /5k/i.test(rawEventToken)
-          ? OFFICIAL_RACE_EVENTS.find((d) => d.label === 'XC 5K')
-          : OFFICIAL_RACE_EVENTS[1]);
+        (d) => d.label.toLowerCase() === canonicalEventLabel.toLowerCase()
+      ) || OFFICIAL_RACE_EVENTS[1];
 
     if (!matchedDef) continue;
 
     const fatTimeSecs = parseFatTimeString(timeMatch[1]);
     if (fatTimeSecs <= 20) continue;
 
-    // Extract YYYY-MM-DD or MM/DD/YYYY or Month DD, YYYY
+    // Extract YYYY-MM-DD, MM/DD/YYYY, or natural month name dates ("Apr 4, 2026" / "May 14, 2026")
     const isoDateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
     const slashDateMatch = line.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+    const monthDateMatch = line.match(
+      /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i
+    );
     let dateStr = todayIso;
     if (isoDateMatch) {
       dateStr = isoDateMatch[1];
@@ -590,7 +634,15 @@ export function parseOfficialResultsTextDeterministically(
       const m = slashDateMatch[1].padStart(2, '0');
       const d = slashDateMatch[2].padStart(2, '0');
       dateStr = `${slashDateMatch[3]}-${m}-${d}`;
+    } else if (monthDateMatch) {
+      const m = MONTH_NAME_MAP[monthDateMatch[1].toLowerCase()] || '01';
+      const d = monthDateMatch[2].padStart(2, '0');
+      dateStr = `${monthDateMatch[3]}-${m}-${d}`;
     }
+
+    const dedupeKey = `${matchedDef.label}|${fatTimeSecs.toFixed(2)}|${dateStr}`;
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
 
     // Extract Splits if present ("Splits: 56.92, 59.46")
     let lapSplitsSecs: number[] = [];
@@ -635,16 +687,20 @@ export function parseOfficialResultsTextDeterministically(
     const placeMatch = line.match(/\b(\d+(?:st|nd|rd|th)(?:\s*\([^)]+\))?)\b/i);
     const placeFinish = placeMatch ? placeMatch[1] : 'Official Finisher';
 
-    // Meet name: pipe-delimited segment or cleaned line
+    // Meet name: pipe-delimited OR tab/multi-space TFRRS/Athletic.net columns
     const pipeParts = line.split('|').map((p) => p.trim());
+    const colParts = pipeParts.length >= 2 ? pipeParts : line.split(/\t|\s{2,}/).map((p) => p.trim());
     let meetName = 'Official Track & Field Invitational';
-    if (pipeParts.length >= 2) {
-      const candidateMeet = pipeParts.find(
+    if (colParts.length >= 2) {
+      const candidateMeet = colParts.find(
         (p) =>
-          p.length > 4 &&
+          p.length > 3 &&
           !p.match(/^20\d{2}-\d{2}-\d{2}$/) &&
-          !p.match(/^(400m|800m|1500m|1600m|1 Mile|3000m|3200m|5000m|XC 5K)$/i) &&
+          !p.match(/^\d{1,2}\/\d{1,2}\/20\d{2}$/) &&
+          !p.match(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)/i) &&
+          !p.match(/^(400|800|1500|1600|1\s*Mile|3000|3200|5000|10,?000)\s*(?:meters?|m|s|sc)?$|^XC\s*5K$|^5K$/i) &&
           !p.match(/^\d{1,2}:\d{2}/) &&
+          !p.match(/^\d+(?:st|nd|rd|th)\b/i) &&
           !p.match(/splits?:/i)
       );
       if (candidateMeet) meetName = candidateMeet;

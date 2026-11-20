@@ -1219,6 +1219,8 @@ export interface CrossTrainingEquivalence {
   coachingNote: string;
 }
 
+export type NcaaCaraSeasonSegment = 'IN_SEASON' | 'OUT_OF_SEASON';
+
 export interface NcaaCaraWeeklyAudit {
   rolling7dCountableHours: number;
   weeklyCapHours: number;
@@ -1226,6 +1228,14 @@ export interface NcaaCaraWeeklyAudit {
   dailyCapHours: number;
   remainingWeeklyHours: number;
   competitionDaysCount?: number;
+  seasonSegment?: NcaaCaraSeasonSegment;
+  strengthHours?: number;
+  meetingFilmHours?: number;
+  varaHours?: number;
+  daysOffCount?: number;
+  requiredDaysOff?: number;
+  daysOffCompliant?: boolean;
+  outOfSeasonSkillCompliant?: boolean;
   compliant: boolean;
   statusLabel: string;
 }

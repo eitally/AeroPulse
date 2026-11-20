@@ -6876,6 +6876,104 @@ async function archiveCoachActivitiesForMember(member, activities) {
 import crypto9 from "crypto";
 
 // src/utils/officialRaceSynthesizer.ts
+var OFFICIAL_RACE_EVENTS = [
+  {
+    label: "400m",
+    distanceMeters: 400,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "800m",
+    distanceMeters: 800,
+    defaultSplitMeters: 400,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "1500m",
+    distanceMeters: 1500,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "1600m",
+    distanceMeters: 1600,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "1 Mile",
+    distanceMeters: 1609.34,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "3000m",
+    distanceMeters: 3e3,
+    defaultSplitMeters: 400,
+    defaultLapCount: 8,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "3200m",
+    distanceMeters: 3200,
+    defaultSplitMeters: 400,
+    defaultLapCount: 8,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "5000m",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "10000m",
+    distanceMeters: 1e4,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 10,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "XC 5K",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "XC",
+    typicalSubType: "Cross Country"
+  },
+  {
+    label: "Road 5K",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "ROAD",
+    typicalSubType: "Road"
+  },
+  {
+    label: "Half Marathon",
+    distanceMeters: 21097.5,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "ROAD",
+    typicalSubType: "Road"
+  }
+];
 function formatFatTime(seconds, forceHundredths = true) {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
   const totalHundredths = Math.round(seconds * 100);
@@ -6892,6 +6990,29 @@ function formatFatTime(seconds, forceHundredths = true) {
     return `${secs}.${hStr}`;
   }
   return `${mins}:${secs.toString().padStart(2, "0")}${forceHundredths || hundredths > 0 ? `.${hStr}` : ""}`;
+}
+function parseFatTimeString(raw) {
+  const cleaned = String(raw || "").trim().replace(/[a-zA-Z]+$/g, "").trim();
+  if (!cleaned) return 0;
+  const parts = cleaned.split(":").map((p) => p.trim());
+  if (parts.length === 1) {
+    const val = parseFloat(parts[0]);
+    return Number.isFinite(val) && val > 0 ? Number(val.toFixed(2)) : 0;
+  }
+  if (parts.length === 2) {
+    const mins = parseInt(parts[0], 10);
+    const secs = parseFloat(parts[1]);
+    if (!Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
+    return Number((mins * 60 + secs).toFixed(2));
+  }
+  if (parts.length === 3) {
+    const hrs = parseInt(parts[0], 10);
+    const mins = parseInt(parts[1], 10);
+    const secs = parseFloat(parts[2]);
+    if (!Number.isFinite(hrs) || !Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
+    return Number((hrs * 3600 + mins * 60 + secs).toFixed(2));
+  }
+  return 0;
 }
 function computeJackDanielsVdot(distanceMeters, timeSecs) {
   if (!distanceMeters || !timeSecs || timeSecs <= 0) return 55;
@@ -7065,6 +7186,138 @@ function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMax
     officialRaceData,
     sourceBadges: [candidate.platform]
   };
+}
+var MONTH_NAME_MAP = {
+  jan: "01",
+  january: "01",
+  feb: "02",
+  february: "02",
+  mar: "03",
+  march: "03",
+  apr: "04",
+  april: "04",
+  may: "05",
+  jun: "06",
+  june: "06",
+  jul: "07",
+  july: "07",
+  aug: "08",
+  august: "08",
+  sep: "09",
+  sept: "09",
+  september: "09",
+  oct: "10",
+  october: "10",
+  nov: "11",
+  november: "11",
+  dec: "12",
+  december: "12"
+};
+function normalizeRaceEventToken(rawToken) {
+  const clean = rawToken.toLowerCase().replace(/,/g, "").replace(/\s+/g, " ").trim();
+  if (/^400\s*(?:m|meters?)$/.test(clean)) return "400m";
+  if (/^800\s*(?:m|meters?)$/.test(clean)) return "800m";
+  if (/^1500\s*(?:m|meters?)$/.test(clean)) return "1500m";
+  if (/^1600\s*(?:m|meters?)$/.test(clean)) return "1600m";
+  if (/^(?:1\s*)?mile$/.test(clean)) return "1 Mile";
+  if (/^3000\s*(?:m|meters?|s|sc|m\s*steeple(?:chase)?)$/.test(clean)) return "3000m";
+  if (/^3200\s*(?:m|meters?)$/.test(clean)) return "3200m";
+  if (/^5000\s*(?:m|meters?)$/.test(clean)) return "5000m";
+  if (/^10000\s*(?:m|meters?)$/.test(clean)) return "10000m";
+  if (/^xc\s*5k$/.test(clean)) return "XC 5K";
+  if (/^road\s*5k$/.test(clean)) return "Road 5K";
+  if (/^5k$/.test(clean)) return "XC 5K";
+  if (/half\s*marathon/.test(clean)) return "Half Marathon";
+  return rawToken;
+}
+function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
+  const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 5);
+  const detectedPlatformFromUrl = defaultUrl ? /tfrrs/i.test(defaultUrl) ? "TFRRS" : /milesplit/i.test(defaultUrl) ? "MileSplit" : /runsignup/i.test(defaultUrl) ? "RunSignup" : "Athletic.net" : "Athletic.net";
+  const results = [];
+  const seenKeys = /* @__PURE__ */ new Set();
+  const todayIso = getLocalDateIso();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^athletic\.net\s*\/?\s*tfrrs/i.test(line) || /^date\s*\|\s*meet/i.test(line)) {
+      continue;
+    }
+    const eventMatch = line.match(
+      /\b(400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
+    );
+    const timeMatch = line.match(
+      /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]?|\b[456]\d\.\d{2}[a-zA-Z]?)\b/
+    );
+    if (!eventMatch || !timeMatch) continue;
+    const canonicalEventLabel = normalizeRaceEventToken(eventMatch[1]);
+    const matchedDef = OFFICIAL_RACE_EVENTS.find(
+      (d) => d.label.toLowerCase() === canonicalEventLabel.toLowerCase()
+    ) || OFFICIAL_RACE_EVENTS[1];
+    if (!matchedDef) continue;
+    const fatTimeSecs = parseFatTimeString(timeMatch[1]);
+    if (fatTimeSecs <= 20) continue;
+    const isoDateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+    const slashDateMatch = line.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+    const monthDateMatch = line.match(
+      /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i
+    );
+    let dateStr = todayIso;
+    if (isoDateMatch) {
+      dateStr = isoDateMatch[1];
+    } else if (slashDateMatch) {
+      const m = slashDateMatch[1].padStart(2, "0");
+      const d = slashDateMatch[2].padStart(2, "0");
+      dateStr = `${slashDateMatch[3]}-${m}-${d}`;
+    } else if (monthDateMatch) {
+      const m = MONTH_NAME_MAP[monthDateMatch[1].toLowerCase()] || "01";
+      const d = monthDateMatch[2].padStart(2, "0");
+      dateStr = `${monthDateMatch[3]}-${m}-${d}`;
+    }
+    const dedupeKey = `${matchedDef.label}|${fatTimeSecs.toFixed(2)}|${dateStr}`;
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+    let lapSplitsSecs = [];
+    const splitsMatch = line.match(/splits?\s*:\s*([0-9.,\s:]+)/i);
+    if (splitsMatch) {
+      lapSplitsSecs = splitsMatch[1].split(/[,\s]+/).map((s) => parseFatTimeString(s)).filter((n) => n > 8 && n < 400);
+    }
+    if (lapSplitsSecs.length === 0) {
+      lapSplitsSecs = generateDefaultLapSplits(
+        matchedDef.distanceMeters,
+        fatTimeSecs,
+        matchedDef.defaultSplitMeters
+      );
+    }
+    const platform = /tfrrs/i.test(line) ? "TFRRS" : /milesplit/i.test(line) ? "MileSplit" : /runsignup/i.test(line) ? "RunSignup" : /athletic\.net/i.test(line) ? "Athletic.net" : detectedPlatformFromUrl;
+    const trackType = /banked/i.test(line) ? "INDOOR_BANKED_200M" : /indoor/i.test(line) ? "INDOOR_FLAT_200M" : /xc|cross country/i.test(line) || matchedDef.category === "XC" ? "XC_COURSE" : matchedDef.category === "ROAD" ? "ROAD" : "OUTDOOR_400M";
+    const placeMatch = line.match(/\b(\d+(?:st|nd|rd|th)(?:\s*\([^)]+\))?)\b/i);
+    const placeFinish = placeMatch ? placeMatch[1] : "Official Finisher";
+    const pipeParts = line.split("|").map((p) => p.trim());
+    const colParts = pipeParts.length >= 2 ? pipeParts : line.split(/\t|\s{2,}/).map((p) => p.trim());
+    let meetName = "Official Track & Field Invitational";
+    if (colParts.length >= 2) {
+      const candidateMeet = colParts.find(
+        (p) => p.length > 3 && !p.match(/^20\d{2}-\d{2}-\d{2}$/) && !p.match(/^\d{1,2}\/\d{1,2}\/20\d{2}$/) && !p.match(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)/i) && !p.match(/^(400|800|1500|1600|1\s*Mile|3000|3200|5000|10,?000)\s*(?:meters?|m|s|sc)?$|^XC\s*5K$|^5K$/i) && !p.match(/^\d{1,2}:\d{2}/) && !p.match(/^\d+(?:st|nd|rd|th)\b/i) && !p.match(/splits?:/i)
+      );
+      if (candidateMeet) meetName = candidateMeet;
+    }
+    results.push({
+      id: `parsed-race-${Date.now()}-${i}`,
+      date: dateStr,
+      meetName,
+      eventLabel: matchedDef.label,
+      eventDistanceMeters: matchedDef.distanceMeters,
+      fatTimeSecs,
+      displayFatTime: formatFatTime(fatTimeSecs),
+      platform,
+      trackType,
+      placeFinish,
+      lapSplitDistanceMeters: matchedDef.defaultSplitMeters,
+      lapSplitsSecs,
+      includeWarmupCooldown: true,
+      sourceUrl: defaultUrl
+    });
+  }
+  return results;
 }
 
 // src/physiology/teamOnboardingEngine.ts
@@ -20116,10 +20369,12 @@ ${combinedInput}`,
       } catch {
       }
     }
+    const deterministicInput = [rawText || "", fetchedTextSnippet || ""].filter(Boolean).join("\n");
+    const deterministicRaces = deterministicInput.trim() ? parseOfficialResultsTextDeterministically(deterministicInput, url) : [];
     res.json({
-      races: [],
-      fetchNote: fetchNote || "Used fast local deterministic parser for Athletic.net / TFRRS / MileSplit table rows.",
-      source: "CLIENT_DETERMINISTIC"
+      races: deterministicRaces,
+      fetchNote: fetchNote || (deterministicRaces.length > 0 ? `Extracted ${deterministicRaces.length} official mark${deterministicRaces.length === 1 ? "" : "s"} using deterministic Athletics/TFRRS parser.` : "Used fast local deterministic parser for Athletic.net / TFRRS / MileSplit table rows."),
+      source: deterministicRaces.length > 0 ? "SERVER_DETERMINISTIC" : "CLIENT_DETERMINISTIC"
     });
   } catch (error) {
     res.status(500).json({

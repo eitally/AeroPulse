@@ -32,6 +32,7 @@ import {
   evaluateRecruitingStandards,
 } from '../physiology/scholasticEngine';
 import {
+  computeCriticalSpeedAndDPrime,
   computeJackDanielsVdot,
   computeOfficialRaceTrainingLoad,
   deriveThresholdPaceSecsPerKmFromVdot,
@@ -44,6 +45,7 @@ import {
   SAMPLE_OFFICIAL_TRACK_SEASON_TEXT,
   synthesizeOfficialRaceActivity,
 } from '../utils/officialRaceSynthesizer';
+import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 
 interface OfficialRaceModalProps {
   isOpen: boolean;
@@ -75,6 +77,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   );
   const [parsedCandidates, setParsedCandidates] = useState<ParsedOfficialRaceCandidate[]>([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [autoCalibrateZones, setAutoCalibrateZones] = useState<boolean>(true);
   const [importSuccessBanner, setImportSuccessBanner] = useState<string | null>(null);
 
   // Tab 2: Quick Watchless FAT Track Race Logger State
@@ -401,14 +404,30 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
     const synthesized = selected.map((c) => synthesizeOfficialRaceActivity(c, lthr, maxHr));
 
     onImportOfficialRaces(synthesized);
+    let calibratedNote = '';
+    if (autoCalibrateZones && onSaveProfileOverride && athleteProfile) {
+      const csSummary = computeCriticalSpeedAndDPrime(
+        selected.map((c) => ({ distanceMeters: c.eventDistanceMeters, timeSecs: c.fatTimeSecs }))
+      );
+      const calibratedPace = deriveThresholdPaceSecsPerKmFromVdot(csSummary.vdotBest);
+      await onSaveProfileOverride(
+        buildCompleteAthleteProfile({
+          ...athleteProfile,
+          thresholdPaceSecsPerKm: calibratedPace,
+          source: 'CUSTOM_OVERRIDE',
+          lastSyncedAt: new Date().toISOString(),
+        })
+      );
+      calibratedNote = ` · Calibrated Run LT Pace → ${formatPace(calibratedPace, distanceUnit)} (VDOT ${csSummary.vdotBest.toFixed(1)})`;
+    }
     setImportSuccessBanner(
       `Imported ${synthesized.length} official watchless race${
         synthesized.length === 1 ? '' : 's'
-      } to your Training Calendar, Activity Log & Track PR Trophy Matrix!`
+      } to your Training Calendar, Activity Log & Track PR Trophy Matrix${calibratedNote}!`
     );
   };
 
-  const handleSaveQuickFatRace = () => {
+  const handleSaveQuickFatRace = async () => {
     if (quickRaceAnalytics.fatTimeSecs <= 20) return;
     const candidate: ParsedOfficialRaceCandidate = {
       id: `fat-quick-${Date.now()}`,
@@ -432,8 +451,24 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
     const activity = synthesizeOfficialRaceActivity(candidate, lthr, maxHr);
 
     onImportOfficialRaces([activity]);
+    let calibratedNote = '';
+    if (autoCalibrateZones && onSaveProfileOverride && athleteProfile) {
+      const csSummary = computeCriticalSpeedAndDPrime([
+        { distanceMeters: candidate.eventDistanceMeters, timeSecs: candidate.fatTimeSecs },
+      ]);
+      const calibratedPace = deriveThresholdPaceSecsPerKmFromVdot(csSummary.vdotBest);
+      await onSaveProfileOverride(
+        buildCompleteAthleteProfile({
+          ...athleteProfile,
+          thresholdPaceSecsPerKm: calibratedPace,
+          source: 'CUSTOM_OVERRIDE',
+          lastSyncedAt: new Date().toISOString(),
+        })
+      );
+      calibratedNote = ` · Calibrated Run LT Pace → ${formatPace(calibratedPace, distanceUnit)}`;
+    }
     setImportSuccessBanner(
-      `Logged ${candidate.eventLabel} (${candidate.displayFatTime} FAT at ${candidate.meetName}) with ${candidate.lapSplitsSecs.length} lap splits (${activity.trainingLoad} TSS) to Calendar & Trophy Matrix!`
+      `Logged ${candidate.eventLabel} (${candidate.displayFatTime} FAT at ${candidate.meetName}) with ${candidate.lapSplitsSecs.length} lap splits (${activity.trainingLoad} TSS) to Calendar & Trophy Matrix${calibratedNote}!`
     );
   };
 
@@ -623,8 +658,22 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
               {/* Parsed Results Verification Table */}
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    2. Verify Extracted Watchless Races &amp; Synthesized Physiological Load ({selectedCandidateIds.length} of {parsedCandidates.length} selected)
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      2. Verify Extracted Watchless Races &amp; Synthesized Physiological Load ({selectedCandidateIds.length} of {parsedCandidates.length} selected)
+                    </div>
+                    {onSaveProfileOverride && athleteProfile && (
+                      <label className="inline-flex items-center gap-2 text-2xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          data-testid="official-race-autocalibrate-toggle"
+                          checked={autoCalibrateZones}
+                          onChange={(e) => setAutoCalibrateZones(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                        />
+                        <span>Auto-calibrate Run LT Pace &amp; VDOT from PRs</span>
+                      </label>
+                    )}
                   </div>
                   <button
                     type="button"

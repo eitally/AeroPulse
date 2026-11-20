@@ -9,6 +9,7 @@ import {
   Scale,
   Shield,
   Sliders,
+  Trophy,
   UserCheck,
   Waves,
   X,
@@ -47,6 +48,7 @@ interface AthleteProfileModalProps {
   isSyncingProfile: boolean;
   onSyncProfileFromRemote: () => Promise<void>;
   onSaveProfileOverride: (updated: AthleteProfile) => Promise<void>;
+  onOpenOfficialRaceModal?: () => void;
 }
 
 export function parsePaceInputToSecsPerKm(
@@ -96,6 +98,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   isSyncingProfile,
   onSyncProfileFromRemote,
   onSaveProfileOverride,
+  onOpenOfficialRaceModal,
 }) => {
   const [hrTab, setHrTab] = useState<'CYCLING' | 'RUNNING' | 'SWIMMING'>('CYCLING');
   const [sportFieldsFilter, setSportFieldsFilter] = useState<
@@ -362,6 +365,19 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+            {onOpenOfficialRaceModal &&
+              athleteProfile.primarySport !== 'Cycling' &&
+              athleteProfile.primarySport !== 'Swimming' && (
+                <button
+                  type="button"
+                  data-testid="profile-import-tfrrs-prs-btn"
+                  onClick={onOpenOfficialRaceModal}
+                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 rounded-xl ap-btn-secondary px-3 py-2 text-xs font-semibold whitespace-nowrap cursor-pointer"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Import TFRRS / Athletic.net PRs</span>
+                </button>
+              )}
             <button
               type="button"
               onClick={handlePullFromRemote}

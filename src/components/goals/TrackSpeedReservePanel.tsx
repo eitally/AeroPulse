@@ -3,6 +3,7 @@ import { Gauge } from '../icons/PhosphorIcons';
 import type {
   DistanceUnit,
   SpeedReservePhenotype,
+  TrackTargetEventGroup,
   TrackTrainingZoneCode,
 } from '../../types';
 import type { buildTrackSpeedReserveProfile } from '../../physiology/trackSpeedReserveEngine';
@@ -13,9 +14,48 @@ import {
 } from '../../physiology/trackPrescriptionEngine';
 import { formatPace } from '../../utils/formatters';
 
+export interface TrackEventPresetSpec {
+  seedPlaceholder: string;
+  goalPlaceholder: string;
+  presets: readonly string[];
+}
+
+export function getTrackEventSeedPresets(
+  eventGroup?: TrackTargetEventGroup
+): TrackEventPresetSpec {
+  switch (eventGroup) {
+    case '800M':
+      return {
+        seedPlaceholder: 'e.g. 1:56 or 800m 2:04',
+        goalPlaceholder: 'e.g. 1:52 or 800m 1:58',
+        presets: ['1:52', '2:00', '2:12', '2:25'],
+      };
+    case '3000_3200M':
+      return {
+        seedPlaceholder: 'e.g. 9:15 or 3000m 8:35',
+        goalPlaceholder: 'e.g. 8:45 or 3200m 9:30',
+        presets: ['8:55', '9:45', '10:45', '12:15'],
+      };
+    case '5000M':
+      return {
+        seedPlaceholder: 'e.g. 15:20 or 5k 17:45',
+        goalPlaceholder: 'e.g. 14:20 or 5k 17:00',
+        presets: ['14:40', '16:15', '18:30', '21:30'],
+      };
+    case '1500_MILE':
+    default:
+      return {
+        seedPlaceholder: 'e.g. 4:05 or 1500m 3:48.5',
+        goalPlaceholder: 'e.g. 3:59 or 1600m 4:25',
+        presets: ['4:05', '4:35', '5:15', '6:15'],
+      };
+  }
+}
+
 export interface TrackSpeedReservePanelProps {
   formId: string;
   distanceUnit: DistanceUnit;
+  trackEventGroup?: TrackTargetEventGroup;
   trackStartingPhase: TrackStartingPhaseOption;
   setTrackStartingPhase: React.Dispatch<React.SetStateAction<TrackStartingPhaseOption>>;
   trackPhenotypeOverride: SpeedReservePhenotype | 'AUTO';
@@ -38,6 +78,7 @@ export interface TrackSpeedReservePanelProps {
 export const TrackSpeedReservePanel: React.FC<TrackSpeedReservePanelProps> = ({
   formId,
   distanceUnit,
+  trackEventGroup,
   trackStartingPhase,
   setTrackStartingPhase,
   trackPhenotypeOverride,
@@ -50,6 +91,7 @@ export const TrackSpeedReservePanel: React.FC<TrackSpeedReservePanelProps> = ({
   trackSpeedReserveState,
   trackPlanBundle,
 }) => {
+  const eventPresetSpec = getTrackEventSeedPresets(trackEventGroup);
   return (
               <div
                 data-testid="track-speed-reserve-panel"
@@ -139,14 +181,15 @@ export const TrackSpeedReservePanel: React.FC<TrackSpeedReservePanelProps> = ({
                       type="text"
                       value={trackSeedInput}
                       onChange={(e) => setTrackSeedInput(e.target.value)}
-                      placeholder="e.g. 4:05 or 1500m 3:48.5"
+                      placeholder={eventPresetSpec.seedPlaceholder}
                       className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                     <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                      {(['4:05', '4:35', '5:15', '6:15'] as const).map((preset) => (
+                      {eventPresetSpec.presets.map((preset) => (
                         <button
                           key={preset}
                           type="button"
+                          data-testid={`track-seed-preset-${preset}`}
                           onClick={() => setTrackSeedInput(preset)}
                           className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
                             trackSeedInput.trim() === preset
@@ -173,7 +216,7 @@ export const TrackSpeedReservePanel: React.FC<TrackSpeedReservePanelProps> = ({
                       type="text"
                       value={trackGoalInput}
                       onChange={(e) => setTrackGoalInput(e.target.value)}
-                      placeholder="e.g. 3:59 or 5k 14:40"
+                      placeholder={eventPresetSpec.goalPlaceholder}
                       className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </div>

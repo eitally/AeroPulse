@@ -24,6 +24,7 @@ import {
 import { getUserById } from '../authService.ts';
 import { listTeamsForUser } from '../teamService.ts';
 import { resolveAthleteAgeTier } from '../../src/physiology/ageAndComplianceEngine.ts';
+import { parseOfficialResultsTextDeterministically } from '../../src/utils/officialRaceSynthesizer.ts';
 
 export const coachRouter = Router();
 
@@ -849,12 +850,21 @@ ${combinedInput}`,
       }
     }
 
+    const deterministicInput = [rawText || '', fetchedTextSnippet || '']
+      .filter(Boolean)
+      .join('\n');
+    const deterministicRaces = deterministicInput.trim()
+      ? parseOfficialResultsTextDeterministically(deterministicInput, url)
+      : [];
+
     res.json({
-      races: [],
+      races: deterministicRaces,
       fetchNote:
         fetchNote ||
-        'Used fast local deterministic parser for Athletic.net / TFRRS / MileSplit table rows.',
-      source: 'CLIENT_DETERMINISTIC',
+        (deterministicRaces.length > 0
+          ? `Extracted ${deterministicRaces.length} official mark${deterministicRaces.length === 1 ? '' : 's'} using deterministic Athletics/TFRRS parser.`
+          : 'Used fast local deterministic parser for Athletic.net / TFRRS / MileSplit table rows.'),
+      source: deterministicRaces.length > 0 ? 'SERVER_DETERMINISTIC' : 'CLIENT_DETERMINISTIC',
     });
   } catch (error) {
     res.status(500).json({
