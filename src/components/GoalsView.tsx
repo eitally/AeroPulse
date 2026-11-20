@@ -91,6 +91,23 @@ import {
   type PlanPublishCadence,
 } from '../physiology/planPublishEngine';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
+import {
+  ALL_GOAL_ARCHETYPES,
+  TRACK_ARCHETYPES,
+  WEEKDAY_CHIPS,
+  type GoalArchetypeCategory,
+  type GoalArchetypeId,
+  type GoalArchetypeTemplate,
+  type TrackArchetypeId,
+} from './goals/goalArchetypeTemplates';
+import { TrackSpeedReservePanel } from './goals/TrackSpeedReservePanel';
+import { RacePhysicsSimulatorBody } from './goals/RacePhysicsSimulatorBody';
+export type {
+  GoalArchetypeCategory,
+  GoalArchetypeId,
+  GoalArchetypeTemplate,
+  TrackArchetypeId,
+};
 
 export interface PlannedEventBatchItem {
   date: string;
@@ -152,94 +169,6 @@ interface GoalsViewProps {
   onOpenTracksideStopwatch?: () => void;
 }
 
-export type TrackArchetypeId =
-  | 'TRACK_800M'
-  | 'TRACK_1500_MILE'
-  | 'TRACK_3000_3200M'
-  | 'TRACK_5000M';
-
-export type GoalArchetypeId = TrackArchetypeId | EndurancePlanArchetypeId;
-
-export type GoalArchetypeCategory = 'ALL' | 'CYCLING' | 'ROAD' | 'TRACK';
-
-interface GoalArchetypeTemplate {
-  id: GoalArchetypeId;
-  category: Exclude<GoalArchetypeCategory, 'ALL'>;
-  badge: string;
-  title: string;
-  subtitle: string;
-  sportCategory: SportCategory;
-  targetLabel: string;
-  defaultWeeks: 4 | 8 | 12 | 16;
-  trackEventGroup?: TrackTargetEventGroup;
-  targetProgressionLevels: [number, number, number, number, number, number];
-}
-
-const TRACK_ARCHETYPES: GoalArchetypeTemplate[] = [
-  {
-    id: 'TRACK_800M',
-    category: 'TRACK',
-    badge: 'Track · 800m',
-    title: '800m Track Specialization',
-    subtitle: 'Speed-Reserve Flys, Critical Velocity & Specific 300m Rhythm',
-    sportCategory: 'Running',
-    targetLabel: "CS+D' · ASR Peak",
-    defaultWeeks: 12,
-    trackEventGroup: '800M',
-    targetProgressionLevels: [6.8, 7.6, 8.2, 8.8, 9.2, 9.5],
-  },
-  {
-    id: 'TRACK_1500_MILE',
-    category: 'TRACK',
-    badge: 'Track · 1500m / Mile',
-    title: '1500m / Mile Track Architect',
-    subtitle: 'Sub-T Cruises, Tinman CV & Un-Clamped R-Pace Quarter Repeats',
-    sportCategory: 'Running',
-    targetLabel: '400m R-Pace + CV',
-    defaultWeeks: 12,
-    trackEventGroup: '1500_MILE',
-    targetProgressionLevels: [7.4, 7.9, 8.5, 9.0, 8.8, 8.2],
-  },
-  {
-    id: 'TRACK_3000_3200M',
-    category: 'TRACK',
-    badge: 'Track · 3000m / 3200m',
-    title: '3000m / 3200m Championship Build',
-    subtitle: 'Norwegian Sub-T Volume, CV Progressions & VO2max Economy',
-    sportCategory: 'Running',
-    targetLabel: 'Sub-T · CV · 3K I',
-    defaultWeeks: 12,
-    trackEventGroup: '3000_3200M',
-    targetProgressionLevels: [8.0, 8.4, 8.8, 9.1, 7.8, 6.8],
-  },
-  {
-    id: 'TRACK_5000M',
-    category: 'TRACK',
-    badge: 'Track · 5000m',
-    title: '5000m Track Endurance Peak',
-    subtitle: 'Sub-T 1000m Density, 1200m CV Grinders & 5K Race Control',
-    sportCategory: 'Running',
-    targetLabel: 'High Sub-T + 5K I',
-    defaultWeeks: 16,
-    trackEventGroup: '5000M',
-    targetProgressionLevels: [8.6, 8.8, 9.0, 8.9, 7.2, 6.2],
-  },
-];
-
-const ALL_GOAL_ARCHETYPES: GoalArchetypeTemplate[] = [
-  ...ENDURANCE_PLAN_ARCHETYPES.map((a) => ({ ...a })),
-  ...TRACK_ARCHETYPES,
-];
-
-const WEEKDAY_CHIPS = [
-  { offset: 0, label: 'Mon' },
-  { offset: 1, label: 'Tue' },
-  { offset: 2, label: 'Wed' },
-  { offset: 3, label: 'Thu' },
-  { offset: 4, label: 'Fri' },
-  { offset: 5, label: 'Sat' },
-  { offset: 6, label: 'Sun' },
-] as const;
 
 const GoalsViewInner: React.FC<GoalsViewProps> = ({
   targetGoals,
@@ -1108,220 +1037,21 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
             {/* Track Speed-Reserve & 7-Zone Split Calibration Panel (Track Oval archetypes) */}
             {selectedArchetype.trackEventGroup && (
-              <div
-                data-testid="track-speed-reserve-panel"
-                className="rounded-xl border border-ap-cobalt/30 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-4 space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Gauge className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                      Track Speed-Reserve &amp; Date-Pace Calibration
-                    </h2>
-                  </div>
-                  <span
-                    className={`px-2 py-0.5 rounded-lg font-mono text-2xs font-bold ${
-                      trackSpeedReserveState.isCalibratingEstimate
-                        ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
-                        : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
-                    }`}
-                  >
-                    {trackSpeedReserveState.isCalibratingEstimate
-                      ? 'CALIBRATING · Default Baseline'
-                      : trackSpeedReserveState.parsedManualSeed
-                        ? `Seeded · ${Math.round(trackSpeedReserveState.parsedManualSeed.distanceMeters)}m in ${formatTrackSplitToken(
-                            trackSpeedReserveState.parsedManualSeed.durationSecs
-                          )}`
-                        : `${trackSpeedReserveState.officialMarkCount} FAT Marks · CS + D'`}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label
-                      htmlFor={`${formId}-track-phase`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Season Phase
-                    </label>
-                    <select
-                      id={`${formId}-track-phase`}
-                      value={trackStartingPhase}
-                      onChange={(e) => {
-                        setTrackStartingPhase(e.target.value as TrackStartingPhaseOption);
-                        setSelectedPreviewWeekIdx(0);
-                      }}
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
-                    >
-                      <option value="FULL_PROGRESSION">Full Periodized Arc</option>
-                      <option value="BASE">Base Building &amp; Sub-T</option>
-                      <option value="STRENGTH_CV">Strength &amp; Tinman CV</option>
-                      <option value="SPECIFIC">Race-Specific Track Peak</option>
-                      <option value="PEAK_TAPER">Championship Peak &amp; Taper</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`${formId}-track-phenotype`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      ASR Phenotype
-                    </label>
-                    <select
-                      id={`${formId}-track-phenotype`}
-                      value={trackPhenotypeOverride}
-                      onChange={(e) =>
-                        setTrackPhenotypeOverride(e.target.value as SpeedReservePhenotype | 'AUTO')
-                      }
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
-                    >
-                      <option value="AUTO">Auto (From CS + D&apos;)</option>
-                      <option value="ENDURANCE">Endurance (Lower D&apos; · Aerobic)</option>
-                      <option value="HYBRID">Hybrid (Balanced CS + ASR)</option>
-                      <option value="SPEED">Speed Type (High ASR / D&apos;)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`${formId}-track-seed`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Recent Seed Mark
-                    </label>
-                    <input
-                      id={`${formId}-track-seed`}
-                      data-testid="track-seed-input"
-                      type="text"
-                      value={trackSeedInput}
-                      onChange={(e) => setTrackSeedInput(e.target.value)}
-                      placeholder="e.g. 4:05 or 1500m 3:48.5"
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
-                    />
-                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                      {(['4:05', '4:35', '5:15', '6:15'] as const).map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setTrackSeedInput(preset)}
-                          className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
-                            trackSeedInput.trim() === preset
-                              ? 'bg-ap-cobalt text-white border-ap-cobalt dark:bg-ap-volt dark:text-ap-obsidian font-bold'
-                              : 'bg-white dark:bg-ap-turf text-slate-700 dark:text-slate-300 border-stone-300 dark:border-ap-edge-dark'
-                          }`}
-                        >
-                          {preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`${formId}-track-goal`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Goal Mark (Optional)
-                    </label>
-                    <input
-                      id={`${formId}-track-goal`}
-                      data-testid="track-goal-input"
-                      type="text"
-                      value={trackGoalInput}
-                      onChange={(e) => setTrackGoalInput(e.target.value)}
-                      placeholder="e.g. 3:59 or 5k 14:40"
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono tabular-nums text-xs">
-                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
-                    <div className="text-2xs text-slate-500">Aerobic VDOT</div>
-                    <div className="text-sm font-extrabold text-slate-900 dark:text-white">
-                      {trackSpeedReserveState.profile.vdotAer.toFixed(1)}
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
-                    <div className="text-2xs text-slate-500">Critical Speed (CV)</div>
-                    <div className="text-sm font-extrabold text-ap-cobalt dark:text-ap-volt">
-                      {formatPace(trackSpeedReserveState.profile.criticalPaceSecsPerKm, distanceUnit)}
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
-                    <div className="text-2xs text-slate-500">Anaerobic D&apos;</div>
-                    <div className="text-sm font-extrabold text-slate-900 dark:text-white">
-                      {Math.round(trackSpeedReserveState.profile.dPrimeMeters)} m
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
-                    <div className="text-2xs text-slate-500">Speed Reserve (ASR)</div>
-                    <div className="text-sm font-extrabold text-slate-900 dark:text-white">
-                      +{trackSpeedReserveState.profile.asrMps.toFixed(2)} m/s ·{' '}
-                      {trackPlanBundle?.phenotype || trackSpeedReserveState.profile.phenotype}
-                    </div>
-                  </div>
-                </div>
-
-                {trackPlanBundle?.ambitiousGoalWarning && (
-                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-mono">
-                    Goal exceeds +{trackPlanBundle.deltaMaxPct.toFixed(1)}% 16-week cap (
-                    {trackPlanBundle.rawGoalGapPct.toFixed(1)}% gap). Weekly split targets safely clamped.
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left font-mono tabular-nums text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-stone-200 dark:border-ap-edge text-2xs text-slate-500">
-                        <th className="py-1.5 pr-3">Zone</th>
-                        <th className="py-1.5 px-2">Pace</th>
-                        <th className="py-1.5 px-2">200m</th>
-                        <th className="py-1.5 px-2">400m</th>
-                        <th className="py-1.5 px-2">800m</th>
-                        <th className="py-1.5 px-2">1000m</th>
-                        <th className="py-1.5 pl-2">1600m</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-200/70 dark:divide-ap-edge/70">
-                      {(['E', 'SUB_T', 'T', 'CV', 'I', 'R', 'FR'] as TrackTrainingZoneCode[]).map(
-                        (code) => {
-                          const row = trackSpeedReserveState.profile.zones[code];
-                          return (
-                            <tr key={code} data-testid={`track-zone-row-${code}`}>
-                              <td className="py-1.5 pr-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                                {row.code} ·{' '}
-                                <span className="font-normal text-slate-600 dark:text-slate-300">
-                                  {row.name}
-                                </span>
-                              </td>
-                              <td className="py-1.5 px-2 text-ap-cobalt dark:text-ap-volt font-bold">
-                                {formatPace(row.paceSecsPerKm, distanceUnit)}
-                              </td>
-                              <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
-                                {formatTrackSplitToken(row.splitsSecs.m200)}
-                              </td>
-                              <td className="py-1.5 px-2 font-bold text-slate-900 dark:text-white">
-                                {formatTrackSplitToken(row.splitsSecs.m400)}
-                              </td>
-                              <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
-                                {formatTrackSplitToken(row.splitsSecs.m800)}
-                              </td>
-                              <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
-                                {formatTrackSplitToken(row.splitsSecs.m1000)}
-                              </td>
-                              <td className="py-1.5 pl-2 text-slate-800 dark:text-slate-200">
-                                {formatTrackSplitToken(row.splitsSecs.m1600)}
-                              </td>
-                            </tr>
-                          );
-                        }
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <TrackSpeedReservePanel
+                formId={formId}
+                distanceUnit={distanceUnit}
+                trackStartingPhase={trackStartingPhase}
+                setTrackStartingPhase={setTrackStartingPhase}
+                trackPhenotypeOverride={trackPhenotypeOverride}
+                setTrackPhenotypeOverride={setTrackPhenotypeOverride}
+                trackSeedInput={trackSeedInput}
+                setTrackSeedInput={setTrackSeedInput}
+                trackGoalInput={trackGoalInput}
+                setTrackGoalInput={setTrackGoalInput}
+                setSelectedPreviewWeekIdx={setSelectedPreviewWeekIdx}
+                trackSpeedReserveState={trackSpeedReserveState}
+                trackPlanBundle={trackPlanBundle}
+              />
             )}
 
             {/* STEP 2: FIT YOUR WEEKLY SCHEDULE & START DATE */}
@@ -2247,280 +1977,23 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           </div>
         </div>
 
-        {/* Unit-Aware Course & Environmental Controls */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-xs">
-          <div className="col-span-2">
-            <label
-              htmlFor={`${formId}-sim-course-name`}
-              className="block text-2xs text-slate-500 mb-1"
-            >
-              Event / Course Name
-            </label>
-            <input
-              id={`${formId}-sim-course-name`}
-              type="text"
-              value={simRaceName}
-              onChange={(e) => setSimRaceName(e.target.value)}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor={`${formId}-sim-dist`}
-              className="block text-2xs text-slate-500 mb-1"
-            >
-              Distance ({isImperial ? 'mi' : 'km'})
-            </label>
-            <input
-              id={`${formId}-sim-dist`}
-              type="number"
-              min={1}
-              max={400}
-              step={0.1}
-              value={simDistDisplay}
-              onChange={(e) => {
-                const raw = Math.max(1, Number(e.target.value) || 5);
-                setSimDistKm(isImperial ? Number((raw / 0.621371).toFixed(2)) : raw);
-              }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor={`${formId}-sim-elev`}
-              className="block text-2xs text-slate-500 mb-1"
-            >
-              Elevation Gain ({isImperial ? 'ft' : 'm'})
-            </label>
-            <input
-              id={`${formId}-sim-elev`}
-              type="number"
-              min={0}
-              max={25000}
-              step={25}
-              value={simElevDisplay}
-              onChange={(e) => {
-                const raw = Math.max(0, Number(e.target.value) || 0);
-                setSimElevM(isImperial ? Math.round(raw / 3.28084) : raw);
-              }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor={`${formId}-sim-temp`}
-              className="block text-2xs text-slate-500 mb-1"
-            >
-              Temp ({isImperial ? '°F' : '°C'})
-            </label>
-            <input
-              id={`${formId}-sim-temp`}
-              type="number"
-              min={isImperial ? 20 : -5}
-              max={isImperial ? 115 : 45}
-              step={1}
-              value={simTempDisplay}
-              onChange={(e) => {
-                const raw = Number(e.target.value) || (isImperial ? 65 : 18);
-                setSimTempC(isImperial ? Math.round(((raw - 32) * 5) / 9) : raw);
-              }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor={`${formId}-sim-alt`}
-              className="block text-2xs text-slate-500 mb-1"
-            >
-              Altitude ({isImperial ? 'ft' : 'm'})
-            </label>
-            <input
-              id={`${formId}-sim-alt`}
-              type="number"
-              min={0}
-              max={14000}
-              step={100}
-              value={simAltDisplay}
-              onChange={(e) => {
-                const raw = Math.max(0, Number(e.target.value) || 0);
-                setSimAltM(isImperial ? Math.round(raw / 3.28084) : raw);
-              }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-            />
-          </div>
-        </div>
-
-        {/* Summary KPI Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono tabular-nums">
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
-            <div className="text-2xs uppercase tracking-wider text-slate-500">
-              Predicted Finish Time
-            </div>
-            <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
-              {formatDuration(raceSimulationReport.predictedFinishTimeSecs)}
-            </div>
-            <div className="text-2xs ap-text-brand">
-              {raceSimulationReport.sport === 'Cycling'
-                ? `Avg ${raceSimulationReport.averageTargetWatts ?? 0}W · NP ${
-                    raceSimulationReport.normalizedTargetWatts ?? 0
-                  }W`
-                : `Avg ${formatPace(
-                    raceSimulationReport.averageTargetPaceSecsPerKm ?? 250,
-                    distanceUnit
-                  )}`}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
-            <div className="text-2xs uppercase tracking-wider text-slate-500">
-              Environmental &amp; Fade Derating
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-amber-600 dark:text-amber-400">
-              Heat -{raceSimulationReport.thermalDeratingPct}% · Alt -
-              {raceSimulationReport.altitudeDeratingPct}%
-            </div>
-            <div className="text-2xs text-slate-500">
-              Durability Fade Cap: -{raceSimulationReport.durabilityDeratingPct}%
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
-            <div className="text-2xs uppercase tracking-wider text-slate-500">
-              Carb Oxidation Target
-            </div>
-            <div className="mt-0.5 text-base font-bold text-emerald-600 dark:text-emerald-400">
-              {raceSimulationReport.fuelingPlan.carbsGramsPerHour} g/hr (
-              {raceSimulationReport.fuelingPlan.totalCarbsGrams}g total)
-            </div>
-            <div className="text-2xs text-slate-500">
-              {raceSimulationReport.fuelingPlan.glucoseFructoseRatio} · ~
-              {raceSimulationReport.fuelingPlan.gelEquivalentsCount} gels
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
-            <div className="text-2xs uppercase tracking-wider text-slate-500">
-              Sodium &amp; Hydration
-            </div>
-            <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
-              {raceSimulationReport.fuelingPlan.sodiumMgPerHour} mg/hr Na+
-            </div>
-            <div className="text-2xs text-slate-500">
-              {raceSimulationReport.fuelingPlan.fluidMlPerHour} mL/hr fluid
-              {!athleteProfile?.safeSportHideWeight &&
-              raceSimulationReport.fuelingPlan.caffeineMgRecommendation > 0
-                ? ` · ${raceSimulationReport.fuelingPlan.caffeineMgRecommendation}mg Caf`
-                : ''}
-            </div>
-          </div>
-        </div>
-
-        {/* 5-Segment Pacing & Fueling Cards (Mobile) + Table (Desktop) */}
-        <div data-testid="race-physics-mobile-cards" className="md:hidden space-y-2.5">
-          {raceSimulationReport.segments.map((seg) => {
-            const startUnit = isImperial
-              ? (seg.startKm * 0.621371).toFixed(1)
-              : seg.startKm;
-            const endUnit = isImperial ? (seg.endKm * 0.621371).toFixed(1) : seg.endKm;
-            const targetCapLabel =
-              raceSimulationReport.sport === 'Cycling'
-                ? athleteProfile?.safeSportHideWeight || seg.targetWkg == null
-                  ? `${seg.targetWatts ?? 0}W`
-                  : `${seg.targetWatts ?? 0}W (${seg.targetWkg} W/kg)`
-                : `${formatPace(seg.targetPaceSecsPerKm ?? 250, distanceUnit)} (GAP ${formatPace(
-                    seg.targetGapSecsPerKm ?? 245,
-                    distanceUnit
-                  )})`;
-            return (
-              <div
-                key={`mob-seg-${seg.segmentIndex}`}
-                className="rounded-xl ap-card-inset p-3 space-y-1.5 text-xs"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="font-semibold text-slate-900 dark:text-slate-100">
-                    {seg.segmentLabel}{' '}
-                    <span className="font-mono text-2xs text-slate-600 dark:text-slate-300">
-                      ({startUnit}–{endUnit} {isImperial ? 'mi' : 'km'})
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold ap-text-brand shrink-0">
-                    {targetCapLabel}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-2xs text-slate-600 dark:text-slate-300">
-                  <span>Split {formatDuration(seg.segmentDurationSecs)}</span>
-                  <span>
-                    {seg.avgGradePct}% grade · {seg.accumulatedFatigueLabel}
-                  </span>
-                </div>
-                <div className="font-mono text-2xs ap-ink-emerald">
-                  {seg.carbsGramsTarget}g CHO · {seg.sodiumMgTarget}mg Na+ · {seg.fluidMlTarget}mL
-                </div>
-                <p className="text-slate-700 dark:text-slate-200 leading-snug">
-                  {seg.coachingCue}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300">
-                <th scope="col" className="py-2 px-3">Course Segment</th>
-                <th scope="col" className="py-2 px-3 text-right">Grade / Fatigue</th>
-                <th scope="col" className="py-2 px-3 text-right">Target Cap</th>
-                <th scope="col" className="py-2 px-3 text-right">Split Time</th>
-                <th scope="col" className="py-2 px-3 text-right">Segment Fueling</th>
-                <th scope="col" className="py-2 px-3">Coaching Cue</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono tabular-nums">
-              {raceSimulationReport.segments.map((seg) => {
-                const startUnit = isImperial
-                  ? (seg.startKm * 0.621371).toFixed(1)
-                  : seg.startKm;
-                const endUnit = isImperial ? (seg.endKm * 0.621371).toFixed(1) : seg.endKm;
-                return (
-                  <tr
-                    key={seg.segmentIndex}
-                    className="hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                  >
-                    <td className="py-2.5 px-3 font-sans font-semibold text-slate-900 dark:text-slate-100">
-                      {seg.segmentLabel}{' '}
-                      <span className="font-mono text-2xs text-slate-500">
-                        ({startUnit}–{endUnit} {isImperial ? 'mi' : 'km'})
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-600 dark:text-slate-300">
-                      {seg.avgGradePct}% · {seg.accumulatedFatigueLabel}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold ap-text-brand">
-                      {raceSimulationReport.sport === 'Cycling'
-                        ? athleteProfile?.safeSportHideWeight || seg.targetWkg == null
-                          ? `${seg.targetWatts ?? 0}W`
-                          : `${seg.targetWatts ?? 0}W (${seg.targetWkg} W/kg)`
-                        : `${formatPace(seg.targetPaceSecsPerKm ?? 250, distanceUnit)} (GAP ${formatPace(
-                            seg.targetGapSecsPerKm ?? 245,
-                            distanceUnit
-                          )})`}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-800 dark:text-slate-200">
-                      {formatDuration(seg.segmentDurationSecs)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-emerald-700 dark:text-emerald-300">
-                      {seg.carbsGramsTarget}g CHO · {seg.sodiumMgTarget}mg Na+ · {seg.fluidMlTarget}mL
-                    </td>
-                    <td className="py-2.5 px-3 font-sans text-slate-600 dark:text-slate-300">
-                      {seg.coachingCue}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <RacePhysicsSimulatorBody
+          formId={formId}
+          distanceUnit={distanceUnit}
+          athleteProfile={athleteProfile}
+          simRaceName={simRaceName}
+          setSimRaceName={setSimRaceName}
+          setSimDistKm={setSimDistKm}
+          setSimElevM={setSimElevM}
+          setSimTempC={setSimTempC}
+          setSimAltM={setSimAltM}
+          isImperial={isImperial}
+          simDistDisplay={simDistDisplay}
+          simElevDisplay={simElevDisplay}
+          simTempDisplay={simTempDisplay}
+          simAltDisplay={simAltDisplay}
+          raceSimulationReport={raceSimulationReport}
+        />
       </section>
 
       {/* Modal: Customize Previewed Session via VisualWorkoutBuilder */}

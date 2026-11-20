@@ -48,7 +48,10 @@ import {
   registerPasskey,
 } from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
-import { SyncScopeTimelineBar } from './charts/MicroGraphics';
+import { SEED_EVENT_PILLS, StravaChevronMark } from './auth/authGateShared';
+import { AuthLandingPreviewCard } from './auth/AuthLandingPreviewCard';
+import { AuthOnboardingStepTwo } from './auth/AuthOnboardingStepTwo';
+import { AuthOptionalAddonsStep } from './auth/AuthOptionalAddonsStep';
 import {
   getSavedIntervalsHeaders,
   isBrowserSessionLoggedOut,
@@ -154,12 +157,6 @@ function detectEmbeddedWebView(): boolean {
   return /Instagram|FBAN|FBAV|GroupMe|Line\/|Snapchat|TikTok|BytedanceWebview|LinkedInApp/i.test(ua);
 }
 
-const StravaChevronMark: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-    <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-  </svg>
-);
-
 const GoogleGIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
     <path
@@ -180,21 +177,6 @@ const GoogleGIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }
     />
   </svg>
 );
-
-const SEED_EVENT_PILLS: Array<{
-  id: string;
-  label: string;
-  sport: 'Running' | 'Cycling';
-  prefix: string;
-  placeholder: string;
-}> = [
-  { id: '5k', label: '5K Race', sport: 'Running', prefix: '5K ', placeholder: 'e.g. 18:45' },
-  { id: '3200m', label: '3200m', sport: 'Running', prefix: '3200m ', placeholder: 'e.g. 10:15' },
-  { id: '1600m', label: '1600m / Mile', sport: 'Running', prefix: '1600m ', placeholder: 'e.g. 4:52' },
-  { id: '800m', label: '800m', sport: 'Running', prefix: '800m ', placeholder: 'e.g. 2:04' },
-  { id: 'ftp', label: 'Known FTP', sport: 'Cycling', prefix: '', placeholder: 'e.g. 265W' },
-  { id: '20m', label: '20m Power', sport: 'Cycling', prefix: '20m ', placeholder: 'e.g. 280W' },
-];
 
 export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   status,
@@ -249,10 +231,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       return 'ATHLETE';
     }
   });
-  const [specimenView, setSpecimenView] = useState<'SOLO' | 'COACH'>(() =>
-    onboardingRole === 'COACH' ? 'COACH' : 'SOLO'
-  );
-  const [isSimulatedFatigued, setIsSimulatedFatigued] = useState(false);
   const [showFitDrawer, setShowFitDrawer] = useState(false);
   const teamCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingSharedWorkout, setPendingSharedWorkout] = useState(() =>
@@ -261,7 +239,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   const selectOnboardingRole = (nextRole: 'ATHLETE' | 'COACH') => {
     setOnboardingRole(nextRole);
-    setSpecimenView(nextRole === 'COACH' ? 'COACH' : 'SOLO');
     try {
       if (nextRole === 'COACH') {
         sessionStorage.setItem('thresh_onboarding_role', 'COACH');
@@ -1159,18 +1136,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setShowFitDrawer((prev) => !prev);
   };
 
-  const atlSpecimenValue = isSimulatedFatigued ? 88 : 58;
-  const tsbSpecimenValue = isSimulatedFatigued ? '-24' : '+6';
-  const loadSumSpecimen = isSimulatedFatigued ? '1,180 TSS' : '920 TSS';
   const isSlateVariant =
     typeof document !== 'undefined' &&
     document.documentElement.classList.contains('theme-slate');
-  const z2Scale = isSimulatedFatigued ? 0.38 : 0.54;
-  const z4Scale = isSimulatedFatigued ? 0.39 : 0.31;
-  const z6Scale = isSimulatedFatigued ? 0.23 : 0.15;
-  const z2Pct = isSimulatedFatigued ? '38%' : '54%';
-  const z4Pct = isSimulatedFatigued ? '39%' : '31%';
-  const z6Pct = isSimulatedFatigued ? '23%' : '15%';
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip py-2.5 sm:py-3.5 px-2.5 sm:px-6 flex flex-col justify-center">
@@ -1868,332 +1836,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   )}
                 </aside>
 
-                {/* Block 3: Interactive Live Cockpit Preview */}
-                <section
-                  data-testid="homepage-live-cockpit-preview"
-                  aria-label="Live Cockpit Preview"
-                  className="order-3 lg:col-span-7 lg:col-start-1 lg:row-start-2 w-full liquid-glass rounded-2xl p-4 sm:px-5 sm:py-3.5 space-y-2.5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
-                        Live Cockpit Preview
-                      </h2>
-                      <span className="ap-lane-badge">
-                        <span className="ap-lane-badge-inner">REAL-TIME ENGINE</span>
-                      </span>
-                    </div>
-
-                    <div
-                      role="tablist"
-                      aria-label="Preview audience"
-                      className="inline-flex ap-pill-track p-1 rounded-xl gap-1"
-                    >
-                      <button
-                        type="button"
-                        role="tab"
-                        data-testid="specimen-tab-solo"
-                        aria-selected={specimenView === 'SOLO'}
-                        onClick={() => setSpecimenView('SOLO')}
-                        className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
-                          specimenView === 'SOLO'
-                            ? 'ap-pill-active'
-                            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                        }`}
-                      >
-                        Solo Athlete
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        data-testid="specimen-tab-coach"
-                        aria-selected={specimenView === 'COACH'}
-                        onClick={() => setSpecimenView('COACH')}
-                        className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
-                          specimenView === 'COACH'
-                            ? 'ap-pill-active'
-                            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                        }`}
-                      >
-                        Team Coach
-                      </button>
-                    </div>
-                  </div>
-
-                  {specimenView === 'SOLO' ? (
-                    <div className="space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-ap-muted dark:text-ap-muted-dark">
-                          Simulate Morning Readiness:
-                        </span>
-                        <div className="inline-flex ap-pill-track p-1 rounded-xl gap-1">
-                          <button
-                            type="button"
-                            data-testid="specimen-readiness-optimal"
-                            aria-pressed={!isSimulatedFatigued}
-                            onClick={() => setIsSimulatedFatigued(false)}
-                            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
-                              !isSimulatedFatigued
-                                ? 'ap-pill-active'
-                                : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                            }`}
-                          >
-                            Optimal (+6 TSB)
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="specimen-readiness-fatigued"
-                            aria-pressed={isSimulatedFatigued}
-                            onClick={() => setIsSimulatedFatigued(true)}
-                            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
-                              isSimulatedFatigued
-                                ? 'ap-pill-active'
-                                : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                            }`}
-                          >
-                            Fatigued (-24 TSB)
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 3 KPI Strip */}
-                      <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
-                            42d Fitness (CTL)
-                          </div>
-                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk">
-                            64
-                          </div>
-                        </div>
-                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
-                            7d Fatigue (ATL)
-                          </div>
-                          <div
-                            data-testid="specimen-atl-value"
-                            className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk"
-                          >
-                            {atlSpecimenValue}
-                          </div>
-                        </div>
-                        <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
-                            Form (TSB)
-                          </div>
-                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk flex items-baseline gap-1.5 flex-wrap">
-                            <span data-testid="specimen-tsb-value">{tsbSpecimenValue}</span>
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-2xs font-bold ${
-                                isSimulatedFatigued
-                                  ? 'bg-[#FEF3C7] text-[#92400E] dark:bg-[#2E210C] dark:text-[#FBBF24]'
-                                  : 'bg-[#DCFCE7] text-[#166534] dark:bg-[#122B1B] dark:text-[#4ADE80]'
-                              }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  isSimulatedFatigued ? 'bg-[#D97706]' : 'bg-[#16A34A]'
-                                }`}
-                              />
-                              {isSimulatedFatigued ? 'MODULATED' : 'CLEARED'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 3-Channel Load Focus Bars */}
-                      <div className="rounded-xl ap-card-inset p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
-                            7-Day Load Focus Channels
-                          </span>
-                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                            {loadSumSpecimen}
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
-                            <span>Low Aerobic Z1–Z2</span>
-                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
-                              <div
-                                className="h-full w-full rounded-full bg-[#0D9488] origin-left transition-transform duration-200"
-                                style={{ transform: `scaleX(${z2Scale})` }}
-                              />
-                            </div>
-                            <span className="font-mono tabular-nums text-right">{z2Pct}</span>
-                          </div>
-                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
-                            <span>Threshold Z3–Z4</span>
-                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
-                              <div
-                                className="h-full w-full rounded-full bg-[#EA580C] origin-left transition-transform duration-200"
-                                style={{ transform: `scaleX(${z4Scale})` }}
-                              />
-                            </div>
-                            <span className="font-mono tabular-nums text-right">{z4Pct}</span>
-                          </div>
-                          <div className="grid grid-cols-[120px_1fr_40px] sm:grid-cols-[150px_1fr_44px] items-center gap-2 text-xs font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
-                            <span>Anaerobic Z5–Z6</span>
-                            <div className="h-2.5 rounded-full bg-white dark:bg-[#111A15] overflow-hidden">
-                              <div
-                                className="h-full w-full rounded-full bg-[#7C3AED] origin-left transition-transform duration-200"
-                                style={{ transform: `scaleX(${z6Scale})` }}
-                              />
-                            </div>
-                            <span className="font-mono tabular-nums text-right">{z6Pct}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Today's Prescription Callout */}
-                      <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              isSimulatedFatigued ? 'bg-[#D97706]' : 'bg-[#16A34A]'
-                            }`}
-                          />
-                          <span
-                            data-testid="specimen-prescription-text"
-                            className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk"
-                          >
-                            {isSimulatedFatigued
-                              ? 'Today: 4 × 1km @ 3:48/km · Auto-modulated -15% strain guard'
-                              : 'Today: 5 × 1km @ 3:42/km · Full Prescription'}
-                          </span>
-                        </div>
-                        <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                          {isSimulatedFatigued ? 'STRAIN GUARD -15%' : 'AUTO-CLEAR 100%'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div data-testid="specimen-coach-panel" className="space-y-2.5">
-                      <div className="rounded-xl ap-card-inset p-3 space-y-2.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
-                            Squad Safety Triage · Morning Check
-                          </span>
-                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                            28 ACTIVE ROSTER
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#166534] dark:bg-[#122B1B] dark:text-[#4ADE80] font-mono text-xs font-bold">
-                            <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
-                            24 Cleared
-                          </span>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] dark:bg-[#2E210C] dark:text-[#FBBF24] font-mono text-xs font-bold">
-                            <span className="w-2 h-2 rounded-full bg-[#D97706]" />
-                            3 Auto-Modulated
-                          </span>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEE2E2] text-[#991B1B] dark:bg-[#321316] dark:text-[#F87171] font-mono text-xs font-bold">
-                            <span className="w-2 h-2 rounded-full bg-[#DC2626]" />
-                            1 ACWR 1.48 Hold
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl ap-card-inset p-3 space-y-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
-                            Trackside Pod Splits
-                          </span>
-                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                            0.01s PHONE STOPWATCH
-                          </span>
-                        </div>
-                        <div className="font-mono tabular-nums text-xs sm:text-sm font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
-                          Varsity Pod A · 4 × 800m · Avg 2:18.42 · Spread 0.61s
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2 h-2 rounded-full bg-[#16A34A] shrink-0" />
-                          <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
-                            Willow Glen XC (<span className="font-mono">WGXC-26</span>) · Athletic.net
-                            Roster &amp; PRs Linked
-                          </span>
-                        </div>
-                        <span className="font-mono text-xs font-bold text-[#166534] dark:text-[#4ADE80] shrink-0">
-                          U18 SAFE-SPORT SHIELD ON
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* Block 4: Dual-Audience Value Wells */}
-                <div className="order-4 lg:col-span-7 lg:col-start-1 lg:row-start-3 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="rounded-xl ap-card-inset p-4 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
-                        For Individual Athletes
-                      </h2>
-                      <span className="ap-lane-badge shrink-0">
-                        <span className="ap-lane-badge-inner">SOLO</span>
-                      </span>
-                    </div>
-                    <ul className="space-y-1.5 text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]">
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#0D9488] shrink-0 mt-1.5" />
-                        <span>
-                          Auto-scales workouts when <span className="font-mono">7d</span> strain spikes
-                          or recovery drops
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
-                        <span>
-                          Works with Strava, Garmin, Polar, Wahoo, Intervals.icu, or{' '}
-                          <span className="font-mono">.FIT/.ZIP</span>
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#7C3AED] shrink-0 mt-1.5" />
-                        <span>
-                          Keep 100% of your training history across clubs, seasons, and graduation
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="rounded-xl ap-card-inset p-4 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
-                        For Coaches &amp; Programs
-                      </h2>
-                      <span className="ap-lane-badge shrink-0">
-                        <span className="ap-lane-badge-inner">TEAM</span>
-                      </span>
-                    </div>
-                    <ul className="space-y-1.5 text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]">
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#0D9488] shrink-0 mt-1.5" />
-                        <span>
-                          Onboard a squad in 2 minutes via <span className="font-mono">Athletic.net</span>
-                          , <span className="font-mono">TFRRS</span>, or a{' '}
-                          <span className="font-mono">6-char</span> code
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
-                        <span>
-                          Spot <span className="font-mono">ACWR</span> overload early, including
-                          watchless high school athletes
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#7C3AED] shrink-0 mt-1.5" />
-                        <span>
-                          Build pace pods once and time <span className="font-mono">0.01s</span> splits
-                          right from the infield
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
+                <AuthLandingPreviewCard
+                  onboardingRole={onboardingRole}
+                  onSelectOnboardingRole={selectOnboardingRole}
+                />
               </div>
             </main>
 
@@ -2403,998 +2049,100 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               STEP 2: EXPLICIT POST-AUTH STRAVA DATA SYNC & CALIBRATION
              ============================================================== */}
           {step === 2 && (
-            <div className="space-y-5 relative z-10">
-              {/* Verified Identity Badge */}
-              <div className="rounded-2xl ap-status-prime p-3.5 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <CheckCircle2 className="w-5 h-5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold truncate">
-                      {status.stravaConnected
-                        ? `Signed in with Strava${status.stravaAthleteName ? ` · ${status.stravaAthleteName}` : ''}`
-                        : `Signed in as ${localUser?.name || localUser?.email || 'Athlete'}${localUser?.email && localUser?.name ? ` (${localUser.email})` : ''}`}
-                    </div>
-                    <div className="text-2xs opacity-90">
-                      {status.stravaConnected
-                        ? 'Identity verified. Choose what Strava data you want to sync to THRESH.'
-                        : 'THRESH account active. Configure your telemetry sync and sport calibration below.'}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleSwitchStravaAccount()}
-                  className="text-2xs font-mono underline opacity-90 hover:opacity-100 cursor-pointer shrink-0"
-                >
-                  Switch account
-                </button>
-              </div>
-
-              {onboardingRole === 'COACH' && !activeBrand && (
-                <div
-                  data-testid="coach-quickstart-card"
-                  className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-ap-cobalt/25 dark:border-ap-volt/25"
-                >
-                  <div className="space-y-1">
-                    <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                      Coach Workspace Quick-Start
-                    </h2>
-                    <p className="text-xs text-slate-600 dark:text-slate-300">
-                      Skip personal wearable calibration and go straight to creating your team, importing a CSV roster, or timing track workouts.
-                    </p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      aria-label="Coach Name"
-                      value={athleteName}
-                      onChange={(e) => setAthleteName(e.target.value)}
-                      placeholder="Coach Name (e.g. Coach Vega)"
-                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                    <button
-                      type="button"
-                      data-testid="enter-coach-mode-btn"
-                      disabled={busy}
-                      onClick={() => void handleFinalizeOnboarding('COACH_MODE')}
-                      className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span>Enter Coach Workspace</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => selectOnboardingRole('ATHLETE')}
-                    className="text-2xs underline text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-                  >
-                    Switch to personal Athlete setup instead
-                  </button>
-                </div>
-              )}
-
-              {(onboardingRole !== 'COACH' || Boolean(activeBrand)) && (
-                <>
-                  {!status.stravaConnected ? (
-                <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-orange-500/25">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <StravaChevronMark className="w-4 h-4 text-[#FC4C02]" />
-                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                          Link Strava Workouts (Optional)
-                        </h2>
-                        <span className="px-2 py-0.5 rounded text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-                          Optional
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        Automatically pull your workouts, GPS routes, and gear mileage into THRESH.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleStravaLaunchClick('cloud', false)}
-                        disabled={busy}
-                        className="ap-btn-strava !min-h-[40px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <StravaChevronMark className="w-3.5 h-3.5" />
-                        <span>Connect Strava</span>
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-2xs text-slate-500 dark:text-slate-400">
-                    Not using Strava? No problem. You can link Garmin Connect or Intervals.icu in Step 3, or import .FIT/.ZIP files anytime.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {lacksActivityScope && (
-                    <div className="ap-status-caution rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="space-y-0.5 flex-1 min-w-[220px]">
-                        <div className="font-bold">Activity permission was unchecked on Strava</div>
-                        <div className="opacity-90">
-                          THRESH is set to Identity Only. Re-authorize with activity read access if you want automatic workout sync.
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleStravaLaunchClick('cloud', true)}
-                        className="ap-btn-strava !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer shrink-0"
-                      >
-                        Re-Authorize Activities
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                      Choose What Syncs From Strava
-                    </h1>
-                    <SyncScopeTimelineBar days={syncWindow === 'all' || syncWindow === '180d' ? 365 : 90} />
-                  </div>
-
-                  {/* 1. Sync Window Radio Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {(
-                      [
-                        {
-                          id: '90d' as const,
-                          title: 'Last 90 Days',
-                          badge: 'Recommended · Fast',
-                          desc: 'Loads your 42-day Fitness (CTL), Fatigue (ATL), and recent PRs in ~2 seconds.',
-                          disabled: lacksActivityScope,
-                        },
-                        {
-                          id: '180d' as const,
-                          title: 'Last 6 Months',
-                          badge: 'Season Block',
-                          desc: 'Includes your full prior training block, base mileage, and threshold trends.',
-                          disabled: lacksActivityScope,
-                        },
-                        {
-                          id: 'all' as const,
-                          title: 'Complete Strava Archive',
-                          badge: 'All-Time',
-                          desc: 'Paginates your multi-year run & ride history in the background.',
-                          disabled: lacksActivityScope,
-                        },
-                        {
-                          id: 'none' as const,
-                          title: 'Identity Only (No Sync Yet)',
-                          badge: 'Zero Import',
-                          desc: 'Use Strava strictly for sign-in; enable sync or upload .FIT files anytime later.',
-                          disabled: false,
-                        },
-                      ] as const
-                    ).map((opt) => {
-                      const selected = syncWindow === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          disabled={opt.disabled}
-                          aria-pressed={selected}
-                          onClick={() => setSyncWindow(opt.id)}
-                          className={`text-left rounded-xl p-3.5 border-2 transition-all ${
-                            opt.disabled
-                              ? 'opacity-45 cursor-not-allowed border-slate-300/50 dark:border-white/10'
-                              : selected
-                                ? 'border-[#1E6B38] dark:border-ap-volt bg-emerald-500/10 dark:bg-ap-volt/10 cursor-pointer'
-                                : 'liquid-glass hover:border-[#28573B] dark:hover:border-[#2E6B47] cursor-pointer'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                              {opt.title}
-                            </span>
-                            <span
-                              className={`text-2xs font-mono px-2 py-0.5 rounded-md font-bold ${
-                                selected
-                                  ? 'ap-badge-volt'
-                                  : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300'
-                              }`}
-                            >
-                              {opt.badge}
-                            </span>
-                          </div>
-                          <p className="text-2xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                            {opt.desc}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <label className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none px-1">
-                    <input
-                      type="checkbox"
-                      checked={importProfileAndGear}
-                      onChange={(e) => setImportProfileAndGear(e.target.checked)}
-                      className="w-4 h-4 rounded accent-[#FC4C02]"
-                    />
-                    <span>
-                      Import Strava athlete baseline (FTP / weight if set) &amp; shoe/bike gear mileage
-                    </span>
-                  </label>
-                </>
-              )}
-
-              {/* Athlete Profile & Youth Protection */}
-              <div className="liquid-glass rounded-2xl p-4 space-y-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                    Athlete Profile &amp; Eligibility
-                  </h2>
-                  {isMinorAthlete && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Safe-Sport Minor Protection</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label
-                      htmlFor={`${formId}-profile-name`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Athlete Display Name
-                    </label>
-                    <input
-                      id={`${formId}-profile-name`}
-                      type="text"
-                      value={athleteName}
-                      onChange={(e) => setAthleteName(e.target.value)}
-                      placeholder="e.g. Maya Lin"
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`${formId}-birth-year`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Birth Month &amp; Year <span className="text-slate-400 font-normal">(Age verification)</span>
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        aria-label="Birth month (optional)"
-                        value={birthMonth}
-                        onChange={(e) => setBirthMonth(e.target.value)}
-                        className="w-28 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                      >
-                        <option value="">Month</option>
-                        <option value="01">Jan</option>
-                        <option value="02">Feb</option>
-                        <option value="03">Mar</option>
-                        <option value="04">Apr</option>
-                        <option value="05">May</option>
-                        <option value="06">Jun</option>
-                        <option value="07">Jul</option>
-                        <option value="08">Aug</option>
-                        <option value="09">Sep</option>
-                        <option value="10">Oct</option>
-                        <option value="11">Nov</option>
-                        <option value="12">Dec</option>
-                      </select>
-                      <input
-                        id={`${formId}-birth-year`}
-                        type="number"
-                        min={1920}
-                        max={currentYear}
-                        value={birthYear}
-                        onChange={(e) => setBirthYear(e.target.value)}
-                        placeholder={`e.g. ${currentYear - 17}`}
-                        className="flex-1 min-w-0 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Under-13 COPPA Hard Block */}
-                {isUnder13 && (
-                  <div
-                    data-testid="join-coppa-u13-notice"
-                    className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 space-y-1.5 text-xs"
-                  >
-                    <div className="font-bold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />
-                      <span>13+ Minimum Age Required (COPPA)</span>
-                    </div>
-                    <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
-                      THRESH self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.
-                    </p>
-                  </div>
-                )}
-
-                {/* Minor Youth Protection Gate: If under 18 and not yet attached to a team */}
-                {!isUnder13 && isMinorAthlete && !activeBrand && (
-                  <div className="ap-status-caution rounded-xl p-3.5 space-y-2.5 text-xs">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />
-                      <span>Scholastic Youth Protection Gate</span>
-                    </div>
-                    <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
-                      Under our U18 Safe-Sport youth privacy policy (with COPPA &lt;13 enforcement), athletes aged 13–17 join through an authorized school or club athletic team roster with parent/guardian consent.
-                    </p>
-                    {!showTeamCodeDrawer ? (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          data-testid="youth-open-join-code-btn"
-                          onClick={() => setShowTeamCodeDrawer(true)}
-                          className="ap-btn-primary !min-h-[40px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Users className="w-3.5 h-3.5" />
-                          <span>Enter Coach / Team Join Code</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        data-testid="youth-inline-join-code-box"
-                        className="flex flex-col sm:flex-row gap-2 pt-1"
-                      >
-                        <input
-                          type="text"
-                          value={joinCodeInput}
-                          aria-label="Enter 6-character Team Join Code"
-                          onChange={(e) => {
-                            setJoinCodeInput(e.target.value.toUpperCase());
-                            setJoinSlug(undefined);
-                            setInviteToken('');
-                          }}
-                          placeholder="Enter 6-char Team Code (e.g. PAXC-26)"
-                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
-                        />
-                        <button
-                          type="button"
-                          disabled={isLoadingPreview || !joinCodeInput.trim()}
-                          onClick={() => void lookupTeamPreview(joinCodeInput, inviteToken)}
-                          className="ap-btn-secondary !min-h-[44px] px-3 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
-                        >
-                          {isLoadingPreview ? 'Checking…' : 'Apply Code'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Parent / Guardian Email Requirement for Minor Athletes (13-17) */}
-                {!isUnder13 && isMinorAthlete && (
-                  <div className="space-y-1.5 pt-1 border-t border-slate-200/80 dark:border-white/10">
-                    <label
-                      htmlFor={`${formId}-parent-email`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300"
-                    >
-                      Parent or Guardian Email <span className="text-amber-400 font-bold">*Required for Athletes Under 18</span>
-                    </label>
-                    <input
-                      id={`${formId}-parent-email`}
-                      type="email"
-                      value={parentGuardianEmail}
-                      onChange={(e) => setParentGuardianEmail(e.target.value)}
-                      placeholder="parent.guardian@example.com"
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                    <p className="text-2xs text-slate-500 dark:text-slate-400">
-                      We will dispatch an automated parent notification with full transparency on data safeguards and a 1-click consent link.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* 2. Primary Sport & Units + Optional Day-1 Seed Mark */}
-              <div className="liquid-glass rounded-2xl p-4 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <div
-                      id={`${formId}-primary-sport`}
-                      className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400"
-                    >
-                      Primary Focus
-                    </div>
-                    <div
-                      role="group"
-                      aria-labelledby={`${formId}-primary-sport`}
-                      className="inline-flex rounded-xl p-0.5 liquid-capsule-track text-xs"
-                    >
-                      {(['Running', 'Cycling', 'Hybrid'] as const).map((sp) => (
-                        <button
-                          key={sp}
-                          type="button"
-                          aria-pressed={primarySport === sp}
-                          onClick={() => {
-                            setPrimarySport(sp);
-                            if (sp === 'Cycling') setSelectedSeedEventId('ftp');
-                            else if (selectedSeedEventId === 'ftp' || selectedSeedEventId === '20m') {
-                              setSelectedSeedEventId('5k');
-                            }
-                          }}
-                          className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                            primarySport === sp
-                              ? 'ap-nav-volt-active'
-                              : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {sp}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div
-                      id={`${formId}-display-units`}
-                      className="text-2xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400"
-                    >
-                      Display Units
-                    </div>
-                    <div
-                      role="group"
-                      aria-labelledby={`${formId}-display-units`}
-                      className="inline-flex rounded-xl p-0.5 liquid-capsule-track text-xs font-mono"
-                    >
-                      {(['mi', 'km'] as const).map((u) => (
-                        <button
-                          key={u}
-                          type="button"
-                          aria-pressed={distanceUnit === u}
-                          onClick={() => {
-                            setDistanceUnit(u);
-                            setHasEditedUnits(true);
-                          }}
-                          className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                            distanceUnit === u
-                              ? 'ap-nav-volt-active'
-                              : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {u === 'mi' ? 'mi / lbs' : 'km / kg'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Optional Seed Mark Calibrator — Progressive Disclosure (Auto-open for Identity Only) */}
-                <details
-                  open={syncWindow === 'none' || Boolean(rawSeedValue.trim())}
-                  className="pt-3 border-t border-slate-200/80 dark:border-white/10 group"
-                >
-                  <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-2 py-1 select-none">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white inline-flex items-center gap-1.5">
-                      <span>Optional: Seed Zones From a Recent Race Time or FTP</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-500 transition-transform group-open:rotate-180" />
-                    </span>
-                    <span className="text-2xs text-slate-500 dark:text-slate-400">
-                      {syncWindow === 'none'
-                        ? 'Recommended when importing 0 workouts'
-                        : 'Skip to auto-calibrate from Strava'}
-                    </span>
-                  </summary>
-
-                  <div className="pt-2.5 space-y-2.5">
-                    <label
-                      htmlFor={`${formId}-seed-mark`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300"
-                    >
-                      Recent Race Mark or Threshold Power
-                    </label>
-
-                    <div
-                      role="group"
-                      aria-label="Seed mark event type"
-                      className="flex flex-wrap gap-1.5"
-                    >
-                      {SEED_EVENT_PILLS.filter((p) =>
-                        primarySport === 'Hybrid' ? true : p.sport === primarySport
-                      ).map((pill) => (
-                        <button
-                          key={pill.id}
-                          type="button"
-                          aria-pressed={selectedSeedEventId === pill.id}
-                          onClick={() => setSelectedSeedEventId(pill.id)}
-                          className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg text-2xs font-mono font-semibold transition-colors cursor-pointer ${
-                            selectedSeedEventId === pill.id
-                              ? 'ap-nav-volt-active'
-                              : 'liquid-capsule-track text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {pill.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <input
-                      id={`${formId}-seed-mark`}
-                      type="text"
-                      value={rawSeedValue}
-                      onChange={(e) => setRawSeedValue(e.target.value)}
-                      placeholder={selectedSeedPill.placeholder}
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100"
-                    />
-
-                    {composedSeedMark.trim() && (
-                      <div className="rounded-xl ap-status-prime px-3 py-2 text-xs font-mono flex flex-wrap items-center justify-between gap-2">
-                        {selectedSeedPill.sport === 'Cycling' || /\d+\s*w\b/i.test(composedSeedMark) ? (
-                          <>
-                            <span>Calibrated Cycling FTP: {liveSeedCalibration.cyclingFtpWatts}W</span>
-                            <span>
-                              Z2 Base: {Math.round(liveSeedCalibration.cyclingFtpWatts * 0.56)}–
-                              {Math.round(liveSeedCalibration.cyclingFtpWatts * 0.75)}W
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              {liveSeedCalibration.vdotEstimate
-                                ? `VDOT ${liveSeedCalibration.vdotEstimate} · `
-                                : ''}
-                              LT2 {liveSeedCalibration.thresholdPaceInputDisplay}/{distanceUnit}
-                            </span>
-                            <span>
-                              Easy {liveSeedCalibration.easyPaceInputDisplay}/{distanceUnit} · VO2{' '}
-                              {liveSeedCalibration.intervalPaceInputDisplay}/{distanceUnit}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </details>
-              </div>
-
-              {/* 3. Team Roster Consent & Coach Sharing Tier (Only when joining a team) */}
-              {activeBrand && (
-                <div className="liquid-glass rounded-2xl p-4 space-y-3 border-2 border-[#25573A]">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Joining {activeBrand.name} ({activeBrand.joinCode})
-                      </h2>
-                    </div>
-                    <span className="text-2xs font-mono ap-text-brand font-bold">
-                      Coach {activeBrand.coachDisplayName}
-                    </span>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`${formId}-sharing-tier`}
-                      className="block text-2xs font-semibold text-slate-600 dark:text-slate-300 mb-1"
-                    >
-                      Coach Data Sharing Level
-                    </label>
-                    <select
-                      id={`${formId}-sharing-tier`}
-                      value={sharingTier}
-                      onChange={(e) => setSharingTier(e.target.value as CoachDataSharingTier)}
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
-                    >
-                      <option value="SUMMARY_ONLY">
-                        Workout Summaries &amp; Readiness (Recommended)
-                      </option>
-                      <option value="FULL_STREAMS">
-                        Full Coaching Splits &amp; Pace/Power Curves
-                      </option>
-                      <option value="LOAD_ONLY">
-                        Readiness &amp; Weekly Load Totals Only
-                      </option>
-                    </select>
-                  </div>
-
-                  <label
-                    className={`flex items-start gap-2.5 text-xs select-none ${
-                      isMinorAthlete ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
-                    } text-slate-700 dark:text-slate-300`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isMinorAthlete ? true : safeSportHideWeight}
-                      disabled={isMinorAthlete}
-                      onChange={(e) => !isMinorAthlete && setSafeSportHideWeight(e.target.checked)}
-                      className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
-                    />
-                    <div>
-                      <span>
-                        <strong>Safe-Sport Privacy Mode:</strong> Hide body weight &amp; W/kg on team views
-                      </span>
-                      {isMinorAthlete && (
-                        <span className="block text-2xs text-emerald-400 font-medium mt-0.5">
-                          Enforced &amp; locked ON for minor athletes to prevent RED-S &amp; weight-sensitive eating disorder risks.
-                        </span>
-                      )}
-                    </div>
-                  </label>
-                </div>
-              )}
-
-              <div className="text-center text-2xs text-slate-500 dark:text-slate-400 pt-1 flex flex-wrap items-center justify-center gap-3">
-                <a
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-emerald-400 inline-flex items-center gap-1"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 inline" />
-                  <span>Privacy Policy, COPPA &amp; Safe-Sport Shield</span>
-                </a>
-                <a
-                  href="/procurement"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-emerald-400"
-                >
-                  District NDPA &amp; Terms
-                </a>
-              </div>
-
-              <div className="pt-1 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="ap-btn-secondary text-xs cursor-pointer"
-                >
-                  ← Back
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleConfirmStep2()}
-                  disabled={busy || isUnder13}
-                  className="ap-btn-primary text-sm px-6 cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingStep2 ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="w-4 h-4" />
-                  )}
-                  <span>
-                    {activeBrand
-                      ? `Join ${activeBrand.shortName} & Continue`
-                      : status.stravaConnected
-                        ? 'Confirm Strava Sync & Continue'
-                        : 'Confirm & Continue'}
-                  </span>
-                </button>
-              </div>
-                </>
-              )}
-            </div>
+            <AuthOnboardingStepTwo
+              formId={formId}
+              status={status}
+              localUser={localUser}
+              activeBrand={activeBrand}
+              onboardingRole={onboardingRole}
+              selectOnboardingRole={selectOnboardingRole}
+              setStep={setStep}
+              syncWindow={syncWindow}
+              setSyncWindow={setSyncWindow}
+              importProfileAndGear={importProfileAndGear}
+              setImportProfileAndGear={setImportProfileAndGear}
+              athleteName={athleteName}
+              setAthleteName={setAthleteName}
+              birthYear={birthYear}
+              setBirthYear={setBirthYear}
+              birthMonth={birthMonth}
+              setBirthMonth={setBirthMonth}
+              parentGuardianEmail={parentGuardianEmail}
+              setParentGuardianEmail={setParentGuardianEmail}
+              primarySport={primarySport}
+              setPrimarySport={setPrimarySport}
+              distanceUnit={distanceUnit}
+              setDistanceUnit={setDistanceUnit}
+              setHasEditedUnits={setHasEditedUnits}
+              selectedSeedEventId={selectedSeedEventId}
+              setSelectedSeedEventId={setSelectedSeedEventId}
+              rawSeedValue={rawSeedValue}
+              setRawSeedValue={setRawSeedValue}
+              safeSportHideWeight={safeSportHideWeight}
+              setSafeSportHideWeight={setSafeSportHideWeight}
+              sharingTier={sharingTier}
+              setSharingTier={setSharingTier}
+              isSavingStep2={isSavingStep2}
+              showTeamCodeDrawer={showTeamCodeDrawer}
+              setShowTeamCodeDrawer={setShowTeamCodeDrawer}
+              joinCodeInput={joinCodeInput}
+              setJoinCodeInput={setJoinCodeInput}
+              setJoinSlug={setJoinSlug}
+              inviteToken={inviteToken}
+              setInviteToken={setInviteToken}
+              isLoadingPreview={isLoadingPreview}
+              currentYear={currentYear}
+              isUnder13={isUnder13}
+              isMinorAthlete={isMinorAthlete}
+              lacksActivityScope={lacksActivityScope}
+              selectedSeedPill={selectedSeedPill}
+              composedSeedMark={composedSeedMark}
+              liveSeedCalibration={liveSeedCalibration}
+              lookupTeamPreview={lookupTeamPreview}
+              handleStravaLaunchClick={handleStravaLaunchClick}
+              handleSwitchStravaAccount={handleSwitchStravaAccount}
+              handleConfirmStep2={handleConfirmStep2}
+              handleFinalizeOnboarding={handleFinalizeOnboarding}
+              busy={busy}
+            />
           )}
 
           {/* ==============================================================
               STEP 3: OPTIONAL GARMIN CONNECT OR INTERVALS.ICU (NEVER MANDATORY)
              ============================================================== */}
           {step === 3 && (
-            <div className="space-y-5 relative z-10">
-              <div className="space-y-1.5">
-                {isSyncing && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-2xs font-mono ap-text-strava inline-flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Syncing Strava in background…</span>
-                    </span>
-                  </div>
-                )}
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  Add Overnight Sleep &amp; HRV (Optional)
-                </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {status.stravaConnected ? (
-                    <>
-                      Strava is already handling your sign-in{syncWindow !== 'none' ? ' and workout sync' : ''}. Optionally link <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> for overnight HRV, Sleep Score, and Resting HR—or enter THRESH right now.
-                    </>
-                  ) : (
-                    <>
-                      Your THRESH account is active. Optionally link <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter THRESH right now.
-                    </>
-                  )}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {/* Optional Card 1: Garmin Connect */}
-                <div className="liquid-glass rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                          Garmin Connect
-                        </h2>
-                        {isGarminConnected ? (
-                          <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
-                            Connected ✓
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-md text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-                            Optional
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                        Adds overnight HRV (rMSSD), Sleep Score, Resting HR, and 1-click watch workout pushes.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      aria-expanded={expandGarmin}
-                      onClick={() => setExpandGarmin((prev) => !prev)}
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs shrink-0 cursor-pointer"
-                    >
-                      {isGarminConnected ? 'Update' : expandGarmin ? 'Hide' : 'Connect'}
-                    </button>
-                  </div>
-
-                  {expandGarmin && (
-                    <form
-                      onSubmit={handleConnectGarminInline}
-                      className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">
-                          Paste your Garmin Personal API Key (<code className="font-mono">GCDC_...</code>):
-                        </span>
-                        <a
-                          href="https://connect.garmin.com/app/settings/personalApiToken"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
-                        >
-                          <span>Get Key from Garmin</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="password"
-                          required
-                          aria-label="Garmin Personal API Key"
-                          value={garminPersonalKey}
-                          onChange={(e) => setGarminPersonalKey(e.target.value)}
-                          placeholder="GCDC_00000000-0000-..."
-                          className="flex-1 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                        />
-                        <button
-                          type="submit"
-                          disabled={busy || !garminPersonalKey.trim()}
-                          className="ap-btn-primary !min-h-[44px] sm:!min-h-[42px] text-xs shrink-0 cursor-pointer"
-                        >
-                          {isConnectingGarmin ? 'Linking…' : 'Link Garmin'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-
-                {/* Optional Card 2: Intervals.icu */}
-                <div className="liquid-glass rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                          Intervals.icu
-                        </h2>
-                        {status.intervalsConnected ? (
-                          <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
-                            Connected ✓
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-md text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-                            Optional
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                        Syncs Intervals.icu connected devices (Garmin, COROS, Suunto, Polar, Wahoo), eFTP curves, and planned calendar workouts.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      aria-expanded={expandIntervals}
-                      onClick={() => setExpandIntervals((prev) => !prev)}
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs shrink-0 cursor-pointer"
-                    >
-                      {status.intervalsConnected ? 'Update' : expandIntervals ? 'Hide' : 'Connect'}
-                    </button>
-                  </div>
-
-                  {expandIntervals && (
-                    <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
-                      {onLaunchIntervalsOAuth && (
-                        <button
-                          type="button"
-                          onClick={() => onLaunchIntervalsOAuth?.()}
-                          className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                        >
-                          <Lightning className="w-4 h-4 shrink-0" />
-                          <span>1-Click Connect with Intervals.icu (OAuth 2.0)</span>
-                        </button>
-                      )}
-
-                      <details className="text-2xs text-slate-500 dark:text-slate-400 group/api">
-                        <summary className="cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none py-1">
-                          Power-User Option: Connect via Personal API Key
-                        </summary>
-                        <form
-                          onSubmit={handleConnectIntervalsInline}
-                          className="pt-2 space-y-2.5"
-                        >
-                          <div className="flex items-center justify-between text-2xs">
-                            <span className="text-slate-600 dark:text-slate-300">
-                              Enter Athlete ID (<code className="font-mono">0</code> for self) &amp; API Key:
-                            </span>
-                            <a
-                              href="https://intervals.icu/settings"
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
-                            >
-                              <span>Intervals.icu Settings</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                            <input
-                              type="text"
-                              aria-label="Intervals.icu Athlete ID"
-                              value={intervalsAthleteId}
-                              onChange={(e) => setIntervalsAthleteId(e.target.value)}
-                              placeholder="0 or i12345"
-                              className="sm:col-span-3 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                            />
-                            <input
-                              type="password"
-                              required
-                              aria-label="Intervals.icu API Key"
-                              value={intervalsApiKey}
-                              onChange={(e) => setIntervalsApiKey(e.target.value)}
-                              placeholder="Intervals.icu API Key"
-                              className="sm:col-span-6 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                            />
-                            <button
-                              type="submit"
-                              disabled={busy || !intervalsApiKey.trim()}
-                              className="sm:col-span-3 ap-btn-primary !min-h-[44px] sm:!min-h-[42px] text-xs cursor-pointer"
-                            >
-                              {isConnectingIntervals ? 'Linking…' : 'Connect'}
-                            </button>
-                          </div>
-                        </form>
-                      </details>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Wahoo Option */}
-              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-500 font-bold text-xs flex items-center justify-center">
-                      W
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Wahoo Cloud API</span>
-                        {status.wahooConnected ? (
-                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                            Connected ({status.wahooAthleteName || 'Wahoo'})
-                          </span>
-                        ) : (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                            Optional
-                          </span>
-                        )}
-                      </h4>
-                      <p className="text-2xs text-slate-500 dark:text-slate-400">
-                        ELEMNT bike computer rides, KICKR sessions &amp; FIT files.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {!status.wahooConnected && onLaunchWahooOAuth && (
-                  <button
-                    type="button"
-                    onClick={() => onLaunchWahooOAuth?.()}
-                    disabled={busy}
-                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" />
-                    <span>1-Click Connect with Wahoo (OAuth 2.0)</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Polar Option */}
-              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-500 font-bold text-xs flex items-center justify-center">
-                      P
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Polar AccessLink</span>
-                        {status.polarConnected ? (
-                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                            Connected ({status.polarAthleteName || 'Polar'})
-                          </span>
-                        ) : (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                            Optional
-                          </span>
-                        )}
-                      </h4>
-                      <p className="text-2xs text-slate-500 dark:text-slate-400">
-                        Grit X, Vantage, Pacer, H10 &amp; running load telemetry.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {!status.polarConnected && onLaunchPolarOAuth && (
-                  <button
-                    type="button"
-                    onClick={() => onLaunchPolarOAuth?.()}
-                    disabled={busy}
-                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" />
-                    <span>1-Click Connect with Polar (OAuth 2.0)</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 text-2xs text-slate-600 dark:text-slate-300 flex items-center justify-between flex-wrap gap-2">
-                <span>
-                  <strong>Smart Deduplication:</strong> Connecting Garmin, Intervals.icu, Wahoo, or Polar alongside Strava merges matching workouts automatically—never duplicates.
-                </span>
-                {!claimedTeamsState && (
-                  <button
-                    type="button"
-                    onClick={() => void handleFinalizeOnboarding('CREATE_TEAM')}
-                    disabled={busy}
-                    className="font-semibold ap-text-brand hover:underline cursor-pointer shrink-0"
-                  >
-                    Coach? Set up a Team Workspace →
-                  </button>
-                )}
-              </div>
-
-              <div className="pt-1 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="ap-btn-secondary text-xs cursor-pointer"
-                >
-                  ← Back to Sync Choice
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleFinalizeOnboarding('WORKSPACE')}
-                  disabled={busy}
-                  className="ap-btn-primary text-sm px-6 cursor-pointer"
-                >
-                  {isEntering ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  <span>
-                    {secondaryConnected
-                      ? 'Continue to THRESH →'
-                      : 'Skip for Now — Enter THRESH →'}
-                  </span>
-                </button>
-              </div>
-            </div>
+            <AuthOptionalAddonsStep
+              formId={formId}
+              status={status}
+              localUser={localUser}
+              syncWindow={syncWindow}
+              isSyncing={isSyncing}
+              isEntering={isEntering}
+              isGarminConnected={isGarminConnected}
+              secondaryConnected={secondaryConnected}
+              busy={busy}
+              claimedTeamsState={claimedTeamsState}
+              expandGarmin={expandGarmin}
+              setExpandGarmin={setExpandGarmin}
+              garminPersonalKey={garminPersonalKey}
+              setGarminPersonalKey={setGarminPersonalKey}
+              isConnectingGarmin={isConnectingGarmin}
+              expandIntervals={expandIntervals}
+              setExpandIntervals={setExpandIntervals}
+              intervalsAthleteId={intervalsAthleteId}
+              setIntervalsAthleteId={setIntervalsAthleteId}
+              intervalsApiKey={intervalsApiKey}
+              setIntervalsApiKey={setIntervalsApiKey}
+              isConnectingIntervals={isConnectingIntervals}
+              setStep={setStep}
+              onOpenArchiveWizard={() => setShowArchiveWizard(true)}
+              onLaunchIntervalsOAuth={onLaunchIntervalsOAuth}
+              onLaunchWahooOAuth={onLaunchWahooOAuth}
+              onLaunchPolarOAuth={onLaunchPolarOAuth}
+              handleConnectGarminInline={handleConnectGarminInline}
+              handleConnectIntervalsInline={handleConnectIntervalsInline}
+              handleFinalizeOnboarding={handleFinalizeOnboarding}
+            />
           )}
 
           {(status.stravaConnected || localUser) && onDisconnectCredentials && (
