@@ -811,8 +811,8 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
               }
               className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
                 active
-                  ? 'bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] border-[#1C5436] dark:border-[#C8FF00]'
-                  : 'bg-white/80 dark:bg-[#101B15] text-slate-700 dark:text-slate-300 border-stone-200 dark:border-[#244331] hover:border-[#1C5436]/50'
+                  ? 'bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian border-ap-cobalt dark:border-ap-volt'
+                  : 'bg-white/80 dark:bg-ap-carbon text-slate-700 dark:text-slate-300 border-stone-200 dark:border-ap-edge hover:border-ap-cobalt/50'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -837,7 +837,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             required
             value={builderName}
             onChange={(e) => setBuilderName(e.target.value)}
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
           />
         </div>
         <div className="sm:col-span-3">
@@ -853,7 +853,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             required
             value={builderDate}
             onChange={(e) => setBuilderDate(e.target.value)}
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
           />
         </div>
         <div className="sm:col-span-3">
@@ -869,7 +869,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             onChange={(e) =>
               setBuilderEnv(e.target.value as 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE')
             }
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
           >
             <option value="FLEXIBLE">Flexible</option>
             <option value="OUTDOOR">Outdoor</option>
@@ -927,7 +927,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             type="time"
             value={scheduledTime}
             onChange={(e) => setScheduledTime(e.target.value)}
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
           />
         </div>
 
@@ -944,7 +944,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             value={locationName}
             onChange={(e) => setLocationName(e.target.value)}
             placeholder="e.g. School Track, Woodward XC Park"
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+            className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
           />
           <div className="mt-1.5 flex flex-wrap gap-1">
             {DEFAULT_PRACTICE_VENUE_PRESETS.map((v) => (
@@ -966,7 +966,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       </div>
 
       {/* Sport Presets + 1-Line Quick-Type Shorthand Parser */}
-      <div className="space-y-2 rounded-xl bg-stone-50/90 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] p-3">
+      <div className="space-y-2 rounded-xl bg-stone-50/90 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge p-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-2xs font-mono text-slate-500">Presets:</span>
           {sportPresets.map((preset) => (
@@ -990,7 +990,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   setRawSyntaxOverride(preset.syntax);
                 }
               }}
-              className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#2B543B] hover:border-[#1C5436] text-2xs font-medium text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge-dark hover:border-ap-cobalt text-2xs font-medium text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
             >
               {preset.label}
             </button>
@@ -1009,7 +1009,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 ? 'e.g. 15m wu, 4x8m @ 90% FTP / 4m'
                 : 'e.g. 2mi wu, 4x800m / 90s jog, 2mi cd'
             }
-            className="flex-1 min-h-[44px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-white"
+            className="flex-1 min-h-[44px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-white"
           />
           <button
             type="button"
@@ -1026,7 +1026,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       {/* Visual Warm-Up + Working Sets + Cooldown Stack */}
       <div className="space-y-2.5">
         {/* Warm-up Block */}
-        <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#15231B]/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-turf/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[40px]">
             <input
               type="checkbox"
@@ -1035,7 +1035,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 setRawSyntaxOverride(null);
                 setWarmup((prev) => ({ ...prev, enabled: e.target.checked }));
               }}
-              className="rounded border-stone-300 text-[#1C5436]"
+              className="rounded border-stone-300 text-ap-cobalt"
             />
             <span>Warm-Up</span>
           </label>
@@ -1055,7 +1055,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     value: Math.max(0.5, Number(e.target.value) || 1),
                   }));
                 }}
-                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               />
               <select
                 aria-label="Warm-up unit"
@@ -1067,7 +1067,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     unit: e.target.value as 'min' | 'mi' | 'km',
                   }));
                 }}
-                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               >
                 <option value="min">min</option>
                 <option value="mi">mi</option>
@@ -1107,7 +1107,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     },
                   ]);
                 }}
-                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Repeat Set</span>
@@ -1132,7 +1132,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     },
                   ]);
                 }}
-                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg border border-stone-300 dark:border-[#2B543B] text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg border border-stone-300 dark:border-ap-edge-dark text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Steady Block</span>
@@ -1161,7 +1161,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
               <div
                 key={row.id}
                 data-testid={`visual-builder-set-row-${idx}`}
-                className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/85 dark:bg-[#101B15] p-3 space-y-2 text-xs"
+                className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/85 dark:bg-ap-carbon p-3 space-y-2 text-xs"
               >
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
                   <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
@@ -1179,7 +1179,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, reps: v } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </label>
 
@@ -1199,7 +1199,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, value: v } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </label>
 
@@ -1215,7 +1215,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, unit: u } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       <option value="min">min</option>
                       <option value="sec">sec</option>
@@ -1245,7 +1245,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           )
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       {!STEP_ZONE_PRESETS.some((z) => z.intensityPct === row.intensityPct) && (
                         <option value={row.intensityPct}>{row.intensityPct}% Custom</option>
@@ -1278,7 +1278,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                               prev.map((s) => (s.id === row.id ? { ...s, restValue: v } : s))
                             );
                           }}
-                          className="min-h-[42px] sm:min-h-[38px] w-full rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                          className="min-h-[42px] sm:min-h-[38px] w-full rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                         />
                       </label>
                       <label className="w-14 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
@@ -1293,7 +1293,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                               prev.map((s) => (s.id === row.id ? { ...s, restUnit: u } : s))
                             );
                           }}
-                          className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-1 font-mono text-xs text-slate-900 dark:text-white"
+                          className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1 font-mono text-xs text-slate-900 dark:text-white"
                         >
                           <option value="sec">s</option>
                           <option value="min">m</option>
@@ -1323,7 +1323,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00]">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-ap-cobalt dark:text-ap-volt">
                   <span>
                     Target: <strong>{liveTargetLabel}</strong>
                   </span>
@@ -1342,7 +1342,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                             )
                           );
                         }}
-                        className="rounded border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-1.5 py-0.5 text-2xs text-slate-900 dark:text-white"
+                        className="rounded border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1.5 py-0.5 text-2xs text-slate-900 dark:text-white"
                       >
                         <option value={0}>None</option>
                         <option value={120}>2m</option>
@@ -1358,7 +1358,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
         </div>
 
         {/* Cooldown Block */}
-        <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#15231B]/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-turf/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[40px]">
             <input
               type="checkbox"
@@ -1367,7 +1367,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 setRawSyntaxOverride(null);
                 setCooldown((prev) => ({ ...prev, enabled: e.target.checked }));
               }}
-              className="rounded border-stone-300 text-[#1C5436]"
+              className="rounded border-stone-300 text-ap-cobalt"
             />
             <span>Cooldown</span>
           </label>
@@ -1387,7 +1387,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     value: Math.max(0.5, Number(e.target.value) || 1),
                   }));
                 }}
-                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               />
               <select
                 aria-label="Cooldown unit"
@@ -1399,7 +1399,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     unit: e.target.value as 'min' | 'mi' | 'km',
                   }));
                 }}
-                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               >
                 <option value="min">min</option>
                 <option value="mi">mi</option>
@@ -1415,14 +1415,14 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
 
       {/* Live Effort Skyline + Human-Readable Summary */}
       {parsedSteps.length > 0 && (
-        <div className="rounded-xl bg-stone-50 dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] p-3 space-y-2">
+        <div className="rounded-xl bg-stone-50 dark:bg-ap-turf border border-stone-200 dark:border-ap-edge p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-300">
             <span className="font-semibold">
               Effort Skyline · {parsedSteps.length} steps
             </span>
             <div className="flex items-center gap-2">
               <BracketedIntervalTape workoutSyntax={effectiveSyntax} compact className="!w-24 shrink-0" />
-              <span className="text-[#1C5436] dark:text-[#C8FF00] font-bold">
+              <span className="text-ap-cobalt dark:text-ap-volt font-bold">
                 Est. {Math.round(summaryStats.durationSecs / 60)}m · ~{summaryStats.load} TSS
               </span>
             </div>
@@ -1456,7 +1456,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       {/* Collapsible Advanced Raw Syntax Drawer */}
       <details
         data-testid="visual-builder-raw-syntax-drawer"
-        className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50/70 dark:bg-[#101B15] p-3 text-xs"
+        className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50/70 dark:bg-ap-carbon p-3 text-xs"
       >
         <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-between list-none">
           <span>Advanced: Edit Raw Workout Syntax</span>
@@ -1469,7 +1469,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             aria-label="Raw workout syntax"
             value={effectiveSyntax}
             onChange={(e) => setRawSyntaxOverride(e.target.value)}
-            className="w-full rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] p-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+            className="w-full rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf p-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
           />
           {rawSyntaxOverride !== null && (
             <button
@@ -1509,7 +1509,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+          className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
         />
       </div>
 
@@ -1532,7 +1532,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 type="button"
                 data-testid="visual-builder-export-fit"
                 onClick={handleExportFitClick}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download .FIT</span>
@@ -1541,7 +1541,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 type="button"
                 data-testid="visual-builder-export-zwo"
                 onClick={handleExportZwoClick}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download .ZWO</span>
@@ -1551,7 +1551,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   type="button"
                   data-testid="visual-builder-export-erg"
                   onClick={handleExportErgClick}
-                  className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                  className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download .ERG</span>
@@ -1561,7 +1561,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 type="button"
                 data-testid="visual-builder-garmin-push"
                 onClick={handlePushGarminClick}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Garmin Push</span>
@@ -1570,7 +1570,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 type="button"
                 data-testid="visual-builder-share-btn"
                 onClick={handleShareWorkoutClick}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <ShareNetwork className="w-3.5 h-3.5" />
                 <span>Share / PNG</span>

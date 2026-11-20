@@ -439,7 +439,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
       >
         {standalone ? (
           <div className="flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-ap-turf flex items-center justify-center text-ap-cobalt dark:text-ap-volt shrink-0">
               <Sliders className="w-4 h-4" weight="duotone" />
             </span>
             <div>
@@ -459,7 +459,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
             onClick={() => setOpenPersisted(!isOpen)}
             className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 text-left cursor-pointer group"
           >
-            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-[#15231B] flex items-center justify-center text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-ap-turf flex items-center justify-center text-ap-cobalt dark:text-ap-volt shrink-0">
               <Sliders className="w-4 h-4" weight="duotone" />
             </span>
             <span>
@@ -551,7 +551,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                           <span className="text-slate-500">
                             {ev.paceSecsPerKm > 0 ? formatPace(ev.paceSecsPerKm, distanceUnit) : '—'}
                           </span>
-                          <span className="font-bold ap-ink-emerald dark:text-[#C8FF00]">
+                          <span className="font-bold ap-ink-emerald dark:text-ap-volt">
                             {ev.totalSecs > 0 ? formatDuration(ev.totalSecs) : '—'}
                           </span>
                         </div>
@@ -587,7 +587,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                         { label: '+60 Days', watts: raceAndFtpPredictions.ftp60d },
                         { label: '+90d Goal', watts: raceAndFtpPredictions.targetFtp },
                       ].map((pt) => (
-                        <div key={pt.label} className="rounded-xl border border-slate-200 dark:border-[#244331] bg-white/75 dark:bg-[#101B15] p-3">
+                        <div key={pt.label} className="rounded-xl border border-slate-200 dark:border-ap-edge bg-white/75 dark:bg-ap-carbon p-3">
                           <div className="text-2xs font-sans text-slate-600 dark:text-slate-300">{pt.label}</div>
                           <div className="text-base font-bold text-slate-900 dark:text-white">{pt.watts}W</div>
                           {!athleteProfile.safeSportHideWeight && (
@@ -643,7 +643,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 font-mono text-xs tabular-nums">
                   {durabilityReport.buckets.map((pt) => (
-                    <div key={pt.bucketIndex} className="rounded-xl border border-slate-200 dark:border-[#244331] bg-white/75 dark:bg-[#101B15] p-3 space-y-1">
+                    <div key={pt.bucketIndex} className="rounded-xl border border-slate-200 dark:border-ap-edge bg-white/75 dark:bg-ap-carbon p-3 space-y-1">
                       <div className="text-2xs font-sans text-slate-500">{pt.fatigueLabel}</div>
                       <div className="text-sm font-bold text-slate-900 dark:text-white">
                         {pt.retentionPct > 0 ? `${pt.retentionPct}% retained` : '—'}
@@ -701,15 +701,15 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                     </select>
                   </div>
                   <div className="grid grid-cols-3 gap-2 font-mono text-xs tabular-nums">
-                    <div className="rounded-xl border border-slate-200 dark:border-[#244331] p-2.5">
+                    <div className="rounded-xl border border-slate-200 dark:border-ap-edge p-2.5">
                       <div className="text-2xs font-sans text-slate-500">Low (Z1–Z2)</div>
                       <div className="text-base font-bold text-[#059669]">{totalsAndPolarization.lowPct}%</div>
                     </div>
-                    <div className="rounded-xl border border-slate-200 dark:border-[#244331] p-2.5">
+                    <div className="rounded-xl border border-slate-200 dark:border-ap-edge p-2.5">
                       <div className="text-2xs font-sans text-slate-500">Tempo (Z3)</div>
                       <div className="text-base font-bold text-[#D97706]">{totalsAndPolarization.modPct}%</div>
                     </div>
-                    <div className="rounded-xl border border-slate-200 dark:border-[#244331] p-2.5">
+                    <div className="rounded-xl border border-slate-200 dark:border-ap-edge p-2.5">
                       <div className="text-2xs font-sans text-slate-500">High (Z4+)</div>
                       <div className="text-base font-bold text-[#DC2626]">{totalsAndPolarization.highPct}%</div>
                     </div>
@@ -744,7 +744,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                         const val = Number(runInput);
                         if (val > 0) onUpdateAnnualMileageGoal('Running', convertUnitToMeters(val, distanceUnit));
                       }}
-                      className="rounded-xl border border-slate-200 dark:border-[#244331] p-3 space-y-2"
+                      className="rounded-xl border border-slate-200 dark:border-ap-edge p-3 space-y-2"
                     >
                       <div className="flex justify-between font-mono">
                         <span className="font-sans font-bold text-slate-900 dark:text-white">Running YTD</span>
@@ -760,7 +760,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                           value={runInput}
                           onChange={(e) => setRunInput(e.target.value)}
                           aria-label={`Running Annual Target (${distanceUnit})`}
-                          className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1 font-mono text-xs"
+                          className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1 font-mono text-xs"
                         />
                         <button type="submit" className="min-h-[40px] px-3 rounded-lg ap-btn-primary text-2xs font-bold cursor-pointer">
                           Save
@@ -773,7 +773,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                         const val = Number(bikeInput);
                         if (val > 0) onUpdateAnnualMileageGoal('Cycling', convertUnitToMeters(val, distanceUnit));
                       }}
-                      className="rounded-xl border border-slate-200 dark:border-[#244331] p-3 space-y-2"
+                      className="rounded-xl border border-slate-200 dark:border-ap-edge p-3 space-y-2"
                     >
                       <div className="flex justify-between font-mono">
                         <span className="font-sans font-bold text-slate-900 dark:text-white">Cycling YTD</span>
@@ -789,7 +789,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                           value={bikeInput}
                           onChange={(e) => setBikeInput(e.target.value)}
                           aria-label={`Cycling Annual Target (${distanceUnit})`}
-                          className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1 font-mono text-xs"
+                          className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1 font-mono text-xs"
                         />
                         <button type="submit" className="min-h-[40px] px-3 rounded-lg ap-btn-primary text-2xs font-bold cursor-pointer">
                           Save

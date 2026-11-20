@@ -68,6 +68,9 @@ import { WorkspaceRouter } from './components/WorkspaceRouter';
 import { CockpitFooter } from './components/CockpitFooter';
 import { MobileDock } from './components/MobileDock';
 import { CockpitModals } from './components/CockpitModals';
+import { SessionAuthProvider } from './contexts/SessionAuthContext';
+import { TelemetryWorkspaceProvider } from './contexts/TelemetryWorkspaceContext';
+import { TeamCoachProvider } from './contexts/TeamCoachContext';
 
 import { useTelemetrySync, hasStravaClientCredentials, type CompleteStravaAuthFn } from './hooks/useTelemetrySync';
 import { useTelemetryConnectors } from './hooks/useTelemetryConnectors';
@@ -1724,6 +1727,337 @@ export default function App() {
     }
   }, [isWorkspaceRendered, activeTab, coachSubTab]);
 
+  const hasStandaloneAccount = Boolean(
+    currentUser &&
+      (Boolean(currentUser.email) ||
+        currentUser.authProviders?.some((p) => p.provider !== 'strava'))
+  );
+
+  const sessionAuthValue = useMemo(
+    () => ({
+      currentUser,
+      onUserUpdated: setCurrentUser,
+      onAccountDeleted: () => {
+        setIsRosterModalOpen(false);
+        void handleLogoutAndClearData();
+      },
+      hasStandaloneAccount,
+      connectionStatus,
+      hasGeminiKey: Boolean(connectionStatus.hasGeminiServerKey),
+      intervalsConnected: connectionStatus.intervalsConnected,
+      isSyncingProfile,
+      isSyncing,
+      syncError,
+      idbSavedAt,
+      persistedWorkoutCount: activities.length,
+      stravaSyncWindow: connectionStatus.stravaSyncPolicy?.window,
+      isSampleDemoMode,
+      plainLanguageMode,
+      distanceUnit,
+      resendConfigured,
+      onConnectIntervals: handleConnectIntervals,
+      onLaunchIntervalsOAuth: handleLaunchIntervalsOAuth,
+      onDisconnectIntervals: handleDisconnectIntervals,
+      onLaunchWahooOAuth: handleLaunchWahooOAuth,
+      onDisconnectWahoo: handleDisconnectWahoo,
+      onLaunchPolarOAuth: handleLaunchPolarOAuth,
+      onDisconnectPolar: handleDisconnectPolar,
+      onDisconnectGarmin: handleDisconnectGarmin,
+      onDisconnectStrava: hasStandaloneAccount ? handleDisconnectStravaOnly : handleLogoutSession,
+      onUpdateStravaSyncPolicy: handleUpdateStravaSyncPolicy,
+      onSaveStravaCredentials: handleSaveStravaCredentials,
+      onLaunchStravaOAuth: handleLaunchStravaOAuth,
+      onExchangeStravaCode: handleExchangeStravaCode,
+      onSaveStravaDirectToken: handleSaveStravaDirectToken,
+      onSaveMapTileConfig: handleSaveMapTileConfig,
+      onSaveGeminiApiKey: handleSaveGeminiApiKey,
+      onExportBundle: handleExportConnectionBundle,
+      onImportBundle: handleImportConnectionBundle,
+      onSyncNow: syncLiveTelemetry,
+      onSyncProfileFromRemote: handleSyncProfileFromRemote,
+      onRebuildPersistedArchive: handleClearPersistedArchive,
+      onImportBatchActivities: (newActs: UnifiedActivity[]) => {
+        if (isSampleDemoMode) {
+          setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+          return;
+        }
+        setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
+      },
+      onImportOfficialRaces: handleImportOfficialRaces,
+    }),
+    [
+      currentUser,
+      setCurrentUser,
+      setIsRosterModalOpen,
+      handleLogoutAndClearData,
+      hasStandaloneAccount,
+      connectionStatus,
+      isSyncingProfile,
+      isSyncing,
+      syncError,
+      idbSavedAt,
+      activities.length,
+      isSampleDemoMode,
+      plainLanguageMode,
+      distanceUnit,
+      resendConfigured,
+      handleConnectIntervals,
+      handleLaunchIntervalsOAuth,
+      handleDisconnectIntervals,
+      handleLaunchWahooOAuth,
+      handleDisconnectWahoo,
+      handleLaunchPolarOAuth,
+      handleDisconnectPolar,
+      handleDisconnectGarmin,
+      handleDisconnectStravaOnly,
+      handleLogoutSession,
+      handleUpdateStravaSyncPolicy,
+      handleSaveStravaCredentials,
+      handleLaunchStravaOAuth,
+      handleExchangeStravaCode,
+      handleSaveStravaDirectToken,
+      handleSaveMapTileConfig,
+      handleSaveGeminiApiKey,
+      handleExportConnectionBundle,
+      handleImportConnectionBundle,
+      syncLiveTelemetry,
+      handleSyncProfileFromRemote,
+      handleClearPersistedArchive,
+      setSampleDemoActivities,
+      setActivities,
+      handleImportOfficialRaces,
+    ]
+  );
+
+  const telemetryWorkspaceValue = useMemo(
+    () => ({
+      activeTab,
+      setActiveTab,
+      effectiveActivities,
+      effectiveWellnessDays,
+      latestWellness,
+      effectivePlannedEvents,
+      effectiveTargetGoals,
+      effectiveAnnualMileageGoals,
+      effectiveGearItems,
+      effectiveSessionCheckIns,
+      onRecordSessionCheckIn: handleRecordSessionCheckIn,
+      envFilter,
+      setEnvFilter,
+      selectedSport,
+      setSelectedSport,
+      athleteFtp,
+      latestWeightKg,
+      latestCtl,
+      effectiveAthleteProfile,
+      selectedActivity,
+      benchmarkSegments,
+      isScanningSegments,
+      isHydratingRoutes,
+      handleSelectActivityAndOpenTab,
+      handleCalendarCreatePlannedEvent,
+      handleUpdatePlannedEvent,
+      handleDeletePlannedEvent,
+      handleDeletePlanBlock,
+      handleBatchCreatePlannedEvents,
+      handleCreatePlannedEvent,
+      handleScheduleProposedWorkout: async (workout: Partial<PlannedWorkoutEvent>) => {
+        await handleCreatePlannedEvent({
+          date: workout.date || getLocalDateIso(),
+          name: workout.name || 'Structured Workout',
+          sportCategory: workout.sportCategory || 'Running',
+          environmentPreference: workout.environmentPreference || 'FLEXIBLE',
+          plannedDurationSecs: workout.plannedDurationSecs || 3600,
+          plannedLoad: workout.plannedLoad || 65,
+          workoutSyntax: workout.workoutSyntax || '',
+          description: workout.description || '',
+        });
+      },
+      handleSelectActivity: handleSelectActivityMutex,
+      loadStreamsForActivity,
+      handleScanMoreSegments,
+      handleHydrateMoreRoutes,
+      handleToggleActivityKudos,
+      handleAddActivityComment,
+      handleImportSingleParsedActivity,
+      handleImportMultipleParsedActivities,
+      handleUpdateAnnualMileageGoal,
+      handleAddTargetGoal,
+      handleDeleteTargetGoal,
+      handleSaveProfileOverride,
+      handleOpenTodayTab,
+      handleOpenActivitiesTab,
+      handleOpenGoalsTab,
+      handleSwitchToCalendarTab,
+      handleOpenProfileModal,
+      handleOpenOfficialRaceModal,
+      handleOpenDataSources: handleOpenDataSourcesModal,
+      handleOpenRosterModal,
+      handleOpenCoachWithPrompt: handleOpenCoachPromptMutex,
+    }),
+    [
+      activeTab,
+      setActiveTab,
+      effectiveActivities,
+      effectiveWellnessDays,
+      latestWellness,
+      effectivePlannedEvents,
+      effectiveTargetGoals,
+      effectiveAnnualMileageGoals,
+      effectiveGearItems,
+      effectiveSessionCheckIns,
+      handleRecordSessionCheckIn,
+      envFilter,
+      setEnvFilter,
+      selectedSport,
+      setSelectedSport,
+      athleteFtp,
+      latestWeightKg,
+      latestCtl,
+      effectiveAthleteProfile,
+      selectedActivity,
+      benchmarkSegments,
+      isScanningSegments,
+      isHydratingRoutes,
+      handleSelectActivityAndOpenTab,
+      handleCalendarCreatePlannedEvent,
+      handleUpdatePlannedEvent,
+      handleDeletePlannedEvent,
+      handleDeletePlanBlock,
+      handleBatchCreatePlannedEvents,
+      handleCreatePlannedEvent,
+      handleSelectActivityMutex,
+      loadStreamsForActivity,
+      handleScanMoreSegments,
+      handleHydrateMoreRoutes,
+      handleToggleActivityKudos,
+      handleAddActivityComment,
+      handleImportSingleParsedActivity,
+      handleImportMultipleParsedActivities,
+      handleUpdateAnnualMileageGoal,
+      handleAddTargetGoal,
+      handleDeleteTargetGoal,
+      handleSaveProfileOverride,
+      handleOpenTodayTab,
+      handleOpenActivitiesTab,
+      handleOpenGoalsTab,
+      handleSwitchToCalendarTab,
+      handleOpenProfileModal,
+      handleOpenOfficialRaceModal,
+      handleOpenDataSourcesModal,
+      handleOpenRosterModal,
+      handleOpenCoachPromptMutex,
+    ]
+  );
+
+  const teamCoachValue = useMemo(
+    () => ({
+      coachSubTab,
+      setCoachSubTab,
+      activeTeam: effectiveActiveTeam,
+      myTeams: effectiveTeams,
+      activeTeamId: effectiveActiveTeamId,
+      combinedRoster,
+      activeViewedAthleteId,
+      primaryAthleteDisplayName,
+      selfInviteCode,
+      selfLatestWellness,
+      effectiveSelfPrivacySettings,
+      onUpdateSelfPrivacy: isSampleDemoMode
+        ? setSampleDemoPrivacySettings
+        : setSelfPrivacySettings,
+      onSelectAthleteViewportFromWorkspace: (id: string) => {
+        setInspectedFromCoach(activeTab === 'coach' && id !== 'SELF');
+        setActiveViewedAthleteId(id);
+        setSelectedActivity(null);
+      },
+      onSelectAthleteViewportFromModal: (id: string) => {
+        setActiveViewedAthleteId(id);
+        setSelectedActivity(null);
+      },
+      onSelectActiveTeam: effectiveOnSelectActiveTeam,
+      onTeamsUpdated: effectiveOnTeamsUpdated,
+      onApproveAthleteRequest: handleApproveAthleteRequest,
+      onRemoveOrDeclineAthlete: handleRemoveOrDeclineAthlete,
+      onToggleAthleteRole: handleToggleAthleteRole,
+      onAddFollowByInviteOrName: handleAddFollowByInviteOrName,
+      onPushCoachWorkout: handlePushCoachWorkout,
+      onOpenPublicTeamHub: openPublicTeamHub,
+      onOpenCoachGuide: handleOpenCoachGuideModal,
+      onOpenFullScreenStopwatch: () => {
+        setIsRosterModalOpen(false);
+        if (activeTab === 'coach') {
+          setCoachSubTab('STOPWATCH');
+        } else {
+          setActiveTab('stopwatch');
+        }
+      },
+      onOpenCoachWorkspace: (subTab?: CoachWorkspaceSubTab) => {
+        setInspectedFromCoach(false);
+        setActiveViewedAthleteId('SELF');
+        setSelectedActivity(null);
+        setActiveTab('coach');
+        if (subTab) setCoachSubTab(subTab);
+      },
+      handleSaveStopwatchActivities,
+      handleFlushStopwatchOutbox,
+      chatMessages,
+      onSendChatMessage: handleSendChatMessage,
+      isSendingChat,
+      onCancelSendChat: handleCancelSendChat,
+      coachDraftPrompt,
+      onClearDraftPrompt: () => setCoachDraftPrompt(''),
+      onOpenAICoachFromGuide: (prompt?: string) => {
+        if (prompt) {
+          handleOpenCoachPromptMutex(prompt);
+        } else {
+          handleOpenCoachDrawerModal();
+        }
+      },
+    }),
+    [
+      coachSubTab,
+      setCoachSubTab,
+      effectiveActiveTeam,
+      effectiveTeams,
+      effectiveActiveTeamId,
+      combinedRoster,
+      activeViewedAthleteId,
+      primaryAthleteDisplayName,
+      selfInviteCode,
+      selfLatestWellness,
+      effectiveSelfPrivacySettings,
+      isSampleDemoMode,
+      setSampleDemoPrivacySettings,
+      setSelfPrivacySettings,
+      activeTab,
+      setInspectedFromCoach,
+      setActiveViewedAthleteId,
+      setSelectedActivity,
+      effectiveOnSelectActiveTeam,
+      effectiveOnTeamsUpdated,
+      handleApproveAthleteRequest,
+      handleRemoveOrDeclineAthlete,
+      handleToggleAthleteRole,
+      handleAddFollowByInviteOrName,
+      handlePushCoachWorkout,
+      openPublicTeamHub,
+      handleOpenCoachGuideModal,
+      setIsRosterModalOpen,
+      setActiveTab,
+      handleSaveStopwatchActivities,
+      handleFlushStopwatchOutbox,
+      chatMessages,
+      handleSendChatMessage,
+      isSendingChat,
+      handleCancelSendChat,
+      coachDraftPrompt,
+      setCoachDraftPrompt,
+      handleOpenCoachPromptMutex,
+      handleOpenCoachDrawerModal,
+    ]
+  );
+
   if (publicTeamSlug) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
@@ -1851,7 +2185,10 @@ export default function App() {
 
   return (
     <IconContext.Provider value={{ weight: 'duotone' }}>
-      <div className="ap-shell text-slate-900 dark:text-slate-100">
+      <SessionAuthProvider value={sessionAuthValue}>
+        <TelemetryWorkspaceProvider value={telemetryWorkspaceValue}>
+          <TeamCoachProvider value={teamCoachValue}>
+            <div className="ap-shell text-slate-900 dark:text-slate-100">
         <a href="#main-content" className="ap-skip-link">
           Skip to main content
         </a>
@@ -1956,7 +2293,7 @@ export default function App() {
               redactedStravaCount={redactedStravaCount}
               connectionStatus={connectionStatus}
               dismissedStravaBanner={dismissedStravaBanner}
-              onLaunchStravaOAuth={(mode) => handleLaunchStravaOAuth(mode as any)}
+              onLaunchStravaOAuth={(mode) => handleLaunchStravaOAuth(mode)}
               onDismissStravaBanner={() => {
                 setDismissedStravaBanner(true);
                 try {
@@ -2002,82 +2339,7 @@ export default function App() {
             />
 
             <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
-              <WorkspaceRouter
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                plainLanguageMode={plainLanguageMode}
-                stravaSyncWindow={connectionStatus.stravaSyncPolicy?.window}
-                onOpenDataSources={handleOpenDataSourcesModal}
-                coachSubTab={coachSubTab}
-                setCoachSubTab={setCoachSubTab}
-                activeTeam={effectiveActiveTeam}
-                activeViewedAthleteId={activeViewedAthleteId}
-                onSelectAthleteViewport={(id) => {
-                  setInspectedFromCoach(activeTab === 'coach' && id !== 'SELF');
-                  setActiveViewedAthleteId(id);
-                  setSelectedActivity(null);
-                }}
-                resendConfigured={resendConfigured}
-                onSelectActiveTeam={effectiveOnSelectActiveTeam}
-                onTeamsUpdated={effectiveOnTeamsUpdated}
-                onOpenPublicTeamHub={openPublicTeamHub}
-                onOpenCoachGuide={handleOpenCoachGuideModal}
-                isSampleDemoMode={isSampleDemoMode}
-                effectiveActivities={effectiveActivities}
-                effectiveWellnessDays={effectiveWellnessDays}
-                effectivePlannedEvents={effectivePlannedEvents}
-                effectiveTargetGoals={effectiveTargetGoals}
-                effectiveAnnualMileageGoals={effectiveAnnualMileageGoals}
-                effectiveGearItems={effectiveGearItems}
-                effectiveSessionCheckIns={effectiveSessionCheckIns}
-                onRecordSessionCheckIn={handleRecordSessionCheckIn}
-                envFilter={envFilter}
-                setEnvFilter={setEnvFilter}
-                selectedSport={selectedSport}
-                setSelectedSport={setSelectedSport}
-                distanceUnit={distanceUnit}
-                athleteFtp={athleteFtp}
-                latestWeightKg={latestWeightKg}
-                latestCtl={latestCtl}
-                effectiveAthleteProfile={effectiveAthleteProfile}
-                primaryAthleteDisplayName={primaryAthleteDisplayName}
-                combinedRoster={combinedRoster}
-                myTeams={effectiveTeams}
-                activeTeamId={effectiveActiveTeamId}
-                selectedActivity={selectedActivity}
-                benchmarkSegments={benchmarkSegments}
-                isScanningSegments={isScanningSegments}
-                isHydratingRoutes={isHydratingRoutes}
-                handleSelectActivityAndOpenTab={handleSelectActivityAndOpenTab}
-                handleCalendarCreatePlannedEvent={handleCalendarCreatePlannedEvent}
-                handleUpdatePlannedEvent={handleUpdatePlannedEvent}
-                handleDeletePlannedEvent={handleDeletePlannedEvent}
-                handleDeletePlanBlock={handleDeletePlanBlock}
-                handleBatchCreatePlannedEvents={handleBatchCreatePlannedEvents}
-                handleOpenTodayTab={handleOpenTodayTab}
-                handleOpenProfileModal={handleOpenProfileModal}
-                handleOpenGoalsTab={handleOpenGoalsTab}
-                handleOpenOfficialRaceModal={handleOpenOfficialRaceModal}
-                handleOpenCoachWithPrompt={handleOpenCoachPromptMutex}
-                handleOpenRosterModal={handleOpenRosterModal}
-                handleCreatePlannedEvent={handleCreatePlannedEvent}
-                handleSelectActivity={handleSelectActivityMutex}
-                loadStreamsForActivity={loadStreamsForActivity}
-                handleScanMoreSegments={handleScanMoreSegments}
-                handleHydrateMoreRoutes={handleHydrateMoreRoutes}
-                handleToggleActivityKudos={handleToggleActivityKudos}
-                handleAddActivityComment={handleAddActivityComment}
-                handleImportSingleParsedActivity={handleImportSingleParsedActivity}
-                handleImportMultipleParsedActivities={handleImportMultipleParsedActivities}
-                handleOpenActivitiesTab={handleOpenActivitiesTab}
-                handleUpdateAnnualMileageGoal={handleUpdateAnnualMileageGoal}
-                handleAddTargetGoal={handleAddTargetGoal}
-                handleDeleteTargetGoal={handleDeleteTargetGoal}
-                handleSaveProfileOverride={handleSaveProfileOverride}
-                handleSwitchToCalendarTab={handleSwitchToCalendarTab}
-                handleSaveStopwatchActivities={handleSaveStopwatchActivities}
-                handleFlushStopwatchOutbox={handleFlushStopwatchOutbox}
-              />
+              <WorkspaceRouter />
             </main>
             </div>
 
@@ -2106,148 +2368,23 @@ export default function App() {
         <CockpitModals
           isCoachDrawerOpen={isCoachDrawerOpen}
           onCloseCoachDrawer={() => setIsCoachDrawerOpen(false)}
-          activeViewName={activeTab}
-          latestWellness={latestWellness}
-          chatMessages={chatMessages}
-          onSendChatMessage={handleSendChatMessage}
-          isSendingChat={isSendingChat}
-          onCancelSendChat={handleCancelSendChat}
-          coachDraftPrompt={coachDraftPrompt}
-          onClearDraftPrompt={() => setCoachDraftPrompt('')}
-          hasGeminiKey={Boolean(connectionStatus.hasGeminiServerKey)}
-          onSaveGeminiApiKey={handleSaveGeminiApiKey}
-          onScheduleProposedWorkout={async (workout) => {
-            await handleCreatePlannedEvent({
-              date: workout.date || getLocalDateIso(),
-              name: workout.name || 'Structured Workout',
-              sportCategory: workout.sportCategory || 'Running',
-              environmentPreference: workout.environmentPreference || 'FLEXIBLE',
-              plannedDurationSecs: workout.plannedDurationSecs || 3600,
-              plannedLoad: workout.plannedLoad || 65,
-              workoutSyntax: workout.workoutSyntax || '',
-              description: workout.description || '',
-            });
-          }}
           isProfileModalOpen={isProfileModalOpen}
           onCloseProfileModal={() => setIsProfileModalOpen(false)}
-          effectiveAthleteProfile={effectiveAthleteProfile}
-          distanceUnit={distanceUnit}
-          intervalsConnected={connectionStatus.intervalsConnected}
-          isSyncingProfile={isSyncingProfile}
-          onSyncProfileFromRemote={handleSyncProfileFromRemote}
-          onSaveProfileOverride={handleSaveProfileOverride}
           isDataSourcesOpen={isDataSourcesOpen}
           onCloseDataSources={() => setIsDataSourcesOpen(false)}
-          connectionStatus={connectionStatus}
-          onConnectIntervals={handleConnectIntervals}
-          onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
-          onDisconnectIntervals={handleDisconnectIntervals}
-          onLaunchWahooOAuth={handleLaunchWahooOAuth}
-          onDisconnectWahoo={handleDisconnectWahoo}
-          onLaunchPolarOAuth={handleLaunchPolarOAuth}
-          onDisconnectPolar={handleDisconnectPolar}
-          onDisconnectGarmin={handleDisconnectGarmin}
-          onDisconnectStrava={
-            currentUser &&
-            (Boolean(currentUser.email) ||
-              currentUser.authProviders?.some((p) => p.provider !== 'strava'))
-              ? handleDisconnectStravaOnly
-              : handleLogoutSession
-          }
-          hasStandaloneAccount={Boolean(
-            currentUser &&
-              (Boolean(currentUser.email) ||
-                currentUser.authProviders?.some((p) => p.provider !== 'strava'))
-          )}
-          onUpdateStravaSyncPolicy={handleUpdateStravaSyncPolicy}
-          onSaveStravaCredentials={handleSaveStravaCredentials}
-          onLaunchStravaOAuth={handleLaunchStravaOAuth}
-          onExchangeStravaCode={handleExchangeStravaCode}
-          onSaveStravaDirectToken={handleSaveStravaDirectToken}
-          onSaveMapTileConfig={handleSaveMapTileConfig}
-          onExportBundle={handleExportConnectionBundle}
-          onImportBundle={handleImportConnectionBundle}
-          onSyncNow={syncLiveTelemetry}
-          isSyncing={isSyncing}
-          syncError={syncError}
-          idbSavedAt={idbSavedAt}
-          persistedWorkoutCount={activities.length}
-          onRebuildPersistedArchive={handleClearPersistedArchive}
-          effectiveActivities={effectiveActivities}
-          onImportBatchActivities={(newActs) => {
-            if (isSampleDemoMode) {
-              setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
-              return;
-            }
-            setActivities((prev) => mergeActivitiesNonDestructive(prev, newActs));
-          }}
           isOfficialRaceModalOpen={isOfficialRaceModalOpen}
           onCloseOfficialRaceModal={() => setIsOfficialRaceModalOpen(false)}
-          onImportOfficialRaces={handleImportOfficialRaces}
           isRosterModalOpen={isRosterModalOpen}
           onCloseRosterModal={() => setIsRosterModalOpen(false)}
-          primaryAthleteDisplayName={primaryAthleteDisplayName}
-          selfInviteCode={selfInviteCode}
-          selfLatestWellness={selfLatestWellness}
-          effectiveSelfPrivacySettings={effectiveSelfPrivacySettings}
-          onUpdateSelfPrivacy={
-            isSampleDemoMode ? setSampleDemoPrivacySettings : setSelfPrivacySettings
-          }
-          combinedRoster={combinedRoster}
-          activeViewedAthleteId={activeViewedAthleteId}
-          onSelectAthleteViewport={(id) => {
-            setActiveViewedAthleteId(id);
-            setSelectedActivity(null);
-          }}
-          onApproveAthleteRequest={handleApproveAthleteRequest}
-          onRemoveOrDeclineAthlete={handleRemoveOrDeclineAthlete}
-          onToggleAthleteRole={handleToggleAthleteRole}
-          onAddFollowByInviteOrName={handleAddFollowByInviteOrName}
-          onPushCoachWorkout={handlePushCoachWorkout}
-          myTeams={effectiveTeams}
-          activeTeamId={effectiveActiveTeamId}
-          resendConfigured={resendConfigured}
           rosterInitialTab={rosterInitialTab}
-          onSelectActiveTeam={effectiveOnSelectActiveTeam}
-          onTeamsUpdated={effectiveOnTeamsUpdated}
-          currentUser={currentUser}
-          onUserUpdated={setCurrentUser}
-          onAccountDeleted={() => {
-            setIsRosterModalOpen(false);
-            void handleLogoutAndClearData();
-          }}
-          onOpenFullScreenStopwatch={() => {
-            setIsRosterModalOpen(false);
-            if (activeTab === 'coach') {
-              setCoachSubTab('STOPWATCH');
-            } else {
-              setActiveTab('stopwatch');
-            }
-          }}
           showMetricsGuide={showMetricsGuide}
           guideInitialChapter={guideInitialChapter}
           onCloseMetricsGuide={() => setShowMetricsGuide(false)}
-          onOpenCoachWorkspace={(subTab) => {
-            setInspectedFromCoach(false);
-            setActiveViewedAthleteId('SELF');
-            setSelectedActivity(null);
-            setActiveTab('coach');
-            if (subTab) setCoachSubTab(subTab);
-          }}
-          onNavigateTab={(tab) => setActiveTab(tab)}
-          onOpenDataSourcesFromGuide={handleOpenDataSourcesModal}
-          onOpenRosterModalFromGuide={handleOpenRosterModal}
-          onOpenProfileModalFromGuide={handleOpenProfileModal}
-          onOpenOfficialRaceModalFromGuide={handleOpenOfficialRaceModal}
-          onOpenAICoachFromGuide={(prompt) => {
-            if (prompt) {
-              handleOpenCoachPromptMutex(prompt);
-            } else {
-              handleOpenCoachDrawerModal();
-            }
-          }}
         />
-      </div>
+            </div>
+          </TeamCoachProvider>
+        </TelemetryWorkspaceProvider>
+      </SessionAuthProvider>
     </IconContext.Provider>
   );
 }

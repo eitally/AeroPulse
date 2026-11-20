@@ -829,7 +829,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setShowJoinAnotherBar((prev) => !prev)}
-                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-white dark:bg-ap-carbon border border-stone-300 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5 text-[#0D9488]" />
                 <span>Join Team</span>
@@ -860,8 +860,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   }}
                   className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-white dark:bg-[#15231B] border-slate-900/30 dark:border-emerald-400/40 shadow-xs text-slate-900 dark:text-white'
-                      : 'bg-white/60 dark:bg-[#101B15] border-stone-200 dark:border-emerald-400/20 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-ap-turf border-slate-900/30 dark:border-emerald-400/40 shadow-xs text-slate-900 dark:text-white'
+                      : 'bg-white/60 dark:bg-ap-carbon border-stone-200 dark:border-emerald-400/20 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <span
@@ -908,7 +908,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   aria-label="Enter 6-character Team Join Code or slug"
                   onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
                   placeholder="Enter 6-character Team Join Code (e.g. WGHS-26)"
-                  className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="button"
@@ -935,7 +935,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     value={joinBirthYear}
                     onChange={(e) => setJoinBirthYear(e.target.value)}
                     placeholder="Birth Year (e.g. 2009)"
-                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <input
                     type="email"
@@ -943,7 +943,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     value={joinParentEmail}
                     onChange={(e) => setJoinParentEmail(e.target.value)}
                     placeholder="Parent/Guardian Email (if 13–17)"
-                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                 </div>
               )}
@@ -1039,7 +1039,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   aria-label="Enter Team Join Code"
                   onChange={(e) => setJoinAnotherCode(e.target.value.toUpperCase())}
                   placeholder="e.g. WGHS-26"
-                  className="flex-1 min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3.5 py-2 text-sm font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
                 />
                 <button
                   type="submit"
@@ -1060,7 +1060,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     value={joinBirthYear}
                     onChange={(e) => setJoinBirthYear(e.target.value)}
                     placeholder="Birth Year (e.g. 2009)"
-                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <input
                     type="email"
@@ -1068,7 +1068,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     value={joinParentEmail}
                     onChange={(e) => setJoinParentEmail(e.target.value)}
                     placeholder="Parent/Guardian Email (if 13–17)"
-                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                 </div>
               )}
@@ -1115,7 +1115,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               >
                 Program Type
               </div>
-              <span className="text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00]">
+              <span className="text-2xs font-mono text-ap-cobalt dark:text-ap-volt">
                 Auto-defaults: {defaultSafeSportShield ? 'Safe-Sport Shield ON' : 'Standard Weight View'}
                 {enableParentGuardianCc ? ' · Parent CC ON' : ''}
               </span>
@@ -1135,8 +1135,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     onClick={() => handleOrgTypeChange(opt.id)}
                     className={`min-h-[44px] text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
                       selected
-                        ? 'liquid-capsule-active text-[#101411] dark:text-[#F4F7F4]'
-                        : 'border-emerald-900/15 dark:border-emerald-400/20 bg-white dark:bg-[#15231B] text-slate-700 dark:text-slate-300'
+                        ? 'liquid-capsule-active text-ap-ink dark:text-ap-chalk'
+                        : 'border-emerald-900/15 dark:border-emerald-400/20 bg-white dark:bg-ap-turf text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <div className="text-xs font-bold leading-snug">{opt.label}</div>
@@ -1166,7 +1166,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 placeholder="e.g. Willow Glen High School XC"
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
 
@@ -1183,7 +1183,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 value={coachDisplayName}
                 onChange={(e) => setCoachDisplayName(e.target.value)}
                 placeholder="e.g. Coach Rivera"
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -1206,7 +1206,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             </button>
 
             {showAdvancedBranding && (
-              <div className="px-3.5 pb-4 pt-2 border-t border-stone-200/80 dark:border-[#244331] grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+              <div className="px-3.5 pb-4 pt-2 border-t border-stone-200/80 dark:border-ap-edge grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
                 <div className="lg:col-span-7 space-y-3">
                   <div>
                     <label
@@ -1226,7 +1226,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           : 'Auto-generated from Team Name'
                       }
                       maxLength={18}
-                      className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 dark:text-slate-100"
                     />
                   </div>
 
@@ -1255,7 +1255,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                           setPrimaryHex(preset.primaryHex);
                           setSecondaryHex(preset.secondaryHex);
                         }}
-                        className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] hover:border-slate-400 text-2xs font-medium cursor-pointer"
+                        className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-ap-turf hover:border-slate-400 text-2xs font-medium cursor-pointer"
                       >
                         <span
                           className="w-3 h-3 rounded-full"
@@ -1271,7 +1271,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2">
                       <input
                         id={`${formId}-primary-color`}
                         type="color"
@@ -1286,7 +1286,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       </label>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2">
                       <input
                         id={`${formId}-secondary-color`}
                         type="color"
@@ -1327,7 +1327,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => logoFileInputRef.current?.click()}
-                        className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
+                        className="w-full h-full min-h-[46px] rounded-xl border border-dashed border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-blue-500 cursor-pointer"
                       >
                         <Upload className="w-3.5 h-3.5 text-[#0284C7]" />
                         <span>{logoDataUrl ? 'Replace Crest' : 'Upload Crest'}</span>
@@ -1336,11 +1336,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   </div>
                 </div>
 
-                <div className="lg:col-span-5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-200 dark:border-emerald-400/20 p-3.5 space-y-3">
+                <div className="lg:col-span-5 rounded-xl bg-white dark:bg-ap-carbon border border-stone-200 dark:border-emerald-400/20 p-3.5 space-y-3">
                   <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Header Lockup Preview
                   </div>
-                  <div className="rounded-xl bg-white dark:bg-[#15231B] border border-stone-200 dark:border-emerald-400/20 p-3 relative overflow-hidden">
+                  <div className="rounded-xl bg-white dark:bg-ap-turf border border-stone-200 dark:border-emerald-400/20 p-3 relative overflow-hidden">
                     <div
                       className="absolute top-0 left-0 right-0 h-[3px]"
                       style={{ background: livePalette.hairlineGradientLight }}
@@ -1586,9 +1586,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     <button
                       type="button"
                       onClick={onOpenExternalSync}
-                      className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#244331] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Globe className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />
+                      <Globe className="w-3.5 h-3.5 text-ap-cobalt dark:text-ap-volt" />
                       <span>Athletic.net / TFRRS Sync</span>
                     </button>
                   )}
@@ -1640,14 +1640,14 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                 aria-label="Paste spreadsheet rows or athlete email list for roster import"
                 onChange={(e) => setRawRosterInput(e.target.value)}
                 placeholder={`Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark\nMaya Chen, maya@school.edu, 650-555-0119, Varsity, 2027, parent@family.com, 18:05 5K`}
-                className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
               />
 
               {parsedRosterPreview.length > 0 && (
                 <div className="space-y-3">
                   <div className="overflow-x-auto rounded-xl border border-stone-200 dark:border-slate-800">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-stone-100 dark:bg-[#101B15] text-2xs font-mono uppercase text-slate-500">
+                      <thead className="bg-stone-100 dark:bg-ap-carbon text-2xs font-mono uppercase text-slate-500">
                         <tr>
                           <th className="py-2 px-3">Athlete</th>
                           <th className="py-2 px-3">Email</th>
@@ -1773,7 +1773,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       type="button"
                       disabled={isSendingBulk}
                       onClick={() => handleResendPending('ALL_PENDING')}
-                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Nudge All Pending</span>
@@ -1785,7 +1785,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             {showAuditLog && canManageGovernance && (
               <div
                 data-testid="team-audit-log-panel"
-                className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 bg-stone-50/90 dark:bg-[#101B15] space-y-2 text-xs"
+                className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 bg-stone-50/90 dark:bg-ap-carbon space-y-2 text-xs"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -1814,9 +1814,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     {auditEntries.map((ev) => (
                       <div
                         key={ev.eventId}
-                        className="rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-[#15231B] px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-2xs"
+                        className="rounded-lg border border-stone-200 dark:border-slate-800 bg-white dark:bg-ap-turf px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-2xs"
                       >
-                        <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                        <span className="font-bold text-ap-cobalt dark:text-ap-volt">
                           {ev.action}
                         </span>
                         <span className="text-slate-600 dark:text-slate-300 truncate max-w-[320px]">
@@ -1835,7 +1835,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-stone-100 dark:bg-[#101B15] text-2xs font-mono uppercase text-slate-500">
+                <thead className="bg-stone-100 dark:bg-ap-carbon text-2xs font-mono uppercase text-slate-500">
                   <tr>
                     <th className="py-2.5 px-4">Member</th>
                     <th className="py-2.5 px-3">Squad / Role</th>
@@ -1949,7 +1949,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                       )
                                     );
                                   }}
-                                  className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                                  className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                                 >
                                   <option value="ATHLETE">Athlete</option>
                                   <option value="ASSISTANT_COACH">Assistant Coach</option>
@@ -2009,7 +2009,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                   // ignore offline event-group change error
                                 }
                               }}
-                              className="mt-1 min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                              className="mt-1 min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                             >
                               <option value="">All Events</option>
                               <option value="SPRINTS">Sprints</option>
@@ -2076,7 +2076,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                     )
                                   );
                                 }}
-                                className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                                className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                               >
                                 <option value="ACTIVE">Joined</option>
                                 <option value="INVITED">Invited</option>
@@ -2186,7 +2186,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                           e.target.value = '';
                                         }
                                       }}
-                                      className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-0.5 text-2xs font-mono text-slate-700 dark:text-slate-200"
+                                      className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-700 dark:text-slate-200"
                                     >
                                       <option value="">Merge into…</option>
                                       {activeMergeTargets.map((target) => (

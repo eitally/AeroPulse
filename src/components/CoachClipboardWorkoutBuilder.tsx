@@ -1006,7 +1006,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-[#F4F7F4]">
+          <h2 className="text-sm sm:text-base font-bold text-ap-ink dark:text-ap-chalk">
             Clipboard Builder &amp; Pods
           </h2>
           <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold">
@@ -1017,7 +1017,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
                 clipboardSport === 'Running'
                   ? 'ap-nav-volt-active'
-                  : 'text-[#43584B] dark:text-[#93A39A]'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <Footprints className="w-3 h-3" />
@@ -1030,7 +1030,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
                 clipboardSport === 'Cycling'
                   ? 'ap-nav-volt-active'
-                  : 'text-[#43584B] dark:text-[#93A39A]'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <Bike className="w-3 h-3" />
@@ -1059,7 +1059,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
                 clipboardSport === 'Strength'
                   ? 'ap-nav-volt-active'
-                  : 'text-[#43584B] dark:text-[#93A39A]'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <Dumbbell className="w-3 h-3" />
@@ -1081,14 +1081,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
           </button>
 
           {showExportMenu && (
-            <div className="absolute right-0 mt-1.5 w-48 rounded-xl bg-white dark:bg-[#101B15] border border-[#2B5B3F]/25 dark:border-[#2B543B] shadow-xl p-1.5 z-30 space-y-1 text-xs">
+            <div className="absolute right-0 mt-1.5 w-48 rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/25 dark:border-ap-edge-dark shadow-xl p-1.5 z-30 space-y-1 text-xs">
               <button
                 type="button"
                 onClick={() => {
                   handleCopySheet();
                   setShowExportMenu(false);
                 }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
               >
                 {copiedSheet ? (
                   <Check className="w-3.5 h-3.5 text-[#059669]" />
@@ -1111,7 +1111,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   });
                   setShowExportMenu(false);
                 }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
               >
                 <ClipboardText className="w-3.5 h-3.5" />
                 <span>Print 4-Up Pod Sheet</span>
@@ -1122,7 +1122,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   handleExportFit();
                   setShowExportMenu(false);
                 }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download .FIT</span>
@@ -1133,7 +1133,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   handleExportZwo();
                   setShowExportMenu(false);
                 }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download .ZWO</span>
@@ -1145,7 +1145,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     handleExportErg();
                     setShowExportMenu(false);
                   }}
-                  className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                  className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download .ERG</span>
@@ -1158,7 +1158,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   handleShareWorkout();
                   setShowExportMenu(false);
                 }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] text-left font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
               >
                 <ShareNetwork className="w-3.5 h-3.5" />
                 <span>Share Link / PNG</span>
@@ -1208,8 +1208,8 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   }
                   className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-medium border cursor-pointer ${
                     selected
-                      ? 'border-[#1C5436] bg-[#E3ECE5] text-[#1C5436] dark:border-[#C8FF00] dark:bg-[#15231B] dark:text-[#C8FF00]'
-                      : 'border-stone-300 dark:border-[#244331] text-slate-700 dark:text-slate-300'
+                      ? 'border-ap-cobalt bg-[#E3ECE5] text-ap-cobalt dark:border-ap-volt dark:bg-ap-turf dark:text-ap-volt'
+                      : 'border-stone-300 dark:border-ap-edge text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   {ath.name}
@@ -1221,7 +1221,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       </div>
 
       {/* Quick Shorthand Parser Row */}
-      <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/75 dark:bg-[#101B15]/75 p-3 space-y-2">
+      <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/75 dark:bg-ap-carbon/75 p-3 space-y-2">
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
@@ -1230,7 +1230,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             value={shorthandInput}
             onChange={(e) => setShorthandInput(e.target.value)}
             placeholder="e.g. 2mi WU, 5×800m @ CV (90s jog), 2mi CD"
-            className="flex-1 min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs text-[#101411] dark:text-[#F4F7F4]"
+            className="flex-1 min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
           />
           <button
             type="button"
@@ -1243,7 +1243,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-2xs">
-          <span className="font-mono text-[#43584B] dark:text-[#93A39A]">Presets:</span>
+          <span className="font-mono text-ap-muted dark:text-ap-muted-dark">Presets:</span>
           {[
             {
               label: '800/Mile Combo',
@@ -1278,14 +1278,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         <button
           type="button"
           onClick={() => setShowMetaDetailsMobile((prev) => !prev)}
-          className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+          className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 py-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
         >
           <span className="truncate font-mono text-2xs">
             {workoutTitle} · {workoutDate}
             {formatPracticeTime12h(scheduledTime) ? ` · ${formatPracticeTime12h(scheduledTime)}` : ''}
             {locationName ? ` · ${locationName}` : ''}
           </span>
-          <span className="inline-flex items-center gap-1 text-2xs text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+          <span className="inline-flex items-center gap-1 text-2xs text-ap-cobalt dark:text-ap-volt shrink-0">
             <span>{showMetaDetailsMobile ? 'Hide Details' : 'Schedule, Time & Venue'}</span>
             <ChevronDown
               className={`w-3.5 h-3.5 transition-transform ${showMetaDetailsMobile ? 'rotate-180' : ''}`}
@@ -1296,34 +1296,34 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         {showMetaDetailsMobile && (
           <div className="space-y-2.5 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <span>Session Name</span>
                 <input
                   type="text"
                   value={workoutTitle}
                   onChange={(e) => setWorkoutTitle(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans font-semibold text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-sans font-semibold text-ap-ink dark:text-ap-chalk"
                 />
               </label>
 
-              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <span>Date</span>
                 <input
                   type="date"
                   aria-label="Workout Date"
                   value={workoutDate}
                   onChange={(e) => setWorkoutDate(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                 />
               </label>
 
-              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <label className="inline-flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={includeWarmup}
                     onChange={(e) => setIncludeWarmup(e.target.checked)}
-                    className="rounded border-[#2B5B3F]/40"
+                    className="rounded border-ap-frame/40"
                   />
                   <span>Warm-up</span>
                 </label>
@@ -1332,7 +1332,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   disabled={!includeWarmup}
                   value={warmupDistanceMeters}
                   onChange={(e) => setWarmupDistanceMeters(Number(e.target.value))}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs disabled:opacity-50"
                 >
                   {WARMUP_COOLDOWN_PRESETS.map((p) => (
                     <option key={`wu-${p.meters}`} value={p.meters}>
@@ -1342,13 +1342,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 </select>
               </div>
 
-              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <div className="sm:col-span-2 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <label className="inline-flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={includeCooldown}
                     onChange={(e) => setIncludeCooldown(e.target.checked)}
-                    className="rounded border-[#2B5B3F]/40"
+                    className="rounded border-ap-frame/40"
                   />
                   <span>Cooldown</span>
                 </label>
@@ -1357,7 +1357,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   disabled={!includeCooldown}
                   value={cooldownDistanceMeters}
                   onChange={(e) => setCooldownDistanceMeters(Number(e.target.value))}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs disabled:opacity-50"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs disabled:opacity-50"
                 >
                   {WARMUP_COOLDOWN_PRESETS.map((p) => (
                     <option key={`cd-${p.meters}`} value={p.meters}>
@@ -1370,7 +1370,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
             {/* Practice Slot (Doubles), Call Time & Track / XC Venue */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-              <div className="sm:col-span-4 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <div className="sm:col-span-4 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <span>Session Slot (Doubles)</span>
                 <div
                   role="group"
@@ -1403,7 +1403,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       className={`flex-1 min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md cursor-pointer ${
                         sessionSlot === opt.id
                           ? 'ap-nav-volt-active'
-                          : 'text-[#43584B] dark:text-[#93A39A]'
+                          : 'text-ap-muted dark:text-ap-muted-dark'
                       }`}
                     >
                       {opt.label}
@@ -1412,7 +1412,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 </div>
               </div>
 
-              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-3 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <span className="inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   <span>Practice Time</span>
@@ -1423,11 +1423,11 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   aria-label="Practice Time"
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                 />
               </label>
 
-              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-5 flex flex-col gap-1 font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
                   <span>Practice Location (Track / XC Park / Gym)</span>
@@ -1439,13 +1439,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   value={locationName}
                   onChange={(e) => setLocationName(e.target.value)}
                   placeholder="e.g. School Track, Foothills XC Park, Weight Room"
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-sans text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-sans text-ap-ink dark:text-ap-chalk"
                 />
               </label>
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 text-2xs">
-              <span className="font-mono text-[#43584B] dark:text-[#93A39A]">Venues:</span>
+              <span className="font-mono text-ap-muted dark:text-ap-muted-dark">Venues:</span>
               {[...DEFAULT_PRACTICE_VENUE_PRESETS, ...savedVenues].map((venue) => {
                 const active = locationName.trim().toLowerCase() === venue.name.toLowerCase();
                 return (
@@ -1478,10 +1478,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold shrink-0">
+            <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark font-semibold shrink-0">
               Working Sets ({sets.length})
             </span>
-            <span className="text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] truncate">
+            <span className="text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk truncate">
               {builtWorkout.setsSummary}
             </span>
           </div>
@@ -1490,7 +1490,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               type="button"
               aria-expanded={showManualSetRows}
               onClick={() => setShowManualSetRows((prev) => !prev)}
-              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] inline-flex items-center gap-1 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-card-inset text-xs font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-1 cursor-pointer"
             >
               <span>{showManualSetRows ? 'Hide Sets' : 'Edit Sets'}</span>
               <ChevronDown
@@ -1501,7 +1501,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               type="button"
               data-testid="clipboard-add-set-btn"
               onClick={handleAddSet}
-              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Set</span>
@@ -1515,7 +1515,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             <div
               key={row.id}
               data-testid={`clipboard-set-row-${idx}`}
-              className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-2.5 grid grid-cols-2 sm:grid-cols-12 gap-2 items-center text-xs"
+              className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-2.5 grid grid-cols-2 sm:grid-cols-12 gap-2 items-center text-xs"
             >
               <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
                 <span>Reps</span>
@@ -1529,11 +1529,11 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     const v = Math.max(1, Number(e.target.value) || 1);
                     setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, repCount: v } : s)));
                   }}
-                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                 />
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                 <div className="flex items-center justify-between gap-1">
                   <span>{clipboardSport === 'Cycling' || clipboardSport === 'Strength' || row.measureMode === 'TIME_MINS' ? 'Minutes' : 'Distance'}</span>
                   {clipboardSport === 'Running' && (
@@ -1552,7 +1552,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                           )
                         )
                       }
-                      className="text-2xs underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer"
+                      className="text-2xs underline text-ap-cobalt dark:text-ap-volt cursor-pointer"
                     >
                       {row.measureMode === 'TIME_MINS' ? 'Use m' : 'Use min'}
                     </button>
@@ -1571,7 +1571,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         prev.map((s) => (s.id === row.id ? { ...s, durationMins: v } : s))
                       );
                     }}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   />
                 ) : (
                   <select
@@ -1583,7 +1583,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         prev.map((s) => (s.id === row.id ? { ...s, repDistanceMeters: v } : s))
                       );
                     }}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   >
                     {VALID_REP_DISTS.map((dist) => (
                       <option key={`set-${idx}-d-${dist}`} value={dist}>
@@ -1594,7 +1594,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 )}
               </label>
 
-              <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+              <label className="col-span-2 sm:col-span-3 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                 <span>{clipboardSport === 'Cycling' ? 'Target % FTP' : 'Target Pace'}</span>
                 {clipboardSport === 'Cycling' ? (
                   <select
@@ -1604,7 +1604,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       const v = Number(e.target.value);
                       setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, targetPctFtp: v } : s)));
                     }}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   >
                     <option value={70}>Z2 Endurance (70% FTP)</option>
                     <option value={88}>Z3 Sweet Spot (88% FTP)</option>
@@ -1620,7 +1620,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       const v = e.target.value as VdotPodIntensity;
                       setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, intensity: v } : s)));
                     }}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   >
                     <option value="RACE_400M">400m Pace</option>
                     <option value="RACE_800M">800m Pace</option>
@@ -1634,7 +1634,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 )}
               </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+              <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                 <span>Rep Rest</span>
                 <select
                   aria-label={`Set ${idx + 1} Rep Rest`}
@@ -1643,7 +1643,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     const v = e.target.value;
                     setSets((prev) => prev.map((s) => (s.id === row.id ? { ...s, restLabel: v } : s)));
                   }}
-                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                 >
                   <option value="60s jog">60s jog</option>
                   <option value="90s jog">90s jog</option>
@@ -1654,7 +1654,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               </label>
 
               {idx < sets.length - 1 && (
-                <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+                <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                   <span>Set Rest After</span>
                   <select
                     aria-label={`Set ${idx + 1} Rest After`}
@@ -1665,7 +1665,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         prev.map((s) => (s.id === row.id ? { ...s, setRestAfterSecs: v } : s))
                       );
                     }}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   >
                     <option value={0}>None</option>
                     <option value={120}>2:00 rest</option>
@@ -1681,7 +1681,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     type="button"
                     aria-label={`Remove Set ${idx + 1}`}
                     onClick={() => setSets((prev) => prev.filter((s) => s.id !== row.id))}
-                    className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-lg text-[#43584B] hover:text-[#DC2626] cursor-pointer"
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-lg text-ap-muted hover:text-[#DC2626] cursor-pointer"
                   >
                     <Trash className="w-4 h-4" />
                   </button>
@@ -1695,7 +1695,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
       {/* Optional Athlete Tweak Disclosure */}
       {activeTeam && activeTeam.memberships.some((m) => m.role === 'ATHLETE') && (
-        <details className="rounded-xl border border-stone-200 dark:border-[#244331] px-3 py-2 text-xs">
+        <details className="rounded-xl border border-stone-200 dark:border-ap-edge px-3 py-2 text-xs">
           <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200 select-none">
             Individual Tweaks ({Object.keys(athleteOverrides).length} customized)
           </summary>
@@ -1704,7 +1704,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               aria-label="Select athlete to customize"
               value={overrideAthleteId}
               onChange={(e) => setOverrideAthleteId(e.target.value)}
-              className="sm:col-span-4 min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 text-xs"
+              className="sm:col-span-4 min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs"
             >
               <option value="">Choose athlete…</option>
               {activeTeam.memberships
@@ -1721,7 +1721,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               value={overrideSyntax}
               onChange={(e) => setOverrideSyntax(e.target.value)}
               placeholder="e.g. 1mi warm-up, 3x800m at mile pace, 1mi cooldown"
-              className="sm:col-span-6 min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs"
+              className="sm:col-span-6 min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs"
             />
             <button
               type="button"
@@ -1733,7 +1733,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 }));
                 setOverrideSyntax('');
               }}
-              className="sm:col-span-2 min-h-[38px] rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] font-semibold cursor-pointer"
+              className="sm:col-span-2 min-h-[38px] rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt font-semibold cursor-pointer"
             >
               Save Tweak
             </button>
@@ -1745,7 +1745,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       {clipboardSport === 'Running' && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] font-semibold">
+            <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark font-semibold">
               Pod Splits &amp; Stopwatch Wave
             </span>
             <div
@@ -1768,7 +1768,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   className={`min-h-[44px] sm:min-h-[30px] px-2 rounded-md cursor-pointer ${
                     stopwatchWaveMode === opt.id
                       ? 'ap-nav-volt-active'
-                      : 'text-[#43584B] dark:text-[#93A39A]'
+                      : 'text-ap-muted dark:text-ap-muted-dark'
                   }`}
                 >
                   {opt.label}
@@ -1784,7 +1784,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             {multiSetPreview.map((pod) => (
               <div
                 key={pod.podId}
-                className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 space-y-1.5 text-xs"
+                className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-3 space-y-1.5 text-xs"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-slate-900 dark:text-white truncate">
@@ -1794,11 +1794,11 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
                   {pod.athletes.map((a) => a.name).join(', ')}
                 </div>
-                <div className="pt-1 border-t border-stone-200/70 dark:border-[#244331] space-y-0.5 font-mono text-2xs">
+                <div className="pt-1 border-t border-stone-200/70 dark:border-ap-edge space-y-0.5 font-mono text-2xs">
                   {pod.setSplits.map((sp) => (
                     <div key={`${pod.podId}-s-${sp.setIndex}`} className="flex justify-between gap-2">
                       <span className="text-slate-600 dark:text-slate-300 truncate">{sp.summaryLabel}</span>
-                      <span className="font-bold text-[#1C5436] dark:text-[#C8FF00] shrink-0">
+                      <span className="font-bold text-ap-cobalt dark:text-ap-volt shrink-0">
                         {sp.formattedSplit}/rep
                       </span>
                     </div>
@@ -1858,12 +1858,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       {/* Reusable Team Workout Library */}
       <div
         data-testid="coach-workout-library"
-        className="pt-2 border-t border-stone-200/80 dark:border-[#244331] space-y-2.5"
+        className="pt-2 border-t border-stone-200/80 dark:border-ap-edge space-y-2.5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ClipboardText className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-            <h3 className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4]">
+            <h3 className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk">
               Team Workout Library ({libraryTemplates.length})
             </h3>
           </div>
@@ -1872,7 +1872,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             data-testid="toggle-workout-library-btn"
             aria-expanded={showWorkoutLibrary}
             onClick={() => setShowWorkoutLibrary((v) => !v)}
-            className="ap-touch min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-[#101B15] text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 cursor-pointer"
+            className="ap-touch min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-ap-carbon text-2xs font-mono font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 cursor-pointer"
           >
             <span>{showWorkoutLibrary ? 'Hide Library' : 'Show Library'}</span>
             <ChevronDown
@@ -1893,7 +1893,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   className={`ap-touch min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-full text-2xs font-mono font-semibold cursor-pointer ${
                     libraryFilter === chip.id
                       ? 'ap-nav-volt-active'
-                      : 'bg-white/80 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] text-slate-700 dark:text-slate-300'
+                      : 'bg-white/80 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   {chip.label}
@@ -1905,14 +1905,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               {filteredLibraryTemplates.map((tpl) => (
                 <div
                   key={tpl.id}
-                  className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/85 dark:bg-[#101B15] p-3 flex flex-col justify-between gap-2 text-xs"
+                  className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/85 dark:bg-ap-carbon p-3 flex flex-col justify-between gap-2 text-xs"
                 >
                   <div className="space-y-1">
                     <div className="flex items-start justify-between gap-2">
                       <span className="font-bold text-slate-900 dark:text-white leading-snug">
                         {tpl.name}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-[#15231B] text-2xs font-mono uppercase text-slate-600 dark:text-slate-300 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-ap-turf text-2xs font-mono uppercase text-slate-600 dark:text-slate-300 shrink-0">
                         {tpl.category.replace('_', ' ')}
                       </span>
                     </div>
@@ -1921,7 +1921,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-stone-200/70 dark:border-[#244331]">
+                  <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-stone-200/70 dark:border-ap-edge">
                     <span className="text-2xs font-mono text-slate-500">
                       {Math.round(tpl.plannedDurationSecs / 60)}m · ~{Math.round(tpl.plannedLoad)} TSS
                     </span>
@@ -1942,7 +1942,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                         type="button"
                         data-testid="library-load-template-btn"
                         onClick={() => handleLoadLibraryTemplate(tpl)}
-                        className="ap-touch min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-2xs font-semibold cursor-pointer"
+                        className="ap-touch min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-2xs font-semibold cursor-pointer"
                       >
                         Load
                       </button>

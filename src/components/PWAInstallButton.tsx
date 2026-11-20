@@ -121,7 +121,7 @@ export const OfflineIndicator: React.FC = () => {
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-400 border border-amber-600/40 px-3.5 py-2 text-xs font-semibold text-[#080A09] shadow-lg">
+    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-400 border border-amber-600/40 px-3.5 py-2 text-xs font-semibold text-ap-obsidian shadow-lg">
       <WifiOff className="w-3.5 h-3.5 shrink-0" />
       <span className="truncate">Offline Mode · Viewing cached workout telemetry</span>
     </div>

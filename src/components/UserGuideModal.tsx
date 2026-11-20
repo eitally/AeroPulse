@@ -866,10 +866,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Modal Header + Search Bar */}
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-[#101B15] flex flex-col gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-ap-carbon flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] flex items-center justify-center shadow-md shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-ap-ink text-ap-volt dark:bg-ap-volt dark:text-ap-obsidian flex items-center justify-center shadow-md shrink-0">
                 <HelpCircle className="w-5 h-5" weight="duotone" />
               </div>
               <div className="min-w-0">
@@ -910,7 +910,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search any metric, workflow, or formula (e.g., CTL, Pa:Hr, W', Strava, Block Builder)..."
-                className="w-full min-h-[44px] pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-[#15231B] border border-slate-300/80 dark:border-[#2B543B] text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-[#C8FF00]"
+                className="w-full min-h-[44px] pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-ap-turf border border-slate-300/80 dark:border-ap-edge-dark text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-ap-volt"
               />
               {searchQuery && (
                 <button
@@ -928,7 +928,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 href="/docs/coach.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-lg text-2xs font-bold bg-[#101411] text-[#C8FF00] dark:bg-[#C8FF00] dark:text-[#080A09] whitespace-nowrap transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-2xs font-bold bg-ap-ink text-ap-volt dark:bg-ap-volt dark:text-ap-obsidian whitespace-nowrap transition-colors"
               >
                 Illustrated Coach Guide ↗
               </a>
@@ -1005,7 +1005,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         {/* Main Body: Left Chapter Rail (Desktop) + Right Scrollable Content */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
           {/* Desktop Sidebar Navigation */}
-          <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#15231B]/45 flex-col justify-between p-3 overflow-y-auto">
+          <aside className="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-ap-turf/45 flex-col justify-between p-3 overflow-y-auto">
             <div className="space-y-1">
               <div className="px-2.5 py-1.5 text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                 9 Chapters &amp; Physiology Reference
@@ -1037,7 +1037,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         <span className="text-2xs font-mono uppercase tracking-wider text-slate-600 dark:text-slate-400">
                           CH {ch.number}
                         </span>
-                        {isSelected && <ChevronRight className="w-3.5 h-3.5 text-[#1C5436] dark:text-[#C8FF00]" />}
+                        {isSelected && <ChevronRight className="w-3.5 h-3.5 text-ap-cobalt dark:text-ap-volt" />}
                       </div>
                       <div className="text-xs font-semibold truncate">{ch.shortTitle}</div>
                     </div>
@@ -1089,7 +1089,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           </aside>
 
           {/* Right Scrollable Chapter Content Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-white/40 dark:bg-[#15231B]/20">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-white/40 dark:bg-ap-turf/20">
             {/* Search Results Banner when searchQuery is non-empty */}
             {normalizedQuery ? (
               <div className="space-y-6">
@@ -1460,12 +1460,12 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         )}
 
                         {card.figureSrc && (
-                          <figure className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-[#244331] bg-white dark:bg-[#101B15]">
+                          <figure className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-ap-edge bg-white dark:bg-ap-carbon">
                             <img
                               src={card.figureSrc}
                               alt={card.figureCaption || card.title}
                               loading="lazy"
-                              className="w-full h-auto block border-b border-stone-200/80 dark:border-[#244331]"
+                              className="w-full h-auto block border-b border-stone-200/80 dark:border-ap-edge"
                             />
                             {card.figureCaption && (
                               <figcaption className="px-3 py-2 text-2xs text-slate-600 dark:text-slate-300">
@@ -1539,7 +1539,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         </div>
 
         {/* Bottom Footer with Chapter Prev/Next Controls */}
-        <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-[#244331] bg-white dark:bg-[#101B15] flex items-center justify-between gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center justify-between gap-3 shrink-0">
           <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate">
             Docs Suite: <code className="text-sky-600 dark:text-sky-400">docs/USER_GUIDE.md</code> ·{' '}
             <code className="text-sky-600 dark:text-sky-400">docs/PHYSIOLOGY_AND_METRICS.md</code> ·{' '}

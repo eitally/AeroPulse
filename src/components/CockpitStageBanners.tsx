@@ -49,7 +49,7 @@ interface CockpitStageBannersProps {
   redactedStravaCount: number;
   connectionStatus: ConnectionStatus;
   dismissedStravaBanner: boolean;
-  onLaunchStravaOAuth: (mode: 'cloud' | 'local') => void;
+  onLaunchStravaOAuth: (mode: 'cloud' | 'localhost') => void;
   onDismissStravaBanner: () => void;
 
   isSampleDemoMode: boolean;
@@ -160,7 +160,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
     <>
       {/* Multi-Team Magic Join Offer Banner */}
       {activeBannerSlot === 'JOIN_OFFER' && pendingUrlJoinOffer && (
-        <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-[#C8FF00]/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="rounded-2xl liquid-glass border-lime-600/35 dark:border-ap-volt/35 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2 py-0.5 rounded-md font-mono uppercase text-2xs font-bold ap-badge-volt">
               Team Invite
@@ -369,7 +369,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           className="rounded-xl liquid-glass-subtle border-[#28573B]/35 dark:border-[#25573A] px-3 py-2 flex flex-wrap items-center justify-between gap-2"
         >
           <div className="flex flex-wrap items-center gap-2 text-xs text-[#35463B] dark:text-slate-200 min-w-0">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00] shrink-0">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt shrink-0">
               Sample Demo
             </span>
             <span className="hidden sm:inline">
@@ -436,15 +436,15 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         <section
           data-testid="post-login-welcome-launchpad"
           aria-label="Post-login quick start"
-          className="rounded-xl liquid-glass border-[#28573B]/35 dark:border-[#C8FF00]/30 px-3 py-2 flex flex-wrap items-center justify-between gap-2"
+          className="rounded-xl liquid-glass border-[#28573B]/35 dark:border-ap-volt/30 px-3 py-2 flex flex-wrap items-center justify-between gap-2"
         >
           <div className="flex items-center gap-2 min-w-0 text-xs">
-            <Sparkles className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00] shrink-0" weight="duotone" />
-            <span className="font-bold text-[#101411] dark:text-[#F4F7F4] whitespace-nowrap">
+            <Sparkles className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" weight="duotone" />
+            <span className="font-bold text-ap-ink dark:text-ap-chalk whitespace-nowrap">
               {activitiesCount.toLocaleString()} synced
             </span>
             {athleteProfile && (
-              <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00] whitespace-nowrap">
+              <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt whitespace-nowrap">
                 {athleteProfile.primarySport === 'Running'
                   ? `Run · LT ${formatPace(athleteProfile.thresholdPaceSecsPerKm || 250, distanceUnit)}`
                   : `Bike · ${athleteProfile.ftp}W`}
@@ -454,7 +454,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               <button
                 type="button"
                 onClick={onOpenProfileModal}
-                className="min-h-[44px] sm:min-h-[32px] px-1.5 text-2xs font-semibold underline text-[#1C5436] dark:text-[#C8FF00] cursor-pointer whitespace-nowrap"
+                className="min-h-[44px] sm:min-h-[32px] px-1.5 text-2xs font-semibold underline text-ap-cobalt dark:text-ap-volt cursor-pointer whitespace-nowrap"
               >
                 Edit Zones
               </button>
@@ -501,7 +501,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               type="button"
               aria-label="Dismiss welcome quick start"
               onClick={dismissWelcomeFork}
-              className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] flex items-center justify-center rounded-lg text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] cursor-pointer"
+              className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] flex items-center justify-center rounded-lg text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk cursor-pointer"
               title="Dismiss"
             >
               <X className="w-4 h-4" />

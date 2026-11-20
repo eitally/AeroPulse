@@ -556,7 +556,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               type="button"
               onClick={onOpenCoach}
               aria-label="Open AI Coach"
-              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 sm:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
+              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 sm:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
             >
               <Bot className="w-4 h-4 sm:w-3.5 sm:h-3.5" weight="fill" />
               <span className="hidden sm:inline">AI Coach</span>
@@ -571,7 +571,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {isDark ? (
-                <Sun className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#C8FF00]" weight="fill" />
+                <Sun className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-ap-volt" weight="fill" />
               ) : (
                 <Moon className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#1D3828]" weight="fill" />
               )}
@@ -596,7 +596,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     className="w-6 h-6 rounded-lg object-cover border border-[#28573B] shrink-0"
                   />
                 ) : (
-                  <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
+                  <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-ap-volt border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
                     {primaryAthleteInitials}
                   </span>
                 )}
@@ -614,7 +614,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 <div
                   role="menu"
                   aria-label="Account and workspace settings"
-                  className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#101B15] border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
+                  className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white dark:bg-ap-carbon border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
                 >
                   {/* Account Identity & Connection Summary */}
                   <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
@@ -626,7 +626,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                           className="w-9 h-9 rounded-xl object-cover border border-[#28573B] shrink-0"
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-[#C8FF00] border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-ap-volt border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
                           {primaryAthleteInitials}
                         </div>
                       )}

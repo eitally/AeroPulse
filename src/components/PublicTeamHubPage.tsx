@@ -29,6 +29,13 @@ export interface PublicTeamHubPageProps {
   onExitHub: () => void;
 }
 
+/** Formats a race placeFinish label without prefixing a duplicate `#` on `#10` or `Leg #2`. */
+export function formatPublicPlaceFinish(placeFinish?: string | null): string {
+  const trimmed = String(placeFinish || '').trim();
+  if (!trimmed) return '';
+  return /^\d+$/.test(trimmed) ? `#${trimmed}` : trimmed;
+}
+
 export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   slugOrCode,
   isDark,
@@ -219,7 +226,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   return (
     <div
       data-testid="public-team-hub-page"
-      className="ap-shell min-h-screen text-[#101411] dark:text-[#F4F7F4]"
+      className="ap-shell min-h-screen text-ap-ink dark:text-ap-chalk"
     >
       <a href="#public-hub-main" className="ap-skip-link">
         Skip to team hub content
@@ -271,7 +278,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
               type="button"
               onClick={onToggleDark}
               aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] flex items-center justify-center rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] cursor-pointer"
+              className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] flex items-center justify-center rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon cursor-pointer"
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -281,13 +288,13 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
 
       <main id="public-hub-main" tabIndex={-1} className="max-w-6xl mx-auto px-3.5 sm:px-6 py-5 space-y-4">
         {loading ? (
-          <div className="ap-card p-6 text-center font-mono text-xs text-[#43584B] dark:text-[#93A39A]">
+          <div className="ap-card p-6 text-center font-mono text-xs text-ap-muted dark:text-ap-muted-dark">
             Loading Team Hub...
           </div>
         ) : !payload?.found || !payload.brand ? (
           <section className="ap-card p-6 space-y-3">
             <h1 className="text-lg font-bold">Team Hub Unavailable</h1>
-            <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+            <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
               {payload?.error || 'Check the team share link with your coach.'}
             </p>
           </section>
@@ -316,12 +323,12 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                     <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight truncate">
                       {payload.brand.name}
                     </h1>
-                    <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                    <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
                       {payload.brand.shortName}
                     </span>
                   </div>
                   {payload.brand.mascotOrMotto && (
-                    <p className="text-xs sm:text-sm text-[#43584B] dark:text-[#93A39A]">
+                    <p className="text-xs sm:text-sm text-ap-muted dark:text-ap-muted-dark">
                       {payload.brand.mascotOrMotto} ·{' '}
                       {/^coach\b/i.test(payload.brand.coachDisplayName.trim())
                         ? payload.brand.coachDisplayName.trim()
@@ -331,23 +338,23 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
-                  <div className="rounded-lg border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] px-3 py-1.5">
-                    <span className="text-[#43584B] dark:text-[#93A39A]">Athletes:</span>{' '}
+                  <div className="rounded-lg border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon px-3 py-1.5">
+                    <span className="text-ap-muted dark:text-ap-muted-dark">Athletes:</span>{' '}
                     <strong>{payload.stats.athleteCount}</strong>
                   </div>
-                  <div className="rounded-lg border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] px-3 py-1.5">
-                    <span className="text-[#43584B] dark:text-[#93A39A]">Meets:</span>{' '}
+                  <div className="rounded-lg border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon px-3 py-1.5">
+                    <span className="text-ap-muted dark:text-ap-muted-dark">Meets:</span>{' '}
                     <strong>{payload.stats.meetCount}</strong>
                   </div>
-                  <div className="rounded-lg border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] px-3 py-1.5">
-                    <span className="text-[#43584B] dark:text-[#93A39A]">Results:</span>{' '}
+                  <div className="rounded-lg border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon px-3 py-1.5">
+                    <span className="text-ap-muted dark:text-ap-muted-dark">Results:</span>{' '}
                     <strong>{payload.stats.officialResultCount}</strong>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-stone-200 dark:border-[#244331] flex items-center gap-2 text-2xs text-[#43584B] dark:text-[#93A39A]">
-                <ShieldCheck className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00] shrink-0" />
+              <div className="pt-2 border-t border-stone-200 dark:border-ap-edge flex items-center gap-2 text-2xs text-ap-muted dark:text-ap-muted-dark">
+                <ShieldCheck className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
                 <span>
                   Safe-Sport Clean-Room Hub: Displays public meet schedules, rosters, and official race marks only. Biometric HRV, sleep, GPS routes, RPE, and weight are never exposed.
                 </span>
@@ -359,18 +366,18 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
               <section className="lg:col-span-5 ap-card p-4 sm:p-5 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00]" />
+                    <Calendar className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
                     <h2 className="text-sm sm:text-base font-bold">
                       Season Meet Schedule
                     </h2>
                   </div>
-                  <span className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                  <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                     {payload.upcomingMeets.length} upcoming
                   </span>
                 </div>
 
                 {payload.upcomingMeets.length === 0 && payload.recentSchedule.length === 0 ? (
-                  <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+                  <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
                     No meets published yet.
                   </p>
                 ) : (
@@ -380,14 +387,14 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                       return (
                         <div
                           key={meet.id}
-                          className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3 space-y-1"
+                          className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-3 space-y-1"
                         >
                           <div className="flex items-center justify-between gap-2 font-mono text-2xs">
                             <span
                               className={
                                 isUpcoming
-                                  ? 'font-bold text-[#1C5436] dark:text-[#C8FF00]'
-                                  : 'text-[#43584B] dark:text-[#93A39A]'
+                                  ? 'font-bold text-ap-cobalt dark:text-ap-volt'
+                                  : 'text-ap-muted dark:text-ap-muted-dark'
                               }
                             >
                               {meet.date}
@@ -395,13 +402,13 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                                 ? ` · ${formatPracticeTime12h(meet.scheduledTime)}`
                                 : ''}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded bg-white dark:bg-[#15231B] text-[#43584B] dark:text-[#93A39A]">
+                            <span className="px-1.5 py-0.5 rounded bg-white dark:bg-ap-turf text-ap-muted dark:text-ap-muted-dark">
                               {isUpcoming ? 'Upcoming' : 'Completed'}
                             </span>
                           </div>
                           <div className="text-xs sm:text-sm font-bold">{meet.name}</div>
                           {meet.locationName && (
-                            <div className="flex items-center gap-1 text-2xs text-[#43584B] dark:text-[#93A39A]">
+                            <div className="flex items-center gap-1 text-2xs text-ap-muted dark:text-ap-muted-dark">
                               <MapPin className="w-3.5 h-3.5 shrink-0" />
                               <span className="truncate">{meet.locationName}</span>
                             </div>
@@ -417,7 +424,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
               <section className="lg:col-span-7 ap-card p-4 sm:p-5 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00]" />
+                    <Trophy className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
                     <h2 className="text-sm sm:text-base font-bold">
                       Squad Roster &amp; Official Marks
                     </h2>
@@ -428,7 +435,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                       aria-label="Filter squad division"
                       value={selectedSquad}
                       onChange={(e) => setSelectedSquad(e.target.value)}
-                      className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 text-xs font-semibold"
+                      className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 text-xs font-semibold"
                     >
                       <option value="ALL">All Squads ({payload.rosterLeaderboard.length})</option>
                       {squadOptions.map((sq) => (
@@ -441,7 +448,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                 </div>
 
                 {visibleRoster.length === 0 ? (
-                  <div className="flex items-center gap-2 text-xs text-[#43584B] dark:text-[#93A39A]">
+                  <div className="flex items-center gap-2 text-xs text-ap-muted dark:text-ap-muted-dark">
                     <Users className="w-4 h-4" />
                     <span>No roster athletes published yet.</span>
                   </div>
@@ -449,10 +456,10 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                   <div className="space-y-4">
                     {rosterByEventGroup.map((group) => (
                       <div key={group.eventLabel} className="space-y-1">
-                        <div className="text-2xs font-mono font-bold uppercase tracking-wider text-[#1C5436] dark:text-[#C8FF00] border-b border-stone-200 dark:border-[#244331] pb-1">
+                        <div className="text-2xs font-mono font-bold uppercase tracking-wider text-ap-cobalt dark:text-ap-volt border-b border-stone-200 dark:border-ap-edge pb-1">
                           {group.eventLabel} ({group.rows.length})
                         </div>
-                        <div className="divide-y divide-stone-200 dark:divide-[#244331]">
+                        <div className="divide-y divide-stone-200 dark:divide-ap-edge">
                           {group.rows.map((ath) => {
                             const latestMark = ath.officialResults[0];
                             return (
@@ -470,13 +477,13 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         aria-label={`Open external profile for ${ath.name}`}
-                                        className="text-[#1C5436] dark:text-[#C8FF00]"
+                                        className="text-ap-cobalt dark:text-ap-volt"
                                       >
                                         <ExternalLink className="w-3.5 h-3.5" />
                                       </a>
                                     )}
                                   </div>
-                                  <div className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                  <div className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                                     {ath.squadGroup}
                                     {ath.graduationYear ? ` · Class of ${ath.graduationYear}` : ''}
                                   </div>
@@ -485,19 +492,21 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                                 <div className="text-right font-mono shrink-0">
                                   {latestMark ? (
                                     <>
-                                      <div className="font-extrabold text-[#1C5436] dark:text-[#C8FF00]">
+                                      <div className="font-extrabold text-ap-cobalt dark:text-ap-volt">
                                         {latestMark.displayFatTime}{' '}
-                                        <span className="font-normal text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                        <span className="font-normal text-2xs text-ap-muted dark:text-ap-muted-dark">
                                           ({latestMark.eventLabel})
                                         </span>
                                       </div>
-                                      <div className="text-2xs text-[#43584B] dark:text-[#93A39A]">
+                                      <div className="text-2xs text-ap-muted dark:text-ap-muted-dark">
                                         {latestMark.meetName}
-                                        {latestMark.placeFinish ? ` · #${latestMark.placeFinish}` : ''}
+                                        {formatPublicPlaceFinish(latestMark.placeFinish)
+                                          ? ` · ${formatPublicPlaceFinish(latestMark.placeFinish)}`
+                                          : ''}
                                       </div>
                                     </>
                                   ) : (
-                                    <div className="font-bold text-[#101411] dark:text-[#F4F7F4]">
+                                    <div className="font-bold text-ap-ink dark:text-ap-chalk">
                                       {ath.seedMarkOrFtp ? `Seed ${ath.seedMarkOrFtp}` : 'Rostered'}
                                     </div>
                                   )}
@@ -516,7 +525,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
         )}
       </main>
 
-      <footer className="max-w-6xl mx-auto px-3.5 sm:px-6 pb-6 pt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-[#43584B] dark:text-[#93A39A]">
+      <footer className="max-w-6xl mx-auto px-3.5 sm:px-6 pb-6 pt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-ap-muted dark:text-ap-muted-dark">
         <span>THRESH Clean-Room Team Hub · Youth Safe-Sport Shield</span>
         <div className="flex flex-wrap items-center gap-3 font-semibold">
           <a href="/privacy" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">

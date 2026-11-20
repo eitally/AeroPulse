@@ -1174,7 +1174,7 @@ ${dataLines.join('\n')}
       {isExpanded && (
         <div className="space-y-4 pb-5">
           {/* Explainable Physiological Triggers Strip */}
-          <div className="px-4 sm:px-5 py-2.5 bg-white/40 dark:bg-[#15231B]/40 border-b border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
+          <div className="px-4 sm:px-5 py-2.5 bg-white/40 dark:bg-ap-turf/40 border-b border-slate-200/60 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-2xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 Why It Adapted:
@@ -1271,7 +1271,7 @@ ${dataLines.join('\n')}
                 </div>
 
                 {/* Original Effort Zone Skyline */}
-                <div className="rounded-lg bg-white dark:bg-[#15231B]/90 border border-slate-200/80 dark:border-slate-800 p-2.5 space-y-1.5">
+                <div className="rounded-lg bg-white dark:bg-ap-turf/90 border border-slate-200/80 dark:border-slate-800 p-2.5 space-y-1.5">
                   <div className="flex items-center justify-between text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>Baseline Effort Zone Skyline</span>
                     <span>
@@ -1306,7 +1306,7 @@ ${dataLines.join('\n')}
                   {baselineWorkout.steps.map((s, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/70 dark:bg-[#15231B]/50 border border-slate-200/60 dark:border-slate-800/70"
+                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/70 dark:bg-ap-turf/50 border border-slate-200/60 dark:border-slate-800/70"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
@@ -1365,7 +1365,7 @@ ${dataLines.join('\n')}
                 </div>
 
                 {/* Mobile/Tablet Unified Ghost-Overlay Diff Skyline (dashed scheduled vs adapted fill) */}
-                <div className="lg:hidden rounded-lg bg-white dark:bg-[#15231B]/90 border border-emerald-500/30 p-2.5 space-y-1">
+                <div className="lg:hidden rounded-lg bg-white dark:bg-ap-turf/90 border border-emerald-500/30 p-2.5 space-y-1">
                   <div className="flex items-center justify-between text-2xs font-mono text-emerald-800 dark:text-emerald-300">
                     <span>Baseline (Dashed) vs Adapted (Z1–Z6+)</span>
                     <span>
@@ -1385,7 +1385,7 @@ ${dataLines.join('\n')}
                 </div>
 
                 {/* Morphed Effort Zone Skyline */}
-                <div className="rounded-lg bg-white dark:bg-[#15231B]/90 border border-emerald-500/30 p-2.5 space-y-1.5">
+                <div className="rounded-lg bg-white dark:bg-ap-turf/90 border border-emerald-500/30 p-2.5 space-y-1.5">
                   <div className="flex items-center justify-between text-2xs font-mono text-emerald-800 dark:text-emerald-300">
                     <span>Adapted Effort Zone Skyline (Z1–Z6+)</span>
                     <span>
@@ -1424,7 +1424,7 @@ ${dataLines.join('\n')}
                   {morphedWorkout.steps.map((s, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/90 dark:bg-[#15231B]/80 border border-emerald-500/25"
+                      className="flex items-center justify-between gap-2 text-2xs px-2 py-1 rounded bg-white/90 dark:bg-ap-turf/80 border border-emerald-500/25"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span

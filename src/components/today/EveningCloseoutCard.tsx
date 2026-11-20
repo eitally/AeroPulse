@@ -369,7 +369,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                   });
                   setReminderPrefs(next);
                 }}
-                className="min-h-[44px] sm:min-h-[34px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="min-h-[44px] sm:min-h-[34px] rounded-xl border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               />
               <button
                 type="button"
@@ -550,7 +550,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                       className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
                         active
                           ? 'ap-status-strained font-bold'
-                          : 'bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200'
+                          : 'bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       {area.label}
@@ -569,7 +569,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
               onChange={(e) => setSorenessNote(e.target.value)}
               placeholder="Optional note for your morning coach digest (e.g. tight left soleus, midterms)…"
               aria-label="Optional soreness or stress note for coach"
-              className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs text-slate-900 dark:text-white"
+              className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-slate-900 dark:text-white"
             />
           </div>
 

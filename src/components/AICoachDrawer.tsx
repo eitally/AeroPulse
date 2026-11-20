@@ -121,13 +121,13 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         aria-modal="true"
         aria-labelledby="thresh-ai-coach-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg h-full bg-white dark:bg-[#080A09] border-l border-[#558B00] dark:border-[#C8FF00] shadow-2xl flex flex-col"
+        className="w-full max-w-lg h-full bg-white dark:bg-ap-obsidian border-l border-[#558B00] dark:border-ap-volt shadow-2xl flex flex-col"
       >
         {/* Drawer Header */}
-        <div className="relative px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 border-b border-lime-600/25 dark:border-[#C8FF00]/20 flex items-center justify-between gap-3 bg-[#F8FAEE] dark:bg-[#111714] overflow-hidden">
+        <div className="relative px-4 sm:px-5 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3.5 border-b border-lime-600/25 dark:border-ap-volt/20 flex items-center justify-between gap-3 bg-[#F8FAEE] dark:bg-[#111714] overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#C8FF00] border border-[#65A30D] flex items-center justify-center text-[#080A09] shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-ap-volt border border-[#65A30D] flex items-center justify-center text-ap-obsidian shrink-0">
               <Bot className="w-4 h-4" />
             </div>
             <div className="min-w-0">
@@ -175,7 +175,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         {showKeyForm && onSaveGeminiApiKey && (
           <form
             onSubmit={handleSaveKeySubmit}
-            className="px-4 py-3 bg-slate-100/90 dark:bg-[#101B15] border-b border-slate-200 dark:border-[#244331] space-y-2"
+            className="px-4 py-3 bg-slate-100/90 dark:bg-ap-carbon border-b border-slate-200 dark:border-ap-edge space-y-2"
           >
             <div className="flex items-center justify-between text-2xs">
               <label
@@ -199,7 +199,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                 value={apiKeyDraft}
                 onChange={(e) => setApiKeyDraft(e.target.value)}
                 placeholder="Paste AIzaSy... key (or leave blank to use server env / Physiology Engine)"
-                className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-[#C8FF00]"
+                className="flex-1 min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-ap-volt"
               />
               <button
                 type="submit"
@@ -262,8 +262,8 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
               <div
                 className={`max-w-[92%] rounded-xl px-4 py-3 text-xs leading-relaxed space-y-2.5 ${
                   msg.role === 'user'
-                    ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
-                    : 'bg-slate-100 dark:bg-[#101B15] border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                    ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
+                    : 'bg-slate-100 dark:bg-ap-carbon border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
                 }`}
               >
                 <div className="whitespace-pre-line">{msg.content}</div>
@@ -317,7 +317,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                               className={`min-h-[30px] px-2.5 py-1 rounded-md text-2xs font-semibold flex items-center gap-1 shrink-0 transition-colors ${
                                 isScheduled
                                   ? 'bg-emerald-600/20 text-emerald-500 border border-emerald-500/30'
-                                  : 'bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09]'
+                                  : 'bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian'
                               }`}
                             >
                               {isScheduled ? (
@@ -335,7 +335,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                           </div>
 
                           {pw.workoutSyntax && (
-                            <pre className="text-2xs font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-[#15231B] p-2 rounded border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                            <pre className="text-2xs font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-ap-turf p-2 rounded border border-slate-200 dark:border-slate-800 overflow-x-auto">
                               {pw.workoutSyntax}
                             </pre>
                           )}
@@ -353,14 +353,14 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
             <div
               role="status"
               aria-live="polite"
-              className="rounded-xl bg-slate-100 dark:bg-[#101B15] border border-slate-200 dark:border-[#244331] px-4 py-3 text-xs text-slate-600 dark:text-slate-300 font-mono flex items-center justify-between gap-2"
+              className="rounded-xl bg-slate-100 dark:bg-ap-carbon border border-slate-200 dark:border-ap-edge px-4 py-3 text-xs text-slate-600 dark:text-slate-300 font-mono flex items-center justify-between gap-2"
             >
               <span>Analyzing telemetry &amp; designing workout...</span>
               {onCancelSend && (
                 <button
                   type="button"
                   onClick={onCancelSend}
-                  className="min-h-[36px] px-2.5 py-1 rounded bg-slate-200 dark:bg-[#15231B] text-slate-700 dark:text-slate-200 text-2xs font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+                  className="min-h-[36px] px-2.5 py-1 rounded bg-slate-200 dark:bg-ap-turf text-slate-700 dark:text-slate-200 text-2xs font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -372,7 +372,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
         {/* Input Form */}
         <form
           onSubmit={handleSubmit}
-          className="px-3.5 pt-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] border-t border-slate-200 dark:border-[#244331] bg-white dark:bg-[#101B15] flex items-center gap-2"
+          className="px-3.5 pt-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] border-t border-slate-200 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center gap-2"
         >
           <input
             ref={inputRef}
@@ -381,7 +381,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about cycling/running plans, sleep, or click Send for today's Rx..."
-            className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-[#2B543B] bg-slate-50 dark:bg-[#15231B] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-[#C8FF00]"
+            className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-slate-50 dark:bg-ap-turf px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-ap-volt"
           />
           {isSendingChat && onCancelSend ? (
             <button

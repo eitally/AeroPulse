@@ -790,7 +790,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
         {/* Athlete A Selector Card (Cyan) */}
         <div className="lg:col-span-5 rounded-xl bg-sky-500/10 border border-sky-500/35 p-3.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-sky-500 text-[#080A09] font-mono font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-sky-500 text-ap-obsidian font-mono font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm">
               {athleteA.initials}
             </div>
             <div className="min-w-0">
@@ -807,7 +807,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white cursor-pointer truncate max-w-full rounded"
               >
                 {availableAthletes.map((a) => (
-                  <option key={`a-${a.id}`} value={a.id} className="bg-[#101B15] text-white">
+                  <option key={`a-${a.id}`} value={a.id} className="bg-ap-carbon text-white">
                     {a.name} — {a.goalSummary}
                   </option>
                 ))}
@@ -852,7 +852,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
         {/* Athlete B Selector Card (Aero Orange) */}
         <div className="lg:col-span-5 rounded-xl bg-orange-500/10 border border-orange-500/35 p-3.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-[#F97316] text-[#080A09] font-mono font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-[#F97316] text-ap-obsidian font-mono font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm">
               {athleteB.initials}
             </div>
             <div className="min-w-0">
@@ -869,7 +869,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 className="mt-0.5 bg-transparent text-sm font-bold text-slate-900 dark:text-white cursor-pointer truncate max-w-full rounded"
               >
                 {availableAthletes.map((b) => (
-                  <option key={`b-${b.id}`} value={b.id} className="bg-[#101B15] text-white">
+                  <option key={`b-${b.id}`} value={b.id} className="bg-ap-carbon text-white">
                     {b.name} — {b.goalSummary}
                   </option>
                 ))}
@@ -889,10 +889,10 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
       </div>
 
       {/* Live Synchronized Scrubber Readout Strip */}
-      <div className="rounded-xl bg-[#101B15] border border-[#1C3125] px-4 py-2.5 flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-[#F4F7F4]">
+      <div className="rounded-xl bg-ap-carbon border border-[#1C3125] px-4 py-2.5 flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-ap-chalk">
         <div className="flex items-center gap-2">
-          <span className="text-[#93A39A] uppercase">INSPECTING DATE:</span>
-          <span className="px-2 py-0.5 rounded bg-[#15231B] text-white font-bold">
+          <span className="text-ap-muted-dark uppercase">INSPECTING DATE:</span>
+          <span className="px-2 py-0.5 rounded bg-ap-turf text-white font-bold">
             {activePoint.date}
           </span>
           {(athleteA.redactedWellness || athleteB.redactedWellness) && (
@@ -905,29 +905,29 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
 
         <div className="flex flex-wrap items-center gap-5">
           <div>
-            <span className="text-[#93A39A] mr-1.5">CTL:</span>
+            <span className="text-ap-muted-dark mr-1.5">CTL:</span>
             <span className="text-[#38BDF8] font-bold">{activePoint.aCtl.toFixed(1)}</span>
-            <span className="text-[#93A39A] mx-1">vs</span>
+            <span className="text-ap-muted-dark mx-1">vs</span>
             <span className="text-[#F97316] font-bold">{activePoint.bCtl.toFixed(1)}</span>
           </div>
 
           <div>
-            <span className="text-[#93A39A] mr-1.5">Load/Hr (FTP-Norm):</span>
+            <span className="text-ap-muted-dark mr-1.5">Load/Hr (FTP-Norm):</span>
             <span className="text-[#38BDF8] font-bold">
               {activePoint.aLoadPerHour} TSS/hr ({activePoint.aEffectivePctFtp}% FTP)
             </span>
-            <span className="text-[#93A39A] mx-1">vs</span>
+            <span className="text-ap-muted-dark mx-1">vs</span>
             <span className="text-[#F97316] font-bold">
               {activePoint.bLoadPerHour} TSS/hr ({activePoint.bEffectivePctFtp}% FTP)
             </span>
           </div>
 
           <div>
-            <span className="text-[#93A39A] mr-1.5">RHR / HRV:</span>
+            <span className="text-ap-muted-dark mr-1.5">RHR / HRV:</span>
             <span className="text-[#38BDF8] font-bold">
               {athleteA.redactedWellness ? 'Private' : `${activePoint.aRhr}bpm / ${activePoint.aHrv}ms`}
             </span>
-            <span className="text-[#93A39A] mx-1">vs</span>
+            <span className="text-ap-muted-dark mx-1">vs</span>
             <span className="text-[#F97316] font-bold">
               {athleteB.redactedWellness ? 'Private' : `${activePoint.bRhr}bpm / ${activePoint.bHrv}ms`}
             </span>
@@ -1300,7 +1300,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
 
             {/* Summary Readout Pills for Athlete A & Athlete B */}
             <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-              <div className="px-3 py-1.5 rounded-lg bg-[#101B15] border border-sky-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-ap-carbon border border-sky-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" />
                 <span className="text-white font-semibold">{athleteA.name.split(' ')[0]}:</span>
                 <span className="text-[#38BDF8] font-bold">
@@ -1311,7 +1311,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 </span>
               </div>
 
-              <div className="px-3 py-1.5 rounded-lg bg-[#101B15] border border-orange-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-ap-carbon border border-orange-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
                 <span className="text-white font-semibold">{athleteB.name.split(' ')[0]}:</span>
                 <span className="text-[#F97316] font-bold">
@@ -1538,7 +1538,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
           {/* Side-by-Side Athlete Intensity Archetype & Zone Density Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 pt-1">
             {/* Athlete A Intensity Density Card */}
-            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-[#101B15] border border-sky-500/30 p-3.5 space-y-2.5">
+            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-ap-carbon border border-sky-500/30 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" />
@@ -1599,7 +1599,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
             </div>
 
             {/* Athlete B Intensity Density Card */}
-            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-[#101B15] border border-orange-500/30 p-3.5 space-y-2.5">
+            <div className="lg:col-span-5 rounded-xl bg-white/80 dark:bg-ap-carbon border border-orange-500/30 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
@@ -1660,7 +1660,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
             </div>
 
             {/* Right 2 Cols: Head-to-Head Intensity Delta & Coach Action */}
-            <div className="lg:col-span-2 rounded-xl bg-white/80 dark:bg-[#101B15] border border-stone-200/80 dark:border-slate-800/80 p-3.5 flex flex-col justify-between gap-3 font-mono">
+            <div className="lg:col-span-2 rounded-xl bg-white/80 dark:bg-ap-carbon border border-stone-200/80 dark:border-slate-800/80 p-3.5 flex flex-col justify-between gap-3 font-mono">
               <div className="space-y-1.5">
                 <span className="text-2xs uppercase text-slate-500 dark:text-slate-400 block">
                   INTENSITY DENSITY Δ
@@ -1733,7 +1733,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
 
             {/* Live Regression Badges for Athlete A & Athlete B */}
             <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-[#101B15] border border-sky-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-ap-carbon border border-sky-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" />
                 <span className="text-slate-900 dark:text-white font-semibold">{athleteA.name.split(' ')[0]}:</span>
                 {athleteA.redactedWellness ? (
@@ -1761,7 +1761,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 )}
               </div>
 
-              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-[#101B15] border border-orange-500/40 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-ap-carbon border border-orange-500/40 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
                 <span className="text-slate-900 dark:text-white font-semibold">{athleteB.name.split(' ')[0]}:</span>
                 {athleteB.redactedWellness ? (
@@ -1802,7 +1802,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
                 y={sTop}
                 width={sPlotW}
                 height={sPlotH}
-                className="fill-stone-100/80 dark:fill-[#101B15] stroke-stone-300 dark:stroke-[#1C3125]"
+                className="fill-stone-100/80 dark:fill-ap-carbon stroke-stone-300 dark:stroke-[#1C3125]"
               />
 
               {/* Top-Right: High CTL + Elevated RHR -> Sympathetic Overreaching Warning */}
@@ -2068,7 +2068,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
 
           {/* Scatter Point Inspector & Physiological Interpretation Footer */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1">
-            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-[#101B15] border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
+            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-ap-carbon border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
               {regressionA.statusTone === 'strain' ? (
                 <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               ) : (
@@ -2087,7 +2087,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-[#101B15] border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
+            <div className="lg:col-span-5 rounded-lg bg-white/80 dark:bg-ap-carbon border border-stone-200/80 dark:border-slate-800/80 p-3 flex items-start gap-2.5">
               {regressionB.statusTone === 'strain' ? (
                 <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               ) : (
@@ -2106,7 +2106,7 @@ const DualAthleteComparatorInner: React.FC<DualAthleteComparatorProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-2 rounded-lg bg-white/80 dark:bg-[#101B15] border border-stone-200/80 dark:border-slate-800/80 p-3 flex flex-col justify-between font-mono text-2xs">
+            <div className="lg:col-span-2 rounded-lg bg-white/80 dark:bg-ap-carbon border border-stone-200/80 dark:border-slate-800/80 p-3 flex flex-col justify-between font-mono text-2xs">
               <span className="text-slate-500 dark:text-slate-400 uppercase text-2xs">
                 POINT ({activeScatterRow.date})
               </span>

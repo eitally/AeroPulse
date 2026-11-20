@@ -1,26 +1,11 @@
 import React, { Suspense } from 'react';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+import { useSessionAuth } from '../contexts/SessionAuthContext';
+import { useTelemetryWorkspace } from '../contexts/TelemetryWorkspaceContext';
+import { useTeamCoach } from '../contexts/TeamCoachContext';
 import type { RosterTab } from './AthleteRosterModal';
 import type { UserGuideChapterId } from './UserGuideModal';
-import type {
-  ActiveTab,
-  AthleteProfile,
-  AthletePrivacySettings,
-  CoachChatMessage,
-  CoachWorkspaceSubTab,
-  ConnectedAthleteRecord,
-  ConnectionStatus,
-  DistanceUnit,
-  MapTileProvider,
-  PlannedWorkoutEvent,
-  StravaSyncPolicy,
-  StravaSyncWindow,
-  TeamSummaryWithRole,
-  ThreshUser,
-  UnifiedActivity,
-  UnifiedWellnessDay,
-} from '../types';
 
 const AICoachDrawer = lazyWithRetry(
   () => import('./AICoachDrawer').then((m) => ({ default: m.AICoachDrawer })),
@@ -51,217 +36,129 @@ export interface CockpitModalsProps {
   // AI Coach Drawer
   isCoachDrawerOpen: boolean;
   onCloseCoachDrawer: () => void;
-  activeViewName: ActiveTab;
-  latestWellness: UnifiedWellnessDay | null;
-  chatMessages: CoachChatMessage[];
-  onSendChatMessage: (userText: string) => Promise<void>;
-  isSendingChat: boolean;
-  onCancelSendChat: () => void;
-  coachDraftPrompt: string;
-  onClearDraftPrompt: () => void;
-  hasGeminiKey: boolean;
-  onSaveGeminiApiKey: (key: string) => Promise<void>;
-  onScheduleProposedWorkout: (workout: Partial<PlannedWorkoutEvent>) => Promise<void>;
 
   // Athlete Profile Modal
   isProfileModalOpen: boolean;
   onCloseProfileModal: () => void;
-  effectiveAthleteProfile: AthleteProfile;
-  distanceUnit: DistanceUnit;
-  intervalsConnected: boolean;
-  isSyncingProfile: boolean;
-  onSyncProfileFromRemote: () => Promise<void>;
-  onSaveProfileOverride: (updated: AthleteProfile) => Promise<void>;
 
   // Data Sources Modal
   isDataSourcesOpen: boolean;
   onCloseDataSources: () => void;
-  connectionStatus: ConnectionStatus;
-  onConnectIntervals: (athleteId: string, apiKey: string) => Promise<void>;
-  onLaunchIntervalsOAuth?: () => Promise<void>;
-  onDisconnectIntervals: () => Promise<void>;
-  onLaunchWahooOAuth?: () => Promise<void>;
-  onDisconnectWahoo?: () => Promise<void>;
-  onLaunchPolarOAuth?: () => Promise<void>;
-  onDisconnectPolar?: () => Promise<void>;
-  onDisconnectGarmin: () => Promise<void>;
-  onDisconnectStrava: () => void;
-  hasStandaloneAccount?: boolean;
-  onUpdateStravaSyncPolicy?: (
-    windowChoice: StravaSyncWindow,
-    importProfileAndGear?: boolean
-  ) => Promise<StravaSyncPolicy | null>;
-  onSaveStravaCredentials: (clientId: string, clientSecret: string) => Promise<void>;
-  onLaunchStravaOAuth: (mode?: 'cloud' | 'localhost') => Promise<void>;
-  onExchangeStravaCode: (codeOrUrl: string) => Promise<void>;
-  onSaveStravaDirectToken: (refreshToken: string, accessToken?: string) => Promise<void>;
-  onSaveMapTileConfig: (provider: MapTileProvider, apiKey: string) => Promise<void>;
-  onExportBundle: () => Promise<{ bundle: string; envText: string } | null>;
-  onImportBundle: (bundleOrEnv: string) => Promise<void>;
-  onSyncNow: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
-  isSyncing: boolean;
-  syncError: string | null;
-  idbSavedAt: string | null;
-  persistedWorkoutCount: number;
-  onRebuildPersistedArchive: () => Promise<void>;
-  effectiveActivities: UnifiedActivity[];
-  onImportBatchActivities: (newActs: UnifiedActivity[]) => void;
 
   // Official Race Modal
   isOfficialRaceModalOpen: boolean;
   onCloseOfficialRaceModal: () => void;
-  onImportOfficialRaces: (races: UnifiedActivity[]) => void;
 
   // Athlete Roster Modal
   isRosterModalOpen: boolean;
   onCloseRosterModal: () => void;
-  primaryAthleteDisplayName: string;
-  selfInviteCode: string;
-  selfLatestWellness: UnifiedWellnessDay | null;
-  effectiveSelfPrivacySettings: AthletePrivacySettings;
-  onUpdateSelfPrivacy: React.Dispatch<React.SetStateAction<AthletePrivacySettings>>;
-  combinedRoster: ConnectedAthleteRecord[];
-  activeViewedAthleteId: string;
-  onSelectAthleteViewport: (id: string) => void;
-  onApproveAthleteRequest: (id: string, role: 'COACH_EDIT' | 'FRIEND_VIEW') => void;
-  onRemoveOrDeclineAthlete: (id: string) => void;
-  onToggleAthleteRole: (id: string) => void;
-  onAddFollowByInviteOrName: (
-    query: string,
-    role: 'COACH_EDIT' | 'FRIEND_VIEW',
-    specialty: 'Running' | 'Cycling'
-  ) => void;
-  onPushCoachWorkout: (
-    athleteId: string,
-    workout: {
-      date: string;
-      name: string;
-      sportCategory: 'Running' | 'Cycling';
-      plannedDurationSecs: number;
-      plannedLoad: number;
-      workoutSyntax: string;
-      description: string;
-    }
-  ) => void;
-  myTeams: TeamSummaryWithRole[];
-  activeTeamId: string | null;
-  resendConfigured: boolean;
   rosterInitialTab: RosterTab;
-  onSelectActiveTeam: (teamId: string | null) => void;
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
-  currentUser?: ThreshUser | null;
-  onUserUpdated?: (user: ThreshUser) => void;
-  onAccountDeleted?: () => void;
-  onOpenFullScreenStopwatch?: () => void;
-  onOpenCoachWorkspace?: (subTab?: CoachWorkspaceSubTab) => void;
 
   // User Guide Modal
   showMetricsGuide: boolean;
   guideInitialChapter?: UserGuideChapterId;
   onCloseMetricsGuide: () => void;
-  onNavigateTab: (tab: ActiveTab) => void;
-  onOpenDataSourcesFromGuide: () => void;
-  onOpenRosterModalFromGuide: () => void;
-  onOpenProfileModalFromGuide: () => void;
-  onOpenOfficialRaceModalFromGuide: () => void;
-  onOpenAICoachFromGuide: (prompt?: string) => void;
 }
 
 export const CockpitModals: React.FC<CockpitModalsProps> = ({
   isCoachDrawerOpen,
   onCloseCoachDrawer,
-  activeViewName,
-  latestWellness,
-  chatMessages,
-  onSendChatMessage,
-  isSendingChat,
-  onCancelSendChat,
-  coachDraftPrompt,
-  onClearDraftPrompt,
-  hasGeminiKey,
-  onSaveGeminiApiKey,
-  onScheduleProposedWorkout,
-
   isProfileModalOpen,
   onCloseProfileModal,
-  effectiveAthleteProfile,
-  distanceUnit,
-  intervalsConnected,
-  isSyncingProfile,
-  onSyncProfileFromRemote,
-  onSaveProfileOverride,
-
   isDataSourcesOpen,
   onCloseDataSources,
-  connectionStatus,
-  onConnectIntervals,
-  onLaunchIntervalsOAuth,
-  onDisconnectIntervals,
-  onLaunchWahooOAuth,
-  onDisconnectWahoo,
-  onLaunchPolarOAuth,
-  onDisconnectPolar,
-  onDisconnectGarmin,
-  onDisconnectStrava,
-  hasStandaloneAccount,
-  onUpdateStravaSyncPolicy,
-  onSaveStravaCredentials,
-  onLaunchStravaOAuth,
-  onExchangeStravaCode,
-  onSaveStravaDirectToken,
-  onSaveMapTileConfig,
-  onExportBundle,
-  onImportBundle,
-  onSyncNow,
-  isSyncing,
-  syncError,
-  idbSavedAt,
-  persistedWorkoutCount,
-  onRebuildPersistedArchive,
-  effectiveActivities,
-  onImportBatchActivities,
-
   isOfficialRaceModalOpen,
   onCloseOfficialRaceModal,
-  onImportOfficialRaces,
-
   isRosterModalOpen,
   onCloseRosterModal,
-  primaryAthleteDisplayName,
-  selfInviteCode,
-  selfLatestWellness,
-  effectiveSelfPrivacySettings,
-  onUpdateSelfPrivacy,
-  combinedRoster,
-  activeViewedAthleteId,
-  onSelectAthleteViewport,
-  onApproveAthleteRequest,
-  onRemoveOrDeclineAthlete,
-  onToggleAthleteRole,
-  onAddFollowByInviteOrName,
-  onPushCoachWorkout,
-  myTeams,
-  activeTeamId,
-  resendConfigured,
   rosterInitialTab,
-  onSelectActiveTeam,
-  onTeamsUpdated,
-  currentUser,
-  onUserUpdated,
-  onAccountDeleted,
-  onOpenFullScreenStopwatch,
-  onOpenCoachWorkspace,
-
   showMetricsGuide,
   guideInitialChapter,
   onCloseMetricsGuide,
-  onNavigateTab,
-  onOpenDataSourcesFromGuide,
-  onOpenRosterModalFromGuide,
-  onOpenProfileModalFromGuide,
-  onOpenOfficialRaceModalFromGuide,
-  onOpenAICoachFromGuide,
 }) => {
+  const {
+    currentUser,
+    onUserUpdated,
+    onAccountDeleted,
+    hasStandaloneAccount,
+    connectionStatus,
+    hasGeminiKey,
+    intervalsConnected,
+    isSyncingProfile,
+    isSyncing,
+    syncError,
+    idbSavedAt,
+    persistedWorkoutCount,
+    distanceUnit,
+    resendConfigured,
+    onConnectIntervals,
+    onLaunchIntervalsOAuth,
+    onDisconnectIntervals,
+    onLaunchWahooOAuth,
+    onDisconnectWahoo,
+    onLaunchPolarOAuth,
+    onDisconnectPolar,
+    onDisconnectGarmin,
+    onDisconnectStrava,
+    onUpdateStravaSyncPolicy,
+    onSaveStravaCredentials,
+    onLaunchStravaOAuth,
+    onExchangeStravaCode,
+    onSaveStravaDirectToken,
+    onSaveMapTileConfig,
+    onSaveGeminiApiKey,
+    onExportBundle,
+    onImportBundle,
+    onSyncNow,
+    onSyncProfileFromRemote,
+    onRebuildPersistedArchive,
+    onImportBatchActivities,
+    onImportOfficialRaces,
+  } = useSessionAuth();
+
+  const {
+    activeTab: activeViewName,
+    setActiveTab: onNavigateTab,
+    effectiveActivities,
+    latestWellness,
+    effectiveAthleteProfile,
+    handleSaveProfileOverride: onSaveProfileOverride,
+    handleScheduleProposedWorkout: onScheduleProposedWorkout,
+    handleOpenDataSources: onOpenDataSourcesFromGuide,
+    handleOpenRosterModal: onOpenRosterModalFromGuide,
+    handleOpenProfileModal: onOpenProfileModalFromGuide,
+    handleOpenOfficialRaceModal: onOpenOfficialRaceModalFromGuide,
+  } = useTelemetryWorkspace();
+
+  const {
+    chatMessages,
+    onSendChatMessage,
+    isSendingChat,
+    onCancelSendChat,
+    coachDraftPrompt,
+    onClearDraftPrompt,
+    primaryAthleteDisplayName,
+    selfInviteCode,
+    selfLatestWellness,
+    effectiveSelfPrivacySettings,
+    onUpdateSelfPrivacy,
+    combinedRoster,
+    activeViewedAthleteId,
+    onSelectAthleteViewportFromModal: onSelectAthleteViewport,
+    onApproveAthleteRequest,
+    onRemoveOrDeclineAthlete,
+    onToggleAthleteRole,
+    onAddFollowByInviteOrName,
+    onPushCoachWorkout,
+    myTeams,
+    activeTeamId,
+    onSelectActiveTeam,
+    onTeamsUpdated,
+    onOpenFullScreenStopwatch,
+    onOpenCoachWorkspace,
+    onOpenAICoachFromGuide,
+  } = useTeamCoach();
+
   return (
     <WorkspaceErrorBoundary resetKey="cockpit-modals" fallbackTitle="Modal Needs Recovery">
       {isCoachDrawerOpen && (

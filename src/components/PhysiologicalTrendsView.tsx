@@ -642,7 +642,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['vo2Max', 'rideEftp'])}
-                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-ap-cobalt/45 dark:hover:border-ap-volt/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Ceiling + Bike eFTP
               </button>
@@ -655,21 +655,21 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       : ['rideEftp', 'wPerKg', 'efficiencyFactor']
                   )
                 }
-                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-ap-cobalt/45 dark:hover:border-ap-volt/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 {hideWeight ? 'Power + EF' : 'Power + W/kg + EF'}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['hrvRMSSD', 'restingHR'])}
-                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-ap-cobalt/45 dark:hover:border-ap-volt/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Autonomic (HRV + RHR)
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMetrics(['rideEftp', 'runEftp'])}
-                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-[#1C5436]/45 dark:hover:border-[#C8FF00]/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
+                className="ap-touch-row px-2.5 py-1 rounded-md liquid-glass-subtle hover:border-ap-cobalt/45 dark:hover:border-ap-volt/45 text-slate-700 dark:text-slate-300 font-medium transition-colors cursor-pointer"
               >
                 Bike vs Run eFTP
               </button>
@@ -804,7 +804,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
         </div>
 
         {/* Large Unified SVG Multi-Metric Canvas */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-[#15231B]/45 p-2 sm:p-3">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/40 dark:bg-ap-turf/45 p-2 sm:p-3">
           {!hasAnyActiveChartData ? (
             <div
               data-testid="trends-empty-state"

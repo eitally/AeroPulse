@@ -284,7 +284,7 @@ const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps>
       {isExpanded && (
       <div
         id="thresh-14d-readiness-table"
-        className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-[#15231B]/30"
+        className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/30 dark:bg-ap-turf/30"
       >
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>
@@ -310,7 +310,7 @@ const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps>
 
             {/* Pinned 14-Day Mean Baseline Row */}
             <tr className="bg-emerald-950/6 dark:bg-emerald-400/10 border-b-2 border-emerald-700/25 dark:border-emerald-400/25 font-mono text-xs text-emerald-950 dark:text-emerald-50">
-              <td className="py-2 px-3 font-sans font-bold text-[#1C5436] dark:text-[#C8FF00] whitespace-nowrap">
+              <td className="py-2 px-3 font-sans font-bold text-ap-cobalt dark:text-ap-volt whitespace-nowrap">
                 14d Mean
               </td>
               <td className="py-2 px-3 font-bold">
@@ -550,7 +550,7 @@ const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps>
                         </svg>
                         {/* Non-distorted circular node at current day's exact coordinate */}
                         <span
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#0D9488] dark:bg-[#2DD4BF] ring-2 ring-white dark:ring-[#101B15] shadow-xs pointer-events-none"
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#0D9488] dark:bg-[#2DD4BF] ring-2 ring-white dark:ring-ap-carbon shadow-xs pointer-events-none"
                           style={{ left: `${(ctlXCurr / 56) * 100}%` }}
                         />
                       </div>
@@ -617,7 +617,7 @@ const FourteenDayReadinessLedgerInner: React.FC<FourteenDayReadinessLedgerProps>
                         </svg>
                         {/* Non-distorted circular node at current day's exact coordinate */}
                         <span
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#E11D48] dark:bg-[#FB7185] ring-2 ring-white dark:ring-[#101B15] shadow-xs pointer-events-none"
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#E11D48] dark:bg-[#FB7185] ring-2 ring-white dark:ring-ap-carbon shadow-xs pointer-events-none"
                           style={{ left: `${(atlXCurr / 56) * 100}%` }}
                         />
                       </div>

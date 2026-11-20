@@ -475,11 +475,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-[#101411] dark:text-[#F4F7F4] tracking-tight truncate">
+              <h1 className="text-base sm:text-lg font-bold text-ap-ink dark:text-ap-chalk tracking-tight truncate">
                 {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
               </h1>
               {activeTeam && (
-                <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
                   {activeTeam.brand.joinCode}
                 </span>
               )}
@@ -491,7 +491,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   value={activeTeamId || ''}
                   onChange={(e) => onSelectActiveTeam(e.target.value || null)}
                   aria-label="Select Team in Coach Workspace"
-                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#2B5B3F]/25 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4]"
+                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
                 >
                   {myTeams.map((t) => (
                     <option key={t.brand.teamId} value={t.brand.teamId}>
@@ -568,7 +568,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSubTab('ROSTER')}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
               >
                 <span className="truncate">
                   All {connectedAthletesOnly.length} connected athletes clear for full training today
@@ -584,7 +584,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Users className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-                <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk truncate">
                   No team roster connected yet
                 </span>
               </div>
@@ -631,11 +631,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               type="button"
               aria-expanded={showRelayAndTopTimes}
               onClick={() => setShowRelayAndTopTimes((prev) => !prev)}
-              className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+              className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-ap-ink dark:text-ap-chalk cursor-pointer"
             >
               <span>Relay Optimizer &amp; NFHS FAT Top Times</span>
               <ChevronDown
-                className={`w-4 h-4 text-[#43584B] dark:text-[#93A39A] transition-transform ${
+                className={`w-4 h-4 text-ap-muted dark:text-ap-muted-dark transition-transform ${
                   showRelayAndTopTimes ? 'rotate-180' : ''
                 }`}
               />
@@ -819,7 +819,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   return (
                     <div
                       key={`cara-${ath.id}`}
-                      className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] p-3 text-xs space-y-1"
+                      className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-3 text-xs space-y-1"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-slate-900 dark:text-white">{ath.name}</span>

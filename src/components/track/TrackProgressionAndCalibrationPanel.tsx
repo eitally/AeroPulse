@@ -200,7 +200,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
                   `Updated threshold pace (${formatPace(bayesian.posteriorThresholdPaceSecsPerKm, distanceUnit)} · VDOT ${bayesian.posteriorVdotAer.toFixed(1)}).`
                 );
               }}
-              className="min-h-[44px] sm:min-h-[38px] px-3 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-[#C8FF00] border border-[#2B5B3F] text-2xs font-bold cursor-pointer shrink-0"
+              className="min-h-[44px] sm:min-h-[38px] px-3 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-ap-volt border border-ap-frame text-2xs font-bold cursor-pointer shrink-0"
             >
               Update Pace Zones
             </button>
@@ -258,14 +258,14 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
                   </span>
                 </div>
               </div>
-              <div className="relative h-3 w-full rounded-full bg-slate-200 dark:bg-[#15231B] overflow-hidden">
+              <div className="relative h-3 w-full rounded-full bg-slate-200 dark:bg-ap-turf overflow-hidden">
                 <div
                   style={{ width: `${widthPct}%` }}
                   className={`h-full rounded-full transition-all ${AXIS_BAR_CLASSES[axis.axisId]}`}
                 />
                 <div
                   style={{ left: `${targetPct}%` }}
-                  className="absolute top-0 bottom-0 w-1 bg-[#101B15] dark:bg-[#C8FF00]"
+                  className="absolute top-0 bottom-0 w-1 bg-ap-carbon dark:bg-ap-volt"
                   title={`Target Level: ${axis.targetLevel.toFixed(1)}`}
                 />
               </div>
@@ -278,7 +278,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
       {drawerOpen && (
         <div
           data-testid="bayesian-quarantine-drawer"
-          className="rounded-xl ap-card-inset p-4 space-y-3 border border-emerald-900/15 dark:border-[#244331]"
+          className="rounded-xl ap-card-inset p-4 space-y-3 border border-emerald-900/15 dark:border-ap-edge"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -301,7 +301,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
               {bayesian.auditLog.slice(-6).reverse().map((row) => (
                 <div
                   key={row.activityId}
-                  className="rounded-lg bg-white dark:bg-[#101B15] border border-emerald-900/10 dark:border-[#244331] px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                  className="rounded-lg bg-white dark:bg-ap-carbon border border-emerald-900/10 dark:border-ap-edge px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                 >
                   <div className="min-w-0 space-y-0.5">
                     <div className="flex flex-wrap items-center gap-2">

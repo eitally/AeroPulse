@@ -288,8 +288,8 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
                       onClick={() => setPainArea(area.id)}
                       className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
                         selected
-                          ? 'bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]'
-                          : 'bg-white dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] text-slate-700 dark:text-slate-200'
+                          ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
+                          : 'bg-white dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       {area.label}
@@ -304,7 +304,7 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
                 onChange={(e) => setSorenessNote(e.target.value)}
                 placeholder="Optional note (e.g., tight left shin on track turns)"
                 aria-label="Optional soreness note"
-                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 py-1.5 text-xs text-slate-900 dark:text-white"
+                className="w-full min-h-[44px] rounded-xl border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 py-1.5 text-xs text-slate-900 dark:text-white"
               />
             </div>
           )}

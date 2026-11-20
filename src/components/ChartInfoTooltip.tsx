@@ -136,13 +136,13 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
         aria-label={`Physiological & Coaching Guide: ${title}`}
         aria-expanded={isOpen}
         title={`What is ${title}?`}
-        className="relative inline-flex items-center justify-center p-1 -m-1 rounded-full after:content-[''] after:absolute after:-inset-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#56BA00] dark:focus-visible:ring-[#C8FF00]"
+        className="relative inline-flex items-center justify-center p-1 -m-1 rounded-full after:content-[''] after:absolute after:-inset-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#56BA00] dark:focus-visible:ring-ap-volt"
       >
         <span
           className={`inline-flex items-center justify-center w-5 h-5 rounded-full transition-colors select-none ${
             isOpen
-              ? 'bg-[#F7FEE7] dark:bg-[#C8FF00]/15 text-[#3F6212] dark:text-[#C8FF00] border border-[#A3E635] dark:border-[#C8FF00]/40'
-              : 'liquid-capsule-track text-[#43584B] dark:text-[#93A39A] hover:opacity-85'
+              ? 'bg-[#F7FEE7] dark:bg-ap-volt/15 text-[#3F6212] dark:text-ap-volt border border-[#A3E635] dark:border-ap-volt/40'
+              : 'liquid-capsule-track text-ap-muted dark:text-ap-muted-dark hover:opacity-85'
           }`}
         >
           <HelpCircle className="w-3.5 h-3.5 shrink-0 ap-text-brand" />
@@ -177,7 +177,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <HelpCircle className="w-3.5 h-3.5 ap-text-brand shrink-0" />
-                  <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4] leading-snug">
+                  <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk leading-snug">
                     {title}
                   </span>
                   {liveStatus && (
@@ -191,7 +191,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
                   )}
                 </div>
                 {subtitle && (
-                  <p className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] mt-0.5 pl-5 truncate">
+                  <p className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark mt-0.5 pl-5 truncate">
                     {subtitle}
                   </p>
                 )}
@@ -199,7 +199,7 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="relative p-1 rounded-lg text-[#43584B] hover:text-[#101411] dark:text-[#93A39A] dark:hover:text-[#F4F7F4] after:content-[''] after:absolute after:-inset-2 shrink-0"
+                className="relative p-1 rounded-lg text-ap-muted hover:text-ap-ink dark:text-ap-muted-dark dark:hover:text-ap-chalk after:content-[''] after:absolute after:-inset-2 shrink-0"
                 aria-label="Close guide"
               >
                 <X className="w-4 h-4" />
@@ -213,15 +213,15 @@ export const ChartInfoTooltip: React.FC<ChartInfoTooltipProps> = ({
             )}
 
             <div className="space-y-1">
-              <p className="text-xs text-[#101411] dark:text-[#F4F7F4] leading-snug">
+              <p className="text-xs text-ap-ink dark:text-ap-chalk leading-snug">
                 {whatItMeasures}
               </p>
-              <p className="text-2xs text-[#43584B] dark:text-[#93A39A] leading-snug font-mono ap-card-inset rounded-lg px-2 py-1">
+              <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug font-mono ap-card-inset rounded-lg px-2 py-1">
                 {benchmarks}
               </p>
             </div>
 
-            <div className="pt-0.5 flex items-start gap-1.5 text-xs text-[#101411] dark:text-[#F4F7F4] font-medium leading-snug">
+            <div className="pt-0.5 flex items-start gap-1.5 text-xs text-ap-ink dark:text-ap-chalk font-medium leading-snug">
               <Sparkles className="w-3.5 h-3.5 ap-text-brand shrink-0 mt-0.5" />
               <span>{coachingAction}</span>
             </div>

@@ -227,7 +227,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
             <AeroPulseLogo size="sm" />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-mono font-bold uppercase tracking-wider bg-[#1C5436]/10 text-[#1C5436] dark:bg-[#C8FF00]/15 dark:text-[#C8FF00]">
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-mono font-bold uppercase tracking-wider bg-ap-cobalt/10 text-ap-cobalt dark:bg-ap-volt/15 dark:text-ap-volt">
                   {sharedWorkout?.kind === 'STOPWATCH' ? '#stopwatch splits' : 'Workout Share'}
                 </span>
               </div>
@@ -290,7 +290,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="space-y-2 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-mono font-bold bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09]">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-mono font-bold bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian">
                       {sharedWorkout.sport === 'Cycling' ? (
                         <Bike className="w-3.5 h-3.5" />
                       ) : sharedWorkout.kind === 'STOPWATCH' ? (
@@ -551,7 +551,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                               {row.paceOrPower}
                             </span>
                           )}
-                          <span className="text-sm font-bold tabular-nums text-[#1C5436] dark:text-[#C8FF00]">
+                          <span className="text-sm font-bold tabular-nums text-ap-cobalt dark:text-ap-volt">
                             {row.lapTime}
                           </span>
                         </div>
@@ -614,7 +614,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                         </div>
 
                         <div className="text-right font-mono shrink-0">
-                          <div className="text-xs sm:text-sm font-bold tabular-nums text-[#1C5436] dark:text-[#C8FF00]">
+                          <div className="text-xs sm:text-sm font-bold tabular-nums text-ap-cobalt dark:text-ap-volt">
                             {st.prescribedTargetLabel}
                           </div>
                           {st.repSplitLabel && (
