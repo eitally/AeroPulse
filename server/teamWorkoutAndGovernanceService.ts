@@ -1083,6 +1083,8 @@ export async function saveTeamWorkoutLibraryTemplate(params: {
       params.template.category === 'XC_TEMPO' ||
       params.template.category === 'ROAD' ||
       params.template.category === 'CYCLING' ||
+      params.template.category === 'SWIMMING' ||
+      params.template.category === 'TRIATHLON' ||
       params.template.category === 'RECOVERY'
         ? params.template.category
         : 'TRACK';

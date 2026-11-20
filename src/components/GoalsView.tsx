@@ -60,6 +60,11 @@ import {
   formatPaceClockInput,
   parsePaceClockInput,
 } from '../utils/formatters';
+import {
+  DEFAULT_SWIM_CSS_SECS_PER_100M,
+  formatSwimClockInput,
+  parseSwimClockInput,
+} from '../physiology/swimZones';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 import {
   exportWorkoutAsErg,
@@ -127,7 +132,7 @@ export interface PlannedEventBatchItem {
 
 interface GoalsViewProps {
   annualMileageGoals: AnnualMileageGoal[];
-  onUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling', targetMeters: number) => void;
+  onUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => void;
   targetGoals: TargetGoal[];
   onAddTargetGoal: (goal: Omit<TargetGoal, 'id'>) => void;
   onDeleteTargetGoal: (id: string) => void;
@@ -200,10 +205,20 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
 
   // Smart Default Archetype by athlete's primarySport
   const [archetypeCategory, setArchetypeCategory] = useState<GoalArchetypeCategory>(() =>
-    athleteProfile?.primarySport === 'Running' ? 'ROAD' : 'CYCLING'
+    athleteProfile?.primarySport === 'Swimming' || athleteProfile?.primarySport === 'Triathlon'
+      ? 'SWIM_TRI'
+      : athleteProfile?.primarySport === 'Running'
+        ? 'ROAD'
+        : 'CYCLING'
   );
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<GoalArchetypeId>(() =>
-    athleteProfile?.primarySport === 'Running' ? 'ROAD_HALF_MARATHON' : 'CYC_FTP_BUILDER'
+    athleteProfile?.primarySport === 'Swimming'
+      ? 'SWIM_CSS_ENDURANCE'
+      : athleteProfile?.primarySport === 'Triathlon'
+        ? 'TRI_OLYMPIC'
+        : athleteProfile?.primarySport === 'Running'
+          ? 'ROAD_HALF_MARATHON'
+          : 'CYC_FTP_BUILDER'
   );
   const [blockWeeks, setBlockWeeks] = useState<4 | 8 | 12 | 16>(12);
   const [startAnchorMode, setStartAnchorMode] = useState<PlanStartAnchorMode>('NEXT_MONDAY');
@@ -298,6 +313,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   }, [athleteProfile?.ftp, wellnessDays]);
 
   const safeThresholdPace = Math.max(95, athleteProfile?.thresholdPaceSecsPerKm || 250);
+  const safeSwimCss = athleteProfile?.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M;
 
   // Course Physics, Durability, Weather & Carb/Sodium Race Simulator State (stored cleanly in SI)
   const [simSport, setSimSport] = useState<'Cycling' | 'Running'>('Running');
@@ -597,17 +613,29 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             generatedPlanWeeks[generatedPlanWeeks.length - 1].sessions.length - 1
           ]?.date || targetRaceDateIso;
         const isCycling = selectedArchetype.sportCategory === 'Cycling';
+        const isSwimming = selectedArchetype.sportCategory === 'Swimming';
+        const isMultisport = selectedArchetype.sportCategory === 'Multisport';
         onAddTargetGoal({
           title: selectedArchetype.title,
           type: 'RACE_EVENT',
           sportCategory: selectedArchetype.sportCategory,
           targetDate: startAnchorMode === 'RACE_DATE' ? targetRaceDateIso : finalWeekLastDate,
           priority: 'A-Race',
-          currentValue: isCycling ? currentBikeFtp : safeThresholdPace,
+          currentValue: isCycling
+            ? currentBikeFtp
+            : isSwimming
+              ? safeSwimCss
+              : isMultisport
+                ? Math.round(currentCtl)
+                : safeThresholdPace,
           targetValue: isCycling
             ? Math.round(currentBikeFtp * 1.08)
-            : Math.round(safeThresholdPace * 0.96),
-          unit: isCycling ? 'W' : 's/km',
+            : isSwimming
+              ? Math.max(65, Math.round(safeSwimCss * 0.96))
+              : isMultisport
+                ? Math.max(60, Math.round(currentCtl + 15))
+                : Math.round(safeThresholdPace * 0.96),
+          unit: isCycling ? 'W' : isSwimming ? 's/100m' : isMultisport ? 'CTL' : 's/km',
           notes: `Auto-created from ${blockWeeks}-week ${selectedArchetype.title} plan (${resolvedStartMondayIso}).`,
         });
       }
@@ -659,9 +687,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   const defaultGoalSport: SportCategory =
     athleteProfile?.primarySport === 'Cycling'
       ? 'Cycling'
-      : athleteProfile?.primarySport === 'Hybrid'
-        ? 'Multisport'
-        : 'Running';
+      : athleteProfile?.primarySport === 'Swimming'
+        ? 'Swimming'
+        : athleteProfile?.primarySport === 'Triathlon' || athleteProfile?.primarySport === 'Hybrid'
+          ? 'Multisport'
+          : 'Running';
   const [newTitle, setNewTitle] = useState('');
   const [newSport, setNewSport] = useState<SportCategory>(defaultGoalSport);
   const [newPriority, setNewPriority] = useState<'A-Race' | 'B-Race' | 'Milestone'>('A-Race');
@@ -669,12 +699,20 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   const [newTargetVal, setNewTargetVal] = useState(() =>
     defaultGoalSport === 'Cycling'
       ? String(Math.round(currentBikeFtp * 1.08))
-      : defaultGoalSport === 'Running'
-        ? formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
-        : '85'
+      : defaultGoalSport === 'Swimming'
+        ? formatSwimClockInput(Math.max(65, Math.round(safeSwimCss * 0.96)), distanceUnit)
+        : defaultGoalSport === 'Running'
+          ? formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
+          : String(Math.max(60, Math.round(currentCtl + 15)))
   );
   const [newUnit, setNewUnit] = useState(() =>
-    defaultGoalSport === 'Cycling' ? 'W' : defaultGoalSport === 'Running' ? 's/km' : 'CTL'
+    defaultGoalSport === 'Cycling'
+      ? 'W'
+      : defaultGoalSport === 'Swimming'
+        ? 's/100m'
+        : defaultGoalSport === 'Running'
+          ? 's/km'
+          : 'CTL'
   );
   const [newNotes, setNewNotes] = useState('');
 
@@ -685,7 +723,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       newUnit === 's/km'
         ? parsePaceClockInput(newTargetVal, distanceUnit) ??
           (Math.round(safeThresholdPace * 0.96) || 240)
-        : Number(newTargetVal) || 85;
+        : newUnit === 's/100m'
+          ? parseSwimClockInput(newTargetVal, distanceUnit) ??
+            Math.max(65, Math.round(safeSwimCss * 0.96))
+          : Number(newTargetVal) || 85;
     onAddTargetGoal({
       title: newTitle.trim(),
       type: newPriority === 'Milestone' ? 'PERFORMANCE_METRIC' : 'RACE_EVENT',
@@ -700,7 +741,9 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             ? currentBikeFtp
             : newUnit === 's/km'
               ? safeThresholdPace
-              : Math.round(val * 0.92),
+              : newUnit === 's/100m'
+                ? safeSwimCss
+                : Math.round(val * 0.92),
       targetValue: val,
       unit: newUnit,
       notes: newNotes.trim() || 'Custom performance target tracked by THRESH.',
@@ -950,6 +993,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       { id: 'CYCLING', label: 'Cycling' },
                       { id: 'ROAD', label: 'Road Run' },
                       { id: 'TRACK', label: 'Track Oval' },
+                      { id: 'SWIM_TRI', label: 'Swim & Tri' },
                     ] as const
                   ).map((cat) => {
                     const active = archetypeCategory === cat.id;
@@ -957,6 +1001,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       <button
                         key={cat.id}
                         type="button"
+                        data-testid={`goals-cat-${cat.id}`}
                         aria-pressed={active}
                         onClick={() => {
                           setArchetypeCategory(cat.id);
@@ -1809,6 +1854,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   } else if (sp === 'Cycling') {
                     setNewUnit('W');
                     setNewTargetVal(String(Math.round(currentBikeFtp * 1.08)));
+                  } else if (sp === 'Swimming') {
+                    setNewUnit('s/100m');
+                    setNewTargetVal(
+                      formatSwimClockInput(Math.max(65, Math.round(safeSwimCss * 0.96)), distanceUnit)
+                    );
                   } else {
                     setNewUnit('CTL');
                     setNewTargetVal(String(Math.max(55, Math.round(currentCtl + 12))));
@@ -1859,7 +1909,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 Target Value &amp; Unit
               </label>
               <div className="flex gap-1">
-                {newUnit === 's/km' ? (
+                {newUnit === 's/km' || newUnit === 's/100m' ? (
                   <input
                     id={`${formId}-goal-val`}
                     data-testid="goal-pace-clock-input"
@@ -1867,7 +1917,15 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     inputMode="numeric"
                     value={newTargetVal}
                     onChange={(e) => setNewTargetVal(e.target.value)}
-                    placeholder={distanceUnit === 'mi' ? '7:30' : '4:35'}
+                    placeholder={
+                      newUnit === 's/100m'
+                        ? distanceUnit === 'mi'
+                          ? '1:40'
+                          : '1:50'
+                        : distanceUnit === 'mi'
+                          ? '7:30'
+                          : '4:35'
+                    }
                     className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 ) : (
@@ -1889,6 +1947,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       setNewTargetVal(
                         formatPaceClockInput(Math.round(safeThresholdPace * 0.96), distanceUnit)
                       );
+                    } else if (nextUnit === 's/100m') {
+                      setNewTargetVal(
+                        formatSwimClockInput(
+                          Math.max(65, Math.round(safeSwimCss * 0.96)),
+                          distanceUnit
+                        )
+                      );
                     } else if (nextUnit === 'W') {
                       setNewTargetVal(String(Math.round(currentBikeFtp * 1.08)));
                     } else if (nextUnit === 'CTL') {
@@ -1898,6 +1963,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                   className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 >
                   <option value="s/km">Pace (/{distanceUnit})</option>
+                  <option value="s/100m">Swim CSS (/{distanceUnit === 'mi' ? '100yd' : '100m'})</option>
                   <option value="W">Watts</option>
                   <option value="CTL">CTL</option>
                   {!athleteProfile?.safeSportHideWeight && <option value="W/kg">W/kg</option>}

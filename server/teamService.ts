@@ -296,7 +296,7 @@ export async function createTeamForCoach(params: {
   shortName?: string;
   mascotOrMotto?: string;
   orgType: TeamOrgType;
-  primarySport?: 'Running' | 'Cycling' | 'Hybrid';
+  primarySport?: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
   primaryHex?: string;
   secondaryHex?: string;
   logoDataUrl?: string;

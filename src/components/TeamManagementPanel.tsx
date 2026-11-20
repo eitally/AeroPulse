@@ -187,9 +187,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [teamName, setTeamName] = useState('');
   const [shortName, setShortName] = useState('');
   const [mascotOrMotto, setMascotOrMotto] = useState('');
-  const [primarySport, setPrimarySport] = useState<'Running' | 'Cycling' | 'Hybrid'>(
-    'Running'
-  );
+  const [primarySport, setPrimarySport] = useState<
+    'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid'
+  >('Running');
   const [primaryHex, setPrimaryHex] = useState('#14532D');
   const [secondaryHex, setSecondaryHex] = useState('#D97706');
   const [logoDataUrl, setLogoDataUrl] = useState<string>('');

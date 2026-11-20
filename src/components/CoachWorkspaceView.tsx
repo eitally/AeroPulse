@@ -23,6 +23,7 @@ import {
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
+import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
@@ -409,6 +410,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
   const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
 
+  const workspaceScope = useMemo(
+    () =>
+      resolveWorkspaceSportAndRoleScope({
+        athleteProfile: selfProfile,
+        activeTeam,
+      }),
+    [selfProfile, activeTeam]
+  );
+
   const todayIso = getLocalDateIso();
 
   const teamPlanEvents = useMemo(() => {
@@ -624,8 +634,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </Suspense>
           </WorkspaceErrorBoundary>
 
-          {activeTeam?.brand?.orgType !== 'CYCLING_CLUB' &&
-            activeTeam?.brand?.primarySport !== 'Cycling' && (
+          {workspaceScope.showRelayOptimizer && (
           <div className="rounded-2xl liquid-glass overflow-hidden">
             <button
               type="button"
@@ -790,7 +799,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </Suspense>
           </WorkspaceErrorBoundary>
 
-          {activeTeam?.brand?.orgType === 'COLLEGIATE' && (
+          {activeTeam?.brand?.orgType === 'COLLEGIATE' && workspaceScope.showNcaaCara && (
           <section
             data-testid="coach-cara-audit"
             className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3"

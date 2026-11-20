@@ -38,6 +38,11 @@ import {
   isEBikeActivityText,
   shiftIsoDate,
 } from '../physiology/stravaLoadCalibration';
+import {
+  DEFAULT_SWIM_CSS_SECS_PER_100M,
+  buildSwimPaceZones,
+  deriveSwimCssFromActivities,
+} from '../physiology/swimZones';
 
 export const CURRENT_PMC_MODEL_VERSION = STRAVA_LOAD_MODEL_VERSION;
 
@@ -664,11 +669,31 @@ export function buildCompleteAthleteProfile(
   const storedPrimarySport: AthleteProfile['primarySport'] =
     storedPrimarySportRaw === 'Running' ||
     storedPrimarySportRaw === 'Cycling' ||
+    storedPrimarySportRaw === 'Swimming' ||
+    storedPrimarySportRaw === 'Triathlon' ||
     storedPrimarySportRaw === 'Hybrid'
       ? storedPrimarySportRaw
       : undefined;
   const resolvedPrimarySport: AthleteProfile['primarySport'] =
     partial?.primarySport || storedPrimarySport;
+
+  const derivedSwimCss = deriveSwimCssFromActivities(activities);
+  const rawSwimCss = Number(partial?.swimCssSecsPer100m || 0);
+  const resolvedSwimCss =
+    partial?.source === 'CUSTOM_OVERRIDE' && rawSwimCss >= 60 && rawSwimCss <= 240
+      ? Math.round(rawSwimCss)
+      : derivedSwimCss ||
+        (rawSwimCss >= 60 && rawSwimCss <= 240 && rawSwimCss !== DEFAULT_SWIM_CSS_SECS_PER_100M
+          ? Math.round(rawSwimCss)
+          : rawSwimCss >= 60 && rawSwimCss <= 240
+            ? Math.round(rawSwimCss)
+            : DEFAULT_SWIM_CSS_SECS_PER_100M);
+  const swimZones =
+    partial?.source === 'CUSTOM_OVERRIDE' &&
+    Array.isArray(partial?.swimZones) &&
+    partial.swimZones.length >= 4
+      ? partial.swimZones
+      : buildSwimPaceZones(resolvedSwimCss);
 
   return {
     athleteId: partial?.athleteId || '0',
@@ -692,6 +717,8 @@ export function buildCompleteAthleteProfile(
     runLthr: Math.round(runLthr),
     runMaxHr: Math.round(runMaxHr),
     thresholdPaceSecsPerKm: Number(thresholdPaceSecsPerKm.toFixed(1)),
+    swimCssSecsPer100m: resolvedSwimCss,
+    swimZones,
     powerZones,
     hrZones,
     runHrZones,
@@ -2383,15 +2410,21 @@ export async function safeParseResponseJson<T extends object = Record<string, un
 
 export function inferPrimarySportFromActivities(
   activities: UnifiedActivity[]
-): 'Running' | 'Cycling' | undefined {
+): 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | undefined {
   if (!Array.isArray(activities) || activities.length === 0) return undefined;
   const recent = activities.slice(0, 28);
   const runCount = recent.filter((a) => a.sportCategory === 'Running').length;
   const bikeCount = recent.filter((a) => a.sportCategory === 'Cycling').length;
+  const swimCount = recent.filter((a) => a.sportCategory === 'Swimming').length;
+  if (swimCount >= 1 && bikeCount >= 1 && runCount >= 1) return 'Triathlon';
+  if (swimCount > runCount && swimCount > bikeCount) return 'Swimming';
   if (runCount > bikeCount) return 'Running';
   if (bikeCount > runCount) return 'Cycling';
   const allRuns = activities.filter((a) => a.sportCategory === 'Running').length;
   const allBikes = activities.filter((a) => a.sportCategory === 'Cycling').length;
+  const allSwims = activities.filter((a) => a.sportCategory === 'Swimming').length;
+  if (allSwims >= 1 && allBikes >= 1 && allRuns >= 1) return 'Triathlon';
+  if (allSwims > allRuns && allSwims > allBikes) return 'Swimming';
   if (allRuns > allBikes) return 'Running';
   if (allBikes > allRuns) return 'Cycling';
   return undefined;

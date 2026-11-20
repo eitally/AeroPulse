@@ -39,6 +39,7 @@ import {
   formatDuration,
   formatPace,
 } from '../utils/formatters';
+import { formatSwimDistance } from '../physiology/swimZones';
 import { buildCompleteAthleteProfile } from '../utils/telemetryStorage';
 
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
@@ -67,7 +68,7 @@ export interface TodayPhysiologyDeepDiveProps {
   onSelectActivity: (act: UnifiedActivity) => void;
   onOpenActivitiesSegments: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
-  onUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling', targetMeters: number) => void;
+  onUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => void;
   onSaveProfileOverride: (updated: AthleteProfile) => Promise<void>;
   onOpenOfficialRaceModal?: () => void;
   onOpenDataSources?: () => void;
@@ -168,6 +169,14 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
     year: currentYear,
     targetDistanceMeters: 0,
   };
+  const swimGoal = annualMileageGoals.find((g) => g.sportCategory === 'Swimming') || {
+    sportCategory: 'Swimming' as const,
+    year: currentYear,
+    targetDistanceMeters: 0,
+  };
+
+  const toSwimInputVal = (meters: number, unit: DistanceUnit): string =>
+    Math.round(unit === 'mi' ? meters / 0.9144 : meters).toString();
 
   const [runInput, setRunInput] = useState<string>(() =>
     Math.round(convertMetersToUnit(runGoal.targetDistanceMeters, distanceUnit)).toString()
@@ -175,11 +184,15 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   const [bikeInput, setBikeInput] = useState<string>(() =>
     Math.round(convertMetersToUnit(bikeGoal.targetDistanceMeters, distanceUnit)).toString()
   );
+  const [swimInput, setSwimInput] = useState<string>(() =>
+    toSwimInputVal(swimGoal.targetDistanceMeters, distanceUnit)
+  );
 
   useEffect(() => {
     setRunInput(Math.round(convertMetersToUnit(runGoal.targetDistanceMeters, distanceUnit)).toString());
     setBikeInput(Math.round(convertMetersToUnit(bikeGoal.targetDistanceMeters, distanceUnit)).toString());
-  }, [distanceUnit, runGoal.targetDistanceMeters, bikeGoal.targetDistanceMeters]);
+    setSwimInput(toSwimInputVal(swimGoal.targetDistanceMeters, distanceUnit));
+  }, [distanceUnit, runGoal.targetDistanceMeters, bikeGoal.targetDistanceMeters, swimGoal.targetDistanceMeters]);
 
   const runSummary = useMemo(
     () => computeAnnualMileageSummary('Running', runGoal.targetDistanceMeters, activities, envFilter),
@@ -188,6 +201,10 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
   const bikeSummary = useMemo(
     () => computeAnnualMileageSummary('Cycling', bikeGoal.targetDistanceMeters, activities, envFilter),
     [bikeGoal.targetDistanceMeters, activities, envFilter]
+  );
+  const swimSummary = useMemo(
+    () => computeAnnualMileageSummary('Swimming', swimGoal.targetDistanceMeters, activities, envFilter),
+    [swimGoal.targetDistanceMeters, activities, envFilter]
   );
 
   const durabilityReport = useMemo(() => {
@@ -737,7 +754,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                       <option value="INDOOR">Indoor</option>
                     </select>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -789,6 +806,39 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
                           value={bikeInput}
                           onChange={(e) => setBikeInput(e.target.value)}
                           aria-label={`Cycling Annual Target (${distanceUnit})`}
+                          className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1 font-mono text-xs"
+                        />
+                        <button type="submit" className="min-h-[40px] px-3 rounded-lg ap-btn-primary text-2xs font-bold cursor-pointer">
+                          Save
+                        </button>
+                      </div>
+                    </form>
+                    <form
+                      data-testid="annual-volume-swimming"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const val = Number(swimInput);
+                        if (val > 0) {
+                          const meters = distanceUnit === 'mi' ? Math.round(val * 0.9144) : Math.round(val);
+                          onUpdateAnnualMileageGoal('Swimming', meters);
+                        }
+                      }}
+                      className="rounded-xl border border-slate-200 dark:border-ap-edge p-3 space-y-2"
+                    >
+                      <div className="flex justify-between font-mono">
+                        <span className="font-sans font-bold text-slate-900 dark:text-white">Swimming YTD</span>
+                        <span className="text-teal-700 dark:text-teal-400 font-bold">{swimSummary.pctOfAnnualTarget}%</span>
+                      </div>
+                      <div className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                        {formatSwimDistance(swimSummary.combinedTotalMeters, distanceUnit)}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          id={`${formId}-swim-ytd`}
+                          type="number"
+                          value={swimInput}
+                          onChange={(e) => setSwimInput(e.target.value)}
+                          aria-label={`Swimming Annual Target (${distanceUnit === 'mi' ? 'yd' : 'm'})`}
                           className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1 font-mono text-xs"
                         />
                         <button type="submit" className="min-h-[40px] px-3 rounded-lg ap-btn-primary text-2xs font-bold cursor-pointer">

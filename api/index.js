@@ -4611,6 +4611,8 @@ var SAFE_PROFILE_KEYS = [
   "runLthr",
   "runMaxHr",
   "thresholdPaceSecsPerKm",
+  "swimCssSecsPer100m",
+  "swimZones",
   "thresholdHistory",
   "safeSportHideWeight",
   "birthMonthYear",
@@ -9528,7 +9530,7 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     if (!cleanName) {
       return { ok: false, status: 400, error: "Template name is required." };
     }
-    const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
+    const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto8.randomBytes(6).toString("hex")}`;
     const record = {
@@ -14555,6 +14557,7 @@ function buildServerAthleteProfile(rawProfile, latestWellness, activities) {
     runLthr: Math.round(runLthr),
     runMaxHr: Math.round(runMaxHr),
     thresholdPaceSecsPerKm: Math.round(thresholdPaceSecsPerKm),
+    ...typeof rawProfile?.swimCssSecsPer100m === "number" && rawProfile.swimCssSecsPer100m > 0 ? { swimCssSecsPer100m: Math.round(rawProfile.swimCssSecsPer100m) } : {},
     powerZones,
     hrZones,
     runHrZones,

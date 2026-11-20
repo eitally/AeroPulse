@@ -376,8 +376,12 @@ export function sanitizePersistedAnnualGoals(
   const cleaned: AnnualMileageGoal[] = raw
     .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
     .map((item) => {
-      const sportCategory: 'Running' | 'Cycling' =
-        item.sportCategory === 'Cycling' ? 'Cycling' : 'Running';
+      const sportCategory: 'Running' | 'Cycling' | 'Swimming' =
+        item.sportCategory === 'Cycling'
+          ? 'Cycling'
+          : item.sportCategory === 'Swimming'
+            ? 'Swimming'
+            : 'Running';
       const yearNum = Number(item.year);
       const metersNum = Number(item.targetDistanceMeters);
       return {
@@ -388,7 +392,9 @@ export function sanitizePersistedAnnualGoals(
             ? metersNum
             : sportCategory === 'Cycling'
               ? 8_046_720
-              : 1_931_213,
+              : sportCategory === 'Swimming'
+                ? 100_000
+                : 1_931_213,
       };
     });
 

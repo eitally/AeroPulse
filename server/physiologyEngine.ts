@@ -84,6 +84,7 @@ export interface ServerRawProfileInput {
   runEFtp?: number;
   runLthr?: number;
   runMaxHr?: number;
+  swimCssSecsPer100m?: number;
   sportSettings?: ServerRawSportSetting[] | Record<string, ServerRawSportSetting>;
   stravaZones?: ServerStravaZonesPayload | null;
   powerZones?: ServerPowerZone[];
@@ -559,6 +560,9 @@ export function buildServerAthleteProfile(
     runLthr: Math.round(runLthr),
     runMaxHr: Math.round(runMaxHr),
     thresholdPaceSecsPerKm: Math.round(thresholdPaceSecsPerKm),
+    ...(typeof rawProfile?.swimCssSecsPer100m === 'number' && rawProfile.swimCssSecsPer100m > 0
+      ? { swimCssSecsPer100m: Math.round(rawProfile.swimCssSecsPer100m) }
+      : {}),
     powerZones,
     hrZones,
     runHrZones,

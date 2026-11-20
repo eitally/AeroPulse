@@ -10,6 +10,7 @@ import {
   Shield,
   Sliders,
   UserCheck,
+  Waves,
   X,
   Zap,
 } from "./icons/PhosphorIcons";
@@ -28,6 +29,13 @@ import {
   buildHrZonesFromCeilings,
   buildPowerZonesFromCeilings,
 } from '../utils/telemetryStorage';
+import {
+  DEFAULT_SWIM_CSS_SECS_PER_100M,
+  buildSwimPaceZones,
+  formatSwimClockInput,
+  formatSwimPacePer100,
+  parseSwimClockInput,
+} from '../physiology/swimZones';
 
 interface AthleteProfileModalProps {
   isOpen: boolean;
@@ -89,8 +97,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   onSyncProfileFromRemote,
   onSaveProfileOverride,
 }) => {
-  const [hrTab, setHrTab] = useState<'CYCLING' | 'RUNNING'>('CYCLING');
-  const [sportFieldsFilter, setSportFieldsFilter] = useState<'BOTH' | 'RUNNING' | 'CYCLING'>('BOTH');
+  const [hrTab, setHrTab] = useState<'CYCLING' | 'RUNNING' | 'SWIMMING'>('CYCLING');
+  const [sportFieldsFilter, setSportFieldsFilter] = useState<
+    'ALL' | 'RUNNING' | 'CYCLING' | 'SWIMMING'
+  >('ALL');
   const [savedToast, setSavedToast] = useState<string | null>(null);
   const [pendingDeleteHistoryId, setPendingDeleteHistoryId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -121,6 +131,15 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   );
   const [ltPaceInput, setLtPaceInput] = useState<string>(() =>
     formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit)
+  );
+  const [swimCssSecsPer100m, setSwimCssSecsPer100m] = useState<number>(
+    athleteProfile.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M
+  );
+  const [swimCssInput, setSwimCssInput] = useState<string>(() =>
+    formatSwimClockInput(
+      athleteProfile.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M,
+      distanceUnit
+    )
   );
   const [effectiveDate, setEffectiveDate] = useState<string>(() =>
     getLocalDateIso()
@@ -160,6 +179,9 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     setRunMaxHr(athleteProfile.runMaxHr);
     setThresholdPaceSecsPerKm(athleteProfile.thresholdPaceSecsPerKm);
     setLtPaceInput(formatPaceSecsForInput(athleteProfile.thresholdPaceSecsPerKm, distanceUnit));
+    const nextCss = athleteProfile.swimCssSecsPer100m || DEFAULT_SWIM_CSS_SECS_PER_100M;
+    setSwimCssSecsPer100m(nextCss);
+    setSwimCssInput(formatSwimClockInput(nextCss, distanceUnit));
     setThresholdHistory(athleteProfile.thresholdHistory || []);
     setSafeSportHideWeight(Boolean(athleteProfile.safeSportHideWeight));
     setBirthMonthYear(athleteProfile.birthMonthYear || '');
@@ -188,6 +210,8 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     runLthr === athleteProfile.runLthr && runMaxHr === athleteProfile.runMaxHr
       ? athleteProfile.runHrZones
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
+
+  const previewSwimZones = buildSwimPaceZones(swimCssSecsPer100m);
 
   const profileAgeTier = resolveAthleteAgeTier({
     birthMonthYear: birthMonthYear || undefined,
@@ -221,6 +245,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
       parsePaceInputToSecsPerKm(ltPaceInput, distanceUnit) ?? thresholdPaceSecsPerKm;
     setThresholdPaceSecsPerKm(resolvedPaceSecsPerKm);
     setLtPaceInput(formatPaceSecsForInput(resolvedPaceSecsPerKm, distanceUnit));
+    const resolvedSwimCssSecs =
+      parseSwimClockInput(swimCssInput, distanceUnit) ?? swimCssSecsPer100m;
+    setSwimCssSecsPer100m(resolvedSwimCssSecs);
+    setSwimCssInput(formatSwimClockInput(resolvedSwimCssSecs, distanceUnit));
     const cleanEffDate = (effectiveDate || getLocalDateIso()).slice(0, 10);
     const nextEntry: ThresholdHistoryEntry = {
       id: `th-${cleanEffDate}`,
@@ -255,6 +283,8 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         runLthr,
         runMaxHr,
         thresholdPaceSecsPerKm: resolvedPaceSecsPerKm,
+        swimCssSecsPer100m: resolvedSwimCssSecs,
+        swimZones: buildSwimPaceZones(resolvedSwimCssSecs),
         powerZones: previewPowerZones,
         hrZones: previewBikeHrZones,
         runHrZones: previewRunHrZones,
@@ -479,9 +509,10 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               >
                 {(
                   [
-                    { id: 'BOTH', label: 'Both' },
+                    { id: 'ALL', label: 'All' },
                     { id: 'RUNNING', label: 'Running' },
                     { id: 'CYCLING', label: 'Cycling' },
+                    { id: 'SWIMMING', label: 'Swimming' },
                   ] as const
                 ).map((tab) => (
                   <button
@@ -560,7 +591,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               />
             </div>
 
-            {sportFieldsFilter !== 'RUNNING' && (
+            {(sportFieldsFilter === 'ALL' || sportFieldsFilter === 'CYCLING') && (
               <>
                 <div>
                   <label
@@ -655,7 +686,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               </>
             )}
 
-            {sportFieldsFilter !== 'CYCLING' && (
+            {(sportFieldsFilter === 'ALL' || sportFieldsFilter === 'RUNNING') && (
               <>
                 <div>
                   <label
@@ -769,6 +800,67 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   />
                 </div>
               </>
+            )}
+
+            {(sportFieldsFilter === 'ALL' || sportFieldsFilter === 'SWIMMING') && (
+              <div>
+                <label
+                  htmlFor={`${fieldId}-swim-css`}
+                  className="flex items-center gap-1 text-2xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  <Waves className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                  <span>Swim CSS (/{distanceUnit === 'mi' ? '100yd' : '100m'})</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="Faster 2 seconds per 100m"
+                    onClick={() => {
+                      const next = Math.max(60, swimCssSecsPer100m - 2);
+                      setSwimCssSecsPer100m(next);
+                      setSwimCssInput(formatSwimClockInput(next, distanceUnit));
+                    }}
+                    className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon font-mono text-xs cursor-pointer"
+                  >
+                    -2s
+                  </button>
+                  <input
+                    id={`${fieldId}-swim-css`}
+                    data-testid="profile-swim-css-input"
+                    type="text"
+                    inputMode="text"
+                    placeholder={distanceUnit === 'mi' ? '1:40' : '1:50'}
+                    value={swimCssInput}
+                    onChange={(e) => {
+                      setSwimCssInput(e.target.value);
+                      const parsed = parseSwimClockInput(e.target.value, distanceUnit);
+                      if (parsed !== null) {
+                        setSwimCssSecsPer100m(parsed);
+                      }
+                    }}
+                    onBlur={() => {
+                      const parsed = parseSwimClockInput(swimCssInput, distanceUnit);
+                      const finalSecs = parsed ?? swimCssSecsPer100m;
+                      setSwimCssSecsPer100m(finalSecs);
+                      setSwimCssInput(formatSwimClockInput(finalSecs, distanceUnit));
+                    }}
+                    className="w-full min-w-[60px] min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 py-1.5 font-mono text-xs text-center"
+                    title="Critical Swim Speed pace in mm:ss (e.g. 1:50)"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Slower 2 seconds per 100m"
+                    onClick={() => {
+                      const next = Math.min(240, swimCssSecsPer100m + 2);
+                      setSwimCssSecsPer100m(next);
+                      setSwimCssInput(formatSwimClockInput(next, distanceUnit));
+                    }}
+                    className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon font-mono text-xs cursor-pointer"
+                  >
+                    +2s
+                  </button>
+                </div>
+              </div>
             )}
 
             <div className="flex items-end">
@@ -980,30 +1072,34 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Right: Sport Heart Rate Table (Garmin 5-Zone or Friel 7-Zone) */}
+          {/* Right: Sport Heart Rate & Swim CSS Table */}
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  {(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).length}-Zone Heart Rate Table ({hrTab === 'CYCLING' ? 'Cycling' : 'Running'})
+                  {hrTab === 'SWIMMING'
+                    ? `${previewSwimZones.length}-Zone Swim CSS Table`
+                    : `${(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).length}-Zone Heart Rate Table (${hrTab === 'CYCLING' ? 'Cycling' : 'Running'})`}
                 </h3>
                 <p className="text-2xs text-slate-500 dark:text-slate-400">
-                  {hrTab === 'CYCLING'
-                    ? `LTHR ${lthr} bpm · Max HR ${maxHr} bpm · RHR ${restingHr} bpm`
-                    : `Run LTHR ${runLthr} bpm · Run Max HR ${runMaxHr} bpm`}
+                  {hrTab === 'SWIMMING'
+                    ? `CSS ${formatSwimPacePer100(swimCssSecsPer100m, 'km')} · ${formatSwimPacePer100(swimCssSecsPer100m, 'mi')}`
+                    : hrTab === 'CYCLING'
+                      ? `LTHR ${lthr} bpm · Max HR ${maxHr} bpm · RHR ${restingHr} bpm`
+                      : `Run LTHR ${runLthr} bpm · Run Max HR ${runMaxHr} bpm`}
                 </p>
               </div>
 
               <div
                 role="group"
-                aria-label="Heart rate zone sport"
-                className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs"
+                aria-label="Zone table sport"
+                className="flex flex-wrap items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs"
               >
                 <button
                   type="button"
                   aria-pressed={hrTab === 'CYCLING'}
                   onClick={() => setHrTab('CYCLING')}
-                  className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-md transition-all ${
+                  className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     hrTab === 'CYCLING'
                       ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                       : 'text-slate-500 dark:text-slate-400'
@@ -1015,7 +1111,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   type="button"
                   aria-pressed={hrTab === 'RUNNING'}
                   onClick={() => setHrTab('RUNNING')}
-                  className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-md transition-all ${
+                  className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     hrTab === 'RUNNING'
                       ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                       : 'text-slate-500 dark:text-slate-400'
@@ -1023,45 +1119,100 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 >
                   Running HR
                 </button>
+                <button
+                  type="button"
+                  data-testid="zone-tab-swim-css"
+                  aria-pressed={hrTab === 'SWIMMING'}
+                  onClick={() => setHrTab('SWIMMING')}
+                  className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                    hrTab === 'SWIMMING'
+                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  Swim CSS
+                </button>
               </div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 text-2xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                    <th className="py-1.5 pr-2">Zone</th>
-                    <th className="py-1.5 px-2 text-right">% LTHR</th>
-                    <th className="py-1.5 pl-2 text-right">Target Heart Rate (BPM)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/70 font-mono tabular-nums text-2xs">
-                  {(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).map((hz) => (
-                    <tr key={hz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                      <td className="py-2 pr-2 font-sans">
-                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-                          <span
-                            className="w-2.5 h-2.5 rounded-xs shrink-0"
-                            style={{ backgroundColor: hz.color }}
-                          />
-                          <span className="font-mono font-bold text-slate-900 dark:text-white">
-                            {hz.code}
-                          </span>
-                          <span className="text-slate-600 dark:text-slate-300 truncate max-w-[165px]">
-                            {hz.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-2 text-right text-slate-500 dark:text-slate-400">
-                        {hz.minPctLthr}–{hz.maxPctLthr}%
-                      </td>
-                      <td className="py-2 pl-2 text-right font-bold text-rose-600 dark:text-rose-400">
-                        {hz.minBpm} – {hz.maxBpm} bpm
-                      </td>
+              {hrTab === 'SWIMMING' ? (
+                <table className="w-full text-left border-collapse text-xs" data-testid="swim-css-zone-table">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-2xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      <th className="py-1.5 pr-2">Zone</th>
+                      <th className="py-1.5 px-2 text-right">% CSS</th>
+                      <th className="py-1.5 px-2 text-right">/100m</th>
+                      <th className="py-1.5 pl-2 text-right">/100yd</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/70 font-mono tabular-nums text-2xs">
+                    {previewSwimZones.map((sz) => (
+                      <tr key={sz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                        <td className="py-2 pr-2 font-sans">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-xs shrink-0"
+                              style={{ backgroundColor: sz.color }}
+                            />
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              {sz.code}
+                            </span>
+                            <span className="text-slate-600 dark:text-slate-300 truncate max-w-[140px]">
+                              {sz.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-500 dark:text-slate-400">
+                          {sz.minPctCss}–{sz.maxPctCss}%
+                        </td>
+                        <td className="py-2 px-2 text-right font-bold text-teal-700 dark:text-teal-400">
+                          {formatSwimClockInput(sz.minPaceSecsPer100m, 'km')}–{formatSwimClockInput(sz.maxPaceSecsPer100m, 'km')}
+                        </td>
+                        <td className="py-2 pl-2 text-right text-slate-700 dark:text-slate-200">
+                          {formatSwimClockInput(sz.minPaceSecsPer100m, 'mi')}–{formatSwimClockInput(sz.maxPaceSecsPer100m, 'mi')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-2xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      <th className="py-1.5 pr-2">Zone</th>
+                      <th className="py-1.5 px-2 text-right">% LTHR</th>
+                      <th className="py-1.5 pl-2 text-right">Target Heart Rate (BPM)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/70 font-mono tabular-nums text-2xs">
+                    {(hrTab === 'CYCLING' ? previewBikeHrZones : previewRunHrZones).map((hz) => (
+                      <tr key={hz.code} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                        <td className="py-2 pr-2 font-sans">
+                          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                            <span
+                              className="w-2.5 h-2.5 rounded-xs shrink-0"
+                              style={{ backgroundColor: hz.color }}
+                            />
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              {hz.code}
+                            </span>
+                            <span className="text-slate-600 dark:text-slate-300 truncate max-w-[165px]">
+                              {hz.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-500 dark:text-slate-400">
+                          {hz.minPctLthr}–{hz.maxPctLthr}%
+                        </td>
+                        <td className="py-2 pl-2 text-right font-bold text-rose-600 dark:text-rose-400">
+                          {hz.minBpm} – {hz.maxBpm} bpm
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
