@@ -674,7 +674,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     }));
   }, [enrichedSeries, athleteProfile?.ftp]);
 
-  const handleEChartsSelectDate = useCallback(
+  const handlePmcSelectDate = useCallback(
     (dateStr: string) => {
       const foundIdx = enrichedSeries.findIndex((d) => d.date === dateStr);
       if (foundIdx >= 0) setHoverIdx(foundIdx);
@@ -682,7 +682,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     [enrichedSeries]
   );
 
-  const handleEChartsSelectDateRange = useCallback((startStr: string, endStr: string) => {
+  const handlePmcSelectDateRange = useCallback((startStr: string, endStr: string) => {
     setCustomStart(startStr);
     setCustomEnd(endStr);
     setRangePreset('CUSTOM');
@@ -1569,11 +1569,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         {collapsedSections.pmc ? (
           <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Activity className="w-4 h-4 text-sky-400" />
+              <Activity className="w-4 h-4 text-sky-700 dark:text-sky-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
                 Fitness, Fatigue &amp; Freshness
               </span>
-              <span className="text-xs font-mono text-sky-500">
+              <span className="text-xs font-mono text-sky-700 dark:text-sky-400">
                 CTL {latestDay.ctl.toFixed(1)} · TSB {latestDay.tsb.toFixed(1)}
               </span>
             </div>
@@ -1909,12 +1909,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
               <span
                 className={`font-bold ${
                   activePoint.rampRate > 7
-                    ? 'text-rose-500'
+                    ? 'text-rose-700 dark:text-rose-400'
                     : activePoint.rampRate > 5
-                      ? 'text-amber-500'
+                      ? 'text-amber-700 dark:text-amber-400'
                       : activePoint.rampRate >= 0
-                        ? 'text-emerald-500'
-                        : 'text-sky-400'
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-sky-700 dark:text-sky-400'
                 }`}
               >
                 {activePoint.rampRate > 0
@@ -2014,8 +2014,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 embedded
                 timeline={echartsTimeline}
                 onSelectActivity={onSelectActivity}
-                onSelectDate={handleEChartsSelectDate}
-                onSelectDateRange={handleEChartsSelectDateRange}
+                onSelectDate={handlePmcSelectDate}
+                onSelectDateRange={handlePmcSelectDateRange}
                 height={isCompactMobile ? 380 : 390}
               />
             </Suspense>
@@ -2032,11 +2032,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         {collapsedSections.ledger ? (
           <div className="rounded-2xl liquid-glass px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Calendar className="w-4 h-4 text-emerald-400" />
+              <Calendar className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">
                 14-Day Readiness Ledger &amp; Key Biometrics
               </span>
-              <span className="text-xs font-mono text-emerald-500">
+              <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400">
                 HRV {latestWithHrv.hrvRMSSD > 0 ? `${latestWithHrv.hrvRMSSD}ms` : '—'} · EF{' '}
                 {aerobicDurabilityStats.avgEf28 > 0 ? aerobicDurabilityStats.avgEf28 : '—'}
               </span>

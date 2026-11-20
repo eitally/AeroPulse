@@ -16,10 +16,7 @@ import type {
   UnifiedWellnessDay,
 } from '../types.ts';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine.ts';
-import {
-  consumePendingSharedWorkout,
-  sharedWorkoutToPlannedEventInput,
-} from '../utils/shareWorkoutEngine.ts';
+import { consumePendingSharedWorkout } from '../utils/shareWorkoutRoute.ts';
 import { getSavedIntervalsHeaders, mergeActivitiesNonDestructive } from '../utils/telemetryStorage.ts';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi.ts';
 
@@ -204,14 +201,16 @@ export function useAthleteCloudSync({
     const pending = consumePendingSharedWorkout();
     if (!pending) return;
 
-    const eventInput = sharedWorkoutToPlannedEventInput(pending, {
-      ftpWatts: athleteProfile.ftp || 260,
-      thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm || 245,
-      unit: distanceUnit,
-    });
-    void handleCreatePlannedEvent(eventInput)
-      .then(() => {
-        onPendingWorkoutImported?.();
+    void import('../utils/shareWorkoutEngine.ts')
+      .then(({ sharedWorkoutToPlannedEventInput }) => {
+        const eventInput = sharedWorkoutToPlannedEventInput(pending, {
+          ftpWatts: athleteProfile.ftp || 260,
+          thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm || 245,
+          unit: distanceUnit,
+        });
+        return handleCreatePlannedEvent(eventInput).then(() => {
+          onPendingWorkoutImported?.();
+        });
       })
       .catch(() => undefined);
   }, [

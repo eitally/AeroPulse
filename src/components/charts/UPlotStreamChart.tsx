@@ -869,18 +869,18 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
             <span className="w-2.5 h-0.5 bg-blue-500 inline-block" />
             {preparedData.hasWatts ? 'Watts' : 'Speed'}
           </span>
-          <span className="inline-flex items-center gap-1 text-red-500 font-semibold">
+          <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-400 font-semibold">
             <span className="w-2.5 h-0.5 bg-red-500 inline-block" />
             HR (bpm)
           </span>
           {showCadence && preparedData.hasCadence && (
-            <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold">
+            <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
               <span className="w-2.5 h-0.5 bg-emerald-500 inline-block" />
               Cadence
             </span>
           )}
           {showAltitude && preparedData.hasAltitude && (
-            <span className="inline-flex items-center gap-1 text-purple-400 font-semibold">
+            <span className="inline-flex items-center gap-1 text-purple-700 dark:text-purple-400 font-semibold">
               <span className="w-2.5 h-0.5 bg-purple-400 inline-block" />
               Elev (m)
             </span>

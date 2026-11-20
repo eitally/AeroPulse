@@ -115,34 +115,34 @@ function classifyCogganTier(scorePct: number): {
     return {
       tier: 'World-Class / Domestic Pro',
       cat: 'Cat 1 / Pro',
-      colorClass: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/40',
+      colorClass: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/40',
     };
   }
   if (scorePct >= 82) {
     return {
       tier: 'Exceptional / National Qualifier',
       cat: 'Cat 1 / Cat 2',
-      colorClass: 'text-sky-400 bg-sky-500/15 border-sky-500/40',
+      colorClass: 'text-sky-700 dark:text-sky-400 bg-sky-500/15 border-sky-500/40',
     };
   }
   if (scorePct >= 72) {
     return {
       tier: 'Very Good / Regional Competitive',
       cat: 'Cat 2 / Cat 3',
-      colorClass: 'text-indigo-400 bg-indigo-500/15 border-indigo-500/40',
+      colorClass: 'text-indigo-700 dark:text-indigo-400 bg-indigo-500/15 border-indigo-500/40',
     };
   }
   if (scorePct >= 60) {
     return {
       tier: 'Good / Trained Endurance Athlete',
       cat: 'Cat 3 / Cat 4',
-      colorClass: 'text-amber-400 bg-amber-500/15 border-amber-500/40',
+      colorClass: 'text-amber-700 dark:text-amber-400 bg-amber-500/15 border-amber-500/40',
     };
   }
   return {
     tier: 'Moderate / Developing Base',
     cat: 'Cat 4 / Cat 5',
-    colorClass: 'text-slate-300 bg-slate-500/15 border-slate-500/40',
+    colorClass: 'text-slate-700 dark:text-slate-300 bg-slate-500/15 border-slate-500/40',
   };
 }
 
@@ -972,7 +972,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
                   <span className="text-sky-600 dark:text-[#38BDF8]" title={dim.displayA}>
                     {dim.scoreA} pts ({dim.displayA})
                   </span>
-                  <span className="text-slate-400 dark:text-slate-600">vs</span>
+                  <span className="text-slate-600 dark:text-slate-400">vs</span>
                   <span className="text-orange-600 dark:text-[#F97316]" title={dim.displayB}>
                     {dim.scoreB} pts ({dim.displayB})
                   </span>
@@ -1008,7 +1008,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
                   <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.label}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-600 dark:text-[#38BDF8]">{ax.displayA}</span>
-                    <span className="text-slate-400 dark:text-slate-600">/</span>
+                    <span className="text-slate-600 dark:text-slate-400">/</span>
                     <span className="text-orange-600 dark:text-[#F97316]">{ax.displayB}</span>
                   </div>
                 </div>
@@ -1043,7 +1043,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
                   <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.shortLabel}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-600 dark:text-[#38BDF8]">{ax.displayA}</span>
-                    <span className="text-slate-400 dark:text-slate-600">/</span>
+                    <span className="text-slate-600 dark:text-slate-400">/</span>
                     <span className="text-orange-600 dark:text-[#F97316]">{ax.displayB}</span>
                   </div>
                 </div>

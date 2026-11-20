@@ -227,7 +227,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
       {activeBannerSlot === 'CONNECTED_ATHLETE' && activeConnectedAthlete && (
         <div className="rounded-2xl liquid-glass border-sky-500/40 p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-500/50 flex items-center justify-center font-mono font-bold text-sm text-sky-300">
+            <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-500/50 flex items-center justify-center font-mono font-bold text-sm text-sky-800 dark:text-sky-300">
               {activeConnectedAthlete.avatarInitials}
             </div>
             <div>
@@ -236,19 +236,19 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
                   Viewing {activeConnectedAthlete.name}
                 </span>
                 {activeConnectedAthlete.role === 'COACH_EDIT' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-orange-500/15 text-orange-400 border border-orange-500/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/40">
                     <CalendarPlus className="w-3 h-3" />
                     Coach Access (Calendar Edit Enabled)
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-sky-500/15 text-sky-400 border border-sky-500/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/40">
                     <Eye className="w-3 h-3" />
                     Friend Access (Read-Only View)
                   </span>
                 )}
                 {(shieldedConnectedTelemetry?.redactedWellness ||
                   shieldedConnectedTelemetry?.redactedGpsRoutes) && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-amber-500/15 text-amber-400 border border-amber-500/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono uppercase bg-amber-500/15 text-amber-800 dark:text-amber-400 border border-amber-500/40">
                     <Lock className="w-3 h-3" />
                     Privacy Shield Active (HRV/GPS Masked for Friends)
                   </span>
@@ -256,7 +256,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               </div>
               <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-mono">
                 {activeConnectedAthlete.location} • Strava #{activeConnectedAthlete.stravaAthleteId} • Goal:{' '}
-                <span className="text-sky-400 font-semibold">
+                <span className="text-sky-700 dark:text-sky-400 font-semibold">
                   {activeConnectedAthlete.primaryGoalSummary}
                 </span>
               </div>

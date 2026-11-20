@@ -1,5 +1,4 @@
-import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine.ts';
-import { escapeTextForSafeAttr } from './teamQrHelper.ts';
+import { computeAccessibleTeamPalette, escapeTextForSafeAttr } from './teamPalette.ts';
 import { getThreshThemePalette } from './themeTokens.ts';
 import {
   buildS2SymbolInnerSvg,

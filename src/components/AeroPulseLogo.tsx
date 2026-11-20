@@ -1,6 +1,6 @@
 import React from 'react';
 import type { TeamBrandConfig } from '../types';
-import { computeAccessibleTeamPalette } from '../physiology/teamOnboardingEngine';
+import { computeAccessibleTeamPalette } from '../utils/teamPalette';
 import {
   FAV_F_SHIELD_T_PATH,
   S2_ARROW_NEEDLE_PATH,

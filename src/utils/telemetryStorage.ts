@@ -14,7 +14,7 @@ import {
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
-import { fuseWearableStreamWithStopwatchSplits } from './stopwatchActivitySynthesizer';
+import { fuseWearableStreamWithStopwatchSplits } from './stopwatchWearableFusion';
 import {
   areActivityTimestampsClose,
   resolveActivityStartEpochMs,

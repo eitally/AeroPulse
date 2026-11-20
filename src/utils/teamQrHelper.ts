@@ -1,24 +1,13 @@
-import {
-  computeAccessibleTeamPalette,
-  getOrgTypeSafeguardingDefaults,
-} from '../physiology/teamOnboardingEngine';
+import { getOrgTypeSafeguardingDefaults } from '../physiology/teamOnboardingEngine';
 import { formatTrackMark } from '../physiology/scholasticEngine';
 import {
   buildS2SymbolInnerSvg,
   buildWAWordmarkInnerSvg,
 } from './brandVectors';
+import { computeAccessibleTeamPalette, escapeTextForSafeAttr } from './teamPalette';
 import type { TeamBrandConfig, VdotTrainingPod } from '../types';
 
-export { computeAccessibleTeamPalette };
-
-export function escapeTextForSafeAttr(input: unknown): string {
-  return String(input ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+export { computeAccessibleTeamPalette, escapeTextForSafeAttr };
 
 // ============================================================================
 // Pure-TypeScript ISO/IEC 18004 Scannable QR Code SVG Generator (Versions 1–6, EC-L)
