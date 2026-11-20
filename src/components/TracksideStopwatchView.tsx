@@ -1145,7 +1145,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         } ${
           sessionType === 'WORKOUT'
             ? 'liquid-capsule-active'
-            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4]'
+            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk'
         }`}
       >
         <Timer className={compact ? 'w-3.5 h-3.5 ap-text-brand' : 'w-4 h-4 ap-text-brand'} weight="duotone" />
@@ -1166,7 +1166,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         } ${
           sessionType === 'RACE'
             ? 'liquid-capsule-active'
-            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4]'
+            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk'
         }`}
       >
         <FlagCheckered
@@ -1184,14 +1184,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         aria-label="Workout Preset"
         value={workoutPresetId}
         onChange={(e) => setWorkoutPresetId(e.target.value)}
-        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
           compact ? 'max-w-[168px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
         }`}
       >
         {customPlanPreset && (
           <option
             value="custom-plan"
-            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
           >
             Planned: {customPlanPreset.label}
           </option>
@@ -1200,7 +1200,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           <option
             key={p.id}
             value={p.id}
-            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
           >
             {p.label}
           </option>
@@ -1211,7 +1211,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         aria-label="Race Event Distance"
         value={raceEventLabel}
         onChange={(e) => setRaceEventLabel(e.target.value)}
-        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
           compact ? 'max-w-[155px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
         }`}
       >
@@ -1219,7 +1219,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           <option
             key={evt.label}
             value={evt.label}
-            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
           >
             {evt.label}
             {evt.targetLaps ? ` (${evt.targetLaps} x ${evt.splitMeters}m)` : ' (Open Laps)'}
@@ -1229,19 +1229,19 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     );
 
   const recoverySelectNode = (
-    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
       <span>Auto Recovery Countdown</span>
       <select
         aria-label="Recovery Countdown"
         value={restDurationSecs}
         onChange={(e) => setRestDurationSecs(Number(e.target.value))}
-        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
+        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
       >
         {REST_OPTIONS_SECS.map((sec) => (
           <option
             key={sec}
             value={sec}
-            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
           >
             {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
           </option>
@@ -1249,7 +1249,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
           <option
             value={restDurationSecs}
-            className="bg-white dark:bg-[#101B15] text-[#101411] dark:text-[#F4F7F4]"
+            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
           >
             {restDurationSecs}s Recovery Timer (Auto-Reg)
           </option>
@@ -1259,7 +1259,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   );
 
   const sessionTitleInputNode = (
-    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
       <span>{sessionType === 'RACE' ? 'Meet / Heat Name' : 'Session Name'}</span>
       <input
         type="text"
@@ -1269,7 +1269,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           sessionType === 'RACE' ? 'e.g. League Finals Heat 1' : 'e.g. Tuesday Track Intervals'
         }
         aria-label="Meet or Session Name"
-        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B] dark:placeholder:text-[#93A39A] focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
+        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted dark:placeholder:text-ap-muted-dark focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
       />
     </label>
   );
@@ -1287,7 +1287,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   };
 
   const hardwareTogglesNode = (
-    <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-[#43584B] dark:text-[#93A39A]">
+    <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
       <span>Trackside Hardware &amp; Keys</span>
       <div className="grid grid-cols-3 gap-2">
         <button
@@ -1299,7 +1299,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               ? wakeLockState === 'ACTIVE'
                 ? 'ap-status-prime'
                 : 'ap-status-info'
-              : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+              : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
           }`}
           title="Keep mobile display awake while timing live track sessions"
         >
@@ -1314,7 +1314,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           aria-pressed={soundEnabled}
           onClick={() => setSoundEnabled(!soundEnabled)}
           className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-            soundEnabled ? 'ap-status-info' : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+            soundEnabled ? 'ap-status-info' : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
           }`}
           title="Play crisp Web Audio confirmation beep + vibration on splits"
         >
@@ -1334,7 +1334,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1 px-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
             keyboardShortcutsEnabled
               ? 'ap-status-info'
-              : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+              : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
           }`}
           title="Enable or disable single-key shortcuts (Space, 1-9, C, Z)"
         >
@@ -1357,7 +1357,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
           waveMode === 'MASS'
             ? 'liquid-capsule-active'
-            : 'text-[#43584B] dark:text-[#93A39A]'
+            : 'text-ap-muted dark:text-ap-muted-dark'
         }`}
       >
         Mass Gun
@@ -1378,7 +1378,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
           waveMode === 'POD_STAGGER'
             ? 'liquid-capsule-active ap-status-caution font-bold'
-            : 'text-[#43584B] dark:text-[#93A39A]'
+            : 'text-ap-muted dark:text-ap-muted-dark'
         }`}
       >
         <Waves className="w-3.5 h-3.5" weight="bold" />
@@ -1400,7 +1400,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
           waveMode === 'PURSUIT'
             ? 'liquid-capsule-active ap-status-prime font-bold'
-            : 'text-[#43584B] dark:text-[#93A39A]'
+            : 'text-ap-muted dark:text-ap-muted-dark'
         }`}
         title="Offset faster pods so all pods finish each rep together"
       >
@@ -1449,24 +1449,24 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         data-testid="stopwatch-multiset-plan-strip"
         className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10 text-2xs font-mono"
       >
-        <span className="font-bold uppercase tracking-wider text-[#43584B] dark:text-[#93A39A] mr-1">
+        <span className="font-bold uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark mr-1">
           Multi-Set Plan:
         </span>
         {customWorkoutSpec.warmupDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4]">
+          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
             WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
           </span>
         )}
         {customWorkoutSpec.sets.map((s, idx) => (
           <span
             key={`sw-set-${idx}`}
-            className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] font-semibold"
+            className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt font-semibold"
           >
             {s.repCount}×{s.repDistanceMeters}m
           </span>
         ))}
         {customWorkoutSpec.cooldownDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4]">
+          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
             CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
           </span>
         )}
@@ -1493,10 +1493,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-2xs font-mono font-bold uppercase tracking-wider text-[#101411] dark:text-[#F4F7F4]">
+          <div className="text-2xs font-mono font-bold uppercase tracking-wider text-ap-ink dark:text-ap-chalk">
             World Athletics Oval Lane, Environment &amp; Spike Physics
           </div>
-          <div className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] mt-0.5">
+          <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark mt-0.5">
             {activeEnvAdjustment.advisoryNote}
           </div>
         </div>
@@ -1516,14 +1516,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Oval Lane
           </span>
           <select
             data-testid="stopwatch-lane-select"
             value={trackLane}
             onChange={(e) => setTrackLane(Number(e.target.value) as TrackLaneNumber)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
           >
             {([1, 2, 3, 4, 5, 6, 7, 8] as TrackLaneNumber[]).map((ln) => {
               const g = computeWorldAthleticsOvalLaneGeometry(ln);
@@ -1537,14 +1537,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </label>
 
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Track Facility
           </span>
           <select
             data-testid="stopwatch-facility-select"
             value={trackFacility}
             onChange={(e) => setTrackFacility(e.target.value as NcaaTrackFacilityType)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
           >
             <option value="OUTDOOR_400M">400m Outdoor</option>
             <option value="INDOOR_BANKED_200M">200m Banked</option>
@@ -1553,7 +1553,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </label>
 
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Air Temp (°F)
           </span>
           <input
@@ -1566,12 +1566,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             onChange={(e) =>
               setAirTempF(e.target.value === '' ? null : Number(e.target.value))
             }
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
           />
         </label>
 
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Dew Point (°F)
           </span>
           <input
@@ -1584,12 +1584,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             onChange={(e) =>
               setDewPointF(e.target.value === '' ? null : Number(e.target.value))
             }
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
           />
         </label>
 
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Wind (m/s)
           </span>
           <input
@@ -1600,12 +1600,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             step={0.5}
             value={windSpeedMps}
             onChange={(e) => setWindSpeedMps(Number(e.target.value) || 0)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
           />
         </label>
 
         <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Altitude (m)
           </span>
           <input
@@ -1616,19 +1616,19 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             step={50}
             value={altitudeMeters}
             onChange={(e) => setAltitudeMeters(Number(e.target.value) || 0)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
           />
         </label>
 
         <label className="space-y-1 col-span-2 sm:col-span-2 lg:col-span-1">
-          <span className="block text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
             Footwear
           </span>
           <select
             data-testid="stopwatch-footwear-select"
             value={footwearClass}
             onChange={(e) => setFootwearClass(e.target.value as TrackFootwearClass)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4]"
+            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
           >
             <option value="DAILY_TRAINER">Daily Trainer (1.0x)</option>
             <option value="LIGHTWEIGHT_FLAT_SUPER_TRAINER">Super Trainer / Flat (1.1x)</option>
@@ -1649,7 +1649,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
               isStaggeredStart
                 ? 'ap-status-info font-bold'
-                : 'ap-card text-[#43584B] dark:text-[#93A39A]'
+                : 'ap-card text-ap-muted dark:text-ap-muted-dark'
             }`}
           >
             {isStaggeredStart
@@ -1664,7 +1664,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const waveOffsetsPanelNode =
     waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT' ? (
       <div className="rounded-xl ap-card-inset p-3 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
           <span className="font-bold uppercase tracking-wider">
             {waveMode === 'PURSUIT'
               ? 'Pursuit Stagger Offsets — Finish Together'
@@ -1678,13 +1678,13 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             return (
               <div
                 key={podKey}
-                className="rounded-xl bg-white dark:bg-[#101B15] border border-emerald-900/15 dark:border-[#2B543B] px-3 py-2 flex items-center justify-between gap-2"
+                className="rounded-xl bg-white dark:bg-ap-carbon border border-emerald-900/15 dark:border-ap-edge-dark px-3 py-2 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                  <div className="text-xs font-bold text-ap-ink dark:text-ap-chalk truncate">
                     {podKey}
                   </div>
-                  <div className="text-2xs font-mono text-[#1C5436] dark:text-[#56BA00]">
+                  <div className="text-2xs font-mono text-ap-cobalt dark:text-[#56BA00]">
                     +{offset.toFixed(1)}s offset
                   </div>
                 </div>
@@ -1726,7 +1726,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const chuteQueueStripNode =
     chuteQueueSecs.length > 0 ? (
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <span className="text-2xs font-mono font-bold uppercase text-[#1C5436] dark:text-[#C8FF00]">
+        <span className="text-2xs font-mono font-bold uppercase text-ap-cobalt dark:text-ap-volt">
           Finish Order Queue — Tap next runner in line:
         </span>
         {chuteQueueSecs.map((ts, idx) => (
@@ -1735,8 +1735,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             data-testid={`chute-pill-${idx}`}
             className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold tabular-nums ${
               idx === 0
-                ? 'bg-[#0B120E] text-[#C8FF00] border border-[#56BA00]'
-                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                ? 'bg-[#0B120E] text-ap-volt border border-[#56BA00]'
+                : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
             }`}
           >
             #{idx + 1} · {formatTrackMark(ts, 2)}
@@ -1745,7 +1745,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         <button
           type="button"
           onClick={clearChuteQueue}
-          className="min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] cursor-pointer ml-auto"
+          className="min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark cursor-pointer ml-auto"
         >
           Clear Queue
         </button>
@@ -1801,11 +1801,11 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             data-testid="stopwatch-back-to-log-btn"
             onClick={onOpenActivitiesTab}
             aria-label="Back to Activities"
-            className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center px-2 rounded-lg liquid-capsule-track text-xs font-mono font-bold text-[#101411] dark:text-[#F4F7F4] cursor-pointer shrink-0"
+            className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center px-2 rounded-lg liquid-capsule-track text-xs font-mono font-bold text-ap-ink dark:text-ap-chalk cursor-pointer shrink-0"
           >
             ←
           </button>
-          <h1 className="text-sm sm:text-base font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-tight whitespace-nowrap truncate">
+          <h1 className="text-sm sm:text-base font-extrabold text-ap-ink dark:text-ap-chalk tracking-tight whitespace-nowrap truncate">
             Trackside Stopwatch
           </h1>
           {!isOnline ? (
@@ -1814,7 +1814,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               <span>Offline</span>
             </span>
           ) : (
-            <span className="hidden md:inline-flex px-2 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-[#43584B] dark:text-[#93A39A] shrink-0">
+            <span className="hidden md:inline-flex px-2 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-ap-muted dark:text-ap-muted-dark shrink-0">
               Saved on Device (Offline Ready)
             </span>
           )}
@@ -1829,7 +1829,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
             data-testid="stopwatch-master-clock"
-            className="rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
+            className="rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
           >
             {formatStopwatchClockMs(stopwatchElapsedMs)}
           </div>
@@ -1863,7 +1863,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               data-testid="stopwatch-undo-btn"
               onClick={handleUndo}
               disabled={tapHistory.length === 0}
-              className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+              className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-ap-ink dark:text-ap-chalk disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
             >
               <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
               <span>Undo</span>
@@ -1874,12 +1874,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 type="button"
                 data-testid="stopwatch-chute-tap"
                 onClick={handleChuteTap}
-                className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
+                className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame text-xs font-bold cursor-pointer"
               >
                 <Lightning className="w-4 h-4 shrink-0" weight="fill" />
                 <span>Chute</span>
                 {chuteQueueSecs.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
+                  <span className="px-1.5 py-0.5 rounded bg-ap-cobalt text-ap-volt font-mono text-2xs">
                     {chuteQueueSecs.length}
                   </span>
                 )}
@@ -1906,7 +1906,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             aria-label="Filter runners by pacing pod"
             value={selectedPodFilter}
             onChange={(e) => setSelectedPodFilter(e.target.value)}
-            className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-2.5 text-xs font-mono font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+            className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
           >
             <option value="ALL">All ({runnerTelemetries.length})</option>
             {activePodKeys.map((podKey) => {
@@ -1932,7 +1932,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
                 viewMode === 'CARDS'
                   ? 'liquid-capsule-active'
-                  : 'text-[#43584B] dark:text-[#93A39A]'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
@@ -1946,7 +1946,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
                 viewMode === 'MATRIX'
                   ? 'liquid-capsule-active'
-                  : 'text-[#43584B] dark:text-[#93A39A]'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <Table className="w-3.5 h-3.5" weight="duotone" />
@@ -1963,7 +1963,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
                 showChuteBar
                   ? 'ap-status-info font-bold'
-                  : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                  : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
               }`}
             >
               <Lightning className="w-3.5 h-3.5" weight="bold" />
@@ -1979,7 +1979,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-2.5 rounded-xl text-2xs font-semibold border cursor-pointer shrink-0 ${
               hasCustomEnvOrLane
                 ? 'ap-status-caution font-bold'
-                : 'ap-card-inset text-[#43584B] dark:text-[#93A39A]'
+                : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
             }`}
           >
             <Waves className="w-3.5 h-3.5" weight="bold" />
@@ -1998,7 +1998,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             className={`min-h-[44px] sm:min-h-[38px] px-2.5 rounded-xl font-mono text-2xs font-semibold cursor-pointer shrink-0 ml-auto ${
               showToolsDrawer
                 ? 'ap-status-info font-bold'
-                : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
+                : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
             }`}
           >
             Tools ▾
@@ -2026,7 +2026,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-900/10 dark:border-white/10"
           >
             <div className="inline-flex items-center gap-1.5">
-              <span className="text-2xs font-mono uppercase tracking-wider text-[#43584B] dark:text-[#93A39A]">
+              <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
                 Reps
               </span>
               <button
@@ -2036,13 +2036,13 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 onClick={() =>
                   setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
                 }
-                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-[#101411] dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
               >
                 -
               </button>
               <span
                 data-testid="stopwatch-rep-count"
-                className="px-2 font-mono text-xs font-bold tabular-nums text-[#101411] dark:text-white"
+                className="px-2 font-mono text-xs font-bold tabular-nums text-ap-ink dark:text-white"
               >
                 {activeWorkoutPreset.repCount} reps
               </span>
@@ -2053,7 +2053,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 onClick={() =>
                   setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
                 }
-                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-[#101411] dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
               >
                 +
               </button>
@@ -2072,7 +2072,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
                       isSelected
                         ? 'ap-nav-volt-active'
-                        : 'ap-card-inset text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                        : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                     }`}
                   >
                     {dist}m
@@ -2106,13 +2106,13 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
                   className={`min-h-[88px] rounded-2xl p-3 gap-2 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
-                    isJustTapped ? 'ring-2 ring-[#C8FF00]' : ''
+                    isJustTapped ? 'ring-2 ring-ap-volt' : ''
                   } ${
                     telemetry.isFinishedLocked
                       ? 'ap-card border-[#059669]/45 bg-[#ECFDF5]/70 dark:bg-[#0B1911]'
                       : telemetry.isBellLap
                         ? 'ap-card border-[#D97706]/60 ring-1 ring-[#D97706]/50'
-                        : 'ap-card hover:border-[#2B5B3F] dark:hover:border-[#C8FF00]/60 active:scale-[0.98]'
+                        : 'ap-card hover:border-ap-frame dark:hover:border-ap-volt/60 active:scale-[0.98]'
                   }`}
                 >
                   {/* Row 1: Athlete Name + Target Pod & Right Status Pill */}
@@ -2124,10 +2124,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                         </span>
                       </span>
                       <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                        <div className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk truncate">
                           {telemetry.runnerName}
                         </div>
-                        <div className="text-2xs font-mono text-[#43584B] dark:text-[#93A39A] truncate">
+                        <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
                           {telemetry.podKey}
                           {telemetry.effectiveOffsetSecs > 0
                             ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
@@ -2141,7 +2141,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
                     <div className="shrink-0 flex items-center gap-1">
                       {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
-                        <span className="px-1.5 py-0.5 rounded-lg bg-[#0B120E] text-[#C8FF00] font-mono text-2xs font-bold">
+                        <span className="px-1.5 py-0.5 rounded-lg bg-[#0B120E] text-ap-volt font-mono text-2xs font-bold">
                           +{formatTrackMark(nextChuteTs, 2)}
                         </span>
                       ) : sessionType === 'RACE' ? (
@@ -2162,7 +2162,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                               <span>Bell</span>
                             </span>
                           ) : (
-                            <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                            <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
                               L{telemetry.lapCount}
                               {targetRaceLaps ? `/${targetRaceLaps}` : ''}
                             </span>
@@ -2177,7 +2177,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                           GO +{telemetry.restState.overdueSecs}s
                         </span>
                       ) : (
-                        <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                        <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
                           {telemetry.lapCount}L
                         </span>
                       )}
@@ -2187,7 +2187,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   {/* Row 2: Last Split (+ Target Delta) & Total Elapsed */}
                   <div className="flex items-baseline justify-between gap-2 w-full pt-1.5 border-t border-emerald-900/10 dark:border-white/10">
                     <div className="flex items-baseline gap-1.5 min-w-0">
-                      <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-[#101411] dark:text-[#F4F7F4]">
+                      <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-ap-ink dark:text-ap-chalk">
                         {telemetry.lastLapSecs !== null
                           ? formatTrackMark(telemetry.lastLapSecs, 2)
                           : 'Tap Split'}
@@ -2206,8 +2206,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       )}
                     </div>
 
-                    <div className="text-right font-mono text-xs tabular-nums text-[#43584B] dark:text-[#93A39A] shrink-0">
-                      <span className="font-bold text-[#101411] dark:text-[#F4F7F4]">
+                    <div className="text-right font-mono text-xs tabular-nums text-ap-muted dark:text-ap-muted-dark shrink-0">
+                      <span className="font-bold text-ap-ink dark:text-ap-chalk">
                         {telemetry.netTotalSecs !== null
                           ? formatFatTime(telemetry.netTotalSecs)
                           : '--:--.--'}
@@ -2227,8 +2227,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 className="w-full text-left border-collapse text-xs"
               >
                 <thead>
-                  <tr className="border-b border-emerald-900/15 dark:border-white/10 bg-[#E9EFE9] dark:bg-[#15231B] font-mono text-2xs uppercase text-slate-700 dark:text-slate-300">
-                    <th className="py-2.5 px-3 sticky left-0 bg-[#E9EFE9] dark:bg-[#15231B] z-10">
+                  <tr className="border-b border-emerald-900/15 dark:border-white/10 bg-[#E9EFE9] dark:bg-ap-turf font-mono text-2xs uppercase text-slate-700 dark:text-slate-300">
+                    <th className="py-2.5 px-3 sticky left-0 bg-[#E9EFE9] dark:bg-ap-turf z-10">
                       Athlete &amp; Split Action
                     </th>
                     <th className="py-2.5 px-2.5">Pod</th>
@@ -2249,14 +2249,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                   {filteredTelemetries.map((telemetry, idx) => (
                     <tr
                       key={`row-${telemetry.runnerId}`}
-                      className="hover:bg-[#E9EFE9]/50 dark:hover:bg-[#15231B]/60"
+                      className="hover:bg-[#E9EFE9]/50 dark:hover:bg-ap-turf/60"
                     >
-                      <td className="py-2 px-3 sticky left-0 bg-white dark:bg-[#101B15] z-10">
+                      <td className="py-2 px-3 sticky left-0 bg-white dark:bg-ap-carbon z-10">
                         <button
                           type="button"
                           data-testid={`matrix-split-btn-${idx}`}
                           onClick={() => handleRunnerAction(telemetry)}
-                          className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 font-semibold text-slate-900 dark:text-white cursor-pointer"
+                          className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-[#28573B] dark:hover:border-ap-volt/60 font-semibold text-slate-900 dark:text-white cursor-pointer"
                         >
                           <span className="font-mono text-2xs ap-text-brand font-bold">
                             L{idx + 1}
@@ -2264,7 +2264,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                           <span className="truncate max-w-[140px]">
                             {telemetry.runnerName}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded bg-[#1D3828] text-[#C8FF00] font-mono text-2xs font-bold">
+                          <span className="px-1.5 py-0.5 rounded bg-[#1D3828] text-ap-volt font-mono text-2xs font-bold">
                             {telemetry.isFinishedLocked
                               ? 'Locked'
                               : chuteQueueSecs.length > 0
@@ -2465,7 +2465,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             data-testid="stopwatch-save-thresh"
             onClick={() => void handleSaveToThresh()}
             disabled={totalSplitCount === 0 || isSavingToThresh}
-            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed transition-colors"
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed transition-colors"
           >
             {sessionType === 'RACE' ? (
               <Trophy className="w-4 h-4 shrink-0" weight="duotone" />
@@ -2501,7 +2501,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 data-testid="stopwatch-outbox-sync-now"
                 onClick={() => void handleManualFlushOutbox()}
                 disabled={!isOnline || isFlushingOutbox}
-                className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0B120E] text-[#C8FF00] font-mono text-2xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0B120E] text-ap-volt font-mono text-2xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
               >
                 <ArrowCounterClockwise className="w-3.5 h-3.5" weight="bold" />
                 <span>{isFlushingOutbox ? 'Syncing…' : 'Sync Now'}</span>
@@ -2640,12 +2640,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             }
             handleChuteTap();
           }}
-          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl bg-[#0B120E] text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold cursor-pointer"
+          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame text-xs font-bold cursor-pointer"
         >
           <Lightning className="w-4 h-4 shrink-0" weight="fill" />
           <span>Chute</span>
           {chuteQueueSecs.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-[#1C5436] text-[#C8FF00] font-mono text-2xs">
+            <span className="px-1.5 py-0.5 rounded bg-ap-cobalt text-ap-volt font-mono text-2xs">
               {chuteQueueSecs.length}
             </span>
           )}
@@ -2656,7 +2656,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           data-testid="stopwatch-mobile-undo-btn"
           onClick={handleUndo}
           disabled={tapHistory.length === 0}
-          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl ap-card-inset text-xs font-semibold text-[#101411] dark:text-[#F4F7F4] disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl ap-card-inset text-xs font-semibold text-ap-ink dark:text-ap-chalk disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
         >
           <ArrowCounterClockwise className="w-4 h-4 shrink-0" weight="bold" />
           <span>Undo</span>

@@ -280,7 +280,7 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
           {relayPlan.legs.map((leg) => (
             <div
               key={`${leg.legNumber}-${leg.athleteId}-${leg.distanceMeters}`}
-              className="rounded-lg bg-white/85 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] px-3 py-2 flex items-center justify-between gap-2 text-xs"
+              className="rounded-lg bg-white/85 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge px-3 py-2 flex items-center justify-between gap-2 text-xs"
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5 font-bold text-slate-900 dark:text-white">
@@ -367,7 +367,7 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
           {visibleMarks.map((mark, idx) => (
             <div
               key={mark.id}
-              className="rounded-lg bg-white/85 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] px-3 py-2 flex items-center justify-between gap-2 text-xs font-mono tabular-nums"
+              className="rounded-lg bg-white/85 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge px-3 py-2 flex items-center justify-between gap-2 text-xs font-mono tabular-nums"
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 font-sans">

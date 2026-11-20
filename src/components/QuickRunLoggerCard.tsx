@@ -134,7 +134,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
     <form
       onSubmit={handleSubmit}
       data-testid="quick-log-run-form"
-      className="rounded-xl border border-emerald-900/15 dark:border-[#2B543B] bg-[#F4F7F2] dark:bg-[#0D1711] p-3.5 space-y-3 text-xs"
+      className="rounded-xl border border-emerald-900/15 dark:border-ap-edge-dark bg-[#F4F7F2] dark:bg-[#0D1711] p-3.5 space-y-3 text-xs"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
@@ -158,7 +158,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Easy Run / Shakeout"
-            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs text-slate-900 dark:text-white"
+            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs text-slate-900 dark:text-white"
           />
         </label>
 
@@ -173,7 +173,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
             min="0.1"
             value={distanceInput}
             onChange={(e) => setDistanceInput(e.target.value)}
-            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-mono text-slate-900 dark:text-white"
+            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-mono text-slate-900 dark:text-white"
           />
         </label>
 
@@ -187,7 +187,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
             min="2"
             value={durationMinsInput}
             onChange={(e) => setDurationMinsInput(e.target.value)}
-            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 text-xs font-mono text-slate-900 dark:text-white"
+            className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-mono text-slate-900 dark:text-white"
           />
         </label>
 
@@ -217,7 +217,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
               className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-semibold cursor-pointer ${
                 footwearClass === fw.id
                   ? 'ap-nav-volt-active'
-                  : 'bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] text-slate-700 dark:text-slate-300'
+                  : 'bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge-dark text-slate-700 dark:text-slate-300'
               }`}
             >
               {fw.label}

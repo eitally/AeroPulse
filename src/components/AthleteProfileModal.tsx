@@ -537,7 +537,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     const val = Number(e.target.value);
                     setWeightKg(distanceUnit === 'mi' ? Number((val / 2.20462).toFixed(2)) : val);
                   }}
-                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                  className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                 />
               )}
             </div>
@@ -556,7 +556,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 max={100}
                 value={restingHr}
                 onChange={(e) => setRestingHr(Number(e.target.value))}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
               />
             </div>
 
@@ -576,7 +576,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={550}
                     value={ftp}
                     onChange={(e) => setFtp(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -594,7 +594,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={550}
                     value={indoorFtp}
                     onChange={(e) => setIndoorFtp(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -612,7 +612,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={210}
                     value={lthr}
                     onChange={(e) => setLthr(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -630,7 +630,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={230}
                     value={maxHr}
                     onChange={(e) => setMaxHr(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -649,7 +649,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={45000}
                     value={wPrime}
                     onChange={(e) => setWPrime(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
               </>
@@ -671,7 +671,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={550}
                     value={runFtp}
                     onChange={(e) => setRunFtp(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -691,7 +691,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                         setThresholdPaceSecsPerKm(next);
                         setLtPaceInput(formatPaceSecsForInput(next, distanceUnit));
                       }}
-                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] font-mono text-xs cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon font-mono text-xs cursor-pointer"
                     >
                       -5s
                     </button>
@@ -715,7 +715,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                         setThresholdPaceSecsPerKm(finalSecs);
                         setLtPaceInput(formatPaceSecsForInput(finalSecs, distanceUnit));
                       }}
-                      className="w-full min-w-[64px] min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2 py-1.5 font-mono text-xs text-center"
+                      className="w-full min-w-[64px] min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 py-1.5 font-mono text-xs text-center"
                       title="Enter Lactate Threshold pace in mm:ss (supports 3:30–16:00/mi)"
                     />
                     <button
@@ -726,7 +726,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                         setThresholdPaceSecsPerKm(next);
                         setLtPaceInput(formatPaceSecsForInput(next, distanceUnit));
                       }}
-                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] font-mono text-xs cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[40px] px-2 rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon font-mono text-xs cursor-pointer"
                     >
                       +5s
                     </button>
@@ -747,7 +747,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={215}
                     value={runLthr}
                     onChange={(e) => setRunLthr(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
 
@@ -765,7 +765,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     max={230}
                     value={runMaxHr}
                     onChange={(e) => setRunMaxHr(Number(e.target.value))}
-                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                    className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
               </>
@@ -829,7 +829,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 type="month"
                 value={birthMonthYear}
                 onChange={(e) => setBirthMonthYear(e.target.value)}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
               />
             </div>
 
@@ -844,7 +844,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 id={`${fieldId}-division`}
                 value={academicDivision}
                 onChange={(e) => setAcademicDivision(e.target.value as ScholasticDivision)}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
               >
                 <option value="HS_VARSITY">High School Varsity / Prep</option>
                 <option value="NCAA_D1">NCAA Division I</option>
@@ -865,7 +865,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 id={`${fieldId}-gender`}
                 value={competitionGender}
                 onChange={(e) => setCompetitionGender(e.target.value as 'MEN' | 'WOMEN')}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
               >
                 <option value="MEN">Men&apos;s Standards</option>
                 <option value="WOMEN">Women&apos;s Standards</option>
@@ -888,7 +888,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 placeholder="Optional (e.g. 42)"
                 value={ferritinInput}
                 onChange={(e) => setFerritinInput(e.target.value)}
-                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-2.5 py-1.5 font-mono text-xs"
+                className="w-full min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 py-1.5 font-mono text-xs"
               />
               <p className="text-2xs text-slate-500 dark:text-slate-400 mt-1">
                 Coaching readiness reference only — not a medical diagnosis.
@@ -1083,7 +1083,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 type="date"
                 value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)}
-                className="min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-white"
+                className="min-h-[36px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-white"
               />
             </label>
           </div>
@@ -1099,7 +1099,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                 .map((entry) => (
                   <div
                     key={entry.id}
-                    className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-[#15231B]/60 px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                    className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-ap-turf/60 px-3 py-2 flex items-center justify-between gap-2 text-xs"
                   >
                     <div className="font-mono tabular-nums space-y-0.5">
                       <div className="font-bold text-[#0284C7] dark:text-sky-300">

@@ -201,7 +201,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             type="button"
             onClick={onScanMoreSegments}
             disabled={isScanningSegments}
-            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-[#080A09] transition-colors"
+            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-ap-obsidian transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isScanningSegments ? 'animate-spin' : ''}`} />
             <span>
@@ -238,7 +238,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
   const activeHoveredIndex = efforts.indexOf(activeHoveredEffort);
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101B15] p-4 sm:p-5 space-y-4">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-ap-carbon p-4 sm:p-5 space-y-4">
       {/* Header Row & Controls */}
       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div>
@@ -398,7 +398,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                   }}
                   className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
                     isSelected
-                      ? 'bg-[#1C5436] border-[#1C5436] text-white dark:bg-[#C8FF00] dark:border-[#C8FF00] dark:text-[#080A09] shadow-2xs'
+                      ? 'bg-ap-cobalt border-ap-cobalt text-white dark:bg-ap-volt dark:border-ap-volt dark:text-ap-obsidian shadow-2xs'
                       : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
@@ -559,7 +559,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                       (activeHoveredEffort.endTimeSecs || 0) + 10
                     )
                   }
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-sans font-semibold transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-sans font-semibold transition-colors"
                 >
                   <ZoomIn className="w-3 h-3" />
                   <span>Zoom Segment on Stream &amp; Map</span>
@@ -580,7 +580,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
 
       {/* Main SVG 'Effort Over Time' Chart: Y = Duration (in seconds), X = Date */}
       <div
-        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-[#15231B]/50 p-2 sm:p-3 select-none"
+        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-ap-turf/50 p-2 sm:p-3 select-none"
         onMouseLeave={() => setHoverIdx(null)}
       >
         {(() => {
@@ -1038,7 +1038,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                     <td className="py-2 px-3 font-sans text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
                       {eff.activityName}
                       {isCurrent && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-[#1C5436] text-white dark:bg-[#C8FF00] dark:text-[#080A09] text-2xs font-bold">
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian text-2xs font-bold">
                           Current
                         </span>
                       )}

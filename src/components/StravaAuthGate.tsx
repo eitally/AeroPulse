@@ -1197,14 +1197,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <button
                     type="button"
                     onClick={() => onEnterSampleDemo(onboardingRole)}
-                    className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] items-center cursor-pointer transition-colors"
+                    className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center cursor-pointer transition-colors"
                   >
                     Sample Demo
                   </button>
                 )}
                 <a
                   href="/docs/coach.html"
-                  className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-[#15231B] items-center transition-colors"
+                  className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center transition-colors"
                 >
                   Coach Guide
                 </a>
@@ -1216,13 +1216,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
                     activeBrand
                       ? 'ap-nav-volt-active'
-                      : 'ap-card-inset text-slate-900 dark:text-slate-100 hover:bg-[#DFE8DF] dark:hover:bg-[#15231B]'
+                      : 'ap-card-inset text-slate-900 dark:text-slate-100 hover:bg-[#DFE8DF] dark:hover:bg-ap-turf'
                   }`}
                 >
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
                       activeBrand
-                        ? 'bg-[#1C5436]'
+                        ? 'bg-ap-cobalt'
                         : 'bg-[#3F6212] dark:bg-[#A3E635]'
                     }`}
                   />
@@ -1242,7 +1242,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     type="button"
                     onClick={onToggleDark}
                     aria-label="Toggle color theme"
-                    className="min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-slate-900 dark:text-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                    className="min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-slate-900 dark:text-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
                     title={
                       isDark
                         ? 'Switch to Daylight Chalk'
@@ -1318,7 +1318,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               <div className="flex flex-col lg:grid lg:grid-cols-12 gap-3.5 lg:gap-x-7 lg:gap-y-3.5 items-start">
                 {/* Block 1: Hero Headline + Subhead */}
                 <div className="order-1 lg:col-span-7 lg:col-start-1 lg:row-start-1 w-full">
-                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-[1.08] text-[#101411] dark:text-[#F4F7F4]">
+                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-[1.08] text-ap-ink dark:text-ap-chalk">
                     {activeBrand
                       ? `Join ${activeBrand.name} on THRESH`
                       : "Know today's readiness before you step on the line."}
@@ -1346,7 +1346,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   className="order-2 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:row-span-3 lg:sticky lg:top-4 w-full liquid-glass rounded-2xl p-4 sm:p-5 space-y-3"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-[#101411] dark:text-[#F4F7F4]">
+                    <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-ap-ink dark:text-ap-chalk">
                       Sign in or create account
                     </h2>
                     <span className="ap-lane-badge ap-badge-volt shrink-0">
@@ -1369,7 +1369,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                             onboardingRole === 'ATHLETE'
                               ? 'ap-pill-active'
-                              : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                              : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                           }`}
                         >
                           I&apos;m an Athlete
@@ -1382,7 +1382,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                             onboardingRole === 'COACH'
                               ? 'ap-pill-active'
-                              : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                              : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                           }`}
                         >
                           I&apos;m a Coach
@@ -1470,7 +1470,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             : 'Connect with Strava'}
                       </span>
                     </button>
-                    <p className="text-xs text-center text-[#43584B] dark:text-[#93A39A]">
+                    <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
                       {activeBrand
                         ? 'Optional Strava sync — school athletes can also sign in with Google or Email below.'
                         : 'Read-only 90d import · Never posts or edits activities'}
@@ -1482,7 +1482,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     type="button"
                     onClick={() => void handleGoogleSignIn()}
                     disabled={busy || isGoogleRedirecting}
-                    className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-white dark:bg-[#F4F7F4] text-[#101411] shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm flex items-center justify-center gap-2.5 hover:brightness-95 disabled:opacity-60 cursor-pointer transition-colors"
+                    className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-white dark:bg-ap-chalk text-ap-ink shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm flex items-center justify-center gap-2.5 hover:brightness-95 disabled:opacity-60 cursor-pointer transition-colors"
                   >
                     {isGoogleRedirecting ? (
                       <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
@@ -1501,7 +1501,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       data-testid="homepage-drawer-passkey-btn"
                       aria-expanded={isPasskeyDrawerOpen}
                       onClick={handleTogglePasskeyDrawer}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
                         isPasskeyDrawerOpen
                           ? '!border-[#3F6212] dark:!border-[#A3E635]'
                           : ''
@@ -1514,7 +1514,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       data-testid="homepage-drawer-teamcode-btn"
                       aria-expanded={isTeamCodeDrawerOpen}
                       onClick={() => handleOpenTeamCodeDrawer(false, false)}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
                         isTeamCodeDrawerOpen
                           ? '!border-[#3F6212] dark:!border-[#A3E635]'
                           : ''
@@ -1527,7 +1527,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       data-testid="homepage-drawer-fit-btn"
                       aria-expanded={showFitDrawer}
                       onClick={handleToggleFitDrawer}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
+                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
                         showFitDrawer ? '!border-[#3F6212] dark:!border-[#A3E635]' : ''
                       }`}
                     >
@@ -1546,7 +1546,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           type="button"
                           onClick={() => void handlePasskeySignIn()}
                           disabled={busy || isPasskeyAuthenticating}
-                          className="w-full min-h-[44px] px-3 rounded-xl bg-white dark:bg-[#111A15] text-[#101411] dark:text-[#F4F7F4] font-bold text-xs flex items-center justify-center gap-2 hover:brightness-95 cursor-pointer transition-colors"
+                          className="w-full min-h-[44px] px-3 rounded-xl bg-white dark:bg-[#111A15] text-ap-ink dark:text-ap-chalk font-bold text-xs flex items-center justify-center gap-2 hover:brightness-95 cursor-pointer transition-colors"
                         >
                           {isPasskeyAuthenticating ? (
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1566,12 +1566,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           onSubmit={handlePasskeyRegister}
                           className="rounded-lg bg-white dark:bg-[#111A15] p-2.5 space-y-2 text-xs"
                         >
-                          <div className="flex items-center justify-between font-semibold text-[#101411] dark:text-white">
+                          <div className="flex items-center justify-between font-semibold text-ap-ink dark:text-white">
                             <span>Register Passkey for this device</span>
                             <button
                               type="button"
                               onClick={() => setShowPasskeyRegister(false)}
-                              className="text-xs font-mono text-[#43584B] dark:text-[#93A39A] hover:underline cursor-pointer"
+                              className="text-xs font-mono text-ap-muted dark:text-ap-muted-dark hover:underline cursor-pointer"
                             >
                               Cancel
                             </button>
@@ -1588,12 +1588,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                               value={passkeyRegEmail}
                               onChange={(e) => setPasskeyRegEmail(e.target.value)}
                               placeholder="Enter your email to link passkey"
-                              className="flex-1 min-h-[44px] rounded-xl ap-card-inset px-3 text-xs text-[#101411] dark:text-white"
+                              className="flex-1 min-h-[44px] rounded-xl ap-card-inset px-3 text-xs text-ap-ink dark:text-white"
                             />
                             <button
                               type="submit"
                               disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
-                              className="min-h-[44px] px-3 rounded-xl bg-[#C8FF00] text-[#080A09] font-extrabold text-xs shrink-0 cursor-pointer"
+                              className="min-h-[44px] px-3 rounded-xl bg-ap-volt text-ap-obsidian font-extrabold text-xs shrink-0 cursor-pointer"
                             >
                               {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
                             </button>
@@ -1613,12 +1613,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             }}
                             placeholder="you@school-or-club.org"
                             aria-label="Email address for magic sign-in link"
-                            className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-semibold text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B]/70 dark:placeholder:text-[#93A39A]/70"
+                            className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-semibold text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70"
                           />
                           <button
                             type="submit"
                             disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
-                            className="min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-60 transition-colors"
+                            className="min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-60 transition-colors"
                           >
                             {isSendingMagicLink ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1674,7 +1674,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             setInviteToken('');
                           }}
                           placeholder="e.g. WGXC-26"
-                          className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-mono font-bold uppercase placeholder:normal-case tracking-wider text-[#101411] dark:text-[#F4F7F4] placeholder:text-[#43584B]/70 dark:placeholder:text-[#93A39A]/70"
+                          className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-mono font-bold uppercase placeholder:normal-case tracking-wider text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70"
                         />
                         <button
                           type="button"
@@ -1687,12 +1687,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             }
                             void lookupTeamPreview(joinCodeInput, inviteToken);
                           }}
-                          className="min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs shrink-0 cursor-pointer transition-colors"
+                          className="min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs shrink-0 cursor-pointer transition-colors"
                         >
                           {isLoadingPreview ? 'Checking…' : 'Join Squad'}
                         </button>
                       </div>
-                      <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+                      <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
                         No watch required to join. Connect Strava or Garmin anytime.
                       </p>
                     </div>
@@ -1707,11 +1707,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowArchiveWizard(true)}
-                        className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#C8FF00] hover:bg-[#b5eb00] text-[#080A09] font-extrabold text-xs cursor-pointer transition-colors"
+                        className="w-full min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs cursor-pointer transition-colors"
                       >
                         Open Local .FIT / .ZIP Archive (Zero-Cloud Mode)
                       </button>
-                      <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+                      <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
                         Unpack Garmin, Strava, Polar, or Wahoo files locally in your browser.
                       </p>
                     </div>
@@ -1723,7 +1723,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowCustomStravaKeys((prev) => !prev)}
-                        className="w-full flex items-center justify-between text-xs font-semibold text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white cursor-pointer py-1"
+                        className="w-full flex items-center justify-between text-xs font-semibold text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white cursor-pointer py-1"
                       >
                         <span>Self-hosting THRESH? Configure Strava API Keys</span>
                         {showCustomStravaKeys ? (
@@ -1749,7 +1749,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                               </a>{' '}
                               and set <strong>Authorization Callback Domain</strong> to:
                               <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 font-mono">
-                                <span className="font-bold text-[#101411] dark:text-white truncate">
+                                <span className="font-bold text-ap-ink dark:text-white truncate">
                                   {currentHostname}
                                 </span>
                                 <button
@@ -1783,7 +1783,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 value={stravaClientId}
                                 onChange={(e) => setStravaClientId(e.target.value)}
                                 placeholder="Client ID (e.g. 123456)"
-                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
                               />
                               <input
                                 type="password"
@@ -1793,7 +1793,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 placeholder={
                                   status.stravaClientId ? 'Client Secret (saved)' : 'Client Secret'
                                 }
-                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
                               />
                             </div>
                             <button
@@ -1808,7 +1808,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
                           {(onExchangeStravaCode || onSaveStravaDirectToken) && (
                             <details className="pt-1.5">
-                              <summary className="cursor-pointer text-xs font-medium text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white select-none">
+                              <summary className="cursor-pointer text-xs font-medium text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white select-none">
                                 Or paste a Strava Refresh Token / localhost callback URL
                               </summary>
                               <form onSubmit={handleManualExchangeSubmit} className="mt-2 space-y-2">
@@ -1827,14 +1827,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                     }
                                   }}
                                   placeholder="Paste Refresh Token or http://localhost/...?code=..."
-                                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-[#101411] dark:text-slate-100"
+                                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
                                 />
                                 <button
                                   type="submit"
                                   disabled={
                                     busy || (!manualCodeInput.trim() && !directRefreshToken.trim())
                                   }
-                                  className="w-full min-h-[44px] rounded-lg bg-[#DFE8DF] dark:bg-[#15231B] text-xs font-bold cursor-pointer"
+                                  className="w-full min-h-[44px] rounded-lg bg-[#DFE8DF] dark:bg-ap-turf text-xs font-bold cursor-pointer"
                                 >
                                   Verify &amp; Connect
                                 </button>
@@ -1851,13 +1851,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     <button
                       type="button"
                       onClick={() => onEnterSampleDemo(onboardingRole)}
-                      className="w-full min-h-[52px] rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-[#15231B] px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
+                      className="w-full min-h-[52px] rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
                     >
                       <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-[#43584B] dark:text-[#93A39A]">
+                        <span className="block text-xs font-semibold text-ap-muted dark:text-ap-muted-dark">
                           New here?
                         </span>
-                        <span className="block text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                        <span className="block text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
                           Explore Live Sample Cockpit{'\u00A0'}→
                         </span>
                       </span>
@@ -1876,7 +1876,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2.5">
                     <div className="flex items-center gap-2.5">
-                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
                         Live Cockpit Preview
                       </h2>
                       <span className="ap-lane-badge">
@@ -1898,7 +1898,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                           specimenView === 'SOLO'
                             ? 'ap-pill-active'
-                            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                         }`}
                       >
                         Solo Athlete
@@ -1912,7 +1912,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                           specimenView === 'COACH'
                             ? 'ap-pill-active'
-                            : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                            : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                         }`}
                       >
                         Team Coach
@@ -1923,7 +1923,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   {specimenView === 'SOLO' ? (
                     <div className="space-y-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-[#43584B] dark:text-[#93A39A]">
+                        <span className="text-xs font-bold text-ap-muted dark:text-ap-muted-dark">
                           Simulate Morning Readiness:
                         </span>
                         <div className="inline-flex ap-pill-track p-1 rounded-xl gap-1">
@@ -1935,7 +1935,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                               !isSimulatedFatigued
                                 ? 'ap-pill-active'
-                                : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                                : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                             }`}
                           >
                             Optimal (+6 TSB)
@@ -1948,7 +1948,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-xs font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
                               isSimulatedFatigued
                                 ? 'ap-pill-active'
-                                : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                                : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                             }`}
                           >
                             Fatigued (-24 TSB)
@@ -1959,29 +1959,29 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       {/* 3 KPI Strip */}
                       <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
                         <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
                             42d Fitness (CTL)
                           </div>
-                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk">
                             64
                           </div>
                         </div>
                         <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
                             7d Fatigue (ATL)
                           </div>
                           <div
                             data-testid="specimen-atl-value"
-                            className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4]"
+                            className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk"
                           >
                             {atlSpecimenValue}
                           </div>
                         </div>
                         <div className="rounded-xl ap-card-inset p-2.5 sm:p-3">
-                          <div className="text-xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1">
+                          <div className="text-xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1">
                             Form (TSB)
                           </div>
-                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-[#101411] dark:text-[#F4F7F4] flex items-baseline gap-1.5 flex-wrap">
+                          <div className="font-mono tabular-nums text-base sm:text-xl font-extrabold text-ap-ink dark:text-ap-chalk flex items-baseline gap-1.5 flex-wrap">
                             <span data-testid="specimen-tsb-value">{tsbSpecimenValue}</span>
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-2xs font-bold ${
@@ -2004,7 +2004,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       {/* 3-Channel Load Focus Bars */}
                       <div className="rounded-xl ap-card-inset p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4]">
+                          <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
                             7-Day Load Focus Channels
                           </span>
                           <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
@@ -2055,7 +2055,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           />
                           <span
                             data-testid="specimen-prescription-text"
-                            className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]"
+                            className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk"
                           >
                             {isSimulatedFatigued
                               ? 'Today: 4 × 1km @ 3:48/km · Auto-modulated -15% strain guard'
@@ -2071,7 +2071,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     <div data-testid="specimen-coach-panel" className="space-y-2.5">
                       <div className="rounded-xl ap-card-inset p-3 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                          <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
                             Squad Safety Triage · Morning Check
                           </span>
                           <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
@@ -2096,7 +2096,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
                       <div className="rounded-xl ap-card-inset p-3 space-y-1">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                          <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
                             Trackside Pod Splits
                           </span>
                           <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
@@ -2111,7 +2111,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="w-2 h-2 rounded-full bg-[#16A34A] shrink-0" />
-                          <span className="text-xs font-bold text-[#101411] dark:text-[#F4F7F4]">
+                          <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
                             Willow Glen XC (<span className="font-mono">WGXC-26</span>) · Athletic.net
                             Roster &amp; PRs Linked
                           </span>
@@ -2128,7 +2128,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 <div className="order-4 lg:col-span-7 lg:col-start-1 lg:row-start-3 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="rounded-xl ap-card-inset p-4 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
                         For Individual Athletes
                       </h2>
                       <span className="ap-lane-badge shrink-0">
@@ -2161,7 +2161,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
                   <div className="rounded-xl ap-card-inset p-4 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base font-extrabold text-[#101411] dark:text-[#F4F7F4]">
+                      <h2 className="text-base font-extrabold text-ap-ink dark:text-ap-chalk">
                         For Coaches &amp; Programs
                       </h2>
                       <span className="ap-lane-badge shrink-0">
@@ -2197,9 +2197,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               </div>
             </main>
 
-            <footer className="mt-3 pt-2.5 border-t border-[#CBDAD0] dark:border-[#233B2D] flex flex-wrap items-center justify-between gap-2 text-xs text-[#43584B] dark:text-[#93A39A]">
+            <footer className="mt-3 pt-2.5 border-t border-[#CBDAD0] dark:border-[#233B2D] flex flex-wrap items-center justify-between gap-2 text-xs text-ap-muted dark:text-ap-muted-dark">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-[#101411] dark:text-[#F4F7F4] tracking-wider">
+                <span className="font-extrabold text-ap-ink dark:text-ap-chalk tracking-wider">
                   THRESH
                 </span>
                 <span>· Endurance Readiness &amp; Team Performance Lab</span>
@@ -2265,7 +2265,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             <div className="flex items-center gap-2.5">
               <AeroPulseLogo size="sm" teamBrand={activeBrand} />
               {!activeBrand && (
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
                   Run &amp; Ride Readiness
                 </span>
               )}
@@ -2307,7 +2307,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
                   {isDark ? (
-                    <Sun className="w-4 h-4 text-[#C8FF00]" weight="fill" />
+                    <Sun className="w-4 h-4 text-ap-volt" weight="fill" />
                   ) : (
                     <Moon className="w-4 h-4 text-[#1D3828]" weight="fill" />
                   )}
@@ -2433,7 +2433,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               {onboardingRole === 'COACH' && !activeBrand && (
                 <div
                   data-testid="coach-quickstart-card"
-                  className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-[#1C5436]/25 dark:border-[#C8FF00]/25"
+                  className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-ap-cobalt/25 dark:border-ap-volt/25"
                 >
                   <div className="space-y-1">
                     <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
@@ -2581,7 +2581,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             opt.disabled
                               ? 'opacity-45 cursor-not-allowed border-slate-300/50 dark:border-white/10'
                               : selected
-                                ? 'border-[#1E6B38] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#C8FF00]/10 cursor-pointer'
+                                ? 'border-[#1E6B38] dark:border-ap-volt bg-emerald-500/10 dark:bg-ap-volt/10 cursor-pointer'
                                 : 'liquid-glass hover:border-[#28573B] dark:hover:border-[#2E6B47] cursor-pointer'
                           }`}
                         >

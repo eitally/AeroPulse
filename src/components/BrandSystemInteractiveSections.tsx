@@ -305,7 +305,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
                 key={z.zone}
                 type="button"
                 onClick={() => void copyText(key, formatted, `${z.zone} ${z.name}`)}
-                className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-left bg-white dark:bg-[#101B15] hover:border-emerald-700/50 dark:hover:border-lime-400/50 transition-colors cursor-pointer"
+                className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-left bg-white dark:bg-ap-carbon hover:border-emerald-700/50 dark:hover:border-lime-400/50 transition-colors cursor-pointer"
               >
                 <div
                   className="px-3 py-3 flex items-center justify-between"

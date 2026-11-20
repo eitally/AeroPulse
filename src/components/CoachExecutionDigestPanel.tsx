@@ -193,7 +193,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-          <h2 className="text-sm sm:text-base font-bold text-[#101411] dark:text-[#F4F7F4]">
+          <h2 className="text-sm sm:text-base font-bold text-ap-ink dark:text-ap-chalk">
             Squad Triage (7d)
           </h2>
         </div>
@@ -303,7 +303,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               <div
                 key={row.athleteId}
                 data-testid={`digest-row-${row.athleteId}`}
-                className="rounded-xl border border-[#2B5B3F]/15 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                className="rounded-xl border border-ap-frame/15 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
               >
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -326,7 +326,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                                     ? 'Needs Review'
                                     : 'On Track'}
                     </span>
-                    <span className="font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                    <span className="font-bold text-ap-ink dark:text-ap-chalk truncate">
                       {row.name}
                     </span>
                     {row.checkInStreakDays > 0 && (
@@ -335,7 +335,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                       </span>
                     )}
                     {readiness && (readiness.hrv > 0 || readiness.tsb !== 0) && (
-                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#43584B] dark:text-[#93A39A] tabular-nums">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-ap-muted dark:text-ap-muted-dark tabular-nums">
                         {readiness.hrv > 0 ? `HRV ${Math.round(readiness.hrv)}ms · ` : ''}
                         Form {readiness.tsb >= 0 ? `+${Math.round(readiness.tsb)}` : Math.round(readiness.tsb)}
                       </span>
@@ -346,7 +346,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                       </span>
                     )}
                     {row.isSelfFallback && (
-                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-[#43584B] dark:text-[#93A39A]">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-ap-muted dark:text-ap-muted-dark">
                         Coach Preview
                       </span>
                     )}
@@ -384,7 +384,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                     onClick={() =>
                       row.isSelfFallback ? onOpenTeamPlan() : onInspectAthlete(row.athleteId)
                     }
-                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-[#E3ECE5] dark:bg-[#15231B] text-[#1C5436] dark:text-[#C8FF00] text-2xs font-semibold cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-2xs font-semibold cursor-pointer"
                   >
                     {row.isSelfFallback ? 'Team Plan' : 'Inspect'}
                   </button>
@@ -423,12 +423,12 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
       {activeTeam && athleteMembers.length > 0 && (
         <div
           data-testid="coach-workout-comments"
-          className="pt-2 border-t border-stone-200/80 dark:border-[#244331] space-y-2.5"
+          className="pt-2 border-t border-stone-200/80 dark:border-ap-edge space-y-2.5"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-              <h3 className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4]">
+              <h3 className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk">
                 Workout Notes &amp; SafeSport Comments
               </h3>
             </div>
@@ -449,7 +449,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               aria-label="Target athlete for workout comment"
               value={commentTargetMembershipId}
               onChange={(e) => setCommentTargetMembershipId(e.target.value)}
-              className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#101B15] px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100"
+              className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-carbon px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-slate-100"
             >
               {athleteMembers.map((m) => (
                 <option key={m.membershipId} value={m.membershipId}>
@@ -464,7 +464,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               value={commentDraft}
               onChange={(e) => setCommentDraft(e.target.value)}
               placeholder="Share split feedback or recovery cue (auto-CC'd to guardian for minors)..."
-              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#101B15] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-carbon px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
             />
             <button
               type="submit"
@@ -488,7 +488,7 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
               {(activeTeam.workoutComments || []).slice(0, 6).map((c) => (
                 <div
                   key={c.id}
-                  className="rounded-xl border border-stone-200 dark:border-[#244331] bg-white/80 dark:bg-[#101B15] px-3 py-2 text-xs space-y-0.5"
+                  className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon px-3 py-2 text-xs space-y-0.5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-500">
                     <span>

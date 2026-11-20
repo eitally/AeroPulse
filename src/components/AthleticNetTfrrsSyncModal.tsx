@@ -625,22 +625,22 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         className="ap-modal-sheet max-w-3xl ap-content-stage p-4 sm:p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-stone-200 dark:border-[#244331] pb-3">
+        <div className="flex items-start justify-between gap-3 border-b border-stone-200 dark:border-ap-edge pb-3">
           <div className="space-y-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2
                 id={`${formId}-sync-title`}
-                className="text-base sm:text-lg font-bold text-[#101411] dark:text-[#F4F7F4]"
+                className="text-base sm:text-lg font-bold text-ap-ink dark:text-ap-chalk"
               >
                 Athletic.net &amp; TFRRS Team Sync
               </h2>
               {activeTeam && (
-                <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-[#E3ECE5] text-[#1C5436] dark:bg-[#15231B] dark:text-[#C8FF00]">
+                <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
                   {activeTeam.brand.shortName}
                 </span>
               )}
             </div>
-            <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+            <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
               Import rosters, .ics meet schedules, and official race marks from Athletic.net or TFRRS.
             </p>
           </div>
@@ -648,7 +648,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
             type="button"
             onClick={onClose}
             aria-label="Close Athletic.net and TFRRS sync modal"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4] shrink-0 cursor-pointer"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk shrink-0 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -656,8 +656,8 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
 
         {/* Quick Setup Bar when no team is active (or exploring Sample Demo) */}
         {(!activeTeam || activeTeam.brand.teamId.startsWith('demo_team_')) && (
-          <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3.5 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="text-xs text-[#101411] dark:text-[#F4F7F4]">
+          <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-3.5 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="text-xs text-ap-ink dark:text-ap-chalk">
               <strong>No team yet?</strong> Try a pre-configured demo program or paste your own roster below:
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -702,7 +702,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         <div
           role="tablist"
           aria-label="External sync channels"
-          className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-stone-100 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331]"
+          className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-stone-100 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge"
         >
           {(
             [
@@ -723,7 +723,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   active
                     ? 'ap-nav-volt-active'
-                    : 'text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-[#F4F7F4]'
+                    : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk'
                 }`}
               >
                 {item.label}
@@ -756,8 +756,8 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                       onClick={() => setPasteMode(m.id)}
                       className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold border inline-flex items-center gap-1.5 cursor-pointer ${
                         active
-                          ? 'bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] border-[#1C5436] dark:border-[#C8FF00] font-bold'
-                          : 'bg-white dark:bg-[#15231B] text-[#101411] dark:text-[#F4F7F4] border-stone-200 dark:border-[#244331]'
+                          ? 'bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian border-ap-cobalt dark:border-ap-volt font-bold'
+                          : 'bg-white dark:bg-ap-turf text-ap-ink dark:text-ap-chalk border-stone-200 dark:border-ap-edge'
                       }`}
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -788,7 +788,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
 
             {/* Quick Sample Loaders for Testing & Onboarding */}
             <div className="flex flex-wrap items-center gap-1.5 text-2xs">
-              <span className="font-mono text-[#43584B] dark:text-[#93A39A]">Try sample:</span>
+              <span className="font-mono text-ap-muted dark:text-ap-muted-dark">Try sample:</span>
               <button
                 type="button"
                 data-testid="sync-sample-wg-roster"
@@ -796,7 +796,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   setRawPasteText(WILLOW_GLEN_XC_PRESET.sampleRosterText);
                   setPasteMode('ROSTER');
                 }}
-                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] font-mono text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf font-mono text-ap-ink dark:text-ap-chalk cursor-pointer"
               >
                 Willow Glen Roster
               </button>
@@ -809,7 +809,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   setRawPasteText(WILLOW_GLEN_XC_PRESET.sampleMeetResultsText);
                   setPasteMode('MEET_RESULTS');
                 }}
-                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] font-mono text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf font-mono text-ap-ink dark:text-ap-chalk cursor-pointer"
               >
                 Crystal Springs 2.95 mi Results
               </button>
@@ -820,7 +820,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   setRawPasteText(COLLEGIATE_TFRRS_PRESET.sampleRosterText);
                   setPasteMode('ROSTER');
                 }}
-                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] font-mono text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+                className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-md border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf font-mono text-ap-ink dark:text-ap-chalk cursor-pointer"
               >
                 TFRRS Roster CSV
               </button>
@@ -831,7 +831,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 <div>
                   <label
                     htmlFor={`${formId}-team-filter`}
-                    className="block text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1"
+                    className="block text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1"
                   >
                     School / Team Filter (Filters multi-team invitationals)
                   </label>
@@ -842,13 +842,13 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     value={teamFilterKeyword}
                     onChange={(e) => setTeamFilterKeyword(e.target.value)}
                     placeholder="e.g. Willow Glen"
-                    className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-ap-ink dark:text-ap-chalk"
                   />
                 </div>
                 <div>
                   <label
                     htmlFor={`${formId}-course-dist`}
-                    className="block text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1"
+                    className="block text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1"
                   >
                     XC Course / Track Distance
                   </label>
@@ -857,7 +857,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     data-testid="sync-course-preset-select"
                     value={coursePresetId}
                     onChange={(e) => setCoursePresetId(e.target.value)}
-                    className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-ap-ink dark:text-ap-chalk"
                   >
                     {COURSE_DISTANCE_PRESETS.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -872,7 +872,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
             <div>
               <label
                 htmlFor={`${formId}-paste-box`}
-                className="block text-2xs font-semibold text-[#43584B] dark:text-[#93A39A] mb-1"
+                className="block text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark mb-1"
               >
                 Select-All &amp; Paste from Athletic.net, TFRRS, or Hy-Tek CSV
               </label>
@@ -889,7 +889,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   }
                 }}
                 placeholder="Open your team's Athletic.net or TFRRS page in your browser, press Cmd+A then Cmd+C, and paste here..."
-                className="w-full rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] p-3 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                className="w-full rounded-xl border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf p-3 font-mono text-xs text-ap-ink dark:text-ap-chalk"
               />
             </div>
 
@@ -899,10 +899,10 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
               previewAnalysis.results.length > 0) && (
               <div
                 data-testid="sync-preview-box"
-                className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3 space-y-2"
+                className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-3 space-y-2"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                  <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                  <span className="font-bold text-ap-cobalt dark:text-ap-volt">
                     {previewAnalysis.athletes.length > 0 &&
                       `${previewAnalysis.athletes.length} Roster Athletes Parsed`}
                     {previewAnalysis.meets.length > 0 &&
@@ -912,20 +912,20 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   </span>
                 </div>
 
-                <div className="max-h-40 overflow-y-auto divide-y divide-stone-200/70 dark:divide-[#244331] text-xs font-mono">
+                <div className="max-h-40 overflow-y-auto divide-y divide-stone-200/70 dark:divide-ap-edge text-xs font-mono">
                   {previewAnalysis.athletes.slice(0, 8).map((a, idx) => (
                     <div
                       key={`${a.name}-${idx}`}
                       className="py-1.5 flex items-center justify-between gap-2"
                     >
-                      <span className="font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] truncate">
+                      <span className="font-sans font-semibold text-ap-ink dark:text-ap-chalk truncate">
                         {a.name}{' '}
-                        <span className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                        <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                           ({a.squadGroup}
                           {a.graduationYear ? ` · '${String(a.graduationYear).slice(-2)}` : ''})
                         </span>
                       </span>
-                      <span className="text-[#1C5436] dark:text-[#C8FF00] font-bold shrink-0">
+                      <span className="text-ap-cobalt dark:text-ap-volt font-bold shrink-0">
                         {a.seedMarkOrFtp || a.externalAthleteId || 'Roster'}
                       </span>
                     </div>
@@ -935,10 +935,10 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                       key={`${m.date}-${idx}`}
                       className="py-1.5 flex items-center justify-between gap-2"
                     >
-                      <span className="font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] truncate">
+                      <span className="font-sans font-semibold text-ap-ink dark:text-ap-chalk truncate">
                         {m.date} · {m.name}
                       </span>
-                      <span className="text-2xs text-[#43584B] dark:text-[#93A39A] truncate">
+                      <span className="text-2xs text-ap-muted dark:text-ap-muted-dark truncate">
                         {m.locationName || m.locationCategory}
                       </span>
                     </div>
@@ -948,14 +948,14 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                       key={`${item.row.athleteName}-${idx}`}
                       className="py-1.5 flex items-center justify-between gap-2"
                     >
-                      <span className="font-sans font-semibold text-[#101411] dark:text-[#F4F7F4] truncate">
+                      <span className="font-sans font-semibold text-ap-ink dark:text-ap-chalk truncate">
                         {item.row.athleteName}{' '}
-                        <span className="font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+                        <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                           ({item.row.eventLabel} ·{' '}
                           {item.action === 'MATCHED' ? 'Matched' : 'Add to Roster'})
                         </span>
                       </span>
-                      <span className="text-[#1C5436] dark:text-[#C8FF00] font-bold shrink-0">
+                      <span className="text-ap-cobalt dark:text-ap-volt font-bold shrink-0">
                         {item.row.displayFatTime} · VDOT{' '}
                         {item.activity.officialRaceData?.vdotScore.toFixed(1)}
                       </span>
@@ -988,11 +988,11 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         {/* TAB 2: TEAM URL, .ICS CALENDAR & PUBLIC PARENT HUB */}
         {tab === 'CONNECT_ICS' && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3.5 space-y-3">
+            <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-3.5 space-y-3">
               <div>
                 <label
                   htmlFor={`${formId}-team-url`}
-                  className="block text-xs font-bold text-[#101411] dark:text-[#F4F7F4] mb-1"
+                  className="block text-xs font-bold text-ap-ink dark:text-ap-chalk mb-1"
                 >
                   Athletic.net or TFRRS Team Homepage URL
                 </label>
@@ -1004,7 +1004,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     value={teamUrlInput}
                     onChange={(e) => setTeamUrlInput(e.target.value)}
                     placeholder="https://www.athletic.net/team/1073/xc or https://xc.tfrrs.org/teams/..."
-                    className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-3 py-1.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   />
                   <button
                     type="button"
@@ -1017,7 +1017,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   </button>
                 </div>
                 {parsedUrlPreview && (
-                  <div className="mt-1.5 text-2xs font-mono text-[#1C5436] dark:text-[#C8FF00]">
+                  <div className="mt-1.5 text-2xs font-mono text-ap-cobalt dark:text-ap-volt">
                     Detected:{' '}
                     {parsedUrlPreview.platform === 'ATHLETIC_NET'
                       ? `Athletic.net · SchoolID #${parsedUrlPreview.athleticNetSchoolId} (${parsedUrlPreview.athleticNetSportSlug})`
@@ -1026,14 +1026,14 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 )}
               </div>
 
-              <div className="pt-2 border-t border-stone-200 dark:border-[#244331] space-y-2">
+              <div className="pt-2 border-t border-stone-200 dark:border-ap-edge space-y-2">
                 <label
                   htmlFor={`${formId}-ics-url`}
-                  className="block text-xs font-bold text-[#101411] dark:text-[#F4F7F4]"
+                  className="block text-xs font-bold text-ap-ink dark:text-ap-chalk"
                 >
                   Electronic Calendar (.ics / webcal://) Meet Schedule Sync
                 </label>
-                <p className="text-2xs text-[#43584B] dark:text-[#93A39A]">
+                <p className="text-2xs text-ap-muted dark:text-ap-muted-dark">
                   On Athletic.net, open Electronic Calendar Options on your team calendar to copy the Subscribe URL or download the .ics snapshot.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -1044,7 +1044,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     value={icsUrlInput}
                     onChange={(e) => setIcsUrlInput(e.target.value)}
                     placeholder="webcal://www.athletic.net/... or https://.../calendar.ics"
-                    className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-3 py-1.5 font-mono text-xs text-[#101411] dark:text-[#F4F7F4]"
+                    className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   />
                   <button
                     type="button"
@@ -1076,7 +1076,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     type="button"
                     data-testid="sync-load-wg-ics-btn"
                     onClick={() => void handleSyncIcsFeed(WILLOW_GLEN_XC_PRESET.sampleScheduleIcs)}
-                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] font-mono text-2xs font-semibold text-[#101411] dark:text-[#F4F7F4] cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
                   >
                     Import Willow Glen Sample .ics
                   </button>
@@ -1085,11 +1085,11 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
             </div>
 
             {/* Parent & Supporter Public Read-Only Hub */}
-            <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-3.5 space-y-2.5">
+            <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <ShieldCheck className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00] shrink-0" />
-                  <h3 className="text-xs sm:text-sm font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+                  <ShieldCheck className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
+                  <h3 className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk truncate">
                     Parent &amp; Supporter Read-Only Team Hub
                   </h3>
                 </div>
@@ -1103,11 +1103,11 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   <span>Enabled</span>
                 </label>
               </div>
-              <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+              <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
                 Shares meet schedules and official marks publicly; athlete emails, GPS routes, HRV, RPE, and weight stay private.
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <code className="flex-1 min-w-[200px] rounded-lg border border-stone-200 dark:border-[#244331] bg-white dark:bg-[#15231B] px-2.5 py-2 font-mono text-2xs text-[#101411] dark:text-[#F4F7F4] truncate">
+                <code className="flex-1 min-w-[200px] rounded-lg border border-stone-200 dark:border-ap-edge bg-white dark:bg-ap-turf px-2.5 py-2 font-mono text-2xs text-ap-ink dark:text-ap-chalk truncate">
                   {publicHubUrl}
                 </code>
                 <button
@@ -1144,17 +1144,17 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
 
         {/* TAB 3: 1-CLICK BROWSER BOOKMARKLET */}
         {tab === 'BOOKMARKLET' && (
-          <div className="rounded-xl border border-stone-200 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-4 space-y-3">
+          <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-4 space-y-3">
             <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00] shrink-0" />
-              <h3 className="text-sm font-bold text-[#101411] dark:text-[#F4F7F4]">
+              <Globe className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
+              <h3 className="text-sm font-bold text-ap-ink dark:text-ap-chalk">
                 1-Click &ldquo;Send to THRESH&rdquo; Browser Clipper
               </h3>
             </div>
-            <p className="text-xs text-[#43584B] dark:text-[#93A39A]">
+            <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
               One click inside any open Athletic.net or TFRRS browser tab sends that page&apos;s roster IDs or meet results straight to THRESH.
             </p>
-            <ol className="list-decimal list-inside space-y-1.5 text-xs text-[#101411] dark:text-[#F4F7F4]">
+            <ol className="list-decimal list-inside space-y-1.5 text-xs text-ap-ink dark:text-ap-chalk">
               <li>
                 Drag the <strong>Send to THRESH</strong> button below onto your browser&rsquo;s Bookmarks Bar.
               </li>

@@ -393,14 +393,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
 
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden md:flex items-center gap-2 liquid-glass-subtle border border-[#C5D4C9] dark:border-[#244230] rounded-lg px-3 py-1.5">
-              <span className="text-2xs font-mono uppercase text-[#43584B] dark:text-[#93A39A]">
+              <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
                 Invite Code:
               </span>
               <span className="text-xs font-mono font-bold ap-text-brand">{selfInviteCode}</span>
               <button
                 type="button"
                 onClick={handleCopyInvite}
-                className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center text-[#43584B] dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center text-ap-muted dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                 aria-label="Copy your THRESH Invite Code"
               >
                 {copiedCode ? (
@@ -443,7 +443,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         )}
 
         {/* 2 Focused Tabs */}
-        <div className="px-3 sm:px-6 border-b border-[#C5D4C9] dark:border-[#244230] bg-[#E9EFE9] dark:bg-[#101B15]">
+        <div className="px-3 sm:px-6 border-b border-[#C5D4C9] dark:border-[#244230] bg-[#E9EFE9] dark:bg-ap-carbon">
           <div
             role="tablist"
             aria-label="Connections and privacy sections"
@@ -467,14 +467,14 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               onClick={() => setActiveTab('CONNECT_INVITE')}
               className={`min-h-[44px] px-3 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'CONNECT_INVITE'
-                  ? 'border-[#1C5436] dark:border-[#C8FF00] text-[#101411] dark:text-white font-bold'
-                  : 'border-transparent text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                  ? 'border-ap-cobalt dark:border-ap-volt text-ap-ink dark:text-white font-bold'
+                  : 'border-transparent text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>Connections ({connectedRoster.length})</span>
               {pendingRequests.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-[#080A09] font-bold text-2xs">
+                <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-ap-obsidian font-bold text-2xs">
                   {pendingRequests.length}
                 </span>
               )}
@@ -488,8 +488,8 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               onClick={() => setActiveTab('PRIVACY_SHIELD')}
               className={`min-h-[44px] px-3 py-2 text-xs font-mono uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'PRIVACY_SHIELD'
-                  ? 'border-[#1C5436] dark:border-[#C8FF00] text-[#101411] dark:text-white font-bold'
-                  : 'border-transparent text-[#43584B] dark:text-[#93A39A] hover:text-[#101411] dark:hover:text-white'
+                  ? 'border-ap-cobalt dark:border-ap-volt text-ap-ink dark:text-white font-bold'
+                  : 'border-transparent text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-emerald-700 dark:text-[#10B981] shrink-0" />
@@ -536,7 +536,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       value={inviteQuery}
                       onChange={(e) => setInviteQuery(e.target.value)}
                       placeholder="e.g. Jordan Mercer or TH-5120-VELO"
-                      className="w-full min-h-[44px] bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono"
+                      className="w-full min-h-[44px] bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge-dark rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono"
                       required
                     />
                   </div>
@@ -555,7 +555,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         onChange={(e) =>
                           setInviteRole(e.target.value as 'COACH_EDIT' | 'FRIEND_VIEW')
                         }
-                        className="w-full min-h-[44px] bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        className="w-full min-h-[44px] bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge-dark rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
                       >
                         <option value="FRIEND_VIEW">Teammate (View Only)</option>
                         <option value="COACH_EDIT">Coached Athlete (Edit Calendar)</option>
@@ -575,7 +575,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         onChange={(e) =>
                           setInviteSpecialty(e.target.value as 'Running' | 'Cycling')
                         }
-                        className="w-full min-h-[44px] bg-white dark:bg-[#101B15] border border-stone-300 dark:border-[#2B543B] rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        className="w-full min-h-[44px] bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge-dark rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100"
                       >
                         <option value="Running">Running / Track</option>
                         <option value="Cycling">Cycling / Power</option>
@@ -632,7 +632,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       return (
                         <div
                           key={req.id}
-                          className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-[#244331] rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
+                          className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
                         >
                           <div className="flex items-center gap-2.5">
                             <div
@@ -696,7 +696,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         return (
                           <div
                             key={ath.id}
-                            className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-[#244331] rounded-lg px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2"
+                            className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2"
                           >
                             <div>
                               <div className="text-xs font-semibold text-slate-900 dark:text-white">
@@ -773,7 +773,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                <div className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-[#244331] rounded-lg p-3.5 space-y-2">
+                <div className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3.5 space-y-2">
                   <label
                     htmlFor={`${formIdPrefix}-priv-hrv`}
                     className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5"
@@ -790,7 +790,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         shareWellnessAndHrv: e.target.value as PrivacyVisibilityTier,
                       })
                     }
-                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-[#15231B] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-ap-turf border border-stone-300 dark:border-ap-edge-dark rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   >
                     <option value="ALL_CONNECTIONS">Friends &amp; Coaches</option>
                     <option value="COACHES_ONLY">Coaches Only</option>
@@ -798,7 +798,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   </select>
                 </div>
 
-                <div className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-[#244331] rounded-lg p-3.5 space-y-2">
+                <div className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3.5 space-y-2">
                   <label
                     htmlFor={`${formIdPrefix}-priv-pmc`}
                     className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5"
@@ -815,7 +815,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         sharePmcAndZones: e.target.value as PrivacyVisibilityTier,
                       })
                     }
-                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-[#15231B] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-ap-turf border border-stone-300 dark:border-ap-edge-dark rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   >
                     <option value="ALL_CONNECTIONS">Friends &amp; Coaches</option>
                     <option value="COACHES_ONLY">Coaches Only</option>
@@ -823,7 +823,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   </select>
                 </div>
 
-                <div className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-[#244331] rounded-lg p-3.5 space-y-2">
+                <div className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3.5 space-y-2">
                   <label
                     htmlFor={`${formIdPrefix}-priv-gps`}
                     className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5"
@@ -840,7 +840,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         shareGpsRoutes: e.target.value as PrivacyVisibilityTier,
                       })
                     }
-                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-[#15231B] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] sm:min-h-[38px] bg-white dark:bg-ap-turf border border-stone-300 dark:border-ap-edge-dark rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   >
                     <option value="ALL_CONNECTIONS">Friends &amp; Coaches</option>
                     <option value="COACHES_ONLY">Coaches Only</option>
@@ -850,7 +850,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                <label className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
+                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
                   <span>
                     <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                       Allow Coached Athlete (Edit Calendar) Push
@@ -872,7 +872,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   />
                 </label>
 
-                <label className="bg-white/80 dark:bg-[#101B15] border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
+                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
                   <span>
                     <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                       Strava Compliance Isolation
@@ -966,7 +966,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                                     e.target.value as CoachDataSharingTier
                                   )
                                 }
-                                className="min-h-[44px] sm:min-h-[36px] bg-white dark:bg-[#15231B] border border-stone-300 dark:border-[#2B543B] rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100 cursor-pointer disabled:opacity-50"
+                                className="min-h-[44px] sm:min-h-[36px] bg-white dark:bg-ap-turf border border-stone-300 dark:border-ap-edge-dark rounded-lg px-2.5 text-xs font-mono text-slate-900 dark:text-slate-100 cursor-pointer disabled:opacity-50"
                               >
                                 <option value="LOAD_ONLY">Load &amp; Readiness Only</option>
                                 <option value="SUMMARY_ONLY" disabled={minorConsentLocked}>

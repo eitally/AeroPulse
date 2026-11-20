@@ -52,7 +52,7 @@ export const LoginCapabilitySparkStrip: React.FC<{ className?: string }> = ({ cl
         />
       </svg>
       <div className="min-w-0">
-        <div className="text-2xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+        <div className="text-2xs font-bold text-ap-ink dark:text-ap-chalk truncate">
           Load Curve
         </div>
       </div>
@@ -67,7 +67,7 @@ export const LoginCapabilitySparkStrip: React.FC<{ className?: string }> = ({ cl
         <rect x="31" y="9" width="4" height="6" rx="1" fill="#0D9488" />
       </svg>
       <div className="min-w-0">
-        <div className="text-2xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+        <div className="text-2xs font-bold text-ap-ink dark:text-ap-chalk truncate">
           Zone Morph
         </div>
       </div>
@@ -81,7 +81,7 @@ export const LoginCapabilitySparkStrip: React.FC<{ className?: string }> = ({ cl
         <circle cx="28" cy="8" r="2" fill="#56BA00" />
       </svg>
       <div className="min-w-0">
-        <div className="text-2xs font-bold text-[#101411] dark:text-[#F4F7F4] truncate">
+        <div className="text-2xs font-bold text-ap-ink dark:text-ap-chalk truncate">
           0.01s Splits
         </div>
       </div>
@@ -109,7 +109,7 @@ export const SyncScopeTimelineBar: React.FC<{ days?: 90 | 365 }> = ({ days = 90 
         <circle cx="176" cy="7" r="2.5" fill="#C8FF00" stroke="#101411" strokeWidth="1" />
       )}
     </svg>
-    <span className="font-mono text-2xs font-bold text-[#1C5436] dark:text-[#C8FF00] whitespace-nowrap">
+    <span className="font-mono text-2xs font-bold text-ap-cobalt dark:text-ap-volt whitespace-nowrap">
       {days >= 365 ? '365d Archive' : '90d Fast Sync'}
     </span>
   </div>
@@ -419,7 +419,7 @@ export const PublishWindowTimelineBracket: React.FC<{
     cadence === 'ROLLING_1W' ? 1 : cadence === 'ROLLING_2W' ? 2 : totalWeeks;
   const pct = Math.max(8, Math.min(100, Math.round((releaseWeeks / Math.max(1, totalWeeks)) * 100)));
   return (
-    <div className="flex items-center gap-2 text-2xs font-mono text-[#43584B] dark:text-[#93A39A]">
+    <div className="flex items-center gap-2 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
       <svg viewBox="0 0 120 12" className="w-28 h-3 shrink-0" aria-hidden="true">
         <rect x="1" y="4" width="118" height="4" rx="2" fill="#E3ECE5" />
         <rect
@@ -493,9 +493,9 @@ export const AcwrThreeChannelBullets: React.FC<{
         const pct = Math.max(6, Math.min(94, ((r.val - 0.4) / 1.4) * 100));
         return (
           <div key={r.label} className="space-y-0.5">
-            <div className="flex items-center justify-between font-mono text-2xs text-[#43584B] dark:text-[#93A39A]">
+            <div className="flex items-center justify-between font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
               <span>{r.label}</span>
-              <span className="font-bold text-[#101411] dark:text-[#F4F7F4]">
+              <span className="font-bold text-ap-ink dark:text-ap-chalk">
                 {r.val.toFixed(2)}x
               </span>
             </div>

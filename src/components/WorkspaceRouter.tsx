@@ -2,35 +2,9 @@ import React, { Suspense, useEffect } from 'react';
 import { Activity, Calendar, Timer } from './icons/PhosphorIcons';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
-import type {
-  ActiveTab,
-  AnnualMileageGoal,
-  AthleteGearItem,
-  AthleteProfile,
-  BenchmarkSegmentHistory,
-  CoachWorkspaceSubTab,
-  ConnectedAthleteRecord,
-  DistanceUnit,
-  EnvironmentFilter,
-  PlannedWorkoutEvent,
-  PracticeVenueCategory,
-  SessionCheckInRecord,
-  SportCategory,
-  StravaSyncWindow,
-  TargetGoal,
-  TeamSummaryWithRole,
-  TrackWorkoutSpec,
-  UnifiedActivity,
-  UnifiedWellnessDay,
-  WorkoutSessionSlot,
-} from '../types';
-import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
-import type { PlannedEventBatchItem } from './GoalsView';
-import type { SavedStopwatchEntry } from './TracksideStopwatchView';
-import type {
-  StopwatchOutboxFlushResult,
-  StopwatchSaveResult,
-} from '../utils/stopwatchTeamSync';
+import { useSessionAuth } from '../contexts/SessionAuthContext';
+import { useTelemetryWorkspace } from '../contexts/TelemetryWorkspaceContext';
+import { useTeamCoach } from '../contexts/TeamCoachContext';
 
 const CalendarView = lazyWithRetry(
   () => import('./CalendarView').then((m) => ({ default: m.CalendarView })),
@@ -67,212 +41,83 @@ export const ViewLoadingSkeleton: React.FC = () => (
   </div>
 );
 
-export interface WorkspaceRouterProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
-  effectiveActivities: UnifiedActivity[];
-  effectiveWellnessDays: UnifiedWellnessDay[];
-  effectivePlannedEvents: PlannedWorkoutEvent[];
-  effectiveTargetGoals: TargetGoal[];
-  effectiveAnnualMileageGoals: AnnualMileageGoal[];
-  effectiveGearItems: AthleteGearItem[];
-  effectiveSessionCheckIns?: SessionCheckInRecord[];
-  onRecordSessionCheckIn?: (
-    input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
-    safetySwapEvent?: SafetySwapEventInput | null
-  ) => Promise<void> | void;
-  envFilter: EnvironmentFilter;
-  setEnvFilter: (env: EnvironmentFilter) => void;
-  selectedSport: SportCategory | 'ALL';
-  setSelectedSport: (sport: SportCategory | 'ALL') => void;
-  distanceUnit: DistanceUnit;
-  athleteFtp: number;
-  latestWeightKg: number;
-  latestCtl: number;
-  effectiveAthleteProfile: AthleteProfile;
-  primaryAthleteDisplayName: string;
-  combinedRoster: ConnectedAthleteRecord[];
-  myTeams: TeamSummaryWithRole[];
-  activeTeamId: string | null;
-  selectedActivity: UnifiedActivity | null;
-  benchmarkSegments: BenchmarkSegmentHistory[];
-  isScanningSegments: boolean;
-  isHydratingRoutes: boolean;
-  coachSubTab: CoachWorkspaceSubTab;
-  setCoachSubTab: (tab: CoachWorkspaceSubTab) => void;
-  activeTeam: TeamSummaryWithRole | null;
-  activeViewedAthleteId: string;
-  onSelectAthleteViewport: (athleteId: string) => void;
-  resendConfigured: boolean;
-  onSelectActiveTeam: (teamId: string | null) => void;
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
-  onOpenPublicTeamHub?: (slugOrCode: string) => void;
-  onOpenCoachGuide?: () => void;
-  isSampleDemoMode?: boolean;
-  plainLanguageMode?: boolean;
-  stravaSyncWindow?: StravaSyncWindow;
-  onOpenDataSources?: () => void;
-
-  // Handlers
-  handleSelectActivityAndOpenTab: (act: UnifiedActivity) => void;
-  handleCalendarCreatePlannedEvent: (event: {
-    date: string;
-    name: string;
-    sportCategory: SportCategory;
-    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-    plannedDurationSecs: number;
-    plannedLoad: number;
-    workoutSyntax: string;
-    description: string;
-    scheduledTime?: string;
-    sessionSlot?: WorkoutSessionSlot;
-    locationName?: string;
-    locationCategory?: PracticeVenueCategory;
-    meetingNotes?: string;
-    trackSpec?: TrackWorkoutSpec;
-    replaceExistingDate?: boolean;
-    planBlockId?: string;
-    planBlockName?: string;
-    planWeekNum?: number;
-  }) => Promise<void>;
-  handleUpdatePlannedEvent: (
-    id: string,
-    patch: {
-      date: string;
-      name: string;
-      sportCategory: SportCategory;
-      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-      plannedDurationSecs: number;
-      plannedLoad: number;
-      workoutSyntax: string;
-      description: string;
-      scheduledTime?: string;
-      sessionSlot?: WorkoutSessionSlot;
-      locationName?: string;
-      locationCategory?: PracticeVenueCategory;
-      meetingNotes?: string;
-      trackSpec?: TrackWorkoutSpec;
-    }
-  ) => Promise<void>;
-  handleDeletePlannedEvent: (id: string) => Promise<void>;
-  handleDeletePlanBlock: (planBlockId: string) => Promise<void>;
-  handleBatchCreatePlannedEvents: (batch: PlannedEventBatchItem[]) => Promise<void>;
-  handleOpenTodayTab: () => void;
-  handleOpenProfileModal: () => void;
-  handleOpenGoalsTab: () => void;
-  handleOpenOfficialRaceModal: () => void;
-  handleOpenCoachWithPrompt: (prompt: string) => void;
-  handleOpenRosterModal: () => void;
-  handleCreatePlannedEvent: (eventInput: {
-    date: string;
-    name: string;
-    sportCategory: SportCategory;
-    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-    plannedDurationSecs: number;
-    plannedLoad: number;
-    workoutSyntax: string;
-    description: string;
-    scheduledTime?: string;
-    sessionSlot?: WorkoutSessionSlot;
-    locationName?: string;
-    locationCategory?: PracticeVenueCategory;
-    meetingNotes?: string;
-    trackSpec?: TrackWorkoutSpec;
-    replaceExistingDate?: boolean;
-  }) => Promise<void>;
-  handleSelectActivity: (activity: UnifiedActivity | null) => void;
-  loadStreamsForActivity: (activity: UnifiedActivity) => Promise<void>;
-  handleScanMoreSegments: () => Promise<void>;
-  handleHydrateMoreRoutes: () => Promise<void>;
-  handleToggleActivityKudos: (activity: UnifiedActivity) => Promise<void>;
-  handleAddActivityComment: (activity: UnifiedActivity, text: string) => Promise<void>;
-  handleImportSingleParsedActivity: (activity: UnifiedActivity) => void;
-  handleImportMultipleParsedActivities: (activities: UnifiedActivity[]) => void;
-  handleOpenActivitiesTab: () => void;
-  handleUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling', targetMeters: number) => void;
-  handleAddTargetGoal: (newGoal: Omit<TargetGoal, 'id'>) => void;
-  handleDeleteTargetGoal: (id: string) => void;
-  handleSaveProfileOverride: (updatedProfile: AthleteProfile) => Promise<void>;
-  handleSwitchToCalendarTab: () => void;
-  handleSaveStopwatchActivities: (
-    entries: SavedStopwatchEntry[]
-  ) => Promise<StopwatchSaveResult> | StopwatchSaveResult | number;
-  handleFlushStopwatchOutbox?: () => Promise<StopwatchOutboxFlushResult>;
-}
-
-export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
-  activeTab,
-  setActiveTab,
-  effectiveActivities,
-  effectiveWellnessDays,
-  effectivePlannedEvents,
-  effectiveTargetGoals,
-  effectiveAnnualMileageGoals,
-  effectiveGearItems,
-  effectiveSessionCheckIns = [],
-  onRecordSessionCheckIn,
-  envFilter,
-  setEnvFilter,
-  selectedSport,
-  setSelectedSport,
-  distanceUnit,
-  athleteFtp,
-  latestWeightKg,
-  latestCtl,
-  effectiveAthleteProfile,
-  primaryAthleteDisplayName,
-  combinedRoster,
-  myTeams,
-  activeTeamId,
-  selectedActivity,
-  benchmarkSegments,
-  isScanningSegments,
-  isHydratingRoutes,
-  coachSubTab,
-  setCoachSubTab,
-  activeTeam,
-  activeViewedAthleteId,
-  onSelectAthleteViewport,
-  resendConfigured,
-  onSelectActiveTeam,
-  onTeamsUpdated,
-  onOpenPublicTeamHub,
-  onOpenCoachGuide,
-  isSampleDemoMode = false,
-  plainLanguageMode = false,
-  stravaSyncWindow,
-  onOpenDataSources,
-
-  handleSelectActivityAndOpenTab,
-  handleCalendarCreatePlannedEvent,
-  handleUpdatePlannedEvent,
-  handleDeletePlannedEvent,
-  handleDeletePlanBlock,
-  handleBatchCreatePlannedEvents,
-  handleOpenTodayTab,
-  handleOpenProfileModal,
-  handleOpenGoalsTab,
-  handleOpenOfficialRaceModal,
-  handleOpenCoachWithPrompt,
-  handleOpenRosterModal,
-  handleCreatePlannedEvent,
-  handleSelectActivity,
-  loadStreamsForActivity,
-  handleScanMoreSegments,
-  handleHydrateMoreRoutes,
-  handleToggleActivityKudos,
-  handleAddActivityComment,
-  handleImportSingleParsedActivity,
-  handleImportMultipleParsedActivities,
-  handleOpenActivitiesTab,
-  handleUpdateAnnualMileageGoal,
-  handleAddTargetGoal,
-  handleDeleteTargetGoal,
-  handleSaveProfileOverride,
-  handleSwitchToCalendarTab,
-  handleSaveStopwatchActivities,
-  handleFlushStopwatchOutbox,
-}) => {
+export const WorkspaceRouter: React.FC = () => {
+  const {
+    distanceUnit,
+    resendConfigured,
+    isSampleDemoMode,
+    plainLanguageMode,
+    stravaSyncWindow,
+  } = useSessionAuth();
+  const {
+    activeTab,
+    setActiveTab,
+    effectiveActivities,
+    effectiveWellnessDays,
+    effectivePlannedEvents,
+    effectiveTargetGoals,
+    effectiveAnnualMileageGoals,
+    effectiveGearItems,
+    effectiveSessionCheckIns,
+    onRecordSessionCheckIn,
+    envFilter,
+    setEnvFilter,
+    selectedSport,
+    setSelectedSport,
+    athleteFtp,
+    latestWeightKg,
+    latestCtl,
+    effectiveAthleteProfile,
+    selectedActivity,
+    benchmarkSegments,
+    isScanningSegments,
+    isHydratingRoutes,
+    handleSelectActivityAndOpenTab,
+    handleCalendarCreatePlannedEvent,
+    handleUpdatePlannedEvent,
+    handleDeletePlannedEvent,
+    handleDeletePlanBlock,
+    handleBatchCreatePlannedEvents,
+    handleOpenTodayTab,
+    handleOpenProfileModal,
+    handleOpenGoalsTab,
+    handleOpenOfficialRaceModal,
+    handleOpenCoachWithPrompt,
+    handleOpenRosterModal,
+    handleOpenDataSources: onOpenDataSources,
+    handleCreatePlannedEvent,
+    handleSelectActivity,
+    loadStreamsForActivity,
+    handleScanMoreSegments,
+    handleHydrateMoreRoutes,
+    handleToggleActivityKudos,
+    handleAddActivityComment,
+    handleImportSingleParsedActivity,
+    handleImportMultipleParsedActivities,
+    handleOpenActivitiesTab,
+    handleUpdateAnnualMileageGoal,
+    handleAddTargetGoal,
+    handleDeleteTargetGoal,
+    handleSaveProfileOverride,
+    handleSwitchToCalendarTab,
+  } = useTelemetryWorkspace();
+  const {
+    primaryAthleteDisplayName,
+    combinedRoster,
+    myTeams,
+    activeTeamId,
+    coachSubTab,
+    setCoachSubTab,
+    activeTeam,
+    activeViewedAthleteId,
+    onSelectAthleteViewportFromWorkspace: onSelectAthleteViewport,
+    onSelectActiveTeam,
+    onTeamsUpdated,
+    onOpenPublicTeamHub,
+    onOpenCoachGuide,
+    handleSaveStopwatchActivities,
+    handleFlushStopwatchOutbox,
+  } = useTeamCoach();
   // Warm lazy workspace chunks on idle so trackside Airplane Mode navigation never hits network
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -297,7 +142,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
           <div
             role="tablist"
             aria-label="Training Calendar views"
-            className="flex items-center gap-1 p-1 bg-white/80 dark:bg-[#121B15]/90 border border-emerald-900/15 dark:border-[#244331] rounded-xl shadow-xs"
+            className="flex items-center gap-1 p-1 bg-white/80 dark:bg-[#121B15]/90 border border-emerald-900/15 dark:border-ap-edge rounded-xl shadow-xs"
           >
             <button
               type="button"
@@ -337,7 +182,7 @@ export const WorkspaceRouter: React.FC<WorkspaceRouterProps> = ({
               type="button"
               data-testid="calendar-bar-stopwatch-btn"
               onClick={() => setActiveTab('stopwatch')}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-[#2B5B3F] text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl liquid-glass-subtle hover:border-ap-frame text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Timer className="w-3.5 h-3.5 ap-text-brand" />
               <span>Time on Track</span>

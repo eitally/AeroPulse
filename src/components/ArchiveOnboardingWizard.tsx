@@ -244,7 +244,7 @@ export function ArchiveOnboardingWizard({
           onClick={() => fileInputRef.current?.click()}
           className={`relative rounded-3xl border-2 border-dashed p-6 sm:p-8 text-center transition-all cursor-pointer ${
             isDragging
-              ? 'border-[#1C5436] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#C8FF00]/10 scale-[1.01]'
+              ? 'border-ap-cobalt dark:border-ap-volt bg-emerald-500/10 dark:bg-ap-volt/10 scale-[1.01]'
               : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 bg-slate-50/50 dark:bg-black/30'
           }`}
         >
@@ -297,7 +297,7 @@ export function ArchiveOnboardingWizard({
             </div>
             <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
               <div
-                className="h-full bg-[#1C5436] dark:bg-[#C8FF00] transition-all duration-150"
+                className="h-full bg-ap-cobalt dark:bg-ap-volt transition-all duration-150"
                 style={{
                   width: `${Math.min(
                     100,
@@ -392,7 +392,7 @@ export function ArchiveOnboardingWizard({
                   onClose();
                   onCompleteOnboarding?.();
                 }}
-                className="min-h-[44px] px-5 py-2 rounded-xl bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                className="min-h-[44px] px-5 py-2 rounded-xl bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
               >
                 <span>Enter Cockpit</span>
                 <ArrowRight className="w-3.5 h-3.5" />

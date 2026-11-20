@@ -805,7 +805,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
       {/* ==========================================================================
           PLAN BUILDER TOP CARD (GOAL TRAINING PLAN | SINGLE WORKOUT BUILDER)
          ========================================================================== */}
-      <section className="rounded-2xl liquid-glass p-5 space-y-5 border border-[#1C5436]/25 dark:border-[#C8FF00]/20">
+      <section className="rounded-2xl liquid-glass p-5 space-y-5 border border-ap-cobalt/25 dark:border-ap-volt/20">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="flex flex-wrap items-center gap-2.5">
             <Target className="w-5 h-5 ap-text-brand shrink-0" />
@@ -987,7 +987,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 </div>
               </div>
             ) : activeCalendarBlock && onDeletePlanBlock ? (
-              <div className="rounded-xl bg-stone-50 dark:bg-[#101B15] border border-stone-200 dark:border-[#244331] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="rounded-xl bg-stone-50 dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="text-slate-700 dark:text-slate-200">
                   Active calendar block: <strong>{activeCalendarBlock.name}</strong> (
                   {activeCalendarBlock.count} workouts scheduled)
@@ -1008,7 +1008,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] font-mono text-xs font-extrabold inline-flex items-center justify-center">
+                  <span className="w-6 h-6 rounded-full bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian font-mono text-xs font-extrabold inline-flex items-center justify-center">
                     1
                   </span>
                   <span>Choose Discipline &amp; Goal Plan ({visibleArchetypes.length} Plans)</span>
@@ -1041,8 +1041,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         }}
                         className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] border-[#1C5436] dark:border-[#C8FF00] font-bold'
-                            : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-[#1C5436]/50'
+                            ? 'bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian border-ap-cobalt dark:border-ap-volt font-bold'
+                            : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-ap-cobalt/50'
                         }`}
                       >
                         {cat.label}
@@ -1062,13 +1062,13 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       onClick={() => handleSelectArchetype(arch)}
                       className={`text-left rounded-xl p-3.5 border transition-all flex flex-col justify-between space-y-2 cursor-pointer ${
                         active
-                          ? 'border-[#1C5436] dark:border-[#C8FF00] bg-[#1C5436]/[0.07] dark:bg-[#C8FF00]/[0.08] shadow-xs'
-                          : 'border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-900/50 hover:border-[#1C5436]/50'
+                          ? 'border-ap-cobalt dark:border-ap-volt bg-ap-cobalt/[0.07] dark:bg-ap-volt/[0.08] shadow-xs'
+                          : 'border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-slate-900/50 hover:border-ap-cobalt/50'
                       }`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-2xs font-mono px-1.5 py-0.5 rounded bg-emerald-900/10 dark:bg-[#C8FF00]/15 text-[#1C5436] dark:text-[#C8FF00] font-bold">
+                          <span className="text-2xs font-mono px-1.5 py-0.5 rounded bg-emerald-900/10 dark:bg-ap-volt/15 text-ap-cobalt dark:text-ap-volt font-bold">
                             {arch.badge}
                           </span>
                           <div className="flex items-center gap-1.5">
@@ -1096,7 +1096,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       </div>
                       <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex items-center justify-between text-2xs font-mono">
                         <span className="text-slate-500">Focus:</span>
-                        <span className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                        <span className="font-bold text-ap-cobalt dark:text-ap-volt">
                           {arch.targetLabel}
                         </span>
                       </div>
@@ -1110,11 +1110,11 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             {selectedArchetype.trackEventGroup && (
               <div
                 data-testid="track-speed-reserve-panel"
-                className="rounded-xl border border-[#1C5436]/30 dark:border-[#244331] bg-stone-50 dark:bg-[#101B15] p-4 space-y-4"
+                className="rounded-xl border border-ap-cobalt/30 dark:border-ap-edge bg-stone-50 dark:bg-ap-carbon p-4 space-y-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Gauge className="w-4 h-4 text-[#1C5436] dark:text-[#C8FF00]" />
+                    <Gauge className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
                     <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                       Track Speed-Reserve &amp; Date-Pace Calibration
                     </h2>
@@ -1151,7 +1151,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         setTrackStartingPhase(e.target.value as TrackStartingPhaseOption);
                         setSelectedPreviewWeekIdx(0);
                       }}
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       <option value="FULL_PROGRESSION">Full Periodized Arc</option>
                       <option value="BASE">Base Building &amp; Sub-T</option>
@@ -1174,7 +1174,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       onChange={(e) =>
                         setTrackPhenotypeOverride(e.target.value as SpeedReservePhenotype | 'AUTO')
                       }
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       <option value="AUTO">Auto (From CS + D&apos;)</option>
                       <option value="ENDURANCE">Endurance (Lower D&apos; · Aerobic)</option>
@@ -1197,7 +1197,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       value={trackSeedInput}
                       onChange={(e) => setTrackSeedInput(e.target.value)}
                       placeholder="e.g. 4:05 or 1500m 3:48.5"
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                     <div className="flex flex-wrap items-center gap-1 mt-1.5">
                       {(['4:05', '4:35', '5:15', '6:15'] as const).map((preset) => (
@@ -1207,8 +1207,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           onClick={() => setTrackSeedInput(preset)}
                           className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded font-mono text-2xs border cursor-pointer ${
                             trackSeedInput.trim() === preset
-                              ? 'bg-[#1C5436] text-white border-[#1C5436] dark:bg-[#C8FF00] dark:text-[#080A09] font-bold'
-                              : 'bg-white dark:bg-[#15231B] text-slate-700 dark:text-slate-300 border-stone-300 dark:border-[#2B543B]'
+                              ? 'bg-ap-cobalt text-white border-ap-cobalt dark:bg-ap-volt dark:text-ap-obsidian font-bold'
+                              : 'bg-white dark:bg-ap-turf text-slate-700 dark:text-slate-300 border-stone-300 dark:border-ap-edge-dark'
                           }`}
                         >
                           {preset}
@@ -1231,31 +1231,31 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       value={trackGoalInput}
                       onChange={(e) => setTrackGoalInput(e.target.value)}
                       placeholder="e.g. 3:59 or 5k 14:40"
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono tabular-nums text-xs">
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
                     <div className="text-2xs text-slate-500">Aerobic VDOT</div>
                     <div className="text-sm font-extrabold text-slate-900 dark:text-white">
                       {trackSpeedReserveState.profile.vdotAer.toFixed(1)}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
                     <div className="text-2xs text-slate-500">Critical Speed (CV)</div>
-                    <div className="text-sm font-extrabold text-[#1C5436] dark:text-[#C8FF00]">
+                    <div className="text-sm font-extrabold text-ap-cobalt dark:text-ap-volt">
                       {formatPace(trackSpeedReserveState.profile.criticalPaceSecsPerKm, distanceUnit)}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
                     <div className="text-2xs text-slate-500">Anaerobic D&apos;</div>
                     <div className="text-sm font-extrabold text-slate-900 dark:text-white">
                       {Math.round(trackSpeedReserveState.profile.dPrimeMeters)} m
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-stone-200 dark:border-[#244331] px-3 py-2">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-stone-200 dark:border-ap-edge px-3 py-2">
                     <div className="text-2xs text-slate-500">Speed Reserve (ASR)</div>
                     <div className="text-sm font-extrabold text-slate-900 dark:text-white">
                       +{trackSpeedReserveState.profile.asrMps.toFixed(2)} m/s ·{' '}
@@ -1274,7 +1274,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left font-mono tabular-nums text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-stone-200 dark:border-[#244331] text-2xs text-slate-500">
+                      <tr className="border-b border-stone-200 dark:border-ap-edge text-2xs text-slate-500">
                         <th className="py-1.5 pr-3">Zone</th>
                         <th className="py-1.5 px-2">Pace</th>
                         <th className="py-1.5 px-2">200m</th>
@@ -1284,7 +1284,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         <th className="py-1.5 pl-2">1600m</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-stone-200/70 dark:divide-[#244331]/70">
+                    <tbody className="divide-y divide-stone-200/70 dark:divide-ap-edge/70">
                       {(['E', 'SUB_T', 'T', 'CV', 'I', 'R', 'FR'] as TrackTrainingZoneCode[]).map(
                         (code) => {
                           const row = trackSpeedReserveState.profile.zones[code];
@@ -1296,7 +1296,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                   {row.name}
                                 </span>
                               </td>
-                              <td className="py-1.5 px-2 text-[#1C5436] dark:text-[#C8FF00] font-bold">
+                              <td className="py-1.5 px-2 text-ap-cobalt dark:text-ap-volt font-bold">
                                 {formatPace(row.paceSecsPerKm, distanceUnit)}
                               </td>
                               <td className="py-1.5 px-2 text-slate-800 dark:text-slate-200">
@@ -1328,7 +1328,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             <div className="space-y-3 rounded-xl bg-stone-50/90 dark:bg-slate-900/60 p-4 border border-slate-200/80 dark:border-slate-800">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] font-mono text-xs font-extrabold inline-flex items-center justify-center">
+                  <span className="w-6 h-6 rounded-full bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian font-mono text-xs font-extrabold inline-flex items-center justify-center">
                     2
                   </span>
                   <span>Fit Your Weekly Schedule &amp; Start Date</span>
@@ -1362,7 +1362,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         }}
                         className={`min-h-[44px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
                           startAnchorMode === m.id
-                            ? 'liquid-capsule-active text-[#1C5436] dark:text-[#C8FF00] font-bold'
+                            ? 'liquid-capsule-active text-ap-cobalt dark:text-ap-volt font-bold'
                             : 'text-slate-600 dark:text-slate-400'
                         }`}
                       >
@@ -1377,7 +1377,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       min={todayIso}
                       value={targetRaceDateIso}
                       onChange={(e) => setTargetRaceDateIso(e.target.value)}
-                      className="mt-1.5 w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 font-mono text-xs text-slate-900 dark:text-white"
+                      className="mt-1.5 w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   )}
                 </div>
@@ -1400,7 +1400,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         }}
                         className={`min-h-[44px] sm:min-h-[36px] py-1 rounded-md text-2xs transition-all cursor-pointer ${
                           blockWeeks === wks
-                            ? 'liquid-capsule-active text-[#1C5436] dark:text-[#C8FF00] font-bold'
+                            ? 'liquid-capsule-active text-ap-cobalt dark:text-ap-volt font-bold'
                             : 'text-slate-600 dark:text-slate-400'
                         }`}
                       >
@@ -1427,7 +1427,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           toggleWeekdayPill(dayOff);
                         }
                       }}
-                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="Sunday">Long: Sunday</option>
                       <option value="Saturday">Long: Saturday</option>
@@ -1438,7 +1438,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       onChange={(e) =>
                         setBlockEnvPref(e.target.value as 'FLEXIBLE' | 'OUTDOOR' | 'INDOOR')
                       }
-                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2 text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="FLEXIBLE">Hybrid</option>
                       <option value="OUTDOOR">Outdoor</option>
@@ -1456,7 +1456,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     aria-label="Weekly volume tier"
                     value={volumeTier}
                     onChange={(e) => setVolumeTier(e.target.value as PlanVolumeTier)}
-                    className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#15231B] px-2.5 text-xs text-slate-900 dark:text-white"
+                    className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 text-xs text-slate-900 dark:text-white"
                   >
                     <option value="AUTO">Auto (From Fitness CTL {Math.round(currentCtl)})</option>
                     <option value="STARTER">Starter (~3–5 hrs/wk)</option>
@@ -1483,8 +1483,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         onClick={() => toggleWeekdayPill(day.offset)}
                         className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] border-[#1C5436] dark:border-[#C8FF00]'
-                            : 'bg-white dark:bg-[#15231B] text-slate-600 dark:text-slate-300 border-stone-300 dark:border-[#2B543B]'
+                            ? 'bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian border-ap-cobalt dark:border-ap-volt'
+                            : 'bg-white dark:bg-ap-turf text-slate-600 dark:text-slate-300 border-stone-300 dark:border-ap-edge-dark'
                         }`}
                       >
                         {day.label}
@@ -1499,7 +1499,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-[#1C5436] dark:bg-[#C8FF00] text-white dark:text-[#080A09] font-mono text-xs font-extrabold inline-flex items-center justify-center">
+                  <span className="w-6 h-6 rounded-full bg-ap-cobalt dark:bg-ap-volt text-white dark:text-ap-obsidian font-mono text-xs font-extrabold inline-flex items-center justify-center">
                     3
                   </span>
                   <span>Preview Structure, Customize &amp; Populate Calendar</span>
@@ -1600,7 +1600,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     data-testid="plan-publish-audience"
                     value={publishAudience}
                     onChange={(e) => setPublishAudience(e.target.value as PlanPublishAudience)}
-                    className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-[#2B543B] bg-white dark:bg-[#101B15] px-3 text-xs font-semibold text-slate-900 dark:text-white"
+                    className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs font-semibold text-slate-900 dark:text-white"
                   >
                     <option value="SELF">My Personal Calendar</option>
                     <option value="TEAM_ALL">
@@ -1640,7 +1640,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500" /> Deload
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-xs bg-[#1C5436] dark:bg-[#C8FF00]" /> Taper
+                        <span className="w-2.5 h-2.5 rounded-xs bg-ap-cobalt dark:bg-ap-volt" /> Taper
                       </span>
                     </div>
                   </div>
@@ -1654,7 +1654,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       const hPct = Math.max(20, Math.round((wk.targetTss / maxTss) * 100));
                       const isSelected = idx === selectedPreviewWeekIdx;
                       const barColor = wk.isTaper
-                        ? 'bg-[#1C5436] dark:bg-[#C8FF00]'
+                        ? 'bg-ap-cobalt dark:bg-ap-volt'
                         : wk.isDeload
                           ? 'bg-emerald-500'
                           : 'bg-[#0D9488] dark:bg-[#2DD4BF]';
@@ -1683,7 +1683,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                           <span
                             className={`text-2xs font-mono mt-1 ${
                               isSelected
-                                ? 'font-bold text-[#1C5436] dark:text-[#C8FF00]'
+                                ? 'font-bold text-ap-cobalt dark:text-ap-volt'
                                 : 'text-slate-500'
                             }`}
                           >
@@ -1703,7 +1703,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     </span>
                     <span>
                       Volume:{' '}
-                      <strong className="text-[#1C5436] dark:text-[#C8FF00]">
+                      <strong className="text-ap-cobalt dark:text-ap-volt">
                         {activePreviewWeek.targetHours} hrs · ~{activePreviewWeek.targetTss} TSS
                       </strong>
                     </span>
@@ -1751,7 +1751,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       return (
                         <div
                           key={`${sess.date}-${sIdx}`}
-                          className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200/80 dark:border-slate-800 overflow-hidden"
+                          className="rounded-lg bg-white dark:bg-ap-turf border border-slate-200/80 dark:border-slate-800 overflow-hidden"
                         >
                           <div className="p-2.5 space-y-2 text-xs">
                             <div className="flex items-center justify-between gap-2">
@@ -1764,7 +1764,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                 </div>
                               </div>
                               <div className="text-right font-mono shrink-0">
-                                <div className="font-bold text-[#1C5436] dark:text-[#C8FF00]">
+                                <div className="font-bold text-ap-cobalt dark:text-ap-volt">
                                   {Math.round(sess.plannedDurationSecs / 60)}m
                                 </div>
                                 <div className="text-2xs text-slate-500">~{sess.plannedLoad} TSS</div>
@@ -1775,7 +1775,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                             {stepSkyline.length > 0 && (
                               <div
                                 data-testid={`goals-session-skyline-${sIdx}`}
-                                className="h-7 w-full flex items-end gap-[2px] px-1 pt-1 rounded bg-stone-50 dark:bg-[#101B15]"
+                                className="h-7 w-full flex items-end gap-[2px] px-1 pt-1 rounded bg-stone-50 dark:bg-ap-carbon"
                               >
                                 {stepSkyline.map((st, idx) => (
                                   <div
@@ -1810,7 +1810,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                     });
                                     onOpenTracksideStopwatch?.();
                                   }}
-                                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-mono font-bold cursor-pointer"
+                                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-mono font-bold cursor-pointer"
                                 >
                                   <Timer className="w-3.5 h-3.5" weight="bold" />
                                   <span>Time on Track</span>
@@ -1832,7 +1832,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                       dateIso: sess.date,
                                     })
                                   }
-                                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] cursor-pointer"
+                                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt cursor-pointer"
                                 >
                                   <Download className="w-3.5 h-3.5" weight="bold" />
                                   <span>.FIT</span>
@@ -1853,7 +1853,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                         dateIso: sess.date,
                                       })
                                     }
-                                    className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] cursor-pointer"
+                                    className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt cursor-pointer"
                                   >
                                     <span>.ZWO</span>
                                   </button>
@@ -1868,7 +1868,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                         dateIso: sess.date,
                                       })
                                     }
-                                    className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] cursor-pointer"
+                                    className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt cursor-pointer"
                                   >
                                     <span>.ERG</span>
                                   </button>
@@ -1881,7 +1881,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                                 onClick={() =>
                                   setEditingPreviewTarget({ key: sessionKey, session: sess })
                                 }
-                                className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#101B15] text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-[#1C5436] cursor-pointer ml-auto"
+                                className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt cursor-pointer ml-auto"
                               >
                                 <Sliders className="w-3 h-3" />
                                 <span>Edit</span>
@@ -2058,7 +2058,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="e.g. Sub-20:00 5K or 350W FTP"
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               />
             </div>
             <div className="sm:col-span-2">
@@ -2084,7 +2084,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     setNewTargetVal(String(Math.max(55, Math.round(currentCtl + 12))));
                   }
                 }}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="Running">Running</option>
                 <option value="Cycling">Cycling</option>
@@ -2104,7 +2104,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 id={`${formId}-goal-priority`}
                 value={newPriority}
                 onChange={(e) => setNewPriority(e.target.value as 'A-Race' | 'B-Race' | 'Milestone')}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="A-Race">A-Race</option>
                 <option value="B-Race">B-Race</option>
@@ -2121,7 +2121,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 min={todayIso}
                 value={newTargetDate}
                 onChange={(e) => setNewTargetDate(e.target.value)}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
               />
             </div>
             <div className="sm:col-span-2">
@@ -2138,7 +2138,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     value={newTargetVal}
                     onChange={(e) => setNewTargetVal(e.target.value)}
                     placeholder={distanceUnit === 'mi' ? '7:30' : '4:35'}
-                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 ) : (
                   <input
@@ -2146,7 +2146,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                     type="number"
                     value={newTargetVal}
                     onChange={(e) => setNewTargetVal(e.target.value)}
-                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-20 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 )}
                 <select
@@ -2165,7 +2165,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                       setNewTargetVal(String(Math.max(55, Math.round(currentCtl + 12))));
                     }
                   }}
-                  className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-1.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 >
                   <option value="s/km">Pace (/{distanceUnit})</option>
                   <option value="W">Watts</option>
@@ -2184,7 +2184,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               aria-label="Optional goal notes"
               onChange={(e) => setNewNotes(e.target.value)}
               placeholder="Optional notes (e.g. target pacing strategy, nutrition, climb VAM)..."
-              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+              className="flex-1 min-w-[220px] min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
             />
             <button
               type="submit"
@@ -2261,7 +2261,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
               type="text"
               value={simRaceName}
               onChange={(e) => setSimRaceName(e.target.value)}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -2282,7 +2282,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 const raw = Math.max(1, Number(e.target.value) || 5);
                 setSimDistKm(isImperial ? Number((raw / 0.621371).toFixed(2)) : raw);
               }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -2303,7 +2303,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 const raw = Math.max(0, Number(e.target.value) || 0);
                 setSimElevM(isImperial ? Math.round(raw / 3.28084) : raw);
               }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -2324,7 +2324,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 const raw = Number(e.target.value) || (isImperial ? 65 : 18);
                 setSimTempC(isImperial ? Math.round(((raw - 32) * 5) / 9) : raw);
               }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
           <div>
@@ -2345,14 +2345,14 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 const raw = Math.max(0, Number(e.target.value) || 0);
                 setSimAltM(isImperial ? Math.round(raw / 3.28084) : raw);
               }}
-              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
             />
           </div>
         </div>
 
         {/* Summary KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono tabular-nums">
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Predicted Finish Time
             </div>
@@ -2371,7 +2371,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Environmental &amp; Fade Derating
             </div>
@@ -2384,7 +2384,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Carb Oxidation Target
             </div>
@@ -2398,7 +2398,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-[#15231B]/60 p-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/75 dark:bg-ap-turf/60 p-3">
             <div className="text-2xs uppercase tracking-wider text-slate-500">
               Sodium &amp; Hydration
             </div>

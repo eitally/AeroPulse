@@ -589,7 +589,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-[#15231B]/60 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-ap-turf/60 p-4 space-y-3">
       {/* Top Header: 1Hz Telemetry Badge, Smoothing, Series Toggles & Recalculate Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -673,7 +673,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
             <button
               type="button"
               onClick={handleResetZoom}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-xs font-semibold transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-semibold transition-colors"
             >
               <RotateCcw className="w-3 h-3" />
               <span>Reset 100%</span>
@@ -751,7 +751,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
             onClick={handleResetZoom}
             className={`px-2 py-0.5 rounded-md font-mono text-2xs border transition-colors ${
               !isZoomed
-                ? 'bg-[#1C5436] border-[#1C5436] text-white dark:bg-[#C8FF00] dark:border-[#C8FF00] dark:text-[#080A09] font-semibold'
+                ? 'bg-ap-cobalt border-ap-cobalt text-white dark:bg-ap-volt dark:border-ap-volt dark:text-ap-obsidian font-semibold'
                 : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
             }`}
           >
@@ -848,7 +848,7 @@ const UPlotStreamChartInner: React.FC<UPlotStreamChartProps> = ({
           <button
             type="button"
             onClick={handleResetZoom}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] text-2xs font-sans font-semibold transition-colors shrink-0"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-sans font-semibold transition-colors shrink-0"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Reset Full Stream ×</span>

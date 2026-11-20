@@ -953,7 +953,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
       {isCompactChartView && mobileInspectDay && (
         <div
           data-testid="pmc-mobile-inline-readout"
-          className="mb-1.5 px-2 py-1 rounded-lg bg-[#E9EFE9] dark:bg-[#15231B] border border-[#26583A]/20 dark:border-[#399663]/25 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-2xs font-mono tabular-nums"
+          className="mb-1.5 px-2 py-1 rounded-lg bg-[#E9EFE9] dark:bg-ap-turf border border-[#26583A]/20 dark:border-[#399663]/25 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-2xs font-mono tabular-nums"
         >
           <span className="font-bold text-slate-900 dark:text-slate-100">
             {mobileInspectDay.date}
@@ -1033,7 +1033,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
               width: `${Math.abs(dragSelection.currentX - dragSelection.startX)}px`,
             }}
           >
-            <span className="px-2 py-0.5 rounded-md bg-[#101B15]/95 text-teal-300 text-2xs font-mono font-bold whitespace-nowrap shadow-sm">
+            <span className="px-2 py-0.5 rounded-md bg-ap-carbon/95 text-teal-300 text-2xs font-mono font-bold whitespace-nowrap shadow-sm">
               {enrichedTimeline[Math.min(dragSelection.startIdx, dragSelection.endIdx)]?.date} →{' '}
               {enrichedTimeline[Math.max(dragSelection.startIdx, dragSelection.endIdx)]?.date}
             </span>
@@ -1043,7 +1043,7 @@ const UPlotPMCDashboardInner: React.FC<UPlotPMCDashboardProps> = ({
         {/* Rich Floating Tooltip (Desktop Only) */}
         {activeHoverDay && hoverPos && !dragSelection && !isCompactChartView && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[245px] p-3 rounded-xl border shadow-xl text-2xs font-mono transition-opacity bg-white dark:bg-[#101B15] text-slate-900 dark:text-slate-100 border-slate-300 dark:border-emerald-500/30"
+            className="pointer-events-none absolute z-30 min-w-[245px] p-3 rounded-xl border shadow-xl text-2xs font-mono transition-opacity bg-white dark:bg-ap-carbon text-slate-900 dark:text-slate-100 border-slate-300 dark:border-emerald-500/30"
             style={{
               left: `${Math.min(
                 hoverPos.x + 14,

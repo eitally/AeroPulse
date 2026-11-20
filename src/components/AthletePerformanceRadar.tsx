@@ -651,7 +651,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
                   points={pts}
                   className={
                     ringPct === 100
-                      ? 'fill-stone-100/80 dark:fill-[#101B15]/65 text-slate-300 dark:text-slate-800'
+                      ? 'fill-stone-100/80 dark:fill-ap-carbon/65 text-slate-300 dark:text-slate-800'
                       : ringPct === 75
                         ? 'fill-none text-slate-400 dark:text-slate-700'
                         : 'fill-none text-slate-300 dark:text-slate-800'
@@ -860,7 +860,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               <select
                 value={ageBracketA}
                 onChange={(e) => setAgeBracketA(e.target.value as AgeBracketCode)}
-                className="ap-touch-row bg-white dark:bg-[#15231B] text-sky-800 dark:text-sky-300 border border-sky-600/40 rounded px-2 py-0.5 text-xs font-mono"
+                className="ap-touch-row bg-white dark:bg-ap-turf text-sky-800 dark:text-sky-300 border border-sky-600/40 rounded px-2 py-0.5 text-xs font-mono"
               >
                 {AGE_BRACKETS.map((b) => (
                   <option key={`age-a-${b.code}`} value={b.code}>
@@ -931,7 +931,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               <select
                 value={ageBracketB}
                 onChange={(e) => setAgeBracketB(e.target.value as AgeBracketCode)}
-                className="ap-touch-row bg-white dark:bg-[#15231B] text-orange-800 dark:text-orange-300 border border-orange-600/40 rounded px-2 py-0.5 text-xs font-mono"
+                className="ap-touch-row bg-white dark:bg-ap-turf text-orange-800 dark:text-orange-300 border border-orange-600/40 rounded px-2 py-0.5 text-xs font-mono"
               >
                 {AGE_BRACKETS.map((b) => (
                   <option key={`age-b-${b.code}`} value={b.code}>
@@ -965,7 +965,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
             {fiveDimensions.map((dim) => (
               <div
                 key={dim.key}
-                className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-[#101B15] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
+                className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-ap-carbon rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
               >
                 <span className="text-slate-800 dark:text-slate-300 font-semibold">{dim.label}</span>
                 <div className="flex items-center gap-2">
@@ -1003,7 +1003,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               {cogganCyclingAxes.map((ax) => (
                 <div
                   key={ax.key}
-                  className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-[#101B15] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
+                  className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-ap-carbon rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
                 >
                   <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.label}</span>
                   <div className="flex items-center gap-2">
@@ -1038,7 +1038,7 @@ const AthletePerformanceRadarInner: React.FC<AthletePerformanceRadarProps> = ({
               {wmaRunningAxes.map((ax) => (
                 <div
                   key={ax.key}
-                  className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-[#101B15] rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
+                  className="flex items-center justify-between text-2xs font-mono bg-white/80 dark:bg-ap-carbon rounded px-2.5 py-1.5 border border-stone-200/80 dark:border-slate-800/80"
                 >
                   <span className="text-slate-800 dark:text-slate-300 font-semibold">{ax.shortLabel}</span>
                   <div className="flex items-center gap-2">

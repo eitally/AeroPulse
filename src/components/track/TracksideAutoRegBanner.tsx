@@ -108,8 +108,8 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
               onClick={onExtendRest30s}
               className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'EXTEND_REST_30S'
-                  ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
+                  ? 'bg-ap-carbon text-ap-volt border border-ap-frame'
+                  : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" weight="bold" />
@@ -122,8 +122,8 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
               onClick={onConvertRemainingToCv}
               className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'CONVERT_REMAINING_TO_CV'
-                  ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
+                  ? 'bg-ap-carbon text-ap-volt border border-ap-frame'
+                  : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
               }`}
             >
               <ArrowsLeftRight className="w-3.5 h-3.5 shrink-0" weight="bold" />
@@ -136,8 +136,8 @@ export const TracksideAutoRegBanner: React.FC<TracksideAutoRegBannerProps> = ({
               onClick={() => onEndSession85Stimulus(primaryAlert.completedReps)}
               className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono cursor-pointer transition-colors ${
                 primaryAlert.recommendedAction === 'END_SESSION_85_STIMULUS'
-                  ? 'bg-[#101B15] text-[#C8FF00] border border-[#2B5B3F]'
-                  : 'ap-card-inset text-[#101411] dark:text-[#F4F7F4]'
+                  ? 'bg-ap-carbon text-ap-volt border border-ap-frame'
+                  : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
               }`}
             >
               <Pause className="w-3.5 h-3.5 shrink-0" weight="fill" />

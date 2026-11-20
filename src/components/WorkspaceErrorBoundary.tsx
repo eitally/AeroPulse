@@ -80,7 +80,7 @@ export class WorkspaceErrorBoundary extends React.Component<
         className="ap-card p-6 space-y-3"
       >
         <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-[#C8FF00] shrink-0 mt-0.5" />
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-ap-volt shrink-0 mt-0.5" />
           <div className="space-y-1 min-w-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
               {title}

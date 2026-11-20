@@ -562,7 +562,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       value={profileOrMeetUrl}
                       onChange={(e) => setProfileOrMeetUrl(e.target.value)}
                       placeholder="https://www.athletic.net/TrackAndField/Athlete.aspx?AID=... or https://www.tfrrs.org/athletes/..."
-                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div className="flex items-end">
@@ -570,7 +570,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       type="button"
                       onClick={handleParseUrlOrText}
                       disabled={isParsingRemote}
-                      className="w-full min-h-[44px] px-4 py-2 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] disabled:opacity-50 text-white dark:text-[#080A09] text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+                      className="w-full min-h-[44px] px-4 py-2 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] disabled:opacity-50 text-white dark:text-ap-obsidian text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                       <ClipboardPaste className="w-3.5 h-3.5" />
                       <span>{isParsingRemote ? 'Parsing Official Marks...' : 'Fetch & Parse Official Results'}</span>
@@ -591,7 +591,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     value={rawPasteText}
                     onChange={(e) => setRawPasteText(e.target.value)}
                     placeholder="Paste rows from Athletic.net, TFRRS, MileSplit, or FinishLynx results (e.g. 2026-10-24 | Twilight Meet | 800m | 1:56.38a | Splits: 56.92, 59.46)"
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf p-3 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
 
@@ -612,7 +612,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     type="button"
                     onClick={handleImportSelectedCandidates}
                     disabled={selectedCandidateIds.length === 0}
-                    className="min-h-[44px] sm:min-h-[36px] px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-[#080A09] text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                    className="min-h-[44px] sm:min-h-[36px] px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-ap-obsidian text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Trophy className="w-3.5 h-3.5" />
                     <span>Import {selectedCandidateIds.length} Official Race{selectedCandidateIds.length === 1 ? '' : 's'} to THRESH</span>
@@ -740,7 +740,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         onClick={() => handleSelectQuickEvent(ev.label)}
                         className={`min-h-[44px] sm:min-h-[38px] px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap ${
                           active
-                            ? 'bg-amber-500 text-[#080A09] font-bold'
+                            ? 'bg-amber-500 text-ap-obsidian font-bold'
                             : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-amber-500/50'
                         }`}
                       >
@@ -765,7 +765,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     value={quickFatTimeInput}
                     onChange={(e) => setQuickFatTimeInput(e.target.value)}
                     placeholder="1:55.84"
-                    className="w-full min-h-[44px] rounded-lg border border-amber-500/50 bg-white dark:bg-[#15231B] px-3 py-1.5 text-sm font-mono font-bold text-amber-600 dark:text-amber-400"
+                    className="w-full min-h-[44px] rounded-lg border border-amber-500/50 bg-white dark:bg-ap-turf px-3 py-1.5 text-sm font-mono font-bold text-amber-600 dark:text-amber-400"
                   />
                 </div>
 
@@ -782,7 +782,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     value={quickMeetName}
                     onChange={(e) => setQuickMeetName(e.target.value)}
                     placeholder="Stanford Invitational / State Finals"
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                 </div>
 
@@ -798,7 +798,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     type="date"
                     value={quickDate}
                     onChange={(e) => setQuickDate(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
 
@@ -813,7 +813,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     id={`${formId}-platform`}
                     value={quickPlatform}
                     onChange={(e) => setQuickPlatform(e.target.value as OfficialRacePlatform)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="Athletic.net">Athletic.net</option>
                     <option value="TFRRS">TFRRS (Collegiate)</option>
@@ -834,7 +834,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     id={`${formId}-track-surface`}
                     value={quickTrackType}
                     onChange={(e) => setQuickTrackType(e.target.value as OfficialTrackSurface)}
-                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="OUTDOOR_400M">400m Outdoor Track</option>
                     <option value="INDOOR_BANKED_200M">200m Banked Indoor Track</option>
@@ -858,7 +858,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       value={quickPlaceFinish}
                       onChange={(e) => setQuickPlaceFinish(e.target.value)}
                       placeholder="1st (Final)"
-                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -874,7 +874,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       value={quickWindReading}
                       onChange={(e) => setQuickWindReading(e.target.value)}
                       placeholder="+0.8 m/s"
-                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -919,7 +919,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                   value={quickSplitsInput}
                   onChange={(e) => setQuickSplitsInput(e.target.value)}
                   placeholder="56.82, 59.02"
-                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                  className="w-full min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                 />
 
                 {/* Visual Lap Split Skyline Bars */}
@@ -934,7 +934,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       return (
                         <div
                           key={idx}
-                          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15231B] p-2.5"
+                          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-ap-turf p-2.5"
                         >
                           <div className="text-2xs text-slate-500 font-mono">
                             Lap {idx + 1} ({quickSplitDistance}m)
@@ -1042,7 +1042,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       max={100000}
                       value={rawGpsDistanceInput}
                       onChange={(e) => setRawGpsDistanceInput(e.target.value)}
-                      className="w-24 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                      className="w-24 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="button"
@@ -1052,7 +1052,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         setCopiedPassport(true);
                         window.setTimeout(() => setCopiedPassport(false), 2500);
                       }}
-                      className="min-h-[44px] sm:min-h-[40px] px-3 py-1.5 rounded-lg bg-[#1C5436] hover:bg-[#16422A] dark:bg-[#C8FF00] dark:hover:bg-[#B5EB00] text-white dark:text-[#080A09] font-semibold transition-colors whitespace-nowrap"
+                      className="min-h-[44px] sm:min-h-[40px] px-3 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian font-semibold transition-colors whitespace-nowrap"
                     >
                       {copiedPassport ? '✓ Copied Passport' : 'Copy Shareable Passport'}
                     </button>
@@ -1060,7 +1060,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono tabular-nums">
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-2.5">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-slate-200 dark:border-slate-800 p-2.5">
                     <div className="text-2xs text-slate-500">Certified vs. GPS Drift</div>
                     <div className="font-bold text-slate-900 dark:text-white mt-0.5">
                       {verifiedPassport.certifiedDistanceMeters}m / {verifiedPassport.rawGpsDistanceMeters}m
@@ -1071,7 +1071,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         : `${verifiedPassport.gpsDriftPct}% GPS under-read`}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-2.5">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-slate-200 dark:border-slate-800 p-2.5">
                     <div className="text-2xs text-slate-500">Certified Official Pace</div>
                     <div className="font-bold text-blue-600 dark:text-sky-400 mt-0.5">
                       {formatPace(Math.round(verifiedPassport.certifiedPaceSecsPerKm), distanceUnit)}
@@ -1080,14 +1080,14 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       {verifiedPassport.displayOfficialTime} ({verifiedPassport.platform})
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-2.5">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-slate-200 dark:border-slate-800 p-2.5">
                     <div className="text-2xs text-slate-500">Verified VDOT</div>
                     <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                       {verifiedPassport.vdotScore.toFixed(1)} VDOT
                     </div>
                     <div className="text-2xs text-slate-500">Jack Daniels O2 Index</div>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-[#15231B] border border-slate-200 dark:border-slate-800 p-2.5">
+                  <div className="rounded-lg bg-white dark:bg-ap-turf border border-slate-200 dark:border-slate-800 p-2.5">
                     <div className="text-2xs text-slate-500">Equiv. Marathon Potential</div>
                     <div className="font-bold text-slate-900 dark:text-white mt-0.5">
                       {formatDuration(verifiedPassport.equivalentMarathonSecs)}
@@ -1119,7 +1119,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       value={standardsGender}
                       onChange={(e) => setStandardsGender(e.target.value as 'MEN' | 'WOMEN')}
                       aria-label="Recruiting Standards Category"
-                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1 text-xs"
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1 text-xs"
                     >
                       <option value="MEN">Men&apos;s Standards</option>
                       <option value="WOMEN">Women&apos;s Standards</option>
@@ -1131,7 +1131,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         setNcaaTargetFacility(e.target.value as NcaaTrackFacilityType)
                       }
                       aria-label="Target NCAA Facility"
-                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2.5 py-1 text-xs"
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 py-1 text-xs"
                     >
                       <option value="OUTDOOR_400M">Index → 400m Outdoor</option>
                       <option value="INDOOR_BANKED_200M">Index → 200m Banked Indoor</option>
@@ -1153,7 +1153,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         max={10000}
                         value={ncaaAltitudeFeetInput}
                         onChange={(e) => setNcaaAltitudeFeetInput(e.target.value)}
-                        className="w-20 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#15231B] px-2 py-1 text-xs"
+                        className="w-20 min-h-[38px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-1 text-xs"
                       />
                     </div>
 
@@ -1172,7 +1172,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       className={`rounded-lg border p-2.5 space-y-1.5 ${
                         std.achieved
                           ? 'border-emerald-500/45 bg-emerald-500/10'
-                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15231B]'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-ap-turf'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -1214,7 +1214,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveQuickFatRace}
-                  className="min-h-[44px] sm:min-h-[40px] px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#080A09] text-xs font-bold transition-colors flex items-center gap-2"
+                  className="min-h-[44px] sm:min-h-[40px] px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-ap-obsidian text-xs font-bold transition-colors flex items-center gap-2"
                 >
                   <Trophy className="w-4 h-4" />
                   <span>

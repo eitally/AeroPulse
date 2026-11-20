@@ -27,7 +27,7 @@ export const TracksideLiveHeaderPill: React.FC<TracksideLiveHeaderPillProps> = R
         <button
           type="button"
           onClick={onOpenTracksidePad}
-          className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 hover:border-[#28573B] dark:hover:border-[#C8FF00]/60 transition-colors whitespace-nowrap cursor-pointer"
+          className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-capsule-track text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 hover:border-[#28573B] dark:hover:border-ap-volt/60 transition-colors whitespace-nowrap cursor-pointer"
           title="Open Trackside Stopwatch (0.01s Multi-Athlete Timing)"
         >
           <Timer className="w-4 h-4 ap-text-brand shrink-0" weight="bold" />
@@ -47,14 +47,14 @@ export const TracksideLiveHeaderPill: React.FC<TracksideLiveHeaderPillProps> = R
         aria-label={`Active Trackside ${sessionType} Stopwatch ${formatTrackMark(stopwatchElapsedMs / 1000, 1)}, ${totalSplitCount} splits recorded. Return to Stopwatch.`}
         className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-mono text-xs font-bold tabular-nums transition-all whitespace-nowrap cursor-pointer ${
           stopwatchRunning
-            ? 'bg-[#101B15] text-[#C8FF00] border-2 border-[#2B5B3F] shadow-sm hover:border-[#C8FF00]/70'
+            ? 'bg-ap-carbon text-ap-volt border-2 border-ap-frame shadow-sm hover:border-ap-volt/70'
             : 'ap-status-caution border border-amber-500/45'
         }`}
         title="Return to Trackside Stopwatch Workspace"
       >
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${
-            stopwatchRunning ? 'bg-[#C8FF00] animate-pulse' : 'bg-amber-500'
+            stopwatchRunning ? 'bg-ap-volt animate-pulse' : 'bg-amber-500'
           }`}
           aria-hidden="true"
         />

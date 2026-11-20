@@ -587,7 +587,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         onClick={() => handleSaveSyncPolicy(opt.id, includeGearAndProfile)}
                         className={`text-left rounded-xl p-2.5 border transition-all cursor-pointer ${
                           active
-                            ? 'border-[#28573B] dark:border-[#C8FF00] bg-emerald-500/10 dark:bg-[#193524]'
+                            ? 'border-[#28573B] dark:border-ap-volt bg-emerald-500/10 dark:bg-[#193524]'
                             : 'border-slate-200 dark:border-white/10 hover:border-[#28573B]/60'
                         }`}
                       >
@@ -689,7 +689,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     />
                     <button
                       type="submit"
-                      className="sm:col-span-3 min-h-[44px] sm:min-h-[40px] rounded-lg bg-[#080A09] hover:bg-[#15231B] border border-[#FC4C02]/60 text-white font-semibold text-xs px-3 cursor-pointer"
+                      className="sm:col-span-3 min-h-[44px] sm:min-h-[40px] rounded-lg bg-ap-obsidian hover:bg-ap-turf border border-[#FC4C02]/60 text-white font-semibold text-xs px-3 cursor-pointer"
                     >
                       Save &amp; Connect
                     </button>
@@ -1208,7 +1208,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                     <div
-                      className="h-full bg-[#84CC16] dark:bg-[#C8FF00] transition-all duration-150"
+                      className="h-full bg-[#84CC16] dark:bg-ap-volt transition-all duration-150"
                       style={{
                         width: `${Math.min(
                           100,

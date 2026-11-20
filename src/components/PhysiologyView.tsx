@@ -789,7 +789,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
         {empiricalSummary.points.some((p) =>
           curveDiscipline === 'Cycling' ? p.bestWatts != null : p.bestGapSecsPerKm != null
         ) && (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-[#15231B]/50 p-4 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-ap-turf/50 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -950,7 +950,7 @@ const PhysiologyViewComponent: React.FC<PhysiologyViewProps> = ({
             return (
               <div
                 key={b.bucketIndex}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-[#15231B]/60 p-3 space-y-2 font-mono tabular-nums"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-ap-turf/60 p-3 space-y-2 font-mono tabular-nums"
               >
                 <div className="flex items-center justify-between text-2xs">
                   <span className="font-bold text-slate-900 dark:text-slate-100">

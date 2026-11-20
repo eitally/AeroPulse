@@ -731,7 +731,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
       {/* Top Map Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101B15]">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-ap-carbon">
         <div className="flex items-center gap-2">
           <Compass className="w-4 h-4 text-[#FC4C02]" />
           <div>

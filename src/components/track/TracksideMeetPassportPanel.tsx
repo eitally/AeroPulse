@@ -65,7 +65,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
   return (
     <div
       data-testid="stopwatch-passport-panel"
-      className="rounded-xl ap-card-inset p-3.5 space-y-3 border border-emerald-900/15 dark:border-[#244331]"
+      className="rounded-xl ap-card-inset p-3.5 space-y-3 border border-emerald-900/15 dark:border-ap-edge"
     >
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -81,7 +81,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <label className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 px-3 rounded-xl bg-white dark:bg-[#101B15] border border-emerald-900/15 dark:border-[#2B5B3F] text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer">
+          <label className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 px-3 rounded-xl bg-white dark:bg-ap-carbon border border-emerald-900/15 dark:border-ap-frame text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer">
             <input
               type="checkbox"
               data-testid="stopwatch-nfhs-hand-toggle"
@@ -97,7 +97,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
             data-testid="stopwatch-mint-passports-btn"
             disabled={finishers.length === 0}
             onClick={handleMintPassports}
-            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-[#C8FF00] border border-[#2B5B3F] text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-ap-volt border border-ap-frame text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
           >
             <Trophy className="w-4 h-4 shrink-0" weight="duotone" />
             <span>
@@ -135,7 +135,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
             {mintedPassports.map((p) => (
               <div
                 key={`${p.verificationHash}-${p.athleteName}`}
-                className="rounded-xl bg-white dark:bg-[#101B15] border border-emerald-900/15 dark:border-[#244331] px-3 py-2.5 flex items-center justify-between gap-3 text-xs font-mono tabular-nums"
+                className="rounded-xl bg-white dark:bg-ap-carbon border border-emerald-900/15 dark:border-ap-edge px-3 py-2.5 flex items-center justify-between gap-3 text-xs font-mono tabular-nums"
               >
                 <div className="min-w-0">
                   <div className="font-sans font-bold text-slate-900 dark:text-white truncate">
