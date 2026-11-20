@@ -6,7 +6,11 @@ import {
   saveJsonFile,
   STRAVA_KUDOS_CACHE_FILE,
 } from './sessionContext.ts';
-import { buildServerAthleteProfile, isGenericName } from './physiologyEngine.ts';
+import {
+  buildServerAthleteProfile,
+  isGenericName,
+  type ServerStravaZonesPayload,
+} from './physiologyEngine.ts';
 import { decodeGooglePolyline } from './routers/activitiesRouter.ts';
 import {
   STRAVA_LOAD_MODEL_VERSION,
@@ -14,6 +18,12 @@ import {
   computeStravaActivityLoadV2,
   isVirtualCyclingText,
 } from '../src/physiology/stravaLoadCalibration.ts';
+import type {
+  AthleteGearItem,
+  StravaActivityComment,
+  StravaKudoer,
+  StravaSegmentEffort,
+} from '../src/types.ts';
 
 export { STRAVA_LOAD_MODEL_VERSION };
 import {
@@ -30,6 +40,129 @@ import {
   stripTimezoneSuffix,
 } from '../src/utils/activityTimestamp.ts';
 
+export interface RawStravaSegmentEffort {
+  id?: string | number;
+  id_str?: string;
+  name?: string;
+  distance?: number;
+  elapsed_time?: number;
+  moving_time?: number;
+  average_watts?: number;
+  average_heartrate?: number;
+  pr_rank?: number | null;
+  kom_rank?: number | null;
+  start_date_local?: string;
+  start_index?: number;
+  end_index?: number;
+  segment?: {
+    id?: string | number;
+    id_str?: string;
+    name?: string;
+    distance?: number;
+    average_grade?: number;
+  };
+}
+
+export interface RawStravaActivity {
+  [key: string]: unknown;
+  id?: string | number;
+  id_str?: string;
+  name?: string;
+  sport_type?: string;
+  type?: string;
+  device_name?: string;
+  trainer?: boolean;
+  start_latlng?: number[];
+  end_latlng?: number[];
+  start_date?: string;
+  start_date_local?: string;
+  moving_time?: number;
+  elapsed_time?: number;
+  distance?: number;
+  total_elevation_gain?: number;
+  average_watts?: number;
+  weighted_average_watts?: number;
+  device_watts?: boolean;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_cadence?: number;
+  suffer_score?: number;
+  kudos_count?: number;
+  comment_count?: number;
+  achievement_count?: number;
+  pr_count?: number;
+  athlete_count?: number;
+  has_kudoed?: boolean;
+  gear_id?: string;
+  gear?: { name?: string };
+  athlete?: { id?: string | number; id_str?: string };
+  map?: { summary_polyline?: string };
+  segment_efforts?: RawStravaSegmentEffort[];
+}
+
+export interface RawStravaStarredSegment {
+  id?: string | number;
+  id_str?: string;
+  name?: string;
+  activity_type?: string;
+  distance?: number;
+  average_grade?: number;
+  city?: string;
+  state?: string;
+  athlete_pr_effort?: { elapsed_time?: number };
+}
+
+export interface RawStravaGear {
+  id?: string | number;
+  id_str?: string;
+  name?: string;
+  distance?: number;
+  primary?: boolean;
+}
+
+export interface RawStravaAthleteProfile {
+  [key: string]: unknown;
+  id?: string | number;
+  id_str?: string;
+  firstname?: string;
+  lastname?: string;
+  username?: string;
+  ftp?: number;
+  weight?: number;
+  measurement_preference?: string;
+  bikes?: RawStravaGear[];
+  shoes?: RawStravaGear[];
+}
+
+export interface RawStravaKudoerApi {
+  firstname?: string;
+  lastname?: string;
+  profile_medium?: string;
+  profile?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+export interface RawStravaCommentApi {
+  id?: string | number;
+  id_str?: string;
+  text?: string;
+  created_at?: string;
+  athlete?: {
+    firstname?: string;
+    lastname?: string;
+    profile_medium?: string;
+  };
+}
+
+export interface StravaCachedSocialEntry {
+  kudosCount?: number;
+  hasKudoed?: boolean;
+  kudoers?: StravaKudoer[];
+  comments?: StravaActivityComment[];
+}
+
 export interface NormalizeStravaActivityCalibration {
   calibratedFtp: number;
   calibratedBikeLthr: number;
@@ -39,17 +172,12 @@ export interface NormalizeStravaActivityCalibration {
 }
 
 export function normalizeRawStravaActivity(
-  a: Record<string, any>,
+  a: RawStravaActivity,
   calibration: NormalizeStravaActivityCalibration,
   options?: {
-    detail?: Record<string, any>;
+    detail?: RawStravaActivity;
     idx?: number;
-    kudosCacheEntry?: {
-      kudosCount?: number;
-      hasKudoed?: boolean;
-      kudoers?: any[];
-      comments?: any[];
-    };
+    kudosCacheEntry?: StravaCachedSocialEntry;
   }
 ) {
   const detail = options?.detail || a;
@@ -180,11 +308,13 @@ export function normalizeRawStravaActivity(
   }
 
   const rawEfforts = Array.isArray(detail.segment_efforts) ? detail.segment_efforts : [];
-  const segmentEfforts = rawEfforts.slice(0, 40).map((se: Record<string, any>) => {
-    const dist = Math.round(Number(se.distance || se.segment?.distance || 0));
-    const elTime = Number(se.elapsed_time || 0);
-    const effortId = extractStravaId(se);
-    const segId = extractStravaId(se.segment) || effortId;
+  const segmentEfforts: StravaSegmentEffort[] = rawEfforts
+    .slice(0, 40)
+    .map((se: RawStravaSegmentEffort) => {
+      const dist = Math.round(Number(se.distance || se.segment?.distance || 0));
+      const elTime = Number(se.elapsed_time || 0);
+      const effortId = extractStravaId(se as Record<string, unknown>);
+      const segId = extractStravaId(se.segment as Record<string, unknown>) || effortId;
     return {
       id: effortId,
       segmentId: segId,
@@ -364,14 +494,14 @@ export async function syncStravaAllHistory(
   const cursorQuery = `${afterQuery}${beforeQuery}`;
 
   let headers = { Authorization: `Bearer ${activeAccessToken}` };
-  let rawActivitiesMap = new Map<string, Record<string, any>>();
-  const fetchedThisCallMap = new Map<string, Record<string, any>>();
+  let rawActivitiesMap = new Map<string, RawStravaActivity>();
+  const fetchedThisCallMap = new Map<string, RawStravaActivity>();
   let scopedArchiveFile = '';
   let rateLimitPaused = false;
   let reachedNaturalEnd = false;
   let oldestFetchedEpoch = 0;
 
-  const trackFetchedItem = (item: Record<string, any>) => {
+  const trackFetchedItem = (item: RawStravaActivity) => {
     const itemId = extractStravaId(item);
     if (!item || !itemId) return;
     rawActivitiesMap.set(itemId, item);
@@ -423,7 +553,7 @@ export async function syncStravaAllHistory(
       );
     }
   } else {
-    const firstPageItems = await readStravaResponseJson<Record<string, any>[]>(firstPageResp);
+    const firstPageItems = await readStravaResponseJson<RawStravaActivity[]>(firstPageResp);
     if (Array.isArray(firstPageItems)) {
       const stravaAthleteId = (
         extractStravaId(firstPageItems[0]?.athlete) ||
@@ -432,7 +562,7 @@ export async function syncStravaAllHistory(
       ).replace(/[^0-9]/g, '');
       if (stravaAthleteId) {
         scopedArchiveFile = `/tmp/aeropulse-strava-archive-${stravaAthleteId}.json`;
-        const cachedArchive = loadJsonFile<Record<string, any>[]>(scopedArchiveFile, []);
+        const cachedArchive = loadJsonFile<RawStravaActivity[]>(scopedArchiveFile, []);
         for (const item of cachedArchive) {
           const itemId = extractStravaId(item);
           if (!item || !itemId) continue;
@@ -494,7 +624,7 @@ export async function syncStravaAllHistory(
               stopLoop = true;
               break;
             }
-            const pageItems = await readStravaResponseJson<Record<string, any>[]>(r);
+            const pageItems = await readStravaResponseJson<RawStravaActivity[]>(r);
             if (!Array.isArray(pageItems) || pageItems.length === 0) {
               reachedNaturalEnd = true;
               stopLoop = true;
@@ -558,11 +688,11 @@ export async function syncStravaAllHistory(
       ]);
   const starredSegments =
     starredResp && starredResp.ok
-      ? await readStravaResponseJson<Record<string, any>[]>(starredResp)
+      ? await readStravaResponseJson<RawStravaStarredSegment[]>(starredResp)
       : [];
   const stravaZonesData =
     stravaZonesResp && stravaZonesResp.ok
-      ? await readStravaResponseJson<Record<string, any>>(stravaZonesResp)
+      ? await readStravaResponseJson<ServerStravaZonesPayload>(stravaZonesResp)
       : null;
 
   let stravaAthleteName = '';
@@ -570,9 +700,9 @@ export async function syncStravaAllHistory(
   let stravaFtp: number | undefined;
   let stravaWeightKg: number | undefined;
   let stravaMeasurementPreference: 'mi' | 'km' | undefined;
-  let stravaGearItems: any[] = [];
+  let stravaGearItems: AthleteGearItem[] = [];
   if (stravaProfileResp && stravaProfileResp.ok) {
-    const rawAthlete = await readStravaResponseJson<Record<string, any>>(stravaProfileResp);
+    const rawAthlete = await readStravaResponseJson<RawStravaAthleteProfile>(stravaProfileResp);
     stravaAthleteId = extractStravaId(rawAthlete);
     stravaAthleteName =
       [rawAthlete.firstname, rawAthlete.lastname].filter(Boolean).join(' ').trim() ||
@@ -604,9 +734,9 @@ export async function syncStravaAllHistory(
       await saveSessionCacheAsync(req);
     }
     if (importProfileAndGear) {
-      const bikes = Array.isArray(rawAthlete.bikes)
-        ? rawAthlete.bikes.map((b: any) => ({
-            id: extractStravaId(b),
+      const bikes: AthleteGearItem[] = Array.isArray(rawAthlete.bikes)
+        ? rawAthlete.bikes.map((b) => ({
+            id: extractStravaId(b as Record<string, unknown>),
             name: String(b.name || 'Road Bike'),
             type: 'BIKE' as const,
             distanceMeters: Number(b.distance || 0),
@@ -614,9 +744,9 @@ export async function syncStravaAllHistory(
             primary: Boolean(b.primary),
           }))
         : [];
-      const shoes = Array.isArray(rawAthlete.shoes)
-        ? rawAthlete.shoes.map((s: any) => ({
-            id: extractStravaId(s),
+      const shoes: AthleteGearItem[] = Array.isArray(rawAthlete.shoes)
+        ? rawAthlete.shoes.map((s) => ({
+            id: extractStravaId(s as Record<string, unknown>),
             name: String(s.name || 'Running Shoe'),
             type: 'SHOE' as const,
             distanceMeters: Number(s.distance || 0),
@@ -666,28 +796,21 @@ export async function syncStravaAllHistory(
               `https://www.strava.com/api/v3/activities/${encodeURIComponent(id)}?include_all_efforts=true`,
               { headers }
             );
-            return dResp.ok ? await readStravaResponseJson<Record<string, any>>(dResp) : null;
+            return dResp.ok ? await readStravaResponseJson<RawStravaActivity>(dResp) : null;
           })
         )
       : [];
-  const detailById = new Map<string, Record<string, any>>();
+  const detailById = new Map<string, RawStravaActivity>();
   for (const d of detailedPayloads) {
     const did = extractStravaId(d);
     if (d && did) detailById.set(did, d);
   }
 
   // Hydrate Strava kudoers for top recent activities with kudos_count > 0
-  const kudosCache = loadJsonFile<
-    Record<
-      string,
-      {
-        kudosCount?: number;
-        hasKudoed?: boolean;
-        kudoers?: any[];
-        comments?: any[];
-      }
-    >
-  >(STRAVA_KUDOS_CACHE_FILE, {});
+  const kudosCache = loadJsonFile<Record<string, StravaCachedSocialEntry>>(
+    STRAVA_KUDOS_CACHE_FILE,
+    {}
+  );
 
   const recentKudoCandidates = isCursorContinuation
     ? []
@@ -711,8 +834,8 @@ export async function syncStravaAllHistory(
               headers,
             }),
           ]);
-          const kudoers = kResp.ok
-            ? ((await readStravaResponseJson<any[]>(kResp)) || []).map((k: any) => ({
+          const kudoers: StravaKudoer[] = kResp.ok
+            ? ((await readStravaResponseJson<RawStravaKudoerApi[]>(kResp)) || []).map((k) => ({
                 firstname: String(k.firstname || 'Athlete'),
                 lastname: String(k.lastname || ''),
                 profileMedium: k.profile_medium || k.profile || undefined,
@@ -721,16 +844,18 @@ export async function syncStravaAllHistory(
                 country: k.country || undefined,
               }))
             : [];
-          const comments = cResp.ok
-            ? ((await readStravaResponseJson<any[]>(cResp)) || []).map((c: any, idx: number) => ({
-                id: extractStravaId(c) || `sc-${sid}-${idx}`,
-                text: String(c.text || ''),
-                createdAt: String(c.created_at || act.start_date_local || ''),
-                athleteName:
-                  [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(' ') ||
-                  'Strava Athlete',
-                avatarUrl: c.athlete?.profile_medium || undefined,
-              }))
+          const comments: StravaActivityComment[] = cResp.ok
+            ? ((await readStravaResponseJson<RawStravaCommentApi[]>(cResp)) || []).map(
+                (c, idx: number) => ({
+                  id: extractStravaId(c as Record<string, unknown>) || `sc-${sid}-${idx}`,
+                  text: String(c.text || ''),
+                  createdAt: String(c.created_at || act.start_date_local || ''),
+                  athleteName:
+                    [c.athlete?.firstname, c.athlete?.lastname].filter(Boolean).join(' ') ||
+                    'Strava Athlete',
+                  avatarUrl: c.athlete?.profile_medium || undefined,
+                })
+              )
             : [];
           kudosCache[sid] = {
             ...kudosCache[sid],

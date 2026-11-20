@@ -11,6 +11,18 @@ const VAULT_ENVELOPE_PREFIX = 'v1.';
 let derivedKeyCache: Buffer | null = null;
 let warnedMissingVaultKey = false;
 
+/**
+ * Emits non-secret fallback diagnostics outside test runs without ever logging
+ * tokens, keys, PII, or serialized payloads.
+ */
+export function warnServerFallback(scope: string, err: unknown): void {
+  if (process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)) {
+    return;
+  }
+  const msg = err instanceof Error ? err.message : 'unknown error';
+  console.warn(`[thresh:${scope}] ${msg}`);
+}
+
 function getVaultEncryptionKey(): Buffer {
   if (derivedKeyCache) return derivedKeyCache;
 
@@ -277,8 +289,8 @@ export function saveTenantVaultSync<T>(tenantId: string, data: T): void {
            DO UPDATE SET encrypted_envelope = EXCLUDED.encrypted_envelope, updated_at = NOW();`,
           [safeId, envelope]
         );
-      } catch {
-        // non-fatal background sync failure
+      } catch (err: unknown) {
+        warnServerFallback('vault:bg-postgres-upsert', err);
       }
     })();
   }
@@ -308,13 +320,13 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
               mode: 0o600,
             });
           } catch {
-            // ignore
+            // ignore ephemeral FS cache mirror failure
           }
           return structuredClone(decrypted);
         }
       }
-    } catch {
-      // fall back to local encrypted file
+    } catch (err: unknown) {
+      warnServerFallback('vault:postgres-read-fallback', err);
     }
   }
   return loadTenantVaultSync(safeId, fallback);
@@ -348,8 +360,8 @@ export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promis
          DO UPDATE SET encrypted_envelope = EXCLUDED.encrypted_envelope, updated_at = NOW();`,
         [safeId, envelope]
       );
-    } catch {
-      // non-fatal DB failure (local cache/file still holds encrypted envelope)
+    } catch (err: unknown) {
+      warnServerFallback('vault:postgres-upsert', err);
     }
   }
 }
@@ -459,16 +471,16 @@ export async function deleteTenantVault(tenantId: string): Promise<void> {
   try {
     const encPath = getEncryptedVaultFilePath(safeId);
     if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
-  } catch {
-    // ignore
+  } catch (err: unknown) {
+    warnServerFallback('vault:local-unlink', err);
   }
   const pool = getPostgresPool();
   if (pool) {
     try {
       await ensurePostgresVaultSchema(pool);
       await pool.query('DELETE FROM thresh_tenant_vault WHERE tenant_id = $1', [safeId]);
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      warnServerFallback('vault:postgres-delete', err);
     }
   }
 }
@@ -658,8 +670,8 @@ export async function appendAuditLogAsync(params: {
           JSON.stringify(entry.metadata),
         ]
       );
-    } catch {
-      // local encrypted vault already captured entry
+    } catch (err: unknown) {
+      warnServerFallback('audit:postgres-insert', err);
     }
   }
 
@@ -710,8 +722,8 @@ export async function listTeamAuditLogAsync(
           })(),
         }));
       }
-    } catch {
-      // fall back to encrypted local audit log
+    } catch (err: unknown) {
+      warnServerFallback('audit:postgres-list-fallback', err);
     }
   }
 

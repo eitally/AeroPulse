@@ -6,8 +6,11 @@ import {
   AthleteHrZone,
   AthletePowerZone,
   AthleteProfile,
+  DistanceUnit,
+  MapTileProvider,
   PlannedWorkoutEvent,
   StopwatchFusionMetadata,
+  StravaSyncPolicy,
   UnifiedActivity,
   UnifiedWellnessDay,
 } from '../types';
@@ -268,6 +271,18 @@ export function sanitizeStaleCollapsedProfile(
   return next;
 }
 
+interface LegacyActivityAliasFields {
+  garminId?: string;
+  garminActivityId?: string;
+  intervalsActivityId?: string;
+}
+
+function getActivityWithLegacyAliases(
+  act: UnifiedActivity
+): UnifiedActivity & LegacyActivityAliasFields {
+  return act as UnifiedActivity & LegacyActivityAliasFields;
+}
+
 /**
  * Re-normalizes pure Strava and Garmin Personal API activities on client boot/hydration
  * using the v3 physiological load model so legacy Strava `suffer_score` spikes and
@@ -293,16 +308,17 @@ export function recalibrateStravaActivityLoadClient(
     };
   }
 
+  const legacyAct = getActivityWithLegacyAliases(act);
   const isGarminSourced =
     act.id.startsWith('garmin-') ||
-    Boolean((act as any).garminId || (act as any).garminActivityId) ||
+    Boolean(legacyAct.garminId || legacyAct.garminActivityId) ||
     Boolean(act.sourceBadges?.includes('Garmin'));
   const isStravaSourced =
     act.id.startsWith('strava-') ||
     Boolean(act.stravaId) ||
     Boolean(act.sourceBadges?.includes('Strava'));
   const hasAuthoritativeIntervals =
-    Boolean(act.intervalsId || (act as any).intervalsActivityId) ||
+    Boolean(act.intervalsId || legacyAct.intervalsActivityId) ||
     Boolean(act.sourceBadges?.includes('Intervals.icu'));
 
   // Intervals.icu-only sessions without Garmin EPOC pollution keep their Intervals load
@@ -894,7 +910,7 @@ export async function loadPersistedTelemetrySnapshot(): Promise<PersistedTelemet
       );
       const hasIntervals = hydratedActivities.some(
         (a) =>
-          Boolean(a.intervalsId || (a as any).intervalsActivityId) ||
+          Boolean(a.intervalsId || getActivityWithLegacyAliases(a).intervalsActivityId) ||
           a.sourceBadges?.includes('Intervals.icu')
       );
       const storedVersion = Number(snapshotMeta?.pmcModelVersion || 0);
@@ -2078,6 +2094,73 @@ export interface RotatedStravaTokenPayload {
   athleteName?: string;
 }
 
+export interface StravaTokenHandshakePayload extends RotatedStravaTokenPayload {
+  weightKg?: number;
+  athleteWeightKg?: number;
+  ftp?: number;
+  athleteFtp?: number;
+  measurementPreference?: string;
+  grantedScope?: string;
+}
+
+export interface ServerConfigStatusResponse {
+  mode?: 'LIVE' | 'SANDBOX_CALIBRATION';
+  stravaConnected?: boolean;
+  stravaConfigured?: boolean;
+  stravaClientId?: string;
+  stravaAthleteId?: string;
+  stravaAthleteName?: string;
+  stravaAthleteWeightKg?: number;
+  stravaAthleteFtp?: number;
+  stravaMeasurementPreference?: DistanceUnit;
+  stravaGrantedScope?: string;
+  stravaSyncPolicy?: StravaSyncPolicy & { consentedAt?: string };
+  stravaSource?: 'OAUTH' | 'ENV' | 'NONE';
+  stravaTokens?: RotatedStravaTokenPayload;
+  intervalsConnected?: boolean;
+  intervalsConfigured?: boolean;
+  intervalsAuthMethod?: 'OAUTH' | 'API_KEY' | 'NONE';
+  intervalsAthleteId?: string;
+  intervalsAthleteName?: string;
+  intervalsSource?: 'ENV' | 'USER_INPUT' | 'OAUTH' | 'NONE';
+  garminConnected?: boolean;
+  garminAthleteName?: string;
+  wahooConfigured?: boolean;
+  wahooConnected?: boolean;
+  wahooAthleteId?: string;
+  wahooAthleteName?: string;
+  polarConfigured?: boolean;
+  polarConnected?: boolean;
+  polarAthleteId?: string;
+  polarAthleteName?: string;
+  hasGeminiServerKey?: boolean;
+  callbackUrl?: string;
+  sessionToken?: string;
+  lastSyncedAt?: string;
+  nextHourlySyncAt?: string;
+  stravaActivitiesCount?: number;
+  athleteProfile?: Partial<AthleteProfile>;
+  mapTileProvider?: MapTileProvider;
+  mapTileApiKeyConfigured?: boolean;
+  mapTileApiKey?: string;
+}
+
+export interface StravaExchangeResponse extends StravaTokenHandshakePayload {
+  tokens?: StravaTokenHandshakePayload;
+  sessionToken?: string;
+  hasExistingSyncPolicy?: boolean;
+}
+
+export interface OAuthUrlResponse {
+  url?: string;
+  state?: string;
+  sessionToken?: string;
+}
+
+export type ApiJsonResponse<T extends object = Record<string, unknown>> = T & {
+  error?: string;
+};
+
 export interface StoredClientStravaSyncPolicy {
   window?: string;
   importProfileAndGear?: boolean;
@@ -2281,10 +2364,12 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
   return headers;
 }
 
-export async function safeParseResponseJson(resp: Response): Promise<any> {
+export async function safeParseResponseJson<T extends object = Record<string, unknown>>(
+  resp: Response
+): Promise<ApiJsonResponse<T>> {
   const text = await resp.text();
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as ApiJsonResponse<T>;
   } catch {
     const isHtml = /<!doctype html/i.test(text) || /<html/i.test(text);
     const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -2292,7 +2377,7 @@ export async function safeParseResponseJson(resp: Response): Promise<any> {
       error: `Server returned non-JSON (${resp.status} ${resp.statusText})${
         isHtml ? ' HTML error page' : ''
       }${snippet ? `: ${snippet}` : ''}`,
-    };
+    } as ApiJsonResponse<T>;
   }
 }
 

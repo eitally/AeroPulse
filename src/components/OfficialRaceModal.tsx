@@ -289,10 +289,26 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
       });
 
       if (resp.ok) {
-        const data = await resp.json();
+        interface RawParsedOfficialRace {
+          date?: string;
+          meetName?: string;
+          eventLabel?: string;
+          eventDistanceMeters?: number | string;
+          fatTimeSecs?: number | string;
+          displayFatTime?: string;
+          lapSplitsSecs?: unknown[];
+          platform?: string;
+          trackType?: string;
+          placeFinish?: string;
+          windReading?: string;
+        }
+        const data = (await resp.json()) as {
+          races?: RawParsedOfficialRace[];
+          fetchNote?: string;
+        };
         if (Array.isArray(data.races) && data.races.length > 0) {
           const normalized: ParsedOfficialRaceCandidate[] = data.races
-            .map((r: any, idx: number) => {
+            .map((r, idx: number) => {
               const eventLabel = String(r.eventLabel || '800m');
               const def =
                 OFFICIAL_RACE_EVENTS.find(
@@ -305,7 +321,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
               const splitDist = def.defaultSplitMeters;
               const splits =
                 Array.isArray(r.lapSplitsSecs) && r.lapSplitsSecs.length > 0
-                  ? r.lapSplitsSecs.map((n: any) => Number(n)).filter((n: number) => n > 5)
+                  ? r.lapSplitsSecs.map((n: unknown) => Number(n)).filter((n: number) => n > 5)
                   : generateDefaultLapSplits(
                       Number(r.eventDistanceMeters || def.distanceMeters),
                       fatSecs,
@@ -319,12 +335,14 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 eventDistanceMeters: Number(r.eventDistanceMeters || def.distanceMeters),
                 fatTimeSecs: fatSecs,
                 displayFatTime: formatFatTime(fatSecs),
-                platform: (['Athletic.net', 'TFRRS', 'MileSplit', 'RunSignup', 'Official FAT'].includes(
+                platform: (r.platform &&
+                ['Athletic.net', 'TFRRS', 'MileSplit', 'RunSignup', 'Official FAT'].includes(
                   r.platform
                 )
                   ? r.platform
                   : 'Athletic.net') as OfficialRacePlatform,
-                trackType: (['OUTDOOR_400M', 'INDOOR_BANKED_200M', 'INDOOR_FLAT_200M', 'XC_COURSE', 'ROAD'].includes(
+                trackType: (r.trackType &&
+                ['OUTDOOR_400M', 'INDOOR_BANKED_200M', 'INDOOR_FLAT_200M', 'XC_COURSE', 'ROAD'].includes(
                   r.trackType
                 )
                   ? r.trackType

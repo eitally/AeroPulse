@@ -268,7 +268,9 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
       return;
     }
     const rawActivities = (await actResp.json()) as Record<string, unknown>[];
-    const segmentsCache = loadJsonFile<Record<string, any[]>>(scopedSegmentsFile, {});
+    const segmentsCache = loadJsonFile<
+      Record<string, ReturnType<typeof computeIntervalsSegmentEfforts>>
+    >(scopedSegmentsFile, {});
     const routesCache = loadJsonFile<Record<string, [number, number][]>>(
       scopedRoutesFile,
       {}
@@ -348,7 +350,7 @@ activitiesRouter.post('/api/segments/scan-more', async (req: Request, res: Respo
     saveJsonFile(scopedRoutesFile, routesCache);
 
     const ownedIds = new Set(rawActivities.map((a) => String(a?.id || '')).filter(Boolean));
-    const scopedSegments: Record<string, any[]> = {};
+    const scopedSegments: Record<string, ReturnType<typeof computeIntervalsSegmentEfforts>> = {};
     const scopedRoutes: Record<string, [number, number][]> = {};
     for (const id of ownedIds) {
       if (Array.isArray(segmentsCache[id])) scopedSegments[id] = segmentsCache[id];

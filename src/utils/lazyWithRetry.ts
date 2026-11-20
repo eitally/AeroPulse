@@ -195,11 +195,14 @@ export interface LazyWithRetryOptions {
   restoreTab?: ActiveTab;
 }
 
+type LazyReactComponent =
+  Parameters<typeof lazy>[0] extends () => Promise<{ default: infer C }> ? C : never;
+
 /**
  * Resolves a dynamic module importer with a single cache-busted in-place retry and
  * cooldown-guarded seamless reload on deploy chunk skew.
  */
-export async function resolveLazyModuleWithRetry<T extends React.ComponentType<any>>(
+export async function resolveLazyModuleWithRetry<T extends LazyReactComponent>(
   importer: () => Promise<{ default: T }>,
   options: LazyWithRetryOptions
 ): Promise<{ default: T }> {
@@ -248,7 +251,7 @@ export async function resolveLazyModuleWithRetry<T extends React.ComponentType<a
 /**
  * Wraps React.lazy dynamic imports with chunk-skew retry and recovery.
  */
-export function lazyWithRetry<T extends React.ComponentType<any>>(
+export function lazyWithRetry<T extends LazyReactComponent>(
   importer: () => Promise<{ default: T }>,
   options: LazyWithRetryOptions
 ): React.LazyExoticComponent<T> {

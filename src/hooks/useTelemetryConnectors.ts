@@ -11,6 +11,10 @@ import type {
 } from '../types';
 import type { StravaOAuthJoinContext } from '../components/StravaAuthGate';
 import {
+  type OAuthUrlResponse,
+  type ServerConfigStatusResponse,
+  type StravaExchangeResponse,
+  type StravaTokenHandshakePayload,
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
   getSavedIntervalsHeaders,
@@ -23,9 +27,22 @@ import {
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
 
+interface IncomingOAuthBroadcastPayload {
+  type?: string;
+  provider?: string;
+  athleteId?: string | number;
+  athleteName?: string;
+  sessionToken?: string;
+  tokens?: StravaTokenHandshakePayload;
+  hasExistingSyncPolicy?: boolean;
+  error?: string;
+  cancelled?: boolean;
+  code?: string;
+}
+
 interface UseTelemetryConnectorsParams {
   setSyncError: React.Dispatch<React.SetStateAction<string | null>>;
-  fetchServerConfigStatus: () => Promise<any>;
+  fetchServerConfigStatus: () => Promise<ServerConfigStatusResponse | null>;
   syncLiveTelemetry: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
   reconcileStoreOwnerAthleteId: (incomingAthleteId?: string | number | null) => Promise<void>;
   athleteProfileRef: React.MutableRefObject<AthleteProfile>;
@@ -72,7 +89,7 @@ export function useTelemetryConnectors({
 
   const completeStravaAuthHandshake = useCallback(
     async (opts: {
-      tokens?: any;
+      tokens?: StravaTokenHandshakePayload;
       sessionToken?: string;
       hasExistingSyncPolicy?: boolean;
     }) => {
@@ -245,7 +262,7 @@ export function useTelemetryConnectors({
       // ignore
     }
 
-    const processIncomingOAuthPayload = (payload: any) => {
+    const processIncomingOAuthPayload = (payload?: IncomingOAuthBroadcastPayload | null) => {
       if (!payload || typeof payload !== 'object') return;
       if (payload.type === 'OAUTH_AUTH_SUCCESS' || payload.type === 'aeropulse_oauth_success') {
         if (payload.provider === 'intervals') {
@@ -331,7 +348,7 @@ export function useTelemetryConnectors({
               headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
               body: JSON.stringify({ code: codeStr }),
             });
-            const exData = await safeParseResponseJson(exResp);
+            const exData = await safeParseResponseJson<StravaExchangeResponse>(exResp);
             const resolvedTokens =
               exData?.tokens ||
               (exData?.accessToken || exData?.refreshToken
@@ -374,7 +391,7 @@ export function useTelemetryConnectors({
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== 'aeropulse_oauth_result_v1' || !event.newValue) return;
       try {
-        const parsed = JSON.parse(event.newValue) as { payload?: any };
+        const parsed = JSON.parse(event.newValue) as { payload?: IncomingOAuthBroadcastPayload };
         if (parsed?.payload) {
           processIncomingOAuthPayload(parsed.payload);
         }
@@ -411,7 +428,7 @@ export function useTelemetryConnectors({
       const resp = await fetch(`${urlPath}?flow=${encodeURIComponent(flow)}`, {
         credentials: 'include',
       });
-      const data = await safeParseResponseJson(resp);
+      const data = await safeParseResponseJson<OAuthUrlResponse>(resp);
       if (!resp.ok || !data.url) {
         if (popup && !popup.closed) popup.close();
         throw new Error(data.error || `Failed to start ${providerLabel} OAuth`);
@@ -438,7 +455,7 @@ export function useTelemetryConnectors({
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ athleteId, apiKey }),
     });
-    const data = await safeParseResponseJson(resp);
+    const data = await safeParseResponseJson<{ athleteId?: string }>(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to connect Intervals.icu');
       throw new Error(data.error || 'Failed to connect Intervals.icu');
@@ -557,7 +574,7 @@ export function useTelemetryConnectors({
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ window: windowChoice, importProfileAndGear }),
     });
-    const data = await safeParseResponseJson(resp);
+    const data = await safeParseResponseJson<{ stravaSyncPolicy?: StravaSyncPolicy }>(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Could not update Strava sync preference.');
       return null;
@@ -571,7 +588,7 @@ export function useTelemetryConnectors({
       if (windowChoice !== 'none') {
         void syncLiveTelemetry(windowChoice === 'all', windowChoice);
       }
-      return data.stravaSyncPolicy as StravaSyncPolicy;
+      return data.stravaSyncPolicy;
     }
     return null;
   };
@@ -592,7 +609,7 @@ export function useTelemetryConnectors({
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ clientId, clientSecret }),
     });
-    const data = await safeParseResponseJson(resp);
+    const data = await safeParseResponseJson<{ ok?: boolean }>(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to save Strava credentials');
       return;
@@ -685,7 +702,7 @@ export function useTelemetryConnectors({
     // (falls back automatically to top-level navigation on mobile phones, installed PWAs, or if blocked).
     const isStandalonePwa =
       window.matchMedia?.('(display-mode: standalone)').matches ||
-      Boolean((window.navigator as any)?.standalone);
+      Boolean((window.navigator as Navigator & { standalone?: boolean })?.standalone);
     const isMobileViewport =
       window.innerWidth < 680 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
     const shouldUsePopup = mode === 'localhost' || (!isStandalonePwa && !isMobileViewport);
@@ -746,7 +763,7 @@ export function useTelemetryConnectors({
         credentials: 'include',
         headers: launchHeaders,
       });
-      const data = await safeParseResponseJson(resp);
+      const data = await safeParseResponseJson<OAuthUrlResponse>(resp);
       if (!resp.ok || !data?.url) {
         if (popup && !popup.closed) {
           try {
@@ -822,7 +839,7 @@ export function useTelemetryConnectors({
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ code: codeOrUrl }),
     });
-    const data = await safeParseResponseJson(resp);
+    const data = await safeParseResponseJson<StravaExchangeResponse>(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to exchange Strava authorization code.');
       throw new Error(data.error || 'Failed to exchange Strava authorization code.');
@@ -853,7 +870,7 @@ export function useTelemetryConnectors({
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ refreshToken, accessToken }),
     });
-    const data = await safeParseResponseJson(resp);
+    const data = await safeParseResponseJson<StravaExchangeResponse>(resp);
     if (!resp.ok) {
       setSyncError(data.error || 'Failed to connect Strava token.');
       throw new Error(data.error || 'Failed to connect Strava token.');

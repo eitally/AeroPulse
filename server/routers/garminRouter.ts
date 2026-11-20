@@ -72,7 +72,7 @@ garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
     const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
     const sId = String(stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
     const sActs = sId
-      ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
+      ? loadJsonFile<Record<string, unknown>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
       : [];
 
     const normalizedGarminActs = garminData?.activities
@@ -122,7 +122,7 @@ garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
         oauth1TokenSecret: session.oauth1TokenSecret,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(400).json({
       error:
         err instanceof Error
@@ -150,7 +150,7 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
     const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
     const sId = String(stravaIdentity?.athleteId || '').replace(/[^0-9]/g, '');
     const sActs = sId
-      ? loadJsonFile<Record<string, any>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
+      ? loadJsonFile<Record<string, unknown>[]>(`/tmp/aeropulse-strava-archive-${sId}.json`, [])
       : [];
 
     const prelimActivities = normalizeGarminPersonalApiActivities(
@@ -204,7 +204,7 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
     await saveSessionCacheAsync(req, res);
 
     const loadByDate = new Map<string, number>();
-    const garminActivitiesList: any[] = [];
+    const garminActivitiesList: typeof normalizedActivities = [];
     for (const a of normalizedActivities) {
       const d = String(a.startDateLocal || '').slice(0, 10);
       if (d) {
@@ -335,7 +335,7 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
         rideWPrime: syncedProfile.wPrime,
         ridePMax: syncedProfile.pMax,
         runEftp: syncedProfile.runEFtp,
-        garminTrainingStatus: (hrvStatus === 'Low' ? 'Strained' : 'Productive') as any,
+        garminTrainingStatus: hrvStatus === 'Low' ? ('Strained' as const) : ('Productive' as const),
         trainingStatusReason: `Synced directly via Garmin Connect Personal API (HRV ${hrv || baseline7d} ms · ${hrvStatus}, RHR ${lastRhr} bpm).`,
         readinessStatus: (hrvStatus === 'Low'
           ? 'Strain'
@@ -353,7 +353,7 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
       wellnessDays: formattedWellnessDays,
       activities: normalizedActivities,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(400).json({
       error:
         err instanceof Error
@@ -417,7 +417,7 @@ garminRouter.post('/api/garmin/workout/push', async (req: Request, res: Response
 
     saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), session);
     res.json(pushRes);
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(500).json({
       error:
         err instanceof Error
