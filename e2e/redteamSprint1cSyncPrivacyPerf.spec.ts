@@ -25,7 +25,15 @@ async function signInViaDevMagicLink(page: Page, email: string) {
     confirmBtn.click(),
   ]);
 
+  const switchAthleteBtn = page.getByRole('button', {
+    name: /Switch to personal Athlete setup instead/i,
+  });
   const confirmStep2Btn = page.getByRole('button', { name: /Confirm & Continue/i });
+  await expect(switchAthleteBtn.or(confirmStep2Btn)).toBeVisible({ timeout: 15000 });
+  if (await switchAthleteBtn.isVisible()) {
+    await switchAthleteBtn.click();
+  }
+
   await expect(confirmStep2Btn).toBeVisible({ timeout: 15000 });
   await confirmStep2Btn.click();
 

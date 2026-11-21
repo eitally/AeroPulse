@@ -4,6 +4,7 @@ import {
   RACE_STOPWATCH_PRESETS,
   type RunnerSplitTelemetry,
 } from '../../hooks/useTracksideStopwatch';
+import { formatStopwatchClockMs } from '../../utils/stopwatchActivitySynthesizer';
 import type { VdotPodRosterInput } from '../../physiology/scholasticEngine';
 import type { StopwatchOutboxFlushResult } from '../../utils/stopwatchTeamSync';
 import { TracksideMeetPassportPanel } from '../track/TracksideMeetPassportPanel';
@@ -329,6 +330,15 @@ export const TracksideWalkOnAndSaveBar: React.FC<TracksideWalkOnAndSaveBarProps>
         aria-label="Trackside thumb controls"
         className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header px-2 py-2 grid grid-cols-3 gap-1.5"
       >
+        <div
+          data-testid="stopwatch-mobile-thumb-clock"
+          className="col-span-3 flex items-center justify-between px-2 py-0.5 rounded-lg bg-white/95 dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-stone-300/80 dark:border-ap-frame font-mono text-xs font-extrabold tabular-nums"
+        >
+          <span className="text-2xs uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
+            {stopwatchRunning ? 'Running' : stopwatchElapsedMs > 0 ? 'Paused' : 'Ready'}
+          </span>
+          <span>{formatStopwatchClockMs(stopwatchElapsedMs)}</span>
+        </div>
         <button
           type="button"
           data-testid="stopwatch-mobile-gun-btn"

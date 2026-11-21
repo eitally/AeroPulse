@@ -165,11 +165,74 @@ export function generateTeamJoinCode(shortName: string, suffixNum?: number): str
   return `${prefix}-${digits}`;
 }
 
+export const COACH_EVENT_GROUP_OPTIONS: ReadonlyArray<{
+  id: CoachEventGroup;
+  label: string;
+  shortLabel: string;
+}> = [
+  { id: 'DISTANCE', label: 'Distance (3000m / 3200m / 5K / XC)', shortLabel: 'Distance' },
+  { id: 'MID_DISTANCE', label: 'Mid-Distance (800m / 1600m / Mile)', shortLabel: 'Mid-Dist' },
+  { id: 'SPRINTS', label: 'Sprints (100m / 200m / 400m)', shortLabel: 'Sprints' },
+  { id: 'HURDLES', label: 'Hurdles (100H / 110H / 300H / 400H)', shortLabel: 'Hurdles' },
+  { id: 'JUMPS', label: 'Jumps (LJ / TJ / HJ)', shortLabel: 'Jumps' },
+  { id: 'POLE_VAULT', label: 'Pole Vault (PV)', shortLabel: 'Pole Vault' },
+  { id: 'THROWS', label: 'Throws (SP / Discus / Javelin)', shortLabel: 'Throws' },
+  { id: 'MULTI', label: 'Multi-Events (Pent / Hept / Dec)', shortLabel: 'Multi' },
+];
+
+export const COACH_EVENT_GROUPS: ReadonlySet<CoachEventGroup> = new Set(
+  COACH_EVENT_GROUP_OPTIONS.map((opt) => opt.id)
+);
+
+const COACH_EVENT_GROUP_ALIASES: Record<string, CoachEventGroup> = {
+  DIST: 'DISTANCE',
+  DISTANCE: 'DISTANCE',
+  XC: 'DISTANCE',
+  CROSS_COUNTRY: 'DISTANCE',
+  MID: 'MID_DISTANCE',
+  MIDDIST: 'MID_DISTANCE',
+  MID_DIST: 'MID_DISTANCE',
+  MID_DISTANCE: 'MID_DISTANCE',
+  SPRINT: 'SPRINTS',
+  SPRINTS: 'SPRINTS',
+  HURDLE: 'HURDLES',
+  HURDLES: 'HURDLES',
+  JUMP: 'JUMPS',
+  JUMPS: 'JUMPS',
+  PV: 'POLE_VAULT',
+  VAULT: 'POLE_VAULT',
+  POLE_VAULT: 'POLE_VAULT',
+  THROW: 'THROWS',
+  THROWS: 'THROWS',
+  MULTI: 'MULTI',
+  MULTIS: 'MULTI',
+  MULTI_EVENT: 'MULTI',
+  MULTI_EVENTS: 'MULTI',
+};
+
+export function normalizeCoachEventGroup(val: unknown): CoachEventGroup | null {
+  if (typeof val !== 'string') return null;
+  const normalized = val.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (COACH_EVENT_GROUPS.has(normalized as CoachEventGroup)) {
+    return normalized as CoachEventGroup;
+  }
+  return COACH_EVENT_GROUP_ALIASES[normalized] || null;
+}
+
+export function sanitizeTargetEventGroups(raw: unknown): CoachEventGroup[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .map((g) => normalizeCoachEventGroup(g))
+    .filter((g): g is CoachEventGroup => g !== null);
+}
+
 export interface ParsedBulkRosterRow {
   invitedName: string;
   invitedEmail?: string;
   invitedPhone?: string;
   squadGroup: string;
+  eventGroup?: CoachEventGroup;
+  genderDivision?: 'M' | 'F';
   graduationYear?: number;
   parentGuardianEmail?: string;
   seedMarkOrFtp?: string;
@@ -270,6 +333,12 @@ export function parseBulkRosterCsvOrText(
         'pod',
         'parentemail',
         'guardianemail',
+        'eventgroup',
+        'event',
+        'events',
+        'discipline',
+        'gender',
+        'sex',
       ].includes(c)
     );
 
@@ -280,6 +349,8 @@ export function parseBulkRosterCsvOrText(
     email: -1,
     phone: -1,
     squad: -1,
+    eventGroup: -1,
+    gender: -1,
     gradYear: -1,
     parentEmail: -1,
     seed: -1,
@@ -301,6 +372,10 @@ export function parseBulkRosterCsvOrText(
         colMap.phone = idx;
       } else if (['squad', 'group', 'pod', 'level', 'division', 'team'].includes(col)) {
         colMap.squad = idx;
+      } else if (['eventgroup', 'event', 'events', 'discipline'].includes(col)) {
+        colMap.eventGroup = idx;
+      } else if (['gender', 'sex', 'boysgirls', 'divisiongender'].includes(col)) {
+        colMap.gender = idx;
       } else if (['gradyear', 'class', 'classyear', 'year', 'grad'].includes(col)) {
         colMap.gradYear = idx;
       } else if (
@@ -349,6 +424,8 @@ export function parseBulkRosterCsvOrText(
     let invitedEmail: string | undefined;
     let invitedPhone: string | undefined;
     let squadGroup = defaultSquad;
+    let eventGroup: CoachEventGroup | undefined;
+    let genderDivision: 'M' | 'F' | undefined;
     let graduationYear: number | undefined;
     let parentGuardianEmail: string | undefined;
     let seedMarkOrFtp: string | undefined;
@@ -372,6 +449,19 @@ export function parseBulkRosterCsvOrText(
       }
       if (colMap.squad >= 0 && cols[colMap.squad]) {
         squadGroup = cols[colMap.squad].trim();
+      }
+      if (colMap.eventGroup >= 0 && cols[colMap.eventGroup]) {
+        const rawEventGroup = cols[colMap.eventGroup].trim();
+        eventGroup =
+          normalizeCoachEventGroup(rawEventGroup) ||
+          inferEventGroupFromSeedMark(rawEventGroup);
+      }
+      if (colMap.gender >= 0 && cols[colMap.gender]) {
+        const gRaw = cols[colMap.gender].trim().toUpperCase();
+        if (gRaw.startsWith('M') || gRaw === 'B') genderDivision = 'M';
+        else if (gRaw.startsWith('F') || gRaw.startsWith('W') || gRaw === 'G') {
+          genderDivision = 'F';
+        }
       }
       if (colMap.gradYear >= 0 && cols[colMap.gradYear]) {
         const yr = parseInt(cols[colMap.gradYear].replace(/\D/g, ''), 10);
@@ -427,6 +517,8 @@ export function parseBulkRosterCsvOrText(
       invitedEmail,
       invitedPhone,
       squadGroup: squadGroup || defaultSquad,
+      ...(eventGroup ? { eventGroup } : {}),
+      ...(genderDivision ? { genderDivision } : {}),
       graduationYear,
       parentGuardianEmail,
       seedMarkOrFtp,
@@ -603,13 +695,31 @@ export function buildFreeNativeSmsUri(
 export function inferEventGroupFromSeedMark(seed?: string): CoachEventGroup | undefined {
   if (!seed || !seed.trim()) return undefined;
   const s = seed.trim();
-  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
+  const explicitGroup = normalizeCoachEventGroup(s);
+  if (explicitGroup) return explicitGroup;
+  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|6000\s*m?|6\s*k|8000\s*m?|8\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc|cross\s*country)\b/i.test(s)) {
     return 'DISTANCE';
   }
-  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
+  if (/\b(?:800\s*m?|1000\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile|steeple(?:chase)?|3000\s*sc)\b/i.test(s)) {
     return 'MID_DISTANCE';
   }
-  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
+  // Check hurdles before generic sprints/dash patterns
+  if (/\b(?:100\s*m?\s*h|110\s*m?\s*h|300\s*m?\s*h|400\s*m?\s*h|hurdles?)\b/i.test(s)) {
+    return 'HURDLES';
+  }
+  if (/\b(?:pv|pole\s*vault)\b/i.test(s)) {
+    return 'POLE_VAULT';
+  }
+  if (/\b(?:lj|tj|hj|long\s*jump|triple\s*jump|high\s*jump|jumps?)\b/i.test(s)) {
+    return 'JUMPS';
+  }
+  if (/\b(?:sp|shot\s*put|shot|discus|disc|jav(?:elin)?|hammer|weight\s*throw|throws?)\b/i.test(s)) {
+    return 'THROWS';
+  }
+  if (/\b(?:pent(?:athlon)?|hept(?:athlon)?|dec(?:athlon)?|multi(?:s|-events?)?)\b/i.test(s)) {
+    return 'MULTI';
+  }
+  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|dash|sprint)\b/i.test(s)) {
     return 'SPRINTS';
   }
   return undefined;

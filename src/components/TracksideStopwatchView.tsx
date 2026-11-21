@@ -222,6 +222,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const [includeSelfRunner, setIncludeSelfRunner] = useState<boolean>(!isCoachingTeam);
   const [selectedPodFilter, setSelectedPodFilter] = useState<string>('ALL');
+  const [runnerSearchQuery, setRunnerSearchQuery] = useState<string>('');
+  const [pinnedRunnerIds, setPinnedRunnerIds] = useState<string[]>([]);
+  const [onlyOnTrack, setOnlyOnTrack] = useState<boolean>(false);
+  const [showPinStrip, setShowPinStrip] = useState<boolean>(false);
   const [walkOnName, setWalkOnName] = useState<string>('');
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
   const [copiedCsv, setCopiedCsv] = useState<boolean>(false);
@@ -692,13 +696,17 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     nowEpochMs,
   ]);
 
-  const filteredTelemetries = useMemo(
-    () =>
-      selectedPodFilter === 'ALL'
-        ? runnerTelemetries
-        : runnerTelemetries.filter((t) => t.podKey === selectedPodFilter),
-    [runnerTelemetries, selectedPodFilter]
-  );
+  const filteredTelemetries = useMemo(() => {
+    const cleanQuery = runnerSearchQuery.trim().toLowerCase();
+    return runnerTelemetries.filter((t) => {
+      if (selectedPodFilter !== 'ALL' && t.podKey !== selectedPodFilter) return false;
+      if (onlyOnTrack && pinnedRunnerIds.length > 0 && !pinnedRunnerIds.includes(t.runnerId)) {
+        return false;
+      }
+      if (cleanQuery && !t.runnerName.toLowerCase().includes(cleanQuery)) return false;
+      return true;
+    });
+  }, [runnerTelemetries, selectedPodFilter, runnerSearchQuery, onlyOnTrack, pinnedRunnerIds]);
 
   const maxColumnsInMatrix = useMemo(
     () => Math.max(1, ...filteredTelemetries.map((t) => t.lapSplitsSecs.length)),
@@ -767,6 +775,15 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         );
         return;
       }
+
+      // 350ms per-runner anti-double-tap debounce prevents rain/thumb bounce from double-tapping Chute or splits
+      const nowTapMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const prevTapMs = lastRunnerTapMsRef.current.get(telemetry.runnerId) ?? 0;
+      if (nowTapMs - prevTapMs < 350) {
+        return;
+      }
+      lastRunnerTapMsRef.current.set(telemetry.runnerId, nowTapMs);
+
       if (chuteQueueSecs.length > 0) {
         const assigned = assignChuteToRunner(telemetry.runnerId, telemetry.runnerName, {
           maxRaceLaps: targetRaceLaps,
@@ -786,14 +803,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         }
         return;
       }
-
-      // 350ms per-runner anti-double-tap debounce prevents rain/thumb bounce from creating bogus <0.3s splits
-      const nowTapMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const prevTapMs = lastRunnerTapMsRef.current.get(telemetry.runnerId) ?? 0;
-      if (nowTapMs - prevTapMs < 350) {
-        return;
-      }
-      lastRunnerTapMsRef.current.set(telemetry.runnerId, nowTapMs);
 
       const stamped = tapRunnerSplit(telemetry.runnerId, telemetry.runnerName, {
         maxRaceLaps: targetRaceLaps,
@@ -1795,8 +1804,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       </div>
 
       {/* 1. Unified Trackside Top Header & Sticky Control Deck */}
-      <div className="rounded-xl ap-card px-2.5 sm:px-3.5 py-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="rounded-xl ap-card px-2.5 sm:px-3.5 py-1.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <button
             type="button"
             data-testid="stopwatch-back-to-log-btn"
@@ -1806,31 +1815,50 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           >
             ←
           </button>
-          <h1 className="text-sm sm:text-base font-extrabold text-ap-ink dark:text-ap-chalk tracking-tight whitespace-nowrap truncate">
+          <h1 className="text-sm sm:text-base font-extrabold text-ap-ink dark:text-ap-chalk tracking-tight whitespace-nowrap shrink-0">
             Trackside Stopwatch
           </h1>
           {!isOnline ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-2xs font-bold ap-status-caution shrink-0">
               <WifiSlash className="w-3 h-3" weight="bold" />
-              <span>Offline</span>
+              <span>Offline Safe ✓</span>
             </span>
           ) : (
-            <span className="hidden md:inline-flex px-2 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-ap-muted dark:text-ap-muted-dark shrink-0">
-              Saved on Device (Offline Ready)
+            <span className="inline-flex px-2 py-0.5 rounded-lg font-mono text-2xs font-semibold ap-card-inset text-ap-muted dark:text-ap-muted-dark shrink-0">
+              <span className="md:hidden">Offline Safe ✓</span>
+              <span className="hidden md:inline">Saved on Device (Offline Safe ✓)</span>
             </span>
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            data-testid="stopwatch-header-beep-toggle"
+            aria-pressed={soundEnabled}
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`min-h-[36px] inline-flex items-center gap-1 px-2 rounded-lg text-2xs font-mono font-bold border cursor-pointer shrink-0 ${
+              soundEnabled
+                ? 'ap-status-info'
+                : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
+            }`}
+          >
+            {soundEnabled ? (
+              <SpeakerHigh className="w-3.5 h-3.5 shrink-0" weight="bold" />
+            ) : (
+              <SpeakerSlash className="w-3.5 h-3.5 shrink-0" weight="bold" />
+            )}
+            <span className="hidden sm:inline">{soundEnabled ? 'Beep ON' : 'Muted'}</span>
+          </button>
           {renderModeRadioGroup(true)}
         </div>
       </div>
 
-      <section className="md:sticky md:top-[56px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
+      <section className="sticky top-0 md:top-[56px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
         {/* HUD Row 1: Clock + Gun + Undo + Chute */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
             data-testid="stopwatch-master-clock"
-            className="rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
+            className="rounded-xl bg-white dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-stone-300 dark:border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
           >
             {formatStopwatchClockMs(stopwatchElapsedMs)}
           </div>
@@ -1919,6 +1947,43 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               );
             })}
           </select>
+
+          <input
+            type="search"
+            aria-label="Find runner"
+            value={runnerSearchQuery}
+            onChange={(e) => setRunnerSearchQuery(e.target.value)}
+            placeholder="Find runner..."
+            className="min-h-[44px] sm:min-h-[38px] w-32 sm:w-40 rounded-xl ap-card-inset px-2.5 text-xs text-ap-ink dark:text-ap-chalk"
+          />
+
+          <div className="inline-flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              data-testid="stopwatch-on-track-toggle"
+              aria-pressed={onlyOnTrack}
+              onClick={() => {
+                if (pinnedRunnerIds.length === 0) setShowPinStrip(true);
+                else setOnlyOnTrack((prev) => !prev);
+              }}
+              className={`min-h-[44px] sm:min-h-[38px] px-2.5 rounded-xl text-2xs font-mono font-bold border cursor-pointer ${
+                onlyOnTrack && pinnedRunnerIds.length > 0
+                  ? 'ap-nav-volt-active border-transparent'
+                  : 'ap-card-inset text-ap-ink dark:text-ap-chalk border-transparent'
+              }`}
+            >
+              On Track{pinnedRunnerIds.length > 0 ? ` (${pinnedRunnerIds.length})` : ''}
+            </button>
+            <button
+              type="button"
+              aria-expanded={showPinStrip}
+              onClick={() => setShowPinStrip((prev) => !prev)}
+              className="min-h-[44px] sm:min-h-[38px] px-2 rounded-xl ap-card-inset text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark cursor-pointer"
+              title="Choose runners currently on the track"
+            >
+              {showPinStrip ? 'Hide Heat' : 'Pin Heat'}
+            </button>
+          </div>
 
           <div
             role="group"
@@ -2086,6 +2151,53 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         {multiSetPlanStripNode}
         {envPhysicsPanelNode}
       </section>
+
+      {showPinStrip && (
+        <div
+          data-testid="stopwatch-pin-strip"
+          className="rounded-xl ap-card px-3 py-2 flex flex-wrap items-center gap-1.5 text-2xs"
+        >
+          <span className="font-mono font-bold uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
+            Heat / On Track:
+          </span>
+          {runnerTelemetries.map((t) => {
+            const pinned = pinnedRunnerIds.includes(t.runnerId);
+            return (
+              <button
+                key={t.runnerId}
+                type="button"
+                aria-pressed={pinned}
+                onClick={() =>
+                  setPinnedRunnerIds((prev) =>
+                    prev.includes(t.runnerId)
+                      ? prev.filter((id) => id !== t.runnerId)
+                      : [...prev, t.runnerId]
+                  )
+                }
+                className={`min-h-[32px] px-2.5 rounded-lg font-semibold cursor-pointer ${
+                  pinned
+                    ? 'ap-nav-volt-active'
+                    : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
+                }`}
+              >
+                {t.runnerName}
+              </button>
+            );
+          })}
+          {pinnedRunnerIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setPinnedRunnerIds([]);
+                setOnlyOnTrack(false);
+              }}
+              className="min-h-[32px] px-2 rounded-lg font-mono text-ap-muted dark:text-ap-muted-dark underline cursor-pointer"
+            >
+              Clear Heat
+            </button>
+          )}
+        </div>
+      )}
 
       {autoRegBannerNode}
 

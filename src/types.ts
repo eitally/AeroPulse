@@ -188,7 +188,7 @@ export interface OfficialRaceMetadata {
   trackType: OfficialTrackSurface;
   placeFinish?: string; // e.g. '1st (Final)'
   windReading?: string; // e.g. '+0.8 m/s'
-  lapSplitDistanceMeters?: 200 | 400 | 1000;
+  lapSplitDistanceMeters?: 60 | 100 | 200 | 400 | 1000;
   lapSplitsSecs: number[];
   vdotScore: number;
   includeWarmupCooldown: boolean;
@@ -1004,9 +1004,37 @@ export type VdotPodIntensity =
   | 'RACE_800M'
   | 'RACE_400M';
 
-export type CoachEventGroup = 'SPRINTS' | 'MID_DISTANCE' | 'DISTANCE';
+export type CoachEventGroup =
+  | 'DISTANCE'
+  | 'MID_DISTANCE'
+  | 'SPRINTS'
+  | 'HURDLES'
+  | 'JUMPS'
+  | 'POLE_VAULT'
+  | 'THROWS'
+  | 'MULTI';
 
-export type TrackRepDistanceMeters = 150 | 200 | 300 | 400 | 500 | 600 | 800 | 1000 | 1200 | 1600;
+export type TrackRepDistanceMeters =
+  | 10
+  | 20
+  | 30
+  | 40
+  | 50
+  | 60
+  | 80
+  | 100
+  | 110
+  | 120
+  | 150
+  | 200
+  | 300
+  | 400
+  | 500
+  | 600
+  | 800
+  | 1000
+  | 1200
+  | 1600;
 export type SpeedReservePhenotype = 'ENDURANCE' | 'HYBRID' | 'SPEED';
 export type TrackTrainingZoneCode = 'E' | 'SUB_T' | 'T' | 'CV' | 'I' | 'R' | 'FR';
 export type TrackSeasonPhase = 'BASE' | 'STRENGTH_CV' | 'SPECIFIC' | 'PEAK_TAPER';
@@ -1476,6 +1504,7 @@ export interface TeamMembershipRecord {
   role: TeamMemberRole;
   squadGroup: string;
   eventGroup?: CoachEventGroup;
+  coachEventGroups?: CoachEventGroup[];
   invitedName: string;
   invitedEmail?: string;
   invitedPhone?: string;
@@ -1610,6 +1639,9 @@ export interface PublicTeamHubPayload {
   upcomingMeets: PublicTeamHubMeetItem[];
   recentSchedule: PublicTeamHubMeetItem[];
   rosterLeaderboard: PublicTeamHubRosterEntry[];
+  announcements?: Array<
+    Pick<TeamAnnouncementRecord, 'id' | 'title' | 'body' | 'category' | 'createdAt'>
+  >;
   stats: {
     athleteCount: number;
     meetCount: number;
@@ -1622,6 +1654,7 @@ export interface TeamSummaryWithRole {
   myRole: TeamMemberRole;
   mySquadGroup: string;
   myEventGroup?: CoachEventGroup;
+  myCoachEventGroups?: CoachEventGroup[];
   myMembershipId: string;
   totalInvited: number;
   openedCount: number;
@@ -1632,6 +1665,9 @@ export interface TeamSummaryWithRole {
   workoutLibrary?: TeamWorkoutLibraryTemplate[];
   workoutComments?: TeamWorkoutComment[];
   guardianSafetyAlerts?: GuardianSafetyAlertRecord[];
+  attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
+  announcements?: TeamAnnouncementRecord[];
+  fieldMarkLogs?: FieldEventLogRecord[];
 }
 
 export interface TeamInvitePreviewPayload {
@@ -1671,7 +1707,20 @@ export interface SessionCheckInRecord {
   workoutName?: string;
   rpe: number; // 1..10
   painFlag?: boolean;
-  painArea?: 'KNEE' | 'SHIN' | 'ACHILLES' | 'HAMSTRING' | 'HIP' | 'FOOT' | 'BACK' | 'OTHER';
+  painArea?:
+    | 'KNEE'
+    | 'SHIN'
+    | 'ACHILLES'
+    | 'HAMSTRING'
+    | 'HIP'
+    | 'GROIN'
+    | 'QUAD'
+    | 'ANKLE'
+    | 'FOOT'
+    | 'BACK'
+    | 'SHOULDER'
+    | 'ELBOW'
+    | 'OTHER';
   sorenessNote?: string;
   autoSwappedToRecovery?: boolean;
   legFeel?: 'FRESH' | 'NORMAL' | 'HEAVY';
@@ -1692,6 +1741,86 @@ export interface AthleteCloudStateEnvelope {
   distanceUnit?: DistanceUnit;
   sessionCheckIns?: SessionCheckInRecord[];
   coachArchivedActivities?: UnifiedActivity[];
+}
+
+export type CoachComplexityTier = 'ESSENTIALS' | 'PRO';
+
+export type FieldEventCode =
+  | 'LJ'
+  | 'TJ'
+  | 'HJ'
+  | 'PV'
+  | 'SP'
+  | 'DISCUS'
+  | 'JAVELIN'
+  | 'HAMMER'
+  | 'PENT'
+  | 'HEPT'
+  | 'DEC';
+
+export type FieldAttemptOutcome = 'MARK' | 'FOUL' | 'PASS' | 'CLEAR' | 'MISS';
+
+export interface FieldTrialEntry {
+  attemptNumber: number;
+  outcome: FieldAttemptOutcome;
+  markMeters?: number;
+  barHeightMeters?: number;
+  windMps?: number;
+  note?: string;
+}
+
+export interface FieldEventLogRecord {
+  id: string;
+  teamId?: string;
+  membershipId?: string;
+  athleteName: string;
+  date: string;
+  eventCode: FieldEventCode;
+  eventGroup: CoachEventGroup;
+  isCompetition: boolean;
+  meetOrPracticeTitle: string;
+  implementSpec?: string;
+  poleSpec?: string;
+  approachSteps?: number;
+  attempts: FieldTrialEntry[];
+  bestMarkMeters?: number;
+  multiPoints?: number;
+  rpe?: number;
+  createdAt: string;
+}
+
+export type TeamAttendanceStatus =
+  | 'PRESENT'
+  | 'LATE'
+  | 'EXCUSED'
+  | 'ABSENT'
+  | 'INJURED_MODIFIED';
+
+export interface TeamAttendanceRecord {
+  date: string;
+  membershipId: string;
+  status: TeamAttendanceStatus;
+  note?: string;
+  updatedAt: string;
+  updatedBySid?: string;
+}
+
+export type TeamAnnouncementCategory =
+  | 'WEATHER'
+  | 'SCHEDULE_CHANGE'
+  | 'MEET_LOGISTICS'
+  | 'GENERAL';
+
+export interface TeamAnnouncementRecord {
+  id: string;
+  teamId: string;
+  title: string;
+  body: string;
+  category: TeamAnnouncementCategory;
+  targetEventGroups?: CoachEventGroup[];
+  publishToParentHub: boolean;
+  authorName: string;
+  createdAt: string;
 }
 
 

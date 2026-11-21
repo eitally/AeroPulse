@@ -234,12 +234,13 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
               ))}
             </div>
 
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl liquid-capsule-track">
-              {(['DMR', '4x400m', '4x800m'] as const).map((ev) => (
+            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl liquid-capsule-track">
+              {(['4x100m', '4x200m', '4x400m', '4x800m', 'DMR'] as const).map((ev) => (
                 <button
                   key={ev}
                   type="button"
                   data-testid={`relay-event-btn-${ev}`}
+                  aria-pressed={relayEvent === ev}
                   onClick={() => setRelayEvent(ev)}
                   className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-mono font-bold cursor-pointer ${
                     relayEvent === ev

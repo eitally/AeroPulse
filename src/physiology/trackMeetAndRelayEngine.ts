@@ -12,7 +12,7 @@ import { generateVerifiedRacePassport } from './raceRubberBander.ts';
 import { buildTrackSpeedReserveProfile } from './trackSpeedReserveEngine.ts';
 import { getLocalDateIso } from './stravaLoadCalibration.ts';
 
-export type TrackRelayEventType = '4x400m' | '4x800m' | 'DMR';
+export type TrackRelayEventType = '4x100m' | '4x200m' | '4x400m' | '4x800m' | 'DMR';
 
 export interface RelayCandidateInput {
   id: string;
@@ -27,7 +27,7 @@ export interface RelayCandidateInput {
 
 export interface OptimizedRelayLeg {
   legNumber: 1 | 2 | 3 | 4;
-  distanceMeters: 400 | 800 | 1200 | 1600;
+  distanceMeters: 100 | 200 | 400 | 800 | 1200 | 1600;
   athleteId: string;
   athleteName: string;
   phenotype: SpeedReservePhenotype;
@@ -89,7 +89,14 @@ export interface SquadTopTimesBoard {
   flyingRelaySplits: SquadLeaderboardEntry[];
 }
 
-const RELAY_LEG_DISTANCES: Record<TrackRelayEventType, [400 | 800 | 1200 | 1600, 400 | 800 | 1200 | 1600, 400 | 800 | 1200 | 1600, 400 | 800 | 1200 | 1600]> = {
+type RelayLegMeters = 100 | 200 | 400 | 800 | 1200 | 1600;
+
+const RELAY_LEG_DISTANCES: Record<
+  TrackRelayEventType,
+  [RelayLegMeters, RelayLegMeters, RelayLegMeters, RelayLegMeters]
+> = {
+  '4x100m': [100, 100, 100, 100],
+  '4x200m': [200, 200, 200, 200],
   '4x400m': [400, 400, 400, 400],
   '4x800m': [800, 800, 800, 800],
   DMR: [1200, 400, 800, 1600],
@@ -307,7 +314,7 @@ export function computeMultiEventMeetDayTss(
 
 function predictRelayLegSplitSecs(
   candidate: RelayCandidateInput,
-  distanceMeters: 400 | 800 | 1200 | 1600,
+  distanceMeters: RelayLegMeters,
   legNumber: 1 | 2 | 3 | 4
 ): { splitSecs: number; phenotype: SpeedReservePhenotype; rationale: string } {
   const profile = buildTrackSpeedReserveProfile({
@@ -323,7 +330,21 @@ function predictRelayLegSplitSecs(
   let rawSplitSecs = 60;
   let rationale = '';
 
-  if (distanceMeters === 400) {
+  if (distanceMeters === 100 || distanceMeters === 200) {
+    // Short relays weight maximal sprint speed + start reaction / exchange zone velocity
+    const speedVel = distanceMeters === 100 ? effectiveMss * 0.945 : effectiveMss * 0.925;
+    const phenotypeBonus =
+      profile.phenotype === 'SPEED' ? 0.975 : profile.phenotype === 'HYBRID' ? 1.0 : 1.03;
+    rawSplitSecs = (distanceMeters / Math.max(4.5, speedVel)) * phenotypeBonus + (distanceMeters === 100 ? 0.85 : 0.95);
+    const flyingZoneSavings = legNumber === 1 ? 0 : distanceMeters === 100 ? 0.95 : 0.65;
+    const floorSecs = distanceMeters === 100 ? 9.2 : 19.2;
+    const splitSecs = Number(Math.max(floorSecs, rawSplitSecs - flyingZoneSavings).toFixed(2));
+    return {
+      splitSecs,
+      phenotype: profile.phenotype,
+      rationale: `MaxV ${effectiveMss.toFixed(1)} m/s (${profile.phenotype}) drives ${distanceMeters}m leg`,
+    };
+  } else if (distanceMeters === 400) {
     // 400m weights Peak Speed / ASR (~70%) and glycolytic D' reserve (~30%)
     const dFactor = 0.55;
     const hyper400Mps =

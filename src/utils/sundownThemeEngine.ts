@@ -166,19 +166,13 @@ export function resolveEffectiveThemeState(params: {
   };
 }
 
-function readInitialDaytimePalette(): DaytimePalette {
+export function readInitialDaytimePalette(): DaytimePalette {
   try {
     const saved = localStorage.getItem(STORAGE_DAYTIME_KEY);
     if (saved === 'DAYLIGHT' || saved === 'TRACK_PINE') return saved;
     const legacy = localStorage.getItem(STORAGE_LEGACY_DARK_KEY);
     if (legacy === '1') return 'TRACK_PINE';
     if (legacy === '0') return 'DAYLIGHT';
-    if (
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-color-scheme: dark)').matches
-    ) {
-      return 'TRACK_PINE';
-    }
   } catch {
     // ignore storage access issues
   }

@@ -479,6 +479,7 @@ const TRUSTED_PROD_CORS_ORIGINS = new Set<string>([
   'https://thresh-dev.vercel.app',
   'https://aeropulse-eta.vercel.app',
   'https://thresh.app',
+  'https://thresh.fit',
 ]);
 
 function normalizeVercelHostToOrigin(host?: string): string | null {

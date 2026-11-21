@@ -155,7 +155,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
     try {
       return (
         typeof window !== 'undefined' &&
-        sessionStorage.getItem('thresh_onboarding_role') === 'COACH'
+        (localStorage.getItem('thresh_onboarding_role') === 'COACH' ||
+          sessionStorage.getItem('thresh_onboarding_role') === 'COACH')
       );
     } catch {
       return false;
@@ -905,15 +906,15 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <span
                             className="text-slate-600 dark:text-slate-300 font-medium"
-                            title={`Automatically transitions to Midnight Slate (P2) around local sunset (~${sunsetLabel12h})`}
+                            title={`Automatically transitions to Midnight Slate around local sunset (~${sunsetLabel12h})`}
                           >
                             Sundown ({sunsetLabel12h})
                           </span>
                           <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
                             {(
                               [
-                                { id: 'AUTO_MIDNIGHT_SLATE', label: 'Auto P2' },
-                                { id: 'ALWAYS_MIDNIGHT_SLATE', label: 'P2 Now' },
+                                { id: 'AUTO_MIDNIGHT_SLATE', label: 'Auto Dark' },
+                                { id: 'ALWAYS_MIDNIGHT_SLATE', label: 'Always Dark' },
                                 { id: 'DAYTIME_ONLY', label: 'Off' },
                               ] as const
                             ).map((opt) => (
@@ -939,7 +940,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                           <span>Active palette</span>
                           <span className="font-semibold text-slate-800 dark:text-slate-200">
                             {activeThemeVariant === 'MIDNIGHT_SLATE'
-                              ? 'Midnight Slate (P2)'
+                              ? 'Midnight Slate'
                               : activeThemeVariant === 'TRACK_PINE'
                                 ? 'Track Pine'
                                 : 'Daylight'}

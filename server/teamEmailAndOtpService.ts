@@ -61,7 +61,7 @@ export async function sendEmailViaResend(params: {
   }
 
   const fromAddress = (
-    process.env.RESEND_FROM_EMAIL || 'THRESH Coaching <onboarding@resend.dev>'
+    process.env.RESEND_FROM_EMAIL || 'THRESH Coaching <auth@thresh.fit>'
   ).trim();
 
   try {
@@ -155,12 +155,12 @@ export function buildTeamInviteEmailContent(params: {
     <div style="padding:28px;">
       <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hi <strong>${safeFirstName}</strong>,</p>
       <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">
-        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for daily training readiness, workout pacing pods, and post-workout performance analysis. Sign in with your free Strava account in one tap to claim your roster spot and choose what training summary you share.
+        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for workout pace groups, practice schedules, and split timing. Sign in with school Google or Email in one tap — no GPS watch or Strava required (optional watch sync anytime).
         ${safeSeed ? `<br/><span style="color:#065F46;font-size:13px;">Your initial zones are pre-seeded from <strong>${safeSeed}</strong>.</span>` : ''}
       </p>
       <div style="text-align:center;margin:24px 0;">
         <a href="${safeUrl}" style="display:inline-block;padding:14px 26px;border-radius:12px;background:${palette.primaryOnLight};color:${palette.textOnPrimaryLight};text-decoration:none;font-weight:700;font-size:15px;">
-          Sign In With Strava &amp; Join ${safeShortName} &rarr;
+          Sign In &amp; Join ${safeShortName} &rarr;
         </a>
       </div>
       <div style="padding:12px 16px;border-radius:12px;background:#F3F4F6;text-align:center;font-size:13px;color:#4B5563;">
@@ -176,7 +176,7 @@ export function buildTeamInviteEmailContent(params: {
     `Hi ${firstName},`,
     ``,
     `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on THRESH.`,
-    `Tap your personalized link to sign in with Strava and join in 45 seconds: ${magicJoinUrl}`,
+    `Tap your personalized link to sign in with Google or Email and join in 45 seconds (no GPS watch or Strava needed): ${magicJoinUrl}`,
     `Team Join Code: ${brand.joinCode}`,
     brand.defaultSafeSportShield
       ? `Safe-Sport Protection: Body weight & W/kg are hidden by default.`

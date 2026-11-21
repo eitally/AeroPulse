@@ -278,7 +278,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
             <button
               type="button"
               onClick={onOpenRosterModal}
-              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-300 flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-xs font-mono text-sky-700 dark:text-sky-300 flex items-center gap-1.5 cursor-pointer"
             >
               <Shield className="w-3.5 h-3.5" />
               <span>Connections &amp; Privacy</span>
@@ -382,10 +382,10 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => onExitSampleDemo(true)}
+              onClick={() => onExitSampleDemo(!isCoachMode)}
               className="ap-btn-strava !min-h-[44px] sm:!min-h-[32px] px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
             >
-              Connect with Strava
+              {isCoachMode ? 'Start Free Pilot' : 'Connect with Strava'}
             </button>
             <button
               type="button"

@@ -9,9 +9,14 @@ export type PlanPublishCadence = 'ROLLING_1W' | 'ROLLING_2W' | 'FULL_BLOCK';
 export type PlanPublishAudience =
   | 'SELF'
   | 'TEAM_ALL'
-  | 'EVENT_SPRINTS'
+  | 'EVENT_DISTANCE'
   | 'EVENT_MID_DISTANCE'
-  | 'EVENT_DISTANCE';
+  | 'EVENT_SPRINTS'
+  | 'EVENT_HURDLES'
+  | 'EVENT_JUMPS'
+  | 'EVENT_POLE_VAULT'
+  | 'EVENT_THROWS'
+  | 'EVENT_MULTI';
 
 export interface PlanWeekSourceItem {
   weekNum: number;
@@ -90,6 +95,51 @@ export function resolveAudienceCohortSpec(
         targetEventGroups: ['DISTANCE'],
         cohortLabel: 'Distance / XC Cohort',
         shortTag: 'DISTANCE',
+      };
+    case 'EVENT_HURDLES':
+      return {
+        audience,
+        isTeamBroadcast: true,
+        targetSquadGroup: 'ALL',
+        targetEventGroups: ['HURDLES'],
+        cohortLabel: 'Hurdles Cohort',
+        shortTag: 'HURDLES',
+      };
+    case 'EVENT_JUMPS':
+      return {
+        audience,
+        isTeamBroadcast: true,
+        targetSquadGroup: 'ALL',
+        targetEventGroups: ['JUMPS'],
+        cohortLabel: 'Jumps Cohort',
+        shortTag: 'JUMPS',
+      };
+    case 'EVENT_POLE_VAULT':
+      return {
+        audience,
+        isTeamBroadcast: true,
+        targetSquadGroup: 'ALL',
+        targetEventGroups: ['POLE_VAULT'],
+        cohortLabel: 'Pole Vault Cohort',
+        shortTag: 'POLE VAULT',
+      };
+    case 'EVENT_THROWS':
+      return {
+        audience,
+        isTeamBroadcast: true,
+        targetSquadGroup: 'ALL',
+        targetEventGroups: ['THROWS'],
+        cohortLabel: 'Throws Cohort',
+        shortTag: 'THROWS',
+      };
+    case 'EVENT_MULTI':
+      return {
+        audience,
+        isTeamBroadcast: true,
+        targetSquadGroup: 'ALL',
+        targetEventGroups: ['MULTI'],
+        cohortLabel: 'Multi-Events Cohort',
+        shortTag: 'MULTI',
       };
     case 'SELF':
     default:

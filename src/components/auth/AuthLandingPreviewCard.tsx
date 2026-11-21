@@ -12,6 +12,7 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
   const [specimenView, setSpecimenView] = useState<'SOLO' | 'COACH'>(() =>
     onboardingRole === 'COACH' ? 'COACH' : 'SOLO'
   );
+  const [coachPreviewTab, setCoachPreviewTab] = useState<'PODS' | 'SPLITS' | 'INJURY'>('PODS');
   const [isSimulatedFatigued, setIsSimulatedFatigued] = useState(false);
 
   useEffect(() => {
@@ -239,9 +240,35 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                           <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
                             Squad Safety Triage · Morning Check
                           </span>
-                          <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                            28 ACTIVE ROSTER
-                          </span>
+                          <div
+                            role="tablist"
+                            aria-label="Coach preview feature tabs"
+                            className="inline-flex ap-pill-track p-0.5 rounded-lg gap-0.5"
+                          >
+                            {(
+                              [
+                                { id: 'PODS', label: 'Pace Pods' },
+                                { id: 'SPLITS', label: '0.01s Splits' },
+                                { id: 'INJURY', label: 'Injury Check' },
+                              ] as const
+                            ).map((tab) => (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                role="tab"
+                                data-testid={`specimen-coach-tab-${tab.id.toLowerCase()}`}
+                                aria-selected={coachPreviewTab === tab.id}
+                                onClick={() => setCoachPreviewTab(tab.id)}
+                                className={`min-h-[32px] px-2 rounded-md text-2xs font-bold cursor-pointer transition-colors ${
+                                  coachPreviewTab === tab.id
+                                    ? 'ap-pill-active'
+                                    : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#166534] dark:bg-[#122B1B] dark:text-[#4ADE80] font-mono text-xs font-bold">
@@ -250,11 +277,11 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                           </span>
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] dark:bg-[#2E210C] dark:text-[#FBBF24] font-mono text-xs font-bold">
                             <span className="w-2 h-2 rounded-full bg-[#D97706]" />
-                            3 Auto-Modulated
+                            3 Dial Back
                           </span>
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FEE2E2] text-[#991B1B] dark:bg-[#321316] dark:text-[#F87171] font-mono text-xs font-bold">
                             <span className="w-2 h-2 rounded-full bg-[#DC2626]" />
-                            1 ACWR 1.48 Hold
+                            1 Shin Flag · Bike Swap
                           </span>
                         </div>
                       </div>
@@ -262,14 +289,26 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                       <div className="rounded-xl ap-card-inset p-3 space-y-1">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
-                            Trackside Pod Splits
+                            {coachPreviewTab === 'PODS'
+                              ? 'Distance & Track Pace Pods'
+                              : coachPreviewTab === 'SPLITS'
+                                ? 'Trackside Pod Splits'
+                                : '1-Tap Watchless Injury Check-In'}
                           </span>
                           <span className="font-mono tabular-nums text-xs font-bold text-[#3F6212] dark:text-[#A3E635]">
-                            0.01s PHONE STOPWATCH
+                            {coachPreviewTab === 'PODS'
+                              ? 'AUTO GROUPING BY PR'
+                              : coachPreviewTab === 'SPLITS'
+                                ? '0.01s PHONE STOPWATCH'
+                                : 'SHIN · KNEE · ACHILLES'}
                           </span>
                         </div>
                         <div className="font-mono tabular-nums text-xs sm:text-sm font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
-                          Varsity Pod A · 4 × 800m · Avg 2:18.42 · Spread 0.61s
+                          {coachPreviewTab === 'PODS'
+                            ? 'Sprints 6×30m · Hurdles 5H Rhythm · Jumps LJ 21\'6" · Throws 27x · Distance 5×1000m'
+                            : coachPreviewTab === 'SPLITS'
+                              ? 'Varsity 100m 10.92 / 4×100m 42.1 · 800m Avg 2:18.42 · LJ/HJ Marks · 0.01s PHONE STOPWATCH'
+                              : 'Maya R. flagged Left Shin 4/10 -> Swapped to Bike · Shoulder Check Clean'}
                         </div>
                       </div>
 
@@ -277,7 +316,7 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="w-2 h-2 rounded-full bg-[#16A34A] shrink-0" />
                           <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
-                            Willow Glen XC (<span className="font-mono">WGXC-26</span>) · Athletic.net
+                            Willow Glen Track &amp; Field (<span className="font-mono">WGTR-26</span>) · Athletic.net
                             Roster &amp; PRs Linked
                           </span>
                         </div>
@@ -345,8 +384,7 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                       <li className="flex items-start gap-2">
                         <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0 mt-1.5" />
                         <span>
-                          Spot <span className="font-mono">ACWR</span> overload early, including
-                          watchless high school athletes
+                          Catch shin soreness &amp; overload early — even without GPS watches
                         </span>
                       </li>
                       <li className="flex items-start gap-2">

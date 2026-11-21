@@ -18,7 +18,7 @@ async function signInAndEnterWorkspace(
   });
   expect(loginResp.ok()).toBe(true);
 
-  await page.goto('/?auth_just_signed_in=1');
+  await page.goto('/?auth_just_signed_in=1&role=athlete');
   const confirmStep2Btn = page.getByRole('button', { name: /Confirm & Continue/i });
   await expect(confirmStep2Btn).toBeVisible({ timeout: 15000 });
   await confirmStep2Btn.click();
@@ -180,7 +180,7 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     expect(rileyMembershipId).toBeTruthy();
 
     // Enter workspace via onboarding flow
-    await page.goto('/?auth_just_signed_in=1');
+    await page.goto('/?auth_just_signed_in=1&role=athlete');
     await page.getByRole('button', { name: /Confirm & Continue/i }).click();
     await page
       .getByRole('button', { name: /Skip for Now — Enter THRESH|Continue to THRESH/i })

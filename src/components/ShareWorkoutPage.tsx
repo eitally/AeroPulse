@@ -232,7 +232,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                 </span>
               </div>
               <p className="text-2xs text-slate-600 dark:text-slate-400 truncate">
-                Zero-auth interactive split preview &amp; Clean-Room PNG card
+                Dial splits to your PR · Save or share
               </p>
             </div>
           </div>

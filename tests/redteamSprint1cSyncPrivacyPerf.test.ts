@@ -419,7 +419,7 @@ describe('Sprint 1C: Cloud Sync, Strict Privacy Shield & Performance Hygiene (RT
 
     const indexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf8');
     expect(indexHtml).not.toContain('<!-- THESIS:');
-    expect(indexHtml).toContain('https://thresh-dev.vercel.app/brand/thresh-og-1200x630.png');
+    expect(indexHtml).toContain('https://thresh.fit/brand/thresh-og-1200x630.png');
 
     const rosterModalSrc = fs.readFileSync(
       path.join(process.cwd(), 'src/components/AthleteRosterModal.tsx'),

@@ -27,6 +27,7 @@ import {
   loadTeamDocRaw,
   maskEmailForDisplay,
   projectTeamSummaryForCaller,
+  sanitizeTargetEventGroups,
   saveTeamDocRaw,
   teamDocVaultKey,
   userTeamsVaultKey,
@@ -131,11 +132,7 @@ export async function broadcastWorkoutToTeamSquad(params: {
     const cleanTargets = Array.isArray(params.targetMembershipIds)
       ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
       : undefined;
-    const cleanEventGroups = Array.isArray(params.targetEventGroups)
-      ? params.targetEventGroups.filter(
-          (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const cleanEventGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
     const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
     const scheduledTime = sanitizeScheduledTime(params.scheduledTime);
@@ -247,11 +244,7 @@ export async function broadcastWorkoutBatchToTeamSquad(params: {
     const cleanTargets = Array.isArray(params.targetMembershipIds)
       ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean)
       : undefined;
-    const cleanEventGroups = Array.isArray(params.targetEventGroups)
-      ? params.targetEventGroups.filter(
-          (g): g is CoachEventGroup => g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const cleanEventGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const targetSquadGroup = String(params.targetSquadGroup || 'ALL').trim() || 'ALL';
     const cleanBlockId = params.planBlockId
       ? String(params.planBlockId).slice(0, 80)

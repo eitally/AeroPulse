@@ -7,10 +7,17 @@ import {
   withVaultLock,
 } from './tokenVault.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
-import { inferEventGroupFromSeedMark } from '../src/physiology/teamOnboardingEngine.ts';
+import {
+  inferEventGroupFromSeedMark,
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+} from '../src/physiology/teamOnboardingEngine.ts';
 import type {
+  FieldEventLogRecord,
   GuardianSafetyAlertRecord,
+  TeamAnnouncementRecord,
   TeamAthleteLiveSnapshot,
+  TeamAttendanceRecord,
   TeamBrandConfig,
   TeamBroadcastWorkout,
   TeamExternalSyncConfig,
@@ -22,7 +29,11 @@ import type {
   TeamWorkoutLibraryTemplate,
 } from '../src/types.ts';
 
-export { inferEventGroupFromSeedMark };
+export {
+  inferEventGroupFromSeedMark,
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+};
 
 export function canProgramWorkoutsRole(role?: TeamMemberRole | string): boolean {
   return role === 'HEAD_COACH' || role === 'ASSISTANT_COACH';
@@ -73,6 +84,9 @@ export interface StoredTeamDocument {
   workoutLibrary?: TeamWorkoutLibraryTemplate[];
   workoutComments?: TeamWorkoutComment[];
   guardianSafetyAlerts?: GuardianSafetyAlertRecord[];
+  attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
+  announcements?: TeamAnnouncementRecord[];
+  fieldMarkLogs?: FieldEventLogRecord[];
   anonymousLinkOpens?: number;
   updatedAt: string;
 }
@@ -393,6 +407,9 @@ export function projectTeamSummaryForCaller(
       role: m.role,
       squadGroup: m.squadGroup,
       ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
+      ...(isStaffViewer && Array.isArray(m.coachEventGroups) && m.coachEventGroups.length > 0
+        ? { coachEventGroups: m.coachEventGroups }
+        : {}),
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : undefined,
@@ -491,6 +508,21 @@ export function projectTeamSummaryForCaller(
     return a.targetMembershipId === myMembership.membershipId;
   });
 
+  const visibleAnnouncements = (doc.announcements || []).filter((ann) => {
+    if (isStaffViewer) return true;
+    if (isParentFollower) return Boolean(ann.publishToParentHub);
+    if (!Array.isArray(ann.targetEventGroups) || ann.targetEventGroups.length === 0) {
+      return true;
+    }
+    return Boolean(myMembership.eventGroup) && ann.targetEventGroups.includes(myMembership.eventGroup!);
+  });
+
+  const visibleFieldMarks = isParentFollower
+    ? []
+    : isStaffViewer
+      ? doc.fieldMarkLogs || []
+      : (doc.fieldMarkLogs || []).filter((f) => f.membershipId === myMembership.membershipId);
+
   return {
     brand: {
       ...doc.brand,
@@ -499,6 +531,9 @@ export function projectTeamSummaryForCaller(
     myRole: myMembership.role,
     mySquadGroup: myMembership.squadGroup,
     ...(myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {}),
+    ...(Array.isArray(myMembership.coachEventGroups) && myMembership.coachEventGroups.length > 0
+      ? { myCoachEventGroups: myMembership.coachEventGroups }
+      : {}),
     myMembershipId: myMembership.membershipId,
     totalInvited,
     openedCount,
@@ -509,6 +544,9 @@ export function projectTeamSummaryForCaller(
     ...(isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] }),
     workoutComments: visibleComments,
     guardianSafetyAlerts: visibleSafetyAlerts,
+    ...(isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {}),
+    announcements: visibleAnnouncements,
+    ...(isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks }),
   };
 }
 

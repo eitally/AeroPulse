@@ -1,5 +1,12 @@
 import express, { type Request, type Response } from 'express';
 import {
+  deleteTeamAnnouncement,
+  postTeamAnnouncement,
+  recordTeamAttendanceBatch,
+  recordTeamFieldMarks,
+  updateAssistantCoachEventGroups,
+} from '../teamFieldAndDailyOpsService.ts';
+import {
   escapeHtml,
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
@@ -12,6 +19,7 @@ import { getScopedRuntimeStore } from '../sessionContext.ts';
 import {
   declineAndPurgeParentConsent,
   graduateTeamClass,
+  issueOrResendParentConsentLink,
   leaveOrGraduateTeam,
   mergeDuplicateRosterMembers,
   previewParentConsentToken,
@@ -50,6 +58,10 @@ import {
   updateTeamMemberEventGroup,
   verifyEmailOtpCode,
 } from '../teamService.ts';
+import {
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+} from '../../src/physiology/teamOnboardingEngine.ts';
 import type {
   CoachDataSharingTier,
   CoachEventGroup,
@@ -410,6 +422,7 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       parentGuardianEmail: req.body?.parentGuardianEmail
         ? String(req.body.parentGuardianEmail).trim()
         : undefined,
+      deferParentEmail: Boolean(req.body?.deferParentEmail),
     });
 
     if (!claimed.ok || !claimed.summary) {
@@ -485,12 +498,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
       ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : undefined;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
-      ? req.body.targetEventGroups.filter(
-          (g: unknown): g is CoachEventGroup =>
-            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
@@ -543,12 +551,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast-batch', async (req: Reque
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
       ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : undefined;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
-      ? req.body.targetEventGroups.filter(
-          (g: unknown): g is CoachEventGroup =>
-            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
     const updated = await broadcastWorkoutBatchToTeamSquad({
       callerSid: claims.sid,
@@ -685,7 +688,7 @@ teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Reques
   }
 });
 
-// 11c. Update Roster Member Event Group ('SPRINTS' | 'MID_DISTANCE' | 'DISTANCE' | null)
+// 11c. Update Roster Member Event Group
 teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -693,11 +696,7 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
-    const rawGroup = req.body?.eventGroup;
-    const eventGroup: CoachEventGroup | null =
-      rawGroup === 'SPRINTS' || rawGroup === 'MID_DISTANCE' || rawGroup === 'DISTANCE'
-        ? rawGroup
-        : null;
+    const eventGroup: CoachEventGroup | null = normalizeCoachEventGroup(req.body?.eventGroup);
     const originUrl = resolveRequestOrigin(req);
     const updated = await updateTeamMemberEventGroup({
       callerSid: claims.sid,
@@ -899,6 +898,49 @@ teamRouter.patch(
       res.status(400).json({
         ok: false,
         error: err instanceof Error ? err.message : 'Failed updating member status.',
+      });
+    }
+  }
+);
+
+// 11e-bis. Coach Issue / Resend 1-Click Parent Consent Link
+teamRouter.post(
+  '/api/teams/:teamId/members/:membershipId/parent-consent-link',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await issueOrResendParentConsentLink({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        membershipId: String(req.params.membershipId || ''),
+        originUrl,
+        parentGuardianEmail: req.body?.parentGuardianEmail
+          ? String(req.body.parentGuardianEmail).trim()
+          : undefined,
+      });
+      if (!outcome.ok) {
+        const isAuthError = /permission/i.test(outcome.error || '');
+        res.status(isAuthError ? 403 : 400).json({
+          ok: false,
+          error: outcome.error || 'Could not issue parent consent link.',
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        consentUrl: outcome.consentUrl,
+        emailStatus: outcome.emailStatus,
+        team: outcome.team,
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed issuing parent consent link.',
       });
     }
   }
@@ -1376,6 +1418,231 @@ teamRouter.post('/api/teams/:teamId/comments', async (req: Request, res: Respons
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed posting workout comment.',
+    });
+  }
+});
+
+// ============================================================================
+// 17. Wave 1B / Wave 2 Daily Ops, Attendance, Announcements & Field Marks
+// ============================================================================
+
+teamRouter.post('/api/teams/:teamId/attendance', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      date?: unknown;
+      entries?: Array<{ membershipId?: unknown; status?: unknown; note?: unknown }>;
+    };
+    const entries = Array.isArray(body.entries)
+      ? body.entries.map((entry) => ({
+          membershipId: String(entry?.membershipId || ''),
+          status: String(entry?.status || 'PRESENT') as 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED',
+          note: typeof entry?.note === 'string' ? entry.note : undefined,
+        }))
+      : [];
+    const result = await recordTeamAttendanceBatch({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      date: String(body.date || ''),
+      entries,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({
+        ok: false,
+        error: result.error || 'Unable to record attendance.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, recordedCount: result.recordedCount, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed recording attendance.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/announcements', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      title?: unknown;
+      body?: unknown;
+      category?: unknown;
+      targetEventGroups?: unknown;
+      publishToParentHub?: unknown;
+    };
+    const result = await postTeamAnnouncement({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      title: String(body.title || ''),
+      body: String(body.body || ''),
+      category: typeof body.category === 'string'
+        ? (body.category as 'WEATHER' | 'SCHEDULE_CHANGE' | 'MEET_LOGISTICS' | 'GENERAL')
+        : undefined,
+      targetEventGroups: Array.isArray(body.targetEventGroups)
+        ? body.targetEventGroups.map((g) => String(g) as import('../../src/types.ts').CoachEventGroup)
+        : undefined,
+      publishToParentHub: body.publishToParentHub === true,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({
+        ok: false,
+        error: result.error || 'Unable to post announcement.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, announcement: result.announcement, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed posting announcement.',
+    });
+  }
+});
+
+teamRouter.delete('/api/teams/:teamId/announcements/:announcementId', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await deleteTeamAnnouncement({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      announcementId: String(req.params.announcementId || ''),
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({
+        ok: false,
+        error: result.error || 'Unable to delete announcement.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed deleting announcement.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/field-marks', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      entries?: Array<{
+        membershipId?: unknown;
+        athleteName?: unknown;
+        date?: unknown;
+        eventCode?: unknown;
+        isCompetition?: unknown;
+        meetOrPracticeTitle?: unknown;
+        implementSpec?: unknown;
+        poleSpec?: unknown;
+        approachSteps?: unknown;
+        attempts?: unknown;
+        multiPoints?: unknown;
+        rpe?: unknown;
+      }>;
+    };
+    const entries = Array.isArray(body.entries)
+      ? body.entries.map((entry) => ({
+          membershipId: typeof entry?.membershipId === 'string' ? entry.membershipId : undefined,
+          athleteName: String(entry?.athleteName || ''),
+          date: String(entry?.date || ''),
+          eventCode: String(entry?.eventCode || 'LJ') as import('../../src/types.ts').FieldEventCode,
+          isCompetition: entry?.isCompetition === true,
+          meetOrPracticeTitle: typeof entry?.meetOrPracticeTitle === 'string' ? entry.meetOrPracticeTitle : undefined,
+          implementSpec: typeof entry?.implementSpec === 'string' ? entry.implementSpec : undefined,
+          poleSpec: typeof entry?.poleSpec === 'string' ? entry.poleSpec : undefined,
+          approachSteps: typeof entry?.approachSteps === 'number' ? entry.approachSteps : undefined,
+          attempts: Array.isArray(entry?.attempts)
+            ? (entry.attempts as import('../../src/types.ts').FieldTrialEntry[])
+            : [],
+          multiPoints: typeof entry?.multiPoints === 'number' ? entry.multiPoints : undefined,
+          rpe: typeof entry?.rpe === 'number' ? entry.rpe : undefined,
+        }))
+      : [];
+    const result = await recordTeamFieldMarks({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      entries,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({
+        ok: false,
+        error: result.error || 'Unable to record field marks.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, recordedCount: result.recordedCount, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed recording field marks.',
+    });
+  }
+});
+
+teamRouter.patch('/api/teams/:teamId/members/:membershipId/coach-groups', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as { coachEventGroups?: unknown };
+    const coachEventGroups = Array.isArray(body.coachEventGroups)
+      ? body.coachEventGroups.map((g) => String(g) as import('../../src/types.ts').CoachEventGroup)
+      : [];
+    const result = await updateAssistantCoachEventGroups({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      membershipId: String(req.params.membershipId || ''),
+      coachEventGroups,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(403).json({
+        ok: false,
+        error: result.error || 'Unable to update assistant coach groups.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed updating assistant coach groups.',
     });
   }
 });

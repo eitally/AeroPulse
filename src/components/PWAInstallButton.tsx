@@ -116,9 +116,9 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
   );
 };
 
-export const OfflineIndicator: React.FC = () => {
+export const OfflineIndicator: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const isOnline = useOnlineStatus();
-  if (isOnline) return null;
+  if (hidden || isOnline) return null;
 
   return (
     <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 left-3 right-3 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-400 border border-amber-600/40 px-3.5 py-2 text-xs font-semibold text-ap-obsidian shadow-lg">

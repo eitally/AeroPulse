@@ -4,11 +4,14 @@ import {
   type EndurancePlanArchetypeId,
 } from '../../physiology/cyclingPrescriptionEngine';
 
+import type { AllTrackFieldArchetypeId } from '../../physiology/allEventsPlanEngine';
+
 export type TrackArchetypeId =
   | 'TRACK_800M'
   | 'TRACK_1500_MILE'
   | 'TRACK_3000_3200M'
-  | 'TRACK_5000M';
+  | 'TRACK_5000M'
+  | AllTrackFieldArchetypeId;
 
 export type GoalArchetypeId = TrackArchetypeId | EndurancePlanArchetypeId;
 
@@ -75,6 +78,61 @@ export const TRACK_ARCHETYPES: GoalArchetypeTemplate[] = [
     defaultWeeks: 16,
     trackEventGroup: '5000M',
     targetProgressionLevels: [8.6, 8.8, 9.0, 8.9, 7.2, 6.2],
+  },
+  {
+    id: 'TRACK_SPRINTS',
+    category: 'TRACK',
+    badge: 'Track · Sprints (100m / 200m / 400m)',
+    title: 'Sprints & 4×100m / 4×400m Speed Build',
+    subtitle: 'Block Acceleration, Fly-30m MaxV, Wickets & Relay Handoff Progression',
+    sportCategory: 'Running',
+    targetLabel: 'Blocks · Fly 30m · SE',
+    defaultWeeks: 12,
+    targetProgressionLevels: [6.0, 6.8, 7.6, 8.4, 8.8, 9.2],
+  },
+  {
+    id: 'TRACK_HURDLES',
+    category: 'TRACK',
+    badge: 'Track · Hurdles (100H / 110H / 300H)',
+    title: 'Hurdles Rhythm & Stride Pattern Peak',
+    subtitle: '3-Step Lead/Trail Attack, 300mH Curve Rhythm & Speed Maintenance',
+    sportCategory: 'Running',
+    targetLabel: '3-Step · 300H · Fast Leg',
+    defaultWeeks: 12,
+    targetProgressionLevels: [6.2, 7.0, 7.8, 8.5, 8.9, 9.1],
+  },
+  {
+    id: 'TRACK_JUMPS_PV',
+    category: 'TRACK',
+    badge: 'Field · Jumps & Pole Vault',
+    title: 'Runway Approach, Jumps & Pole Vault Progression',
+    subtitle: 'Board Accuracy, Short-Run Plant/Vaults & Elastic Tendon Prehab',
+    sportCategory: 'Running',
+    targetLabel: 'Runway · Plant · Elasticity',
+    defaultWeeks: 12,
+    targetProgressionLevels: [6.0, 6.7, 7.4, 8.0, 8.3, 8.6],
+  },
+  {
+    id: 'TRACK_THROWS',
+    category: 'TRACK',
+    badge: 'Field · Shot, Discus & Javelin',
+    title: 'Throws Power Ring & Contrast Peak',
+    subtitle: 'Standing/Full Ring Tech, Heavy/Light Implement Contrast & Shoulder Care',
+    sportCategory: 'Running',
+    targetLabel: 'Stands · Full Ring · Contrast',
+    defaultWeeks: 12,
+    targetProgressionLevels: [6.0, 6.6, 7.3, 7.9, 8.2, 8.5],
+  },
+  {
+    id: 'TRACK_MULTI',
+    category: 'TRACK',
+    badge: 'Combined · Pent / Hept / Dec',
+    title: 'Multi-Events Balanced Track & Field Peak',
+    subtitle: 'Sequenced Hurdles + Jumps + Throws + Closing 800m/1500m Durability',
+    sportCategory: 'Running',
+    targetLabel: 'Hurdles · Jumps · Throws · 800/1500',
+    defaultWeeks: 12,
+    targetProgressionLevels: [6.5, 7.2, 7.9, 8.5, 8.7, 8.9],
   },
 ];
 

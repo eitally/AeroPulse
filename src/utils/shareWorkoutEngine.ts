@@ -384,7 +384,7 @@ export async function renderShareCardPngBlob(opts: {
   ctx.fillRect(84, 1218, 912, 2);
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 20px ui-monospace, SFMono-Regular, monospace';
-  ctx.fillText('FIRST-PARTY CLEAN-ROOM WORKOUT  ·  THRESH.RUN/SHARE', 84, 1244);
+  ctx.fillText('TIMED ON THRESH  ·  THRESH.FIT/SHARE', 84, 1244);
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png');

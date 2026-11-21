@@ -491,7 +491,7 @@ export const PRESS_BOILERPLATES: PressBoilerplateSpec[] = [
     id: 'one-line',
     label: 'Partner Directory 1-Liner',
     wordCountLabel: '18 words',
-    text: 'THRESH — Run & Ride Readiness: endurance physiology, Banister load, adaptive track prescriptions, and 0.01s team split timing.',
+    text: 'THRESH — Track, XC & Endurance Coaching Lab uniting team pace pods, watchless 0.01s split timing, Banister load, and 1Hz endurance physiology.',
   },
   {
     id: 'short-35',
@@ -503,6 +503,6 @@ export const PRESS_BOILERPLATES: PressBoilerplateSpec[] = [
     id: 'standard-75',
     label: 'Full Press & Partner Boilerplate',
     wordCountLabel: '72 words',
-    text: 'THRESH (https://thresh.app) is an endurance telemetry and coaching cockpit serving both self-coached athletes and high school, NCAA collegiate, and club programs. Built around calibrated Banister CTL/ATL/TSB load, 2-parameter CS + D’ speed-reserve pacing, and closed-loop daily readiness morphing, THRESH bridges 1Hz wearable files, binary .FIT workout exports, watchless 0.01s multi-runner stopwatch splits, CARA 20-hour compliance audits, and default U18 Safe-Sport weight shielding with honest Day-1 calibration.',
+    text: 'THRESH (https://thresh.fit) is a track, cross country, and endurance coaching lab serving high school, collegiate, and club programs alongside self-coached athletes. Uniting watchless 0.01s multi-runner stopwatch splits, auto-scaled pace pods, U18 Safe-Sport weight shielding, CARA 20-hour compliance audits, and calibrated Banister CTL/ATL/TSB + 1Hz durability telemetry, THRESH replaces fragmented clipboards and static spreadsheets in one workspace.',
   },
 ];

@@ -20,10 +20,10 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'THRESH — Run & Ride Readiness',
+          name: 'THRESH — Track, XC & Endurance Coaching Lab',
           short_name: 'THRESH',
           description:
-            'Autonomous dual-sport threshold physiology, overnight HRV & sleep calibration, Banister load, and adaptive coaching.',
+            'Coach clipboard, auto-scaled distance pace pods, watchless 0.01s trackside stopwatch, and 1Hz endurance physiology for teams and athletes.',
           theme_color: '#0C1D14',
           background_color: '#0C1D14',
           display: 'standalone',
@@ -58,6 +58,7 @@ export default defineConfig(() => {
             '**/brand/**',
             '**/docs/**',
             '**/legal/**',
+            '**/for-athletic-directors.html',
             '**/assets/vendor-leaflet-*',
             '**/assets/vendor-uplot-*',
             '**/assets/FitnessHealthView-*',
@@ -96,7 +97,7 @@ export default defineConfig(() => {
             /^\/api\//,
             /^\/auth\//,
             /^\/docs(\/|$)/,
-            /^\/(legal|privacy|terms|subprocessors|procurement)(\/|$)/,
+            /^\/(legal|privacy|terms|subprocessors|procurement|for-athletic-directors)(\/|$)/,
           ],
           runtimeCaching: [
             {

@@ -877,7 +877,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
         </div>
 
         <div className="ap-card-inset rounded-xl px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-300">
-          Write <strong>THRESH</strong> in ALL-CAPS across UI, print, meet sheets, and press copy (e.g. <em>THRESH — Run &amp; Ride Readiness</em>); use lowercase only inside web domains (<code className="font-mono">https://thresh.app</code>).
+          Write <strong>THRESH</strong> in ALL-CAPS across UI, print, meet sheets, and press copy (e.g. <em>THRESH — Track, XC &amp; Endurance Coaching Lab</em>); use lowercase only inside web domains (<code className="font-mono">https://thresh.fit</code>).
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -914,7 +914,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
             Factual Press &amp; API Partner Boilerplate
           </h3>
           <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
-            Zero fabricated metrics or pricing · OPS-03 ready
+            Factual specifications &amp; partner copy
           </span>
         </div>
 

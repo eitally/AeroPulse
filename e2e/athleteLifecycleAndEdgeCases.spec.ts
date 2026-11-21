@@ -63,7 +63,15 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
     const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     await signInViaDevMagicLink(page, `u13.check.${unique}@example.com`);
 
+    const switchAthleteBtn = page.getByRole('button', {
+      name: /Switch to personal Athlete setup instead/i,
+    });
     const birthYearInput = page.locator('input[type="number"][min="1920"]');
+    await expect(switchAthleteBtn.or(birthYearInput)).toBeVisible({ timeout: 15000 });
+    if (await switchAthleteBtn.isVisible()) {
+      await switchAthleteBtn.click();
+    }
+
     await expect(birthYearInput).toBeVisible({ timeout: 15000 });
     await birthYearInput.fill(String(new Date().getFullYear() - 10));
 

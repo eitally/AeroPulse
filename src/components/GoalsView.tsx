@@ -40,6 +40,10 @@ import {
   parseTrackMarkClockInput,
 } from '../physiology/trackSpeedReserveEngine';
 import {
+  generateAllEventsTrackPlan,
+  type AllTrackFieldArchetypeId,
+} from '../physiology/allEventsPlanEngine';
+import {
   formatTrackSplitToken,
   generatePeriodizedTrackPlan,
   type TrackStartingPhaseOption,
@@ -442,32 +446,51 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     longDayOffset,
   ]);
 
-  // Unified Periodized Weeks (Track Oval Engine OR Endurance Cycling/Road Engine + Inline Session Overrides)
+  // Unified Periodized Weeks (Track Oval Engine, All-Events Sprint/Hurdle/Field Engine, OR Endurance Engine)
+  const isAllTfEventPlan =
+    selectedArchetype.id === 'TRACK_SPRINTS' ||
+    selectedArchetype.id === 'TRACK_HURDLES' ||
+    selectedArchetype.id === 'TRACK_JUMPS_PV' ||
+    selectedArchetype.id === 'TRACK_THROWS' ||
+    selectedArchetype.id === 'TRACK_MULTI';
+
   const generatedPlanWeeks = useMemo(() => {
+    const formatTrackWeekRows = (weeks: Array<{ weekNum: number; startDate: string; phaseLabel: string; isDeload: boolean; isTaper: boolean; targetTss: number; targetHours: number; zoneDistributionPct: [number, number, number, number, number, number]; sessions: PlannedWorkoutEvent[] }>) =>
+      weeks.map((wk) => ({
+        weekNum: wk.weekNum,
+        startDateIso: wk.startDate,
+        phase: wk.phaseLabel,
+        isDeload: wk.isDeload,
+        isTaper: wk.isTaper,
+        targetTss: wk.targetTss,
+        targetHours: wk.targetHours.toFixed(1),
+        zoneDistributionPct: wk.zoneDistributionPct,
+        sessions: wk.sessions.map((s) => ({
+          date: s.date,
+          name: s.name,
+          sportCategory: s.sportCategory,
+          environmentPreference:
+            blockEnvPref === 'FLEXIBLE' ? s.environmentPreference : blockEnvPref,
+          plannedDurationSecs: s.plannedDurationSecs,
+          plannedLoad: s.plannedLoad,
+          workoutSyntax: s.workoutSyntax || '',
+          description: s.description,
+          trackSpec: s.trackSpec,
+          replaceExistingDate: true,
+        })),
+      }));
+
     const rawWeeks = trackPlanBundle
-      ? trackPlanBundle.weeks.map((wk) => ({
-          weekNum: wk.weekNum,
-          startDateIso: wk.startDate,
-          phase: wk.phaseLabel,
-          isDeload: wk.isDeload,
-          isTaper: wk.isTaper,
-          targetTss: wk.targetTss,
-          targetHours: wk.targetHours.toFixed(1),
-          zoneDistributionPct: wk.zoneDistributionPct,
-          sessions: wk.sessions.map((s) => ({
-            date: s.date,
-            name: s.name,
-            sportCategory: s.sportCategory,
-            environmentPreference:
-              blockEnvPref === 'FLEXIBLE' ? s.environmentPreference : blockEnvPref,
-            plannedDurationSecs: s.plannedDurationSecs,
-            plannedLoad: s.plannedLoad,
-            workoutSyntax: s.workoutSyntax || '',
-            description: s.description,
-            trackSpec: s.trackSpec,
-            replaceExistingDate: true,
-          })),
-        }))
+      ? formatTrackWeekRows(trackPlanBundle.weeks)
+      : isAllTfEventPlan
+        ? formatTrackWeekRows(
+            generateAllEventsTrackPlan({
+              archetypeId: selectedArchetype.id as AllTrackFieldArchetypeId,
+              startDateIso: resolvedStartMondayIso,
+              blockWeeks,
+              selectedWeekdays,
+            })
+          )
       : generateEnduranceTrainingPlan({
           archetypeId: selectedArchetype.id as EndurancePlanArchetypeId,
           startDateIso: resolvedStartMondayIso,
@@ -499,6 +522,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
     });
   }, [
     trackPlanBundle,
+    isAllTfEventPlan,
     selectedArchetype.id,
     resolvedStartMondayIso,
     blockWeeks,
@@ -1393,9 +1417,14 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                         ? `Entire Team (${activeTeam.brand.shortName})`
                         : 'Entire Team Squad'}
                     </option>
-                    <option value="EVENT_SPRINTS">Sprints Cohort (100m–400m)</option>
-                    <option value="EVENT_MID_DISTANCE">800m / Mile Cohort</option>
                     <option value="EVENT_DISTANCE">Distance / XC Cohort (3K–10K)</option>
+                    <option value="EVENT_MID_DISTANCE">Mid-Distance (800m / Mile)</option>
+                    <option value="EVENT_SPRINTS">Sprints Cohort (100m–400m)</option>
+                    <option value="EVENT_HURDLES">Hurdles Cohort (100H–400H)</option>
+                    <option value="EVENT_JUMPS">Jumps Cohort (LJ / TJ / HJ)</option>
+                    <option value="EVENT_POLE_VAULT">Pole Vault Cohort</option>
+                    <option value="EVENT_THROWS">Throws Cohort (SP / Discus / Jav)</option>
+                    <option value="EVENT_MULTI">Multi-Events (Pent / Hept / Dec)</option>
                   </select>
                   {publishAudience !== 'SELF' && connectedRoster.length > 0 && (
                     <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">

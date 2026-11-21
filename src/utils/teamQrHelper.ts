@@ -325,8 +325,8 @@ export function openPrintableTeamPosterWindow(
       <div><span class="code-pill">${escapeTextForSafeAttr(brand.joinCode)}</span></div>
       <div class="steps">
         <div class="step"><strong>1. Scan QR or Open Link</strong>Your school/club profile &amp; squad settings load automatically.</div>
-        <div class="step"><strong>2. Sign In With Strava</strong>Authenticate via Strava, choose your workout sync preference, and optionally enter a recent race time.</div>
-        <div class="step"><strong>3. Check Morning Brief</strong>Wake up to your 7-day Productive Training verdict &amp; coach workouts.</div>
+        <div class="step"><strong>2. Sign In With Google or Email</strong>Use your school Google account or email (no GPS watch or Strava required) and optionally enter a recent race time.</div>
+        <div class="step"><strong>3. Check Daily Practice</strong>See your workout pace group, trackside splits, and readiness check-in.</div>
       </div>
       ${safeSportNote}
     </div>
@@ -371,7 +371,7 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
   const repHeaders = Array.from({ length: repCols }, (_, i) => `<th>R${i + 1}</th>`).join('');
   const emptyBoxes = Array.from({ length: repCols }, () => '<td class="rep-box"></td>').join('');
 
-  const podCards = (pods || []).slice(0, 4).map((pod) => {
+  const podCards = (pods || []).map((pod) => {
     const targetSplit =
       pod.targetRepSplitSecs ??
       Number(((pod.targetPaceSecsPerKm / 1000) * Math.max(150, repDistanceMeters)).toFixed(1));
@@ -425,6 +425,16 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     </section>`;
   });
 
+  const podPages: string[] = [];
+  for (let i = 0; i < podCards.length; i += 4) {
+    const chunk = podCards.slice(i, i + 4).join('');
+    const breakStyle = i > 0 ? ' style="page-break-before: always;"' : '';
+    podPages.push(`<main class="pod-grid"${breakStyle}>${chunk}</main>`);
+  }
+  if (podPages.length === 0) {
+    podPages.push('<main class="pod-grid"></main>');
+  }
+
   return `<!doctype html>
 <html>
 <head>
@@ -456,6 +466,7 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     .ath-name { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; color: #0E1712; white-space: nowrap; }
     .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #43574B; font-size: 11px; }
     .rep-box { border-left: 1px solid #C9D7CF; min-width: 28px; height: 20px; }
+    .sheet-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid #C9D7CF; display: flex; justify-content: space-between; align-items: center; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #43574B; font-weight: 600; }
     .no-print { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     @media print { body { background: #FFFFFF; padding: 0; } .no-print { display: none !important; } }
   </style>
@@ -471,7 +482,11 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     </div>
     <div class="banner-meta">${escapeTextForSafeAttr(dateStr)} · ${repCount} × ${repDistanceMeters}m · Rest: ${escapeTextForSafeAttr(recoveryLabel)}</div>
   </div>
-  <main class="pod-grid">${podCards.join('')}</main>
+  ${podPages.join('')}
+  <footer class="sheet-footer">
+    <span>Auto-scaled Pace Pods &amp; 0.01s Watchless Splits · THRESH</span>
+    <span>https://thresh.fit</span>
+  </footer>
 </body>
 </html>`;
 }

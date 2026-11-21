@@ -87,8 +87,8 @@ test.describe('Athletic.net & TFRRS Team Sync + Safe-Sport Clean-Room Parent Hub
     await expect(hubPage).toContainText('Lucas Alvarez');
     await expect(hubPage).toContainText('15:18.40');
 
-    // Verify Safe-Sport Clean-Room notice and absence of sensitive biometric fields
-    await expect(hubPage).toContainText('Safe-Sport Clean-Room Hub');
+    // Verify Safe-Sport notice and absence of sensitive biometric fields
+    await expect(hubPage).toContainText('Safe-Sport Team Hub');
 
     // Verify Light + Dark mode zero horizontal overflow and >= 44px mobile touch targets
     await assertZeroHorizontalOverflow(page);
