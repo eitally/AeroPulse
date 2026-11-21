@@ -289,6 +289,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
+  const [isTeamMessagesOpen, setIsTeamMessagesOpen] = useState<boolean>(false);
   const [rosterInitialTab, setRosterInitialTab] = useState<RosterTab>('CONNECT_INVITE');
   const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
   const [guideInitialChapter, setGuideInitialChapter] =
@@ -2253,6 +2254,7 @@ export default function App() {
           anySourceConnected={anySourceConnected}
           onOpenDataSources={handleOpenDataSourcesModal}
           onOpenCoach={handleOpenCoachDrawerModal}
+          onOpenTeamMessages={() => setIsTeamMessagesOpen(true)}
           isDark={isDark}
           onToggleDark={toggleQuickLightDark}
           activeThemeVariant={activeThemeVariant}
@@ -2393,6 +2395,8 @@ export default function App() {
         />
 
         <CockpitModals
+          isTeamMessagesOpen={isTeamMessagesOpen}
+          onCloseTeamMessages={() => setIsTeamMessagesOpen(false)}
           isCoachDrawerOpen={isCoachDrawerOpen}
           onCloseCoachDrawer={() => setIsCoachDrawerOpen(false)}
           isProfileModalOpen={isProfileModalOpen}

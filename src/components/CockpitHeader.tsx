@@ -27,6 +27,7 @@ import {
   TrendingUp,
   HelpCircle,
   LogOut,
+  MessageSquare,
 } from './icons/PhosphorIcons';
 import type {
   ActiveTab,
@@ -69,6 +70,7 @@ export interface CockpitHeaderProps {
   anySourceConnected: boolean;
   onOpenDataSources: () => void;
   onOpenCoach: () => void;
+  onOpenTeamMessages?: () => void;
   isDark: boolean;
   onToggleDark: () => void;
   activeThemeVariant?: EffectiveThemeVariant;
@@ -130,6 +132,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   anySourceConnected,
   onOpenDataSources,
   onOpenCoach,
+  onOpenTeamMessages,
   currentUser,
   effectiveActivities,
   effectiveAthleteProfile,
@@ -550,7 +553,25 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </div>
             )}
 
-            {/* Right Utility Cluster: Floating Live Stopwatch (active only) + Athlete Switcher + AI Coach + Theme + Account */}
+            {/* Right Utility Cluster: Floating Live Stopwatch (active only) + Athlete Switcher + Team Chat + AI Coach + Theme + Account */}
+
+            {activeTeam && onOpenTeamMessages && (
+              <button
+                type="button"
+                data-testid="open-team-messages-btn"
+                onClick={onOpenTeamMessages}
+                aria-label="Open Team Messaging"
+                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-3 rounded-xl ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
+              >
+                <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5 ap-text-brand" />
+                <span className="hidden sm:inline">Team Chat</span>
+                {(activeTeam.teamMessages?.length || 0) > 0 && (
+                  <span className="hidden sm:inline px-1.5 py-0.2 rounded-full text-2xs font-mono font-bold ap-nav-volt-active">
+                    {activeTeam.teamMessages!.length}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* AI Coach Action Button — Stadium Pine Instrument Pill */}
             <button
