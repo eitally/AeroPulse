@@ -647,6 +647,16 @@ export async function getPublicTeamHubBySlugOrCode(
     upcomingMeets,
     recentSchedule,
     rosterLeaderboard,
+    announcements: (doc.announcements || [])
+      .filter((a) => a.publishToParentHub)
+      .slice(0, 6)
+      .map((a) => ({
+        id: a.id,
+        title: a.title,
+        body: a.body,
+        category: a.category,
+        createdAt: a.createdAt,
+      })),
     stats: {
       athleteCount: rosterLeaderboard.length,
       meetCount: meetItems.length,

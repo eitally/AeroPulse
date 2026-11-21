@@ -89,7 +89,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   const [quickTrackType, setQuickTrackType] = useState<OfficialTrackSurface>('OUTDOOR_400M');
   const [quickPlaceFinish, setQuickPlaceFinish] = useState<string>('1st (Final)');
   const [quickWindReading, setQuickWindReading] = useState<string>('+0.8 m/s');
-  const [quickSplitDistance, setQuickSplitDistance] = useState<200 | 400 | 1000>(400);
+  const [quickSplitDistance, setQuickSplitDistance] = useState<60 | 100 | 200 | 400 | 1000>(400);
   const [quickSplitsInput, setQuickSplitsInput] = useState<string>('56.82, 59.02');
   const [quickIncludeWarmup, setQuickIncludeWarmup] = useState<boolean>(true);
   const [rawGpsDistanceInput, setRawGpsDistanceInput] = useState<string>('814');
@@ -116,6 +116,13 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
     setRawGpsDistanceInput(String(Math.round(def.distanceMeters * 1.016)));
 
     const presetTimes: Record<string, { time: string; splits: string; surface: OfficialTrackSurface }> = {
+      '60m': { time: '6.94', splits: '6.94', surface: 'INDOOR_FLAT_200M' },
+      '100m': { time: '10.84', splits: '10.84', surface: 'OUTDOOR_400M' },
+      '200m': { time: '21.92', splits: '21.92', surface: 'OUTDOOR_400M' },
+      '100mH': { time: '14.12', splits: '14.12', surface: 'OUTDOOR_400M' },
+      '110mH': { time: '14.08', splits: '14.08', surface: 'OUTDOOR_400M' },
+      '300mH': { time: '38.45', splits: '18.90, 19.55', surface: 'OUTDOOR_400M' },
+      '400mH': { time: '52.84', splits: '25.40, 27.44', surface: 'OUTDOOR_400M' },
       '400m': { time: '50.84', splits: '24.60, 26.24', surface: 'OUTDOOR_400M' },
       '800m': { time: '1:55.84', splits: '56.82, 59.02', surface: 'OUTDOOR_400M' },
       '1500m': { time: '3:56.84', splits: '46.80, 63.40, 64.10, 62.54', surface: 'OUTDOOR_400M' },
@@ -358,7 +365,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 sourceUrl: profileOrMeetUrl.trim() || undefined,
               };
             })
-            .filter((c: ParsedOfficialRaceCandidate) => c.fatTimeSecs > 20);
+            .filter((c: ParsedOfficialRaceCandidate) => c.fatTimeSecs > 5);
 
           if (normalized.length > 0) {
             setParsedCandidates(normalized);
@@ -405,9 +412,10 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
 
     onImportOfficialRaces(synthesized);
     let calibratedNote = '';
-    if (autoCalibrateZones && onSaveProfileOverride && athleteProfile) {
+    const aerobicCandidates = selected.filter((c) => c.eventDistanceMeters >= 400);
+    if (autoCalibrateZones && onSaveProfileOverride && athleteProfile && aerobicCandidates.length > 0) {
       const csSummary = computeCriticalSpeedAndDPrime(
-        selected.map((c) => ({ distanceMeters: c.eventDistanceMeters, timeSecs: c.fatTimeSecs }))
+        aerobicCandidates.map((c) => ({ distanceMeters: c.eventDistanceMeters, timeSecs: c.fatTimeSecs }))
       );
       const calibratedPace = deriveThresholdPaceSecsPerKmFromVdot(csSummary.vdotBest);
       await onSaveProfileOverride(
@@ -428,7 +436,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   };
 
   const handleSaveQuickFatRace = async () => {
-    if (quickRaceAnalytics.fatTimeSecs <= 20) return;
+    if (quickRaceAnalytics.fatTimeSecs <= 5) return;
     const candidate: ParsedOfficialRaceCandidate = {
       id: `fat-quick-${Date.now()}`,
       date: quickDate,
@@ -452,7 +460,12 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
 
     onImportOfficialRaces([activity]);
     let calibratedNote = '';
-    if (autoCalibrateZones && onSaveProfileOverride && athleteProfile) {
+    if (
+      autoCalibrateZones &&
+      onSaveProfileOverride &&
+      athleteProfile &&
+      candidate.eventDistanceMeters >= 400
+    ) {
       const csSummary = computeCriticalSpeedAndDPrime([
         { distanceMeters: candidate.eventDistanceMeters, timeSecs: candidate.fatTimeSecs },
       ]);

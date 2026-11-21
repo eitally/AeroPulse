@@ -353,7 +353,7 @@ export function synthesizeTracksideRaceActivity(params: {
   sessionTitle?: string;
   eventLabel: string;
   eventDistanceMeters: number;
-  lapSplitDistanceMeters: 200 | 400 | 1000;
+  lapSplitDistanceMeters: 60 | 100 | 200 | 400 | 1000;
   lapSplitsSecs: number[];
   netTotalSecs: number;
   placeFinish?: string;

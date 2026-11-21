@@ -9,6 +9,14 @@ import type {
   TeamWorkoutLibraryTemplate,
   ThreshUser,
 } from '../types.ts';
+import type {
+  CoachEventGroup,
+  FieldEventCode,
+  FieldTrialEntry,
+  TeamAnnouncementCategory,
+  TeamAnnouncementRecord,
+  TeamAttendanceStatus,
+} from '../types.ts';
 import { getSavedIntervalsHeaders } from './telemetryStorage.ts';
 
 export function buildThreshSessionHeaders(): Record<string, string> {
@@ -248,4 +256,102 @@ export function deleteAccountApi() {
     method: 'DELETE',
     body: JSON.stringify({ confirm: 'DELETE' }),
   });
+}
+
+export async function recordTeamAttendanceBatchApi(params: {
+  teamId: string;
+  date: string;
+  entries: Array<{ membershipId: string; status: TeamAttendanceStatus; note?: string }>;
+}) {
+  return requestLifecycleJson<{
+    recordedCount?: number;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/attendance`, {
+    method: 'POST',
+    body: JSON.stringify({ date: params.date, entries: params.entries }),
+  });
+}
+
+export async function postTeamAnnouncementApi(params: {
+  teamId: string;
+  title: string;
+  body: string;
+  category?: TeamAnnouncementCategory;
+  targetEventGroups?: CoachEventGroup[];
+  publishToParentHub?: boolean;
+}) {
+  return requestLifecycleJson<{
+    announcement?: TeamAnnouncementRecord;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/announcements`, {
+    method: 'POST',
+    body: JSON.stringify({
+      title: params.title,
+      body: params.body,
+      category: params.category,
+      targetEventGroups: params.targetEventGroups,
+      publishToParentHub: params.publishToParentHub,
+    }),
+  });
+}
+
+export async function deleteTeamAnnouncementApi(params: {
+  teamId: string;
+  announcementId: string;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/announcements/${encodeURIComponent(params.announcementId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+export async function recordTeamFieldMarksApi(params: {
+  teamId: string;
+  entries: Array<{
+    membershipId?: string;
+    athleteName: string;
+    date: string;
+    eventCode: FieldEventCode;
+    isCompetition?: boolean;
+    meetOrPracticeTitle?: string;
+    implementSpec?: string;
+    poleSpec?: string;
+    approachSteps?: number;
+    attempts: FieldTrialEntry[];
+    multiPoints?: number;
+    rpe?: number;
+  }>;
+}) {
+  return requestLifecycleJson<{
+    recordedCount?: number;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/field-marks`, {
+    method: 'POST',
+    body: JSON.stringify({ entries: params.entries }),
+  });
+}
+
+export async function updateAssistantCoachEventGroupsApi(params: {
+  teamId: string;
+  membershipId: string;
+  coachEventGroups: CoachEventGroup[];
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/members/${encodeURIComponent(params.membershipId)}/coach-groups`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ coachEventGroups: params.coachEventGroups }),
+    },
+  );
 }

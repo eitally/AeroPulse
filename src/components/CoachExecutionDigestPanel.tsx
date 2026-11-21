@@ -15,6 +15,8 @@ import {
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import type {
+  CoachComplexityTier,
+  CoachEventGroup,
   ConnectedAthleteRecord,
   TeamSummaryWithRole,
   TeamWorkoutComment,
@@ -31,6 +33,9 @@ export interface CoachExecutionDigestPanelProps {
   isSampleDemoMode?: boolean;
   onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   primaryAthleteDisplayName?: string;
+  complexityTier?: CoachComplexityTier;
+  eventGroupFilter?: CoachEventGroup[];
+  onQuickInspectDrawer?: (athleteId: string) => void;
   onInspectAthlete: (athleteId: string) => void;
   onOpenTeamPlan: () => void;
 }
@@ -44,6 +49,9 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
   isSampleDemoMode = false,
   onTeamsUpdated,
   primaryAthleteDisplayName,
+  complexityTier = 'PRO',
+  eventGroupFilter,
+  onQuickInspectDrawer,
   onInspectAthlete,
   onOpenTeamPlan,
 }) => {
@@ -176,14 +184,23 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
   }, [roster]);
 
   const visibleRows = useMemo(() => {
+    const groupScoped =
+      eventGroupFilter && eventGroupFilter.length > 0
+        ? digest.rows.filter(
+            (r) =>
+              r.isSelfFallback ||
+              !r.eventGroup ||
+              eventGroupFilter.includes(r.eventGroup as CoachEventGroup)
+          )
+        : digest.rows;
     if (filterMode === 'ATTENTION') {
-      return digest.rows.filter((r) => r.attentionReason !== 'ON_TRACK');
+      return groupScoped.filter((r) => r.attentionReason !== 'ON_TRACK');
     }
     if (filterMode === 'ON_TRACK') {
-      return digest.rows.filter((r) => r.attentionReason === 'ON_TRACK');
+      return groupScoped.filter((r) => r.attentionReason === 'ON_TRACK');
     }
-    return digest.rows;
-  }, [digest.rows, filterMode]);
+    return groupScoped;
+  }, [digest.rows, eventGroupFilter, filterMode]);
 
   return (
     <section
@@ -334,7 +351,9 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                         {row.checkInStreakDays}d streak
                       </span>
                     )}
-                    {readiness && (readiness.hrv > 0 || readiness.tsb !== 0) && (
+                    {complexityTier !== 'ESSENTIALS' &&
+                      readiness &&
+                      (readiness.hrv > 0 || readiness.tsb !== 0) && (
                       <span className="px-1.5 py-0.5 rounded text-2xs font-mono ap-card-inset text-ap-muted dark:text-ap-muted-dark tabular-nums">
                         {readiness.hrv > 0 ? `HRV ${Math.round(readiness.hrv)}ms · ` : ''}
                         Form {readiness.tsb >= 0 ? `+${Math.round(readiness.tsb)}` : Math.round(readiness.tsb)}
@@ -381,12 +400,18 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
                   </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      row.isSelfFallback ? onOpenTeamPlan() : onInspectAthlete(row.athleteId)
-                    }
+                    onClick={() => {
+                      if (row.isSelfFallback) {
+                        onOpenTeamPlan();
+                      } else if (complexityTier === 'ESSENTIALS' && onQuickInspectDrawer) {
+                        onQuickInspectDrawer(row.athleteId);
+                      } else {
+                        onInspectAthlete(row.athleteId);
+                      }
+                    }}
                     className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-2xs font-semibold cursor-pointer"
                   >
-                    {row.isSelfFallback ? 'Team Plan' : 'Inspect'}
+                    {row.isSelfFallback ? 'Team Plan' : complexityTier === 'ESSENTIALS' ? 'Summary' : 'Inspect'}
                   </button>
                 </div>
               </div>

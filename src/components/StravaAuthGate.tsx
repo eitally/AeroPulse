@@ -1326,7 +1326,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     {activeBrand
                       ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
                       : onboardingRole === 'COACH'
-                        ? 'Onboard your distance and track pods in 2 minutes, catch shin & knee overload early, and time 0.01s splits on the infield — zero GPS watches required.'
+                        ? 'Sprints, hurdles, jumps, pole vault, throws, distance & XC — onboard your full squad in 2 minutes, catch injury overload early, and log 0.01s splits or field marks on the infield.'
                         : 'THRESH turns wearable workouts, .FIT files, and trackside splits into daily workout modulation for solo athletes, and real-time injury triage for entire teams.'}
                   </p>
                 </div>

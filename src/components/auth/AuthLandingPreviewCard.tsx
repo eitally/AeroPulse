@@ -305,10 +305,10 @@ export const AuthLandingPreviewCard: React.FC<AuthLandingPreviewCardProps> = ({
                         </div>
                         <div className="font-mono tabular-nums text-xs sm:text-sm font-semibold text-[#1F3528] dark:text-[#C8D8CE]">
                           {coachPreviewTab === 'PODS'
-                            ? 'Distance Pod A · 5 × 1000m @ 3:24/km · Mid-Dist · 8 × 400m @ 68s'
+                            ? 'Sprints 6×30m · Hurdles 5H Rhythm · Jumps LJ 21\'6" · Throws 27x · Distance 5×1000m'
                             : coachPreviewTab === 'SPLITS'
-                              ? 'Varsity Pod A · 4 × 800m · Avg 2:18.42 · Spread 0.61s · Offline Safe'
-                              : 'Maya R. flagged Left Shin 4/10 -> Swapped to 25m Aqua Jog / Bike'}
+                              ? 'Varsity 100m 10.92 / 4×100m 42.1 · 800m Avg 2:18.42 · LJ/HJ Marks · 0.01s PHONE STOPWATCH'
+                              : 'Maya R. flagged Left Shin 4/10 -> Swapped to Bike · Shoulder Check Clean'}
                         </div>
                       </div>
 

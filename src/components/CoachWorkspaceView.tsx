@@ -1,6 +1,8 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import type {
   AthleteProfile,
+  CoachComplexityTier,
+  CoachEventGroup,
   CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
   DistanceUnit,
@@ -78,6 +80,34 @@ const CoachClipboardWorkoutBuilder = lazyWithRetry(
       default: m.CoachClipboardWorkoutBuilder,
     })),
   { chunkKey: 'CoachClipboardWorkoutBuilder', restoreTab: 'coach' }
+);
+const TracksideFieldEventsSheet = lazyWithRetry(
+  () =>
+    import('./track/TracksideFieldEventsSheet').then((m) => ({
+      default: m.TracksideFieldEventsSheet,
+    })),
+  { chunkKey: 'TracksideFieldEventsSheet', restoreTab: 'coach' }
+);
+const CoachDailyOpsPanel = lazyWithRetry(
+  () =>
+    import('./coach/CoachDailyOpsPanel').then((m) => ({
+      default: m.CoachDailyOpsPanel,
+    })),
+  { chunkKey: 'CoachDailyOpsPanel', restoreTab: 'coach' }
+);
+const CoachAthleteSummaryDrawer = lazyWithRetry(
+  () =>
+    import('./coach/CoachDailyOpsPanel').then((m) => ({
+      default: m.CoachAthleteSummaryDrawer,
+    })),
+  { chunkKey: 'CoachAthleteSummaryDrawer', restoreTab: 'coach' }
+);
+const CoachOnboardingWizard = lazyWithRetry(
+  () =>
+    import('./coach/CoachOnboardingWizard').then((m) => ({
+      default: m.CoachOnboardingWizard,
+    })),
+  { chunkKey: 'CoachOnboardingWizard', restoreTab: 'coach' }
 );
 
 export interface CoachWorkspaceViewProps {
@@ -413,6 +443,28 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   );
 
   const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
+  const [complexityTierState, setComplexityTierState] = useState<CoachComplexityTier | null>(() => {
+    try {
+      const saved = window.localStorage.getItem('thresh_coach_complexity_tier');
+      return saved === 'PRO' || saved === 'ESSENTIALS' ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const complexityTier: CoachComplexityTier =
+    complexityTierState ??
+    (activeTeam?.brand?.orgType === 'COLLEGIATE' ? 'PRO' : 'ESSENTIALS');
+  const setComplexityTier = (next: CoachComplexityTier) => {
+    setComplexityTierState(next);
+    try {
+      window.localStorage.setItem('thresh_coach_complexity_tier', next);
+    } catch {
+      // ignore storage failures
+    }
+  };
+  const [tracksideMode, setTracksideMode] = useState<'STOPWATCH' | 'FIELD'>('STOPWATCH');
+  const [showOnboardingWizard, setShowOnboardingWizard] = useState<boolean>(false);
+  const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
   const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
   const [caraMeetingHours, setCaraMeetingHours] = useState<number>(0);
@@ -425,6 +477,25 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         activeTeam,
       }),
     [selfProfile, activeTeam]
+  );
+
+  const assistantAllowedEventGroups = useMemo<CoachEventGroup[] | undefined>(() => {
+    if (
+      activeTeam?.myRole === 'ASSISTANT_COACH' &&
+      Array.isArray(activeTeam.myCoachEventGroups) &&
+      activeTeam.myCoachEventGroups.length > 0
+    ) {
+      return activeTeam.myCoachEventGroups;
+    }
+    return undefined;
+  }, [activeTeam?.myCoachEventGroups, activeTeam?.myRole]);
+
+  const drawerAthlete = useMemo(
+    () =>
+      drawerAthleteId
+        ? connectedAthletesOnly.find((a) => a.id === drawerAthleteId) || null
+        : null,
+    [connectedAthletesOnly, drawerAthleteId]
   );
 
   const todayIso = getLocalDateIso();
@@ -504,6 +575,39 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <div
+                role="group"
+                aria-label="Coach Workspace Complexity"
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-2xs font-semibold"
+              >
+                <button
+                  type="button"
+                  data-testid="coach-complexity-essentials"
+                  aria-pressed={complexityTier === 'ESSENTIALS'}
+                  onClick={() => setComplexityTier('ESSENTIALS')}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
+                    complexityTier === 'ESSENTIALS'
+                      ? 'ap-nav-volt-active font-bold'
+                      : 'text-ap-ink dark:text-ap-chalk'
+                  }`}
+                >
+                  Simple
+                </button>
+                <button
+                  type="button"
+                  data-testid="coach-complexity-pro"
+                  aria-pressed={complexityTier === 'PRO'}
+                  onClick={() => setComplexityTier('PRO')}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
+                    complexityTier === 'PRO'
+                      ? 'ap-nav-volt-active font-bold'
+                      : 'text-ap-ink dark:text-ap-chalk'
+                  }`}
+                >
+                  Pro Metrics
+                </button>
+              </div>
+
               {myTeams.length > 0 && (
                 <select
                   value={activeTeamId || ''}
@@ -519,6 +623,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   <option value="">Personal Mode</option>
                 </select>
               )}
+
+              <button
+                type="button"
+                data-testid="coach-open-wizard-btn"
+                onClick={() => setShowOnboardingWizard(true)}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+              >
+                60s Setup
+              </button>
 
               <button
                 type="button"
@@ -606,17 +719,27 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   No team roster connected yet
                 </span>
               </div>
-              <button
-                type="button"
-                data-testid="coach-empty-setup-btn"
-                onClick={() => {
-                  setOpenCreateTeamOnSwitch(true);
-                  setSubTab('ROSTER');
-                }}
-                className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
-              >
-                Set Up Team or Import Roster
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="coach-empty-wizard-btn"
+                  onClick={() => setShowOnboardingWizard(true)}
+                  className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+                >
+                  60-Sec Setup Wizard
+                </button>
+                <button
+                  type="button"
+                  data-testid="coach-empty-setup-btn"
+                  onClick={() => {
+                    setOpenCreateTeamOnSwitch(true);
+                    setSubTab('ROSTER');
+                  }}
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+                >
+                  Set Up Team or Import Roster
+                </button>
+              </div>
             </section>
           )}
 
@@ -635,9 +758,40 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 connectedAthletes={connectedAthletesOnly}
                 primaryAthleteDisplayName={primaryAthleteDisplayName}
                 selfProfile={selfProfile}
+                complexityTier={complexityTier}
                 onTeamsUpdated={onTeamsUpdated}
                 onCreatePlannedEvent={onCreatePlannedEvent}
-                onOpenStopwatchSubTab={() => setSubTab('STOPWATCH')}
+                onOpenStopwatchSubTab={() => {
+                  setTracksideMode('STOPWATCH');
+                  setSubTab('STOPWATCH');
+                }}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
+
+          {/* Daily 3:15 PM Trackside Habit: Roll Call, Broadcasts & Quick Launch */}
+          <WorkspaceErrorBoundary fallbackTitle="Daily Practice Ops" restoreTab="coach">
+            <Suspense
+              fallback={
+                <div className="h-32 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Practice Ops…
+                </div>
+              }
+            >
+              <CoachDailyOpsPanel
+                activeTeam={activeTeam}
+                myTeams={myTeams}
+                complexityTier={complexityTier}
+                allowedEventGroups={assistantAllowedEventGroups}
+                onLaunchStopwatch={() => {
+                  setTracksideMode('STOPWATCH');
+                  setSubTab('STOPWATCH');
+                }}
+                onLaunchFieldSheet={() => {
+                  setTracksideMode('FIELD');
+                  setSubTab('STOPWATCH');
+                }}
+                onTeamsUpdated={onTeamsUpdated}
               />
             </Suspense>
           </WorkspaceErrorBoundary>
@@ -732,30 +886,93 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* 3. STOPWATCH */}
+      {/* 3. STOPWATCH & FIELD EVENTS */}
       {subTab === 'STOPWATCH' && (
-        <WorkspaceErrorBoundary fallbackTitle="Trackside Stopwatch" restoreTab="coach">
-          <Suspense
-            fallback={
-              <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                Loading Trackside Stopwatch…
-              </div>
-            }
+        <div className="space-y-3">
+          <div
+            role="group"
+            aria-label="Trackside Timing or Field Marks"
+            className="rounded-2xl liquid-glass px-3 py-2 flex flex-wrap items-center justify-between gap-2"
           >
-            <TracksideStopwatchView
-              selfName={primaryAthleteDisplayName}
-              selfProfile={selfProfile}
-              roster={combinedRoster}
-              myTeams={myTeams}
-              activeTeamId={activeTeamId}
-              onSaveStopwatchActivities={onSaveStopwatchActivities}
-              onFlushStopwatchOutbox={onFlushStopwatchOutbox}
-              onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
-              postSaveActionLabel="View Team Plan"
-              onOpenRosterModal={() => setSubTab('ROSTER')}
-            />
-          </Suspense>
-        </WorkspaceErrorBoundary>
+            <div className="inline-flex items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-xs font-bold">
+              <button
+                type="button"
+                data-testid="trackside-mode-stopwatch"
+                aria-pressed={tracksideMode === 'STOPWATCH'}
+                onClick={() => setTracksideMode('STOPWATCH')}
+                className={`min-h-[44px] sm:min-h-[34px] px-3.5 py-1 rounded-lg cursor-pointer transition-colors ${
+                  tracksideMode === 'STOPWATCH'
+                    ? 'ap-nav-volt-active'
+                    : 'text-ap-ink dark:text-ap-chalk'
+                }`}
+              >
+                Track Stopwatch
+              </button>
+              <button
+                type="button"
+                data-testid="trackside-mode-field"
+                aria-pressed={tracksideMode === 'FIELD'}
+                onClick={() => setTracksideMode('FIELD')}
+                className={`min-h-[44px] sm:min-h-[34px] px-3.5 py-1 rounded-lg cursor-pointer transition-colors ${
+                  tracksideMode === 'FIELD'
+                    ? 'ap-nav-volt-active'
+                    : 'text-ap-ink dark:text-ap-chalk'
+                }`}
+              >
+                Field Marks &amp; Multi
+              </button>
+            </div>
+            <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+              {tracksideMode === 'STOPWATCH'
+                ? 'Sprints · Hurdles · Mid-Dist · Distance Lanes'
+                : 'LJ · TJ · HJ · PV · Throws · Pent / Hept / Dec'}
+            </span>
+          </div>
+
+          {tracksideMode === 'STOPWATCH' ? (
+            <WorkspaceErrorBoundary fallbackTitle="Trackside Stopwatch" restoreTab="coach">
+              <Suspense
+                fallback={
+                  <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                    Loading Trackside Stopwatch…
+                  </div>
+                }
+              >
+                <TracksideStopwatchView
+                  selfName={primaryAthleteDisplayName}
+                  selfProfile={selfProfile}
+                  roster={combinedRoster}
+                  myTeams={myTeams}
+                  activeTeamId={activeTeamId}
+                  onSaveStopwatchActivities={onSaveStopwatchActivities}
+                  onFlushStopwatchOutbox={onFlushStopwatchOutbox}
+                  onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
+                  postSaveActionLabel="View Team Plan"
+                  onOpenRosterModal={() => setSubTab('ROSTER')}
+                />
+              </Suspense>
+            </WorkspaceErrorBoundary>
+          ) : (
+            <WorkspaceErrorBoundary fallbackTitle="Trackside Field Sheet" restoreTab="coach">
+              <Suspense
+                fallback={
+                  <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                    Loading Field &amp; Multi Sheet…
+                  </div>
+                }
+              >
+                <TracksideFieldEventsSheet
+                  activeTeam={activeTeam}
+                  myTeams={myTeams}
+                  rosterAthletes={connectedAthletesOnly}
+                  allowedEventGroups={assistantAllowedEventGroups}
+                  distanceUnit={distanceUnit}
+                  onTeamsUpdated={onTeamsUpdated}
+                />
+              </Suspense>
+            </WorkspaceErrorBoundary>
+          )}
+        </div>
       )}
 
       {/* 4. ROSTER, SQUAD TRIAGE & TEAM SETTINGS */}
@@ -776,6 +993,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             isSampleDemoMode={isSampleDemoMode}
             onTeamsUpdated={onTeamsUpdated}
             primaryAthleteDisplayName={primaryAthleteDisplayName}
+            complexityTier={complexityTier}
+            eventGroupFilter={assistantAllowedEventGroups}
+            onQuickInspectDrawer={(athId) => setDrawerAthleteId(athId)}
             onInspectAthlete={(athId) => {
               onSelectAthleteViewport(athId);
               onOpenAthleteToday();
@@ -1035,6 +1255,46 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               selfName={primaryAthleteDisplayName}
               onTeamsUpdated={onTeamsUpdated}
               onOpenPublicHub={onOpenPublicTeamHub}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {showOnboardingWizard && (
+        <WorkspaceErrorBoundary fallbackTitle="Team Setup Wizard" restoreTab="coach">
+          <Suspense fallback={null}>
+            <CoachOnboardingWizard
+              isOpen={showOnboardingWizard}
+              myTeams={myTeams}
+              selfName={primaryAthleteDisplayName}
+              onClose={() => setShowOnboardingWizard(false)}
+              onSetComplexityTier={(tier) => setComplexityTier(tier)}
+              onTeamCreated={(teams, createdId) => {
+                onTeamsUpdated(teams, createdId);
+                setSubTab('CLIPBOARD');
+              }}
+              onOpenRosterStudio={() => {
+                setOpenCreateTeamOnSwitch(true);
+                setSubTab('ROSTER');
+              }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {drawerAthlete && (
+        <WorkspaceErrorBoundary fallbackTitle="Athlete Coach Summary" restoreTab="coach">
+          <Suspense fallback={null}>
+            <CoachAthleteSummaryDrawer
+              athlete={drawerAthlete}
+              activeTeam={activeTeam}
+              onClose={() => setDrawerAthleteId(null)}
+              onSwitchToProTelemetry={(athId) => {
+                setComplexityTier('PRO');
+                setDrawerAthleteId(null);
+                onSelectAthleteViewport(athId);
+                onOpenAthleteToday();
+              }}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

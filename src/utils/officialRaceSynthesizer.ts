@@ -16,13 +16,69 @@ import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
 export interface OfficialRaceEventDefinition {
   label: string;
   distanceMeters: number;
-  defaultSplitMeters: 200 | 400 | 1000;
+  defaultSplitMeters: 60 | 100 | 200 | 400 | 1000;
   defaultLapCount: number;
   category: 'TRACK' | 'XC' | 'ROAD';
   typicalSubType: 'Track' | 'Cross Country' | 'Road';
 }
 
 export const OFFICIAL_RACE_EVENTS: OfficialRaceEventDefinition[] = [
+  {
+    label: '60m',
+    distanceMeters: 60,
+    defaultSplitMeters: 60,
+    defaultLapCount: 1,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '100m',
+    distanceMeters: 100,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '200m',
+    distanceMeters: 200,
+    defaultSplitMeters: 200,
+    defaultLapCount: 1,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '100mH',
+    distanceMeters: 100,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '110mH',
+    distanceMeters: 110,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '300mH',
+    distanceMeters: 300,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
+  {
+    label: '400mH',
+    distanceMeters: 400,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: 'TRACK',
+    typicalSubType: 'Track',
+  },
   {
     label: '400m',
     distanceMeters: 400,
@@ -133,7 +189,7 @@ export interface ParsedOfficialRaceCandidate {
   trackType: OfficialTrackSurface;
   placeFinish?: string;
   windReading?: string;
-  lapSplitDistanceMeters: 200 | 400 | 1000;
+  lapSplitDistanceMeters: 60 | 100 | 200 | 400 | 1000;
   lapSplitsSecs: number[];
   includeWarmupCooldown: boolean;
   sourceUrl?: string;
@@ -283,8 +339,14 @@ export function computeOfficialRaceTrainingLoad(
   includeWarmupCooldown: boolean
 ): number {
   let raceEffortTss = 45;
-  if (distanceMeters <= 450) {
-    raceEffortTss = 34; // 400m all-out glycolytic sprint
+  if (distanceMeters <= 120) {
+    raceEffortTss = 18; // 60m / 100m / 100mH / 110mH maximal neuromuscular sprint
+  } else if (distanceMeters <= 250) {
+    raceEffortTss = 24; // 200m sprint
+  } else if (distanceMeters <= 350) {
+    raceEffortTss = 30; // 300mH long hurdle sprint
+  } else if (distanceMeters <= 450) {
+    raceEffortTss = 34; // 400m / 400mH all-out glycolytic sprint
   } else if (distanceMeters <= 900) {
     raceEffortTss = 44; // 800m anaerobic + VO2max maximal effort
   } else if (distanceMeters <= 1700) {
@@ -309,7 +371,7 @@ export function computeOfficialRaceTrainingLoad(
 export function generateDefaultLapSplits(
   eventDistanceMeters: number,
   fatTimeSecs: number,
-  splitDistanceMeters: 200 | 400 | 1000 = 400
+  splitDistanceMeters: 60 | 100 | 200 | 400 | 1000 = 400
 ): number[] {
   if (!fatTimeSecs || fatTimeSecs <= 0) return [];
   const numLaps = Math.max(1, Math.round(eventDistanceMeters / splitDistanceMeters));
@@ -549,6 +611,13 @@ const MONTH_NAME_MAP: Record<string, string> = {
 
 function normalizeRaceEventToken(rawToken: string): string {
   const clean = rawToken.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  if (/^60\s*(?:m|meters?)$/.test(clean)) return '60m';
+  if (/^100\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return '100mH';
+  if (/^110\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return '110mH';
+  if (/^300\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return '300mH';
+  if (/^400\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return '400mH';
+  if (/^100\s*(?:m|meters?)$/.test(clean)) return '100m';
+  if (/^200\s*(?:m|meters?)$/.test(clean)) return '200m';
   if (/^400\s*(?:m|meters?)$/.test(clean)) return '400m';
   if (/^800\s*(?:m|meters?)$/.test(clean)) return '800m';
   if (/^1500\s*(?:m|meters?)$/.test(clean)) return '1500m';
@@ -599,13 +668,13 @@ export function parseOfficialResultsTextDeterministically(
       continue;
     }
 
-    // Match Event distance token (Athletic.net & TFRRS formats incl. "800 METERS", "3000S", "10,000 METERS")
+    // Match Event distance token (Sprints/Hurdles 60m-400mH through Half Marathon)
     const eventMatch = line.match(
-      /\b(400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
+      /\b(100\s*(?:meters?|m)\s*(?:h|hurdles?)|110\s*(?:meters?|m)\s*(?:h|hurdles?)|300\s*(?:meters?|m)\s*(?:h|hurdles?)|400\s*(?:meters?|m)\s*(?:h|hurdles?)|60\s*(?:meters?|m)|100\s*(?:meters?|m)|200\s*(?:meters?|m)|400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
     );
-    // Match FAT time token (e.g. 50.84, 1:56.38a, 4:16.42, 9:18.60, 15:34.20)
+    // Match FAT time token (e.g. 6.84, 10.74, 14.12, 21.84, 50.84, 1:56.38a, 4:16.42, 15:34.20)
     const timeMatch = line.match(
-      /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]?|\b[456]\d\.\d{2}[a-zA-Z]?)\b/
+      /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]?|[1-6]\d\.\d{2}[a-zA-Z]?|[6-9]\.\d{2}[a-zA-Z]?)\b/
     );
 
     if (!eventMatch || !timeMatch) continue;
@@ -619,7 +688,7 @@ export function parseOfficialResultsTextDeterministically(
     if (!matchedDef) continue;
 
     const fatTimeSecs = parseFatTimeString(timeMatch[1]);
-    if (fatTimeSecs <= 20) continue;
+    if (fatTimeSecs <= 5) continue;
 
     // Extract YYYY-MM-DD, MM/DD/YYYY, or natural month name dates ("Apr 4, 2026" / "May 14, 2026")
     const isoDateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);

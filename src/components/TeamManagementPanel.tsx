@@ -50,6 +50,7 @@ import {
   mergeRosterMembersApi,
   requestParentConsentLinkApi,
   transferHeadCoachApi,
+  updateAssistantCoachEventGroupsApi,
   updateMemberRoleApi,
   updateMemberStatusApi,
 } from '../utils/teamLifecycleApi';
@@ -2125,6 +2126,40 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 )}
                               </div>
                             )}
+                          {isActiveTeamCoach && m.role === 'ASSISTANT_COACH' && (
+                            <div className="mt-1.5 flex flex-wrap gap-1" role="group" aria-label={`Groups coached by ${m.invitedName}`}>
+                              {COACH_EVENT_GROUP_OPTIONS.map((opt) => {
+                                const active = (m.coachEventGroups || []).includes(opt.id);
+                                return (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    disabled={isRowBusy}
+                                    aria-pressed={active}
+                                    onClick={() => {
+                                      const curr = m.coachEventGroups || [];
+                                      const next = active ? curr.filter((g) => g !== opt.id) : [...curr, opt.id];
+                                      void runMemberMutation(
+                                        m.membershipId,
+                                        () =>
+                                          updateAssistantCoachEventGroupsApi({
+                                            teamId: activeTeam.brand.teamId,
+                                            membershipId: m.membershipId,
+                                            coachEventGroups: next,
+                                          }),
+                                        `Updated coached event groups for ${m.invitedName}.`
+                                      );
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-2xs font-mono cursor-pointer ${
+                                      active ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian font-bold' : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
+                                    }`}
+                                  >
+                                    {opt.shortLabel}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                           {isActiveTeamCoach && m.role === 'ATHLETE' && (
                             <select
                               aria-label={`Event group for ${m.invitedName}`}

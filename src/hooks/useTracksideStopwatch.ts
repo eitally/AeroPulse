@@ -81,6 +81,46 @@ export const WORKOUT_STOPWATCH_PRESETS: WorkoutStopwatchPreset[] = [
     defaultRestSecs: 60,
   },
   {
+    id: '6x30-fly',
+    label: '6 x 30m · Fly Max Velocity',
+    repCount: 6,
+    repDistanceMeters: 30,
+    intensity: 'RACE_400M',
+    defaultRestSecs: 240,
+  },
+  {
+    id: '4x60-blocks',
+    label: '4 x 60m · Block Accel',
+    repCount: 4,
+    repDistanceMeters: 60,
+    intensity: 'RACE_400M',
+    defaultRestSecs: 240,
+  },
+  {
+    id: '3x150-se',
+    label: '3 x 150m · Speed Endurance',
+    repCount: 3,
+    repDistanceMeters: 150,
+    intensity: 'RACE_400M',
+    defaultRestSecs: 360,
+  },
+  {
+    id: '6x110h-rhythm',
+    label: '6 x 60m · 5-Hurdle Rhythm',
+    repCount: 6,
+    repDistanceMeters: 60,
+    intensity: 'RACE_400M',
+    defaultRestSecs: 210,
+  },
+  {
+    id: '3x300h',
+    label: '3 x 300m · Hurdle Pattern',
+    repCount: 3,
+    repDistanceMeters: 300,
+    intensity: 'RACE_800M',
+    defaultRestSecs: 300,
+  },
+  {
     id: 'open-400',
     label: 'Open 400m Laps',
     repCount: 12,
@@ -93,11 +133,18 @@ export const WORKOUT_STOPWATCH_PRESETS: WorkoutStopwatchPreset[] = [
 export interface RaceStopwatchPreset {
   label: string;
   distanceMeters: number;
-  splitMeters: 200 | 400 | 1000;
+  splitMeters: 60 | 100 | 200 | 400 | 1000;
   targetLaps: number | null;
 }
 
 const INCLUDED_RACE_EVENT_LABELS = new Set([
+  '60m',
+  '100m',
+  '200m',
+  '100mH',
+  '110mH',
+  '300mH',
+  '400mH',
   '400m',
   '800m',
   '1500m',
@@ -227,7 +274,7 @@ function sanitizeNumberRecord(raw: unknown): Record<string, number> {
 }
 
 const VALID_REP_DISTANCES: TrackRepDistanceMeters[] = [
-  150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
+  10, 20, 30, 40, 50, 60, 80, 100, 110, 120, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
 ];
 
 function sanitizeCustomWorkoutSpec(raw: unknown): TrackWorkoutSpec | null {

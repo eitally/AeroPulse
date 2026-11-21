@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  Bell,
   Calendar,
   CheckCircle2,
   ExternalLink,
@@ -360,6 +361,36 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                 </span>
               </div>
             </section>
+
+            {(payload.announcements || []).length > 0 && (
+              <section
+                data-testid="public-hub-announcements"
+                className="rounded-2xl liquid-glass border border-amber-500/35 px-4 py-3 space-y-2"
+              >
+                <div className="flex items-center gap-2 text-xs font-extrabold text-ap-ink dark:text-ap-chalk uppercase tracking-wider font-mono">
+                  <Bell className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Active Weather &amp; Schedule Alerts</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {payload.announcements!.slice(0, 4).map((ann) => (
+                    <div
+                      key={ann.id}
+                      className="rounded-xl ap-card-inset px-3 py-2 text-xs space-y-0.5"
+                    >
+                      <div className="flex items-center justify-between gap-2 font-mono text-2xs">
+                        <span className="font-bold text-ap-cobalt dark:text-ap-volt">
+                          [{ann.category}] {ann.title}
+                        </span>
+                        <span className="text-ap-muted dark:text-ap-muted-dark">
+                          {ann.createdAt.slice(0, 10)}
+                        </span>
+                      </div>
+                      <p className="text-ap-ink dark:text-ap-chalk leading-snug">{ann.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
               {/* Left Column: Meet Schedule */}

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type {
   AthleteProfile,
+  CoachComplexityTier,
   CoachEventGroup,
   ConnectedAthleteRecord,
   PracticeVenueCategory,
@@ -52,6 +53,7 @@ import {
   buildSwimClipboardWorkout,
   buildTriBrickClipboardWorkout,
 } from '../physiology/swimZones';
+import { ALL_TF_PRACTICE_TEMPLATES } from '../physiology/fieldEventsEngine';
 import {
   COACH_EVENT_GROUP_OPTIONS,
   normalizeCoachEventGroup,
@@ -102,6 +104,7 @@ export interface CoachClipboardWorkoutBuilderProps {
     replaceExistingDate?: boolean;
   }) => Promise<void>;
   onOpenStopwatchSubTab: () => void;
+  complexityTier?: CoachComplexityTier;
 }
 
 type AudienceMode = 'ALL' | CoachEventGroup | 'INDIVIDUAL';
@@ -119,7 +122,7 @@ interface BuilderSetRow {
 }
 
 const VALID_REP_DISTS: TrackRepDistanceMeters[] = [
-  150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
+  10, 20, 30, 40, 50, 60, 80, 100, 120, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
 ];
 
 const SWIM_REP_DISTS: number[] = [50, 100, 150, 200, 300, 400, 500, 800];
@@ -195,6 +198,7 @@ const BUILTIN_WORKOUT_LIBRARY: Array<TeamWorkoutLibraryTemplate & { isBuiltin?: 
     isBuiltin: true,
   },
   ...SWIM_TRI_CLIPBOARD_TEMPLATES,
+  ...ALL_TF_PRACTICE_TEMPLATES,
 ];
 
 const LIBRARY_CATEGORY_CHIPS: Array<{ id: 'ALL' | TeamWorkoutLibraryCategory; label: string }> = [
@@ -295,6 +299,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   onTeamsUpdated,
   onCreatePlannedEvent,
   onOpenStopwatchSubTab,
+  complexityTier = 'ESSENTIALS',
 }) => {
   const [clipboardSport, setClipboardSport] = useState<SportCategory>('Running');
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
@@ -1352,41 +1357,6 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  handleExportFit();
-                  setShowExportMenu(false);
-                }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download .FIT</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleExportZwo();
-                  setShowExportMenu(false);
-                }}
-                className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download .ZWO</span>
-              </button>
-              {clipboardSport === 'Cycling' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleExportErg();
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download .ERG</span>
-                </button>
-              )}
-              <button
-                type="button"
                 data-testid="clipboard-share-btn"
                 onClick={() => {
                   handleShareWorkout();
@@ -1397,6 +1367,41 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 <ShareNetwork className="w-3.5 h-3.5" />
                 <span>Share Link / PNG</span>
               </button>
+              {(() => {
+                const watchExportItems = [
+                  { id: 'fit', label: 'Download .FIT', onClick: handleExportFit, show: true },
+                  { id: 'zwo', label: 'Download .ZWO', onClick: handleExportZwo, show: true },
+                  { id: 'erg', label: 'Download .ERG', onClick: handleExportErg, show: clipboardSport === 'Cycling' },
+                ].filter((item) => item.show);
+                const buttons = watchExportItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      item.onClick();
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{item.label}</span>
+                  </button>
+                ));
+                if (complexityTier === 'ESSENTIALS') {
+                  return (
+                    <details
+                      data-testid="clipboard-watch-exports-details"
+                      className="pt-1 border-t border-ap-frame/15 dark:border-ap-edge-dark"
+                    >
+                      <summary className="px-2 py-1 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark cursor-pointer">
+                        Watch Exports (.FIT/.ZWO)
+                      </summary>
+                      <div className="space-y-1 pt-1">{buttons}</div>
+                    </details>
+                  );
+                }
+                return buttons;
+              })()}
             </div>
           )}
         </div>
